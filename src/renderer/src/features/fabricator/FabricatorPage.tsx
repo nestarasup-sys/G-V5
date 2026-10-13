@@ -176,7 +176,7 @@ export function FabricatorPage() {
   const selectedPartIds = selectedIds
   const selectedPart = project?.parts.find((part) => part.id === selectedPartIds[0]) ?? null
   const visibleParts = useMemo(() => (project?.parts ?? []).filter((part) => part.name.toLowerCase().includes(filter.toLowerCase())), [project, filter])
-  const scale = project ? Math.min((stageSize.width - 48) / project.width, (stageSize.height - 48) / project.height) * zoom : 1
+  const scale = project ? Math.max(0.05, Math.min((stageSize.width - 48) / project.width, (stageSize.height - 48) / project.height)) * zoom : 1
 
   const updateProject = useCallback((updater: (current: FabricatorProject) => FabricatorProject) => {
     setProject((current) => current ? { ...updater(current), updatedAt: new Date().toISOString() } : current)
