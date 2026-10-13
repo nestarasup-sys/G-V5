@@ -34,7 +34,7 @@ function dataUrlBuffer(dataUrl: string): Buffer {
 type StoredHistoryEntry = {
   action: FabricatorHistoryEntry['action']
   project: Omit<FabricatorProject, 'sourceDataUrl' | 'parts'>
-  parts: Array<{ part: Omit<ModelPart, 'dataUrl'>; hash: string }>
+  parts: Array<{ part: Omit<ModelPart, 'dataUrl' | 'chromaBaseDataUrl'>; hash: string; chromaBaseHash?: string }>
 }
 
 async function writeFabricatorHistory(slot: number, history: FabricatorHistorySaveState): Promise<void> {
@@ -57,7 +57,11 @@ async function writeFabricatorHistory(slot: number, history: FabricatorHistorySa
     await access(join(slotPath(slot), snapshot.sourceAssetName))
     const parts = await Promise.all(snapshot.parts.map(async (part) => {
       if (!/^[a-zA-Z0-9_-]{1,80}$/.test(part.id)) throw new Error('Peça de histórico inválida.')
-      return { part: (({ dataUrl: _dataUrl, ...metadata }) => metadata)(part), hash: await storeAsset(dataUrlBuffer(part.dataUrl), 'png') }
+      return {
+        part: (({ dataUrl: _dataUrl, chromaBaseDataUrl: _baseDataUrl, ...metadata }) => metadata)(part),
+        hash: await storeAsset(dataUrlBuffer(part.dataUrl), 'png'),
+        ...(part.chromaBaseDataUrl ? { chromaBaseHash: await storeAsset(dataUrlBuffer(part.chromaBaseDataUrl), 'png') } : {})
+      }
     }))
     const { parts: _parts, ...metadata } = snapshot
     return { action: entry.action, project: metadata, parts }
@@ -107,9 +111,10 @@ async function readFabricatorHistory(slot: number): Promise<FabricatorHistorySta
     const source = await readFile(join(slotPath(slot), entry.project.sourceAssetName))
     const extension = extname(entry.project.sourceAssetName).toLowerCase()
     const mime = extension === '.png' ? 'image/png' : extension === '.webp' ? 'image/webp' : 'image/jpeg'
-    const parts = await Promise.all(entry.parts.map(async ({ part, hash }) => ({
+    const parts = await Promise.all(entry.parts.map(async ({ part, hash, chromaBaseHash }) => ({
       ...part,
-      dataUrl: `data:image/png;base64,${(await readAsset(hash, 'png')).toString('base64')}`
+      dataUrl: `data:image/png;base64,${(await readAsset(hash, 'png')).toString('base64')}`,
+      ...(chromaBaseHash ? { chromaBaseDataUrl: `data:image/png;base64,${(await readAsset(chromaBaseHash, 'png')).toString('base64')}` } : {})
     })))
     return {
       action: entry.action,
@@ -135,6 +140,7 @@ async function writeFabricatorProject(project: FabricatorProjectSave, changedAss
   for (const asset of changedAssets) {
     if (!validPartIds.has(asset.id)) continue
     await writeFile(join(partsFolder, `${asset.id}.png`), dataUrlBuffer(asset.dataUrl))
+    if (asset.chromaBaseDataUrl) await writeFile(join(partsFolder, `${asset.id}.base.png`), dataUrlBuffer(asset.chromaBaseDataUrl))
   }
   // Never publish a manifest until every referenced image exists. Serializing
   // saves per slot also prevents an older save from deleting a newer asset.
@@ -155,6 +161,7 @@ async function writeFabricatorProject(project: FabricatorProjectSave, changedAss
     width: project.width,
     height: project.height,
     tolerance: project.tolerance,
+    chromaBaseTolerance: project.chromaBaseTolerance,
     joints: project.joints,
     layerOrder: project.layerOrder,
     hiddenPartIds: project.hiddenPartIds,
@@ -164,7 +171,10 @@ async function writeFabricatorProject(project: FabricatorProjectSave, changedAss
   const manifestTemp = join(folder, 'project.json.tmp')
   await writeFile(manifestTemp, JSON.stringify(manifest), 'utf8')
   await rename(manifestTemp, join(folder, 'project.json'))
-  const keepFiles = new Set(parts.map((part) => `${part.id}.png`))
+  const keepFiles = new Set(parts.flatMap((part) => [
+    `${part.id}.png`,
+    ...(part.chromaBaseSaved ? [`${part.id}.base.png`] : [])
+  ]))
   for (const file of await readdir(partsFolder)) {
     if (file.endsWith('.png') && !keepFiles.has(file)) await unlink(join(partsFolder, file))
   }
@@ -186,7 +196,7 @@ async function registerFabricatorHandlers(): Promise<void> {
       try {
         const manifest = JSON.parse(await readFile(join(slotPath(slot), 'project.json'), 'utf8')) as Omit<FabricatorProject, 'sourceDataUrl' | 'parts'> & {
           sourceFile: string
-          parts: Array<Omit<ModelPart, 'dataUrl'>>
+          parts: Array<Omit<ModelPart, 'dataUrl' | 'chromaBaseDataUrl'>>
         }
         slots[slot - 1] = { slot, name: manifest.name, sourceName: manifest.sourceName, partCount: manifest.parts.length, updatedAt: manifest.updatedAt }
       } catch { /* Slots without a valid manifest are empty. */ }
@@ -223,7 +233,7 @@ async function registerFabricatorHandlers(): Promise<void> {
       const folder = slotPath(slot)
       const manifest = JSON.parse(await readFile(join(folder, 'project.json'), 'utf8')) as Omit<FabricatorProject, 'sourceDataUrl' | 'parts'> & {
         sourceFile: string
-        parts: Array<Omit<ModelPart, 'dataUrl'>>
+        parts: Array<Omit<ModelPart, 'dataUrl' | 'chromaBaseDataUrl'>>
       }
       if (!/^source-[a-f0-9-]+\.(png|jpe?g|webp)$/i.test(manifest.sourceFile) || manifest.parts.length > 500 || manifest.parts.some((part) => !/^[a-zA-Z0-9_-]{1,80}$/.test(part.id))) return null
       const sourceBytes = await readFile(join(folder, manifest.sourceFile))
@@ -232,7 +242,8 @@ async function registerFabricatorHandlers(): Promise<void> {
       const sourceDataUrl = `data:${mime};base64,${sourceBytes.toString('base64')}`
       const parts = await Promise.all(manifest.parts.map(async (part) => ({
         ...part,
-        dataUrl: `data:image/png;base64,${(await readFile(join(folder, 'parts', `${part.id}.png`))).toString('base64')}`
+        dataUrl: `data:image/png;base64,${(await readFile(join(folder, 'parts', `${part.id}.png`))).toString('base64')}`,
+        ...(part.chromaBaseSaved ? { chromaBaseDataUrl: `data:image/png;base64,${(await readFile(join(folder, 'parts', `${part.id}.base.png`))).toString('base64')}` } : {})
       })))
       return { ...manifest, sourceDataUrl, parts }
     } catch { return null }

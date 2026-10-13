@@ -14,7 +14,7 @@ const sections: { label: string; icon: IconName }[] = [
   { label: 'Exportação', icon: 'download' }
 ]
 
-type ProcessedPart = Omit<ModelPart, 'dataUrl'> & { png: ArrayBuffer }
+type ProcessedPart = Omit<ModelPart, 'dataUrl' | 'chromaBaseDataUrl'> & { png: ArrayBuffer; basePng: ArrayBuffer }
 type ProcessorMessage =
   | { type: 'progress'; id: number; value: number }
   | { type: 'complete'; id: number; width: number; height: number; parts: ProcessedPart[] }
@@ -42,6 +42,7 @@ function bytesToDataUrl(buffer: ArrayBuffer): string {
 function makeId(): string { return crypto.randomUUID() }
 
 const DEFAULT_CHROMA_TOLERANCE = 74
+const MAX_CHROMA_TOLERANCE = 280
 const emptyHistory = (): FabricatorHistoryState => ({ undo: [], redo: [] })
 
 function rotatePoint(point: { x: number; y: number }, origin: { x: number; y: number }, angle: number) {
@@ -89,6 +90,7 @@ async function cleanSavedPartEdges(parts: ModelPart[], sourceDataUrl: string, to
 
 async function splitImage(part: ModelPart, axis: 'horizontal' | 'vertical'): Promise<ModelPart[]> {
   const image = await imageFromDataUrl(part.dataUrl)
+  const baseImage = await imageFromDataUrl(part.chromaBaseDataUrl ?? part.dataUrl)
   const firstWidth = axis === 'vertical' ? Math.floor(part.width / 2) : part.width
   const firstHeight = axis === 'horizontal' ? Math.floor(part.height / 2) : part.height
   const regions = axis === 'vertical'
@@ -98,7 +100,10 @@ async function splitImage(part: ModelPart, axis: 'horizontal' | 'vertical'): Pro
     const canvas = document.createElement('canvas')
     canvas.width = region.width; canvas.height = region.height
     canvas.getContext('2d')?.drawImage(image, region.x, region.y, region.width, region.height, 0, 0, region.width, region.height)
-    return { ...part, id: makeId(), name: `${part.name} ${index === 0 ? 'A' : 'B'}`, x: part.x + region.x, y: part.y + region.y, width: region.width, height: region.height, rotation: 0, jointAnchor: { x: part.x + region.x + region.width / 2, y: part.y + region.y + region.height / 2 }, dataUrl: canvas.toDataURL('image/png') }
+    const baseCanvas = document.createElement('canvas')
+    baseCanvas.width = region.width; baseCanvas.height = region.height
+    baseCanvas.getContext('2d')?.drawImage(baseImage, region.x, region.y, region.width, region.height, 0, 0, region.width, region.height)
+    return { ...part, id: makeId(), name: `${part.name} ${index === 0 ? 'A' : 'B'}`, x: part.x + region.x, y: part.y + region.y, width: region.width, height: region.height, rotation: 0, jointAnchor: { x: part.x + region.x + region.width / 2, y: part.y + region.y + region.height / 2 }, chromaBaseSaved: true, chromaBaseDataUrl: baseCanvas.toDataURL('image/png'), dataUrl: canvas.toDataURL('image/png') }
   }))
 }
 
@@ -108,15 +113,24 @@ async function mergeImages(parts: ModelPart[]): Promise<ModelPart> {
   const canvas = document.createElement('canvas'); canvas.width = Math.ceil(right - x); canvas.height = Math.ceil(bottom - y)
   const context = canvas.getContext('2d')
   if (!context) throw new Error('Não foi possível mesclar as peças.')
+  const baseCanvas = document.createElement('canvas'); baseCanvas.width = canvas.width; baseCanvas.height = canvas.height
+  const baseContext = baseCanvas.getContext('2d')
+  if (!baseContext) throw new Error('Não foi possível mesclar as bases do chroma.')
   for (const part of parts) {
     const image = await imageFromDataUrl(part.dataUrl)
+    const baseImage = await imageFromDataUrl(part.chromaBaseDataUrl ?? part.dataUrl)
     context.save()
     context.translate(part.x - x + part.width / 2, part.y - y + part.height / 2)
     context.rotate(part.rotation * Math.PI / 180)
     context.drawImage(image, -part.width / 2, -part.height / 2, part.width, part.height)
     context.restore()
+    baseContext.save()
+    baseContext.translate(part.x - x + part.width / 2, part.y - y + part.height / 2)
+    baseContext.rotate(part.rotation * Math.PI / 180)
+    baseContext.drawImage(baseImage, -part.width / 2, -part.height / 2, part.width, part.height)
+    baseContext.restore()
   }
-  return { id: makeId(), name: 'Peças mescladas', x, y, width: canvas.width, height: canvas.height, rotation: 0, dataUrl: canvas.toDataURL('image/png') }
+  return { id: makeId(), name: 'Peças mescladas', x, y, width: canvas.width, height: canvas.height, rotation: 0, chromaBaseSaved: true, chromaBaseDataUrl: baseCanvas.toDataURL('image/png'), dataUrl: canvas.toDataURL('image/png') }
 }
 
 export function FabricatorPage() {
@@ -168,13 +182,21 @@ export function FabricatorPage() {
   const chromaWorkerRef = useRef<Worker | null>(null)
   const requestId = useRef(0)
   const dirtyAssets = useRef<Map<string, string>>(new Map())
+  const dirtyChromaBases = useRef<Map<string, string>>(new Map())
   const savedTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const initialSlotLoad = useRef(false)
 
   const persistProject = useCallback(async (snapshot: FabricatorProject) => {
-    let assets: FabricatorAssetSave[] = Array.from(dirtyAssets.current, ([id, dataUrl]) => ({ id, dataUrl }))
+    let assets: FabricatorAssetSave[] = Array.from(dirtyAssets.current, ([id, dataUrl]) => ({
+      id, dataUrl,
+      ...(dirtyChromaBases.current.has(id) ? { chromaBaseDataUrl: dirtyChromaBases.current.get(id)! } : {})
+    }))
+    const baseAssets = snapshot.parts.flatMap((part) => dirtyChromaBases.current.has(part.id) && !dirtyAssets.current.has(part.id)
+      ? [{ id: part.id, dataUrl: part.dataUrl, chromaBaseDataUrl: part.chromaBaseDataUrl! }]
+      : [])
+    assets = [...assets, ...baseAssets]
     const { sourceDataUrl: _sourceDataUrl, parts, ...metadata } = snapshot
-    const serialized = { ...metadata, parts: parts.map(({ dataUrl: _dataUrl, ...part }) => part) }
+    const serialized = { ...metadata, parts: parts.map(({ dataUrl: _dataUrl, chromaBaseDataUrl: _baseDataUrl, ...part }) => part) }
     try {
       await window.desktop.saveFabricatorProject(serialized, assets)
     } catch (reason) {
@@ -191,7 +213,10 @@ export function FabricatorPage() {
       assets = Array.from(byId.values())
       await window.desktop.saveFabricatorProject(serialized, assets)
     }
-    for (const asset of assets) if (dirtyAssets.current.get(asset.id) === asset.dataUrl) dirtyAssets.current.delete(asset.id)
+    for (const asset of assets) {
+      if (dirtyAssets.current.get(asset.id) === asset.dataUrl) dirtyAssets.current.delete(asset.id)
+      if (asset.chromaBaseDataUrl && dirtyChromaBases.current.get(asset.id) === asset.chromaBaseDataUrl) dirtyChromaBases.current.delete(asset.id)
+    }
     setSaveState('saved')
     setSlots((current) => current.map((item, index) => index + 1 === snapshot.slot ? { slot: snapshot.slot, name: snapshot.name, sourceName: snapshot.sourceName, partCount: snapshot.parts.length, updatedAt: snapshot.updatedAt } : item))
   }, [])
@@ -205,10 +230,11 @@ export function FabricatorPage() {
       redo: bounded.redo.map(({ action, project: snapshot }) => { const { sourceDataUrl: _sourceDataUrl, ...project } = snapshot; return { action, project } })
     }
     const { sourceDataUrl: _sourceDataUrl, parts, ...metadata } = currentProject
-    const currentForDisk = { ...metadata, parts: parts.map(({ dataUrl: _dataUrl, ...part }) => part) }
+    const currentForDisk = { ...metadata, parts: parts.map(({ dataUrl: _dataUrl, chromaBaseDataUrl: _baseDataUrl, ...part }) => part) }
     const changedAssets = parts.flatMap((part) => {
       const dataUrl = dirtyAssets.current.get(part.id)
-      return dataUrl ? [{ id: part.id, dataUrl }] : []
+      const chromaBaseDataUrl = dirtyChromaBases.current.get(part.id)
+      return dataUrl || chromaBaseDataUrl ? [{ id: part.id, dataUrl: dataUrl ?? part.dataUrl, ...(chromaBaseDataUrl ? { chromaBaseDataUrl } : {}) }] : []
     })
     setSaveState('saving')
     void window.desktop.saveFabricatorHistory(currentProject.slot, forDisk, currentForDisk, changedAssets).then(() => {
@@ -256,7 +282,10 @@ export function FabricatorPage() {
       const nextHistory: FabricatorHistoryState = direction === 'undo'
         ? { undo: currentHistory.undo.slice(0, -1), redo: [...currentHistory.redo, { action: entry.action, project: currentProject }].slice(-50) }
         : { undo: [...currentHistory.undo, { action: entry.action, project: currentProject }].slice(-50), redo: currentHistory.redo.slice(0, -1) }
-      for (const part of target.parts) dirtyAssets.current.set(part.id, part.dataUrl)
+      for (const part of target.parts) {
+        dirtyAssets.current.set(part.id, part.dataUrl)
+        if (part.chromaBaseDataUrl && part.chromaBaseSaved) dirtyChromaBases.current.set(part.id, part.chromaBaseDataUrl)
+      }
       projectRef.current = target
       setProject(target); setSelectedIds((ids) => { const valid = ids.filter((id) => target.parts.some((part) => part.id === id)); return valid.length ? valid : target.parts[0] ? [target.parts[0].id] : [] })
       publishHistory(nextHistory, target)
@@ -381,7 +410,7 @@ export function FabricatorPage() {
     mixerSessionRef.current += 1
     historyGestureRef.current = false; historyGestureChangedRef.current = false; historyGestureSnapshotRef.current = null
     historyRef.current = emptyHistory(); setHistory(historyRef.current)
-    setActiveSlot(slot); setProject(null); setSelectedIds([]); setError(''); dirtyAssets.current.clear(); mixerSurfacesRef.current.clear(); mixerStrokeRef.current = null; setMixerActive(false); setMixerPainting(false); setZoom(1); setPan({ x: 0, y: 0 })
+    setActiveSlot(slot); setProject(null); setSelectedIds([]); setError(''); dirtyAssets.current.clear(); dirtyChromaBases.current.clear(); mixerSurfacesRef.current.clear(); mixerStrokeRef.current = null; setMixerActive(false); setMixerPainting(false); setZoom(1); setPan({ x: 0, y: 0 })
     const summary = slots[slot - 1]
     if (!summary) return
     try {
@@ -405,10 +434,25 @@ export function FabricatorPage() {
           setError('O modelo abriu, mas não foi possível corrigir automaticamente o contorno verde.')
         }
       }
+      const historicalBaselines = [loaded, ...loadedHistory.undo, ...loadedHistory.redo]
+        .map((entry) => 'project' in entry ? entry.project : entry)
+        .filter((candidate) => candidate.parts.length === loaded.parts.length && loaded.parts.every((part) => candidate.parts.some((item) => item.id === part.id)))
+        .sort((a, b) => a.tolerance - b.tolerance)
+      const historicalBaseline = historicalBaselines[0]
+      const chromaBaseTolerance = loaded.chromaBaseTolerance ?? (loaded.parts.every((part) => part.chromaBaseDataUrl) ? 0 : historicalBaseline?.tolerance ?? loaded.tolerance)
+      const partsWithBases = loadedParts.map((part) => {
+        const storedPart = loaded.parts.find((item) => item.id === part.id)
+        const historicalPart = historicalBaseline?.parts.find((item) => item.id === part.id)
+        const chromaBaseDataUrl = storedPart?.chromaBaseDataUrl ?? historicalPart?.dataUrl ?? part.dataUrl
+        const chromaBaseSaved = storedPart?.chromaBaseSaved ?? Boolean(historicalPart)
+        if (chromaBaseSaved && !storedPart?.chromaBaseDataUrl && chromaBaseDataUrl) dirtyChromaBases.current.set(part.id, chromaBaseDataUrl)
+        return { ...part, chromaBaseSaved, chromaBaseDataUrl }
+      })
       setProject({
         ...loaded,
         chromaVersion,
-        parts: loadedParts,
+        chromaBaseTolerance,
+        parts: partsWithBases,
         layerOrder: normalizeLayerOrder(loaded.parts, loaded.layerOrder),
         hiddenPartIds: loaded.hiddenPartIds ?? [],
         joints: rig.joints
@@ -439,7 +483,7 @@ export function FabricatorPage() {
       setSlots((current) => current.map((item, index) => index === slot - 1 ? null : item))
       if (activeSlot === slot) {
         workerRef.current?.terminate(); workerRef.current = null
-        setProcessing(false); setProgress(0); setProject(null); setSelectedIds([]); dirtyAssets.current.clear(); setError('')
+        setProcessing(false); setProgress(0); setProject(null); setSelectedIds([]); dirtyAssets.current.clear(); dirtyChromaBases.current.clear(); setError('')
       }
     } catch (reason) {
       setError(reason instanceof Error ? `Não foi possível excluir o modelo: ${reason.message}` : 'Não foi possível excluir o modelo.')
@@ -465,12 +509,12 @@ export function FabricatorPage() {
       worker.terminate(); workerRef.current = null; setProcessing(false)
       if (message.type === 'error') { setError(message.message); return }
       if (message.parts.length === 0) { setError('Nenhuma peça foi encontrada. Aumente a tolerância ou escolha outra imagem.'); return }
-      const parts: ModelPart[] = message.parts.map(({ png, ...part }) => ({ ...part, rotation: 0, dataUrl: bytesToDataUrl(png) }))
-      for (const part of parts) dirtyAssets.current.set(part.id, part.dataUrl)
+      const parts: ModelPart[] = message.parts.map(({ png, basePng, ...part }) => ({ ...part, rotation: 0, chromaBaseSaved: true, dataUrl: bytesToDataUrl(png), chromaBaseDataUrl: bytesToDataUrl(basePng) }))
+      for (const part of parts) { dirtyAssets.current.set(part.id, part.dataUrl); if (part.chromaBaseDataUrl) dirtyChromaBases.current.set(part.id, part.chromaBaseDataUrl) }
       const detectedJoints = autoConnectParts(parts)
       const rig = normalizePartAnchors(parts, detectedJoints)
       const nextProject: FabricatorProject = {
-        schemaVersion: 1, chromaVersion: 2, slot: metadata.slot, name: metadata.name, sourceName: metadata.sourceName,
+        schemaVersion: 1, chromaVersion: 2, chromaBaseTolerance: 0, slot: metadata.slot, name: metadata.name, sourceName: metadata.sourceName,
         sourceAssetName: metadata.sourceAssetName, sourceDataUrl, width: message.width, height: message.height,
         tolerance, parts: rig.parts, joints: rig.joints, layerOrder: parts.map((part) => part.id), hiddenPartIds: [], updatedAt: new Date().toISOString()
       }
@@ -484,7 +528,7 @@ export function FabricatorPage() {
   }
 
   const applyChromaKey = () => {
-    if (!project || chromaApplying || processing || historyBusy || chromaValue <= project.tolerance) return
+    if (!project || chromaApplying || processing || historyBusy || chromaValue === project.tolerance) return
     chromaWorkerRef.current?.terminate()
     const worker = new Worker(new URL('./models/chromaAdjust.worker.ts', import.meta.url), { type: 'module' })
     chromaWorkerRef.current = worker
@@ -513,7 +557,7 @@ export function FabricatorPage() {
       id,
       sourceDataUrl: project.sourceDataUrl,
       tolerance,
-      parts: project.parts.map(({ id: partId, dataUrl }) => ({ id: partId, dataUrl }))
+      parts: project.parts.map(({ id: partId, dataUrl, chromaBaseDataUrl }) => ({ id: partId, dataUrl: chromaBaseDataUrl ?? dataUrl }))
     })
   }
 
@@ -533,6 +577,7 @@ export function FabricatorPage() {
     }
     chromaWorkerRef.current?.terminate(); chromaWorkerRef.current = null; setChromaApplying(false)
     setChromaValue(DEFAULT_CHROMA_TOLERANCE)
+    dirtyAssets.current.clear(); dirtyChromaBases.current.clear()
     runProcessor(project.sourceDataUrl, DEFAULT_CHROMA_TOLERANCE, {
       slot: project.slot,
       name: originalName,
@@ -553,7 +598,7 @@ export function FabricatorPage() {
       if (!selected) return
       chromaWorkerRef.current?.terminate(); chromaWorkerRef.current = null; setChromaApplying(false)
       mixerSessionRef.current += 1
-      setActiveSlot(slot); setProject(null); setSelectedIds([]); dirtyAssets.current.clear(); mixerSurfacesRef.current.clear(); mixerStrokeRef.current = null; setMixerActive(false); setMixerPainting(false)
+      setActiveSlot(slot); setProject(null); setSelectedIds([]); dirtyAssets.current.clear(); dirtyChromaBases.current.clear(); mixerSurfacesRef.current.clear(); mixerStrokeRef.current = null; setMixerActive(false); setMixerPainting(false)
       const name = selected.sourceName.replace(/\.[^.]+$/, '') || `Modelo ${slot}`
       const recordBefore = project?.slot === slot ? project : undefined
       if (!recordBefore) { historyRef.current = emptyHistory(); setHistory(historyRef.current) }
@@ -565,12 +610,13 @@ export function FabricatorPage() {
     updateProject((current) => ({ ...current, parts: current.parts.filter((part) => part.id !== partId), joints: current.joints.filter((joint) => joint.parentPartId !== partId && joint.childPartId !== partId) }))
     setSelectedIds((current) => current.filter((id) => id !== partId))
     dirtyAssets.current.delete(partId)
+    dirtyChromaBases.current.delete(partId)
   }
 
   const splitSelected = async (axis: 'horizontal' | 'vertical') => {
     if (!selectedPart || selectedPart.rotation !== 0) return
     const split = await splitImage(selectedPart, axis)
-    for (const part of split) dirtyAssets.current.set(part.id, part.dataUrl)
+    for (const part of split) { dirtyAssets.current.set(part.id, part.dataUrl); if (part.chromaBaseDataUrl) dirtyChromaBases.current.set(part.id, part.chromaBaseDataUrl) }
     updateProject((current) => ({ ...current, parts: [...current.parts.filter((part) => part.id !== selectedPart.id), ...split], joints: current.joints.filter((joint) => joint.parentPartId !== selectedPart.id && joint.childPartId !== selectedPart.id) }))
     setSelectedIds(split.map((part) => part.id)); dirtyAssets.current.delete(selectedPart.id)
   }
@@ -580,9 +626,10 @@ export function FabricatorPage() {
     const parts = project.parts.filter((part) => selectedPartIds.includes(part.id))
     const merged = await mergeImages(parts)
     dirtyAssets.current.set(merged.id, merged.dataUrl)
+    if (merged.chromaBaseDataUrl) dirtyChromaBases.current.set(merged.id, merged.chromaBaseDataUrl)
     const ids = new Set(parts.map((part) => part.id))
     updateProject((current) => ({ ...current, parts: [...current.parts.filter((part) => !ids.has(part.id)), merged], joints: current.joints.filter((joint) => !ids.has(joint.parentPartId) && !ids.has(joint.childPartId)) }))
-    for (const id of ids) dirtyAssets.current.delete(id)
+    for (const id of ids) { dirtyAssets.current.delete(id); dirtyChromaBases.current.delete(id) }
     setSelectedIds([merged.id])
   }
 
@@ -966,8 +1013,8 @@ export function FabricatorPage() {
                   <span className={`model-save-state ${saveState}`}><i />{saveState === 'saving' ? 'Salvando…' : saveState === 'error' ? 'Erro ao salvar' : 'Salvo localmente'}</span>
                   <div className="model-chroma-control">
                     <div className="model-chroma-heading"><label htmlFor="model-chroma-range"><Icon name="sliders" />Chroma key</label><output htmlFor="model-chroma-range">{chromaValue}</output></div>
-                    <div className="model-chroma-adjust"><input id="model-chroma-range" aria-label="Intensidade do chroma key" type="range" min={project.tolerance} max={Math.max(220, project.tolerance + 60)} value={Math.max(chromaValue, project.tolerance)} disabled={chromaApplying || processing || historyBusy || project.tolerance >= 280} onChange={(event) => setChromaValue(Number(event.target.value))} /><button className="model-chroma-apply" onClick={applyChromaKey} disabled={chromaApplying || processing || historyBusy || chromaValue <= project.tolerance} type="button">{chromaApplying ? 'Aplicando…' : 'Aplicar'}</button></div>
-                    <small>Aumente para remover mais verde · Resetar restaura a importação</small>
+                    <div className="model-chroma-adjust"><input id="model-chroma-range" aria-label="Intensidade do chroma key" type="range" min={project.chromaBaseTolerance ?? project.tolerance} max={MAX_CHROMA_TOLERANCE} value={Math.max(chromaValue, project.chromaBaseTolerance ?? project.tolerance)} disabled={chromaApplying || processing || historyBusy} onChange={(event) => setChromaValue(Number(event.target.value))} /><button className="model-chroma-apply" onClick={applyChromaKey} disabled={chromaApplying || processing || historyBusy || chromaValue === project.tolerance} type="button">{chromaApplying ? 'Aplicando…' : 'Aplicar'}</button></div>
+                    <small>Arraste para ajustar em qualquer direção · Resetar restaura a importação</small>
                   </div>
                   <button className="model-tool-button model-reset-button" onClick={() => void resetModel()} disabled={processing || chromaApplying || historyBusy} title="Voltar o modelo inteiro ao estado da imagem importada" type="button"><Icon name="reset" /><span>{processing ? 'Resetando…' : 'Resetar'}</span></button>
                   <button className={`model-tool-button model-mixer-toggle${mixerActive ? ' active' : ''}`} aria-pressed={mixerActive} onClick={() => { setMixerActive((active) => !active); setConnectMode(false); setConnectFromId(null) }} disabled={processing || chromaApplying || historyBusy} title="Pinte sobre a junta: o pincel edita a peça visível mais alta, mesmo que outra esteja selecionada" type="button"><Icon name="brush" /><span>Misturador</span></button>

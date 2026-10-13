@@ -19,6 +19,9 @@ export type ModelPart = {
   width: number
   height: number
   dataUrl: string
+  /** Recorte original com uma pequena margem recuperável para reajustar o chroma. */
+  chromaBaseDataUrl?: string
+  chromaBaseSaved?: boolean
   rotation: number
   /** Pivô único da peça no canvas, em coordenadas da folha. */
   jointAnchor?: { x: number; y: number }
@@ -37,6 +40,8 @@ export type FabricatorProject = {
   width: number
   height: number
   tolerance: number
+  /** Menor tolerância recuperável a partir da base de cada peça. */
+  chromaBaseTolerance?: number
   parts: ModelPart[]
   joints: JointLink[]
   /** Ordem de desenho do fundo para a frente. Ausente em modelos antigos. */
@@ -55,10 +60,10 @@ export type FabricatorSlotSummary = {
 } | null
 
 export type FabricatorProjectSave = Omit<FabricatorProject, 'sourceDataUrl' | 'parts'> & {
-  parts: Array<Omit<ModelPart, 'dataUrl'>>
+  parts: Array<Omit<ModelPart, 'dataUrl' | 'chromaBaseDataUrl'>>
 }
 
-export type FabricatorAssetSave = { id: string; dataUrl: string }
+export type FabricatorAssetSave = { id: string; dataUrl: string; chromaBaseDataUrl?: string }
 
 export type FabricatorHistoryAction = 'edit' | 'mixer' | 'reset'
 export type FabricatorHistoryEntry = { action: FabricatorHistoryAction; project: FabricatorProject }
