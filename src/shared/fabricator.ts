@@ -15,6 +15,7 @@ export type ModelPart = {
   width: number
   height: number
   dataUrl: string
+  rotation: number
   selected?: boolean
 }
 
