@@ -1,7 +1,8 @@
-import { app, BrowserWindow, dialog, ipcMain } from 'electron'
-import { mkdir, readFile, writeFile, readdir, unlink, rename } from 'node:fs/promises'
-import { basename, extname, join } from 'node:path'
+import { app, BrowserWindow, dialog, ipcMain, type IpcMainInvokeEvent } from 'electron'
+import { mkdir, readFile, writeFile, readdir, unlink, rename, stat } from 'node:fs/promises'
+import { basename, extname, join, resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
+import { fileURLToPath } from 'node:url'
 import type { FabricatorAssetSave, FabricatorProject, FabricatorProjectSave, FabricatorSlotSummary, ModelPart } from '../src/shared/fabricator'
 
 const slotCount = 10
@@ -12,6 +13,17 @@ function isValidSlot(slot: number): boolean {
   return Number.isInteger(slot) && slot >= 1 && slot <= slotCount
 }
 
+function assertTrustedSender(event: IpcMainInvokeEvent): void {
+  const senderUrl = event.senderFrame?.url
+  if (!senderUrl) throw new Error('Origem da solicitação inválida.')
+  const expectedUrl = process.env.ELECTRON_RENDERER_URL
+  if (expectedUrl) {
+    if (new URL(senderUrl).origin !== new URL(expectedUrl).origin) throw new Error('Origem da solicitação não autorizada.')
+  } else if (resolve(fileURLToPath(senderUrl)) !== resolve(join(__dirname, '../renderer/index.html'))) {
+    throw new Error('Origem da solicitação não autorizada.')
+  }
+}
+
 function dataUrlBuffer(dataUrl: string): Buffer {
   const match = /^data:image\/png;base64,([A-Za-z0-9+/=]+)$/.exec(dataUrl)
   if (!match) throw new Error('Arquivo de peça inválido.')
@@ -19,7 +31,8 @@ function dataUrlBuffer(dataUrl: string): Buffer {
 }
 
 async function registerFabricatorHandlers(): Promise<void> {
-  ipcMain.handle('fabricator:list-slots', async (): Promise<FabricatorSlotSummary[]> => {
+  ipcMain.handle('fabricator:list-slots', async (event): Promise<FabricatorSlotSummary[]> => {
+    assertTrustedSender(event)
     const slots: FabricatorSlotSummary[] = Array.from({ length: slotCount }, () => null)
     for (let slot = 1; slot <= slotCount; slot += 1) {
       try {
@@ -33,7 +46,8 @@ async function registerFabricatorHandlers(): Promise<void> {
     return slots
   })
 
-  ipcMain.handle('fabricator:import-model', async (_event, slot: number) => {
+  ipcMain.handle('fabricator:import-model', async (event, slot: number) => {
+    assertTrustedSender(event)
     if (!isValidSlot(slot)) throw new Error('Slot inválido.')
     const result = await dialog.showOpenDialog({
       title: 'Importar folha de modelo',
@@ -43,6 +57,7 @@ async function registerFabricatorHandlers(): Promise<void> {
     if (result.canceled || !result.filePaths[0]) return null
     const path = result.filePaths[0]
     const extension = extname(path).toLowerCase()
+    if ((await stat(path)).size > 50 * 1024 * 1024) throw new Error('A imagem excede o limite de 50 MB.')
     const mime = extension === '.png' ? 'image/png' : extension === '.webp' ? 'image/webp' : 'image/jpeg'
     const bytes = await readFile(path)
     const sourceDataUrl = `data:${mime};base64,${bytes.toString('base64')}`
@@ -53,7 +68,8 @@ async function registerFabricatorHandlers(): Promise<void> {
     return { sourceName: basename(path), sourceAssetName, sourceDataUrl }
   })
 
-  ipcMain.handle('fabricator:load-slot', async (_event, slot: number): Promise<FabricatorProject | null> => {
+  ipcMain.handle('fabricator:load-slot', async (event, slot: number): Promise<FabricatorProject | null> => {
+    assertTrustedSender(event)
     if (!isValidSlot(slot)) throw new Error('Slot inválido.')
     try {
       const folder = slotPath(slot)
@@ -74,7 +90,8 @@ async function registerFabricatorHandlers(): Promise<void> {
     } catch { return null }
   })
 
-  ipcMain.handle('fabricator:save-project', async (_event, project: FabricatorProjectSave, changedAssets: FabricatorAssetSave[]): Promise<void> => {
+  ipcMain.handle('fabricator:save-project', async (event, project: FabricatorProjectSave, changedAssets: FabricatorAssetSave[]): Promise<void> => {
+    assertTrustedSender(event)
     if (!isValidSlot(project.slot) || project.schemaVersion !== 1 || project.parts.length > 500) throw new Error('Projeto inválido.')
     const folder = slotPath(project.slot)
     const partsFolder = join(folder, 'parts')
