@@ -137,6 +137,16 @@ export function FabricatorPage() {
   const dirtyAssets = useRef<Map<string, string>>(new Map())
   const savedTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
+  const persistProject = useCallback(async (snapshot: FabricatorProject) => {
+    const assets: FabricatorAssetSave[] = Array.from(dirtyAssets.current, ([id, dataUrl]) => ({ id, dataUrl }))
+    const { sourceDataUrl: _sourceDataUrl, parts, ...metadata } = snapshot
+    const serialized = { ...metadata, parts: parts.map(({ dataUrl: _dataUrl, ...part }) => part) }
+    await window.desktop.saveFabricatorProject(serialized, assets)
+    for (const asset of assets) if (dirtyAssets.current.get(asset.id) === asset.dataUrl) dirtyAssets.current.delete(asset.id)
+    setSaveState('saved')
+    setSlots((current) => current.map((item, index) => index + 1 === snapshot.slot ? { slot: snapshot.slot, name: snapshot.name, sourceName: snapshot.sourceName, partCount: snapshot.parts.length, updatedAt: snapshot.updatedAt } : item))
+  }, [])
+
   useEffect(() => {
     void window.desktop.listFabricatorSlots().then(setSlots).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : 'Não foi possível abrir a biblioteca.'))
     return () => { workerRef.current?.terminate(); if (savedTimer.current) clearTimeout(savedTimer.current) }
@@ -155,20 +165,13 @@ export function FabricatorPage() {
     setSaveState('saving')
     if (savedTimer.current) clearTimeout(savedTimer.current)
     savedTimer.current = setTimeout(() => {
-      const assets: FabricatorAssetSave[] = Array.from(dirtyAssets.current, ([id, dataUrl]) => ({ id, dataUrl }))
-      const { sourceDataUrl: _sourceDataUrl, parts, ...metadata } = project
-      const serialized = { ...metadata, parts: parts.map(({ dataUrl: _dataUrl, ...part }) => part) }
-      void window.desktop.saveFabricatorProject(serialized, assets).then(() => {
-        for (const asset of assets) if (dirtyAssets.current.get(asset.id) === asset.dataUrl) dirtyAssets.current.delete(asset.id)
-        setSaveState('saved')
-        setSlots((current) => current.map((item, index) => index + 1 === project.slot ? { slot: project.slot, name: project.name, sourceName: project.sourceName, partCount: project.parts.length, updatedAt: project.updatedAt } : item))
-      }).catch((reason: unknown) => {
+      void persistProject(project).catch((reason: unknown) => {
         setSaveState('error')
         setError(reason instanceof Error ? `Falha ao salvar: ${reason.message}` : 'Falha ao salvar o projeto.')
       })
     }, 700)
     return () => { if (savedTimer.current) clearTimeout(savedTimer.current) }
-  }, [project])
+  }, [persistProject, project])
 
   const selectedPartIds = selectedIds
   const selectedPart = project?.parts.find((part) => part.id === selectedPartIds[0]) ?? null
@@ -180,6 +183,10 @@ export function FabricatorPage() {
   }, [])
 
   const selectSlot = async (slot: number) => {
+    if (project) {
+      if (savedTimer.current) clearTimeout(savedTimer.current)
+      try { await persistProject(project) } catch (reason) { setError(reason instanceof Error ? `Falha ao salvar antes de trocar de slot: ${reason.message}` : 'Falha ao salvar antes de trocar de slot.'); return }
+    }
     workerRef.current?.terminate(); workerRef.current = null
     setActiveSlot(slot); setProject(null); setSelectedIds([]); setError(''); dirtyAssets.current.clear(); setZoom(1)
     const summary = slots[slot - 1]
@@ -219,10 +226,15 @@ export function FabricatorPage() {
 
   const importSlot = async (slot: number) => {
     if (slots[slot - 1] && !window.confirm(`Substituir o modelo do slot ${slot}? O projeto atual será trocado.`)) return
-    setActiveSlot(slot); setProject(null); setSelectedIds([]); setError('')
+    if (project) {
+      if (savedTimer.current) clearTimeout(savedTimer.current)
+      try { await persistProject(project) } catch (reason) { setError(reason instanceof Error ? `Falha ao salvar antes da importação: ${reason.message}` : 'Falha ao salvar antes da importação.'); return }
+    }
+    setError('')
     try {
       const selected = await window.desktop.importFabricatorModel(slot)
       if (!selected) return
+      setActiveSlot(slot); setProject(null); setSelectedIds([]); dirtyAssets.current.clear()
       const name = selected.sourceName.replace(/\.[^.]+$/, '') || `Modelo ${slot}`
       runProcessor(selected.sourceDataUrl, 74, { slot, name, sourceName: selected.sourceName, sourceAssetName: selected.sourceAssetName })
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível importar a imagem.') }
