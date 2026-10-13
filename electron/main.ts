@@ -137,10 +137,10 @@ async function registerFabricatorHandlers(): Promise<void> {
 
 function createMainWindow(): void {
   const window = new BrowserWindow({
-    width: 1280,
-    height: 800,
-    minWidth: 760,
-    minHeight: 520,
+    width: 1440,
+    height: 900,
+    minWidth: 1120,
+    minHeight: 720,
     backgroundColor: '#f7f8fa',
     title: 'Gacha Nymi',
     webPreferences: {
