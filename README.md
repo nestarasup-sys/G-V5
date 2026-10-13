@@ -9,6 +9,10 @@ Aplicativo desktop de trabalho em português brasileiro. A tela inicial começa 
 
 ## Desenvolvimento
 
+No Windows, abra `ABRIR_DESENVOLVIMENTO.bat`. O modo de desenvolvimento atualiza a interface automaticamente e recarrega o Electron quando arquivos do processo principal ou preload mudam. Mantenha a janela do terminal aberta enquanto trabalha.
+
+Também é possível iniciar pelo terminal:
+
 ```powershell
 npm install
 npm run dev

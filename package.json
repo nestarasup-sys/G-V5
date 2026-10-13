@@ -6,7 +6,7 @@
   "type": "module",
   "main": "out/main/main.js",
   "scripts": {
-    "dev": "electron-vite dev",
+    "dev": "electron-vite dev --watch",
     "build": "electron-vite build",
     "preview": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.json"
