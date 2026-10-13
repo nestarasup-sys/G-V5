@@ -41,9 +41,15 @@ export type FabricatorSlotSummary = {
   updatedAt: string
 } | null
 
+export type FabricatorProjectSave = Omit<FabricatorProject, 'sourceDataUrl' | 'parts'> & {
+  parts: Array<Omit<ModelPart, 'dataUrl'>>
+}
+
+export type FabricatorAssetSave = { id: string; dataUrl: string }
+
 export type FabricatorDesktopApi = {
   listFabricatorSlots: () => Promise<FabricatorSlotSummary[]>
   importFabricatorModel: (slot: number) => Promise<{ sourceName: string; sourceAssetName: string; sourceDataUrl: string } | null>
   loadFabricatorSlot: (slot: number) => Promise<FabricatorProject | null>
-  saveFabricatorProject: (project: Omit<FabricatorProject, 'sourceDataUrl'>) => Promise<void>
+  saveFabricatorProject: (project: FabricatorProjectSave, changedAssets: FabricatorAssetSave[]) => Promise<void>
 }

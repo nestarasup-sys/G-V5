@@ -2,7 +2,7 @@ import { app, BrowserWindow, dialog, ipcMain } from 'electron'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { basename, extname, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
-import type { FabricatorProject, FabricatorSlotSummary, ModelPart } from '../src/shared/fabricator'
+import type { FabricatorAssetSave, FabricatorProject, FabricatorProjectSave, FabricatorSlotSummary, ModelPart } from '../src/shared/fabricator'
 
 const slotCount = 10
 const libraryPath = () => join(app.getPath('userData'), 'fabricator', 'models')
@@ -73,7 +73,7 @@ async function registerFabricatorHandlers(): Promise<void> {
     } catch { return null }
   })
 
-  ipcMain.handle('fabricator:save-project', async (_event, project: Omit<FabricatorProject, 'sourceDataUrl'>): Promise<void> => {
+  ipcMain.handle('fabricator:save-project', async (_event, project: FabricatorProjectSave, changedAssets: FabricatorAssetSave[]): Promise<void> => {
     if (!isValidSlot(project.slot) || project.schemaVersion !== 1 || project.parts.length > 500) throw new Error('Projeto inválido.')
     const folder = slotPath(project.slot)
     const partsFolder = join(folder, 'parts')
@@ -81,11 +81,16 @@ async function registerFabricatorHandlers(): Promise<void> {
     const sourceFile = project.sourceAssetName
     if (!/^source-[a-f0-9-]+\.(png|jpe?g|webp)$/i.test(sourceFile)) throw new Error('Imagem original inválida.')
     await readFile(join(folder, sourceFile))
-    const parts = project.parts.map(({ dataUrl, ...part }) => {
+    const parts = project.parts.map((part) => {
       if (!/^[a-zA-Z0-9_-]{1,80}$/.test(part.id)) throw new Error('Identificador de peça inválido.')
       return part
     })
-    for (const part of project.parts) await writeFile(join(partsFolder, `${part.id}.png`), dataUrlBuffer(part.dataUrl))
+    const validPartIds = new Set(parts.map((part) => part.id))
+    for (const asset of changedAssets) {
+      if (!validPartIds.has(asset.id)) continue
+      await writeFile(join(partsFolder, `${asset.id}.png`), dataUrlBuffer(asset.dataUrl))
+    }
+    for (const part of parts) await readFile(join(partsFolder, `${part.id}.png`))
     const projectDocument = {
       schemaVersion: project.schemaVersion,
       slot: project.slot,
@@ -100,6 +105,11 @@ async function registerFabricatorHandlers(): Promise<void> {
     }
     const manifest = { ...projectDocument, parts, sourceFile }
     await writeFile(join(folder, 'project.json'), JSON.stringify(manifest), 'utf8')
+    const keepFiles = new Set(parts.map((part) => `${part.id}.png`))
+    const { readdir, unlink } = await import('node:fs/promises')
+    for (const file of await readdir(partsFolder)) {
+      if (file.endsWith('.png') && !keepFiles.has(file)) await unlink(join(partsFolder, file))
+    }
   })
 }
 
