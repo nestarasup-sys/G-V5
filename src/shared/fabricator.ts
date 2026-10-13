@@ -6,6 +6,8 @@ export type JointLink = {
   childAnchor: { x: number; y: number }
   /** Pivô único exibido como uma bolinha no canvas. */
   pivot?: { x: number; y: number }
+  /** Quando ativo, arrastar a peça-pai move esta peça junto com o encaixe. */
+  fixed?: boolean
   suggested?: boolean
 }
 

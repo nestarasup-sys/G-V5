@@ -252,9 +252,11 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .model-joint-pivot:hover { fill: #bd3d6c; stroke-width: 3.5; }
 .model-joint-pivot.suggested { fill: #d99a34; }
 .model-joint-pivot.suggested:hover { fill: #b67718; }
+.model-joint-pivot.selected { fill: #f02f70; stroke: #fff; stroke-width: 3.5; filter: drop-shadow(0 0 3px #ed3278) drop-shadow(0 0 7px #ed3278bb); }
 .model-stage-tools { position: absolute; z-index: 6; right: 9px; bottom: 9px; display: flex; align-items: center; gap: 4px; padding: 4px; border: 1px solid #ece6eb; border-radius: 8px; background: #ffffffdb; box-shadow: 0 3px 10px #44303a0a; }
 .model-stage-tools button { width: 23px; height: 23px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 5px; background: transparent; color: #776e78; cursor: pointer; }
 .model-stage-tools button:hover { background: #fff0f5; color: #a44166; }
+.model-stage-tools button.active { background: #fff0f5; color: #bd3d6c; }
 .model-stage-tools svg { width: 13px; height: 13px; }
 .model-stage-tools span { min-width: 28px; color: #948a95; font-size: 12px; text-align: center; }
 .model-canvas-footer { min-height: 29px; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 9px; border-top: 1px solid #eee9ed; color: #a29aa3; font-size: 12px; }
@@ -343,6 +345,9 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .model-layer-controls button { width: 27px; height: 27px; display: grid; place-items: center; padding: 0; border: 1px solid #eee8ed; border-radius: 6px; background: #fff; color: #837985; font-size: 15px; cursor: pointer; }
 .model-layer-controls button:hover:not(:disabled) { border-color: #edc7d5; background: #fff6f9; color: #a44166; }
 .model-layer-controls button:disabled { opacity: .35; cursor: default; }
+.model-layer-controls button.model-layer-fix { color: #9d929f; }
+.model-layer-controls button.model-layer-fix.fixed { border-color: #e8a5bb; background: #fff0f5; color: #bd3d6c; box-shadow: inset 0 0 0 1px #f5d7e2; }
+.model-layer-controls button.model-layer-fix svg { width: 14px; height: 14px; }
 .model-joint-panel { gap: 9px; }
 .model-auto-connect { min-height: 61px; display: flex; align-items: center; gap: 10px; padding: 9px 11px; border: 1px solid #edc5d3; border-radius: 9px; background: linear-gradient(120deg, #fff4f8, #fff); color: #aa4267; text-align: left; cursor: pointer; }
 .model-auto-connect:hover { border-color: #df91ad; background: #fff0f5; }
