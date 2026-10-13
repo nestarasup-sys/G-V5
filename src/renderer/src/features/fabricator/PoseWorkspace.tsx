@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { FabricatorPose, FabricatorPoseDraft, FabricatorPoseDraftSave, FabricatorPoseSave, FabricatorPoseSummary, FabricatorSlotSummary, PosePart } from '../../../../shared/fabricator'
+import type { FabricatorPose, FabricatorPoseDraft, FabricatorPoseDraftSave, FabricatorPoseSave, FabricatorPoseSummary, FabricatorProject, FabricatorSlotSummary, PosePart } from '../../../../shared/fabricator'
 import { Icon } from '../../ui/components/Icon'
 import { jointPivot, normalizeLayerOrder, orderedParts } from './models/rig'
 
@@ -40,12 +40,33 @@ function toDraftSave(project: DraftProject, editingSlot: number | null): Fabrica
   }
 }
 
+function poseFromModel(model: FabricatorProject): DraftProject {
+  return {
+    schemaVersion: 1,
+    name: `Pose de ${model.name}`,
+    sourceModelSlot: model.slot,
+    sourceModelName: model.name,
+    sourceModelUpdatedAt: model.updatedAt,
+    width: model.width,
+    height: model.height,
+    parts: model.parts.map((part) => ({
+      id: part.id, name: part.name, x: part.x, y: part.y, width: part.width, height: part.height,
+      rotation: part.rotation, jointAnchor: part.jointAnchor ? { ...part.jointAnchor } : undefined, dataUrl: part.dataUrl
+    })),
+    joints: model.joints.map((joint) => structuredClone(joint)),
+    layerOrder: normalizeLayerOrder(model.parts, model.layerOrder),
+    hiddenPartIds: [...(model.hiddenPartIds ?? [])],
+    updatedAt: new Date().toISOString()
+  }
+}
+
 export function PoseWorkspace() {
   const [models, setModels] = useState<FabricatorSlotSummary[]>(Array.from({ length: 10 }, () => null))
   const [allPoseSlots, setAllPoseSlots] = useState<FabricatorPoseSummary[]>([])
   const [selectedModelSlot, setSelectedModelSlot] = useState(1)
   const [activeSlot, setActiveSlot] = useState(1)
   const [project, setProject] = useState<DraftProject | null>(null)
+  const [sourcePreview, setSourcePreview] = useState<DraftProject | null>(null)
   const [editingSlot, setEditingSlot] = useState<number | null>(null)
   const [history, setHistory] = useState<PoseHistory>(emptyHistory)
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -92,10 +113,13 @@ export function PoseWorkspace() {
       ])
       const preferredModelSlot = modelSlots.find((slot) => slot)?.slot ?? poseSummaries[0]?.sourceModelSlot ?? 1
       const draft = await window.desktop.loadFabricatorPoseDraft(preferredModelSlot)
+      const displayedModelSlot = draft?.project.sourceModelSlot ?? preferredModelSlot
+      const sourceModel = await window.desktop.loadFabricatorSlot(displayedModelSlot)
       setModels(modelSlots)
       setAllPoseSlots(poseSummaries)
-      setSelectedModelSlot(draft?.project.sourceModelSlot ?? preferredModelSlot)
+      setSelectedModelSlot(displayedModelSlot)
       setRecoveredDraft(draft)
+      setSourcePreview(sourceModel ? poseFromModel(sourceModel) : null)
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Não foi possível carregar a biblioteca de poses.')
     } finally {
@@ -177,6 +201,10 @@ export function PoseWorkspace() {
     if (draftTimer.current) clearTimeout(draftTimer.current)
     const sourceModelSlot = projectRef.current?.sourceModelSlot ?? recoveredDraft?.project.sourceModelSlot ?? selectedModelSlot
     try { await window.desktop.deleteFabricatorPoseDraft(sourceModelSlot) } catch { /* O conteúdo em memória continua editável. */ }
+    try {
+      const sourceModel = await window.desktop.loadFabricatorSlot(sourceModelSlot)
+      setSourcePreview(sourceModel ? poseFromModel(sourceModel) : null)
+    } catch { setSourcePreview(null) }
     pendingAssets.current.clear()
     setRecoveredDraft(null)
     setEditingSlot(null)
@@ -197,25 +225,11 @@ export function PoseWorkspace() {
   const beginNewPose = async (modelSlot: number) => {
     const model = await window.desktop.loadFabricatorSlot(modelSlot)
     if (!model) { setError('Não foi possível carregar esse modelo.'); return }
-    const next: DraftProject = {
-      schemaVersion: 1,
-      name: `Pose de ${model.name}`,
-      sourceModelSlot: model.slot,
-      sourceModelName: model.name,
-      sourceModelUpdatedAt: model.updatedAt,
-      width: model.width,
-      height: model.height,
-      parts: model.parts.map((part) => ({
-        id: part.id, name: part.name, x: part.x, y: part.y, width: part.width, height: part.height,
-        rotation: part.rotation, jointAnchor: part.jointAnchor ? { ...part.jointAnchor } : undefined, dataUrl: part.dataUrl
-      })),
-      joints: model.joints.map((joint) => structuredClone(joint)),
-      layerOrder: normalizeLayerOrder(model.parts, model.layerOrder),
-      hiddenPartIds: [...(model.hiddenPartIds ?? [])],
-      updatedAt: new Date().toISOString()
-    }
+    const next = poseFromModel(model)
     pendingAssets.current = new Map(next.parts.map((part) => [part.id, part.dataUrl]))
+    setSourcePreview(null)
     setSelectedModelSlot(modelSlot)
+    setSourcePreview(null)
     const modelPoseSlots = Array.from({ length: SLOT_COUNT }, (_, index) => allPoseSlots.find((slot) => slot?.sourceModelSlot === modelSlot && slot.slot === index + 1) ?? null)
     setActiveSlot(modelPoseSlots.findIndex((slot) => !slot) + 1 || SLOT_COUNT)
     setEditingSlot(null)
@@ -249,6 +263,7 @@ export function PoseWorkspace() {
       // The draft is stored in a different folder from the saved pose, so copy
       // the pose's part images into the draft library on its next autosave.
       pendingAssets.current = new Map(editable.parts.map((part) => [part.id, part.dataUrl]))
+      setSourcePreview(null)
       setEditingSlot(slot)
       editingSlotRef.current = slot
       setHistory(emptyHistory())
@@ -266,6 +281,7 @@ export function PoseWorkspace() {
     if (!recoveredDraft) return
     setEditingSlot(recoveredDraft.editingSlot)
     setSelectedModelSlot(recoveredDraft.project.sourceModelSlot)
+    setSourcePreview(null)
     editingSlotRef.current = recoveredDraft.editingSlot
     publishProject(recoveredDraft.project)
     setSelectedId(recoveredDraft.project.parts[0]?.id ?? null)
@@ -320,11 +336,12 @@ export function PoseWorkspace() {
     }
   }
 
-  const parts = useMemo(() => project ? orderedParts(project.parts, project.layerOrder) : [], [project])
-  const selectedPart = project?.parts.find((part) => part.id === selectedId) ?? null
-  const visibleParts = useMemo(() => parts.filter((part) => !project?.hiddenPartIds.includes(part.id)), [parts, project?.hiddenPartIds])
+    const displayProject = project ?? sourcePreview
+    const parts = useMemo(() => displayProject ? orderedParts(displayProject.parts, displayProject.layerOrder) : [], [displayProject])
+    const selectedPart = displayProject?.parts.find((part) => part.id === selectedId) ?? null
+    const visibleParts = useMemo(() => parts.filter((part) => !displayProject?.hiddenPartIds.includes(part.id)), [parts, displayProject?.hiddenPartIds])
   const filteredParts = useMemo(() => parts.filter((part) => part.name.toLocaleLowerCase().includes(partFilter.toLocaleLowerCase())), [parts, partFilter])
-  const scale = project ? Math.max(0.05, Math.min((stageSize.width - 48) / project.width, (stageSize.height - 48) / project.height)) * zoom : 1
+  const scale = displayProject ? Math.max(0.05, Math.min((stageSize.width - 48) / displayProject.width, (stageSize.height - 48) / displayProject.height)) * zoom : 1
 
   const movePart = (partId: string, dx: number, dy: number) => changeProject((current) => ({
     ...current,
@@ -392,6 +409,13 @@ export function PoseWorkspace() {
       const draft = await window.desktop.loadFabricatorPoseDraft(modelSlot)
       setRecoveredDraft(draft)
       if (draft) setActiveSlot(draft.editingSlot ?? 1)
+      const sourceModel = await window.desktop.loadFabricatorSlot(modelSlot)
+      if (sourceModel) setSourcePreview(poseFromModel(sourceModel))
+      else {
+        const firstSavedPose = allPoseSlots.find((pose) => pose?.sourceModelSlot === modelSlot)
+        const savedPose = firstSavedPose ? await window.desktop.loadFabricatorPose(modelSlot, firstSavedPose.slot) : null
+        setSourcePreview(savedPose ? (({ slot: _slot, ...pose }) => pose)(savedPose) : null)
+      }
       setError('')
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Não foi possível abrir a biblioteca deste modelo.')
@@ -401,7 +425,7 @@ export function PoseWorkspace() {
   }
 
   const beginPan = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (!project || event.target instanceof Element && event.target.closest('.pose-stage-tools, .pose-part, .pose-joint-marker')) return
+    if (!displayProject || event.target instanceof Element && event.target.closest('.pose-stage-tools, .pose-part, .pose-joint-marker')) return
     event.preventDefault()
     event.currentTarget.setPointerCapture(event.pointerId)
     panRef.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, originX: pan.x, originY: pan.y }
@@ -457,18 +481,18 @@ export function PoseWorkspace() {
 
       <div className="pose-editor-body">
         <section className="pose-canvas-column" aria-label="Prévia da pose">
-          <div className="pose-canvas-heading"><span><i /> PRÉVIA DA POSE</span><span>{project ? `${project.width} × ${project.height}` : 'Escolha um modelo para começar'}</span></div>
+          <div className="pose-canvas-heading"><span><i />{project ? 'PRÉVIA DA POSE' : sourcePreview ? 'MODELO BASE · SOMENTE PRÉVIA' : 'PRÉVIA DA POSE'}</span><span>{displayProject ? `${displayProject.width} × ${displayProject.height}` : 'Escolha um modelo para começar'}</span></div>
           <div ref={stageRef} className={`pose-stage${panning ? ' panning' : ''}`} onPointerDown={beginPan} onPointerMove={moveCanvas} onPointerUp={stopCanvasGesture} onPointerCancel={stopCanvasGesture}>
-            {project ? <div className="pose-artboard" style={{ width: project.width * scale, height: project.height * scale, left: `calc(50% + ${pan.x}px)`, top: `calc(50% + ${pan.y}px)` }}>
+            {displayProject ? <div className={`pose-artboard${!project ? ' source-preview' : ''}`} style={{ width: displayProject.width * scale, height: displayProject.height * scale, left: `calc(50% + ${pan.x}px)`, top: `calc(50% + ${pan.y}px)` }}>
               {visibleParts.map((part, index) => <img key={part.id} className={`pose-part${selectedId === part.id ? ' selected' : ''}`} src={part.dataUrl} alt={part.name} draggable={false} onClick={(event) => { event.stopPropagation(); setSelectedId(part.id) }} onPointerDown={(event) => startPartDrag(event, part)} style={{ left: part.x * scale, top: part.y * scale, width: part.width * scale, height: part.height * scale, zIndex: index + 1, transform: `rotate(${part.rotation}deg)` }} />)}
-              {showJoints && <svg className="pose-joints" viewBox={`0 0 ${project.width} ${project.height}`} preserveAspectRatio="none">{project.joints.map((joint) => {
+              {showJoints && <svg className="pose-joints" viewBox={`0 0 ${displayProject.width} ${displayProject.height}`} preserveAspectRatio="none">{displayProject.joints.map((joint) => {
                 const pivot = jointPivot(joint)
                 return <circle key={joint.id} className={`pose-joint-marker${joint.fixed ? ' fixed' : ''}${selectedId === joint.childPartId ? ' selected' : ''}`} cx={pivot.x} cy={pivot.y} r={Math.max(8, 9 / scale)} />
               })}</svg>}
             </div> : <div className="pose-canvas-empty"><span><Icon name="expand" /></span><strong>{loading ? 'Carregando poses…' : 'Sua pose começa aqui'}</strong><small>Escolha um modelo salvo e crie uma pose independente.</small><button className="pose-button primary" onClick={() => setSelectingModel(true)} type="button"><Icon name="plus" /> Escolher modelo</button></div>}
             <div className="pose-stage-tools"><span>{Math.round(zoom * 100)}%</span><button title="Aumentar zoom" onClick={() => setZoom((value) => Math.min(2.5, value + 0.15))} type="button">+</button><button title="Diminuir zoom" onClick={() => setZoom((value) => Math.max(0.45, value - 0.15))} type="button">−</button><button title="Centralizar" onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }) }} type="button"><Icon name="frame" /></button></div>
           </div>
-          <footer className="pose-canvas-footer"><span><kbd>Arraste o fundo</kbd> para mover a prévia <i /> <kbd>Arraste a peça</kbd> para posicionar</span><span>{project ? `${project.parts.length} peças · ${project.joints.length} juntas` : 'O modelo original fica protegido'}</span></footer>
+          <footer className="pose-canvas-footer"><span><kbd>Arraste o fundo</kbd> para mover a prévia {project && <><i /> <kbd>Arraste a peça</kbd> para posicionar</>}</span><span>{displayProject ? `${displayProject.parts.length} peças · ${displayProject.joints.length} juntas` : 'O modelo original fica protegido'}</span></footer>
         </section>
 
         <aside className="pose-side-panel" aria-label="Slots e ferramentas de pose">
@@ -501,7 +525,7 @@ export function PoseWorkspace() {
               const child = project.parts.find((part) => part.id === joint.childPartId)
               return <article key={joint.id} className={`pose-rig-row${joint.fixed ? ' fixed' : ''}`}><div className="pose-rig-title"><b>{parent?.name ?? 'Peça'}</b><Icon name="chevronRight" /><b>{child?.name ?? 'Peça'}</b></div><div className="pose-rig-actions"><button className={joint.fixed ? 'fixed' : ''} title={joint.fixed ? 'Desfixar esta conexão' : 'Fixar esta conexão ao rig'} onClick={() => changeProject((current) => ({ ...current, joints: current.joints.map((item) => item.id === joint.id ? { ...item, fixed: !item.fixed } : item) }))} type="button">{joint.fixed ? 'Fixada' : 'Fixar'}</button><button title="Girar ramo à esquerda" disabled={!joint.fixed} onClick={() => rotateBranch(joint.id, -15)} type="button">−15°</button><button title="Girar ramo à direita" disabled={!joint.fixed} onClick={() => rotateBranch(joint.id, 15)} type="button">+15°</button></div></article>
             })}{project.joints.length === 0 && <small>Este modelo ainda não tem juntas. Prepare o rig na aba Modelos para usá-lo em poses.</small>}</div>}
-            {!project && <div className="pose-panel-empty"><Icon name="sparkles" /><strong>Crie ou abra uma pose</strong><small>As ferramentas aparecem aqui.</small></div>}
+            {!project && <div className="pose-panel-empty"><Icon name="sparkles" /><strong>{sourcePreview ? 'Prévia do modelo selecionado' : 'Crie ou abra uma pose'}</strong><small>{sourcePreview ? 'Clique em Nova pose para editar uma cópia independente.' : 'As ferramentas aparecem aqui.'}</small></div>}
           </section>
         </aside>
       </div>
