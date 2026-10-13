@@ -111,10 +111,25 @@ export function FabricatorPage() {
   const savedTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const persistProject = useCallback(async (snapshot: FabricatorProject) => {
-    const assets: FabricatorAssetSave[] = Array.from(dirtyAssets.current, ([id, dataUrl]) => ({ id, dataUrl }))
+    let assets: FabricatorAssetSave[] = Array.from(dirtyAssets.current, ([id, dataUrl]) => ({ id, dataUrl }))
     const { sourceDataUrl: _sourceDataUrl, parts, ...metadata } = snapshot
     const serialized = { ...metadata, parts: parts.map(({ dataUrl: _dataUrl, ...part }) => part) }
-    await window.desktop.saveFabricatorProject(serialized, assets)
+    try {
+      await window.desktop.saveFabricatorProject(serialized, assets)
+    } catch (reason) {
+      const message = reason instanceof Error ? reason.message : String(reason)
+      const missing = /FABRICATOR_MISSING_ASSETS:([a-zA-Z0-9_,.-]+)/.exec(message)?.[1]?.split(',') ?? []
+      if (!missing.length) throw reason
+      const recoverable = missing.flatMap((id) => {
+        const part = snapshot.parts.find((item) => item.id === id)
+        return part ? [{ id, dataUrl: part.dataUrl }] : []
+      })
+      if (recoverable.length !== missing.length) throw reason
+      for (const asset of recoverable) dirtyAssets.current.set(asset.id, asset.dataUrl)
+      const byId = new Map([...assets, ...recoverable].map((asset) => [asset.id, asset]))
+      assets = Array.from(byId.values())
+      await window.desktop.saveFabricatorProject(serialized, assets)
+    }
     for (const asset of assets) if (dirtyAssets.current.get(asset.id) === asset.dataUrl) dirtyAssets.current.delete(asset.id)
     setSaveState('saved')
     setSlots((current) => current.map((item, index) => index + 1 === snapshot.slot ? { slot: snapshot.slot, name: snapshot.name, sourceName: snapshot.sourceName, partCount: snapshot.parts.length, updatedAt: snapshot.updatedAt } : item))

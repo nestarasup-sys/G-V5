@@ -8,6 +8,7 @@ import type { FabricatorAssetSave, FabricatorProject, FabricatorProjectSave, Fab
 const slotCount = 10
 const libraryPath = () => join(app.getPath('userData'), 'fabricator', 'models')
 const slotPath = (slot: number) => join(libraryPath(), `slot-${slot}`)
+const fabricatorSaveQueues = new Map<number, Promise<void>>()
 
 function isValidSlot(slot: number): boolean {
   return Number.isInteger(slot) && slot >= 1 && slot <= slotCount
@@ -28,6 +29,60 @@ function dataUrlBuffer(dataUrl: string): Buffer {
   const match = /^data:image\/png;base64,([A-Za-z0-9+/=]+)$/.exec(dataUrl)
   if (!match) throw new Error('Arquivo de peça inválido.')
   return Buffer.from(match[1], 'base64')
+}
+
+async function writeFabricatorProject(project: FabricatorProjectSave, changedAssets: FabricatorAssetSave[]): Promise<void> {
+  if (!isValidSlot(project.slot) || project.schemaVersion !== 1 || project.parts.length > 500) throw new Error('Projeto inválido.')
+  const folder = slotPath(project.slot)
+  const partsFolder = join(folder, 'parts')
+  await mkdir(partsFolder, { recursive: true })
+  const sourceFile = project.sourceAssetName
+  if (!/^source-[a-f0-9-]+\.(png|jpe?g|webp)$/i.test(sourceFile)) throw new Error('Imagem original inválida.')
+  await readFile(join(folder, sourceFile))
+  const parts = project.parts.map((part) => {
+    if (!/^[a-zA-Z0-9_-]{1,80}$/.test(part.id)) throw new Error('Identificador de peça inválido.')
+    return part
+  })
+  const validPartIds = new Set(parts.map((part) => part.id))
+  for (const asset of changedAssets) {
+    if (!validPartIds.has(asset.id)) continue
+    await writeFile(join(partsFolder, `${asset.id}.png`), dataUrlBuffer(asset.dataUrl))
+  }
+  // Never publish a manifest until every referenced image exists. Serializing
+  // saves per slot also prevents an older save from deleting a newer asset.
+  const missingAssets: string[] = []
+  for (const part of parts) {
+    try { await access(join(partsFolder, `${part.id}.png`)) } catch (reason) {
+      if ((reason as NodeJS.ErrnoException).code !== 'ENOENT') throw reason
+      missingAssets.push(part.id)
+    }
+  }
+  if (missingAssets.length) throw new Error(`FABRICATOR_MISSING_ASSETS:${missingAssets.join(',')}`)
+  const projectDocument = {
+    schemaVersion: project.schemaVersion,
+    slot: project.slot,
+    name: project.name,
+    sourceName: project.sourceName,
+    sourceAssetName: project.sourceAssetName,
+    width: project.width,
+    height: project.height,
+    tolerance: project.tolerance,
+    joints: project.joints,
+    layerOrder: project.layerOrder,
+    hiddenPartIds: project.hiddenPartIds,
+    updatedAt: project.updatedAt
+  }
+  const manifest = { ...projectDocument, parts, sourceFile }
+  const manifestTemp = join(folder, 'project.json.tmp')
+  await writeFile(manifestTemp, JSON.stringify(manifest), 'utf8')
+  await rename(manifestTemp, join(folder, 'project.json'))
+  const keepFiles = new Set(parts.map((part) => `${part.id}.png`))
+  for (const file of await readdir(partsFolder)) {
+    if (file.endsWith('.png') && !keepFiles.has(file)) await unlink(join(partsFolder, file))
+  }
+  for (const file of await readdir(folder)) {
+    if (/^source-[a-f0-9-]+\.(png|jpe?g|webp)$/i.test(file) && file !== sourceFile) await unlink(join(folder, file))
+  }
 }
 
 async function registerFabricatorHandlers(): Promise<void> {
@@ -92,47 +147,13 @@ async function registerFabricatorHandlers(): Promise<void> {
 
   ipcMain.handle('fabricator:save-project', async (event, project: FabricatorProjectSave, changedAssets: FabricatorAssetSave[]): Promise<void> => {
     assertTrustedSender(event)
-    if (!isValidSlot(project.slot) || project.schemaVersion !== 1 || project.parts.length > 500) throw new Error('Projeto inválido.')
-    const folder = slotPath(project.slot)
-    const partsFolder = join(folder, 'parts')
-    await mkdir(partsFolder, { recursive: true })
-    const sourceFile = project.sourceAssetName
-    if (!/^source-[a-f0-9-]+\.(png|jpe?g|webp)$/i.test(sourceFile)) throw new Error('Imagem original inválida.')
-    await readFile(join(folder, sourceFile))
-    const parts = project.parts.map((part) => {
-      if (!/^[a-zA-Z0-9_-]{1,80}$/.test(part.id)) throw new Error('Identificador de peça inválido.')
-      return part
-    })
-    const validPartIds = new Set(parts.map((part) => part.id))
-    for (const asset of changedAssets) {
-      if (!validPartIds.has(asset.id)) continue
-      await writeFile(join(partsFolder, `${asset.id}.png`), dataUrlBuffer(asset.dataUrl))
-    }
-    for (const part of parts) await access(join(partsFolder, `${part.id}.png`))
-    const projectDocument = {
-      schemaVersion: project.schemaVersion,
-      slot: project.slot,
-      name: project.name,
-      sourceName: project.sourceName,
-      sourceAssetName: project.sourceAssetName,
-      width: project.width,
-      height: project.height,
-      tolerance: project.tolerance,
-      joints: project.joints,
-      layerOrder: project.layerOrder,
-      hiddenPartIds: project.hiddenPartIds,
-      updatedAt: project.updatedAt
-    }
-    const manifest = { ...projectDocument, parts, sourceFile }
-    const manifestTemp = join(folder, 'project.json.tmp')
-    await writeFile(manifestTemp, JSON.stringify(manifest), 'utf8')
-    await rename(manifestTemp, join(folder, 'project.json'))
-    const keepFiles = new Set(parts.map((part) => `${part.id}.png`))
-    for (const file of await readdir(partsFolder)) {
-      if (file.endsWith('.png') && !keepFiles.has(file)) await unlink(join(partsFolder, file))
-    }
-    for (const file of await readdir(folder)) {
-      if (/^source-[a-f0-9-]+\.(png|jpe?g|webp)$/i.test(file) && file !== sourceFile) await unlink(join(folder, file))
+    if (!isValidSlot(project.slot)) throw new Error('Projeto inválido.')
+    const slot = project.slot
+    const previous = fabricatorSaveQueues.get(slot) ?? Promise.resolve()
+    const current = previous.catch(() => undefined).then(() => writeFabricatorProject(project, changedAssets))
+    fabricatorSaveQueues.set(slot, current)
+    try { await current } finally {
+      if (fabricatorSaveQueues.get(slot) === current) fabricatorSaveQueues.delete(slot)
     }
   })
 }
