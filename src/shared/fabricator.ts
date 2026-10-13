@@ -20,6 +20,8 @@ export type ModelPart = {
   height: number
   dataUrl: string
   rotation: number
+  /** Pivô único da peça no canvas, em coordenadas da folha. */
+  jointAnchor?: { x: number; y: number }
   selected?: boolean
 }
 

@@ -255,9 +255,8 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .model-canvas-part.connect-source { filter: drop-shadow(0 0 4px #e0a529) drop-shadow(0 0 7px #e0a529aa); }
 .model-joint-layer { position: absolute; z-index: 4; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
 .model-joint-anchor { stroke: #fff; stroke-width: 2.5; vector-effect: non-scaling-stroke; pointer-events: auto; cursor: grab; filter: drop-shadow(0 1px 3px #56213988); transition: fill .12s ease, r .12s ease; }
-.model-joint-anchor.parent { fill: #9560c5; }
-.model-joint-anchor.child { fill: #df638b; }
-.model-joint-layer g.suggested .model-joint-anchor { stroke: #fff6dc; }
+.model-joint-anchor { fill: #9560c5; }
+.model-joint-anchor.suggested { fill: #d99a34; stroke: #fff6dc; }
 .model-joint-anchor:hover { stroke-width: 3.5; filter: drop-shadow(0 0 4px #562139aa); }
 .model-joint-anchor.selected { fill: #f02f70; stroke: #fff; stroke-width: 3.5; filter: drop-shadow(0 0 3px #ed3278) drop-shadow(0 0 7px #ed3278bb); }
 .model-stage-tools { position: absolute; z-index: 6; right: 9px; bottom: 9px; display: flex; align-items: center; gap: 4px; padding: 4px; border: 1px solid #ece6eb; border-radius: 8px; background: #ffffffdb; box-shadow: 0 3px 10px #44303a0a; }

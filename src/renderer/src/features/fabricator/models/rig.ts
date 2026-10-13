@@ -16,8 +16,8 @@ function edgePoint(part: ModelPart, target: ModelPart): Point {
 }
 
 export function createJoint(parent: ModelPart, child: ModelPart, suggested = false): JointLink {
-  const parentAnchor = edgePoint(parent, child)
-  const childAnchor = edgePoint(child, parent)
+  const parentAnchor = parent.jointAnchor ?? edgePoint(parent, child)
+  const childAnchor = child.jointAnchor ?? edgePoint(child, parent)
   return {
     id: crypto.randomUUID(), parentPartId: parent.id, childPartId: child.id,
     parentAnchor, childAnchor,
@@ -28,6 +28,29 @@ export function createJoint(parent: ModelPart, child: ModelPart, suggested = fal
 
 export function jointPivot(joint: JointLink): Point {
   return joint.pivot ?? { x: (joint.parentAnchor.x + joint.childAnchor.x) / 2, y: (joint.parentAnchor.y + joint.childAnchor.y) / 2 }
+}
+
+export function normalizePartAnchors(parts: ModelPart[], joints: JointLink[]): { parts: ModelPart[]; joints: JointLink[] } {
+  const anchors = new Map(parts.flatMap((part) => part.jointAnchor ? [[part.id, part.jointAnchor] as const] : []))
+  for (const joint of joints) {
+    if (!anchors.has(joint.parentPartId)) anchors.set(joint.parentPartId, joint.parentAnchor)
+    if (!anchors.has(joint.childPartId)) anchors.set(joint.childPartId, joint.childAnchor)
+  }
+  for (const part of parts) if (!anchors.has(part.id)) anchors.set(part.id, center(part))
+  const normalizedParts = parts.map((part) => ({ ...part, ...(anchors.has(part.id) ? { jointAnchor: anchors.get(part.id) } : {}) }))
+  const normalizedJoints = joints.map((joint) => {
+    const parentAnchor = anchors.get(joint.parentPartId) ?? joint.parentAnchor
+    const childAnchor = anchors.get(joint.childPartId) ?? joint.childAnchor
+    return { ...joint, parentAnchor, childAnchor, pivot: { x: (parentAnchor.x + childAnchor.x) / 2, y: (parentAnchor.y + childAnchor.y) / 2 } }
+  })
+  return { parts: normalizedParts, joints: normalizedJoints }
+}
+
+export function partJointAnchor(part: ModelPart, joints: JointLink[]): Point | null {
+  if (part.jointAnchor) return part.jointAnchor
+  const joint = joints.find((item) => item.parentPartId === part.id || item.childPartId === part.id)
+  if (!joint) return center(part)
+  return joint.parentPartId === part.id ? joint.parentAnchor : joint.childAnchor
 }
 
 export function normalizeLayerOrder(parts: ModelPart[], order?: string[]): string[] {
