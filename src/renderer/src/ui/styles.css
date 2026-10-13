@@ -207,14 +207,14 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .model-slot-title > span:last-child { display: flex; flex-direction: column; gap: 3px; }
 .model-slot-title strong { color: #342e36; font: 700 12px Manrope, sans-serif; }
 .model-slot-title small { color: #aaa1aa; font-size: 12px; }
-.model-slots { min-width: 0; flex: 1; display: grid; grid-template-columns: repeat(10, minmax(40px, 1fr)); gap: 5px; }
-.model-slot { min-width: 0; height: 52px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; padding: 3px 2px; overflow: hidden; border: 1px solid #eee9ed; border-radius: 9px; background: #fff; color: #aaa1aa; cursor: pointer; transition: .16s ease; }
-.model-slot > span { width: 20px; height: 20px; display: grid; place-items: center; border-radius: 6px; background: #f7f4f6; color: #99909a; font: 700 12px Manrope, sans-serif; }
-.model-slot small { width: 100%; overflow: hidden; color: #aaa1aa; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; text-align: center; }
-.model-slot:hover { border-color: #edbfd0; background: #fff8fb; }
-.model-slot.active { border-color: #e98bad; background: #fff4f8; box-shadow: inset 0 0 0 1px #f7dce6; }
-.model-slot.active > span, .model-slot.filled > span { background: #f8dce6; color: #a44166; }
-.model-slot.active small, .model-slot.filled small { color: #a4496b; }
+.model-slots { min-width: 0; flex: 1; display: grid; grid-template-columns: repeat(10, minmax(54px, 1fr)); gap: 5px; overflow-x: auto; scrollbar-width: thin; }
+.model-slot { min-width: 54px; height: 52px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; padding: 3px 2px; overflow: hidden; border: 1px solid transparent; border-radius: 9px; color: #fff; cursor: pointer; transition: filter .16s ease, box-shadow .16s ease; }
+.model-slot > span { color: #fff; font: 700 13px Manrope, sans-serif; }
+.model-slot small { width: 100%; overflow: hidden; color: #fff; font-size: 10px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; text-align: center; }
+.model-slot.empty { border-color: #c52f46; background: #d84056; }
+.model-slot.filled { border-color: #16865d; background: #22996b; }
+.model-slot:hover { filter: brightness(1.08); }
+.model-slot.active { box-shadow: inset 0 0 0 2px #ffffffbd, 0 0 0 1px #55434e; }
 .model-import-compact { height: 34px; display: flex; flex: 0 0 auto; align-items: center; gap: 6px; padding: 0 10px; border: 1px solid #efcbd8; border-radius: 8px; background: #fff5f8; color: #a84368; font-size: 12px; font-weight: 700; cursor: pointer; }
 .model-delete-compact { height: 34px; display: flex; flex: 0 0 auto; align-items: center; gap: 6px; padding: 0 10px; border: 1px solid #f0d3d4; border-radius: 8px; background: #fff; color: #ad5c62; font-size: 12px; font-weight: 700; cursor: pointer; }
 .model-delete-compact:hover { border-color: #e7aeb1; background: #fff5f5; color: #a33f48; }
@@ -411,7 +411,7 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
   .model-slot-title { min-width: 74px; }
   .model-slot-logo { display: none; }
   .model-slot-title strong { font-size: 12px; }
-  .model-slots { gap: 3px; grid-template-columns: repeat(10, minmax(32px, 1fr)); }
+  .model-slots { gap: 3px; }
   .model-slot { height: 47px; }
   .model-import-compact { padding: 0 7px; font-size: 12px; }
   .model-editor-content { grid-template-columns: minmax(0, 1fr) minmax(235px, 38%); gap: 7px; padding: 7px; }
@@ -422,8 +422,7 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 
 @media (max-width: 800px) {
   .model-slot-title { display: none; }
-  .model-slots { grid-template-columns: repeat(10, minmax(29px, 1fr)); }
-  .model-slot small { font-size: 12px; }
+  .model-slots { gap: 3px; }
   .model-import-compact span { display: none; }
   .model-import-compact { width: 31px; justify-content: center; padding: 0; }
   .model-delete-compact span { display: none; }

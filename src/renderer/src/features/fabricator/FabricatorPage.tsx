@@ -540,8 +540,8 @@ export function FabricatorPage() {
             <div className="model-slots" role="tablist" aria-label="Slots de modelos">
               {slots.map((slot, index) => {
                 const number = index + 1
-                return <button key={number} className={`model-slot${activeSlot === number ? ' active' : ''}${slot ? ' filled' : ''}`} onClick={() => void selectSlot(number)} disabled={deletingSlot !== null} role="tab" aria-selected={activeSlot === number} title={slot ? `${slot.name} — ${slot.partCount} peças` : `Slot ${number} vazio`} type="button">
-                  <span>{slot?.name ? slot.name.slice(0, 1).toUpperCase() : String(number).padStart(2, '0')}</span><small>{slot ? slot.name : 'Vazio'}</small>
+                return <button key={number} className={`model-slot${activeSlot === number ? ' active' : ''}${slot ? ' filled' : ' empty'}`} onClick={() => void selectSlot(number)} disabled={deletingSlot !== null} role="tab" aria-selected={activeSlot === number} aria-label={`Slot ${number}, ${slot ? 'preenchido' : 'vazio'}`} title={slot ? `Slot ${number}: ${slot.name} — ${slot.partCount} peças` : `Slot ${number}: vazio`} type="button">
+                  <span>{String(number).padStart(2, '0')}</span><small>{slot ? 'Preenchido' : 'Vazio'}</small>
                 </button>
               })}
             </div>
