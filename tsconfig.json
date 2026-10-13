@@ -17,5 +17,5 @@
     "noFallthroughCasesInSwitch": true,
     "types": ["vite/client"]
   },
-  "include": ["electron.vite.config.ts", "electron/**/*.ts", "src/renderer/src/**/*.ts", "src/renderer/src/**/*.tsx"]
+  "include": ["electron.vite.config.ts", "electron/**/*.ts", "src/shared/**/*.ts", "src/renderer/src/**/*.ts", "src/renderer/src/**/*.tsx"]
 }
