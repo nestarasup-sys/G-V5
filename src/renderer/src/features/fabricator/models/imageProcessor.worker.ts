@@ -18,10 +18,27 @@ workerScope.onmessage = async (event: MessageEvent<ProcessRequest>) => {
     const pixels = image.data
     const background = sampleBackground(pixels, source.width, source.height)
     const keyed = new Uint8Array(source.width * source.height)
+    const feather = 44
     for (let offset = 0, pixel = 0; offset < pixels.length; offset += 4, pixel += 1) {
       const distance = Math.hypot(pixels[offset] - background[0], pixels[offset + 1] - background[1], pixels[offset + 2] - background[2])
       if (distance <= tolerance) pixels[offset + 3] = 0
-      else if (distance < tolerance + 24) pixels[offset + 3] = Math.round(pixels[offset + 3] * ((distance - tolerance) / 24))
+      else if (distance < tolerance + feather) {
+        const matte = (distance - tolerance) / feather
+        if (matte < 0.12) pixels[offset + 3] = 0
+        else {
+          const backgroundWeight = 1 - matte
+          pixels[offset] = clampChannel((pixels[offset] - background[0] * backgroundWeight) / matte)
+          pixels[offset + 1] = clampChannel((pixels[offset + 1] - background[1] * backgroundWeight) / matte)
+          pixels[offset + 2] = clampChannel((pixels[offset + 2] - background[2] * backgroundWeight) / matte)
+          pixels[offset + 3] = Math.round(pixels[offset + 3] * matte)
+        }
+      }
+      if (pixels[offset + 3] > 0 && background[1] > background[0] * 1.2 && background[1] > background[2] * 1.08 && distance < tolerance + 150) {
+        const spillWeight = Math.max(0, Math.min(1, (tolerance + 150 - distance) / 150))
+        const dominantNonGreen = Math.max(pixels[offset], pixels[offset + 2])
+        const greenSpill = Math.max(0, pixels[offset + 1] - dominantNonGreen)
+        pixels[offset + 1] = clampChannel(pixels[offset + 1] - greenSpill * spillWeight)
+      }
       keyed[pixel] = pixels[offset + 3] > 24 ? 1 : 0
     }
     context.putImageData(image, 0, 0)
@@ -85,6 +102,10 @@ workerScope.onmessage = async (event: MessageEvent<ProcessRequest>) => {
   } catch (error) {
     workerScope.postMessage({ type: 'error', id, message: error instanceof Error ? error.message : 'Falha ao processar imagem.' })
   }
+}
+
+function clampChannel(value: number): number {
+  return Math.max(0, Math.min(255, Math.round(value)))
 }
 
 function sampleBackground(pixels: Uint8ClampedArray, width: number, height: number): [number, number, number] {

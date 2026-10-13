@@ -231,9 +231,6 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .model-save-state i { width: 6px; height: 6px; border-radius: 50%; background: #76b795; }
 .model-save-state.saving i { background: #e6b74e; }
 .model-save-state.error i { background: #dd6c75; }
-.model-tolerance { display: flex; align-items: center; gap: 6px; color: #8a828b; font-size: 12px; white-space: nowrap; }
-.model-tolerance input { width: 78px; accent-color: var(--rose-dark); }
-.model-tolerance span { width: 22px; color: #a14669; font-variant-numeric: tabular-nums; }
 .model-tool-button { min-height: 27px; display: inline-flex; align-items: center; justify-content: center; gap: 5px; padding: 0 8px; border: 1px solid #eee8ed; border-radius: 7px; background: #fff; color: #706872; font-size: 12px; font-weight: 650; white-space: nowrap; cursor: pointer; transition: .14s ease; }
 .model-tool-button:hover { border-color: #edc7d5; background: #fff6f9; color: #a44166; }
 .model-tool-button:disabled { opacity: .45; cursor: not-allowed; }

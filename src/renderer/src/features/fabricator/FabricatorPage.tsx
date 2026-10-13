@@ -337,11 +337,6 @@ export function FabricatorPage() {
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível importar a imagem.') }
   }
 
-  const reprocess = () => {
-    if (!project) return
-    runProcessor(project.sourceDataUrl, project.tolerance, { slot: project.slot, name: project.name, sourceName: project.sourceName, sourceAssetName: project.sourceAssetName })
-  }
-
   const removePart = (partId: string) => {
     updateProject((current) => ({ ...current, parts: current.parts.filter((part) => part.id !== partId), joints: current.joints.filter((joint) => joint.parentPartId !== partId && joint.childPartId !== partId) }))
     setSelectedIds((current) => current.filter((id) => id !== partId))
@@ -562,8 +557,6 @@ export function FabricatorPage() {
                 <div className="model-current-title"><span className="model-eyebrow">MODELO {String(project.slot).padStart(2, '0')}</span><input aria-label="Nome do modelo" value={project.name} onChange={(event) => updateProject((current) => ({ ...current, name: event.target.value }))} /></div>
                 <div className="model-toolbar-actions">
                   <span className={`model-save-state ${saveState}`}><i />{saveState === 'saving' ? 'Salvando…' : saveState === 'error' ? 'Erro ao salvar' : 'Salvo localmente'}</span>
-                  <label className="model-tolerance">Chroma <input aria-label="Tolerância do chroma key" type="range" min="20" max="150" value={project.tolerance} onChange={(event) => updateProject((current) => ({ ...current, tolerance: Number(event.target.value) }))} /><span>{project.tolerance}</span></label>
-                  <button className="model-tool-button" onClick={reprocess} disabled={processing} title="Refazer chroma e recortes" type="button"><Icon name="sparkles" /> Reanalisar</button>
                   <button className={`model-tool-button model-pivot-visibility${showJointPivots ? ' active' : ''}`} aria-pressed={showJointPivots} onClick={() => setShowJointPivots((visible) => !visible)} title={showJointPivots ? 'Ocultar bolinhas das juntas' : 'Mostrar bolinhas das juntas'} type="button"><Icon name={showJointPivots ? 'eye' : 'eyeOff'} /><span>{showJointPivots ? 'Ocultar bolinhas' : 'Mostrar bolinhas'}</span></button>
                 </div>
               </div>
