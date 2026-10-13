@@ -213,7 +213,7 @@ export function PoseWorkspace() {
     setActiveSlot(slots.findIndex((slot) => !slot) + 1 || SLOT_COUNT)
     setEditingSlot(null)
     editingSlotRef.current = null
-    setHistory({ undo: [cloneProject(next)], redo: [] })
+    setHistory(emptyHistory())
     setSelectedId(next.parts[0]?.id ?? null)
     publishProject(next)
     setSelectingModel(false)
