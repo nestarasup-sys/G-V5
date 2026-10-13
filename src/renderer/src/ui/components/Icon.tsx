@@ -1,8 +1,8 @@
 export type IconName =
   | 'plus' | 'search' | 'check' | 'expand' | 'frame' | 'zoomIn' | 'zoomOut'
-  | 'chevronDown' | 'sliders' | 'chevronLeft' | 'chevronRight' | 'sparkles'
+  | 'chevronDown' | 'sliders' | 'chevronRight' | 'sparkles'
   | 'body' | 'face' | 'shirt' | 'flower' | 'message' | 'paw' | 'box' | 'user'
-  | 'bow' | 'camera' | 'gamepad' | 'settings' | 'star' | 'edit' | 'bell'
+  | 'bow' | 'camera' | 'settings' | 'star' | 'edit' | 'bell'
 
 const paths: Record<IconName, string> = {
   plus: 'M12 5v14M5 12h14',
@@ -14,7 +14,6 @@ const paths: Record<IconName, string> = {
   zoomOut: 'M11 19a8 8 0 1 1 0-16 8 8 0 0 1 0 16Zm10 2-4.4-4.4M7 11h8',
   chevronDown: 'm6 9 6 6 6-6',
   sliders: 'M4 7h9m4 0h3M4 17h3m4 0h9M13 4v6M7 14v6',
-  chevronLeft: 'm15 18-6-6 6-6',
   chevronRight: 'm9 18 6-6-6-6',
   sparkles: 'm12 3 1.7 5.3L19 10l-5.3 1.7L12 17l-1.7-5.3L5 10l5.3-1.7L12 3Zm7 11 .9 2.1L22 17l-2.1.9L19 20l-.9-2.1L16 17l2.1-.9L19 14ZM5 3l.8 1.7L7.5 5.5l-1.7.8L5 8l-.8-1.7-1.7-.8 1.7-.8L5 3Z',
   body: 'M12 3a3 3 0 1 0 0 6 3 3 0 0 0 0-6ZM8 11h8l2 10H6l2-10Zm0 0-3 3m11-3 3 3M9 14v4m6-4v4',
@@ -27,7 +26,6 @@ const paths: Record<IconName, string> = {
   user: 'M20 21a8 8 0 0 0-16 0m8-10a5 5 0 1 0 0-10 5 5 0 0 0 0 10Z',
   bow: 'M12 12c-2-4-7-6-9-4-2 2 0 7 5 7l4-3Zm0 0c2-4 7-6 9-4 2 2 0 7-5 7l-4-3Zm0 0v7m-2 2 2-2 2 2',
   camera: 'M4 7h3l2-3h6l2 3h3a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2Zm8 10a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z',
-  gamepad: 'M7 8h10a5 5 0 0 1 4.8 6.4l-1.1 3.4a2 2 0 0 1-3.2 1l-3-2.3h-5l-3 2.3a2 2 0 0 1-3.2-1l-1.1-3.4A5 5 0 0 1 7 8Zm1 3v5m-2.5-2.5h5M16 13h.01M18 15h.01',
   settings: 'M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8Zm0-5v2m0 14v2m9-9h-2M5 12H3m15.4-6.4-1.4 1.4M7 17l-1.4 1.4m12.8 0L17 17M7 7 5.6 5.6',
   star: 'm12 3 2.7 5.5 6.1.9-4.4 4.3 1 6.1-5.4-2.9-5.4 2.9 1-6.1-4.4-4.3 6.1-.9L12 3Z',
   edit: 'm15 5 4 4m-11 11 4.5-1 9-9a2.8 2.8 0 0 0-4-4l-9 9L7 20ZM4 20h4',
