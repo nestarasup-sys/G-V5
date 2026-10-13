@@ -125,17 +125,3 @@ export function reorderLayer(order: string[], partId: string, targetId: string):
   next.splice(to, 0, next.splice(from, 1)[0])
   return next
 }
-
-export function fixedPartGroup(joints: JointLink[], startId: string): Set<string> {
-  const group = new Set([startId])
-  let changed = true
-  while (changed) {
-    changed = false
-    for (const joint of joints) {
-      if (!joint.fixed) continue
-      if (group.has(joint.parentPartId) && !group.has(joint.childPartId)) { group.add(joint.childPartId); changed = true }
-      if (group.has(joint.childPartId) && !group.has(joint.parentPartId)) { group.add(joint.parentPartId); changed = true }
-    }
-  }
-  return group
-}
