@@ -71,6 +71,27 @@ export type FabricatorHistoryState = { undo: FabricatorHistoryEntry[]; redo: Fab
 export type FabricatorHistorySaveEntry = { action: FabricatorHistoryAction; project: Omit<FabricatorProject, 'sourceDataUrl'> }
 export type FabricatorHistorySaveState = { undo: FabricatorHistorySaveEntry[]; redo: FabricatorHistorySaveEntry[] }
 
+export type PosePart = Omit<ModelPart, 'chromaBaseDataUrl' | 'chromaBaseSaved'>
+export type FabricatorPose = {
+  schemaVersion: 1
+  slot: number
+  name: string
+  sourceModelSlot: number
+  sourceModelName: string
+  sourceModelUpdatedAt: string
+  width: number
+  height: number
+  parts: PosePart[]
+  joints: JointLink[]
+  layerOrder: string[]
+  hiddenPartIds: string[]
+  updatedAt: string
+}
+export type FabricatorPoseSave = Omit<FabricatorPose, 'parts'> & { parts: Array<Omit<PosePart, 'dataUrl'>> }
+export type FabricatorPoseSummary = { slot: number; name: string; sourceModelName: string; partCount: number; updatedAt: string } | null
+export type FabricatorPoseDraft = { editingSlot: number | null; project: Omit<FabricatorPose, 'slot'>; updatedAt: string }
+export type FabricatorPoseDraftSave = { editingSlot: number | null; project: Omit<FabricatorPoseSave, 'slot'>; updatedAt: string }
+
 export type FabricatorDesktopApi = {
   listFabricatorSlots: () => Promise<FabricatorSlotSummary[]>
   importFabricatorModel: (slot: number) => Promise<{ sourceName: string; sourceAssetName: string; sourceDataUrl: string } | null>
@@ -79,4 +100,11 @@ export type FabricatorDesktopApi = {
   loadFabricatorHistory: (slot: number) => Promise<FabricatorHistoryState>
   saveFabricatorHistory: (slot: number, history: FabricatorHistorySaveState, current: FabricatorProjectSave, changedAssets: FabricatorAssetSave[]) => Promise<void>
   deleteFabricatorSlot: (slot: number) => Promise<void>
+  listFabricatorPoseSlots: () => Promise<FabricatorPoseSummary[]>
+  loadFabricatorPose: (slot: number) => Promise<FabricatorPose | null>
+  saveFabricatorPose: (slot: number, project: FabricatorPoseSave, assets: FabricatorAssetSave[]) => Promise<void>
+  deleteFabricatorPose: (slot: number) => Promise<void>
+  loadFabricatorPoseDraft: () => Promise<FabricatorPoseDraft | null>
+  saveFabricatorPoseDraft: (draft: FabricatorPoseDraftSave, assets: FabricatorAssetSave[]) => Promise<void>
+  deleteFabricatorPoseDraft: () => Promise<void>
 }
