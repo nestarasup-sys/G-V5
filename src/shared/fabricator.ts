@@ -4,6 +4,8 @@ export type JointLink = {
   childPartId: string
   parentAnchor: { x: number; y: number }
   childAnchor: { x: number; y: number }
+  /** Pivô único exibido como uma bolinha no canvas. */
+  pivot?: { x: number; y: number }
   suggested?: boolean
 }
 
@@ -31,6 +33,10 @@ export type FabricatorProject = {
   tolerance: number
   parts: ModelPart[]
   joints: JointLink[]
+  /** Ordem de desenho do fundo para a frente. Ausente em modelos antigos. */
+  layerOrder?: string[]
+  /** Peças temporariamente ocultas no editor. */
+  hiddenPartIds?: string[]
   updatedAt: string
 }
 

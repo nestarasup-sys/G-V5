@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FabricatorAssetSave, FabricatorProject, FabricatorSlotSummary, JointLink, ModelPart } from '../../../../shared/fabricator'
 import { Icon, type IconName } from '../../ui/components/Icon'
+import { autoConnectParts, createJoint, jointPivot, normalizeLayerOrder, orderedParts, reorderLayer } from './models/rig'
 
 const sections: { label: string; icon: IconName }[] = [
   { label: 'Modelos', icon: 'sparkles' }, { label: 'Personagens', icon: 'user' },
@@ -18,7 +19,8 @@ type ProcessorMessage =
   | { type: 'complete'; id: number; width: number; height: number; parts: ProcessedPart[] }
   | { type: 'error'; id: number; message: string }
 type DragState = { partId: string; pointerId: number; x: number; y: number }
-type AnchorDragState = { jointId: string; side: 'parentAnchor' | 'childAnchor'; pointerId: number; x: number; y: number }
+type AnchorDragState = { jointId: string; pointerId: number; x: number; y: number }
+type PanelTab = 'parts' | 'layers' | 'joints'
 
 function bytesToDataUrl(buffer: ArrayBuffer): string {
   const bytes = new Uint8Array(buffer)
@@ -31,39 +33,6 @@ function bytesToDataUrl(buffer: ArrayBuffer): string {
 }
 
 function makeId(): string { return crypto.randomUUID() }
-
-function edgePoint(part: ModelPart, target: ModelPart): { x: number; y: number } {
-  const center = { x: part.x + part.width / 2, y: part.y + part.height / 2 }
-  const targetCenter = { x: target.x + target.width / 2, y: target.y + target.height / 2 }
-  const dx = targetCenter.x - center.x
-  const dy = targetCenter.y - center.y
-  const horizontal = Math.abs(dx / Math.max(1, part.width)) > Math.abs(dy / Math.max(1, part.height))
-  return horizontal
-    ? { x: center.x + Math.sign(dx || 1) * part.width / 2, y: center.y + dy * part.width / (2 * Math.max(1, Math.abs(dx))) }
-    : { x: center.x + dx * part.height / (2 * Math.max(1, Math.abs(dy))), y: center.y + Math.sign(dy || 1) * part.height / 2 }
-}
-
-function linkParts(parent: ModelPart, child: ModelPart, suggested = false): JointLink {
-  return { id: makeId(), parentPartId: parent.id, childPartId: child.id, parentAnchor: edgePoint(parent, child), childAnchor: edgePoint(child, parent), suggested }
-}
-
-function suggestJoints(parts: ModelPart[]): JointLink[] {
-  const torso = parts.find((part) => /tronco|corpo/i.test(part.name))
-  const head = parts.find((part) => /cabeça/i.test(part.name))
-  if (!torso || parts.length < 2) return []
-  const links: JointLink[] = []
-  if (head) links.push(linkParts(torso, head, true))
-  const arms = parts.filter((part) => /braço esquerdo|braço direito/i.test(part.name))
-  const forearms = parts.filter((part) => /antebraço/i.test(part.name))
-  for (const arm of arms) {
-    links.push(linkParts(torso, arm, true))
-    const side = arm.name.toLowerCase().includes('esquerdo') ? 'esquerdo' : 'direito'
-    const forearm = forearms.find((part) => part.name.toLowerCase().includes(side))
-    if (forearm) links.push(linkParts(arm, forearm, true))
-  }
-  for (const leg of parts.filter((part) => /perna/i.test(part.name))) links.push(linkParts(torso, leg, true))
-  return links
-}
 
 function rotatePoint(point: { x: number; y: number }, origin: { x: number; y: number }, angle: number) {
   const radians = angle * Math.PI / 180
@@ -126,6 +95,8 @@ export function FabricatorPage() {
   const [filter, setFilter] = useState('')
   const [connectMode, setConnectMode] = useState(false)
   const [connectFromId, setConnectFromId] = useState<string | null>(null)
+  const [panelTab, setPanelTab] = useState<PanelTab>('parts')
+  const [layerDragId, setLayerDragId] = useState<string | null>(null)
   const [zoom, setZoom] = useState(1)
   const [stageSize, setStageSize] = useState({ width: 1, height: 1 })
   const [renamingPartId, setRenamingPartId] = useState<string | null>(null)
@@ -176,11 +147,47 @@ export function FabricatorPage() {
   const selectedPartIds = selectedIds
   const selectedPart = project?.parts.find((part) => part.id === selectedPartIds[0]) ?? null
   const visibleParts = useMemo(() => (project?.parts ?? []).filter((part) => part.name.toLowerCase().includes(filter.toLowerCase())), [project, filter])
+  const canvasParts = useMemo(() => project ? orderedParts(project.parts, project.layerOrder) : [], [project])
+  const frontToBackLayers = useMemo(() => canvasParts.slice().reverse(), [canvasParts])
+  const hiddenPartIds = project?.hiddenPartIds ?? []
   const scale = project ? Math.max(0.05, Math.min((stageSize.width - 48) / project.width, (stageSize.height - 48) / project.height)) * zoom : 1
 
   const updateProject = useCallback((updater: (current: FabricatorProject) => FabricatorProject) => {
-    setProject((current) => current ? { ...updater(current), updatedAt: new Date().toISOString() } : current)
+    setProject((current) => {
+      if (!current) return current
+      const next = updater(current)
+      const validIds = new Set(next.parts.map((part) => part.id))
+      return {
+        ...next,
+        layerOrder: normalizeLayerOrder(next.parts, next.layerOrder),
+        hiddenPartIds: (next.hiddenPartIds ?? []).filter((id) => validIds.has(id)),
+        joints: next.joints.filter((joint) => validIds.has(joint.parentPartId) && validIds.has(joint.childPartId)),
+        updatedAt: new Date().toISOString()
+      }
+    })
   }, [])
+
+  const moveLayer = (partId: string, direction: -1 | 1) => {
+    updateProject((current) => {
+      const topDown = normalizeLayerOrder(current.parts, current.layerOrder).reverse()
+      const index = topDown.indexOf(partId)
+      const nextIndex = index + direction
+      if (index < 0 || nextIndex < 0 || nextIndex >= topDown.length) return current
+      ;[topDown[index], topDown[nextIndex]] = [topDown[nextIndex], topDown[index]]
+      return { ...current, layerOrder: topDown.reverse() }
+    })
+  }
+
+  const dropLayer = (sourceId: string, targetId: string) => {
+    updateProject((current) => ({ ...current, layerOrder: reorderLayer(normalizeLayerOrder(current.parts, current.layerOrder).reverse(), sourceId, targetId).reverse() }))
+  }
+
+  const toggleLayerVisibility = (partId: string) => updateProject((current) => {
+    const hidden = new Set(current.hiddenPartIds ?? [])
+    if (hidden.has(partId)) hidden.delete(partId)
+    else hidden.add(partId)
+    return { ...current, hiddenPartIds: Array.from(hidden) }
+  })
 
   const selectSlot = async (slot: number) => {
     if (project) {
@@ -194,7 +201,12 @@ export function FabricatorPage() {
     try {
       const loaded = await window.desktop.loadFabricatorSlot(slot)
       if (!loaded) throw new Error('O projeto salvo não pôde ser carregado.')
-      setProject(loaded); setSelectedIds(loaded.parts[0] ? [loaded.parts[0].id] : [])
+      setProject({
+        ...loaded,
+        layerOrder: normalizeLayerOrder(loaded.parts, loaded.layerOrder),
+        hiddenPartIds: loaded.hiddenPartIds ?? [],
+        joints: loaded.joints.map((joint) => ({ ...joint, pivot: jointPivot(joint) }))
+      }); setSelectedIds(loaded.parts[0] ? [loaded.parts[0].id] : [])
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Falha ao abrir modelo.') }
   }
 
@@ -216,7 +228,7 @@ export function FabricatorPage() {
       const nextProject: FabricatorProject = {
         schemaVersion: 1, slot: metadata.slot, name: metadata.name, sourceName: metadata.sourceName,
         sourceAssetName: metadata.sourceAssetName, sourceDataUrl, width: message.width, height: message.height,
-        tolerance, parts, joints: suggestJoints(parts), updatedAt: new Date().toISOString()
+        tolerance, parts, joints: autoConnectParts(parts), layerOrder: parts.map((part) => part.id), hiddenPartIds: [], updatedAt: new Date().toISOString()
       }
       setProject(nextProject); setSelectedIds(parts[0] ? [parts[0].id] : [])
     }
@@ -277,7 +289,7 @@ export function FabricatorPage() {
         const parent = project.parts.find((part) => part.id === connectFromId)
         const child = project.parts.find((part) => part.id === partId)
         if (parent && child && !project.joints.some((joint) => joint.parentPartId === parent.id && joint.childPartId === child.id)) {
-          updateProject((current) => ({ ...current, joints: [...current.joints, linkParts(parent, child)] }))
+          updateProject((current) => ({ ...current, joints: [...current.joints, createJoint(parent, child)] }))
         }
         setConnectFromId(null); setConnectMode(false); setSelectedIds([partId]); return
       }
@@ -294,7 +306,8 @@ export function FabricatorPage() {
       joints: current.joints.map((joint) => ({
         ...joint,
         ...(joint.parentPartId === partId ? { parentAnchor: { x: joint.parentAnchor.x + dx, y: joint.parentAnchor.y + dy } } : {}),
-        ...(joint.childPartId === partId ? { childAnchor: { x: joint.childAnchor.x + dx, y: joint.childAnchor.y + dy } } : {})
+        ...(joint.childPartId === partId ? { childAnchor: { x: joint.childAnchor.x + dx, y: joint.childAnchor.y + dy } } : {}),
+        ...((joint.parentPartId === partId || joint.childPartId === partId) ? { pivot: { x: jointPivot(joint).x + dx, y: jointPivot(joint).y + dy } } : {})
       }))
     }))
   }
@@ -309,7 +322,7 @@ export function FabricatorPage() {
       changed = false
       for (const item of project.joints) if (affected.has(item.parentPartId) && !affected.has(item.childPartId)) { affected.add(item.childPartId); changed = true }
     }
-    const origin = joint.parentAnchor
+    const origin = jointPivot(joint)
     updateProject((current) => ({
       ...current,
       parts: current.parts.map((part) => {
@@ -319,6 +332,7 @@ export function FabricatorPage() {
       }),
       joints: current.joints.map((item) => ({
         ...item,
+        ...((affected.has(item.parentPartId) || affected.has(item.childPartId)) ? { pivot: rotatePoint(jointPivot(item), origin, amount) } : {}),
         ...(affected.has(item.parentPartId) ? { parentAnchor: rotatePoint(item.parentAnchor, origin, amount) } : {}),
         ...(affected.has(item.childPartId) ? { childAnchor: rotatePoint(item.childAnchor, origin, amount) } : {})
       }))
@@ -345,13 +359,13 @@ export function FabricatorPage() {
     const drag = anchorDragRef.current
     if (!drag || !project || drag.pointerId !== event.pointerId || !scale) return
     const dx = (event.clientX - drag.x) / scale; const dy = (event.clientY - drag.y) / scale
-    updateProject((current) => ({ ...current, joints: current.joints.map((joint) => joint.id === drag.jointId ? { ...joint, [drag.side]: { x: joint[drag.side].x + dx, y: joint[drag.side].y + dy } } : joint) }))
+    updateProject((current) => ({ ...current, joints: current.joints.map((joint) => joint.id === drag.jointId ? { ...joint, pivot: { x: jointPivot(joint).x + dx, y: jointPivot(joint).y + dy } } : joint) }))
     drag.x = event.clientX; drag.y = event.clientY
   }
 
-  const beginAnchorDrag = (event: React.PointerEvent<SVGCircleElement>, joint: JointLink, side: 'parentAnchor' | 'childAnchor') => {
+  const beginAnchorDrag = (event: React.PointerEvent<SVGCircleElement>, joint: JointLink) => {
     event.stopPropagation(); event.currentTarget.setPointerCapture(event.pointerId)
-    anchorDragRef.current = { jointId: joint.id, side, pointerId: event.pointerId, x: event.clientX, y: event.clientY }
+    anchorDragRef.current = { jointId: joint.id, pointerId: event.pointerId, x: event.clientX, y: event.clientY }
   }
 
   const renderEmptyState = () => (
@@ -417,14 +431,9 @@ export function FabricatorPage() {
                   <div className="model-canvas-topline"><span><i /> CANVAS DE MONTAGEM</span><span>{project.width} × {project.height}</span></div>
                   <div ref={stageRef} className="model-stage" onPointerMove={(event) => { movePartDrag(event); moveAnchorDrag(event) }} onPointerUp={(event) => { if (dragRef.current?.pointerId === event.pointerId) dragRef.current = null; if (anchorDragRef.current?.pointerId === event.pointerId) anchorDragRef.current = null }} onPointerCancel={() => { dragRef.current = null; anchorDragRef.current = null }}>
                     <div className="model-artboard" style={{ width: `${project.width * scale}px`, height: `${project.height * scale}px` }}>
-                      {project.parts.map((part) => <img key={part.id} className={`model-canvas-part${selectedIds.includes(part.id) ? ' selected' : ''}${connectFromId === part.id ? ' connect-source' : ''}`} src={part.dataUrl} alt={part.name} draggable={false} onClick={(event) => { event.stopPropagation(); handlePartClick(part.id, event.ctrlKey || event.metaKey) }} onPointerDown={(event) => beginPartDrag(event, part)} style={{ left: part.x * scale, top: part.y * scale, width: part.width * scale, height: part.height * scale, transform: `rotate(${part.rotation}deg)` }} />)}
+                      {canvasParts.filter((part) => !hiddenPartIds.includes(part.id)).map((part) => <img key={part.id} className={`model-canvas-part${selectedIds.includes(part.id) ? ' selected' : ''}${connectFromId === part.id ? ' connect-source' : ''}`} src={part.dataUrl} alt={part.name} draggable={false} onClick={(event) => { event.stopPropagation(); handlePartClick(part.id, event.ctrlKey || event.metaKey) }} onPointerDown={(event) => beginPartDrag(event, part)} style={{ left: part.x * scale, top: part.y * scale, width: part.width * scale, height: part.height * scale, transform: `rotate(${part.rotation}deg)` }} />)}
                       <svg className="model-joint-layer" viewBox={`0 0 ${project.width} ${project.height}`} preserveAspectRatio="none" aria-label="Conexões entre as peças">
-                        {project.joints.map((joint) => <g key={joint.id} className={joint.suggested ? 'suggested' : ''}>
-                          <line x1={joint.parentAnchor.x} y1={joint.parentAnchor.y} x2={joint.childAnchor.x} y2={joint.childAnchor.y} />
-                          <circle className="model-joint-anchor" cx={joint.parentAnchor.x} cy={joint.parentAnchor.y} r={Math.max(7, 9 / scale)} onPointerDown={(event) => beginAnchorDrag(event, joint, 'parentAnchor')} />
-                          <circle className="model-joint-anchor child" cx={joint.childAnchor.x} cy={joint.childAnchor.y} r={Math.max(7, 9 / scale)} onPointerDown={(event) => beginAnchorDrag(event, joint, 'childAnchor')} />
-                          <text x={(joint.parentAnchor.x + joint.childAnchor.x) / 2} y={(joint.parentAnchor.y + joint.childAnchor.y) / 2 - 8 / scale}>●</text>
-                        </g>)}
+                        {project.joints.map((joint) => { const pivot = jointPivot(joint); return <circle key={joint.id} className={`model-joint-pivot${joint.suggested ? ' suggested' : ''}`} cx={pivot.x} cy={pivot.y} r={Math.max(8, 10 / scale)} aria-label={`Pivô: ${project.parts.find((part) => part.id === joint.childPartId)?.name ?? 'peça'}`} onPointerDown={(event) => beginAnchorDrag(event, joint)} /> })}
                       </svg>
                     </div>
                     <div className="model-stage-tools"><button onClick={() => setZoom((value) => Math.min(2.4, value + 0.15))} title="Aumentar zoom" type="button"><Icon name="zoomIn" /></button><span>{Math.round(zoom * 100)}%</span><button onClick={() => setZoom((value) => Math.max(0.5, value - 0.15))} title="Diminuir zoom" type="button"><Icon name="zoomOut" /></button><button onClick={() => setZoom(1)} title="Ajustar ao espaço" type="button"><Icon name="frame" /></button></div>
@@ -432,32 +441,19 @@ export function FabricatorPage() {
                   <div className="model-canvas-footer"><span><kbd>Arraste</kbd> para posicionar <i /> <kbd>Ctrl</kbd> + clique para selecionar várias</span><span>{project.parts.length} peças <i /> {project.joints.length} conexões</span></div>
                 </section>
 
-                <aside className="model-parts-panel" aria-label="Peças e articulações">
-                  <div className="model-parts-heading"><div><span className="model-eyebrow">BIBLIOTECA</span><h2>Peças <small>{project.parts.length}</small></h2></div><button className="model-icon-button" title="Adicionar outra folha" onClick={() => void importSlot(project.slot)} type="button"><Icon name="plus" /></button></div>
-                  <label className="model-part-search"><Icon name="search" /><input placeholder="Buscar peça…" value={filter} onChange={(event) => setFilter(event.target.value)} /></label>
-                  <div className="model-part-grid">
-                    {visibleParts.map((part) => <button key={part.id} className={`model-part-card${selectedIds.includes(part.id) ? ' selected' : ''}`} onClick={(event) => { handlePartClick(part.id, event.ctrlKey || event.metaKey) }} type="button" title={`${part.name} · arraste a peça no canvas para reposicionar`}>
-                      <span className="model-part-thumb"><img src={part.dataUrl} alt="" /></span><span className="model-part-card-name">{part.name}</span><small>{Math.round(part.width)} × {Math.round(part.height)}</small>
-                    </button>)}
-                    {visibleParts.length === 0 && <p className="model-no-parts">Nenhuma peça encontrada.</p>}
+                <aside className="model-parts-panel model-work-panel" aria-label="Painel de edição">
+                  <div className="model-panel-header"><div><span className="model-eyebrow">MONTAGEM</span><h2>{panelTab === 'parts' ? 'Peças' : panelTab === 'layers' ? 'Camadas' : 'Articulações'} <small>{panelTab === 'joints' ? project.joints.length : project.parts.length}</small></h2></div><button className="model-icon-button" title="Adicionar outra folha" onClick={() => void importSlot(project.slot)} type="button"><Icon name="plus" /></button></div>
+                  <div className="model-panel-tabs" role="tablist" aria-label="Ferramentas do modelo">
+                    {([['parts', 'Peças'], ['layers', 'Camadas'], ['joints', 'Juntas']] as const).map(([tab, label]) => <button key={tab} role="tab" aria-selected={panelTab === tab} className={panelTab === tab ? 'active' : ''} onClick={() => setPanelTab(tab)} type="button">{label}</button>)}
                   </div>
-                  <div className="model-part-actions">
-                    <div className="model-action-row"><button className={`model-tool-button${connectMode ? ' active' : ''}`} onClick={() => { setConnectMode((value) => !value); setConnectFromId(null) }} type="button"><span className="model-link-dot" />{connectMode ? 'Clique em duas peças' : 'Ligar peças'}</button><button className="model-tool-button" onClick={() => updateProject((current) => ({ ...current, joints: [...current.joints.filter((joint) => !joint.suggested), ...suggestJoints(current.parts)] }))} type="button">Sugerir juntas</button></div>
-                    {connectMode && <p className="model-connect-hint">Selecione a peça-pai e depois a peça que ela movimenta.</p>}
-                    <div className="model-joint-list">
-                      <div className="model-joint-list-heading"><strong>Articulações</strong><small>{project.joints.length}</small></div>
-                      {project.joints.length === 0 ? <p className="model-joint-empty">Conecte duas peças para montar o esqueleto.</p> : project.joints.map((joint) => {
-                        const parent = project.parts.find((part) => part.id === joint.parentPartId); const child = project.parts.find((part) => part.id === joint.childPartId)
-                        return <div className="model-joint-row" key={joint.id}><span className="model-joint-row-name"><b>{parent?.name ?? 'Peça'}</b><Icon name="chevronRight" /><b>{child?.name ?? 'Peça'}</b>{joint.suggested && <small>SUGESTÃO</small>}</span><span className="model-joint-controls"><button title="Girar para a esquerda" onClick={() => rotateBranch(joint.id, -15)} type="button">−15°</button><button title="Girar para a direita" onClick={() => rotateBranch(joint.id, 15)} type="button">+15°</button><button title="Desconectar" onClick={() => updateProject((current) => ({ ...current, joints: current.joints.filter((item) => item.id !== joint.id) }))} type="button">×</button></span></div>
-                      })}
-                    </div>
-                    {selectedPart && <div className="model-selected-tools">
-                      <div className="model-selected-name">{renamingPartId === selectedPart.id ? <input autoFocus value={selectedPart.name} onBlur={() => setRenamingPartId(null)} onChange={(event) => updateProject((current) => ({ ...current, parts: current.parts.map((part) => part.id === selectedPart.id ? { ...part, name: event.target.value } : part) }))} onKeyDown={(event) => { if (event.key === 'Enter') setRenamingPartId(null) }} /> : <><strong>{selectedPart.name}</strong><button title="Renomear peça" onClick={() => setRenamingPartId(selectedPart.id)} type="button"><Icon name="edit" /></button></>}</div>
-                      <div className="model-action-row"><button className="model-tool-button" onClick={() => void splitSelected('vertical')} disabled={selectedPart.rotation !== 0 || selectedPart.width < 2} type="button">Dividir ↔</button><button className="model-tool-button" onClick={() => void splitSelected('horizontal')} disabled={selectedPart.rotation !== 0 || selectedPart.height < 2} type="button">Dividir ↕</button><button className="model-tool-button danger" onClick={() => removePart(selectedPart.id)} type="button">Excluir</button></div>
-                      {selectedPartIds.length > 1 && <button className="model-merge-button" onClick={() => void mergeSelected()} type="button">Mesclar {selectedPartIds.length} peças selecionadas</button>}
-                    </div>}
+                  {panelTab === 'parts' && <div className="model-panel-body">
+                    <label className="model-part-search"><Icon name="search" /><input placeholder="Buscar peça…" value={filter} onChange={(event) => setFilter(event.target.value)} /></label>
+                    <div className="model-part-grid">{visibleParts.map((part) => <button key={part.id} className={`model-part-card${selectedIds.includes(part.id) ? ' selected' : ''}`} onClick={(event) => handlePartClick(part.id, event.ctrlKey || event.metaKey)} type="button" title={`${part.name} · selecione ou arraste no canvas`}><span className="model-part-thumb"><img src={part.dataUrl} alt="" /></span><span className="model-part-card-name">{part.name}</span><small>{Math.round(part.width)} × {Math.round(part.height)}</small></button>)}{visibleParts.length === 0 && <p className="model-no-parts">Nenhuma peça encontrada.</p>}</div>
+                    {selectedPart && <div className="model-selected-tools"><div className="model-selected-name">{renamingPartId === selectedPart.id ? <input autoFocus value={selectedPart.name} onBlur={() => setRenamingPartId(null)} onChange={(event) => updateProject((current) => ({ ...current, parts: current.parts.map((part) => part.id === selectedPart.id ? { ...part, name: event.target.value } : part) }))} onKeyDown={(event) => { if (event.key === 'Enter') setRenamingPartId(null) }} /> : <><strong>{selectedPart.name}</strong><button title="Renomear peça" onClick={() => setRenamingPartId(selectedPart.id)} type="button"><Icon name="edit" /></button></>}</div><div className="model-action-row"><button className="model-tool-button" onClick={() => void splitSelected('vertical')} disabled={selectedPart.rotation !== 0 || selectedPart.width < 2} type="button">Dividir ↔</button><button className="model-tool-button" onClick={() => void splitSelected('horizontal')} disabled={selectedPart.rotation !== 0 || selectedPart.height < 2} type="button">Dividir ↕</button><button className="model-tool-button danger" onClick={() => removePart(selectedPart.id)} type="button">Excluir</button></div>{selectedPartIds.length > 1 && <button className="model-merge-button" onClick={() => void mergeSelected()} type="button">Mesclar {selectedPartIds.length} peças selecionadas</button>}</div>}
                     <div className="model-source-info"><span><Icon name="frame" /> Fonte</span><small title={project.sourceName}>{project.sourceName}</small></div>
-                  </div>
+                  </div>}
+                  {panelTab === 'layers' && <div className="model-panel-body model-layer-panel"><p className="model-panel-intro">Arraste para mudar a ordem. A camada do topo aparece na frente.</p><div className="model-layer-list">{frontToBackLayers.map((part, index) => <div key={part.id} draggable className={`model-layer-row${selectedIds.includes(part.id) ? ' selected' : ''}${layerDragId === part.id ? ' dragging' : ''}`} onDragStart={() => setLayerDragId(part.id)} onDragEnd={() => setLayerDragId(null)} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); if (layerDragId) dropLayer(layerDragId, part.id); setLayerDragId(null) }}><button className="model-layer-select" onClick={() => { setSelectedIds([part.id]); setPanelTab('parts') }} type="button"><span className="model-layer-thumb"><img src={part.dataUrl} alt="" /></span><span><strong>{part.name}</strong><small>Camada {frontToBackLayers.length - index}</small></span></button><div className="model-layer-controls"><button title="Mover para frente" disabled={index === 0} onClick={() => moveLayer(part.id, -1)} type="button">↑</button><button title="Mover para trás" disabled={index === frontToBackLayers.length - 1} onClick={() => moveLayer(part.id, 1)} type="button">↓</button><button title={hiddenPartIds.includes(part.id) ? 'Mostrar peça' : 'Ocultar peça'} aria-pressed={!hiddenPartIds.includes(part.id)} onClick={() => toggleLayerVisibility(part.id)} type="button">{hiddenPartIds.includes(part.id) ? '○' : '◉'}</button></div></div>)}</div></div>}
+                  {panelTab === 'joints' && <div className="model-panel-body model-joint-panel"><button className="model-auto-connect" onClick={() => updateProject((current) => ({ ...current, joints: [...current.joints.filter((joint) => !joint.suggested), ...autoConnectParts(current.parts)] }))} type="button"><Icon name="sparkles" /><span><strong>Conectar automaticamente</strong><small>Detectar cabeça, braços, pernas e encaixes</small></span></button><button className={`model-tool-button model-manual-connect${connectMode ? ' active' : ''}`} onClick={() => { setConnectMode((value) => !value); setConnectFromId(null) }} type="button"><span className="model-link-dot" />{connectMode ? 'Selecione duas peças no canvas' : 'Ligar peças manualmente'}</button>{connectMode && <p className="model-connect-hint">Clique primeiro na peça que ficará parada e depois na peça que ela movimenta.</p>}<p className="model-panel-intro">Cada junta usa uma bolinha. Arraste a bolinha no canvas para ajustar o pivô.</p><div className="model-joint-list"><div className="model-joint-list-heading"><strong>Conexões do esqueleto</strong><small>{project.joints.length}</small></div>{project.joints.length === 0 ? <p className="model-joint-empty">Ainda não há conexões. Use a sugestão automática ou ligue duas peças manualmente.</p> : project.joints.map((joint) => { const parent = project.parts.find((part) => part.id === joint.parentPartId); const child = project.parts.find((part) => part.id === joint.childPartId); return <div className="model-joint-row" key={joint.id}><span className="model-joint-row-name"><b>{parent?.name ?? 'Peça'}</b><Icon name="chevronRight" /><b>{child?.name ?? 'Peça'}</b>{joint.suggested && <small>AUTO</small>}</span><span className="model-joint-controls"><button title="Girar ramo à esquerda" onClick={() => rotateBranch(joint.id, -15)} type="button">−15°</button><button title="Girar ramo à direita" onClick={() => rotateBranch(joint.id, 15)} type="button">+15°</button><button title="Desconectar" onClick={() => updateProject((current) => ({ ...current, joints: current.joints.filter((item) => item.id !== joint.id) }))} type="button">×</button></span></div>})}</div></div>}
                 </aside>
               </div>
             </>
