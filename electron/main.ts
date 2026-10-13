@@ -1,5 +1,5 @@
 import { app, BrowserWindow, dialog, ipcMain, type IpcMainInvokeEvent } from 'electron'
-import { mkdir, readFile, writeFile, readdir, unlink, rename, stat } from 'node:fs/promises'
+import { mkdir, readFile, writeFile, readdir, unlink, rename, stat, access } from 'node:fs/promises'
 import { basename, extname, join, resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
@@ -108,7 +108,7 @@ async function registerFabricatorHandlers(): Promise<void> {
       if (!validPartIds.has(asset.id)) continue
       await writeFile(join(partsFolder, `${asset.id}.png`), dataUrlBuffer(asset.dataUrl))
     }
-    for (const part of parts) await readFile(join(partsFolder, `${part.id}.png`))
+    for (const part of parts) await access(join(partsFolder, `${part.id}.png`))
     const projectDocument = {
       schemaVersion: project.schemaVersion,
       slot: project.slot,
