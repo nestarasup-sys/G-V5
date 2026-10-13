@@ -9,6 +9,7 @@ workerScope.onmessage = async (event: MessageEvent<ProcessRequest>) => {
   const { id, sourceDataUrl, tolerance } = event.data
   try {
     const source = await createImageBitmap(await (await fetch(sourceDataUrl)).blob())
+    if (source.width * source.height > 32_000_000) throw new Error('Esta imagem tem mais de 32 milhões de pixels. Reduza suas dimensões para continuar com segurança.')
     const canvas = new OffscreenCanvas(source.width, source.height)
     const context = canvas.getContext('2d', { willReadFrequently: true })
     if (!context) throw new Error('Não foi possível preparar a imagem para edição.')
