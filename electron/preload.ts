@@ -9,13 +9,13 @@ const fabricatorApi: FabricatorDesktopApi = {
   loadFabricatorHistory: (slot) => ipcRenderer.invoke('fabricator:load-history', slot),
   saveFabricatorHistory: (slot, history, current, changedAssets) => ipcRenderer.invoke('fabricator:save-history', slot, history, current, changedAssets),
   deleteFabricatorSlot: (slot) => ipcRenderer.invoke('fabricator:delete-slot', slot),
-  listFabricatorPoseSlots: () => ipcRenderer.invoke('fabricator:poses:list'),
-  loadFabricatorPose: (slot) => ipcRenderer.invoke('fabricator:poses:load', slot),
-  saveFabricatorPose: (slot, project, assets) => ipcRenderer.invoke('fabricator:poses:save', slot, project, assets),
-  deleteFabricatorPose: (slot) => ipcRenderer.invoke('fabricator:poses:delete', slot),
-  loadFabricatorPoseDraft: () => ipcRenderer.invoke('fabricator:poses:draft:load'),
-  saveFabricatorPoseDraft: (draft, assets) => ipcRenderer.invoke('fabricator:poses:draft:save', draft, assets),
-  deleteFabricatorPoseDraft: () => ipcRenderer.invoke('fabricator:poses:draft:delete')
+  listFabricatorPoseSlots: (modelSlot) => ipcRenderer.invoke('fabricator:poses:list', modelSlot),
+  loadFabricatorPose: (modelSlot, slot) => ipcRenderer.invoke('fabricator:poses:load', modelSlot, slot),
+  saveFabricatorPose: (modelSlot, slot, project, assets) => ipcRenderer.invoke('fabricator:poses:save', modelSlot, slot, project, assets),
+  deleteFabricatorPose: (modelSlot, slot) => ipcRenderer.invoke('fabricator:poses:delete', modelSlot, slot),
+  loadFabricatorPoseDraft: (modelSlot) => ipcRenderer.invoke('fabricator:poses:draft:load', modelSlot),
+  saveFabricatorPoseDraft: (modelSlot, draft, assets) => ipcRenderer.invoke('fabricator:poses:draft:save', modelSlot, draft, assets),
+  deleteFabricatorPoseDraft: (modelSlot) => ipcRenderer.invoke('fabricator:poses:draft:delete', modelSlot)
 }
 
 contextBridge.exposeInMainWorld('desktop', {

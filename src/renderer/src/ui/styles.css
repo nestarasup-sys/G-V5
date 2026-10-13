@@ -205,6 +205,11 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .pose-workspace { display: flex; flex-direction: column; overflow: hidden; }
 .pose-toolbar { min-height: 65px; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 14px; border-bottom: 1px solid #f0ebef; }
 .pose-toolbar-title, .pose-toolbar-actions { min-width: 0; display: flex; align-items: center; gap: 9px; }
+.pose-model-select { max-width: min(290px, 32vw); min-height: 34px; display: inline-flex; align-items: center; gap: 7px; margin-left: 6px; padding: 0 9px; border: 1px solid #eee5eb; border-radius: 8px; background: #fff; color: #635965; font-size: 11px; font-weight: 700; cursor: pointer; }
+.pose-model-select:hover { border-color: #e7b1c3; background: #fff7fa; color: #a44166; }
+.pose-model-select > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pose-model-select svg { width: 14px; height: 14px; flex: 0 0 auto; color: #b14971; }
+.pose-model-select svg:last-child { width: 12px; height: 12px; transform: rotate(90deg); }
 .pose-toolbar-title > span:last-child { display: grid; gap: 3px; }
 .pose-toolbar-title strong { color: #342e36; font: 750 14px Manrope, sans-serif; }
 .pose-toolbar-title small { color: #9d939e; font-size: 11px; }
@@ -327,6 +332,7 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .pose-model-options { min-height: 120px; display: flex; flex-direction: column; gap: 5px; overflow-y: auto; padding: 0 12px 12px; }
 .pose-model-option { display: flex; align-items: center; gap: 10px; padding: 9px; border: 1px solid #f0ebef; border-radius: 8px; background: #fff; text-align: left; cursor: pointer; }
 .pose-model-option:hover { border-color: #e7aec1; background: #fff7fa; }
+.pose-model-option.archived { background: #faf8fa; }
 .pose-model-number { width: 31px; height: 31px; display: grid; place-items: center; border-radius: 8px; background: #fff0f5; color: #ad446b; font-weight: 800; }
 .pose-model-option > span:nth-child(2) { min-width: 0; flex: 1; display: grid; gap: 3px; }
 .pose-model-option b { overflow: hidden; color: #574e59; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }

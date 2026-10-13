@@ -88,7 +88,7 @@ export type FabricatorPose = {
   updatedAt: string
 }
 export type FabricatorPoseSave = Omit<FabricatorPose, 'parts'> & { parts: Array<Omit<PosePart, 'dataUrl'>> }
-export type FabricatorPoseSummary = { slot: number; name: string; sourceModelName: string; partCount: number; updatedAt: string } | null
+export type FabricatorPoseSummary = { slot: number; sourceModelSlot: number; name: string; sourceModelName: string; partCount: number; updatedAt: string } | null
 export type FabricatorPoseDraft = { editingSlot: number | null; project: Omit<FabricatorPose, 'slot'>; updatedAt: string }
 export type FabricatorPoseDraftSave = { editingSlot: number | null; project: Omit<FabricatorPoseSave, 'slot'>; updatedAt: string }
 
@@ -100,11 +100,11 @@ export type FabricatorDesktopApi = {
   loadFabricatorHistory: (slot: number) => Promise<FabricatorHistoryState>
   saveFabricatorHistory: (slot: number, history: FabricatorHistorySaveState, current: FabricatorProjectSave, changedAssets: FabricatorAssetSave[]) => Promise<void>
   deleteFabricatorSlot: (slot: number) => Promise<void>
-  listFabricatorPoseSlots: () => Promise<FabricatorPoseSummary[]>
-  loadFabricatorPose: (slot: number) => Promise<FabricatorPose | null>
-  saveFabricatorPose: (slot: number, project: FabricatorPoseSave, assets: FabricatorAssetSave[]) => Promise<void>
-  deleteFabricatorPose: (slot: number) => Promise<void>
-  loadFabricatorPoseDraft: () => Promise<FabricatorPoseDraft | null>
-  saveFabricatorPoseDraft: (draft: FabricatorPoseDraftSave, assets: FabricatorAssetSave[]) => Promise<void>
-  deleteFabricatorPoseDraft: () => Promise<void>
+  listFabricatorPoseSlots: (modelSlot?: number) => Promise<FabricatorPoseSummary[]>
+  loadFabricatorPose: (modelSlot: number, slot: number) => Promise<FabricatorPose | null>
+  saveFabricatorPose: (modelSlot: number, slot: number, project: FabricatorPoseSave, assets: FabricatorAssetSave[]) => Promise<void>
+  deleteFabricatorPose: (modelSlot: number, slot: number) => Promise<void>
+  loadFabricatorPoseDraft: (modelSlot: number) => Promise<FabricatorPoseDraft | null>
+  saveFabricatorPoseDraft: (modelSlot: number, draft: FabricatorPoseDraftSave, assets: FabricatorAssetSave[]) => Promise<void>
+  deleteFabricatorPoseDraft: (modelSlot: number) => Promise<void>
 }

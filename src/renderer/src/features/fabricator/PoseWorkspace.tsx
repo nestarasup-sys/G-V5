@@ -11,7 +11,6 @@ type PartGesture = { pointerId: number; partId: string; x: number; y: number; be
 
 const SLOT_COUNT = 12
 const HISTORY_LIMIT = 50
-const emptyPoseSlots = (): FabricatorPoseSummary[] => Array.from({ length: SLOT_COUNT }, () => null)
 const emptyHistory = (): PoseHistory => ({ undo: [], redo: [] })
 
 function cloneProject(project: DraftProject): DraftProject {
@@ -43,7 +42,8 @@ function toDraftSave(project: DraftProject, editingSlot: number | null): Fabrica
 
 export function PoseWorkspace() {
   const [models, setModels] = useState<FabricatorSlotSummary[]>(Array.from({ length: 10 }, () => null))
-  const [slots, setSlots] = useState<FabricatorPoseSummary[]>(emptyPoseSlots)
+  const [allPoseSlots, setAllPoseSlots] = useState<FabricatorPoseSummary[]>([])
+  const [selectedModelSlot, setSelectedModelSlot] = useState(1)
   const [activeSlot, setActiveSlot] = useState(1)
   const [project, setProject] = useState<DraftProject | null>(null)
   const [editingSlot, setEditingSlot] = useState<number | null>(null)
@@ -73,6 +73,8 @@ export function PoseWorkspace() {
   const pendingAssets = useRef<Map<string, string>>(new Map())
   const writeQueue = useRef<Promise<void>>(Promise.resolve())
   const draftTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const slots = useMemo(() => Array.from({ length: SLOT_COUNT }, (_, index) => allPoseSlots.find((slot) => slot?.sourceModelSlot === selectedModelSlot && slot.slot === index + 1) ?? null), [allPoseSlots, selectedModelSlot])
+  const selectedModelName = models[selectedModelSlot - 1]?.name ?? allPoseSlots.find((slot) => slot?.sourceModelSlot === selectedModelSlot)?.sourceModelName ?? 'Escolher modelo'
 
   const publishProject = useCallback((next: DraftProject | null, isDirty = true) => {
     projectRef.current = next
@@ -84,13 +86,15 @@ export function PoseWorkspace() {
   const loadLibraries = useCallback(async () => {
     setLoading(true)
     try {
-      const [modelSlots, poseSlots, draft] = await Promise.all([
+      const [modelSlots, poseSummaries] = await Promise.all([
         window.desktop.listFabricatorSlots(),
-        window.desktop.listFabricatorPoseSlots(),
-        window.desktop.loadFabricatorPoseDraft()
+        window.desktop.listFabricatorPoseSlots()
       ])
+      const preferredModelSlot = modelSlots.find((slot) => slot)?.slot ?? poseSummaries[0]?.sourceModelSlot ?? 1
+      const draft = await window.desktop.loadFabricatorPoseDraft(preferredModelSlot)
       setModels(modelSlots)
-      setSlots(poseSlots)
+      setAllPoseSlots(poseSummaries)
+      setSelectedModelSlot(draft?.project.sourceModelSlot ?? preferredModelSlot)
       setRecoveredDraft(draft)
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Não foi possível carregar a biblioteca de poses.')
@@ -115,7 +119,7 @@ export function PoseWorkspace() {
       return dataUrl ? [{ id: part.id, dataUrl }] : []
     })
     const serialized = toDraftSave(snapshot, targetSlot)
-    const write = writeQueue.current.catch(() => undefined).then(() => window.desktop.saveFabricatorPoseDraft(serialized, assets))
+    const write = writeQueue.current.catch(() => undefined).then(() => window.desktop.saveFabricatorPoseDraft(snapshot.sourceModelSlot, serialized, assets))
     writeQueue.current = write
     return write.then(() => {
       for (const asset of assets) if (pendingAssets.current.get(asset.id) === asset.dataUrl) pendingAssets.current.delete(asset.id)
@@ -171,7 +175,8 @@ export function PoseWorkspace() {
 
   const discardDraft = async () => {
     if (draftTimer.current) clearTimeout(draftTimer.current)
-    try { await window.desktop.deleteFabricatorPoseDraft() } catch { /* O conteúdo em memória continua editável. */ }
+    const sourceModelSlot = projectRef.current?.sourceModelSlot ?? recoveredDraft?.project.sourceModelSlot ?? selectedModelSlot
+    try { await window.desktop.deleteFabricatorPoseDraft(sourceModelSlot) } catch { /* O conteúdo em memória continua editável. */ }
     pendingAssets.current.clear()
     setRecoveredDraft(null)
     setEditingSlot(null)
@@ -210,7 +215,9 @@ export function PoseWorkspace() {
       updatedAt: new Date().toISOString()
     }
     pendingAssets.current = new Map(next.parts.map((part) => [part.id, part.dataUrl]))
-    setActiveSlot(slots.findIndex((slot) => !slot) + 1 || SLOT_COUNT)
+    setSelectedModelSlot(modelSlot)
+    const modelPoseSlots = Array.from({ length: SLOT_COUNT }, (_, index) => allPoseSlots.find((slot) => slot?.sourceModelSlot === modelSlot && slot.slot === index + 1) ?? null)
+    setActiveSlot(modelPoseSlots.findIndex((slot) => !slot) + 1 || SLOT_COUNT)
     setEditingSlot(null)
     editingSlotRef.current = null
     setHistory(emptyHistory())
@@ -236,7 +243,7 @@ export function PoseWorkspace() {
     }
     setLoading(true)
     try {
-      const saved = await window.desktop.loadFabricatorPose(slot)
+      const saved = await window.desktop.loadFabricatorPose(selectedModelSlot, slot)
       if (!saved) throw new Error('O slot de pose não pôde ser carregado.')
       const { slot: _slot, ...editable } = saved
       // The draft is stored in a different folder from the saved pose, so copy
@@ -258,6 +265,7 @@ export function PoseWorkspace() {
   const recoverDraft = () => {
     if (!recoveredDraft) return
     setEditingSlot(recoveredDraft.editingSlot)
+    setSelectedModelSlot(recoveredDraft.project.sourceModelSlot)
     editingSlotRef.current = recoveredDraft.editingSlot
     publishProject(recoveredDraft.project)
     setSelectedId(recoveredDraft.project.parts[0]?.id ?? null)
@@ -282,15 +290,15 @@ export function PoseWorkspace() {
         return dataUrl ? [{ id: part.id, dataUrl }] : []
       })
       const saved: FabricatorPose = { ...snapshot, slot, updatedAt: new Date().toISOString() }
-      await window.desktop.saveFabricatorPose(slot, toSavedPose(saved, slot), assets)
+      await window.desktop.saveFabricatorPose(snapshot.sourceModelSlot, slot, toSavedPose(saved, slot), assets)
       for (const asset of assets) if (pendingAssets.current.get(asset.id) === asset.dataUrl) pendingAssets.current.delete(asset.id)
-      await window.desktop.deleteFabricatorPoseDraft()
+      await window.desktop.deleteFabricatorPoseDraft(snapshot.sourceModelSlot)
       setRecoveredDraft(null)
       setEditingSlot(slot)
       editingSlotRef.current = slot
       setActiveSlot(slot)
       publishProject({ ...snapshot, updatedAt: saved.updatedAt }, false)
-      setSlots((current) => current.map((item, index) => index + 1 === slot ? { slot: slot!, name: saved.name, sourceModelName: saved.sourceModelName, partCount: saved.parts.length, updatedAt: saved.updatedAt } : item))
+      setAllPoseSlots((current) => [...current.filter((item) => !(item?.sourceModelSlot === snapshot.sourceModelSlot && item.slot === slot)), { slot, sourceModelSlot: snapshot.sourceModelSlot, name: saved.name, sourceModelName: saved.sourceModelName, partCount: saved.parts.length, updatedAt: saved.updatedAt }])
       setSaveMessage('Pose salva')
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Não foi possível salvar a pose.')
@@ -303,9 +311,9 @@ export function PoseWorkspace() {
     if (!editingSlot || !project) return
     if (!window.confirm(`Excluir permanentemente a pose “${project.name}” do slot ${editingSlot}?`)) return
     try {
-      await window.desktop.deleteFabricatorPose(editingSlot)
+      await window.desktop.deleteFabricatorPose(selectedModelSlot, editingSlot)
       await discardDraft()
-      setSlots((current) => current.map((slot, index) => index + 1 === editingSlot ? null : slot))
+      setAllPoseSlots((current) => current.filter((slot) => !(slot?.sourceModelSlot === selectedModelSlot && slot.slot === editingSlot)))
       setActiveSlot(editingSlot)
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Não foi possível excluir a pose.')
@@ -364,6 +372,34 @@ export function PoseWorkspace() {
     return { ...current, layerOrder: topDown.reverse() }
   })
 
+  const selectModelLibrary = async (modelSlot: number) => {
+    if (modelSlot === selectedModelSlot) { setSelectingModel(false); return }
+    if (!await canReplaceCurrent()) return
+    setSelectedModelSlot(modelSlot)
+    setProject(null)
+    projectRef.current = null
+    setDirty(false)
+    dirtyRef.current = false
+    setEditingSlot(null)
+    editingSlotRef.current = null
+    setSelectedId(null)
+    setHistory(emptyHistory())
+    setActiveSlot(1)
+    setRecoveredDraft(null)
+    setSelectingModel(false)
+    setLoading(true)
+    try {
+      const draft = await window.desktop.loadFabricatorPoseDraft(modelSlot)
+      setRecoveredDraft(draft)
+      if (draft) setActiveSlot(draft.editingSlot ?? 1)
+      setError('')
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Não foi possível abrir a biblioteca deste modelo.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
   const beginPan = (event: React.PointerEvent<HTMLDivElement>) => {
     if (!project || event.target instanceof Element && event.target.closest('.pose-stage-tools, .pose-part, .pose-joint-marker')) return
     event.preventDefault()
@@ -405,9 +441,9 @@ export function PoseWorkspace() {
   return (
     <section className="fabricator-workspace pose-workspace" aria-label="Editor de poses">
       <header className="pose-toolbar">
-        <div className="pose-toolbar-title"><span className="model-slot-logo"><Icon name="expand" /></span><span><strong>Poses</strong><small>{project ? `Modelo: ${project.sourceModelName}` : 'Crie poses sem alterar seus modelos'}</small></span></div>
+        <div className="pose-toolbar-title"><span className="model-slot-logo"><Icon name="expand" /></span><span><strong>Poses</strong><small>Biblioteca independente por modelo</small></span><button className="pose-model-select" onClick={() => setSelectingModel(true)} type="button" title="Selecionar modelo"><Icon name="box" /><span>{selectedModelName}</span><Icon name="chevronRight" /></button></div>
         <div className="pose-toolbar-actions">
-          <button className="pose-button secondary" onClick={() => setSelectingModel(true)} type="button"><Icon name="plus" /> Nova pose</button>
+          <button className="pose-button secondary" onClick={() => void (async () => { if (!await canReplaceCurrent()) return; if (recoveredDraft && !project) { if (!window.confirm('Existe um rascunho recuperável para este modelo. Descartar e começar uma pose nova?')) return; await discardDraft() } await beginNewPose(selectedModelSlot) })()} disabled={!models[selectedModelSlot - 1]} type="button"><Icon name="plus" /> Nova pose</button>
           <button className="pose-icon-button" title="Desfazer" aria-label="Desfazer" disabled={!history.undo.length || !project} onClick={() => restoreHistory('undo')} type="button"><Icon name="undo" /></button>
           <button className="pose-icon-button" title="Refazer" aria-label="Refazer" disabled={!history.redo.length || !project} onClick={() => restoreHistory('redo')} type="button"><Icon name="redo" /></button>
           {editingSlot && <button className="pose-button danger" onClick={() => void deletePose()} disabled={saving} type="button"><Icon name="trash" /> Excluir</button>}
@@ -470,7 +506,7 @@ export function PoseWorkspace() {
         </aside>
       </div>
 
-      {selectingModel && <div className="pose-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setSelectingModel(false) }}><section className="pose-model-picker" role="dialog" aria-modal="true" aria-labelledby="pose-model-picker-title"><header><span><small>COMEÇAR UMA POSE</small><strong id="pose-model-picker-title">Escolha um modelo pronto</strong></span><button onClick={() => setSelectingModel(false)} aria-label="Fechar" type="button">×</button></header><p>Vamos criar uma cópia independente. Editar esta pose não altera o modelo original.</p><div className="pose-model-options">{models.map((model, index) => model && <button key={model.slot} className="pose-model-option" onClick={() => void (async () => { if (await canReplaceCurrent()) await beginNewPose(model.slot) })()} type="button"><span className="pose-model-number">{String(index + 1).padStart(2, '0')}</span><span><b>{model.name}</b><small>{model.partCount} peças · {new Date(model.updatedAt).toLocaleDateString()}</small></span><Icon name="chevronRight" /></button>)}{models.every((model) => !model) && <div className="pose-model-none">Salve primeiro um modelo na aba Modelos para começar.</div>}</div></section></div>}
+      {selectingModel && <div className="pose-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setSelectingModel(false) }}><section className="pose-model-picker" role="dialog" aria-modal="true" aria-labelledby="pose-model-picker-title"><header><span><small>BIBLIOTECA DE POSES</small><strong id="pose-model-picker-title">Escolha o modelo</strong></span><button onClick={() => setSelectingModel(false)} aria-label="Fechar" type="button">×</button></header><p>Cada modelo tem seus próprios 12 slots. As poses salvas continuam disponíveis se o modelo de origem for excluído.</p><div className="pose-model-options">{models.map((model, index) => model && <button key={`model-${model.slot}`} className="pose-model-option" onClick={() => void selectModelLibrary(model.slot)} type="button"><span className="pose-model-number">{String(index + 1).padStart(2, '0')}</span><span><b>{model.name}</b><small>{model.partCount} peças · modelo pronto</small></span><Icon name="chevronRight" /></button>)}{Array.from(new Set(allPoseSlots.filter((pose) => pose && !models[pose.sourceModelSlot - 1]).map((pose) => pose!.sourceModelSlot))).map((modelSlot) => { const archivedName = allPoseSlots.find((pose) => pose?.sourceModelSlot === modelSlot)?.sourceModelName ?? `Modelo ${modelSlot}`; return <button key={`archive-${modelSlot}`} className="pose-model-option archived" onClick={() => void selectModelLibrary(modelSlot)} type="button"><span className="pose-model-number"><Icon name="box" /></span><span><b>{archivedName}</b><small>Modelo de origem removido · poses preservadas</small></span><Icon name="chevronRight" /></button>})}{models.every((model) => !model) && allPoseSlots.length === 0 && <div className="pose-model-none">Salve primeiro um modelo na aba Modelos para começar.</div>}</div></section></div>}
     </section>
   )
 }
