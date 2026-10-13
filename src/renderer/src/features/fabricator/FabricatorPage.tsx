@@ -301,6 +301,7 @@ export function FabricatorPage() {
   useEffect(() => { projectRef.current = project }, [project])
 
   useEffect(() => {
+    if (activeSection !== 'Modelos') return
     const element = stageRef.current
     if (!element) return
     const measure = () => {
@@ -312,7 +313,7 @@ export function FabricatorPage() {
     observer.observe(element)
     window.addEventListener('resize', measure)
     return () => { observer.disconnect(); window.removeEventListener('resize', measure) }
-  }, [project])
+  }, [activeSection, project])
 
   useEffect(() => {
     if (!project) { setSaveState('saved'); return }
