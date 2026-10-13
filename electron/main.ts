@@ -1,5 +1,5 @@
 import { app, BrowserWindow, dialog, ipcMain, type IpcMainInvokeEvent } from 'electron'
-import { mkdir, readFile, writeFile, readdir, unlink, rename, stat, access, rm } from 'node:fs/promises'
+import { mkdir, readFile, writeFile, readdir, unlink, rename, stat, access, rm, copyFile } from 'node:fs/promises'
 import { basename, dirname, extname, join, resolve } from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
@@ -247,7 +247,7 @@ async function writeFabricatorProject(project: FabricatorProjectSave, changedAss
   }
 }
 
-async function writePoseAssets(folder: string, parts: Array<Omit<PosePart, 'dataUrl'>>, assets: FabricatorAssetSave[]): Promise<void> {
+async function writePoseAssets(folder: string, parts: Array<Omit<PosePart, 'dataUrl'>>, assets: FabricatorAssetSave[], fallbackFolder?: string): Promise<void> {
   const partsFolder = join(folder, 'parts')
   await mkdir(partsFolder, { recursive: true })
   const partIds = new Set(parts.map((part) => part.id))
@@ -257,7 +257,15 @@ async function writePoseAssets(folder: string, parts: Array<Omit<PosePart, 'data
   }
   for (const part of parts) {
     if (!/^[a-zA-Z0-9_-]{1,80}$/.test(part.id)) throw new Error('Peça de pose inválida.')
-    await access(join(partsFolder, `${part.id}.png`))
+    const target = join(partsFolder, `${part.id}.png`)
+    try { await access(target) } catch (reason) {
+      if ((reason as NodeJS.ErrnoException).code !== 'ENOENT') throw reason
+      if (!fallbackFolder) throw new Error(`Imagem ausente na pose: ${part.name} (${part.id}).`)
+      try { await copyFile(join(fallbackFolder, 'parts', `${part.id}.png`), target) } catch (fallbackReason) {
+        if ((fallbackReason as NodeJS.ErrnoException).code === 'ENOENT') throw new Error(`Imagem ausente na pose e no rascunho: ${part.name} (${part.id}).`)
+        throw fallbackReason
+      }
+    }
   }
   const keepFiles = new Set(parts.map((part) => `${part.id}.png`))
   for (const filename of await readdir(partsFolder)) if (filename.endsWith('.png') && !keepFiles.has(filename)) await unlink(join(partsFolder, filename))
@@ -274,7 +282,10 @@ async function readPoseAssets(folder: string, parts: Array<Omit<PosePart, 'dataU
 async function writePoseProject(modelSlot: number, slot: number, project: FabricatorPoseSave, assets: FabricatorAssetSave[]): Promise<void> {
   if (!isValidModelSlot(modelSlot) || project.sourceModelSlot !== modelSlot || !isValidPoseSlot(slot) || project.slot !== slot || project.schemaVersion !== 1 || project.parts.length === 0 || project.parts.length > 500) throw new Error('Pose inválida.')
   const folder = poseSlotPath(modelSlot, slot)
-  await writePoseAssets(folder, project.parts, assets)
+  // A edição automática salva primeiro no diretório de rascunho e consome as
+  // imagens pendentes no renderer. Ao salvar no slot, copie as partes já
+  // persistidas no rascunho para que o slot independente tenha sua biblioteca.
+  await writePoseAssets(folder, project.parts, assets, poseDraftPath(modelSlot))
   const temporary = join(folder, 'pose.json.tmp')
   await writeFile(temporary, JSON.stringify(project), 'utf8')
   await rename(temporary, join(folder, 'pose.json'))
