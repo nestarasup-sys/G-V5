@@ -234,6 +234,8 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .model-tool-button:hover { border-color: #edc7d5; background: #fff6f9; color: #a44166; }
 .model-tool-button:disabled { opacity: .45; cursor: not-allowed; }
 .model-tool-button.active { border-color: #df89a7; background: #fff0f5; color: #a33e64; }
+.model-pivot-visibility { min-height: 31px; padding: 0 10px; }
+.model-pivot-visibility svg { width: 15px; height: 15px; }
 .model-tool-button.danger:hover { border-color: #efc3c5; background: #fff4f3; color: #bd5e62; }
 .model-tool-button svg { width: 13px; height: 13px; }
 .model-editor-content { min-width: 0; min-height: 0; flex: 1; display: grid; grid-template-columns: minmax(0, 1fr) minmax(270px, 37%); gap: 11px; padding: 11px; }
