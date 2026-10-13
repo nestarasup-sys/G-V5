@@ -31,6 +31,10 @@ export type FabricatorProject = {
   tolerance: number
   parts: ModelPart[]
   joints: JointLink[]
+  /** Ordem de desenho do fundo para a frente. Ausente em projetos anteriores. */
+  layerOrder?: string[]
+  /** Identificadores das peças ocultadas no editor. */
+  hiddenPartIds?: string[]
   updatedAt: string
 }
 
