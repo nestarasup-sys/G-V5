@@ -19,6 +19,9 @@ type ProcessorMessage =
   | { type: 'progress'; id: number; value: number }
   | { type: 'complete'; id: number; width: number; height: number; parts: ProcessedPart[] }
   | { type: 'error'; id: number; message: string }
+type ChromaAdjustMessage =
+  | { type: 'complete'; id: number; parts: Array<{ id: string; png: ArrayBuffer }> }
+  | { type: 'error'; id: number; message: string }
 type DragState = { partId: string; pointerId: number; x: number; y: number }
 type AnchorDragState = { partId: string; pointerId: number; x: number; y: number; offsetX: number }
 type PanState = { pointerId: number; x: number; y: number; originX: number; originY: number }
@@ -37,6 +40,8 @@ function bytesToDataUrl(buffer: ArrayBuffer): string {
 }
 
 function makeId(): string { return crypto.randomUUID() }
+
+const DEFAULT_CHROMA_TOLERANCE = 74
 
 function rotatePoint(point: { x: number; y: number }, origin: { x: number; y: number }, angle: number) {
   const radians = angle * Math.PI / 180
@@ -121,6 +126,8 @@ export function FabricatorPage() {
   const [project, setProject] = useState<FabricatorProject | null>(null)
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [processing, setProcessing] = useState(false)
+  const [chromaApplying, setChromaApplying] = useState(false)
+  const [chromaValue, setChromaValue] = useState(DEFAULT_CHROMA_TOLERANCE)
   const [deletingSlot, setDeletingSlot] = useState<number | null>(null)
   const [progress, setProgress] = useState(0)
   const [saveState, setSaveState] = useState<'saved' | 'saving' | 'error'>('saved')
@@ -149,6 +156,7 @@ export function FabricatorPage() {
   const mixerSessionRef = useRef(0)
   const layerDragRef = useRef<string | null>(null)
   const workerRef = useRef<Worker | null>(null)
+  const chromaWorkerRef = useRef<Worker | null>(null)
   const requestId = useRef(0)
   const dirtyAssets = useRef<Map<string, string>>(new Map())
   const savedTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -183,7 +191,7 @@ export function FabricatorPage() {
     void window.desktop.listFabricatorSlots()
       .then((items) => { setSlots(items); setSlotsLoaded(true) })
       .catch((reason: unknown) => { setSlotsLoaded(true); setError(reason instanceof Error ? reason.message : 'Não foi possível abrir a biblioteca.') })
-    return () => { workerRef.current?.terminate(); if (savedTimer.current) clearTimeout(savedTimer.current) }
+    return () => { workerRef.current?.terminate(); chromaWorkerRef.current?.terminate(); if (savedTimer.current) clearTimeout(savedTimer.current) }
   }, [])
 
   useEffect(() => {
@@ -283,6 +291,7 @@ export function FabricatorPage() {
       try { await persistProject(project) } catch (reason) { setError(reason instanceof Error ? `Falha ao salvar antes de trocar de slot: ${reason.message}` : 'Falha ao salvar antes de trocar de slot.'); return }
     }
     workerRef.current?.terminate(); workerRef.current = null
+    chromaWorkerRef.current?.terminate(); chromaWorkerRef.current = null; setChromaApplying(false)
     mixerSessionRef.current += 1
     setActiveSlot(slot); setProject(null); setSelectedIds([]); setError(''); dirtyAssets.current.clear(); mixerSurfacesRef.current.clear(); mixerStrokeRef.current = null; setMixerActive(false); setMixerPainting(false); setZoom(1); setPan({ x: 0, y: 0 })
     const summary = slots[slot - 1]
@@ -313,6 +322,7 @@ export function FabricatorPage() {
         hiddenPartIds: loaded.hiddenPartIds ?? [],
         joints: rig.joints
       }); setSelectedIds(loaded.parts[0] ? [loaded.parts[0].id] : [])
+      setChromaValue(loaded.tolerance)
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Falha ao abrir modelo.') }
   }
 
@@ -330,6 +340,7 @@ export function FabricatorPage() {
     if (activeSlot === slot) {
       if (savedTimer.current) clearTimeout(savedTimer.current)
       workerRef.current?.terminate(); workerRef.current = null
+      chromaWorkerRef.current?.terminate(); chromaWorkerRef.current = null; setChromaApplying(false)
       setProcessing(false)
     }
     try {
@@ -372,10 +383,69 @@ export function FabricatorPage() {
         sourceAssetName: metadata.sourceAssetName, sourceDataUrl, width: message.width, height: message.height,
         tolerance, parts: rig.parts, joints: rig.joints, layerOrder: parts.map((part) => part.id), hiddenPartIds: [], updatedAt: new Date().toISOString()
       }
+      setChromaValue(tolerance)
       setProject(nextProject); setSelectedIds(parts[0] ? [parts[0].id] : [])
     }
     worker.onerror = () => { worker.terminate(); workerRef.current = null; setProcessing(false); setError('O processamento da imagem falhou.') }
     worker.postMessage({ id, sourceDataUrl, tolerance })
+  }
+
+  const applyChromaKey = () => {
+    if (!project || chromaApplying || processing || chromaValue <= project.tolerance) return
+    chromaWorkerRef.current?.terminate()
+    const worker = new Worker(new URL('./models/chromaAdjust.worker.ts', import.meta.url), { type: 'module' })
+    chromaWorkerRef.current = worker
+    const id = ++requestId.current
+    const slot = project.slot
+    const tolerance = chromaValue
+    setChromaApplying(true); setError('')
+    worker.onmessage = (event: MessageEvent<ChromaAdjustMessage>) => {
+      if (event.data.id !== id) return
+      worker.terminate(); chromaWorkerRef.current = null; setChromaApplying(false)
+      if (event.data.type === 'error') { setError(`Chroma key: ${event.data.message}`); return }
+      const updatedAssets = new Map(event.data.parts.map(({ id: partId, png }) => [partId, bytesToDataUrl(png)]))
+      for (const [partId, dataUrl] of updatedAssets) dirtyAssets.current.set(partId, dataUrl)
+      mixerSurfacesRef.current.clear()
+      updateProject((current) => current.slot !== slot ? current : {
+        ...current,
+        tolerance,
+        parts: current.parts.map((part) => updatedAssets.has(part.id) ? { ...part, dataUrl: updatedAssets.get(part.id)! } : part)
+      })
+    }
+    worker.onerror = () => {
+      worker.terminate(); chromaWorkerRef.current = null; setChromaApplying(false)
+      setError('O ajuste do chroma key falhou. Suas posições e conexões foram preservadas.')
+    }
+    worker.postMessage({
+      id,
+      sourceDataUrl: project.sourceDataUrl,
+      tolerance,
+      parts: project.parts.map(({ id: partId, dataUrl }) => ({ id: partId, dataUrl }))
+    })
+  }
+
+  const resetModel = async () => {
+    if (!project || processing || chromaApplying) return
+    const originalName = project.sourceName.replace(/\.[^.]+$/, '') || `Modelo ${project.slot}`
+    if (!window.confirm('Resetar este modelo para a importação original? Isso vai apagar os recortes, posições, camadas, juntas e ajustes atuais.')) return
+    if (savedTimer.current) clearTimeout(savedTimer.current)
+    setProcessing(true)
+    try {
+      await persistProject(project)
+    } catch (reason) {
+      setProcessing(false)
+      setError(reason instanceof Error ? `Não foi possível salvar antes de resetar: ${reason.message}` : 'Não foi possível salvar antes de resetar.')
+      setProject((current) => current ? { ...current, updatedAt: new Date().toISOString() } : current)
+      return
+    }
+    chromaWorkerRef.current?.terminate(); chromaWorkerRef.current = null; setChromaApplying(false)
+    setChromaValue(DEFAULT_CHROMA_TOLERANCE)
+    runProcessor(project.sourceDataUrl, DEFAULT_CHROMA_TOLERANCE, {
+      slot: project.slot,
+      name: originalName,
+      sourceName: project.sourceName,
+      sourceAssetName: project.sourceAssetName
+    })
   }
 
   const importSlot = async (slot: number) => {
@@ -388,6 +458,7 @@ export function FabricatorPage() {
     try {
       const selected = await window.desktop.importFabricatorModel(slot)
       if (!selected) return
+      chromaWorkerRef.current?.terminate(); chromaWorkerRef.current = null; setChromaApplying(false)
       mixerSessionRef.current += 1
       setActiveSlot(slot); setProject(null); setSelectedIds([]); dirtyAssets.current.clear(); mixerSurfacesRef.current.clear(); mixerStrokeRef.current = null; setMixerActive(false); setMixerPainting(false)
       const name = selected.sourceName.replace(/\.[^.]+$/, '') || `Modelo ${slot}`
@@ -747,14 +818,20 @@ export function FabricatorPage() {
           ) : (
             <>
               <div className="model-editor-toolbar">
-                <div className="model-current-title"><span className="model-eyebrow">MODELO {String(project.slot).padStart(2, '0')}</span><input aria-label="Nome do modelo" value={project.name} onChange={(event) => updateProject((current) => ({ ...current, name: event.target.value }))} /></div>
+                <div className="model-current-title"><span className="model-eyebrow">MODELO {String(project.slot).padStart(2, '0')}</span><input aria-label="Nome do modelo" value={project.name} disabled={processing || chromaApplying} onChange={(event) => updateProject((current) => ({ ...current, name: event.target.value }))} /></div>
                 <div className="model-toolbar-actions">
                   <span className={`model-save-state ${saveState}`}><i />{saveState === 'saving' ? 'Salvando…' : saveState === 'error' ? 'Erro ao salvar' : 'Salvo localmente'}</span>
-                  <button className={`model-tool-button model-mixer-toggle${mixerActive ? ' active' : ''}`} aria-pressed={mixerActive} onClick={() => { setMixerActive((active) => !active); setConnectMode(false); setConnectFromId(null) }} title="Pinte sobre a junta: o pincel edita a peça visível mais alta, mesmo que outra esteja selecionada" type="button"><Icon name="brush" /><span>Misturador</span></button>
-                  <button className={`model-tool-button model-pivot-visibility${showJointPivots ? ' active' : ''}`} aria-pressed={showJointPivots} onClick={() => setShowJointPivots((visible) => !visible)} title={showJointPivots ? 'Ocultar bolinhas das juntas' : 'Mostrar bolinhas das juntas'} type="button"><Icon name={showJointPivots ? 'eye' : 'eyeOff'} /><span>{showJointPivots ? 'Ocultar bolinhas' : 'Mostrar bolinhas'}</span></button>
+                  <div className="model-chroma-control">
+                    <div className="model-chroma-heading"><label htmlFor="model-chroma-range"><Icon name="sliders" />Chroma key</label><output htmlFor="model-chroma-range">{chromaValue}</output></div>
+                    <div className="model-chroma-adjust"><input id="model-chroma-range" aria-label="Intensidade do chroma key" type="range" min={project.tolerance} max={Math.max(220, project.tolerance + 60)} value={Math.max(chromaValue, project.tolerance)} disabled={chromaApplying || processing || project.tolerance >= 280} onChange={(event) => setChromaValue(Number(event.target.value))} /><button className="model-chroma-apply" onClick={applyChromaKey} disabled={chromaApplying || processing || chromaValue <= project.tolerance} type="button">{chromaApplying ? 'Aplicando…' : 'Aplicar'}</button></div>
+                    <small>Aumente para remover mais verde · Resetar restaura a importação</small>
+                  </div>
+                  <button className="model-tool-button model-reset-button" onClick={() => void resetModel()} disabled={processing || chromaApplying} title="Voltar o modelo inteiro ao estado da imagem importada" type="button"><Icon name="reset" /><span>{processing ? 'Resetando…' : 'Resetar'}</span></button>
+                  <button className={`model-tool-button model-mixer-toggle${mixerActive ? ' active' : ''}`} aria-pressed={mixerActive} onClick={() => { setMixerActive((active) => !active); setConnectMode(false); setConnectFromId(null) }} disabled={processing || chromaApplying} title="Pinte sobre a junta: o pincel edita a peça visível mais alta, mesmo que outra esteja selecionada" type="button"><Icon name="brush" /><span>Misturador</span></button>
+                  <button className={`model-tool-button model-pivot-visibility${showJointPivots ? ' active' : ''}`} aria-pressed={showJointPivots} onClick={() => setShowJointPivots((visible) => !visible)} disabled={processing || chromaApplying} title={showJointPivots ? 'Ocultar bolinhas das juntas' : 'Mostrar bolinhas das juntas'} type="button"><Icon name={showJointPivots ? 'eye' : 'eyeOff'} /><span>{showJointPivots ? 'Ocultar bolinhas' : 'Mostrar bolinhas'}</span></button>
                 </div>
               </div>
-              <div className="model-editor-content">
+              <div className={`model-editor-content${processing || chromaApplying ? ' chroma-applying' : ''}`} aria-busy={processing || chromaApplying}>
                 <section className="model-canvas-column" aria-label="Prévia e montagem">
                   <div className="model-canvas-topline"><span><i /> CANVAS DE MONTAGEM</span><span>{project.width} × {project.height}</span></div>
                   <div ref={stageRef} className={`model-stage${panning ? ' panning' : ''}${mixerActive ? ' mixer-active' : ''}${mixerPainting ? ' mixer-painting' : ''}`} onPointerDown={beginPan} onPointerMove={(event) => { moveMixerStroke(event); movePan(event); movePartDrag(event); moveAnchorDrag(event) }} onPointerUp={(event) => { if (dragRef.current?.pointerId === event.pointerId) dragRef.current = null; if (anchorDragRef.current?.pointerId === event.pointerId) anchorDragRef.current = null; if (panRef.current?.pointerId === event.pointerId) { panRef.current = null; setPanning(false) } if (mixerStrokeRef.current?.pointerId === event.pointerId) { mixerStrokeRef.current = null; setMixerPainting(false) } }} onPointerCancel={() => { dragRef.current = null; anchorDragRef.current = null; panRef.current = null; mixerStrokeRef.current = null; setPanning(false); setMixerPainting(false) }}>
