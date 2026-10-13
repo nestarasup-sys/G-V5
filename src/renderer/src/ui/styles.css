@@ -247,7 +247,8 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .model-canvas-topline { height: 32px; min-height: 32px; display: flex; align-items: center; justify-content: space-between; padding: 0 11px; border-bottom: 1px solid #f0ebef; color: #a198a2; font-size: 12px; font-weight: 800; letter-spacing: .8px; }
 .model-canvas-topline > span:first-child { display: flex; align-items: center; gap: 6px; }
 .model-canvas-topline i { width: 6px; height: 6px; border-radius: 50%; background: #e786a6; box-shadow: 0 0 0 3px #fce8ef; }
-.model-stage { min-width: 0; min-height: 0; flex: 1; position: relative; overflow: hidden; background-color: #fdfcfd; background-image: linear-gradient(45deg, #f1edf1 25%, transparent 25%), linear-gradient(-45deg, #f1edf1 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #f1edf1 75%), linear-gradient(-45deg, transparent 75%, #f1edf1 75%); background-position: 0 0, 0 6px, 6px -6px, -6px 0; background-size: 12px 12px; touch-action: none; }
+.model-stage { min-width: 0; min-height: 0; flex: 1; position: relative; overflow: hidden; background-color: #fdfcfd; background-image: linear-gradient(45deg, #f1edf1 25%, transparent 25%), linear-gradient(-45deg, #f1edf1 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #f1edf1 75%), linear-gradient(-45deg, transparent 75%, #f1edf1 75%); background-position: 0 0, 0 6px, 6px -6px, -6px 0; background-size: 12px 12px; touch-action: none; cursor: grab; }
+.model-stage.panning { cursor: grabbing; }
 .model-artboard { position: absolute; top: 50%; left: 50%; overflow: visible; transform: translate(-50%, -50%); filter: drop-shadow(0 3px 10px #44303a1a); }
 .model-canvas-part { position: absolute; z-index: 1; object-fit: fill; cursor: grab; user-select: none; -webkit-user-drag: none; transform-origin: center center; }
 .model-canvas-part:active { cursor: grabbing; }

@@ -20,6 +20,7 @@ type ProcessorMessage =
   | { type: 'error'; id: number; message: string }
 type DragState = { partId: string; pointerId: number; x: number; y: number }
 type AnchorDragState = { partId: string; pointerId: number; x: number; y: number; offsetX: number }
+type PanState = { pointerId: number; x: number; y: number; originX: number; originY: number }
 type PanelTab = 'parts' | 'layers' | 'joints'
 
 function bytesToDataUrl(buffer: ArrayBuffer): string {
@@ -101,11 +102,14 @@ export function FabricatorPage() {
   const [layerDragId, setLayerDragId] = useState<string | null>(null)
   const [showJointPivots, setShowJointPivots] = useState(true)
   const [zoom, setZoom] = useState(1)
+  const [pan, setPan] = useState({ x: 0, y: 0 })
+  const [panning, setPanning] = useState(false)
   const [stageSize, setStageSize] = useState({ width: 1, height: 1 })
   const [renamingPartId, setRenamingPartId] = useState<string | null>(null)
   const stageRef = useRef<HTMLDivElement>(null)
   const dragRef = useRef<DragState | null>(null)
   const anchorDragRef = useRef<AnchorDragState | null>(null)
+  const panRef = useRef<PanState | null>(null)
   const layerDragRef = useRef<string | null>(null)
   const workerRef = useRef<Worker | null>(null)
   const requestId = useRef(0)
@@ -238,7 +242,7 @@ export function FabricatorPage() {
       try { await persistProject(project) } catch (reason) { setError(reason instanceof Error ? `Falha ao salvar antes de trocar de slot: ${reason.message}` : 'Falha ao salvar antes de trocar de slot.'); return }
     }
     workerRef.current?.terminate(); workerRef.current = null
-    setActiveSlot(slot); setProject(null); setSelectedIds([]); setError(''); dirtyAssets.current.clear(); setZoom(1)
+    setActiveSlot(slot); setProject(null); setSelectedIds([]); setError(''); dirtyAssets.current.clear(); setZoom(1); setPan({ x: 0, y: 0 })
     const summary = slots[slot - 1]
     if (!summary) return
     try {
@@ -453,6 +457,20 @@ export function FabricatorPage() {
     dragRef.current = { partId: part.id, pointerId: event.pointerId, x: event.clientX, y: event.clientY }
   }
 
+  const beginPan = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!project || (event.target instanceof Element && event.target.closest('.model-canvas-part, .model-joint-anchor, .model-stage-tools'))) return
+    event.preventDefault()
+    event.currentTarget.setPointerCapture(event.pointerId)
+    panRef.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, originX: pan.x, originY: pan.y }
+    setPanning(true)
+  }
+
+  const movePan = (event: React.PointerEvent<HTMLDivElement>) => {
+    const drag = panRef.current
+    if (!drag || drag.pointerId !== event.pointerId) return
+    setPan({ x: drag.originX + event.clientX - drag.x, y: drag.originY + event.clientY - drag.y })
+  }
+
   const movePartDrag = (event: React.PointerEvent<HTMLDivElement>) => {
     const drag = dragRef.current
     if (!drag || !project || drag.pointerId !== event.pointerId || !scale) return
@@ -552,16 +570,16 @@ export function FabricatorPage() {
               <div className="model-editor-content">
                 <section className="model-canvas-column" aria-label="Prévia e montagem">
                   <div className="model-canvas-topline"><span><i /> CANVAS DE MONTAGEM</span><span>{project.width} × {project.height}</span></div>
-                  <div ref={stageRef} className="model-stage" onPointerMove={(event) => { movePartDrag(event); moveAnchorDrag(event) }} onPointerUp={(event) => { if (dragRef.current?.pointerId === event.pointerId) dragRef.current = null; if (anchorDragRef.current?.pointerId === event.pointerId) anchorDragRef.current = null }} onPointerCancel={() => { dragRef.current = null; anchorDragRef.current = null }}>
-                    <div className="model-artboard" style={{ width: `${project.width * scale}px`, height: `${project.height * scale}px` }}>
+                  <div ref={stageRef} className={`model-stage${panning ? ' panning' : ''}`} onPointerDown={beginPan} onPointerMove={(event) => { movePan(event); movePartDrag(event); moveAnchorDrag(event) }} onPointerUp={(event) => { if (dragRef.current?.pointerId === event.pointerId) dragRef.current = null; if (anchorDragRef.current?.pointerId === event.pointerId) anchorDragRef.current = null; if (panRef.current?.pointerId === event.pointerId) { panRef.current = null; setPanning(false) } }} onPointerCancel={() => { dragRef.current = null; anchorDragRef.current = null; panRef.current = null; setPanning(false) }}>
+                    <div className="model-artboard" style={{ width: `${project.width * scale}px`, height: `${project.height * scale}px`, left: `calc(50% + ${pan.x}px)`, top: `calc(50% + ${pan.y}px)` }}>
                       {canvasParts.filter((part) => !hiddenPartIds.includes(part.id)).map((part) => <img key={part.id} className={`model-canvas-part${selectedIds.includes(part.id) ? ' selected' : ''}${connectFromId === part.id ? ' connect-source' : ''}`} src={part.dataUrl} alt={part.name} draggable={false} onClick={(event) => { event.stopPropagation(); handlePartClick(part.id, event.ctrlKey || event.metaKey) }} onPointerDown={(event) => beginPartDrag(event, part)} style={{ left: part.x * scale, top: part.y * scale, width: part.width * scale, height: part.height * scale, transform: `rotate(${part.rotation}deg)` }} />)}
                       <svg className="model-joint-layer" viewBox={`0 0 ${project.width} ${project.height}`} preserveAspectRatio="none" aria-label="Conexões entre as peças">
                         {showJointPivots && jointMarkers.map(({ part, anchor, offset, fixed }) => <circle key={part.id} className={`model-joint-anchor${fixed ? ' fixed' : selectedIds.includes(part.id) ? ' selected' : ''}`} cx={anchor.x + offset / scale} cy={anchor.y} r={Math.max(selectedIds.includes(part.id) ? 11 : 8, (selectedIds.includes(part.id) ? 13 : 10) / scale)} aria-label={`Pivô de ${part.name}`} onPointerDown={(event) => beginAnchorDrag(event, part.id, offset)} />)}
                       </svg>
                     </div>
-                    <div className="model-stage-tools"><span>{Math.round(zoom * 100)}%</span><button onClick={() => setZoom((value) => Math.min(2.4, value + 0.15))} title="Aumentar zoom" type="button"><Icon name="zoomIn" /></button><button onClick={() => setZoom((value) => Math.max(0.5, value - 0.15))} title="Diminuir zoom" type="button"><Icon name="zoomOut" /></button><button onClick={() => setZoom(1)} title="Ajustar ao espaço" type="button"><Icon name="frame" /></button></div>
+                    <div className="model-stage-tools"><span>{Math.round(zoom * 100)}%</span><button onClick={() => setZoom((value) => Math.min(2.4, value + 0.15))} title="Aumentar zoom" type="button"><Icon name="zoomIn" /></button><button onClick={() => setZoom((value) => Math.max(0.5, value - 0.15))} title="Diminuir zoom" type="button"><Icon name="zoomOut" /></button><button onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }) }} title="Centralizar prévia" type="button"><Icon name="frame" /></button></div>
                   </div>
-                  <div className="model-canvas-footer"><span><kbd>Arraste</kbd> para posicionar <i /> <kbd>Ctrl</kbd> + clique para selecionar várias</span><span>{project.parts.length} peças <i /> {project.joints.length} conexões</span></div>
+                  <div className="model-canvas-footer"><span><kbd>Arraste o fundo</kbd> para mover a prévia <i /> <kbd>Arraste a peça</kbd> para posicionar <i /> <kbd>Ctrl</kbd> + clique para selecionar várias</span><span>{project.parts.length} peças <i /> {project.joints.length} conexões</span></div>
                 </section>
 
                 <aside className="model-parts-panel model-work-panel" aria-label="Painel de edição">
