@@ -282,22 +282,6 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .model-part-card-name { width: 100%; overflow: hidden; color: #635b65; font-size: 12px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; text-align: center; }
 .model-part-card small { color: #aaa2ab; font-size: 12px; }
 .model-no-parts { grid-column: 1/-1; color: #aaa2ab; font-size: 12px; text-align: center; }
-.model-layer-panel { min-height: 100px; max-height: 25%; flex: 0 1 25%; display: flex; flex-direction: column; gap: 5px; overflow: hidden; margin: 0 8px 7px; padding: 6px 0 7px; border-bottom: 1px solid #f0ebef; }
-.model-layer-heading { display: flex; flex: 0 0 auto; align-items: center; justify-content: space-between; color: #514a53; font-size: 12px; font-weight: 700; }
-.model-layer-heading span { color: #aaa1aa; font-size: 12px; font-weight: 400; }
-.model-layer-list { min-height: 0; display: flex; flex-direction: column; gap: 3px; overflow: auto; scrollbar-width: thin; }
-.model-layer-row { min-height: 28px; display: flex; flex: 0 0 28px; align-items: center; gap: 3px; padding: 2px 3px; border: 1px solid transparent; border-radius: 6px; background: #faf9fa; }
-.model-layer-row.selected { border-color: #f0cada; background: #fff4f8; }
-.model-layer-row.dragging { opacity: .45; }
-.model-layer-select { min-width: 0; height: 24px; display: flex; flex: 1; align-items: center; gap: 5px; overflow: hidden; padding: 0 3px; border: 0; background: transparent; color: #635b65; text-align: left; cursor: grab; }
-.model-layer-grip { flex: 0 0 auto; color: #ae9eaa; font-size: 14px; }
-.model-layer-name { min-width: 0; flex: 1; overflow: hidden; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
-.model-layer-select small { flex: 0 0 auto; color: #aaa1aa; font-size: 12px; }
-.model-layer-control { width: 25px; height: 24px; display: grid; flex: 0 0 25px; place-items: center; padding: 0; border: 1px solid #eee8ed; border-radius: 5px; background: #fff; color: #716875; font-size: 13px; cursor: pointer; }
-.model-layer-control:hover:not(:disabled) { border-color: #edc7d5; background: #fff6f9; color: #a44166; }
-.model-layer-control:disabled { opacity: .35; cursor: not-allowed; }
-.model-layer-control.visibility { color: #a44166; }
-.model-layer-control.visibility.hidden { color: #aaa1aa; }
 .model-part-actions { min-height: 125px; max-height: 46%; flex: 0 1 46%; display: flex; flex-direction: column; gap: 7px; overflow: auto; padding: 0 9px 8px; scrollbar-width: thin; }
 .model-action-row { display: flex; align-items: center; gap: 5px; }
 .model-action-row > .model-tool-button { min-width: 0; flex: 1; }

@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FabricatorAssetSave, FabricatorProject, FabricatorSlotSummary, JointLink, ModelPart } from '../../../../shared/fabricator'
 import { Icon, type IconName } from '../../ui/components/Icon'
-import { linkParts, normalizedLayerOrder, orderedParts, suggestJoints } from './models/rig'
 
 const sections: { label: string; icon: IconName }[] = [
   { label: 'Modelos', icon: 'sparkles' }, { label: 'Personagens', icon: 'user' },
@@ -21,8 +20,6 @@ type ProcessorMessage =
 type DragState = { partId: string; pointerId: number; x: number; y: number }
 type AnchorDragState = { jointId: string; side: 'parentAnchor' | 'childAnchor'; pointerId: number; x: number; y: number }
 
-function makeId(): string { return crypto.randomUUID() }
-
 function bytesToDataUrl(buffer: ArrayBuffer): string {
   const bytes = new Uint8Array(buffer)
   let binary = ''
@@ -31,6 +28,41 @@ function bytesToDataUrl(buffer: ArrayBuffer): string {
     binary += String.fromCharCode(...bytes.subarray(offset, Math.min(offset + chunk, bytes.length)))
   }
   return `data:image/png;base64,${btoa(binary)}`
+}
+
+function makeId(): string { return crypto.randomUUID() }
+
+function edgePoint(part: ModelPart, target: ModelPart): { x: number; y: number } {
+  const center = { x: part.x + part.width / 2, y: part.y + part.height / 2 }
+  const targetCenter = { x: target.x + target.width / 2, y: target.y + target.height / 2 }
+  const dx = targetCenter.x - center.x
+  const dy = targetCenter.y - center.y
+  const horizontal = Math.abs(dx / Math.max(1, part.width)) > Math.abs(dy / Math.max(1, part.height))
+  return horizontal
+    ? { x: center.x + Math.sign(dx || 1) * part.width / 2, y: center.y + dy * part.width / (2 * Math.max(1, Math.abs(dx))) }
+    : { x: center.x + dx * part.height / (2 * Math.max(1, Math.abs(dy))), y: center.y + Math.sign(dy || 1) * part.height / 2 }
+}
+
+function linkParts(parent: ModelPart, child: ModelPart, suggested = false): JointLink {
+  return { id: makeId(), parentPartId: parent.id, childPartId: child.id, parentAnchor: edgePoint(parent, child), childAnchor: edgePoint(child, parent), suggested }
+}
+
+function suggestJoints(parts: ModelPart[]): JointLink[] {
+  const torso = parts.find((part) => /tronco|corpo/i.test(part.name))
+  const head = parts.find((part) => /cabeça/i.test(part.name))
+  if (!torso || parts.length < 2) return []
+  const links: JointLink[] = []
+  if (head) links.push(linkParts(torso, head, true))
+  const arms = parts.filter((part) => /braço esquerdo|braço direito/i.test(part.name))
+  const forearms = parts.filter((part) => /antebraço/i.test(part.name))
+  for (const arm of arms) {
+    links.push(linkParts(torso, arm, true))
+    const side = arm.name.toLowerCase().includes('esquerdo') ? 'esquerdo' : 'direito'
+    const forearm = forearms.find((part) => part.name.toLowerCase().includes(side))
+    if (forearm) links.push(linkParts(arm, forearm, true))
+  }
+  for (const leg of parts.filter((part) => /perna/i.test(part.name))) links.push(linkParts(torso, leg, true))
+  return links
 }
 
 function rotatePoint(point: { x: number; y: number }, origin: { x: number; y: number }, angle: number) {
@@ -94,7 +126,6 @@ export function FabricatorPage() {
   const [filter, setFilter] = useState('')
   const [connectMode, setConnectMode] = useState(false)
   const [connectFromId, setConnectFromId] = useState<string | null>(null)
-  const [layerDragId, setLayerDragId] = useState<string | null>(null)
   const [zoom, setZoom] = useState(1)
   const [stageSize, setStageSize] = useState({ width: 1, height: 1 })
   const [renamingPartId, setRenamingPartId] = useState<string | null>(null)
@@ -145,53 +176,11 @@ export function FabricatorPage() {
   const selectedPartIds = selectedIds
   const selectedPart = project?.parts.find((part) => part.id === selectedPartIds[0]) ?? null
   const visibleParts = useMemo(() => (project?.parts ?? []).filter((part) => part.name.toLowerCase().includes(filter.toLowerCase())), [project, filter])
-  const canvasParts = useMemo(() => project ? orderedParts(project.parts, project.layerOrder) : [], [project])
-  const hiddenPartIds = project?.hiddenPartIds ?? []
   const scale = project ? Math.max(0.05, Math.min((stageSize.width - 48) / project.width, (stageSize.height - 48) / project.height)) * zoom : 1
 
   const updateProject = useCallback((updater: (current: FabricatorProject) => FabricatorProject) => {
-    setProject((current) => {
-      if (!current) return current
-      const next = updater(current)
-      const validIds = new Set(next.parts.map((part) => part.id))
-      return {
-        ...next,
-        layerOrder: normalizedLayerOrder(next.parts, next.layerOrder),
-        hiddenPartIds: (next.hiddenPartIds ?? []).filter((id) => validIds.has(id)),
-        updatedAt: new Date().toISOString()
-      }
-    })
+    setProject((current) => current ? { ...updater(current), updatedAt: new Date().toISOString() } : current)
   }, [])
-
-  const moveLayer = (partId: string, direction: -1 | 1) => {
-    updateProject((current) => {
-      const frontToBack = normalizedLayerOrder(current.parts, current.layerOrder).reverse()
-      const index = frontToBack.indexOf(partId)
-      const nextIndex = index + direction
-      if (index < 0 || nextIndex < 0 || nextIndex >= frontToBack.length) return current
-      ;[frontToBack[index], frontToBack[nextIndex]] = [frontToBack[nextIndex], frontToBack[index]]
-      return { ...current, layerOrder: frontToBack.reverse() }
-    })
-  }
-
-  const placeLayer = (sourceId: string, targetId: string) => {
-    if (sourceId === targetId) return
-    updateProject((current) => {
-      const frontToBack = normalizedLayerOrder(current.parts, current.layerOrder).reverse()
-      const from = frontToBack.indexOf(sourceId)
-      const to = frontToBack.indexOf(targetId)
-      if (from < 0 || to < 0) return current
-      frontToBack.splice(to, 0, frontToBack.splice(from, 1)[0])
-      return { ...current, layerOrder: frontToBack.reverse() }
-    })
-  }
-
-  const togglePartVisibility = (partId: string) => updateProject((current) => {
-    const hidden = new Set(current.hiddenPartIds ?? [])
-    if (hidden.has(partId)) hidden.delete(partId)
-    else hidden.add(partId)
-    return { ...current, hiddenPartIds: Array.from(hidden) }
-  })
 
   const selectSlot = async (slot: number) => {
     if (project) {
@@ -205,11 +194,7 @@ export function FabricatorPage() {
     try {
       const loaded = await window.desktop.loadFabricatorSlot(slot)
       if (!loaded) throw new Error('O projeto salvo não pôde ser carregado.')
-      setProject({
-        ...loaded,
-        layerOrder: normalizedLayerOrder(loaded.parts, loaded.layerOrder),
-        hiddenPartIds: loaded.hiddenPartIds ?? []
-      }); setSelectedIds(loaded.parts[0] ? [loaded.parts[0].id] : [])
+      setProject(loaded); setSelectedIds(loaded.parts[0] ? [loaded.parts[0].id] : [])
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Falha ao abrir modelo.') }
   }
 
@@ -231,7 +216,7 @@ export function FabricatorPage() {
       const nextProject: FabricatorProject = {
         schemaVersion: 1, slot: metadata.slot, name: metadata.name, sourceName: metadata.sourceName,
         sourceAssetName: metadata.sourceAssetName, sourceDataUrl, width: message.width, height: message.height,
-        tolerance, parts, joints: suggestJoints(parts), layerOrder: parts.map((part) => part.id), hiddenPartIds: [], updatedAt: new Date().toISOString()
+        tolerance, parts, joints: suggestJoints(parts), updatedAt: new Date().toISOString()
       }
       setProject(nextProject); setSelectedIds(parts[0] ? [parts[0].id] : [])
     }
@@ -432,9 +417,9 @@ export function FabricatorPage() {
                   <div className="model-canvas-topline"><span><i /> CANVAS DE MONTAGEM</span><span>{project.width} × {project.height}</span></div>
                   <div ref={stageRef} className="model-stage" onPointerMove={(event) => { movePartDrag(event); moveAnchorDrag(event) }} onPointerUp={(event) => { if (dragRef.current?.pointerId === event.pointerId) dragRef.current = null; if (anchorDragRef.current?.pointerId === event.pointerId) anchorDragRef.current = null }} onPointerCancel={() => { dragRef.current = null; anchorDragRef.current = null }}>
                     <div className="model-artboard" style={{ width: `${project.width * scale}px`, height: `${project.height * scale}px` }}>
-                      {canvasParts.map((part, index) => hiddenPartIds.includes(part.id) ? null : <img key={part.id} className={`model-canvas-part${selectedIds.includes(part.id) ? ' selected' : ''}${connectFromId === part.id ? ' connect-source' : ''}`} src={part.dataUrl} alt={part.name} draggable={false} onClick={(event) => { event.stopPropagation(); handlePartClick(part.id, event.ctrlKey || event.metaKey) }} onPointerDown={(event) => beginPartDrag(event, part)} style={{ left: part.x * scale, top: part.y * scale, width: part.width * scale, height: part.height * scale, zIndex: index + 1, transform: `rotate(${part.rotation}deg)` }} />)}
+                      {project.parts.map((part) => <img key={part.id} className={`model-canvas-part${selectedIds.includes(part.id) ? ' selected' : ''}${connectFromId === part.id ? ' connect-source' : ''}`} src={part.dataUrl} alt={part.name} draggable={false} onClick={(event) => { event.stopPropagation(); handlePartClick(part.id, event.ctrlKey || event.metaKey) }} onPointerDown={(event) => beginPartDrag(event, part)} style={{ left: part.x * scale, top: part.y * scale, width: part.width * scale, height: part.height * scale, transform: `rotate(${part.rotation}deg)` }} />)}
                       <svg className="model-joint-layer" viewBox={`0 0 ${project.width} ${project.height}`} preserveAspectRatio="none" aria-label="Conexões entre as peças">
-                        {project.joints.filter((joint) => !hiddenPartIds.includes(joint.parentPartId) && !hiddenPartIds.includes(joint.childPartId)).map((joint) => <g key={joint.id} className={joint.suggested ? 'suggested' : ''}>
+                        {project.joints.map((joint) => <g key={joint.id} className={joint.suggested ? 'suggested' : ''}>
                           <line x1={joint.parentAnchor.x} y1={joint.parentAnchor.y} x2={joint.childAnchor.x} y2={joint.childAnchor.y} />
                           <circle className="model-joint-anchor" cx={joint.parentAnchor.x} cy={joint.parentAnchor.y} r={Math.max(7, 9 / scale)} onPointerDown={(event) => beginAnchorDrag(event, joint, 'parentAnchor')} />
                           <circle className="model-joint-anchor child" cx={joint.childAnchor.x} cy={joint.childAnchor.y} r={Math.max(7, 9 / scale)} onPointerDown={(event) => beginAnchorDrag(event, joint, 'childAnchor')} />
@@ -456,24 +441,8 @@ export function FabricatorPage() {
                     </button>)}
                     {visibleParts.length === 0 && <p className="model-no-parts">Nenhuma peça encontrada.</p>}
                   </div>
-                  <section className="model-layer-panel" aria-label="Camadas das peças">
-                    <div className="model-layer-heading"><strong>Camadas</strong><span>frente → fundo</span></div>
-                    <div className="model-layer-list">
-                      {[...orderedParts(project.parts, project.layerOrder)].reverse().map((part, index, frontToBack) => {
-                        const hidden = hiddenPartIds.includes(part.id)
-                        return <div key={part.id} className={`model-layer-row${selectedIds.includes(part.id) ? ' selected' : ''}${layerDragId === part.id ? ' dragging' : ''}`} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); const source = event.dataTransfer.getData('text/plain') || layerDragId; if (source) placeLayer(source, part.id); setLayerDragId(null) }}>
-                          <button className="model-layer-select" draggable onDragStart={(event) => { setLayerDragId(part.id); event.dataTransfer.setData('text/plain', part.id); event.dataTransfer.effectAllowed = 'move' }} onDragEnd={() => setLayerDragId(null)} onClick={(event) => handlePartClick(part.id, event.ctrlKey || event.metaKey)} type="button" title={`Selecionar ${part.name}; arraste para reordenar`}>
-                            <span className="model-layer-grip" aria-hidden="true">⠿</span><span className="model-layer-name">{part.name}</span><small>{String(index + 1).padStart(2, '0')}</small>
-                          </button>
-                          <button className="model-layer-control" onClick={() => moveLayer(part.id, -1)} disabled={index === 0} type="button" title="Trazer para frente" aria-label={`Trazer ${part.name} para frente`}>↑</button>
-                          <button className="model-layer-control" onClick={() => moveLayer(part.id, 1)} disabled={index === frontToBack.length - 1} type="button" title="Enviar para trás" aria-label={`Enviar ${part.name} para trás`}>↓</button>
-                          <button className={`model-layer-control visibility${hidden ? ' hidden' : ''}`} onClick={() => togglePartVisibility(part.id)} type="button" title={hidden ? 'Mostrar peça' : 'Ocultar peça'} aria-label={`${hidden ? 'Mostrar' : 'Ocultar'} ${part.name}`} aria-pressed={!hidden}>{hidden ? '○' : '◉'}</button>
-                        </div>
-                      })}
-                    </div>
-                  </section>
                   <div className="model-part-actions">
-                    <div className="model-action-row"><button className={`model-tool-button${connectMode ? ' active' : ''}`} onClick={() => { setConnectMode((value) => !value); setConnectFromId(null) }} type="button"><span className="model-link-dot" />{connectMode ? 'Clique em duas peças' : 'Ligar peças'}</button><button className="model-tool-button" onClick={() => updateProject((current) => ({ ...current, joints: [...current.joints.filter((joint) => !joint.suggested), ...suggestJoints(current.parts)] }))} type="button" title="Completa automaticamente as juntas ausentes usando nomes e proximidade das peças">Auto-conectar</button></div>
+                    <div className="model-action-row"><button className={`model-tool-button${connectMode ? ' active' : ''}`} onClick={() => { setConnectMode((value) => !value); setConnectFromId(null) }} type="button"><span className="model-link-dot" />{connectMode ? 'Clique em duas peças' : 'Ligar peças'}</button><button className="model-tool-button" onClick={() => updateProject((current) => ({ ...current, joints: [...current.joints.filter((joint) => !joint.suggested), ...suggestJoints(current.parts)] }))} type="button">Sugerir juntas</button></div>
                     {connectMode && <p className="model-connect-hint">Selecione a peça-pai e depois a peça que ela movimenta.</p>}
                     <div className="model-joint-list">
                       <div className="model-joint-list-heading"><strong>Articulações</strong><small>{project.joints.length}</small></div>

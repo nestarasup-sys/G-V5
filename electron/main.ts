@@ -119,8 +119,6 @@ async function registerFabricatorHandlers(): Promise<void> {
       height: project.height,
       tolerance: project.tolerance,
       joints: project.joints,
-      layerOrder: project.layerOrder,
-      hiddenPartIds: project.hiddenPartIds,
       updatedAt: project.updatedAt
     }
     const manifest = { ...projectDocument, parts, sourceFile }
