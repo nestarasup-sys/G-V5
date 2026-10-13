@@ -451,9 +451,20 @@ export function FabricatorPage() {
 
   const updatePartPosition = (partId: string, dx: number, dy: number) => {
     updateProject((current) => {
-      // A fixed connection moves only its immediate pair. It does not turn the
-      // entire connected rig into one rigid group.
-      const movingIds = new Set([partId, ...current.joints.filter((joint) => joint.fixed && joint.parentPartId === partId).map((joint) => joint.childPartId)])
+      // A fixed joint carries its whole child branch. Without walking the
+      // hierarchy, moving (for example) the torso would leave forearms and
+      // lower legs behind even when their parent pieces were fixed together.
+      const movingIds = new Set<string>([partId])
+      let addedPart = true
+      while (addedPart) {
+        addedPart = false
+        for (const joint of current.joints) {
+          if (joint.fixed && movingIds.has(joint.parentPartId) && !movingIds.has(joint.childPartId)) {
+            movingIds.add(joint.childPartId)
+            addedPart = true
+          }
+        }
+      }
       return {
         ...current,
         parts: current.parts.map((part) => movingIds.has(part.id) ? { ...part, x: part.x + dx, y: part.y + dy, ...(part.jointAnchor ? { jointAnchor: { x: part.jointAnchor.x + dx, y: part.jointAnchor.y + dy } } : {}) } : part),
