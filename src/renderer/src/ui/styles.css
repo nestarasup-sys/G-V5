@@ -239,6 +239,7 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .pose-part.selected { filter: drop-shadow(0 0 2px #e15683) drop-shadow(0 0 4px #e156835e); }
 .pose-joints { position: absolute; z-index: 50; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
 .pose-joint-marker { fill: #e34d64; stroke: #fff; stroke-width: 2; vector-effect: non-scaling-stroke; }
+.pose-joint-marker { pointer-events: all; cursor: pointer; }
 .pose-joint-marker.fixed { fill: #26a875; }
 .pose-joint-marker.selected { fill: #f2c23c; }
 .pose-stage-tools { position: absolute; z-index: 60; right: 8px; bottom: 8px; display: flex; align-items: center; gap: 4px; padding: 4px; border: 1px solid #ece6eb; border-radius: 8px; background: #ffffffdf; }
@@ -297,6 +298,18 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .pose-mode-selector button { min-height: 26px; border: 1px solid #eee7ec; border-radius: 6px; background: #fff; color: #817883; font-size: 9px; cursor: pointer; }
 .pose-mode-selector button.active { border-color: #e9b2c5; background: #fff0f5; color: #a44166; font-weight: 700; }
 .pose-rotation-range { width: 100%; margin: 0; accent-color: #c74b75; }
+.pose-rotation-card { display: grid; gap: 7px; padding: 9px; border: 1px solid #f0dce4; border-radius: 8px; background: linear-gradient(145deg, #fff8fb, #fff); }
+.pose-rotation-title { color: #655563; font-size: 10px; font-weight: 750; }
+.pose-rotation-card .pose-mode-selector button { min-height: 34px; padding: 4px 5px; font-size: 10px; line-height: 1.25; }
+.pose-pivot-hint { padding: 6px 7px; border-radius: 6px; background: #f8f2f5; color: #8e7784; font-size: 9px; line-height: 1.45; }
+.pose-rotation-label output { color: #a44166; font-size: 12px; font-weight: 800; }
+.pose-rotation-actions { display: flex; align-items: center; gap: 4px; }
+.pose-rotation-actions > button, .pose-rotation-actions > label { min-width: 0; height: 29px; display: inline-flex; align-items: center; justify-content: center; gap: 2px; padding: 0 7px; border: 1px solid #eee0e7; border-radius: 6px; background: #fff; color: #756675; font-size: 10px; font-weight: 700; }
+.pose-rotation-actions > button { cursor: pointer; }
+.pose-rotation-actions > button:hover { border-color: #e5afc2; background: #fff3f7; color: #a44166; }
+.pose-rotation-actions > label { flex: 1; color: #aa456b; }
+.pose-rotation-actions input { width: 46px; border: 0; outline: 0; color: #554d57; font-size: 11px; text-align: right; }
+.pose-rotation-actions .pose-rotation-reset { margin-left: auto; }
 .pose-layer-list { gap: 5px; }
 .pose-layer-row { display: flex; align-items: center; gap: 4px; padding: 5px; border: 1px solid #eee9ed; border-radius: 7px; }
 .pose-layer-row.selected { border-color: #e9a0b7; background: #fff8fa; }
@@ -315,6 +328,12 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .pose-rig-actions { display: flex; gap: 4px; }
 .pose-rig-actions button:first-child { margin-right: auto; }
 .pose-rig-actions button.fixed { border-color: #bfe1d0; background: #edf8f1; color: #36815b; }
+.pose-rig-status { display: flex; align-items: center; gap: 5px; color: #978d98; font-size: 9px; }
+.pose-rig-status i { width: 7px; height: 7px; border-radius: 50%; background: #df5a69; }
+.pose-rig-row.fixed .pose-rig-status { color: #36815b; }
+.pose-rig-row.fixed .pose-rig-status i { background: #26a875; }
+.pose-rig-select { justify-self: start; min-height: 26px; padding: 0 8px; border: 1px solid #eee7ec; border-radius: 6px; background: #fff; color: #8b5267; font-size: 9px; font-weight: 700; cursor: pointer; }
+.pose-rig-select:hover { border-color: #e7aec1; background: #fff6f9; }
 .pose-error, .pose-recovery { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 7px 10px 0; padding: 7px 9px; border: 1px solid #efced6; border-radius: 8px; background: #fff7f9; color: #9c4c62; font-size: 10px; }
 .pose-error button, .pose-recovery button { min-height: 25px; padding: 0 7px; border: 1px solid #eed4dc; border-radius: 6px; background: #fff; color: #8b5264; font-size: 10px; cursor: pointer; }
 .pose-recovery > span { display: grid; gap: 3px; }

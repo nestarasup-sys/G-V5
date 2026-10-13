@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FabricatorPose, FabricatorPoseDraft, FabricatorPoseDraftSave, FabricatorPoseSave, FabricatorPoseSummary, FabricatorProject, FabricatorSlotSummary, PosePart } from '../../../../shared/fabricator'
 import { Icon } from '../../ui/components/Icon'
-import { jointPivot, normalizeLayerOrder, orderedParts } from './models/rig'
+import { jointPivot, normalizeLayerOrder, orderedParts, partJointAnchor } from './models/rig'
 
 type DraftProject = Omit<FabricatorPose, 'slot'>
 type PanelTab = 'parts' | 'layers' | 'joints'
@@ -22,6 +22,24 @@ function rotatePoint(point: { x: number; y: number }, origin: { x: number; y: nu
   const x = point.x - origin.x
   const y = point.y - origin.y
   return { x: origin.x + x * Math.cos(radians) - y * Math.sin(radians), y: origin.y + x * Math.sin(radians) + y * Math.cos(radians) }
+}
+
+function translatePart(project: DraftProject, partId: string, dx: number, dy: number): DraftProject {
+  return {
+    ...project,
+    parts: project.parts.map((part) => part.id === partId ? {
+      ...part,
+      x: part.x + dx,
+      y: part.y + dy,
+      ...(part.jointAnchor ? { jointAnchor: { x: part.jointAnchor.x + dx, y: part.jointAnchor.y + dy } } : {})
+    } : part),
+    joints: project.joints.map((joint) => ({
+      ...joint,
+      ...((joint.parentPartId === partId || joint.childPartId === partId) ? { pivot: { x: jointPivot(joint).x + dx, y: jointPivot(joint).y + dy } } : {}),
+      ...(joint.parentPartId === partId ? { parentAnchor: { x: joint.parentAnchor.x + dx, y: joint.parentAnchor.y + dy } } : {}),
+      ...(joint.childPartId === partId ? { childAnchor: { x: joint.childAnchor.x + dx, y: joint.childAnchor.y + dy } } : {})
+    }))
+  }
 }
 
 function toSavedPose(project: DraftProject, slot: number): FabricatorPoseSave {
@@ -343,41 +361,53 @@ export function PoseWorkspace() {
   const filteredParts = useMemo(() => parts.filter((part) => part.name.toLocaleLowerCase().includes(partFilter.toLocaleLowerCase())), [parts, partFilter])
   const scale = displayProject ? Math.max(0.05, Math.min((stageSize.width - 48) / displayProject.width, (stageSize.height - 48) / displayProject.height)) * zoom : 1
 
-  const movePart = (partId: string, dx: number, dy: number) => changeProject((current) => ({
-    ...current,
-    parts: current.parts.map((part) => part.id === partId ? { ...part, x: part.x + dx, y: part.y + dy } : part),
-    joints: current.joints.map((joint) => ({
-      ...joint,
-      ...((joint.parentPartId === partId || joint.childPartId === partId) ? { pivot: { x: jointPivot(joint).x + dx, y: jointPivot(joint).y + dy } } : {}),
-      ...(joint.parentPartId === partId ? { parentAnchor: { x: joint.parentAnchor.x + dx, y: joint.parentAnchor.y + dy } } : {}),
-      ...(joint.childPartId === partId ? { childAnchor: { x: joint.childAnchor.x + dx, y: joint.childAnchor.y + dy } } : {})
-    }))
-  }), false)
+  const movePart = (partId: string, dx: number, dy: number) => changeProject((current) => translatePart(current, partId, dx, dy), false)
 
-  const rotateBranch = (jointId: string, amount: number) => changeProject((current) => {
-    const joint = current.joints.find((item) => item.id === jointId)
-    if (!joint) return current
-    const affected = new Set<string>([joint.childPartId])
-    let changed = true
-    while (changed) {
-      changed = false
-      for (const item of current.joints) if (item.fixed && affected.has(item.parentPartId) && !affected.has(item.childPartId)) { affected.add(item.childPartId); changed = true }
+  const setPartPosition = (partId: string, axis: 'x' | 'y', value: number) => changeProject((current) => {
+    const part = current.parts.find((item) => item.id === partId)
+    if (!part || !Number.isFinite(value)) return current
+    const delta = value - part[axis]
+    return axis === 'x' ? translatePart(current, partId, delta, 0) : translatePart(current, partId, 0, delta)
+  })
+
+  const rotateSelected = (targetAngle: number, includeConnectedChildren: boolean) => changeProject((current) => {
+    const selected = current.parts.find((part) => part.id === selectedId)
+    if (!selected) return current
+    const amount = targetAngle - selected.rotation
+    if (!amount) return current
+    const origin = partJointAnchor(selected, current.joints) ?? { x: selected.x + selected.width / 2, y: selected.y + selected.height / 2 }
+    const affected = new Set<string>([selected.id])
+    if (includeConnectedChildren) {
+      let changed = true
+      while (changed) {
+        changed = false
+        for (const joint of current.joints) if (joint.fixed && affected.has(joint.parentPartId) && !affected.has(joint.childPartId)) {
+          affected.add(joint.childPartId)
+          changed = true
+        }
+      }
     }
-    const origin = jointPivot(joint)
-    return {
-      ...current,
-      parts: current.parts.map((part) => {
-        if (!affected.has(part.id)) return part
-        const center = rotatePoint({ x: part.x + part.width / 2, y: part.y + part.height / 2 }, origin, amount)
-        return { ...part, x: center.x - part.width / 2, y: center.y - part.height / 2, rotation: (part.rotation + amount) % 360, ...(part.jointAnchor ? { jointAnchor: rotatePoint(part.jointAnchor, origin, amount) } : {}) }
-      }),
-      joints: current.joints.map((item) => ({
-        ...item,
-        ...((affected.has(item.parentPartId) || affected.has(item.childPartId)) ? { pivot: rotatePoint(jointPivot(item), origin, amount) } : {}),
-        ...(affected.has(item.parentPartId) ? { parentAnchor: rotatePoint(item.parentAnchor, origin, amount) } : {}),
-        ...(affected.has(item.childPartId) ? { childAnchor: rotatePoint(item.childAnchor, origin, amount) } : {})
-      }))
-    }
+    const parts = current.parts.map((part) => {
+      if (!affected.has(part.id)) return part
+      const center = rotatePoint({ x: part.x + part.width / 2, y: part.y + part.height / 2 }, origin, amount)
+      const anchor = partJointAnchor(part, current.joints)
+      return {
+        ...part,
+        x: center.x - part.width / 2,
+        y: center.y - part.height / 2,
+        rotation: part.rotation + amount,
+        ...(anchor ? { jointAnchor: rotatePoint(anchor, origin, amount) } : {})
+      }
+    })
+    const partById = new Map(parts.map((part) => [part.id, part]))
+    const joints = current.joints.map((joint) => {
+      const parent = partById.get(joint.parentPartId)
+      const child = partById.get(joint.childPartId)
+      const parentAnchor = parent ? partJointAnchor(parent, current.joints) ?? joint.parentAnchor : joint.parentAnchor
+      const childAnchor = child ? partJointAnchor(child, current.joints) ?? joint.childAnchor : joint.childAnchor
+      return { ...joint, parentAnchor, childAnchor, pivot: { x: (parentAnchor.x + childAnchor.x) / 2, y: (parentAnchor.y + childAnchor.y) / 2 } }
+    })
+    return { ...current, parts, joints }
   })
 
   const changeLayer = (partId: string, direction: -1 | 1) => changeProject((current) => {
@@ -485,9 +515,11 @@ export function PoseWorkspace() {
           <div ref={stageRef} className={`pose-stage${panning ? ' panning' : ''}`} onPointerDown={beginPan} onPointerMove={moveCanvas} onPointerUp={stopCanvasGesture} onPointerCancel={stopCanvasGesture}>
             {displayProject ? <div className={`pose-artboard${!project ? ' source-preview' : ''}`} style={{ width: displayProject.width * scale, height: displayProject.height * scale, left: `calc(50% + ${pan.x}px)`, top: `calc(50% + ${pan.y}px)` }}>
               {visibleParts.map((part, index) => <img key={part.id} className={`pose-part${selectedId === part.id ? ' selected' : ''}`} src={part.dataUrl} alt={part.name} draggable={false} onClick={(event) => { event.stopPropagation(); setSelectedId(part.id) }} onPointerDown={(event) => startPartDrag(event, part)} style={{ left: part.x * scale, top: part.y * scale, width: part.width * scale, height: part.height * scale, zIndex: index + 1, transform: `rotate(${part.rotation}deg)` }} />)}
-              {showJoints && <svg className="pose-joints" viewBox={`0 0 ${displayProject.width} ${displayProject.height}`} preserveAspectRatio="none">{displayProject.joints.map((joint) => {
-                const pivot = jointPivot(joint)
-                return <circle key={joint.id} className={`pose-joint-marker${joint.fixed ? ' fixed' : ''}${selectedId === joint.childPartId ? ' selected' : ''}`} cx={pivot.x} cy={pivot.y} r={Math.max(8, 9 / scale)} />
+              {showJoints && <svg className="pose-joints" viewBox={`0 0 ${displayProject.width} ${displayProject.height}`} preserveAspectRatio="none">{displayProject.parts.filter((part) => !/tronco|corpo/i.test(part.name)).map((part) => {
+                const anchor = partJointAnchor(part, displayProject.joints)
+                if (!anchor) return null
+                const connected = displayProject.joints.some((joint) => joint.childPartId === part.id && joint.fixed)
+                return <circle key={part.id} className={`pose-joint-marker${connected ? ' fixed' : ''}${selectedId === part.id ? ' selected' : ''}`} cx={anchor.x} cy={anchor.y} r={Math.max(8, 9 / scale)} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); if (project) setSelectedId(part.id) }} aria-label={`Bolinha de junta de ${part.name}`} />
               })}</svg>}
             </div> : <div className="pose-canvas-empty"><span><Icon name="expand" /></span><strong>{loading ? 'Carregando poses…' : 'Sua pose começa aqui'}</strong><small>Escolha um modelo salvo e crie uma pose independente.</small><button className="pose-button primary" onClick={() => setSelectingModel(true)} type="button"><Icon name="plus" /> Escolher modelo</button></div>}
             <div className="pose-stage-tools"><span>{Math.round(zoom * 100)}%</span><button title="Aumentar zoom" onClick={() => setZoom((value) => Math.min(2.5, value + 0.15))} type="button">+</button><button title="Diminuir zoom" onClick={() => setZoom((value) => Math.max(0.45, value - 0.15))} type="button">−</button><button title="Centralizar" onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }) }} type="button"><Icon name="frame" /></button></div>
@@ -513,17 +545,23 @@ export function PoseWorkspace() {
               <label className="pose-search"><Icon name="search" /><input value={partFilter} onChange={(event) => setPartFilter(event.target.value)} placeholder="Localizar peça" /></label>
               <div className="pose-piece-list">{filteredParts.map((part) => <button key={part.id} className={`pose-piece-row${selectedId === part.id ? ' selected' : ''}`} onClick={() => setSelectedId(part.id)} type="button"><span className="pose-piece-thumb"><img src={part.dataUrl} alt="" /></span><span><b>{part.name}</b><small>{Math.round(part.rotation)}°</small></span></button>)}</div>
               {selectedPart && <div className="pose-transform-controls">
-                <div className="pose-control-heading"><strong>Transformação</strong><span>Posição e rotação independentes</span></div>
-                <div className="pose-number-row"><label>X<input type="number" step="1" value={Number(selectedPart.x.toFixed(1))} onChange={(event) => changeProject((current) => ({ ...current, parts: current.parts.map((part) => part.id === selectedPart.id ? { ...part, x: Number(event.target.value) || 0 } : part) }))} /></label><label>Y<input type="number" step="1" value={Number(selectedPart.y.toFixed(1))} onChange={(event) => changeProject((current) => ({ ...current, parts: current.parts.map((part) => part.id === selectedPart.id ? { ...part, y: Number(event.target.value) || 0 } : part) }))} /></label></div>
-                <div className="pose-mode-selector"><button className={rotationMode === 'branch' ? 'active' : ''} onClick={() => setRotationMode('branch')} type="button">Girar ramo</button><button className={rotationMode === 'part' ? 'active' : ''} onClick={() => setRotationMode('part')} type="button">Girar peça</button></div>
-                {rotationMode === 'part' ? <><label className="pose-rotation-label">Rotação <output>{Math.round(selectedPart.rotation)}°</output></label><input className="pose-rotation-range" type="range" min={-180} max={180} value={Math.max(-180, Math.min(180, selectedPart.rotation))} onChange={(event) => changeProject((current) => ({ ...current, parts: current.parts.map((part) => part.id === selectedPart.id ? { ...part, rotation: Number(event.target.value) } : part) }))} /><input className="pose-rotation-number" aria-label="Rotação da peça em graus" type="number" min={-360} max={360} value={Number(selectedPart.rotation.toFixed(1))} onChange={(event) => changeProject((current) => ({ ...current, parts: current.parts.map((part) => part.id === selectedPart.id ? { ...part, rotation: Number(event.target.value) || 0 } : part) }))} /></> : <p className="pose-mode-hint">Use os controles de rotação na aba Rig para girar em torno de uma junta e mover as peças filhas fixadas.</p>}
+                <div className="pose-control-heading"><strong>Posição e rotação</strong><span>A bolinha destacada é o pivô usado no modelo.</span></div>
+                <div className="pose-number-row"><label>X<input aria-label="Posição X" type="number" step="1" value={Number(selectedPart.x.toFixed(1))} onChange={(event) => setPartPosition(selectedPart.id, 'x', Number(event.target.value))} /></label><label>Y<input aria-label="Posição Y" type="number" step="1" value={Number(selectedPart.y.toFixed(1))} onChange={(event) => setPartPosition(selectedPart.id, 'y', Number(event.target.value))} /></label></div>
+                <div className="pose-rotation-card">
+                  <span className="pose-rotation-title">Como quer girar?</span>
+                  <div className="pose-mode-selector"><button className={rotationMode === 'branch' ? 'active' : ''} onClick={() => setRotationMode('branch')} type="button">Peça + conectadas</button><button className={rotationMode === 'part' ? 'active' : ''} onClick={() => setRotationMode('part')} type="button">Só esta peça</button></div>
+                  {rotationMode === 'branch' && <small className="pose-pivot-hint">{project.joints.find((joint) => joint.childPartId === selectedPart.id) ? `Gira em torno da bolinha de ${selectedPart.name}. Filhas fixadas acompanham.` : 'Peça central: gira em torno da própria bolinha.'}</small>}
+                  <label className="pose-rotation-label">Ângulo <output>{Math.round(selectedPart.rotation)}°</output></label>
+                  <input className="pose-rotation-range" aria-label="Ângulo de rotação" type="range" min={-360} max={360} value={Math.max(-360, Math.min(360, selectedPart.rotation))} onChange={(event) => rotateSelected(Number(event.target.value), rotationMode === 'branch')} />
+                  <div className="pose-rotation-actions"><button onClick={() => rotateSelected(selectedPart.rotation - 15, rotationMode === 'branch')} type="button">−15°</button><label><input aria-label="Ângulo em graus" type="number" step="1" value={Number(selectedPart.rotation.toFixed(1))} onChange={(event) => { if (event.target.value !== '' && Number.isFinite(Number(event.target.value))) rotateSelected(Number(event.target.value), rotationMode === 'branch') }} />°</label><button onClick={() => rotateSelected(selectedPart.rotation + 15, rotationMode === 'branch')} type="button">+15°</button><button className="pose-rotation-reset" title="Zerar rotação" onClick={() => rotateSelected(0, rotationMode === 'branch')} type="button">Zerar</button></div>
+                </div>
               </div>}
             </div>}
             {project && tab === 'layers' && <div className="pose-tool-content pose-layer-list">{[...parts].reverse().map((part, index, ordered) => <div key={part.id} className={`pose-layer-row${selectedId === part.id ? ' selected' : ''}`}><button className="pose-layer-select" onClick={() => setSelectedId(part.id)} type="button"><span className="pose-piece-thumb"><img src={part.dataUrl} alt="" /></span><span><b>{part.name}</b><small>Camada {ordered.length - index}</small></span></button><div><button title="Trazer para frente" disabled={index === 0} onClick={() => changeLayer(part.id, -1)} type="button">↑</button><button title="Enviar para trás" disabled={index === ordered.length - 1} onClick={() => changeLayer(part.id, 1)} type="button">↓</button><button title={project.hiddenPartIds.includes(part.id) ? 'Mostrar peça' : 'Ocultar peça'} onClick={() => changeProject((current) => ({ ...current, hiddenPartIds: current.hiddenPartIds.includes(part.id) ? current.hiddenPartIds.filter((id) => id !== part.id) : [...current.hiddenPartIds, part.id] }))} type="button"><Icon name={project.hiddenPartIds.includes(part.id) ? 'eyeOff' : 'eye'} /></button></div></div>)}</div>}
-            {project && tab === 'joints' && <div className="pose-tool-content pose-rig-list"><p>Juntas fixadas formam o rig. Girar um ramo move também suas peças descendentes.</p>{project.joints.map((joint) => {
+            {project && tab === 'joints' && <div className="pose-tool-content pose-rig-list"><p>Estas conexões vêm de Modelos. Selecione uma peça em Peças e use “Peça + conectadas” para girar o ramo pela mesma bolinha.</p>{project.joints.map((joint) => {
               const parent = project.parts.find((part) => part.id === joint.parentPartId)
               const child = project.parts.find((part) => part.id === joint.childPartId)
-              return <article key={joint.id} className={`pose-rig-row${joint.fixed ? ' fixed' : ''}`}><div className="pose-rig-title"><b>{parent?.name ?? 'Peça'}</b><Icon name="chevronRight" /><b>{child?.name ?? 'Peça'}</b></div><div className="pose-rig-actions"><button className={joint.fixed ? 'fixed' : ''} title={joint.fixed ? 'Desfixar esta conexão' : 'Fixar esta conexão ao rig'} onClick={() => changeProject((current) => ({ ...current, joints: current.joints.map((item) => item.id === joint.id ? { ...item, fixed: !item.fixed } : item) }))} type="button">{joint.fixed ? 'Fixada' : 'Fixar'}</button><button title="Girar ramo à esquerda" disabled={!joint.fixed} onClick={() => rotateBranch(joint.id, -15)} type="button">−15°</button><button title="Girar ramo à direita" disabled={!joint.fixed} onClick={() => rotateBranch(joint.id, 15)} type="button">+15°</button></div></article>
+              return <article key={joint.id} className={`pose-rig-row${joint.fixed ? ' fixed' : ''}`}><div className="pose-rig-title"><b>{parent?.name ?? 'Peça'}</b><Icon name="chevronRight" /><b>{child?.name ?? 'Peça'}</b></div><div className="pose-rig-status"><i />{joint.fixed ? 'Conectada no modelo' : 'Solta no modelo'}</div><button className="pose-rig-select" onClick={() => { setSelectedId(joint.childPartId); setTab('parts') }} type="button">Selecionar {child?.name ?? 'peça'} para girar</button></article>
             })}{project.joints.length === 0 && <small>Este modelo ainda não tem juntas. Prepare o rig na aba Modelos para usá-lo em poses.</small>}</div>}
             {!project && <div className="pose-panel-empty"><Icon name="sparkles" /><strong>{sourcePreview ? 'Prévia do modelo selecionado' : 'Crie ou abra uma pose'}</strong><small>{sourcePreview ? 'Clique em Nova pose para editar uma cópia independente.' : 'As ferramentas aparecem aqui.'}</small></div>}
           </section>
