@@ -155,7 +155,7 @@ export function FabricatorPage() {
   const [zoom, setZoom] = useState(1)
   const [pan, setPan] = useState({ x: 0, y: 0 })
   const [panning, setPanning] = useState(false)
-  const [stageSize, setStageSize] = useState({ width: 1, height: 1 })
+  const [stageSize, setStageSize] = useState({ width: 0, height: 0 })
   const [renamingPartId, setRenamingPartId] = useState<string | null>(null)
   const stageRef = useRef<HTMLDivElement>(null)
   const projectRef = useRef<FabricatorProject | null>(null)
@@ -303,9 +303,15 @@ export function FabricatorPage() {
   useEffect(() => {
     const element = stageRef.current
     if (!element) return
-    const observer = new ResizeObserver(([entry]) => setStageSize({ width: entry.contentRect.width, height: entry.contentRect.height }))
+    const measure = () => {
+      const bounds = element.getBoundingClientRect()
+      setStageSize({ width: bounds.width, height: bounds.height })
+    }
+    measure()
+    const observer = new ResizeObserver(measure)
     observer.observe(element)
-    return () => observer.disconnect()
+    window.addEventListener('resize', measure)
+    return () => { observer.disconnect(); window.removeEventListener('resize', measure) }
   }, [project])
 
   useEffect(() => {
@@ -352,7 +358,9 @@ export function FabricatorPage() {
     .map((item) => ({ ...item, fixed: Boolean(project?.joints.some((joint) => joint.childPartId === item.part.id && joint.fixed)) }))
     .sort((a, b) => Number(selectedIds.includes(a.part.id)) - Number(selectedIds.includes(b.part.id))), [jointedParts, project?.joints, selectedIds])
   const hiddenPartIds = project?.hiddenPartIds ?? []
-  const scale = project ? Math.max(0.05, Math.min((stageSize.width - 48) / project.width, (stageSize.height - 48) / project.height)) * zoom : 1
+  const measuredWidth = Math.max(stageSize.width, stageRef.current?.clientWidth ?? 0)
+  const measuredHeight = Math.max(stageSize.height, stageRef.current?.clientHeight ?? 0)
+  const scale = project ? Math.max(0.05, Math.min((measuredWidth - 48) / project.width, (measuredHeight - 48) / project.height)) * zoom : 1
 
   const updateProject = (updater: (current: FabricatorProject) => FabricatorProject, action: FabricatorHistoryAction = 'edit') => {
     const current = projectRef.current
