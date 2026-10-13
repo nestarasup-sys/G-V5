@@ -1,5 +1,5 @@
 import { app, BrowserWindow, dialog, ipcMain } from 'electron'
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, writeFile, readdir, unlink, rename } from 'node:fs/promises'
 import { basename, extname, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import type { FabricatorAssetSave, FabricatorProject, FabricatorProjectSave, FabricatorSlotSummary, ModelPart } from '../src/shared/fabricator'
@@ -61,6 +61,7 @@ async function registerFabricatorHandlers(): Promise<void> {
         sourceFile: string
         parts: Array<Omit<ModelPart, 'dataUrl'>>
       }
+      if (!/^source-[a-f0-9-]+\.(png|jpe?g|webp)$/i.test(manifest.sourceFile) || manifest.parts.length > 500 || manifest.parts.some((part) => !/^[a-zA-Z0-9_-]{1,80}$/.test(part.id))) return null
       const sourceBytes = await readFile(join(folder, manifest.sourceFile))
       const extension = extname(manifest.sourceFile).toLowerCase()
       const mime = extension === '.png' ? 'image/png' : extension === '.webp' ? 'image/webp' : 'image/jpeg'
@@ -104,11 +105,15 @@ async function registerFabricatorHandlers(): Promise<void> {
       updatedAt: project.updatedAt
     }
     const manifest = { ...projectDocument, parts, sourceFile }
-    await writeFile(join(folder, 'project.json'), JSON.stringify(manifest), 'utf8')
+    const manifestTemp = join(folder, 'project.json.tmp')
+    await writeFile(manifestTemp, JSON.stringify(manifest), 'utf8')
+    await rename(manifestTemp, join(folder, 'project.json'))
     const keepFiles = new Set(parts.map((part) => `${part.id}.png`))
-    const { readdir, unlink } = await import('node:fs/promises')
     for (const file of await readdir(partsFolder)) {
       if (file.endsWith('.png') && !keepFiles.has(file)) await unlink(join(partsFolder, file))
+    }
+    for (const file of await readdir(folder)) {
+      if (/^source-[a-f0-9-]+\.(png|jpe?g|webp)$/i.test(file) && file !== sourceFile) await unlink(join(folder, file))
     }
   })
 }
