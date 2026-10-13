@@ -89,6 +89,7 @@ export function FabricatorPage() {
   const [project, setProject] = useState<FabricatorProject | null>(null)
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [processing, setProcessing] = useState(false)
+  const [deletingSlot, setDeletingSlot] = useState<number | null>(null)
   const [progress, setProgress] = useState(0)
   const [saveState, setSaveState] = useState<'saved' | 'saving' | 'error'>('saved')
   const [error, setError] = useState('')
@@ -225,6 +226,34 @@ export function FabricatorPage() {
         joints: loaded.joints.map((joint) => ({ ...joint, pivot: jointPivot(joint) }))
       }); setSelectedIds(loaded.parts[0] ? [loaded.parts[0].id] : [])
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Falha ao abrir modelo.') }
+  }
+
+  const deleteSlot = async (slot: number) => {
+    const summary = slots[slot - 1]
+    if (!summary || deletingSlot !== null) return
+    if (!window.confirm(`Excluir permanentemente “${summary.name}” do slot ${slot}? A imagem original e todas as peças salvas serão apagadas.`)) return
+    setDeletingSlot(slot)
+    if (activeSlot === slot) {
+      if (savedTimer.current) clearTimeout(savedTimer.current)
+      workerRef.current?.terminate(); workerRef.current = null
+      setProcessing(false)
+    }
+    try {
+      await window.desktop.deleteFabricatorSlot(slot)
+      setSlots((current) => current.map((item, index) => index === slot - 1 ? null : item))
+      if (activeSlot === slot) {
+        workerRef.current?.terminate(); workerRef.current = null
+        setProcessing(false); setProgress(0); setProject(null); setSelectedIds([]); dirtyAssets.current.clear(); setError('')
+      }
+    } catch (reason) {
+      setError(reason instanceof Error ? `Não foi possível excluir o modelo: ${reason.message}` : 'Não foi possível excluir o modelo.')
+      if (activeSlot === slot) {
+        if (project) setProject({ ...project, updatedAt: new Date().toISOString() })
+        else await selectSlot(slot)
+      }
+    } finally {
+      setDeletingSlot(null)
+    }
   }
 
   const runProcessor = (sourceDataUrl: string, tolerance: number, metadata: { slot: number; name: string; sourceName: string; sourceAssetName: string }) => {
@@ -447,12 +476,13 @@ export function FabricatorPage() {
             <div className="model-slots" role="tablist" aria-label="Slots de modelos">
               {slots.map((slot, index) => {
                 const number = index + 1
-                return <button key={number} className={`model-slot${activeSlot === number ? ' active' : ''}${slot ? ' filled' : ''}`} onClick={() => void selectSlot(number)} role="tab" aria-selected={activeSlot === number} title={slot ? `${slot.name} — ${slot.partCount} peças` : `Slot ${number} vazio`} type="button">
+                return <button key={number} className={`model-slot${activeSlot === number ? ' active' : ''}${slot ? ' filled' : ''}`} onClick={() => void selectSlot(number)} disabled={deletingSlot !== null} role="tab" aria-selected={activeSlot === number} title={slot ? `${slot.name} — ${slot.partCount} peças` : `Slot ${number} vazio`} type="button">
                   <span>{slot?.name ? slot.name.slice(0, 1).toUpperCase() : String(number).padStart(2, '0')}</span><small>{slot ? slot.name : 'Vazio'}</small>
                 </button>
               })}
             </div>
-            <button className="model-import-compact" onClick={() => void importSlot(activeSlot)} type="button"><Icon name="plus" /><span>Importar</span></button>
+            {slots[activeSlot - 1] && <button className="model-delete-compact" onClick={() => void deleteSlot(activeSlot)} disabled={deletingSlot === activeSlot} title="Excluir permanentemente este modelo" type="button"><Icon name="trash" /><span>{deletingSlot === activeSlot ? 'Excluindo…' : 'Excluir modelo'}</span></button>}
+            <button className="model-import-compact" onClick={() => void importSlot(activeSlot)} disabled={deletingSlot !== null} type="button"><Icon name="plus" /><span>Importar</span></button>
           </header>
 
           {!project ? (

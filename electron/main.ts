@@ -1,6 +1,6 @@
 import { app, BrowserWindow, dialog, ipcMain, type IpcMainInvokeEvent } from 'electron'
-import { mkdir, readFile, writeFile, readdir, unlink, rename, stat, access } from 'node:fs/promises'
-import { basename, extname, join, resolve } from 'node:path'
+import { mkdir, readFile, writeFile, readdir, unlink, rename, stat, access, rm } from 'node:fs/promises'
+import { basename, dirname, extname, join, resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import type { FabricatorAssetSave, FabricatorProject, FabricatorProjectSave, FabricatorSlotSummary, ModelPart } from '../src/shared/fabricator'
@@ -151,6 +151,22 @@ async function registerFabricatorHandlers(): Promise<void> {
     const slot = project.slot
     const previous = fabricatorSaveQueues.get(slot) ?? Promise.resolve()
     const current = previous.catch(() => undefined).then(() => writeFabricatorProject(project, changedAssets))
+    fabricatorSaveQueues.set(slot, current)
+    try { await current } finally {
+      if (fabricatorSaveQueues.get(slot) === current) fabricatorSaveQueues.delete(slot)
+    }
+  })
+
+  ipcMain.handle('fabricator:delete-slot', async (event, slot: number): Promise<void> => {
+    assertTrustedSender(event)
+    if (!isValidSlot(slot)) throw new Error('Slot inválido.')
+    const previous = fabricatorSaveQueues.get(slot) ?? Promise.resolve()
+    const current = previous.catch(() => undefined).then(async () => {
+      const base = resolve(libraryPath())
+      const target = resolve(slotPath(slot))
+      if (dirname(target) !== base || basename(target) !== `slot-${slot}`) throw new Error('Caminho de exclusão inválido.')
+      await rm(target, { recursive: true, force: true })
+    })
     fabricatorSaveQueues.set(slot, current)
     try { await current } finally {
       if (fabricatorSaveQueues.get(slot) === current) fabricatorSaveQueues.delete(slot)

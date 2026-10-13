@@ -61,4 +61,5 @@ export type FabricatorDesktopApi = {
   importFabricatorModel: (slot: number) => Promise<{ sourceName: string; sourceAssetName: string; sourceDataUrl: string } | null>
   loadFabricatorSlot: (slot: number) => Promise<FabricatorProject | null>
   saveFabricatorProject: (project: FabricatorProjectSave, changedAssets: FabricatorAssetSave[]) => Promise<void>
+  deleteFabricatorSlot: (slot: number) => Promise<void>
 }

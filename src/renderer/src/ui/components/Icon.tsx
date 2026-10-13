@@ -2,7 +2,7 @@ export type IconName =
   | 'plus' | 'search' | 'check' | 'expand' | 'frame' | 'zoomIn' | 'zoomOut'
   | 'chevronDown' | 'sliders' | 'chevronRight' | 'sparkles'
   | 'body' | 'face' | 'shirt' | 'flower' | 'message' | 'paw' | 'box' | 'user'
-  | 'bow' | 'camera' | 'settings' | 'download' | 'star' | 'edit' | 'bell' | 'link' | 'eye' | 'eyeOff'
+  | 'bow' | 'camera' | 'settings' | 'download' | 'star' | 'edit' | 'bell' | 'link' | 'eye' | 'eyeOff' | 'trash'
 
 const paths: Record<IconName, string> = {
   plus: 'M12 5v14M5 12h14',
@@ -33,7 +33,8 @@ const paths: Record<IconName, string> = {
   download: 'M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3',
   link: 'M10 13a5 5 0 0 0 7.1 0l3-3A5 5 0 0 0 13 2.9l-1.7 1.7m2.7 6.4a5 5 0 0 0-7.1 0l-3 3A5 5 0 0 0 11 21.1l1.7-1.7',
   eye: 'M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7Zm10 3a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z',
-  eyeOff: 'm3 3 18 18M10.6 10.6a2 2 0 0 0 2.8 2.8M9.9 5.2A10.8 10.8 0 0 1 12 5c6.4 0 10 7 10 7a15.7 15.7 0 0 1-3.1 3.9M6.2 6.2C3.5 8 2 12 2 12s3.6 7 10 7c1 0 1.9-.2 2.8-.5'
+  eyeOff: 'm3 3 18 18M10.6 10.6a2 2 0 0 0 2.8 2.8M9.9 5.2A10.8 10.8 0 0 1 12 5c6.4 0 10 7 10 7a15.7 15.7 0 0 1-3.1 3.9M6.2 6.2C3.5 8 2 12 2 12s3.6 7 10 7c1 0 1.9-.2 2.8-.5',
+  trash: 'M3 6h18M8 6V4h8v2m-11 0 1 15h10l1-15M10 11v6m4-6v6'
 }
 
 export function Icon({ name, className }: { name: IconName; className?: string }) {
