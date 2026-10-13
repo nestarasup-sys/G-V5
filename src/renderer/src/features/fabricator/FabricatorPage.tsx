@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { FabricatorAssetSave, FabricatorProject, FabricatorSlotSummary, ModelPart } from '../../../../shared/fabricator'
+import type { FabricatorAssetSave, FabricatorHistoryAction, FabricatorHistorySaveState, FabricatorHistoryState, FabricatorProject, FabricatorSlotSummary, ModelPart } from '../../../../shared/fabricator'
 import { Icon, type IconName } from '../../ui/components/Icon'
 import { despillGreenFringes, sampleBackground } from './models/chroma'
 import { autoConnectParts, createJoint, jointPivot, normalizeLayerOrder, normalizePartAnchors, orderedParts, partJointAnchor, reorderLayer } from './models/rig'
@@ -42,6 +42,7 @@ function bytesToDataUrl(buffer: ArrayBuffer): string {
 function makeId(): string { return crypto.randomUUID() }
 
 const DEFAULT_CHROMA_TOLERANCE = 74
+const emptyHistory = (): FabricatorHistoryState => ({ undo: [], redo: [] })
 
 function rotatePoint(point: { x: number; y: number }, origin: { x: number; y: number }, angle: number) {
   const radians = angle * Math.PI / 180
@@ -124,6 +125,7 @@ export function FabricatorPage() {
   const [slotsLoaded, setSlotsLoaded] = useState(false)
   const [activeSlot, setActiveSlot] = useState(1)
   const [project, setProject] = useState<FabricatorProject | null>(null)
+  const [history, setHistory] = useState<FabricatorHistoryState>(emptyHistory)
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [processing, setProcessing] = useState(false)
   const [chromaApplying, setChromaApplying] = useState(false)
@@ -140,12 +142,19 @@ export function FabricatorPage() {
   const [showJointPivots, setShowJointPivots] = useState(true)
   const [mixerActive, setMixerActive] = useState(false)
   const [mixerPainting, setMixerPainting] = useState(false)
+  const [historyBusy, setHistoryBusy] = useState(false)
   const [zoom, setZoom] = useState(1)
   const [pan, setPan] = useState({ x: 0, y: 0 })
   const [panning, setPanning] = useState(false)
   const [stageSize, setStageSize] = useState({ width: 1, height: 1 })
   const [renamingPartId, setRenamingPartId] = useState<string | null>(null)
   const stageRef = useRef<HTMLDivElement>(null)
+  const projectRef = useRef<FabricatorProject | null>(null)
+  const historyRef = useRef<FabricatorHistoryState>(emptyHistory())
+  const historyGestureRef = useRef(false)
+  const historyGestureChangedRef = useRef(false)
+  const historyGestureSnapshotRef = useRef<FabricatorProject | null>(null)
+  const historyGestureActionRef = useRef<FabricatorHistoryAction>('edit')
   const dragRef = useRef<DragState | null>(null)
   const anchorDragRef = useRef<AnchorDragState | null>(null)
   const panRef = useRef<PanState | null>(null)
@@ -187,12 +196,85 @@ export function FabricatorPage() {
     setSlots((current) => current.map((item, index) => index + 1 === snapshot.slot ? { slot: snapshot.slot, name: snapshot.name, sourceName: snapshot.sourceName, partCount: snapshot.parts.length, updatedAt: snapshot.updatedAt } : item))
   }, [])
 
+  const publishHistory = (next: FabricatorHistoryState, currentProject: FabricatorProject) => {
+    const bounded = { undo: next.undo.slice(-50), redo: next.redo.slice(-50) }
+    historyRef.current = bounded
+    setHistory(bounded)
+    const forDisk: FabricatorHistorySaveState = {
+      undo: bounded.undo.map(({ action, project: snapshot }) => { const { sourceDataUrl: _sourceDataUrl, ...project } = snapshot; return { action, project } }),
+      redo: bounded.redo.map(({ action, project: snapshot }) => { const { sourceDataUrl: _sourceDataUrl, ...project } = snapshot; return { action, project } })
+    }
+    const { sourceDataUrl: _sourceDataUrl, parts, ...metadata } = currentProject
+    const currentForDisk = { ...metadata, parts: parts.map(({ dataUrl: _dataUrl, ...part }) => part) }
+    const changedAssets = parts.flatMap((part) => {
+      const dataUrl = dirtyAssets.current.get(part.id)
+      return dataUrl ? [{ id: part.id, dataUrl }] : []
+    })
+    setSaveState('saving')
+    void window.desktop.saveFabricatorHistory(currentProject.slot, forDisk, currentForDisk, changedAssets).then(() => {
+      for (const asset of changedAssets) if (dirtyAssets.current.get(asset.id) === asset.dataUrl) dirtyAssets.current.delete(asset.id)
+      setSaveState('saved')
+      setSlots((current) => current.map((item, index) => index + 1 === currentProject.slot ? { slot: currentProject.slot, name: currentProject.name, sourceName: currentProject.sourceName, partCount: currentProject.parts.length, updatedAt: currentProject.updatedAt } : item))
+    }).catch((reason: unknown) => {
+      setError(reason instanceof Error ? `Falha ao salvar o histórico: ${reason.message}` : 'Falha ao salvar o histórico local.')
+      setSaveState('error')
+    })
+  }
+
+  const recordHistorySnapshot = (snapshot: FabricatorProject, action: FabricatorHistoryAction, currentProject: FabricatorProject) => {
+    const current = historyRef.current
+    publishHistory({ undo: [...current.undo, { action, project: snapshot }].slice(-50), redo: [] }, currentProject)
+  }
+
+  const startHistoryGesture = (action: FabricatorHistoryAction) => {
+    if (historyGestureRef.current) return
+    historyGestureRef.current = true
+    historyGestureChangedRef.current = false
+    historyGestureSnapshotRef.current = projectRef.current
+    historyGestureActionRef.current = action
+  }
+
+  const finishHistoryGesture = () => {
+    const snapshot = historyGestureSnapshotRef.current
+    const changed = historyGestureChangedRef.current
+    const action = historyGestureActionRef.current
+    historyGestureRef.current = false
+    historyGestureChangedRef.current = false
+    historyGestureSnapshotRef.current = null
+    if (snapshot && changed && projectRef.current) recordHistorySnapshot(snapshot, action, projectRef.current)
+  }
+
+  const restoreHistory = async (direction: 'undo' | 'redo') => {
+    const currentProject = projectRef.current
+    const currentHistory = historyRef.current
+    const sourceStack = currentHistory[direction]
+    const entry = sourceStack[sourceStack.length - 1]
+    if (!currentProject || !entry || historyBusy || processing || chromaApplying) return
+    setHistoryBusy(true)
+    try {
+      const target = entry.project
+      const nextHistory: FabricatorHistoryState = direction === 'undo'
+        ? { undo: currentHistory.undo.slice(0, -1), redo: [...currentHistory.redo, { action: entry.action, project: currentProject }].slice(-50) }
+        : { undo: [...currentHistory.undo, { action: entry.action, project: currentProject }].slice(-50), redo: currentHistory.redo.slice(0, -1) }
+      for (const part of target.parts) dirtyAssets.current.set(part.id, part.dataUrl)
+      projectRef.current = target
+      setProject(target); setSelectedIds((ids) => { const valid = ids.filter((id) => target.parts.some((part) => part.id === id)); return valid.length ? valid : target.parts[0] ? [target.parts[0].id] : [] })
+      publishHistory(nextHistory, target)
+    } catch (reason) {
+      setError(reason instanceof Error ? `Não foi possível restaurar o histórico: ${reason.message}` : 'Não foi possível restaurar esse estado.')
+    } finally {
+      setHistoryBusy(false)
+    }
+  }
+
   useEffect(() => {
     void window.desktop.listFabricatorSlots()
       .then((items) => { setSlots(items); setSlotsLoaded(true) })
       .catch((reason: unknown) => { setSlotsLoaded(true); setError(reason instanceof Error ? reason.message : 'Não foi possível abrir a biblioteca.') })
     return () => { workerRef.current?.terminate(); chromaWorkerRef.current?.terminate(); if (savedTimer.current) clearTimeout(savedTimer.current) }
   }, [])
+
+  useEffect(() => { projectRef.current = project }, [project])
 
   useEffect(() => {
     const element = stageRef.current
@@ -248,20 +330,24 @@ export function FabricatorPage() {
   const hiddenPartIds = project?.hiddenPartIds ?? []
   const scale = project ? Math.max(0.05, Math.min((stageSize.width - 48) / project.width, (stageSize.height - 48) / project.height)) * zoom : 1
 
-  const updateProject = useCallback((updater: (current: FabricatorProject) => FabricatorProject) => {
-    setProject((current) => {
-      if (!current) return current
-      const next = updater(current)
-      const validIds = new Set(next.parts.map((part) => part.id))
-      return {
-        ...next,
-        layerOrder: normalizeLayerOrder(next.parts, next.layerOrder),
-        hiddenPartIds: (next.hiddenPartIds ?? []).filter((id) => validIds.has(id)),
-        joints: next.joints.filter((joint) => validIds.has(joint.parentPartId) && validIds.has(joint.childPartId)),
-        updatedAt: new Date().toISOString()
-      }
-    })
-  }, [])
+  const updateProject = (updater: (current: FabricatorProject) => FabricatorProject, action: FabricatorHistoryAction = 'edit') => {
+    const current = projectRef.current
+    if (!current) return
+    const next = updater(current)
+    if (next === current) return
+    const validIds = new Set(next.parts.map((part) => part.id))
+    const normalized: FabricatorProject = {
+      ...next,
+      layerOrder: normalizeLayerOrder(next.parts, next.layerOrder),
+      hiddenPartIds: (next.hiddenPartIds ?? []).filter((id) => validIds.has(id)),
+      joints: next.joints.filter((joint) => validIds.has(joint.parentPartId) && validIds.has(joint.childPartId)),
+      updatedAt: new Date().toISOString()
+    }
+    projectRef.current = normalized
+    setProject(normalized)
+    if (historyGestureRef.current) historyGestureChangedRef.current = true
+    else recordHistorySnapshot(current, action, normalized)
+  }
 
   const moveLayer = (partId: string, direction: -1 | 1) => {
     updateProject((current) => {
@@ -293,12 +379,17 @@ export function FabricatorPage() {
     workerRef.current?.terminate(); workerRef.current = null
     chromaWorkerRef.current?.terminate(); chromaWorkerRef.current = null; setChromaApplying(false)
     mixerSessionRef.current += 1
+    historyGestureRef.current = false; historyGestureChangedRef.current = false; historyGestureSnapshotRef.current = null
+    historyRef.current = emptyHistory(); setHistory(historyRef.current)
     setActiveSlot(slot); setProject(null); setSelectedIds([]); setError(''); dirtyAssets.current.clear(); mixerSurfacesRef.current.clear(); mixerStrokeRef.current = null; setMixerActive(false); setMixerPainting(false); setZoom(1); setPan({ x: 0, y: 0 })
     const summary = slots[slot - 1]
     if (!summary) return
     try {
       const loaded = await window.desktop.loadFabricatorSlot(slot)
       if (!loaded) throw new Error('O projeto salvo não pôde ser carregado.')
+      let loadedHistory = emptyHistory()
+      try { loadedHistory = await window.desktop.loadFabricatorHistory(slot) } catch { setError('O modelo abriu, mas o histórico persistido não pôde ser carregado.') }
+      historyRef.current = loadedHistory; setHistory(loadedHistory)
       const rig = normalizePartAnchors(loaded.parts, loaded.joints)
       let loadedParts = rig.parts
       let chromaVersion = loaded.chromaVersion ?? 0
@@ -361,7 +452,7 @@ export function FabricatorPage() {
     }
   }
 
-  const runProcessor = (sourceDataUrl: string, tolerance: number, metadata: { slot: number; name: string; sourceName: string; sourceAssetName: string }) => {
+  const runProcessor = (sourceDataUrl: string, tolerance: number, metadata: { slot: number; name: string; sourceName: string; sourceAssetName: string }, recordBefore?: FabricatorProject) => {
     workerRef.current?.terminate()
     const worker = new Worker(new URL('./models/imageProcessor.worker.ts', import.meta.url), { type: 'module' })
     workerRef.current = worker
@@ -383,7 +474,9 @@ export function FabricatorPage() {
         sourceAssetName: metadata.sourceAssetName, sourceDataUrl, width: message.width, height: message.height,
         tolerance, parts: rig.parts, joints: rig.joints, layerOrder: parts.map((part) => part.id), hiddenPartIds: [], updatedAt: new Date().toISOString()
       }
+      if (recordBefore) recordHistorySnapshot(recordBefore, 'reset', nextProject)
       setChromaValue(tolerance)
+      projectRef.current = nextProject
       setProject(nextProject); setSelectedIds(parts[0] ? [parts[0].id] : [])
     }
     worker.onerror = () => { worker.terminate(); workerRef.current = null; setProcessing(false); setError('O processamento da imagem falhou.') }
@@ -391,7 +484,7 @@ export function FabricatorPage() {
   }
 
   const applyChromaKey = () => {
-    if (!project || chromaApplying || processing || chromaValue <= project.tolerance) return
+    if (!project || chromaApplying || processing || historyBusy || chromaValue <= project.tolerance) return
     chromaWorkerRef.current?.terminate()
     const worker = new Worker(new URL('./models/chromaAdjust.worker.ts', import.meta.url), { type: 'module' })
     chromaWorkerRef.current = worker
@@ -425,7 +518,7 @@ export function FabricatorPage() {
   }
 
   const resetModel = async () => {
-    if (!project || processing || chromaApplying) return
+    if (!project || processing || chromaApplying || historyBusy) return
     const originalName = project.sourceName.replace(/\.[^.]+$/, '') || `Modelo ${project.slot}`
     if (!window.confirm('Resetar este modelo para a importação original? Isso vai apagar os recortes, posições, camadas, juntas e ajustes atuais.')) return
     if (savedTimer.current) clearTimeout(savedTimer.current)
@@ -445,7 +538,7 @@ export function FabricatorPage() {
       name: originalName,
       sourceName: project.sourceName,
       sourceAssetName: project.sourceAssetName
-    })
+    }, project)
   }
 
   const importSlot = async (slot: number) => {
@@ -462,7 +555,9 @@ export function FabricatorPage() {
       mixerSessionRef.current += 1
       setActiveSlot(slot); setProject(null); setSelectedIds([]); dirtyAssets.current.clear(); mixerSurfacesRef.current.clear(); mixerStrokeRef.current = null; setMixerActive(false); setMixerPainting(false)
       const name = selected.sourceName.replace(/\.[^.]+$/, '') || `Modelo ${slot}`
-      runProcessor(selected.sourceDataUrl, 74, { slot, name, sourceName: selected.sourceName, sourceAssetName: selected.sourceAssetName })
+      const recordBefore = project?.slot === slot ? project : undefined
+      if (!recordBefore) { historyRef.current = emptyHistory(); setHistory(historyRef.current) }
+      runProcessor(selected.sourceDataUrl, 74, { slot, name, sourceName: selected.sourceName, sourceAssetName: selected.sourceAssetName }, recordBefore)
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível importar a imagem.') }
   }
 
@@ -676,7 +771,7 @@ export function FabricatorPage() {
       dirtyAssets.current.set(partId, dataUrl)
       changedAssets.set(partId, dataUrl)
     }
-    if (changedAssets.size > 0) updateProject((current) => ({ ...current, parts: current.parts.map((part) => changedAssets.has(part.id) ? { ...part, dataUrl: changedAssets.get(part.id)! } : part) }))
+    if (changedAssets.size > 0) updateProject((current) => ({ ...current, parts: current.parts.map((part) => changedAssets.has(part.id) ? { ...part, dataUrl: changedAssets.get(part.id)! } : part) }), 'mixer')
   }
 
   const queueMixerSegment = (fromX: number, fromY: number, toX: number, toY: number) => {
@@ -691,6 +786,7 @@ export function FabricatorPage() {
     if (!project || !stageRef.current) return
     event.preventDefault(); event.stopPropagation()
     stageRef.current.setPointerCapture(event.pointerId)
+    startHistoryGesture('mixer')
     mixerTouchedRef.current = new Map()
     mixerStrokeRef.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY }
     setMixerPainting(true)
@@ -709,6 +805,7 @@ export function FabricatorPage() {
     if (connectMode || !project) return
     event.preventDefault(); event.stopPropagation()
     event.currentTarget.setPointerCapture(event.pointerId)
+    startHistoryGesture('edit')
     setSelectedIds((current) => current.includes(part.id) ? current : [part.id])
     dragRef.current = { partId: part.id, pointerId: event.pointerId, x: event.clientX, y: event.clientY }
   }
@@ -763,6 +860,7 @@ export function FabricatorPage() {
   const beginAnchorDrag = (event: React.PointerEvent<SVGCircleElement>, partId: string, displayOffset: number) => {
     if (mixerActive) { startMixerStroke(event); return }
     event.stopPropagation(); event.currentTarget.setPointerCapture(event.pointerId)
+    startHistoryGesture('edit')
     anchorDragRef.current = { partId, pointerId: event.pointerId, x: event.clientX, y: event.clientY, offsetX: displayOffset / scale }
   }
 
@@ -818,23 +916,29 @@ export function FabricatorPage() {
           ) : (
             <>
               <div className="model-editor-toolbar">
-                <div className="model-current-title"><span className="model-eyebrow">MODELO {String(project.slot).padStart(2, '0')}</span><input aria-label="Nome do modelo" value={project.name} disabled={processing || chromaApplying} onChange={(event) => updateProject((current) => ({ ...current, name: event.target.value }))} /></div>
+                <div className="model-history-controls" aria-label="Histórico de alterações">
+                  <button className="model-history-button" onClick={() => void restoreHistory('undo')} disabled={!history.undo.length || historyBusy || processing || chromaApplying} title={`Desfazer${history.undo.length ? ` — ${history.undo.length} alterações disponíveis` : ''}`} aria-label={`Desfazer, ${history.undo.length} alterações disponíveis`} type="button"><Icon name="undo" /></button>
+                  <button className="model-history-button" onClick={() => void restoreHistory('redo')} disabled={!history.redo.length || historyBusy || processing || chromaApplying} title={`Refazer${history.redo.length ? ` — ${history.redo.length} alterações disponíveis` : ''}`} aria-label={`Refazer, ${history.redo.length} alterações disponíveis`} type="button"><Icon name="redo" /></button>
+                  <small className="model-history-count" title="Histórico salvo localmente; mantém até 50 alterações">{history.undo.length}/50</small>
+                </div>
+                <div className="model-current-title"><span className="model-eyebrow">MODELO {String(project.slot).padStart(2, '0')}</span><input aria-label="Nome do modelo" value={project.name} disabled={processing || chromaApplying || historyBusy} onChange={(event) => updateProject((current) => ({ ...current, name: event.target.value }))} /></div>
                 <div className="model-toolbar-actions">
                   <span className={`model-save-state ${saveState}`}><i />{saveState === 'saving' ? 'Salvando…' : saveState === 'error' ? 'Erro ao salvar' : 'Salvo localmente'}</span>
                   <div className="model-chroma-control">
                     <div className="model-chroma-heading"><label htmlFor="model-chroma-range"><Icon name="sliders" />Chroma key</label><output htmlFor="model-chroma-range">{chromaValue}</output></div>
-                    <div className="model-chroma-adjust"><input id="model-chroma-range" aria-label="Intensidade do chroma key" type="range" min={project.tolerance} max={Math.max(220, project.tolerance + 60)} value={Math.max(chromaValue, project.tolerance)} disabled={chromaApplying || processing || project.tolerance >= 280} onChange={(event) => setChromaValue(Number(event.target.value))} /><button className="model-chroma-apply" onClick={applyChromaKey} disabled={chromaApplying || processing || chromaValue <= project.tolerance} type="button">{chromaApplying ? 'Aplicando…' : 'Aplicar'}</button></div>
+                    <div className="model-chroma-adjust"><input id="model-chroma-range" aria-label="Intensidade do chroma key" type="range" min={project.tolerance} max={Math.max(220, project.tolerance + 60)} value={Math.max(chromaValue, project.tolerance)} disabled={chromaApplying || processing || historyBusy || project.tolerance >= 280} onChange={(event) => setChromaValue(Number(event.target.value))} /><button className="model-chroma-apply" onClick={applyChromaKey} disabled={chromaApplying || processing || historyBusy || chromaValue <= project.tolerance} type="button">{chromaApplying ? 'Aplicando…' : 'Aplicar'}</button></div>
                     <small>Aumente para remover mais verde · Resetar restaura a importação</small>
                   </div>
-                  <button className="model-tool-button model-reset-button" onClick={() => void resetModel()} disabled={processing || chromaApplying} title="Voltar o modelo inteiro ao estado da imagem importada" type="button"><Icon name="reset" /><span>{processing ? 'Resetando…' : 'Resetar'}</span></button>
-                  <button className={`model-tool-button model-mixer-toggle${mixerActive ? ' active' : ''}`} aria-pressed={mixerActive} onClick={() => { setMixerActive((active) => !active); setConnectMode(false); setConnectFromId(null) }} disabled={processing || chromaApplying} title="Pinte sobre a junta: o pincel edita a peça visível mais alta, mesmo que outra esteja selecionada" type="button"><Icon name="brush" /><span>Misturador</span></button>
-                  <button className={`model-tool-button model-pivot-visibility${showJointPivots ? ' active' : ''}`} aria-pressed={showJointPivots} onClick={() => setShowJointPivots((visible) => !visible)} disabled={processing || chromaApplying} title={showJointPivots ? 'Ocultar bolinhas das juntas' : 'Mostrar bolinhas das juntas'} type="button"><Icon name={showJointPivots ? 'eye' : 'eyeOff'} /><span>{showJointPivots ? 'Ocultar bolinhas' : 'Mostrar bolinhas'}</span></button>
+                  <button className="model-tool-button model-reset-button" onClick={() => void resetModel()} disabled={processing || chromaApplying || historyBusy} title="Voltar o modelo inteiro ao estado da imagem importada" type="button"><Icon name="reset" /><span>{processing ? 'Resetando…' : 'Resetar'}</span></button>
+                  <button className={`model-tool-button model-mixer-toggle${mixerActive ? ' active' : ''}`} aria-pressed={mixerActive} onClick={() => { setMixerActive((active) => !active); setConnectMode(false); setConnectFromId(null) }} disabled={processing || chromaApplying || historyBusy} title="Pinte sobre a junta: o pincel edita a peça visível mais alta, mesmo que outra esteja selecionada" type="button"><Icon name="brush" /><span>Misturador</span></button>
+                  <button className="model-tool-button model-mixer-clear" onClick={() => { setMixerActive(false); void restoreHistory('undo') }} disabled={history.undo[history.undo.length - 1]?.action !== 'mixer' || historyBusy || processing || chromaApplying} title="Limpar o último traço do Misturador" aria-label="Limpar último traço do Misturador" type="button"><Icon name="eraser" /></button>
+                  <button className={`model-tool-button model-pivot-visibility${showJointPivots ? ' active' : ''}`} aria-pressed={showJointPivots} onClick={() => setShowJointPivots((visible) => !visible)} disabled={processing || chromaApplying || historyBusy} title={showJointPivots ? 'Ocultar bolinhas das juntas' : 'Mostrar bolinhas das juntas'} type="button"><Icon name={showJointPivots ? 'eye' : 'eyeOff'} /><span>{showJointPivots ? 'Ocultar bolinhas' : 'Mostrar bolinhas'}</span></button>
                 </div>
               </div>
-              <div className={`model-editor-content${processing || chromaApplying ? ' chroma-applying' : ''}`} aria-busy={processing || chromaApplying}>
+              <div className={`model-editor-content${processing || chromaApplying || historyBusy ? ' chroma-applying' : ''}`} aria-busy={processing || chromaApplying || historyBusy}>
                 <section className="model-canvas-column" aria-label="Prévia e montagem">
                   <div className="model-canvas-topline"><span><i /> CANVAS DE MONTAGEM</span><span>{project.width} × {project.height}</span></div>
-                  <div ref={stageRef} className={`model-stage${panning ? ' panning' : ''}${mixerActive ? ' mixer-active' : ''}${mixerPainting ? ' mixer-painting' : ''}`} onPointerDown={beginPan} onPointerMove={(event) => { moveMixerStroke(event); movePan(event); movePartDrag(event); moveAnchorDrag(event) }} onPointerUp={(event) => { if (dragRef.current?.pointerId === event.pointerId) dragRef.current = null; if (anchorDragRef.current?.pointerId === event.pointerId) anchorDragRef.current = null; if (panRef.current?.pointerId === event.pointerId) { panRef.current = null; setPanning(false) } if (mixerStrokeRef.current?.pointerId === event.pointerId) { mixerStrokeRef.current = null; setMixerPainting(false) } }} onPointerCancel={() => { dragRef.current = null; anchorDragRef.current = null; panRef.current = null; mixerStrokeRef.current = null; setPanning(false); setMixerPainting(false) }}>
+                  <div ref={stageRef} className={`model-stage${panning ? ' panning' : ''}${mixerActive ? ' mixer-active' : ''}${mixerPainting ? ' mixer-painting' : ''}`} onPointerDown={beginPan} onPointerMove={(event) => { moveMixerStroke(event); movePan(event); movePartDrag(event); moveAnchorDrag(event) }} onPointerUp={(event) => { if (dragRef.current?.pointerId === event.pointerId) dragRef.current = null; if (anchorDragRef.current?.pointerId === event.pointerId) anchorDragRef.current = null; if (panRef.current?.pointerId === event.pointerId) { panRef.current = null; setPanning(false) } if (mixerStrokeRef.current?.pointerId === event.pointerId) { mixerStrokeRef.current = null; setMixerPainting(false) } void mixerQueueRef.current.then(() => finishHistoryGesture()) }} onPointerCancel={() => { dragRef.current = null; anchorDragRef.current = null; panRef.current = null; mixerStrokeRef.current = null; setPanning(false); setMixerPainting(false); void mixerQueueRef.current.then(() => finishHistoryGesture()) }}>
                     <div className="model-artboard" style={{ width: `${project.width * scale}px`, height: `${project.height * scale}px`, left: `calc(50% + ${pan.x}px)`, top: `calc(50% + ${pan.y}px)` }}>
                       {canvasParts.filter((part) => !hiddenPartIds.includes(part.id)).map((part) => <img key={part.id} className={`model-canvas-part${selectedIds.includes(part.id) ? ' selected' : ''}${connectFromId === part.id ? ' connect-source' : ''}`} src={part.dataUrl} alt={part.name} draggable={false} onClick={(event) => { event.stopPropagation(); if (!mixerActive) handlePartClick(part.id, event.ctrlKey || event.metaKey) }} onPointerDown={(event) => beginPartDrag(event, part)} style={{ left: part.x * scale, top: part.y * scale, width: part.width * scale, height: part.height * scale, transform: `rotate(${part.rotation}deg)` }} />)}
                       <svg className="model-joint-layer" viewBox={`0 0 ${project.width} ${project.height}`} preserveAspectRatio="none" aria-label="Conexões entre as peças">

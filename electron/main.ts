@@ -1,9 +1,9 @@
 import { app, BrowserWindow, dialog, ipcMain, type IpcMainInvokeEvent } from 'electron'
 import { mkdir, readFile, writeFile, readdir, unlink, rename, stat, access, rm } from 'node:fs/promises'
 import { basename, dirname, extname, join, resolve } from 'node:path'
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
-import type { FabricatorAssetSave, FabricatorProject, FabricatorProjectSave, FabricatorSlotSummary, ModelPart } from '../src/shared/fabricator'
+import type { FabricatorAssetSave, FabricatorHistoryEntry, FabricatorHistorySaveEntry, FabricatorHistorySaveState, FabricatorHistoryState, FabricatorProject, FabricatorProjectSave, FabricatorSlotSummary, ModelPart } from '../src/shared/fabricator'
 
 const slotCount = 10
 const libraryPath = () => join(app.getPath('userData'), 'fabricator', 'models')
@@ -29,6 +29,94 @@ function dataUrlBuffer(dataUrl: string): Buffer {
   const match = /^data:image\/png;base64,([A-Za-z0-9+/=]+)$/.exec(dataUrl)
   if (!match) throw new Error('Arquivo de peça inválido.')
   return Buffer.from(match[1], 'base64')
+}
+
+type StoredHistoryEntry = {
+  action: FabricatorHistoryEntry['action']
+  project: Omit<FabricatorProject, 'sourceDataUrl' | 'parts'>
+  parts: Array<{ part: Omit<ModelPart, 'dataUrl'>; hash: string }>
+}
+
+async function writeFabricatorHistory(slot: number, history: FabricatorHistorySaveState): Promise<void> {
+  if (!isValidSlot(slot) || !Array.isArray(history.undo) || !Array.isArray(history.redo) || history.undo.length > 50 || history.redo.length > 50) throw new Error('Histórico inválido.')
+  const folder = join(slotPath(slot), 'history')
+  const assetsFolder = join(folder, 'assets')
+  await mkdir(assetsFolder, { recursive: true })
+  const referencedAssets = new Set<string>()
+  const storeAsset = async (bytes: Buffer, extension: string): Promise<string> => {
+    const hash = createHash('sha256').update(bytes).digest('hex')
+    const filename = `${hash}.${extension}`
+    referencedAssets.add(filename)
+    try { await access(join(assetsFolder, filename)) } catch { await writeFile(join(assetsFolder, filename), bytes) }
+    return hash
+  }
+  const serializeEntry = async (entry: FabricatorHistorySaveEntry): Promise<StoredHistoryEntry> => {
+    const snapshot = entry.project
+    if (snapshot.slot !== slot || snapshot.schemaVersion !== 1 || snapshot.parts.length > 500) throw new Error('Snapshot de histórico inválido.')
+    if (!/^source-[a-f0-9-]+\.(png|jpe?g|webp)$/i.test(snapshot.sourceAssetName)) throw new Error('Imagem original no histórico inválida.')
+    await access(join(slotPath(slot), snapshot.sourceAssetName))
+    const parts = await Promise.all(snapshot.parts.map(async (part) => {
+      if (!/^[a-zA-Z0-9_-]{1,80}$/.test(part.id)) throw new Error('Peça de histórico inválida.')
+      return { part: (({ dataUrl: _dataUrl, ...metadata }) => metadata)(part), hash: await storeAsset(dataUrlBuffer(part.dataUrl), 'png') }
+    }))
+    const { parts: _parts, ...metadata } = snapshot
+    return { action: entry.action, project: metadata, parts }
+  }
+  const stored = {
+    version: 1,
+    undo: await Promise.all(history.undo.map(serializeEntry)),
+    redo: await Promise.all(history.redo.map(serializeEntry))
+  }
+  const temporaryManifest = join(folder, 'history.json.tmp')
+  await writeFile(temporaryManifest, JSON.stringify(stored), 'utf8')
+  await rename(temporaryManifest, join(folder, 'history.json'))
+  for (const filename of await readdir(assetsFolder)) if (!referencedAssets.has(filename)) await unlink(join(assetsFolder, filename))
+  const keptSources = new Set([
+    ...stored.undo.map((entry) => entry.project.sourceAssetName),
+    ...stored.redo.map((entry) => entry.project.sourceAssetName)
+  ])
+  try {
+    const current = JSON.parse(await readFile(join(slotPath(slot), 'project.json'), 'utf8')) as { sourceFile?: string }
+    if (current.sourceFile) keptSources.add(current.sourceFile)
+  } catch { /* The current project may not yet have a manifest. */ }
+  for (const filename of await readdir(slotPath(slot))) {
+    if (/^source-[a-f0-9-]+\.(png|jpe?g|webp)$/i.test(filename) && !keptSources.has(filename)) await unlink(join(slotPath(slot), filename))
+  }
+}
+
+async function readFabricatorHistory(slot: number): Promise<FabricatorHistoryState> {
+  const folder = join(slotPath(slot), 'history')
+  const assetsFolder = join(folder, 'assets')
+  const stored = JSON.parse(await readFile(join(folder, 'history.json'), 'utf8')) as {
+    version: number
+    undo: StoredHistoryEntry[]
+    redo: StoredHistoryEntry[]
+  }
+  if (stored.version !== 1 || !Array.isArray(stored.undo) || !Array.isArray(stored.redo) || stored.undo.length > 50 || stored.redo.length > 50) throw new Error('Arquivo de histórico inválido.')
+  const cache = new Map<string, Buffer>()
+  const readAsset = async (hash: string, extension: string) => {
+    if (!/^[a-f0-9]{64}$/i.test(hash)) throw new Error('Referência de histórico inválida.')
+    const key = `${hash}.${extension}`
+    let bytes = cache.get(key)
+    if (!bytes) { bytes = await readFile(join(assetsFolder, key)); cache.set(key, bytes) }
+    return bytes
+  }
+  const restoreEntry = async (entry: StoredHistoryEntry): Promise<FabricatorHistoryEntry> => {
+    if (!['edit', 'mixer', 'reset'].includes(entry.action) || entry.project.slot !== slot) throw new Error('Snapshot de histórico inválido.')
+    if (!/^source-[a-f0-9-]+\.(png|jpe?g|webp)$/i.test(entry.project.sourceAssetName)) throw new Error('Imagem original do histórico inválida.')
+    const source = await readFile(join(slotPath(slot), entry.project.sourceAssetName))
+    const extension = extname(entry.project.sourceAssetName).toLowerCase()
+    const mime = extension === '.png' ? 'image/png' : extension === '.webp' ? 'image/webp' : 'image/jpeg'
+    const parts = await Promise.all(entry.parts.map(async ({ part, hash }) => ({
+      ...part,
+      dataUrl: `data:image/png;base64,${(await readAsset(hash, 'png')).toString('base64')}`
+    })))
+    return {
+      action: entry.action,
+      project: { ...entry.project, sourceDataUrl: `data:${mime};base64,${source.toString('base64')}`, parts }
+    }
+  }
+  return { undo: await Promise.all(stored.undo.map(restoreEntry)), redo: await Promise.all(stored.redo.map(restoreEntry)) }
 }
 
 async function writeFabricatorProject(project: FabricatorProjectSave, changedAssets: FabricatorAssetSave[]): Promise<void> {
@@ -80,8 +168,13 @@ async function writeFabricatorProject(project: FabricatorProjectSave, changedAss
   for (const file of await readdir(partsFolder)) {
     if (file.endsWith('.png') && !keepFiles.has(file)) await unlink(join(partsFolder, file))
   }
+  const keptSources = new Set([sourceFile])
+  try {
+    const history = JSON.parse(await readFile(join(folder, 'history', 'history.json'), 'utf8')) as { undo?: Array<{ project?: { sourceAssetName?: string } }>; redo?: Array<{ project?: { sourceAssetName?: string } }> }
+    for (const entry of [...(history.undo ?? []), ...(history.redo ?? [])]) if (entry.project?.sourceAssetName) keptSources.add(entry.project.sourceAssetName)
+  } catch { /* No persisted history yet. */ }
   for (const file of await readdir(folder)) {
-    if (/^source-[a-f0-9-]+\.(png|jpe?g|webp)$/i.test(file) && file !== sourceFile) await unlink(join(folder, file))
+    if (/^source-[a-f0-9-]+\.(png|jpe?g|webp)$/i.test(file) && !keptSources.has(file)) await unlink(join(folder, file))
   }
 }
 
@@ -157,6 +250,29 @@ async function registerFabricatorHandlers(): Promise<void> {
     }
   })
 
+  ipcMain.handle('fabricator:load-history', async (event, slot: number): Promise<FabricatorHistoryState> => {
+    assertTrustedSender(event)
+    if (!isValidSlot(slot)) throw new Error('Slot inválido.')
+    try { return await readFabricatorHistory(slot) } catch (reason) {
+      if ((reason as NodeJS.ErrnoException).code === 'ENOENT') return { undo: [], redo: [] }
+      throw reason
+    }
+  })
+
+  ipcMain.handle('fabricator:save-history', async (event, slot: number, history: FabricatorHistorySaveState, current: FabricatorProjectSave, changedAssets: FabricatorAssetSave[]): Promise<void> => {
+    assertTrustedSender(event)
+    if (!isValidSlot(slot) || current.slot !== slot) throw new Error('Slot inválido.')
+    const previous = fabricatorSaveQueues.get(slot) ?? Promise.resolve()
+    const save = previous.catch(() => undefined).then(async () => {
+      await writeFabricatorHistory(slot, history)
+      await writeFabricatorProject(current, changedAssets)
+    })
+    fabricatorSaveQueues.set(slot, save)
+    try { await save } finally {
+      if (fabricatorSaveQueues.get(slot) === save) fabricatorSaveQueues.delete(slot)
+    }
+  })
+
   ipcMain.handle('fabricator:delete-slot', async (event, slot: number): Promise<void> => {
     assertTrustedSender(event)
     if (!isValidSlot(slot)) throw new Error('Slot inválido.')
@@ -208,4 +324,16 @@ app.whenReady().then(async () => {
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
+})
+
+let waitingForFabricatorWritesBeforeQuit = false
+app.on('before-quit', (event) => {
+  const pendingWrites = Array.from(fabricatorSaveQueues.values())
+  if (pendingWrites.length === 0 || waitingForFabricatorWritesBeforeQuit) return
+  event.preventDefault()
+  waitingForFabricatorWritesBeforeQuit = true
+  void Promise.allSettled(pendingWrites).then(() => {
+    waitingForFabricatorWritesBeforeQuit = false
+    app.quit()
+  })
 })

@@ -60,10 +60,18 @@ export type FabricatorProjectSave = Omit<FabricatorProject, 'sourceDataUrl' | 'p
 
 export type FabricatorAssetSave = { id: string; dataUrl: string }
 
+export type FabricatorHistoryAction = 'edit' | 'mixer' | 'reset'
+export type FabricatorHistoryEntry = { action: FabricatorHistoryAction; project: FabricatorProject }
+export type FabricatorHistoryState = { undo: FabricatorHistoryEntry[]; redo: FabricatorHistoryEntry[] }
+export type FabricatorHistorySaveEntry = { action: FabricatorHistoryAction; project: Omit<FabricatorProject, 'sourceDataUrl'> }
+export type FabricatorHistorySaveState = { undo: FabricatorHistorySaveEntry[]; redo: FabricatorHistorySaveEntry[] }
+
 export type FabricatorDesktopApi = {
   listFabricatorSlots: () => Promise<FabricatorSlotSummary[]>
   importFabricatorModel: (slot: number) => Promise<{ sourceName: string; sourceAssetName: string; sourceDataUrl: string } | null>
   loadFabricatorSlot: (slot: number) => Promise<FabricatorProject | null>
   saveFabricatorProject: (project: FabricatorProjectSave, changedAssets: FabricatorAssetSave[]) => Promise<void>
+  loadFabricatorHistory: (slot: number) => Promise<FabricatorHistoryState>
+  saveFabricatorHistory: (slot: number, history: FabricatorHistorySaveState, current: FabricatorProjectSave, changedAssets: FabricatorAssetSave[]) => Promise<void>
   deleteFabricatorSlot: (slot: number) => Promise<void>
 }

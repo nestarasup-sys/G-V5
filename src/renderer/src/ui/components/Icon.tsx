@@ -2,7 +2,7 @@ export type IconName =
   | 'plus' | 'search' | 'check' | 'expand' | 'frame' | 'zoomIn' | 'zoomOut'
   | 'chevronDown' | 'sliders' | 'chevronRight' | 'sparkles'
   | 'body' | 'face' | 'shirt' | 'flower' | 'message' | 'paw' | 'box' | 'user'
-  | 'bow' | 'camera' | 'settings' | 'download' | 'star' | 'edit' | 'bell' | 'link' | 'eye' | 'eyeOff' | 'trash' | 'brush' | 'reset'
+  | 'bow' | 'camera' | 'settings' | 'download' | 'star' | 'edit' | 'bell' | 'link' | 'eye' | 'eyeOff' | 'trash' | 'brush' | 'reset' | 'undo' | 'redo' | 'eraser'
 
 const paths: Record<IconName, string> = {
   plus: 'M12 5v14M5 12h14',
@@ -36,7 +36,10 @@ const paths: Record<IconName, string> = {
   eyeOff: 'm3 3 18 18M10.6 10.6a2 2 0 0 0 2.8 2.8M9.9 5.2A10.8 10.8 0 0 1 12 5c6.4 0 10 7 10 7a15.7 15.7 0 0 1-3.1 3.9M6.2 6.2C3.5 8 2 12 2 12s3.6 7 10 7c1 0 1.9-.2 2.8-.5',
   trash: 'M3 6h18M8 6V4h8v2m-11 0 1 15h10l1-15M10 11v6m4-6v6',
   brush: 'm14 4 6 6-9 9H5v-6l9-9ZM5 19c-1.3 0-2 .8-2 2h5c0-1.2-1-2-3-2Z',
-  reset: 'M3 12a9 9 0 1 0 2.6-6.4L3 8m0-5v5h5m4-1v5l3 2'
+  reset: 'M3 12a9 9 0 1 0 2.6-6.4L3 8m0-5v5h5m4-1v5l3 2',
+  undo: 'M9 14 4 9l5-5M4 9h9a7 7 0 0 1 0 14h-2',
+  redo: 'm15 14 5-5-5-5m5 5h-9a7 7 0 0 0 0 14h2',
+  eraser: 'm7 21 10-10m-5-5 8 8a2 2 0 0 1 0 3l-3 3a2 2 0 0 1-3 0l-8-8a2 2 0 0 1 0-3l3-3a2 2 0 0 1 3 0Z'
 }
 
 export function Icon({ name, className }: { name: IconName; className?: string }) {
