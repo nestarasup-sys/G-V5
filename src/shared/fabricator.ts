@@ -23,6 +23,7 @@ export type FabricatorProject = {
   slot: number
   name: string
   sourceName: string
+  sourceAssetName: string
   sourceDataUrl: string
   width: number
   height: number
@@ -42,7 +43,7 @@ export type FabricatorSlotSummary = {
 
 export type FabricatorDesktopApi = {
   listFabricatorSlots: () => Promise<FabricatorSlotSummary[]>
-  importFabricatorModel: (slot: number) => Promise<{ sourceName: string; sourceDataUrl: string; width: number; height: number } | null>
+  importFabricatorModel: (slot: number) => Promise<{ sourceName: string; sourceAssetName: string; sourceDataUrl: string } | null>
   loadFabricatorSlot: (slot: number) => Promise<FabricatorProject | null>
-  saveFabricatorProject: (project: FabricatorProject) => Promise<void>
+  saveFabricatorProject: (project: Omit<FabricatorProject, 'sourceDataUrl'>) => Promise<void>
 }

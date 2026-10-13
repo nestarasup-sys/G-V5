@@ -1,6 +1,7 @@
 import { app, BrowserWindow, dialog, ipcMain } from 'electron'
-import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { basename, extname, join } from 'node:path'
+import { randomUUID } from 'node:crypto'
 import type { FabricatorProject, FabricatorSlotSummary, ModelPart } from '../src/shared/fabricator'
 
 const slotCount = 10
@@ -46,15 +47,10 @@ async function registerFabricatorHandlers(): Promise<void> {
     const bytes = await readFile(path)
     const sourceDataUrl = `data:${mime};base64,${bytes.toString('base64')}`
     const destination = slotPath(slot)
+    const sourceAssetName = `source-${randomUUID()}${extension}`
     await mkdir(destination, { recursive: true })
-    await writeFile(join(destination, `source${extension}`), bytes)
-    for (const item of await readdir(destination)) {
-      if (/^source\.(png|jpe?g|webp)$/i.test(item) && item !== `source${extension}`) {
-        const { unlink } = await import('node:fs/promises')
-        await unlink(join(destination, item))
-      }
-    }
-    return { sourceName: basename(path), sourceDataUrl, width: 0, height: 0 }
+    await writeFile(join(destination, sourceAssetName), bytes)
+    return { sourceName: basename(path), sourceAssetName, sourceDataUrl }
   })
 
   ipcMain.handle('fabricator:load-slot', async (_event, slot: number): Promise<FabricatorProject | null> => {
@@ -77,22 +73,32 @@ async function registerFabricatorHandlers(): Promise<void> {
     } catch { return null }
   })
 
-  ipcMain.handle('fabricator:save-project', async (_event, project: FabricatorProject): Promise<void> => {
+  ipcMain.handle('fabricator:save-project', async (_event, project: Omit<FabricatorProject, 'sourceDataUrl'>): Promise<void> => {
     if (!isValidSlot(project.slot) || project.schemaVersion !== 1 || project.parts.length > 500) throw new Error('Projeto inválido.')
     const folder = slotPath(project.slot)
     const partsFolder = join(folder, 'parts')
     await mkdir(partsFolder, { recursive: true })
-    const sourceExtension = extname(project.sourceName).toLowerCase()
-    const sourceFile = `source${['.png', '.jpg', '.jpeg', '.webp'].includes(sourceExtension) ? sourceExtension : '.png'}`
-    const sourceMatch = /^data:image\/(png|jpeg|webp);base64,([A-Za-z0-9+/=]+)$/.exec(project.sourceDataUrl)
-    if (!sourceMatch) throw new Error('Imagem original inválida.')
-    await writeFile(join(folder, sourceFile), Buffer.from(sourceMatch[2], 'base64'))
+    const sourceFile = project.sourceAssetName
+    if (!/^source-[a-f0-9-]+\.(png|jpe?g|webp)$/i.test(sourceFile)) throw new Error('Imagem original inválida.')
+    await readFile(join(folder, sourceFile))
     const parts = project.parts.map(({ dataUrl, ...part }) => {
       if (!/^[a-zA-Z0-9_-]{1,80}$/.test(part.id)) throw new Error('Identificador de peça inválido.')
       return part
     })
     for (const part of project.parts) await writeFile(join(partsFolder, `${part.id}.png`), dataUrlBuffer(part.dataUrl))
-    const manifest = { ...project, sourceDataUrl: undefined, parts, sourceFile }
+    const projectDocument = {
+      schemaVersion: project.schemaVersion,
+      slot: project.slot,
+      name: project.name,
+      sourceName: project.sourceName,
+      sourceAssetName: project.sourceAssetName,
+      width: project.width,
+      height: project.height,
+      tolerance: project.tolerance,
+      joints: project.joints,
+      updatedAt: project.updatedAt
+    }
+    const manifest = { ...projectDocument, parts, sourceFile }
     await writeFile(join(folder, 'project.json'), JSON.stringify(manifest), 'utf8')
   })
 }

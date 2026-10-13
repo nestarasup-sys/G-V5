@@ -1,7 +1,11 @@
 type ProcessRequest = { id: number; sourceDataUrl: string; tolerance: number }
 type ProcessedPart = { id: string; name: string; x: number; y: number; width: number; height: number; png: ArrayBuffer }
+const workerScope = self as unknown as {
+  onmessage: ((event: MessageEvent<ProcessRequest>) => void) | null
+  postMessage: (message: unknown, transfer?: Transferable[]) => void
+}
 
-self.onmessage = async (event: MessageEvent<ProcessRequest>) => {
+workerScope.onmessage = async (event: MessageEvent<ProcessRequest>) => {
   const { id, sourceDataUrl, tolerance } = event.data
   try {
     const source = await createImageBitmap(await (await fetch(sourceDataUrl)).blob())
@@ -72,13 +76,13 @@ self.onmessage = async (event: MessageEvent<ProcessRequest>) => {
       const png = await blob.arrayBuffer()
       parts.push({ id: crypto.randomUUID(), name: guessName(minX, minY, maxX, maxY, source.width, source.height), x: minX, y: minY, width, height, png })
       progress += write
-      if (parts.length % 2 === 0) self.postMessage({ type: 'progress', id, value: Math.min(96, Math.round(progress / total * 100)) })
+      if (parts.length % 2 === 0) workerScope.postMessage({ type: 'progress', id, value: Math.min(96, Math.round(progress / total * 100)) })
     }
     parts.sort((a, b) => a.y - b.y || a.x - b.x)
-    self.postMessage({ type: 'complete', id, width: source.width, height: source.height, parts }, parts.map((part) => part.png))
+    workerScope.postMessage({ type: 'complete', id, width: source.width, height: source.height, parts }, parts.map((part) => part.png))
     source.close()
   } catch (error) {
-    self.postMessage({ type: 'error', id, message: error instanceof Error ? error.message : 'Falha ao processar imagem.' })
+    workerScope.postMessage({ type: 'error', id, message: error instanceof Error ? error.message : 'Falha ao processar imagem.' })
   }
 }
 
