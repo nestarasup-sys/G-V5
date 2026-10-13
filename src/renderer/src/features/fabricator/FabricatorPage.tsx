@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FabricatorAssetSave, FabricatorProject, FabricatorSlotSummary, JointLink, ModelPart } from '../../../../shared/fabricator'
 import { Icon, type IconName } from '../../ui/components/Icon'
-import { autoConnectParts, createJoint, jointPivot, normalizeLayerOrder, orderedParts, reorderLayer } from './models/rig'
+import { autoConnectParts, createJoint, fixedPartGroup, jointPivot, normalizeLayerOrder, orderedParts, reorderLayer } from './models/rig'
 
 const sections: { label: string; icon: IconName }[] = [
   { label: 'Modelos', icon: 'sparkles' }, { label: 'Personagens', icon: 'user' },
@@ -318,17 +318,7 @@ export function FabricatorPage() {
 
   const updatePartPosition = (partId: string, dx: number, dy: number) => {
     updateProject((current) => {
-      const movingIds = new Set<string>([partId])
-      let expanded = true
-      while (expanded) {
-        expanded = false
-        for (const joint of current.joints) {
-          if (joint.fixed && movingIds.has(joint.parentPartId) && !movingIds.has(joint.childPartId)) {
-            movingIds.add(joint.childPartId)
-            expanded = true
-          }
-        }
-      }
+      const movingIds = fixedPartGroup(current.joints, partId)
       return {
         ...current,
         parts: current.parts.map((part) => movingIds.has(part.id) ? { ...part, x: part.x + dx, y: part.y + dy } : part),
@@ -345,7 +335,24 @@ export function FabricatorPage() {
   const toggleJointFix = (partId: string) => updateProject((current) => {
     const incoming = current.joints.find((joint) => joint.childPartId === partId)
     if (!incoming) return current
-    return { ...current, joints: current.joints.map((joint) => joint.id === incoming.id ? { ...joint, fixed: !joint.fixed } : joint) }
+    if (incoming.fixed) return { ...current, joints: current.joints.map((joint) => joint.id === incoming.id ? { ...joint, fixed: false } : joint) }
+
+    const pivot = jointPivot(incoming)
+    const dx = pivot.x - incoming.childAnchor.x
+    const dy = pivot.y - incoming.childAnchor.y
+    const movingIds = fixedPartGroup(current.joints, incoming.childPartId)
+    return {
+      ...current,
+      parts: current.parts.map((part) => movingIds.has(part.id) ? { ...part, x: part.x + dx, y: part.y + dy } : part),
+      joints: current.joints.map((joint) => joint.id === incoming.id
+        ? { ...joint, parentAnchor: pivot, childAnchor: pivot, fixed: true }
+        : {
+            ...joint,
+            ...(movingIds.has(joint.parentPartId) ? { parentAnchor: { x: joint.parentAnchor.x + dx, y: joint.parentAnchor.y + dy } } : {}),
+            ...(movingIds.has(joint.childPartId) ? { childAnchor: { x: joint.childAnchor.x + dx, y: joint.childAnchor.y + dy } } : {}),
+            ...((movingIds.has(joint.parentPartId) || movingIds.has(joint.childPartId)) ? { pivot: { x: jointPivot(joint).x + dx, y: jointPivot(joint).y + dy } } : {})
+          })
+    }
   })
 
   const rotateBranch = (jointId: string, amount: number) => {
