@@ -7,7 +7,7 @@ type DraftProject = Omit<FabricatorPose, 'slot'>
 type PanelTab = 'parts' | 'layers' | 'joints'
 type PoseHistory = { undo: DraftProject[]; redo: DraftProject[] }
 type PanGesture = { pointerId: number; x: number; y: number; originX: number; originY: number }
-type PartGesture = { pointerId: number; partId: string; x: number; y: number; before: DraftProject }
+type PartGesture = { pointerId: number; partId: string; lastAngle: number; startRotation: number; accumulatedRotation: number; pivotX: number; pivotY: number; includeConnectedChildren: boolean; before: DraftProject }
 
 const SLOT_COUNT = 12
 const HISTORY_LIMIT = 50
@@ -361,8 +361,6 @@ export function PoseWorkspace() {
   const filteredParts = useMemo(() => parts.filter((part) => part.name.toLocaleLowerCase().includes(partFilter.toLocaleLowerCase())), [parts, partFilter])
   const scale = displayProject ? Math.max(0.05, Math.min((stageSize.width - 48) / displayProject.width, (stageSize.height - 48) / displayProject.height)) * zoom : 1
 
-  const movePart = (partId: string, dx: number, dy: number) => changeProject((current) => translatePart(current, partId, dx, dy), false)
-
   const setPartPosition = (partId: string, axis: 'x' | 'y', value: number) => changeProject((current) => {
     const part = current.parts.find((item) => item.id === partId)
     if (!part || !Number.isFinite(value)) return current
@@ -370,8 +368,8 @@ export function PoseWorkspace() {
     return axis === 'x' ? translatePart(current, partId, delta, 0) : translatePart(current, partId, 0, delta)
   })
 
-  const rotateSelected = (targetAngle: number, includeConnectedChildren: boolean) => changeProject((current) => {
-    const selected = current.parts.find((part) => part.id === selectedId)
+  const rotateSelected = (partId: string, targetAngle: number, includeConnectedChildren: boolean) => changeProject((current) => {
+    const selected = current.parts.find((part) => part.id === partId)
     if (!selected) return current
     const amount = targetAngle - selected.rotation
     if (!amount) return current
@@ -467,10 +465,13 @@ export function PoseWorkspace() {
     if (panGesture?.pointerId === event.pointerId) setPan({ x: panGesture.originX + event.clientX - panGesture.x, y: panGesture.originY + event.clientY - panGesture.y })
     const drag = partDragRef.current
     if (drag?.pointerId === event.pointerId && project && scale) {
-      const dx = (event.clientX - drag.x) / scale
-      const dy = (event.clientY - drag.y) / scale
-      if (dx || dy) movePart(drag.partId, dx, dy)
-      drag.x = event.clientX; drag.y = event.clientY
+      const pointerAngle = Math.atan2(event.clientY - drag.pivotY, event.clientX - drag.pivotX) * 180 / Math.PI
+      let step = pointerAngle - drag.lastAngle
+      if (step > 180) step -= 360
+      if (step < -180) step += 360
+      drag.accumulatedRotation += step
+      drag.lastAngle = pointerAngle
+      rotateSelected(drag.partId, drag.startRotation + drag.accumulatedRotation, drag.includeConnectedChildren)
     }
   }
 
@@ -480,7 +481,7 @@ export function PoseWorkspace() {
     if (drag?.pointerId === event.pointerId) {
       partDragRef.current = null
       const current = projectRef.current
-      if (current && JSON.stringify(drag.before.parts) !== JSON.stringify(current.parts)) remember(drag.before)
+      if (current && JSON.stringify(drag.before) !== JSON.stringify(current)) remember(drag.before)
     }
   }
 
@@ -489,7 +490,21 @@ export function PoseWorkspace() {
     event.preventDefault(); event.stopPropagation()
     event.currentTarget.setPointerCapture(event.pointerId)
     setSelectedId(part.id)
-    partDragRef.current = { pointerId: event.pointerId, partId: part.id, x: event.clientX, y: event.clientY, before: cloneProject(project) }
+    const anchor = partJointAnchor(part, project.joints) ?? { x: part.x + part.width / 2, y: part.y + part.height / 2 }
+    const artboardRect = event.currentTarget.closest('.pose-artboard')?.getBoundingClientRect()
+    const pivotX = (artboardRect?.left ?? 0) + anchor.x * scale
+    const pivotY = (artboardRect?.top ?? 0) + anchor.y * scale
+    partDragRef.current = {
+      pointerId: event.pointerId,
+      partId: part.id,
+      lastAngle: Math.atan2(event.clientY - pivotY, event.clientX - pivotX) * 180 / Math.PI,
+      startRotation: part.rotation,
+      accumulatedRotation: 0,
+      pivotX,
+      pivotY,
+      includeConnectedChildren: rotationMode === 'branch',
+      before: cloneProject(project)
+    }
   }
 
   return (
@@ -524,7 +539,7 @@ export function PoseWorkspace() {
             </div> : <div className="pose-canvas-empty"><span><Icon name="expand" /></span><strong>{loading ? 'Carregando poses…' : 'Sua pose começa aqui'}</strong><small>Escolha um modelo salvo e crie uma pose independente.</small><button className="pose-button primary" onClick={() => setSelectingModel(true)} type="button"><Icon name="plus" /> Escolher modelo</button></div>}
             <div className="pose-stage-tools"><span>{Math.round(zoom * 100)}%</span><button title="Aumentar zoom" onClick={() => setZoom((value) => Math.min(2.5, value + 0.15))} type="button">+</button><button title="Diminuir zoom" onClick={() => setZoom((value) => Math.max(0.45, value - 0.15))} type="button">−</button><button title="Centralizar" onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }) }} type="button"><Icon name="frame" /></button></div>
           </div>
-          <footer className="pose-canvas-footer"><span><kbd>Arraste o fundo</kbd> para mover a prévia {project && <><i /> <kbd>Arraste a peça</kbd> para posicionar</>}</span><span>{displayProject ? `${displayProject.parts.length} peças · ${displayProject.joints.length} juntas` : 'O modelo original fica protegido'}</span></footer>
+          <footer className="pose-canvas-footer"><span><kbd>Arraste o fundo</kbd> para mover a prévia {project && <><i /> <kbd>Arraste a peça</kbd> para girar pela bolinha</>}</span><span>{displayProject ? `${displayProject.parts.length} peças · ${displayProject.joints.length} juntas` : 'O modelo original fica protegido'}</span></footer>
         </section>
 
         <aside className="pose-side-panel" aria-label="Slots e ferramentas de pose">
@@ -552,8 +567,8 @@ export function PoseWorkspace() {
                   <div className="pose-mode-selector"><button className={rotationMode === 'branch' ? 'active' : ''} onClick={() => setRotationMode('branch')} type="button">Peça + conectadas</button><button className={rotationMode === 'part' ? 'active' : ''} onClick={() => setRotationMode('part')} type="button">Só esta peça</button></div>
                   {rotationMode === 'branch' && <small className="pose-pivot-hint">{project.joints.find((joint) => joint.childPartId === selectedPart.id) ? `Gira em torno da bolinha de ${selectedPart.name}. Filhas fixadas acompanham.` : 'Peça central: gira em torno da própria bolinha.'}</small>}
                   <label className="pose-rotation-label">Ângulo <output>{Math.round(selectedPart.rotation)}°</output></label>
-                  <input className="pose-rotation-range" aria-label="Ângulo de rotação" type="range" min={-360} max={360} value={Math.max(-360, Math.min(360, selectedPart.rotation))} onChange={(event) => rotateSelected(Number(event.target.value), rotationMode === 'branch')} />
-                  <div className="pose-rotation-actions"><button onClick={() => rotateSelected(selectedPart.rotation - 15, rotationMode === 'branch')} type="button">−15°</button><label><input aria-label="Ângulo em graus" type="number" step="1" value={Number(selectedPart.rotation.toFixed(1))} onChange={(event) => { if (event.target.value !== '' && Number.isFinite(Number(event.target.value))) rotateSelected(Number(event.target.value), rotationMode === 'branch') }} />°</label><button onClick={() => rotateSelected(selectedPart.rotation + 15, rotationMode === 'branch')} type="button">+15°</button><button className="pose-rotation-reset" title="Zerar rotação" onClick={() => rotateSelected(0, rotationMode === 'branch')} type="button">Zerar</button></div>
+                  <input className="pose-rotation-range" aria-label="Ângulo de rotação" type="range" min={-360} max={360} value={Math.max(-360, Math.min(360, selectedPart.rotation))} onChange={(event) => rotateSelected(selectedPart.id, Number(event.target.value), rotationMode === 'branch')} />
+                  <div className="pose-rotation-actions"><button onClick={() => rotateSelected(selectedPart.id, selectedPart.rotation - 15, rotationMode === 'branch')} type="button">−15°</button><label><input aria-label="Ângulo em graus" type="number" step="1" value={Number(selectedPart.rotation.toFixed(1))} onChange={(event) => { if (event.target.value !== '' && Number.isFinite(Number(event.target.value))) rotateSelected(selectedPart.id, Number(event.target.value), rotationMode === 'branch') }} />°</label><button onClick={() => rotateSelected(selectedPart.id, selectedPart.rotation + 15, rotationMode === 'branch')} type="button">+15°</button><button className="pose-rotation-reset" title="Zerar rotação" onClick={() => rotateSelected(selectedPart.id, 0, rotationMode === 'branch')} type="button">Zerar</button></div>
                 </div>
               </div>}
             </div>}
