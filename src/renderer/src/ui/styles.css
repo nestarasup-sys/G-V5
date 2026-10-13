@@ -245,7 +245,7 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .model-artboard { position: absolute; top: 50%; left: 50%; overflow: visible; transform: translate(-50%, -50%); filter: drop-shadow(0 3px 10px #44303a1a); }
 .model-canvas-part { position: absolute; z-index: 1; object-fit: fill; cursor: grab; user-select: none; -webkit-user-drag: none; transform-origin: center center; }
 .model-canvas-part:active { cursor: grabbing; }
-.model-canvas-part.selected { z-index: 2; filter: drop-shadow(0 0 2px #e15683) drop-shadow(0 0 4px #e156835e); }
+.model-canvas-part.selected { filter: drop-shadow(0 0 2px #e15683) drop-shadow(0 0 4px #e156835e); }
 .model-canvas-part.connect-source { filter: drop-shadow(0 0 4px #e0a529) drop-shadow(0 0 7px #e0a529aa); }
 .model-joint-layer { position: absolute; z-index: 4; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
 .model-joint-pivot { fill: #df638b; stroke: #fff; stroke-width: 2.5; vector-effect: non-scaling-stroke; pointer-events: auto; cursor: grab; filter: drop-shadow(0 1px 3px #56213988); }
