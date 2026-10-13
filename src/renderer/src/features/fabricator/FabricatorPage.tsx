@@ -22,6 +22,8 @@ type ProcessorMessage =
 type DragState = { partId: string; pointerId: number; x: number; y: number }
 type AnchorDragState = { partId: string; pointerId: number; x: number; y: number; offsetX: number }
 type PanState = { pointerId: number; x: number; y: number; originX: number; originY: number }
+type MixerSurface = { canvas: HTMLCanvasElement; context: CanvasRenderingContext2D }
+type MixerStrokeState = { pointerId: number; x: number; y: number }
 type PanelTab = 'parts' | 'layers' | 'joints'
 
 function bytesToDataUrl(buffer: ArrayBuffer): string {
@@ -129,6 +131,8 @@ export function FabricatorPage() {
   const [panelTab, setPanelTab] = useState<PanelTab>('parts')
   const [layerDragId, setLayerDragId] = useState<string | null>(null)
   const [showJointPivots, setShowJointPivots] = useState(true)
+  const [mixerActive, setMixerActive] = useState(false)
+  const [mixerPainting, setMixerPainting] = useState(false)
   const [zoom, setZoom] = useState(1)
   const [pan, setPan] = useState({ x: 0, y: 0 })
   const [panning, setPanning] = useState(false)
@@ -138,6 +142,11 @@ export function FabricatorPage() {
   const dragRef = useRef<DragState | null>(null)
   const anchorDragRef = useRef<AnchorDragState | null>(null)
   const panRef = useRef<PanState | null>(null)
+  const mixerStrokeRef = useRef<MixerStrokeState | null>(null)
+  const mixerTouchedRef = useRef<Map<string, Uint8Array>>(new Map())
+  const mixerSurfacesRef = useRef<Map<string, MixerSurface>>(new Map())
+  const mixerQueueRef = useRef<Promise<void>>(Promise.resolve())
+  const mixerSessionRef = useRef(0)
   const layerDragRef = useRef<string | null>(null)
   const workerRef = useRef<Worker | null>(null)
   const requestId = useRef(0)
@@ -197,6 +206,10 @@ export function FabricatorPage() {
     }, 700)
     return () => { if (savedTimer.current) clearTimeout(savedTimer.current) }
   }, [persistProject, project])
+
+  useEffect(() => {
+    if (connectMode && mixerActive) setMixerActive(false)
+  }, [connectMode, mixerActive])
 
   const selectedPartIds = selectedIds
   const selectedPart = project?.parts.find((part) => part.id === selectedPartIds[0]) ?? null
@@ -270,7 +283,8 @@ export function FabricatorPage() {
       try { await persistProject(project) } catch (reason) { setError(reason instanceof Error ? `Falha ao salvar antes de trocar de slot: ${reason.message}` : 'Falha ao salvar antes de trocar de slot.'); return }
     }
     workerRef.current?.terminate(); workerRef.current = null
-    setActiveSlot(slot); setProject(null); setSelectedIds([]); setError(''); dirtyAssets.current.clear(); setZoom(1); setPan({ x: 0, y: 0 })
+    mixerSessionRef.current += 1
+    setActiveSlot(slot); setProject(null); setSelectedIds([]); setError(''); dirtyAssets.current.clear(); mixerSurfacesRef.current.clear(); mixerStrokeRef.current = null; setMixerActive(false); setMixerPainting(false); setZoom(1); setPan({ x: 0, y: 0 })
     const summary = slots[slot - 1]
     if (!summary) return
     try {
@@ -374,7 +388,8 @@ export function FabricatorPage() {
     try {
       const selected = await window.desktop.importFabricatorModel(slot)
       if (!selected) return
-      setActiveSlot(slot); setProject(null); setSelectedIds([]); dirtyAssets.current.clear()
+      mixerSessionRef.current += 1
+      setActiveSlot(slot); setProject(null); setSelectedIds([]); dirtyAssets.current.clear(); mixerSurfacesRef.current.clear(); mixerStrokeRef.current = null; setMixerActive(false); setMixerPainting(false)
       const name = selected.sourceName.replace(/\.[^.]+$/, '') || `Modelo ${slot}`
       runProcessor(selected.sourceDataUrl, 74, { slot, name, sourceName: selected.sourceName, sourceAssetName: selected.sourceAssetName })
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível importar a imagem.') }
@@ -487,7 +502,128 @@ export function FabricatorPage() {
     }))
   }
 
+  const paintMixerSegment = async (fromX: number, fromY: number, toX: number, toY: number, touchedPixels: Map<string, Uint8Array>, session: number) => {
+    if (!project || !scale || session !== mixerSessionRef.current) return
+    const stage = stageRef.current
+    if (!stage) return
+    const bounds = stage.getBoundingClientRect()
+    const candidates = canvasParts.slice().reverse().filter((part) => !hiddenPartIds.includes(part.id))
+    const imageDataById = new Map<string, ImageData>()
+    const affectedParts = new Map<string, ModelPart>()
+    const distance = Math.hypot(toX - fromX, toY - fromY)
+    const steps = Math.max(1, Math.ceil(distance / 10))
+    const radius = 24 / scale
+
+    for (let step = 0; step <= steps; step += 1) {
+      const screenX = fromX + (toX - fromX) * (step / steps)
+      const screenY = fromY + (toY - fromY) * (step / steps)
+      const boardX = (screenX - bounds.left - bounds.width / 2 - pan.x) / scale + project.width / 2
+      const boardY = (screenY - bounds.top - bounds.height / 2 - pan.y) / scale + project.height / 2
+
+      for (const part of candidates) {
+        const centerX = part.x + part.width / 2
+        const centerY = part.y + part.height / 2
+        const radians = -part.rotation * Math.PI / 180
+        const offsetX = boardX - centerX
+        const offsetY = boardY - centerY
+        const localX = centerX + offsetX * Math.cos(radians) - offsetY * Math.sin(radians) - part.x
+        const localY = centerY + offsetX * Math.sin(radians) + offsetY * Math.cos(radians) - part.y
+        if (localX < 0 || localY < 0 || localX >= part.width || localY >= part.height) continue
+
+        let surface = mixerSurfacesRef.current.get(part.id)
+        if (!surface) {
+          const image = await imageFromDataUrl(part.dataUrl)
+          if (session !== mixerSessionRef.current) return
+          const canvas = document.createElement('canvas')
+          canvas.width = image.naturalWidth; canvas.height = image.naturalHeight
+          const context = canvas.getContext('2d', { willReadFrequently: true })
+          if (!context) continue
+          context.drawImage(image, 0, 0)
+          surface = { canvas, context }
+          mixerSurfacesRef.current.set(part.id, surface)
+        }
+        let imageData = imageDataById.get(part.id)
+        if (!imageData) {
+          imageData = surface.context.getImageData(0, 0, surface.canvas.width, surface.canvas.height)
+          imageDataById.set(part.id, imageData)
+        }
+        const width = imageData.width
+        const height = imageData.height
+        const pixelX = Math.floor(localX / part.width * width)
+        const pixelY = Math.floor(localY / part.height * height)
+        if (imageData.data[(pixelY * width + pixelX) * 4 + 3] === 0) continue
+
+        let touched = touchedPixels.get(part.id)
+        if (!touched) { touched = new Uint8Array(width * height); touchedPixels.set(part.id, touched) }
+        const centerPixelX = localX / part.width * width
+        const centerPixelY = localY / part.height * height
+        const radiusX = radius / part.width * width
+        const radiusY = radius / part.height * height
+        const minX = Math.max(0, Math.floor(centerPixelX - radiusX))
+        const maxX = Math.min(width - 1, Math.ceil(centerPixelX + radiusX))
+        const minY = Math.max(0, Math.floor(centerPixelY - radiusY))
+        const maxY = Math.min(height - 1, Math.ceil(centerPixelY + radiusY))
+        let changed = false
+        for (let y = minY; y <= maxY; y += 1) for (let x = minX; x <= maxX; x += 1) {
+          const dx = (x + 0.5 - centerPixelX) / radiusX
+          const dy = (y + 0.5 - centerPixelY) / radiusY
+          const radial = dx * dx + dy * dy
+          const index = y * width + x
+          if (radial > 1 || touched[index]) continue
+          touched[index] = 1
+          const alphaOffset = index * 4 + 3
+          const alpha = imageData.data[alphaOffset]
+          if (alpha === 0) continue
+          const falloff = 1 - radial
+          imageData.data[alphaOffset] = Math.round(alpha * (1 - 0.3 * falloff))
+          changed = true
+        }
+        if (changed) affectedParts.set(part.id, part)
+        break
+      }
+    }
+
+    if (session !== mixerSessionRef.current || affectedParts.size === 0) return
+    const changedAssets = new Map<string, string>()
+    for (const [partId] of affectedParts) {
+      const surface = mixerSurfacesRef.current.get(partId)
+      const imageData = imageDataById.get(partId)
+      if (!surface || !imageData) continue
+      surface.context.putImageData(imageData, 0, 0)
+      const dataUrl = surface.canvas.toDataURL('image/png')
+      dirtyAssets.current.set(partId, dataUrl)
+      changedAssets.set(partId, dataUrl)
+    }
+    if (changedAssets.size > 0) updateProject((current) => ({ ...current, parts: current.parts.map((part) => changedAssets.has(part.id) ? { ...part, dataUrl: changedAssets.get(part.id)! } : part) }))
+  }
+
+  const queueMixerSegment = (fromX: number, fromY: number, toX: number, toY: number) => {
+    const touchedPixels = mixerTouchedRef.current
+    const session = mixerSessionRef.current
+    mixerQueueRef.current = mixerQueueRef.current
+      .then(() => paintMixerSegment(fromX, fromY, toX, toY, touchedPixels, session))
+      .catch((reason: unknown) => { if (session === mixerSessionRef.current) setError(reason instanceof Error ? `Misturador: ${reason.message}` : 'O misturador não conseguiu editar essa peça.') })
+  }
+
+  const startMixerStroke = <T extends Element,>(event: React.PointerEvent<T>) => {
+    if (!project || !stageRef.current) return
+    event.preventDefault(); event.stopPropagation()
+    stageRef.current.setPointerCapture(event.pointerId)
+    mixerTouchedRef.current = new Map()
+    mixerStrokeRef.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY }
+    setMixerPainting(true)
+    queueMixerSegment(event.clientX, event.clientY, event.clientX, event.clientY)
+  }
+
+  const moveMixerStroke = (event: React.PointerEvent<HTMLDivElement>) => {
+    const stroke = mixerStrokeRef.current
+    if (!stroke || stroke.pointerId !== event.pointerId) return
+    queueMixerSegment(stroke.x, stroke.y, event.clientX, event.clientY)
+    stroke.x = event.clientX; stroke.y = event.clientY
+  }
+
   const beginPartDrag = (event: React.PointerEvent<HTMLImageElement>, part: ModelPart) => {
+    if (mixerActive) { startMixerStroke(event); return }
     if (connectMode || !project) return
     event.preventDefault(); event.stopPropagation()
     event.currentTarget.setPointerCapture(event.pointerId)
@@ -496,7 +632,9 @@ export function FabricatorPage() {
   }
 
   const beginPan = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (!project || (event.target instanceof Element && event.target.closest('.model-canvas-part, .model-joint-anchor, .model-stage-tools'))) return
+    if (!project || (event.target instanceof Element && event.target.closest('.model-stage-tools'))) return
+    if (mixerActive) { startMixerStroke(event); return }
+    if (event.target instanceof Element && event.target.closest('.model-canvas-part, .model-joint-anchor')) return
     event.preventDefault()
     event.currentTarget.setPointerCapture(event.pointerId)
     panRef.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, originX: pan.x, originY: pan.y }
@@ -541,6 +679,7 @@ export function FabricatorPage() {
   }
 
   const beginAnchorDrag = (event: React.PointerEvent<SVGCircleElement>, partId: string, displayOffset: number) => {
+    if (mixerActive) { startMixerStroke(event); return }
     event.stopPropagation(); event.currentTarget.setPointerCapture(event.pointerId)
     anchorDragRef.current = { partId, pointerId: event.pointerId, x: event.clientX, y: event.clientY, offsetX: displayOffset / scale }
   }
@@ -600,22 +739,23 @@ export function FabricatorPage() {
                 <div className="model-current-title"><span className="model-eyebrow">MODELO {String(project.slot).padStart(2, '0')}</span><input aria-label="Nome do modelo" value={project.name} onChange={(event) => updateProject((current) => ({ ...current, name: event.target.value }))} /></div>
                 <div className="model-toolbar-actions">
                   <span className={`model-save-state ${saveState}`}><i />{saveState === 'saving' ? 'Salvando…' : saveState === 'error' ? 'Erro ao salvar' : 'Salvo localmente'}</span>
+                  <button className={`model-tool-button model-mixer-toggle${mixerActive ? ' active' : ''}`} aria-pressed={mixerActive} onClick={() => { setMixerActive((active) => !active); setConnectMode(false); setConnectFromId(null) }} title="Pinte sobre a junta: o pincel edita a peça visível mais alta, mesmo que outra esteja selecionada" type="button"><Icon name="brush" /><span>Misturador</span></button>
                   <button className={`model-tool-button model-pivot-visibility${showJointPivots ? ' active' : ''}`} aria-pressed={showJointPivots} onClick={() => setShowJointPivots((visible) => !visible)} title={showJointPivots ? 'Ocultar bolinhas das juntas' : 'Mostrar bolinhas das juntas'} type="button"><Icon name={showJointPivots ? 'eye' : 'eyeOff'} /><span>{showJointPivots ? 'Ocultar bolinhas' : 'Mostrar bolinhas'}</span></button>
                 </div>
               </div>
               <div className="model-editor-content">
                 <section className="model-canvas-column" aria-label="Prévia e montagem">
                   <div className="model-canvas-topline"><span><i /> CANVAS DE MONTAGEM</span><span>{project.width} × {project.height}</span></div>
-                  <div ref={stageRef} className={`model-stage${panning ? ' panning' : ''}`} onPointerDown={beginPan} onPointerMove={(event) => { movePan(event); movePartDrag(event); moveAnchorDrag(event) }} onPointerUp={(event) => { if (dragRef.current?.pointerId === event.pointerId) dragRef.current = null; if (anchorDragRef.current?.pointerId === event.pointerId) anchorDragRef.current = null; if (panRef.current?.pointerId === event.pointerId) { panRef.current = null; setPanning(false) } }} onPointerCancel={() => { dragRef.current = null; anchorDragRef.current = null; panRef.current = null; setPanning(false) }}>
+                  <div ref={stageRef} className={`model-stage${panning ? ' panning' : ''}${mixerActive ? ' mixer-active' : ''}${mixerPainting ? ' mixer-painting' : ''}`} onPointerDown={beginPan} onPointerMove={(event) => { moveMixerStroke(event); movePan(event); movePartDrag(event); moveAnchorDrag(event) }} onPointerUp={(event) => { if (dragRef.current?.pointerId === event.pointerId) dragRef.current = null; if (anchorDragRef.current?.pointerId === event.pointerId) anchorDragRef.current = null; if (panRef.current?.pointerId === event.pointerId) { panRef.current = null; setPanning(false) } if (mixerStrokeRef.current?.pointerId === event.pointerId) { mixerStrokeRef.current = null; setMixerPainting(false) } }} onPointerCancel={() => { dragRef.current = null; anchorDragRef.current = null; panRef.current = null; mixerStrokeRef.current = null; setPanning(false); setMixerPainting(false) }}>
                     <div className="model-artboard" style={{ width: `${project.width * scale}px`, height: `${project.height * scale}px`, left: `calc(50% + ${pan.x}px)`, top: `calc(50% + ${pan.y}px)` }}>
-                      {canvasParts.filter((part) => !hiddenPartIds.includes(part.id)).map((part) => <img key={part.id} className={`model-canvas-part${selectedIds.includes(part.id) ? ' selected' : ''}${connectFromId === part.id ? ' connect-source' : ''}`} src={part.dataUrl} alt={part.name} draggable={false} onClick={(event) => { event.stopPropagation(); handlePartClick(part.id, event.ctrlKey || event.metaKey) }} onPointerDown={(event) => beginPartDrag(event, part)} style={{ left: part.x * scale, top: part.y * scale, width: part.width * scale, height: part.height * scale, transform: `rotate(${part.rotation}deg)` }} />)}
+                      {canvasParts.filter((part) => !hiddenPartIds.includes(part.id)).map((part) => <img key={part.id} className={`model-canvas-part${selectedIds.includes(part.id) ? ' selected' : ''}${connectFromId === part.id ? ' connect-source' : ''}`} src={part.dataUrl} alt={part.name} draggable={false} onClick={(event) => { event.stopPropagation(); if (!mixerActive) handlePartClick(part.id, event.ctrlKey || event.metaKey) }} onPointerDown={(event) => beginPartDrag(event, part)} style={{ left: part.x * scale, top: part.y * scale, width: part.width * scale, height: part.height * scale, transform: `rotate(${part.rotation}deg)` }} />)}
                       <svg className="model-joint-layer" viewBox={`0 0 ${project.width} ${project.height}`} preserveAspectRatio="none" aria-label="Conexões entre as peças">
                         {showJointPivots && jointMarkers.map(({ part, anchor, offset, fixed }) => <circle key={part.id} className={`model-joint-anchor${fixed ? ' fixed' : selectedIds.includes(part.id) ? ' selected' : ''}`} cx={anchor.x + offset / scale} cy={anchor.y} r={Math.max(selectedIds.includes(part.id) ? 11 : 8, (selectedIds.includes(part.id) ? 13 : 10) / scale)} aria-label={`Pivô de ${part.name}`} onPointerDown={(event) => beginAnchorDrag(event, part.id, offset)} />)}
                       </svg>
                     </div>
                     <div className="model-stage-tools"><span>{Math.round(zoom * 100)}%</span><button onClick={() => setZoom((value) => Math.min(2.4, value + 0.15))} title="Aumentar zoom" type="button"><Icon name="zoomIn" /></button><button onClick={() => setZoom((value) => Math.max(0.5, value - 0.15))} title="Diminuir zoom" type="button"><Icon name="zoomOut" /></button><button onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }) }} title="Centralizar prévia" type="button"><Icon name="frame" /></button></div>
                   </div>
-                  <div className="model-canvas-footer"><span><kbd>Arraste o fundo</kbd> para mover a prévia <i /> <kbd>Arraste a peça</kbd> para posicionar <i /> <kbd>Ctrl</kbd> + clique para selecionar várias</span><span>{project.parts.length} peças <i /> {project.joints.length} conexões</span></div>
+                  <div className="model-canvas-footer"><span>{mixerActive ? <><kbd>Misturador ativo</kbd> passe sobre a junta; ele afeta a camada visível mais alta</> : <><kbd>Arraste o fundo</kbd> para mover a prévia <i /> <kbd>Arraste a peça</kbd> para posicionar <i /> <kbd>Ctrl</kbd> + clique para selecionar várias</>}</span><span>{project.parts.length} peças <i /> {project.joints.length} conexões</span></div>
                 </section>
 
                 <aside className="model-parts-panel model-work-panel" aria-label="Painel de edição">
