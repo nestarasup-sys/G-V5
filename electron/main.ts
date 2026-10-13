@@ -3,15 +3,33 @@ import { mkdir, readFile, writeFile, readdir, unlink, rename, stat, access, rm }
 import { basename, dirname, extname, join, resolve } from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
-import type { FabricatorAssetSave, FabricatorHistoryEntry, FabricatorHistorySaveEntry, FabricatorHistorySaveState, FabricatorHistoryState, FabricatorProject, FabricatorProjectSave, FabricatorSlotSummary, ModelPart } from '../src/shared/fabricator'
+import type { FabricatorAssetSave, FabricatorHistoryEntry, FabricatorHistorySaveEntry, FabricatorHistorySaveState, FabricatorHistoryState, FabricatorPose, FabricatorPoseDraft, FabricatorPoseDraftSave, FabricatorPoseSave, FabricatorPoseSummary, FabricatorProject, FabricatorProjectSave, FabricatorSlotSummary, ModelPart, PosePart } from '../src/shared/fabricator'
 
 const slotCount = 10
+const poseSlotCount = 12
 const libraryPath = () => join(app.getPath('userData'), 'fabricator', 'models')
 const slotPath = (slot: number) => join(libraryPath(), `slot-${slot}`)
+const poseLibraryPath = () => join(app.getPath('userData'), 'fabricator', 'poses')
+const poseSlotPath = (slot: number) => join(poseLibraryPath(), `slot-${slot}`)
+const poseDraftPath = () => join(poseLibraryPath(), 'draft')
 const fabricatorSaveQueues = new Map<number, Promise<void>>()
+let poseSaveQueue: Promise<void> = Promise.resolve()
+const poseSaveWrites = new Set<Promise<void>>()
+
+function queuePoseWrite(operation: () => Promise<void>): Promise<void> {
+  const next = poseSaveQueue.catch(() => undefined).then(operation)
+  poseSaveQueue = next
+  poseSaveWrites.add(next)
+  void next.then(() => poseSaveWrites.delete(next), () => poseSaveWrites.delete(next))
+  return next
+}
 
 function isValidSlot(slot: number): boolean {
   return Number.isInteger(slot) && slot >= 1 && slot <= slotCount
+}
+
+function isValidPoseSlot(slot: number): boolean {
+  return Number.isInteger(slot) && slot >= 1 && slot <= poseSlotCount
 }
 
 function assertTrustedSender(event: IpcMainInvokeEvent): void {
@@ -188,6 +206,75 @@ async function writeFabricatorProject(project: FabricatorProjectSave, changedAss
   }
 }
 
+async function writePoseAssets(folder: string, parts: Array<Omit<PosePart, 'dataUrl'>>, assets: FabricatorAssetSave[]): Promise<void> {
+  const partsFolder = join(folder, 'parts')
+  await mkdir(partsFolder, { recursive: true })
+  const partIds = new Set(parts.map((part) => part.id))
+  for (const asset of assets) {
+    if (!partIds.has(asset.id) || !/^[a-zA-Z0-9_-]{1,80}$/.test(asset.id)) continue
+    await writeFile(join(partsFolder, `${asset.id}.png`), dataUrlBuffer(asset.dataUrl))
+  }
+  for (const part of parts) {
+    if (!/^[a-zA-Z0-9_-]{1,80}$/.test(part.id)) throw new Error('Peça de pose inválida.')
+    await access(join(partsFolder, `${part.id}.png`))
+  }
+  const keepFiles = new Set(parts.map((part) => `${part.id}.png`))
+  for (const filename of await readdir(partsFolder)) if (filename.endsWith('.png') && !keepFiles.has(filename)) await unlink(join(partsFolder, filename))
+}
+
+async function readPoseAssets(folder: string, parts: Array<Omit<PosePart, 'dataUrl'>>): Promise<PosePart[]> {
+  const partsFolder = join(folder, 'parts')
+  return Promise.all(parts.map(async (part) => ({
+    ...part,
+    dataUrl: `data:image/png;base64,${(await readFile(join(partsFolder, `${part.id}.png`))).toString('base64')}`
+  })))
+}
+
+async function writePoseProject(slot: number, project: FabricatorPoseSave, assets: FabricatorAssetSave[]): Promise<void> {
+  if (!isValidPoseSlot(slot) || project.slot !== slot || project.schemaVersion !== 1 || project.parts.length === 0 || project.parts.length > 500) throw new Error('Pose inválida.')
+  const folder = poseSlotPath(slot)
+  await writePoseAssets(folder, project.parts, assets)
+  const temporary = join(folder, 'pose.json.tmp')
+  await writeFile(temporary, JSON.stringify(project), 'utf8')
+  await rename(temporary, join(folder, 'pose.json'))
+}
+
+async function readPoseProject(slot: number): Promise<FabricatorPose | null> {
+  if (!isValidPoseSlot(slot)) throw new Error('Slot de pose inválido.')
+  try {
+    const folder = poseSlotPath(slot)
+    const manifest = JSON.parse(await readFile(join(folder, 'pose.json'), 'utf8')) as FabricatorPoseSave
+    if (manifest.slot !== slot || manifest.schemaVersion !== 1 || manifest.parts.length === 0 || manifest.parts.length > 500) return null
+    return { ...manifest, parts: await readPoseAssets(folder, manifest.parts) }
+  } catch (reason) {
+    if ((reason as NodeJS.ErrnoException).code === 'ENOENT') return null
+    throw reason
+  }
+}
+
+async function writePoseDraft(draft: FabricatorPoseDraftSave, assets: FabricatorAssetSave[]): Promise<void> {
+  if (draft.editingSlot !== null && !isValidPoseSlot(draft.editingSlot)) throw new Error('Rascunho de pose inválido.')
+  if (draft.project.schemaVersion !== 1 || draft.project.parts.length === 0 || draft.project.parts.length > 500) throw new Error('Rascunho de pose inválido.')
+  const folder = poseDraftPath()
+  await writePoseAssets(folder, draft.project.parts, assets)
+  const temporary = join(folder, 'draft.json.tmp')
+  await writeFile(temporary, JSON.stringify(draft), 'utf8')
+  await rename(temporary, join(folder, 'draft.json'))
+}
+
+async function readPoseDraft(): Promise<FabricatorPoseDraft | null> {
+  try {
+    const folder = poseDraftPath()
+    const draft = JSON.parse(await readFile(join(folder, 'draft.json'), 'utf8')) as FabricatorPoseDraftSave
+    if (draft.editingSlot !== null && !isValidPoseSlot(draft.editingSlot)) return null
+    if (draft.project.schemaVersion !== 1 || draft.project.parts.length === 0 || draft.project.parts.length > 500) return null
+    return { ...draft, project: { ...draft.project, parts: await readPoseAssets(folder, draft.project.parts) } }
+  } catch (reason) {
+    if ((reason as NodeJS.ErrnoException).code === 'ENOENT') return null
+    throw reason
+  }
+}
+
 async function registerFabricatorHandlers(): Promise<void> {
   ipcMain.handle('fabricator:list-slots', async (event): Promise<FabricatorSlotSummary[]> => {
     assertTrustedSender(event)
@@ -299,6 +386,59 @@ async function registerFabricatorHandlers(): Promise<void> {
       if (fabricatorSaveQueues.get(slot) === current) fabricatorSaveQueues.delete(slot)
     }
   })
+
+  ipcMain.handle('fabricator:poses:list', async (event): Promise<FabricatorPoseSummary[]> => {
+    assertTrustedSender(event)
+    const slots: FabricatorPoseSummary[] = Array.from({ length: poseSlotCount }, () => null)
+    for (let slot = 1; slot <= poseSlotCount; slot += 1) {
+      try {
+        const manifest = JSON.parse(await readFile(join(poseSlotPath(slot), 'pose.json'), 'utf8')) as FabricatorPoseSave
+        slots[slot - 1] = { slot, name: manifest.name, sourceModelName: manifest.sourceModelName, partCount: manifest.parts.length, updatedAt: manifest.updatedAt }
+      } catch { /* Slots sem manifest válido aparecem vazios. */ }
+    }
+    return slots
+  })
+
+  ipcMain.handle('fabricator:poses:load', async (event, slot: number): Promise<FabricatorPose | null> => {
+    assertTrustedSender(event)
+    return readPoseProject(slot)
+  })
+
+  ipcMain.handle('fabricator:poses:save', async (event, slot: number, project: FabricatorPoseSave, assets: FabricatorAssetSave[]): Promise<void> => {
+    assertTrustedSender(event)
+    await queuePoseWrite(() => writePoseProject(slot, project, assets))
+  })
+
+  ipcMain.handle('fabricator:poses:delete', async (event, slot: number): Promise<void> => {
+    assertTrustedSender(event)
+    if (!isValidPoseSlot(slot)) throw new Error('Slot de pose inválido.')
+    await queuePoseWrite(async () => {
+      const base = resolve(poseLibraryPath())
+      const target = resolve(poseSlotPath(slot))
+      if (dirname(target) !== base || basename(target) !== `slot-${slot}`) throw new Error('Caminho de exclusão de pose inválido.')
+      await rm(target, { recursive: true, force: true })
+    })
+  })
+
+  ipcMain.handle('fabricator:poses:draft:load', async (event): Promise<FabricatorPoseDraft | null> => {
+    assertTrustedSender(event)
+    return readPoseDraft()
+  })
+
+  ipcMain.handle('fabricator:poses:draft:save', async (event, draft: FabricatorPoseDraftSave, assets: FabricatorAssetSave[]): Promise<void> => {
+    assertTrustedSender(event)
+    await queuePoseWrite(() => writePoseDraft(draft, assets))
+  })
+
+  ipcMain.handle('fabricator:poses:draft:delete', async (event): Promise<void> => {
+    assertTrustedSender(event)
+    await queuePoseWrite(async () => {
+      const base = resolve(poseLibraryPath())
+      const target = resolve(poseDraftPath())
+      if (dirname(target) !== base || basename(target) !== 'draft') throw new Error('Caminho de rascunho inválido.')
+      await rm(target, { recursive: true, force: true })
+    })
+  })
 }
 
 function createMainWindow(): void {
@@ -339,7 +479,7 @@ app.on('window-all-closed', () => {
 
 let waitingForFabricatorWritesBeforeQuit = false
 app.on('before-quit', (event) => {
-  const pendingWrites = Array.from(fabricatorSaveQueues.values())
+  const pendingWrites = [...fabricatorSaveQueues.values(), ...poseSaveWrites]
   if (pendingWrites.length === 0 || waitingForFabricatorWritesBeforeQuit) return
   event.preventDefault()
   waitingForFabricatorWritesBeforeQuit = true
