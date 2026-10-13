@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FabricatorAssetSave, FabricatorProject, FabricatorSlotSummary, ModelPart } from '../../../../shared/fabricator'
 import { Icon, type IconName } from '../../ui/components/Icon'
+import { despillGreenFringes, sampleBackground } from './models/chroma'
 import { autoConnectParts, createJoint, jointPivot, normalizeLayerOrder, normalizePartAnchors, orderedParts, partJointAnchor, reorderLayer } from './models/rig'
 
 const sections: { label: string; icon: IconName }[] = [
@@ -49,6 +50,33 @@ async function imageFromDataUrl(dataUrl: string): Promise<HTMLImageElement> {
     image.onerror = () => reject(new Error('Não foi possível abrir o recorte.'))
     image.src = dataUrl
   })
+}
+
+async function cleanSavedPartEdges(parts: ModelPart[], sourceDataUrl: string, tolerance: number): Promise<ModelPart[]> {
+  const source = await imageFromDataUrl(sourceDataUrl)
+  const sampleCanvas = document.createElement('canvas')
+  sampleCanvas.width = 128; sampleCanvas.height = 128
+  const sampleContext = sampleCanvas.getContext('2d', { willReadFrequently: true })
+  if (!sampleContext) throw new Error('Não foi possível analisar a cor do fundo.')
+  sampleContext.drawImage(source, 0, 0, sampleCanvas.width, sampleCanvas.height)
+  const background = sampleBackground(sampleContext.getImageData(0, 0, sampleCanvas.width, sampleCanvas.height).data, sampleCanvas.width, sampleCanvas.height)
+
+  const cleaned: ModelPart[] = []
+  for (const part of parts) {
+    const image = await imageFromDataUrl(part.dataUrl)
+    const canvas = document.createElement('canvas')
+    canvas.width = image.naturalWidth; canvas.height = image.naturalHeight
+    const context = canvas.getContext('2d', { willReadFrequently: true })
+    if (!context) throw new Error(`Não foi possível limpar a borda de ${part.name}.`)
+    context.drawImage(image, 0, 0)
+    const imageData = context.getImageData(0, 0, canvas.width, canvas.height)
+    const changed = despillGreenFringes(imageData.data, background, tolerance)
+    if (changed > 0) {
+      context.putImageData(imageData, 0, 0)
+      cleaned.push({ ...part, dataUrl: canvas.toDataURL('image/png') })
+    } else cleaned.push(part)
+  }
+  return cleaned
 }
 
 async function splitImage(part: ModelPart, axis: 'horizontal' | 'vertical'): Promise<ModelPart[]> {
@@ -249,9 +277,24 @@ export function FabricatorPage() {
       const loaded = await window.desktop.loadFabricatorSlot(slot)
       if (!loaded) throw new Error('O projeto salvo não pôde ser carregado.')
       const rig = normalizePartAnchors(loaded.parts, loaded.joints)
+      let loadedParts = rig.parts
+      let chromaVersion = loaded.chromaVersion ?? 0
+      if (chromaVersion < 2) {
+        try {
+          loadedParts = await cleanSavedPartEdges(rig.parts, loaded.sourceDataUrl, loaded.tolerance)
+          for (const part of loadedParts) {
+            const previous = rig.parts.find((item) => item.id === part.id)
+            if (previous?.dataUrl !== part.dataUrl) dirtyAssets.current.set(part.id, part.dataUrl)
+          }
+          chromaVersion = 2
+        } catch {
+          setError('O modelo abriu, mas não foi possível corrigir automaticamente o contorno verde.')
+        }
+      }
       setProject({
         ...loaded,
-        parts: rig.parts,
+        chromaVersion,
+        parts: loadedParts,
         layerOrder: normalizeLayerOrder(loaded.parts, loaded.layerOrder),
         hiddenPartIds: loaded.hiddenPartIds ?? [],
         joints: rig.joints
@@ -311,7 +354,7 @@ export function FabricatorPage() {
       const detectedJoints = autoConnectParts(parts)
       const rig = normalizePartAnchors(parts, detectedJoints)
       const nextProject: FabricatorProject = {
-        schemaVersion: 1, slot: metadata.slot, name: metadata.name, sourceName: metadata.sourceName,
+        schemaVersion: 1, chromaVersion: 2, slot: metadata.slot, name: metadata.name, sourceName: metadata.sourceName,
         sourceAssetName: metadata.sourceAssetName, sourceDataUrl, width: message.width, height: message.height,
         tolerance, parts: rig.parts, joints: rig.joints, layerOrder: parts.map((part) => part.id), hiddenPartIds: [], updatedAt: new Date().toISOString()
       }

@@ -1,3 +1,5 @@
+import { despillGreenFringes, sampleBackground } from './chroma'
+
 type ProcessRequest = { id: number; sourceDataUrl: string; tolerance: number }
 type ProcessedPart = { id: string; name: string; x: number; y: number; width: number; height: number; png: ArrayBuffer }
 const workerScope = self as unknown as {
@@ -33,14 +35,9 @@ workerScope.onmessage = async (event: MessageEvent<ProcessRequest>) => {
           pixels[offset + 3] = Math.round(pixels[offset + 3] * matte)
         }
       }
-      if (pixels[offset + 3] > 0 && background[1] > background[0] * 1.2 && background[1] > background[2] * 1.08 && distance < tolerance + 150) {
-        const spillWeight = Math.max(0, Math.min(1, (tolerance + 150 - distance) / 150))
-        const dominantNonGreen = Math.max(pixels[offset], pixels[offset + 2])
-        const greenSpill = Math.max(0, pixels[offset + 1] - dominantNonGreen)
-        pixels[offset + 1] = clampChannel(pixels[offset + 1] - greenSpill * spillWeight)
-      }
       keyed[pixel] = pixels[offset + 3] > 24 ? 1 : 0
     }
+    despillGreenFringes(pixels, background, tolerance)
     context.putImageData(image, 0, 0)
 
     const total = source.width * source.height
@@ -106,25 +103,6 @@ workerScope.onmessage = async (event: MessageEvent<ProcessRequest>) => {
 
 function clampChannel(value: number): number {
   return Math.max(0, Math.min(255, Math.round(value)))
-}
-
-function sampleBackground(pixels: Uint8ClampedArray, width: number, height: number): [number, number, number] {
-  const samples: number[][] = []
-  const step = Math.max(1, Math.floor(Math.min(width, height) / 120))
-  for (let x = 0; x < width; x += step) {
-    samples.push([0, x], [height - 1, x])
-  }
-  for (let y = 0; y < height; y += step) samples.push([y, 0], [y, width - 1])
-  const green = samples.map(([y, x]) => {
-    const offset = (y * width + x) * 4
-    return [pixels[offset], pixels[offset + 1], pixels[offset + 2]]
-  }).filter(([r, g, b]) => g > r * 1.2 && g > b * 1.08)
-  const chosen = green.length > 0 ? green : samples.map(([y, x]) => {
-    const offset = (y * width + x) * 4
-    return [pixels[offset], pixels[offset + 1], pixels[offset + 2]]
-  })
-  const channels = [0, 1, 2].map((channel) => chosen.map((sample) => sample[channel]).sort((a, b) => a - b)[Math.floor(chosen.length / 2)])
-  return channels as [number, number, number]
 }
 
 function guessName(minX: number, minY: number, maxX: number, maxY: number, width: number, height: number): string {

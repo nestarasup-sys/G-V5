@@ -27,6 +27,8 @@ export type ModelPart = {
 
 export type FabricatorProject = {
   schemaVersion: 1
+  /** Versão da limpeza de contorno chroma aplicada às peças. */
+  chromaVersion?: number
   slot: number
   name: string
   sourceName: string
