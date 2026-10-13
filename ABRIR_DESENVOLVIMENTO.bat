@@ -16,7 +16,7 @@ if errorlevel 1 (
   exit /b 1
 )
 
-if not exist "node_modules\electron\dist\electron.exe" (
+if not exist "node_modules\electron\install.js" (
   echo Preparando as dependencias do aplicativo...
   call npm install
   if errorlevel 1 (
@@ -24,6 +24,23 @@ if not exist "node_modules\electron\dist\electron.exe" (
     pause
     exit /b 1
   )
+)
+
+if not exist "node_modules\electron\dist\electron.exe" (
+  echo Instalando o executavel do Electron...
+  call node scripts\install-electron.cjs
+  if errorlevel 1 (
+    echo Nao foi possivel instalar o executavel do Electron.
+    pause
+    exit /b 1
+  )
+)
+
+if not exist "node_modules\electron\dist\electron.exe" (
+  echo O Electron continua sem o executavel esperado em node_modules\electron\dist.
+  echo Confira a conexao e as mensagens de instalacao acima.
+  pause
+  exit /b 1
 )
 
 echo Iniciando Gacha Nymi em modo de desenvolvimento...
