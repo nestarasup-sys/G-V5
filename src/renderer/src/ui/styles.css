@@ -95,9 +95,11 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .customizer-wardrobe-overlay.draggable { pointer-events:auto;cursor:grab;touch-action:none; }
 .customizer-wardrobe-overlay.draggable:active { cursor:grabbing; }
 .customizer-wardrobe-catalog { min-height:0;flex:1;display:flex;flex-direction:column;gap:10px; }
-.customizer-wardrobe-customize-tab { min-height:36px;display:flex;align-items:center;justify-content:center;gap:7px;border:1px solid #eee9ed;border-radius:8px;background:#fff;color:#706773;font-size:12px;font-weight:750;cursor:pointer; }
+.customizer-wardrobe-toolbar { display:flex;align-items:center;gap:7px; }
+.customizer-wardrobe-customize-tab { min-width:0;min-height:36px;flex:1;display:flex;align-items:center;justify-content:center;gap:7px;border:1px solid #eee9ed;border-radius:8px;background:#fff;color:#706773;font-size:12px;font-weight:750;cursor:pointer; }
 .customizer-wardrobe-customize-tab svg { width:14px;height:14px; }
 .customizer-wardrobe-customize-tab:hover,.customizer-wardrobe-customize-tab.active { border-color:#f0c5d4;background:#fff2f7;color:#ac426b; }
+.customizer-wardrobe-history { display:flex;flex:0 0 auto;align-items:center;gap:5px; }
 .customizer-wardrobe-tabs { position:sticky;top:-13px;z-index:4;display:grid;grid-template-columns:1fr 1fr;gap:5px;margin:-1px -1px 0;padding:7px;border:1px solid #f0e9ee;border-radius:9px;background:#fff;box-shadow:0 4px 12px #35233808; }
 .customizer-wardrobe-tabs button { min-height:34px;border:1px solid transparent;border-radius:7px;background:#faf8fa;color:#7d727e;font-size:12px;font-weight:700;cursor:pointer; }
 .customizer-wardrobe-tabs button.active { border-color:#f0c5d4;background:#fff2f7;color:#ac426b; }
