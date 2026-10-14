@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import type { FabricatorHistoryState, FabricatorPose, FabricatorPoseSummary, FabricatorProject, FabricatorProjectSave, FabricatorSlotSummary, WardrobeCategory, WardrobeComponent, WardrobeSet, WardrobeSetSave, WardrobeSetSummary } from '../../../../../shared/fabricator'
 import { Icon } from '../../../ui/components/Icon'
-import { orderedParts, partJointAnchor } from '../models/rig'
+import { orderedParts, partJointAnchor, sourcePointFromCanvas } from '../models/rig'
 
 type WorkerPiece = Omit<WardrobeComponent, 'category' | 'attachedPartId' | 'rotation' | 'dataUrl'> & { png: ArrayBuffer }
 type WorkerMessage = { type: 'complete'; id: number; width: number; height: number; pieces: WorkerPiece[] } | { type: 'error'; id: number; message: string }
@@ -60,12 +60,15 @@ function guessBone(category: WardrobeCategory, x: number, width: number, model: 
           : category === 'calca-coxa' ? { x: side === 'left' ? .42 : .58, y: .58 }
             : { x: side === 'left' ? .38 : .62, y: .82 }
   const candidates = model.parts.filter((part) => {
-    const centerX = (part.x + part.width / 2) / model.width
+    const partX = part.sourceTransform?.x ?? part.x
+    const centerX = (partX + part.width / 2) / model.width
     return category === 'camisa' || category === 'shorts' ? centerX > .3 && centerX < .7 : side === 'left' ? centerX < .5 : centerX >= .5
   })
   const distance = (part: FabricatorProject['parts'][number]) => {
-    const dx = (part.x + part.width / 2) / model.width - target.x
-    const dy = (part.y + part.height / 2) / model.height - target.y
+    const partX = part.sourceTransform?.x ?? part.x
+    const partY = part.sourceTransform?.y ?? part.y
+    const dx = (partX + part.width / 2) / model.width - target.x
+    const dy = (partY + part.height / 2) / model.height - target.y
     return dx * dx + dy * dy * 1.5
   }
   return candidates.sort((a, b) => distance(a) - distance(b))[0] ?? model.parts[0]
@@ -116,20 +119,26 @@ export function WardrobeWorkspace() {
         try { history = await window.desktop.loadFabricatorHistory(targetSlot) } catch { /* Keep calibration available if no history can be read. */ }
         if (history) {
           const original = history.undo[0]?.project
-          if (original) {
-            const sourceParts = new Map(original.parts.map((part) => [part.id, part]))
-            const recoveredParts = reference.parts.map((part) => {
-              if (part.sourceTransform) return part
-              const sourcePart = sourceParts.get(part.id)
-              if (!sourcePart) return part
-              const jointAnchor = partJointAnchor(sourcePart, original.joints)
-              return { ...part, sourceTransform: { x: sourcePart.x, y: sourcePart.y, rotation: sourcePart.rotation, ...(jointAnchor ? { jointAnchor: { ...jointAnchor } } : {}) } }
-            })
-            if (recoveredParts.some((part, index) => part !== reference.parts[index])) {
-              recoveredModel = { ...reference, parts: recoveredParts }
-              try { await window.desktop.saveFabricatorProject(serializeModel(recoveredModel), []) }
-              catch { setError('Recuperei a origem das peças pelo histórico, mas não consegui gravá-la no modelo. Ela ficará disponível nesta sessão.') }
-            }
+          const originalParts = new Map((original?.parts ?? []).map((part) => [part.id, part]))
+          const recoveredParts = reference.parts.map((part) => {
+            const sourcePart = originalParts.get(part.id)
+            const baseTransform = part.sourceTransform ?? (sourcePart
+              ? { x: sourcePart.x, y: sourcePart.y, rotation: sourcePart.rotation }
+              : undefined)
+            if (!baseTransform || part.sourceTransform?.anchorVersion === 1) return part
+            // Keep the user's current rig pivot, but express it in the original sheet's coordinates.
+            const currentAnchor = partJointAnchor(part, reference.joints)
+            const sourcePoint = currentAnchor
+              ? sourcePointFromCanvas({ ...part, sourceTransform: baseTransform }, currentAnchor)
+              : null
+            const fallbackAnchor = sourcePart ? partJointAnchor(sourcePart, original?.joints ?? []) : baseTransform.jointAnchor
+            const jointAnchor = sourcePoint ?? fallbackAnchor
+            return { ...part, sourceTransform: { ...baseTransform, anchorVersion: 1 as const, ...(jointAnchor ? { jointAnchor: { ...jointAnchor } } : {}) } }
+          })
+          if (recoveredParts.some((part, index) => part !== reference.parts[index])) {
+            recoveredModel = { ...reference, parts: recoveredParts }
+            try { await window.desktop.saveFabricatorProject(serializeModel(recoveredModel), []) }
+            catch { setError('Recuperei a origem das peças pelo histórico, mas não consegui gravá-la no modelo. Ela ficará disponível nesta sessão.') }
           }
         }
       }
@@ -201,8 +210,18 @@ export function WardrobeWorkspace() {
   const updateComponent = (id: string, values: Partial<WardrobeComponent>) => { setDirty(true); setDraft((current) => current ? ({ ...current, components: current.components.map((component) => component.id === id ? { ...component, ...values } : component), updatedAt: new Date().toISOString() }) : current) }
   const calibrateSourceAnchor = async (partId: string, x: number, y: number) => {
     if (!model) return
+    const selectedPart = model.parts.find((part) => part.id === partId)
+    if (!selectedPart) return
+    const currentAnchor = partJointAnchor(selectedPart, model.joints) ?? { x: selectedPart.x + selectedPart.width / 2, y: selectedPart.y + selectedPart.height / 2 }
+    const currentCenter = { x: selectedPart.x + selectedPart.width / 2, y: selectedPart.y + selectedPart.height / 2 }
+    const radians = -selectedPart.rotation * Math.PI / 180
+    const dx = currentAnchor.x - currentCenter.x
+    const dy = currentAnchor.y - currentCenter.y
+    const localX = dx * Math.cos(radians) - dy * Math.sin(radians)
+    const localY = dx * Math.sin(radians) + dy * Math.cos(radians)
+    const sourceCenter = { x: x - localX, y: y - localY }
     const parts = model.parts.map((part) => part.id === partId
-      ? { ...part, sourceTransform: { x: part.x, y: part.y, rotation: part.rotation, jointAnchor: { x, y } } }
+      ? { ...part, sourceTransform: { x: sourceCenter.x - part.width / 2, y: sourceCenter.y - part.height / 2, rotation: 0, anchorVersion: 1 as const, jointAnchor: { x, y } } }
       : part)
     const calibrated = { ...model, parts, updatedAt: new Date().toISOString() }
     setModel(calibrated); setCalibratingPartId(null); setError('')
@@ -339,14 +358,15 @@ export function WardrobeWorkspace() {
           const layerBand = testPose ? previewLayerStride : draft.components.length + 1
           const modelBone = model?.parts.find((part) => part.id === component.attachedPartId)
           const poseBone = testPose?.parts.find((part) => part.id === component.attachedPartId)
-          const referenceAnchor = modelBone ? sourceAnchor(modelBone) : null
           const currentAnchor = poseBone && testPose ? partJointAnchor(poseBone, testPose.joints) ?? { x: poseBone.x + poseBone.width / 2, y: poseBone.y + poseBone.height / 2 } : null
+          const sourceFrame = poseBone?.sourceTransform?.anchorVersion === 1 ? poseBone.sourceTransform : modelBone?.sourceTransform
+          const referenceAnchor = sourceFrame && modelBone ? sourceAnchor({ ...modelBone, sourceTransform: sourceFrame }) : null
           const offsetX = referenceAnchor && currentAnchor ? currentAnchor.x - referenceAnchor.x : 0
           const offsetY = referenceAnchor && currentAnchor ? currentAnchor.y - referenceAnchor.y : 0
           const testOffset = testDragOffsets[component.id] ?? { x: 0, y: 0 }
           const componentX = component.x + (testPose ? testOffset.x : 0)
           const componentY = component.y + (testPose ? testOffset.y : 0)
-          const bodyRotation = modelBone?.sourceTransform && poseBone ? poseBone.rotation - modelBone.sourceTransform.rotation : 0
+          const bodyRotation = sourceFrame && poseBone ? poseBone.rotation - sourceFrame.rotation : 0
           const poseLayer = testPose?.layerOrder.indexOf(component.attachedPartId) ?? -1
           const zIndex = testPose ? 3 + Math.max(0, poseLayer) * layerBand + index : 2 + layer * layerBand + index
           const image = <img className={`wardrobe-preview-part${component.id === selectedId ? ' selected' : ''}`} src={component.dataUrl} alt={component.name} title={`${component.name} · ${categoryNames[component.category]} · camada do modelo ${layer + 1}`} draggable={false} onClick={() => setSelectedId(component.id)} onPointerDown={(event) => beginPieceDrag(event, component)} onPointerMove={movePieceDrag} onPointerUp={finishPieceDrag} onPointerCancel={finishPieceDrag} style={{ left: 0, top: 0, width: component.width * scale, height: component.height * scale, transform: `rotate(${component.rotation}deg)` }} />

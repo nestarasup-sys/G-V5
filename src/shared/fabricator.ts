@@ -26,7 +26,7 @@ export type ModelPart = {
   /** Pivô único da peça no canvas, em coordenadas da folha. */
   jointAnchor?: { x: number; y: number }
   /** Transformação imutável da peça na folha desmontada original. */
-  sourceTransform?: { x: number; y: number; rotation: number; jointAnchor?: { x: number; y: number } }
+  sourceTransform?: { x: number; y: number; rotation: number; jointAnchor?: { x: number; y: number }; anchorVersion?: 1 }
   selected?: boolean
 }
 

@@ -53,6 +53,24 @@ export function partJointAnchor(part: ModelPart, joints: JointLink[]): Point | n
   return joint.parentPartId === part.id ? joint.parentAnchor : joint.childAnchor
 }
 
+/** Maps a pivot from the currently assembled canvas back into the imported sheet. */
+export function sourcePointFromCanvas(part: ModelPart, point: Point): Point | null {
+  const source = part.sourceTransform
+  if (!source) return null
+  const currentCenter = center(part)
+  const toLocal = -part.rotation * Math.PI / 180
+  const currentDx = point.x - currentCenter.x
+  const currentDy = point.y - currentCenter.y
+  const localX = currentDx * Math.cos(toLocal) - currentDy * Math.sin(toLocal)
+  const localY = currentDx * Math.sin(toLocal) + currentDy * Math.cos(toLocal)
+  const fromSource = source.rotation * Math.PI / 180
+  const sourceCenter = { x: source.x + part.width / 2, y: source.y + part.height / 2 }
+  return {
+    x: sourceCenter.x + localX * Math.cos(fromSource) - localY * Math.sin(fromSource),
+    y: sourceCenter.y + localX * Math.sin(fromSource) + localY * Math.cos(fromSource)
+  }
+}
+
 export function normalizeLayerOrder(parts: ModelPart[], order?: string[]): string[] {
   const valid = new Set(parts.map((part) => part.id))
   const normalized = (order ?? []).filter((id, index, list) => valid.has(id) && list.indexOf(id) === index)
