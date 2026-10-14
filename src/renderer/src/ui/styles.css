@@ -678,12 +678,20 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .wardrobe-preview-card>header { min-height:34px;display:flex;align-items:center;justify-content:space-between;padding:0 10px;border-bottom:1px solid #f0ebef;color:#a198a2;font-size:10px;font-weight:800;letter-spacing:.6px; }
 .wardrobe-preview-card>header span:first-child { display:flex;align-items:center;gap:6px; }
 .wardrobe-preview-card>header i { width:6px;height:6px;border-radius:50%;background:#e786a6; }
+.wardrobe-preview-controls { display:flex;align-items:center;gap:7px;flex-wrap:wrap;padding:7px 10px;border-bottom:1px solid #f0ebef; }
+.wardrobe-preview-controls small { color:#8e8490;font-size:10px; }
 .wardrobe-preview-stage { position:relative;min-width:0;min-height:0;flex:1;display:grid;place-items:center;overflow:hidden;background-color:#fdfcfd;background-image:linear-gradient(45deg,#f1edf1 25%,transparent 25%),linear-gradient(-45deg,#f1edf1 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#f1edf1 75%),linear-gradient(-45deg,transparent 75%,#f1edf1 75%);background-position:0 0,0 6px,6px -6px,-6px 0;background-size:12px 12px; }
 .wardrobe-artboard { position:relative;flex:0 0 auto;overflow:visible;filter:drop-shadow(0 3px 10px #44303a1a); }
 .wardrobe-artboard.calibrating-origin { cursor:crosshair; }
 .wardrobe-calibration-hint { border:1px solid #e15683;background:#fff6fa;color:#a92c57; }
 .wardrobe-calibrate-button { width:100%;justify-content:center;margin:2px 0 8px; }
 .wardrobe-artboard>img { position:absolute;object-fit:fill;user-select:none;-webkit-user-drag:none; }
+.wardrobe-reference-body-part { pointer-events:none;touch-action:none; }
+.wardrobe-reference-body-part.movable { pointer-events:auto;cursor:grab;filter:drop-shadow(0 0 3px #3284f5a8); }
+.wardrobe-reference-body-part.movable:active { cursor:grabbing; }
+.wardrobe-binding-marker { position:absolute;z-index:2000;width:16px;height:16px;transform:translate(-50%,-50%);border:3px solid white;border-radius:50%;background:#2685e9;box-shadow:0 0 0 2px #1768bd,0 2px 7px #173b7999;pointer-events:none; }
+.wardrobe-binding-marker.selected { width:20px;height:20px;background:#39adff;box-shadow:0 0 0 3px #1557a8,0 0 12px #0e80ff; }
+.wardrobe-bind-dot { width:10px;height:10px;flex:0 0 10px;border:2px solid #fff;border-radius:50%;background:#2685e9;box-shadow:0 0 0 1px #1768bd; }
 .wardrobe-preview-part { cursor:grab;touch-action:none;user-select:none; }
 .wardrobe-preview-part:active { cursor:grabbing; }
 .wardrobe-preview-part.selected { filter:drop-shadow(0 0 2px #e15683) drop-shadow(0 0 4px #e156835e); }
