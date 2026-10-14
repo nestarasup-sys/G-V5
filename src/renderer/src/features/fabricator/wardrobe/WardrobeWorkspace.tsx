@@ -29,6 +29,20 @@ function bindingMarker(component: WardrobeComponent, bone: ModelPart): Point {
   if (right > left && bottom > top) return { x: (left + right) / 2, y: (top + bottom) / 2 }
   return { x: Math.max(bx, Math.min(bx + bw, component.x + component.width / 2)), y: Math.max(by, Math.min(by + bh, component.y + component.height / 2)) }
 }
+function rebindComponents(components: WardrobeComponent[], reference: FabricatorProject): { components: WardrobeComponent[]; changed: boolean } {
+  const bones = new Map(reference.parts.map((part) => [part.id, part]))
+  let changed = false
+  const rebound = components.map((component) => {
+    const bone = bones.get(component.attachedPartId)
+    if (!bone) return component
+    const expected = bindWardrobeComponent(component, bone)
+    const current = component.binding
+    if (current?.boneId === expected.boneId && Math.abs(current.localCenterX - expected.localCenterX) < 0.00001 && Math.abs(current.localCenterY - expected.localCenterY) < 0.00001 && Math.abs(current.widthRatio - expected.widthRatio) < 0.00001 && Math.abs(current.heightRatio - expected.heightRatio) < 0.00001 && Math.abs(current.relativeRotation - expected.relativeRotation) < 0.00001) return component
+    changed = true
+    return { ...component, binding: expected }
+  })
+  return { components: changed ? rebound : components, changed }
+}
 const categoryNames: Record<WardrobeCategory, string> = {
   camisa: 'Camisas', 'manga-superior': 'Mangas superiores', 'manga-inferior': 'Mangas inferiores', 'calca-coxa': 'Calças · coxas', 'calca-canela': 'Calças · canelas', shorts: 'Shorts'
 }
@@ -202,43 +216,43 @@ export function WardrobeWorkspace() {
       if (!alive || event.data.type === 'progress') return
       if (event.data.type === 'error') { setError(`Não foi possível separar o corpo original: ${event.data.message}`); worker.terminate(); return }
       const pieces = event.data.parts
-      const sameParts = pieces.length === model.parts.length && pieces.every((piece, index) => Math.abs(piece.width - model.parts[index].width) <= 6 && Math.abs(piece.height - model.parts[index].height) <= 6)
-      if (!sameParts) { setError('A folha original não corresponde às peças salvas do modelo. A movimentação do corpo precisa de uma referência compatível.'); worker.terminate(); return }
+      // Reprocessing with a different chroma tolerance changes crop margins.
+      // Import and reprocessing both sort components by y/x, so preserve that
+      // stable order instead of rejecting valid pieces by their old dimensions.
+      if (pieces.length !== model.parts.length) { setError(`A folha original gerou ${pieces.length} peças, mas o modelo salvo tem ${model.parts.length}. Ajuste o chroma do modelo para recuperar a mesma separação.`); worker.terminate(); return }
       const parts: Record<string, SourceReferencePart> = {}
       model.parts.forEach((part, index) => {
         const piece = pieces[index]
         parts[part.id] = { x: piece.x, y: piece.y, width: piece.width, height: piece.height, imageDataUrl: dataUrl(piece.png) }
       })
       setSourceReference({ sourceDataUrl: model.sourceDataUrl, parts })
+      setError('')
       worker.terminate()
     }
     worker.onerror = () => { if (alive) setError('Não foi possível carregar as peças separadas do corpo original.'); worker.terminate() }
     worker.postMessage({ id: 1, sourceDataUrl: model.sourceDataUrl, tolerance: model.tolerance })
     return () => { alive = false; worker.terminate() }
   }, [model])
+  useEffect(() => {
+    if (!sourceParts || !referenceModel || !draft) return
+    const rebound = rebindComponents(draft.components, referenceModel)
+    if (!rebound.changed) return
+    setDraft((current) => current?.id === draft.id ? { ...current, components: rebindComponents(current.components, referenceModel).components } : current)
+    setDirty(true)
+  }, [sourceParts, draft?.id])
   useEffect(() => () => workerRef.current?.terminate(), [])
 
   const openSet = async (id: string) => {
     if (dirty && !window.confirm('Há alterações não salvas neste conjunto. Descartar e abrir outro?')) return
-    if (!sourceParts) { setError('Aguarde as peças da folha original carregarem antes de abrir o conjunto.'); return }
     try {
       const loaded = await window.desktop.loadWardrobeSet(modelSlot, id)
       if (!loaded) throw new Error('O conjunto não foi encontrado.')
-      const components = loaded.components.map((component) => {
-        const bone = referenceBone(component.attachedPartId)
-        if (!bone) return component
-        const expected = bindWardrobeComponent(component, bone)
-        const current = component.binding
-        if (current?.boneId === expected.boneId && Math.abs(current.localCenterX - expected.localCenterX) < 0.00001 && Math.abs(current.localCenterY - expected.localCenterY) < 0.00001 && Math.abs(current.widthRatio - expected.widthRatio) < 0.00001 && Math.abs(current.heightRatio - expected.heightRatio) < 0.00001 && Math.abs(current.relativeRotation - expected.relativeRotation) < 0.00001) return component
-        return { ...component, binding: expected }
-      })
-      const migrated = components.some((component, index) => component !== loaded.components[index])
-      setDraft(migrated ? { ...loaded, components } : loaded); setActiveSetId(id); setSelectedId(components[0]?.id ?? null); setDirty(migrated); setBodyOffsets({}); setError('')
+      const rebound = referenceModel ? rebindComponents(loaded.components, referenceModel) : { components: loaded.components, changed: false }
+      setDraft(rebound.changed ? { ...loaded, components: rebound.components } : loaded); setActiveSetId(id); setSelectedId(rebound.components[0]?.id ?? null); setDirty(rebound.changed); setBodyOffsets({}); setError('')
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível abrir o conjunto.') }
   }
   const importSheet = async (file?: File) => {
     if (!file || !model) return
-    if (!sourceParts || !referenceModel) { setError('Aguarde carregar a folha original do modelo.'); return }
     if (!/\.(png|jpe?g|webp)$/i.test(file.name)) { setError('Use uma imagem PNG, JPG ou WebP.'); return }
     setProcessing(true); setError('')
     try {
@@ -256,7 +270,7 @@ export function WardrobeWorkspace() {
         const components = message.pieces.map((piece) => {
           const category = guessCategory(piece, message.width, message.height)
           const { png, ...metadata } = piece
-          const bone = guessBone(category, piece.x + piece.width / 2, message.width, referenceModel)
+          const bone = guessBone(category, piece.x + piece.width / 2, message.width, referenceModel ?? model)
           const positioned: WardrobeComponent = { ...metadata, category, attachedPartId: bone?.id ?? '', rotation: 0, originX: metadata.x, originY: metadata.y, originWidth: metadata.width, originHeight: metadata.height, dataUrl: dataUrl(png) }
           if (bone) positioned.binding = bindWardrobeComponent(positioned, bone)
           return { ...positioned, name: guessName(category, piece.x + piece.width / 2, message.width) }
