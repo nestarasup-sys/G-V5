@@ -6,19 +6,30 @@ export type WardrobePoseTransform = {
   origin: Point
   localLeft: number
   localTop: number
+  renderWidth: number
+  renderHeight: number
   localRotation: number
   matrix: string
   scaleX: number
   scaleY: number
 }
 
-/** Map a garment through the fitted bone frame, independent of the rig ball. */
-export function mapWardrobeComponentToPose(component: WardrobeComponent, sourceBone: ModelPart, poseBone: ModelPart): WardrobePoseTransform {
+/**
+ * Map a garment from the source sheet into the posed bone's local frame.
+ * The garment's own x/y/width/height/rotation are intentionally kept in this
+ * calculation so manual fitting and non-uniform scaling survive every pose.
+ */
+export function mapWardrobeComponentToPose(
+  component: WardrobeComponent,
+  sourceBone: ModelPart,
+  poseBone: ModelPart,
+  kneeOverlap = 0
+): WardrobePoseTransform {
   const source = sourceBone.sourceTransform
   const sourceWidth = Math.max(1, source?.width ?? sourceBone.width)
   const sourceHeight = Math.max(1, source?.height ?? sourceBone.height)
-  const scaleX = poseBone.width / sourceWidth
-  const scaleY = poseBone.height / sourceHeight
+  const scaleX = Math.max(0.0001, poseBone.width / sourceWidth)
+  const scaleY = Math.max(0.0001, poseBone.height / sourceHeight)
   const sourceRotation = source?.rotation ?? 0
   const sourceCenter = { x: (source?.x ?? sourceBone.x) + sourceWidth / 2, y: (source?.y ?? sourceBone.y) + sourceHeight / 2 }
   const garmentCenter = { x: component.x + component.width / 2, y: component.y + component.height / 2 }
@@ -32,10 +43,15 @@ export function mapWardrobeComponentToPose(component: WardrobeComponent, sourceB
   const radians = poseBone.rotation * Math.PI / 180
   const matrix = [Math.cos(radians) * scaleX, Math.sin(radians) * scaleX, -Math.sin(radians) * scaleY, Math.cos(radians) * scaleY, 0, 0]
     .map((value) => Number(value.toFixed(8))).join(',')
+  const overlap = Math.max(0, kneeOverlap)
   return {
     origin: { x: poseBone.x + poseBone.width / 2, y: poseBone.y + poseBone.height / 2 },
     localLeft: localCenter.x - component.width / 2,
-    localTop: localCenter.y - component.height / 2,
+    // Expand evenly around the fitted center so the overlap cannot shift the
+    // garment away from its bone. This tiny test-only stretch closes the knee.
+    localTop: localCenter.y - (component.height + overlap) / 2,
+    renderWidth: component.width,
+    renderHeight: component.height + overlap,
     localRotation: component.rotation - sourceRotation,
     matrix: `matrix(${matrix})`, scaleX, scaleY
   }
