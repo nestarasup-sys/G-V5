@@ -220,7 +220,7 @@ export function WardrobeWorkspace() {
     const localX = dx * Math.cos(radians) - dy * Math.sin(radians)
     const localY = dx * Math.sin(radians) + dy * Math.cos(radians)
     const sourceCenter = { x: x - localX, y: y - localY }
-    const sourceTransform = { x: sourceCenter.x - part.width / 2, y: sourceCenter.y - part.height / 2, width: part.width, height: part.height, rotation: 0, anchorVersion: 1 as const, jointAnchor: { x, y } }
+    const sourceTransform = { x: sourceCenter.x - selectedPart.width / 2, y: sourceCenter.y - selectedPart.height / 2, width: selectedPart.width, height: selectedPart.height, rotation: 0, anchorVersion: 1 as const, jointAnchor: { x, y } }
     setDraft((current) => current ? { ...current, sourceOverrides: { ...current.sourceOverrides, [partId]: sourceTransform }, updatedAt: new Date().toISOString() } : current)
     setDirty(true)
     setCalibratingPartId(null)
