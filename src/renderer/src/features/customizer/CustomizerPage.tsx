@@ -17,8 +17,8 @@ const characters = [
 ]
 
 const modules: { name: string; icon: IconName; detail: string }[] = [
-  { name: 'Presets', icon: 'sparkles', detail: 'Looks prontos para começar' },
-  { name: 'Corpo', icon: 'body', detail: 'Pose, proporções e detalhes' },
+  { name: 'Modelos', icon: 'sparkles', detail: 'Looks prontos para começar' },
+  { name: 'Poses', icon: 'body', detail: 'Pose, proporções e detalhes' },
   { name: 'Cabeça', icon: 'face', detail: 'Rosto, cabelo e expressões' },
   { name: 'Roupas', icon: 'shirt', detail: 'Monte um visual único' },
   { name: 'Acessórios', icon: 'flower', detail: 'Peças e objetos de cena' },
