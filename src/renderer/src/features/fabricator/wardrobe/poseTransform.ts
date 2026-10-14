@@ -93,24 +93,3 @@ export function poseDeltaToSource(delta: Point, sourceBone: ModelPart, poseBone:
   return { x: inverse.a * delta.x + inverse.c * delta.y, y: inverse.b * delta.x + inverse.d * delta.y }
 }
 
-/**
- * Source crops may have large transparent margins at the knee. Copying the
- * last 18px therefore moves transparent pixels and leaves skin visible.
- * Instead we stretch ONLY the knee-facing half of the already fitted image:
- * the middle seam is stationary, the far side expands by at least 3× the
- * requested overlap. The original garment remains rendered unchanged below
- * and its stored geometry is never touched.
- */
-export function kneeBand(
-  component: WardrobeComponent,
-  amount: number
-): { shiftY: number; scaleY: number; clipTop: number; clipBottom: number } | null {
-  if (!Number.isFinite(amount) || amount <= 0 || component.height <= 0) return null
-  const pivot = component.height / 2
-  const extension = Math.max(amount * 3, 48)
-  const stretch = 1 + extension / pivot
-  const shiftY = (1 - stretch) * pivot // keep middle seam stationary
-  if (component.category === 'calca-coxa') return { shiftY, scaleY: stretch, clipTop: pivot, clipBottom: 0 }
-  if (component.category === 'calca-canela') return { shiftY, scaleY: stretch, clipTop: 0, clipBottom: pivot }
-  return null
-}
