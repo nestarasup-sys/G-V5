@@ -3,7 +3,7 @@ import { mkdir, readFile, writeFile, readdir, unlink, rename, stat, access, rm, 
 import { basename, dirname, extname, join, resolve } from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
-import type { FabricatorAssetSave, FabricatorHistoryEntry, FabricatorHistorySaveEntry, FabricatorHistorySaveState, FabricatorHistoryState, FabricatorPose, FabricatorPoseDraft, FabricatorPoseDraftSave, FabricatorPoseSave, FabricatorPoseSummary, FabricatorProject, FabricatorProjectSave, FabricatorSlotSummary, ModelPart, PosePart, WardrobeAssetSave, WardrobeCategory, WardrobeSet, WardrobeSetSave, WardrobeSetSummary } from '../src/shared/fabricator'
+import type { FabricatorAssetSave, FabricatorHistoryEntry, FabricatorHistorySaveEntry, FabricatorHistorySaveState, FabricatorHistoryState, FabricatorPose, FabricatorPoseDraft, FabricatorPoseDraftSave, FabricatorPoseSave, FabricatorPoseSummary, CustomizerLibrary, FabricatorProject, FabricatorProjectSave, FabricatorSlotSummary, ModelPart, PosePart, WardrobeAssetSave, WardrobeCategory, WardrobeSet, WardrobeSetSave, WardrobeSetSummary } from '../src/shared/fabricator'
 
 const slotCount = 10
 const poseSlotCount = 12
@@ -633,6 +633,35 @@ async function registerFabricatorHandlers(): Promise<void> {
       if (dirname(target) !== base || basename(target) !== 'draft') throw new Error('Caminho de rascunho inválido.')
       await rm(target, { recursive: true, force: true })
     })
+  })
+
+  ipcMain.handle('customizer:load-library', async (event): Promise<CustomizerLibrary> => {
+    assertTrustedSender(event)
+    try {
+      const library = JSON.parse(await readFile(join(app.getPath('userData'), 'customizer', 'characters.json'), 'utf8')) as CustomizerLibrary
+      return library.schemaVersion === 1 && Array.isArray(library.characters) ? library : { schemaVersion: 1, characters: [] }
+    } catch (reason) {
+      if ((reason as NodeJS.ErrnoException).code === 'ENOENT') return { schemaVersion: 1, characters: [] }
+      throw reason
+    }
+  })
+  ipcMain.handle('customizer:save-library', async (event, library: CustomizerLibrary): Promise<void> => {
+    assertTrustedSender(event)
+    if (library?.schemaVersion !== 1 || !Array.isArray(library.characters) || library.characters.length > 200) throw new Error('Biblioteca de personagens inválida.')
+    for (const character of library.characters) {
+      if (!isValidWardrobeId(character.id) || typeof character.name !== 'string' || character.name.length > 80 ||
+          !(character.modelSlot === null || isValidModelSlot(character.modelSlot)) || !isValidPoseSlot(character.poseSlot) ||
+          !character.equipped || !character.adjustments ||
+          Object.values(character.equipped).some((value) => typeof value !== 'string' || value.length > 160) ||
+          Object.values(character.adjustments).some((value) => !value || Object.values(value).some((number) => typeof number !== 'number' || !Number.isFinite(number)))) {
+        throw new Error('Dados de personagem inválidos.')
+      }
+    }
+    const folder = join(app.getPath('userData'), 'customizer')
+    await mkdir(folder, { recursive: true })
+    const temporary = join(folder, 'characters.json.tmp')
+    await writeFile(temporary, JSON.stringify(library), 'utf8')
+    await rename(temporary, join(folder, 'characters.json'))
   })
 
   ipcMain.handle('fabricator:wardrobe:list', async (event, modelSlot: number): Promise<WardrobeSetSummary[]> => {
