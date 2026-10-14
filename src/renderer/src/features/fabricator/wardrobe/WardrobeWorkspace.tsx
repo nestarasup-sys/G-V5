@@ -4,6 +4,7 @@ import { Icon } from '../../../ui/components/Icon'
 
 type WorkerPiece = Omit<WardrobeComponent, 'category' | 'attachedPartId' | 'rotation' | 'dataUrl'> & { png: ArrayBuffer }
 type WorkerMessage = { type: 'complete'; id: number; width: number; height: number; pieces: WorkerPiece[] } | { type: 'error'; id: number; message: string }
+type ReferenceMessage = { type: 'complete'; id: number; png: ArrayBuffer } | { type: 'error'; id: number; message: string }
 const categoryNames: Record<WardrobeCategory, string> = {
   camisa: 'Camisas', 'manga-superior': 'Mangas superiores', 'manga-inferior': 'Mangas inferiores', 'calca-coxa': 'Calças · coxas', 'calca-canela': 'Calças · canelas', shorts: 'Shorts'
 }
@@ -75,6 +76,7 @@ export function WardrobeWorkspace() {
   const requestRef = useRef(0)
   const previewRef = useRef<HTMLDivElement>(null)
   const [previewSize, setPreviewSize] = useState({ width: 0, height: 0 })
+  const [referencePreview, setReferencePreview] = useState<{ sourceDataUrl: string; imageDataUrl: string } | null>(null)
   const selected = draft?.components.find((component) => component.id === selectedId) ?? null
   const selectedIndex = draft?.components.findIndex((component) => component.id === selectedId) ?? -1
   const scale = model && previewSize.width && previewSize.height ? Math.min((previewSize.width - 48) / model.width, (previewSize.height - 48) / model.height) * zoom : 1
@@ -95,6 +97,20 @@ export function WardrobeWorkspace() {
     if (!element) return
     const observer = new ResizeObserver(([entry]) => setPreviewSize({ width: entry.contentRect.width, height: entry.contentRect.height }))
     observer.observe(element); return () => observer.disconnect()
+  }, [model])
+  useEffect(() => {
+    if (!model) { setReferencePreview(null); return }
+    let alive = true
+    const worker = new Worker(new URL('./wardrobeReference.worker.ts', import.meta.url), { type: 'module' })
+    worker.onmessage = (event: MessageEvent<ReferenceMessage>) => {
+      if (!alive) return
+      if (event.data.type === 'complete') setReferencePreview({ sourceDataUrl: model.sourceDataUrl, imageDataUrl: dataUrl(event.data.png) })
+      else setError(event.data.message)
+      worker.terminate()
+    }
+    worker.onerror = () => { if (alive) setError('Não foi possível limpar o fundo verde da referência.'); worker.terminate() }
+    worker.postMessage({ id: 1, sourceDataUrl: model.sourceDataUrl, tolerance: model.tolerance })
+    return () => { alive = false; worker.terminate() }
   }, [model])
   useEffect(() => () => workerRef.current?.terminate(), [])
 
@@ -180,7 +196,7 @@ export function WardrobeWorkspace() {
     <div className="wardrobe-body">
       <aside className="wardrobe-library"><header><span><strong>Conjuntos</strong><small>{sets.length} salvos para este modelo</small></span><span className="wardrobe-count">{sets.length}</span></header><div className="wardrobe-set-list">{sets.map((set) => <button className={`wardrobe-set-row${activeSetId === set.id ? ' active' : ''}`} key={set.id} onClick={() => void openSet(set.id)} type="button"><span className="wardrobe-set-icon"><Icon name="shirt" /></span><span><b>{set.name}</b><small>{set.componentCount} peças</small></span><Icon name="chevronRight" /></button>)}{!sets.length && <div className="wardrobe-library-empty"><Icon name="box" /><span>Nenhum conjunto salvo.<br />Importe sua primeira folha.</span></div>}</div><div className="wardrobe-category-legend"><strong>Categorias</strong>{categories.map((category) => <span key={category}><i />{categoryNames[category]}</span>)}</div></aside>
       <section className="wardrobe-preview-card"><header><span><i /> PRÉVIA DE ENCAIXE · FOLHA ORIGINAL</span><span>{model ? `${model.width} × ${model.height}` : 'Sem modelo'}</span></header><div ref={previewRef} className="wardrobe-preview-stage">{model && <div className="wardrobe-artboard" style={{ width: model.width * scale, height: model.height * scale }}>
-        <img className="wardrobe-base-image" src={model.sourceDataUrl} alt={`Folha original desmontada do modelo ${model.name}`} title="Referência original desmontada; o modelo salvo não será alterado" style={{ left: 0, top: 0, width: model.width * scale, height: model.height * scale, zIndex: 1 }} />
+        {referencePreview?.sourceDataUrl === model.sourceDataUrl && <img className="wardrobe-base-image" src={referencePreview.imageDataUrl} alt={`Folha original desmontada do modelo ${model.name}`} title="Referência original desmontada com chroma key; o modelo salvo não será alterado" style={{ left: 0, top: 0, width: model.width * scale, height: model.height * scale, zIndex: 1 }} />}
         {draft?.components.map((component, index) => <img key={component.id} className={`wardrobe-preview-part${component.id === selectedId ? ' selected' : ''}`} src={component.dataUrl} alt={component.name} title={`${component.name} · ${categoryNames[component.category]}`} onClick={() => setSelectedId(component.id)} style={{ left: component.x * scale, top: component.y * scale, width: component.width * scale, height: component.height * scale, zIndex: index + 2, transform: `rotate(${component.rotation}deg)` }} />)}
       </div>}{!model && <div className="wardrobe-empty"><Icon name="shirt" /><strong>Selecione um modelo salvo</strong><small>O modelo será usado como guia na prévia de encaixe.</small></div>}{model && !draft && <div className="wardrobe-stage-hint">Importe uma folha para começar · fundo transparente preservado</div>}<div className="wardrobe-zoom"><span>{Math.round(zoom * 100)}%</span><button onClick={() => setZoom((value) => Math.min(2.2, value + .1))} type="button">+</button><button onClick={() => setZoom((value) => Math.max(.55, value - .1))} type="button">−</button></div>{processing && <div className="wardrobe-processing"><span className="model-spinner" />Detectando peças transparentes…</div>}</div><footer>Pré-encaixe pelo centro da peça do modelo, preservando o tamanho do recorte. Revise e ajuste antes de salvar.</footer></section>
       <aside className="wardrobe-edit-panel"><header><span><strong>Peças do conjunto</strong><small>{draft ? `${draft.components.length} partes detectadas` : 'Recortes automáticos'}</small></span>{draft && <span className="wardrobe-count">{draft.components.length}</span>}</header>
