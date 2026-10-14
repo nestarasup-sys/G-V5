@@ -101,13 +101,18 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .quiet-button svg { width: 13px; height: 13px; color: #6eb990; }
 
 .stage-wrap { min-height: 0; flex: 1; display: flex; flex-direction: column; overflow: hidden; border: 1px solid #ebe5ea; border-radius: 14px; background: #fff; box-shadow: 0 6px 24px #3222320a; }
-.stage-scene { min-height: 0; flex: 1; position: relative; overflow: hidden; display: flex; align-items: end; justify-content: center; background: radial-gradient(ellipse at 49% 55%, #fff 0, #fff7fa 36%, #f7eaf0 74%, #f4e9ef 100%); }
+.stage-scene { min-height: 0; flex: 1; position: relative; overflow: hidden; display: flex; align-items: end; justify-content: center; background-color: var(--preview-background, #fdfcfd); background-image: radial-gradient(ellipse at 49% 55%, #ffffff54 0, transparent 74%); }
 .stage-scene::before { position: absolute; inset: 0; background-image: radial-gradient(#b55c7c 0.65px, transparent .65px); background-size: 19px 19px; opacity: .08; content: ''; mask-image: linear-gradient(90deg, #000, transparent 55%, #000); }
-.stage-glow { width: 52%; height: 64%; position: absolute; left: 24%; top: 15%; border-radius: 50%; background: #fff; filter: blur(48px); opacity: .82; }
+.stage-glow { width: 52%; height: 64%; position: absolute; left: 24%; top: 15%; border-radius: 50%; background: #fff; filter: blur(48px); opacity: .22; }
 .stage-label { position: absolute; top: 17px; left: 18px; z-index: 2; display: flex; align-items: center; gap: 8px; padding: 7px 10px; border: 1px solid #ffffffb0; border-radius: 7px; background: #ffffff9c; color: #8f818b; font-size: 12px; font-weight: 700; letter-spacing: .8px; backdrop-filter: blur(8px); }
 .stage-label .online-dot { width: 6px; height: 6px; box-shadow: none; }
 .scene-chip { position: absolute; top: 18px; right: 18px; z-index: 2; display: flex; align-items: center; gap: 7px; padding: 7px 9px; border: 1px solid #ffffffb0; border-radius: 7px; background: #ffffffa8; color: #978b94; font-size: 12px; backdrop-filter: blur(8px); }
 .scene-chip span { width: 8px; height: 8px; border: 1px solid #e2b8c8; border-radius: 3px; background: linear-gradient(135deg, #f6c5d7 50%, #fff 50%); }
+.preview-scene-color { overflow:hidden; padding-right:10px; color:#776b77; cursor:pointer; }
+.preview-scene-color:hover { border-color:#dc8daa; background:#fff9fb; }
+.preview-scene-color .preview-color-swatch { width:14px;height:14px;flex:0 0 auto;border:1px solid #d9cbd3;border-radius:4px; }
+.preview-color-label { white-space:nowrap; }
+.preview-scene-color input { position:absolute;inset:0;width:100%;height:100%;padding:0;border:0;opacity:0;cursor:pointer; }
 .stage-tools { position: absolute; top: 50%; right: 14px; z-index: 3; display: flex; flex-direction: column; gap: 6px; transform: translateY(-50%); }
 .stage-tools button { width: 30px; height: 30px; display: grid; place-items: center; border: 1px solid #ffffffb8; border-radius: 8px; background: #ffffff9c; color: #8e7d89; cursor: pointer; backdrop-filter: blur(6px); }
 .stage-tools button:hover { color: var(--rose-dark); background: white; }

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { CharacterPreview } from '../../ui/components/CharacterPreview'
 import { CharacterPortrait } from '../../ui/components/CharacterPortrait'
 import { Icon, type IconName } from '../../ui/components/Icon'
+import { usePreviewBackground } from '../fabricator/usePreviewBackground'
 
 const characters = [
   { name: 'Chloe', hair: '#cfaa78', outfit: '#f2d771', skin: '#f5d7c7' },
@@ -31,6 +32,7 @@ const modules: { name: string; icon: IconName; detail: string }[] = [
 export function CustomizerPage() {
   const [selectedIndex, setSelectedIndex] = useState(0)
   const [activeModule, setActiveModule] = useState<string | null>(null)
+  const [previewBackground, setPreviewBackground] = usePreviewBackground()
   const [rosterQuery, setRosterQuery] = useState('')
   const selectedCharacter = characters[selectedIndex]
   const visibleCharacters = characters
@@ -48,11 +50,15 @@ export function CustomizerPage() {
         <div className="customizer-models-columns">
           <section className="customizer-model-preview" aria-label="Prévia do personagem">
             <div className="stage-wrap">
-              <div className="stage-scene">
+              <div className="stage-scene" style={{ '--preview-background': previewBackground } as import('react').CSSProperties}>
                 <div className="stage-glow" />
                 <div className="stage-label"><span className="online-dot" /> PREVIEW DO PERSONAGEM</div>
                 <button className="customizer-back-button customizer-preview-back" onClick={() => setActiveModule(null)} type="button"><span aria-hidden="true">←</span> Customizar</button>
-                <div className="scene-chip"><span /> Estúdio • Luz suave</div>
+                <label className="scene-chip preview-scene-color" title="Mudar a cor do fundo de todas as prévias">
+                  <span className="preview-color-swatch" style={{ backgroundColor: previewBackground }} />
+                  <span className="preview-color-label">Fundo da prévia</span>
+                  <input type="color" aria-label="Cor de fundo das prévias" value={previewBackground} onChange={(event) => setPreviewBackground(event.target.value)} />
+                </label>
                 <div className="stage-tools" aria-label="Controles do preview">
                   <button aria-label="Ajustar enquadramento" type="button"><Icon name="frame" /></button>
                   <button aria-label="Aproximar" type="button"><Icon name="zoomIn" /></button>
@@ -117,10 +123,14 @@ export function CustomizerPage() {
           </div>
 
           <div className="stage-wrap">
-            <div className="stage-scene">
+            <div className="stage-scene" style={{ '--preview-background': previewBackground } as import('react').CSSProperties}>
               <div className="stage-glow" />
               <div className="stage-label"><span className="online-dot" /> PREVIEW DO PERSONAGEM</div>
-              <div className="scene-chip"><span /> {activeModule ? `Explorando ${activeModule}` : 'Estúdio • Luz suave'}</div>
+              <label className="scene-chip preview-scene-color" title="Mudar a cor do fundo de todas as prévias">
+                <span className="preview-color-swatch" style={{ backgroundColor: previewBackground }} />
+                <span className="preview-color-label">Fundo da prévia</span>
+                <input type="color" aria-label="Cor de fundo das prévias" value={previewBackground} onChange={(event) => setPreviewBackground(event.target.value)} />
+              </label>
               <div className="stage-tools" aria-label="Controles do preview">
                 <button aria-label="Ajustar enquadramento"><Icon name="frame" /></button>
                 <button aria-label="Aproximar"><Icon name="zoomIn" /></button>
