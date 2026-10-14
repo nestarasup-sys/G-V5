@@ -203,6 +203,8 @@ const modules: { name: string; icon: IconName; detail: string }[] = [
 
 export function CustomizerPage() {
   const [characters, setCharacters] = useState<CustomizerCharacter[]>([])
+  const charactersRef = useRef<CustomizerCharacter[]>([])
+  const characterSaveQueue = useRef(new Map<string, Promise<void>>())
   const [selectedCharacterId, setSelectedCharacterId] = useState('')
   const [charactersLoading, setCharactersLoading] = useState(true)
   const [charactersError, setCharactersError] = useState('')
@@ -244,6 +246,7 @@ export function CustomizerPage() {
     let cancelled = false
     void window.desktop.listCustomizerCharacters().then((loaded) => {
       if (cancelled) return
+      charactersRef.current = loaded
       setCharacters(loaded)
       let remembered = ''
       try { remembered = localStorage.getItem('nymi.customizer.activeCharacter') ?? '' } catch { /* Storage preferences are optional. */ }
@@ -453,21 +456,35 @@ export function CustomizerPage() {
   async function saveCharacter(next: CustomizerCharacter) {
     setCharactersError('')
     setCharacterSaveState('saving')
-    setCharacters((current) => current.map((character) => character.id === next.id ? next : character))
+    charactersRef.current = charactersRef.current.map((character) => character.id === next.id ? next : character)
+    setCharacters(charactersRef.current)
+    const previousWrite = characterSaveQueue.current.get(next.id)
+    const write = (previousWrite ? previousWrite.catch(() => undefined) : Promise.resolve())
+      .then(() => window.desktop.saveCustomizerCharacter(next))
+    characterSaveQueue.current.set(next.id, write)
     try {
-      await window.desktop.saveCustomizerCharacter(next)
+      await write
       setCharacterSaveState('saved')
     } catch (reason) {
       setCharacterSaveState('error')
       setCharactersError(reason instanceof Error ? reason.message : 'Não foi possível salvar o personagem.')
-      const latest = await window.desktop.listCustomizerCharacters().catch(() => null)
-      if (latest) setCharacters(latest)
+      if (characterSaveQueue.current.get(next.id) === write) {
+        const latest = await window.desktop.listCustomizerCharacters().catch(() => null)
+        if (latest) {
+          charactersRef.current = latest
+          setCharacters(latest)
+        }
+      }
+    } finally {
+      if (characterSaveQueue.current.get(next.id) === write) characterSaveQueue.current.delete(next.id)
     }
   }
 
-  async function saveCharacterCustomization(patch: Partial<CustomizerCharacter['customization']>) {
+  async function saveCharacterCustomization(patch: Partial<CustomizerCharacter['customization']> | ((current: CustomizerCharacter['customization']) => Partial<CustomizerCharacter['customization']>)) {
     if (!selectedCharacter) return
-    await saveCharacter({ ...selectedCharacter, customization: { ...selectedCharacter.customization, ...patch }, updatedAt: new Date().toISOString() })
+    const current = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
+    const changes = typeof patch === 'function' ? patch(current.customization) : patch
+    await saveCharacter({ ...current, customization: { ...current.customization, ...changes }, updatedAt: new Date().toISOString() })
   }
 
   function wardrobeGroupKey(group: Pick<CustomizerWardrobeGroup, 'modelSlot' | 'setId' | 'category'>) {
@@ -476,7 +493,8 @@ export function CustomizerPage() {
 
   async function applyWardrobeGroup(set: WardrobeSetSummary, category: ClothingGroupCategory) {
     if (!selectedCharacter) return
-    const groups = selectedCharacter.customization.wardrobeGroups ?? []
+    const current = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
+    const groups = current.customization.wardrobeGroups ?? []
     const existing = groups.find((group) => group.modelSlot === set.modelSlot && group.setId === set.id && group.category === category)
     if (existing) {
       setSelectedClothing({ setId: set.id, category })
@@ -484,21 +502,21 @@ export function CustomizerPage() {
     }
     const nextGroup: CustomizerWardrobeGroup = { modelSlot: set.modelSlot, setId: set.id, category, offsetX: 0, offsetY: 0, scaleX: 1, scaleY: 1, rotation: 0 }
     setSelectedClothing({ setId: set.id, category })
-    await saveCharacterCustomization({ wardrobeGroups: [...groups.filter((group) => group.category !== category || group.modelSlot !== set.modelSlot), nextGroup] })
+    await saveCharacterCustomization((latest) => {
+      const latestGroups = latest.wardrobeGroups ?? []
+      return { wardrobeGroups: [...latestGroups.filter((group) => group.category !== category || group.modelSlot !== set.modelSlot), nextGroup] }
+    })
   }
 
   async function removeWardrobeGroup(setId: string, category: ClothingGroupCategory) {
     if (!selectedCharacter) return
-    const groups = selectedCharacter.customization.wardrobeGroups ?? []
-    await saveCharacterCustomization({ wardrobeGroups: groups.filter((group) => !(group.setId === setId && group.category === category)) })
+    await saveCharacterCustomization((current) => ({ wardrobeGroups: (current.wardrobeGroups ?? []).filter((group) => !(group.setId === setId && group.category === category)) }))
     if (selectedClothing?.setId === setId && selectedClothing.category === category) setSelectedClothing(null)
   }
 
   async function adjustWardrobeGroup(patch: Partial<Pick<CustomizerWardrobeGroup, 'offsetX' | 'offsetY' | 'scaleX' | 'scaleY' | 'rotation'>>) {
     if (!selectedCharacter || !selectedClothing) return
-    const groups = selectedCharacter.customization.wardrobeGroups ?? []
-    const nextGroups = groups.map((group) => group.setId === selectedClothing.setId && group.category === selectedClothing.category ? { ...group, ...patch } : group)
-    await saveCharacterCustomization({ wardrobeGroups: nextGroups })
+    await saveCharacterCustomization((current) => ({ wardrobeGroups: (current.wardrobeGroups ?? []).map((group) => group.setId === selectedClothing.setId && group.category === selectedClothing.category ? { ...group, ...patch } : group) }))
   }
 
   function beginWardrobeDrag(event: import('react').PointerEvent<HTMLImageElement>) {
@@ -528,6 +546,7 @@ export function CustomizerPage() {
     } : group)
     const nextCharacter = { ...selectedCharacter, customization: { ...selectedCharacter.customization, wardrobeGroups: nextGroups }, updatedAt: new Date().toISOString() }
     drag.latest = nextCharacter
+    charactersRef.current = charactersRef.current.map((character) => character.id === nextCharacter.id ? nextCharacter : character)
     setCharacters((current) => current.map((character) => character.id === nextCharacter.id ? nextCharacter : character))
   }
 
@@ -547,6 +566,7 @@ export function CustomizerPage() {
     try {
       if (dialogMode === 'create') {
         const character = await window.desktop.createCustomizerCharacter(name)
+        charactersRef.current = [...charactersRef.current, character]
         setCharacters((current) => [...current, character])
         setSelectedCharacterId(character.id)
         setActiveModule(null)
@@ -566,6 +586,7 @@ export function CustomizerPage() {
     try {
       await window.desktop.deleteCustomizerCharacter(selectedCharacter.id)
       const remaining = characters.filter((character) => character.id !== selectedCharacter.id)
+      charactersRef.current = remaining
       setCharacters(remaining)
       setSelectedCharacterId(remaining[0]?.id ?? '')
       setActiveModule(null)
