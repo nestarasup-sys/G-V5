@@ -75,6 +75,19 @@ export type FabricatorHistorySaveState = { undo: FabricatorHistorySaveEntry[]; r
 
 export type PosePart = Omit<ModelPart, 'chromaBaseDataUrl' | 'chromaBaseSaved'>
 export type WardrobeCategory = 'camisa' | 'manga-superior' | 'manga-inferior' | 'calca-coxa' | 'calca-canela' | 'shorts'
+/** Encaixe da roupa expresso no referencial imutável do osso na folha original. */
+export type WardrobeBinding = {
+  version: 1
+  boneId: string
+  boneWidth: number
+  boneHeight: number
+  boneRotation: number
+  localCenterX: number
+  localCenterY: number
+  widthRatio: number
+  heightRatio: number
+  relativeRotation: number
+}
 export type WardrobeComponent = {
   id: string
   name: string
@@ -90,6 +103,8 @@ export type WardrobeComponent = {
   originY?: number
   originWidth?: number
   originHeight?: number
+  /** Relação congelada com o osso, atualizada junto com os ajustes manuais. */
+  binding?: WardrobeBinding
   dataUrl: string
 }
 export type WardrobeSet = {

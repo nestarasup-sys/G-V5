@@ -756,3 +756,6 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
   .wardrobe-preview-card { grid-row:2; }
   .wardrobe-edit-panel { grid-row:3; }
 }
+
+.wardrobe-bind-button { width:100%;justify-content:center;margin-top:4px; }
+.wardrobe-fields>.wardrobe-note { margin-top:-3px; }
