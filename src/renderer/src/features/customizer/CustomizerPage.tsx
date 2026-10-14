@@ -124,19 +124,23 @@ export function CustomizerPage() {
             <span className="module-count">09</span>
           </div>
           <div className="module-grid">
-            {modules.map((module, index) => (
+            {modules.map((module, index) => {
+              const selectionAllowed = module.name !== 'Modelos' && module.name !== 'Poses'
+              const chosen = selectionAllowed && activeModule === module.name
+              return (
               <button
-                className={`module-card ${activeModule === module.name ? 'chosen' : ''}`}
+                className={`module-card ${chosen ? 'chosen' : ''}`}
                 key={module.name}
-                onClick={() => setActiveModule(activeModule === module.name ? null : module.name)}
-                aria-pressed={activeModule === module.name}
+                onClick={() => setActiveModule(chosen ? null : selectionAllowed ? module.name : null)}
+                aria-pressed={chosen}
                 title={module.detail}
               >
                 <span className="module-icon"><Icon name={module.icon} /></span>
                 <span className="module-name">{module.name}</span>
                 {index === 0 && <span className="module-new">NOVO</span>}
               </button>
-            ))}
+              )
+            })}
           </div>
           <button className="help-link" onClick={() => setActiveModule('Central de ajuda')}><span className="help-icon">?</span><span><strong>Precisa de uma ideia?</strong><small>Explore o guia rápido do Nymi</small></span><Icon name="chevronRight" /></button>
         </aside>
