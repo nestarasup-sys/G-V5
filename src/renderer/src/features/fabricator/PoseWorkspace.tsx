@@ -94,7 +94,7 @@ function poseFromModel(model: FabricatorProject): DraftProject {
     height: model.height,
     parts: model.parts.map((part) => ({
       id: part.id, name: part.name, x: part.x, y: part.y, width: part.width, height: part.height,
-      rotation: part.rotation, jointAnchor: part.jointAnchor ? { ...part.jointAnchor } : undefined, dataUrl: part.dataUrl
+      rotation: part.rotation, jointAnchor: part.jointAnchor ? { ...part.jointAnchor } : undefined, sourceTransform: part.sourceTransform ? { ...part.sourceTransform, ...(part.sourceTransform.jointAnchor ? { jointAnchor: { ...part.sourceTransform.jointAnchor } } : {}) } : undefined, dataUrl: part.dataUrl
     })),
     joints: model.joints.map((joint) => structuredClone(joint)),
     layerOrder: normalizeLayerOrder(model.parts, model.layerOrder),
