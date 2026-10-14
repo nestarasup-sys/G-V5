@@ -65,7 +65,7 @@ try {
       return { total: garments.length, bands: bands.length, styles }
     })
     assert.equal(state.total, 7, 'All seven fitted garments must render')
-    assert.equal(state.bands, 4, 'Each fitted thigh/calf must extend at the knee')
+    assert.equal(state.bands, 0, 'No automatic overlays may distort the manually fitted clothes')
     assert.ok(state.styles.every((g) => g.loaded && g.matrix.startsWith('matrix(')))
     await window.screenshot({ path: join(output, `pose-${id}.png`) })
     // A temporary drag may change preview offsets, but MUST NOT make the wardrobe dirty.
@@ -82,7 +82,7 @@ try {
     assert.equal(hashTree(appData), originalHash, 'Try-on must not change the userData files')
   }
   assert.ok(existsSync(join(output, 'pose-01.png')) && existsSync(join(output, 'pose-02.png')))
-  console.log('Electron smoke passed: original sheet + neutral/rotated pose + 4 knee bands + read-only exit')
+  console.log('Electron smoke passed: original sheet + neutral/rotated pose + exact clothes/no knee overlays + read-only exit')
 } finally {
   if (electronApp) await electronApp.close()
 }
