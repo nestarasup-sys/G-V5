@@ -80,10 +80,11 @@ export function mapWardrobeComponentToPose(
 }
 
 /** CSS zoom belongs only to the translation; image width/height are zoomed separately. */
-export function cssAffine(matrix: Affine2D, zoom: number, localY = 0): string {
+export function cssAffine(matrix: Affine2D, zoom: number, localY = 0, localYScale = 1): string {
+  // Local knee cap composition. Translation is zoomed, linear terms are not.
   const e = matrix.e + matrix.c * localY
   const f = matrix.f + matrix.d * localY
-  return `matrix(${matrix.a}, ${matrix.b}, ${matrix.c}, ${matrix.d}, ${e * zoom}, ${f * zoom})`
+  return `matrix(${matrix.a}, ${matrix.b}, ${matrix.c * localYScale}, ${matrix.d * localYScale}, ${e * zoom}, ${f * zoom})`
 }
 
 /** A drag in the posed canvas converted back to the disassembled-sheet axes. */
@@ -93,17 +94,23 @@ export function poseDeltaToSource(delta: Point, sourceBone: ModelPart, poseBone:
 }
 
 /**
- * A copied narrow band extends ONLY the knee-facing edge. Its dimensions are
- * never written into the garment and the original edited width/height stay
- * intact. The transform can be rendered using cssAffine(matrix, zoom, shift).
+ * Source crops may have large transparent margins at the knee. Copying the
+ * last 18px therefore moves transparent pixels and leaves skin visible.
+ * Instead we stretch ONLY the knee-facing half of the already fitted image:
+ * the middle seam is stationary, the far side expands by at least 3× the
+ * requested overlap. The original garment remains rendered unchanged below
+ * and its stored geometry is never touched.
  */
 export function kneeBand(
   component: WardrobeComponent,
   amount: number
-): { shiftY: number; clipTop: number; clipBottom: number } | null {
+): { shiftY: number; scaleY: number; clipTop: number; clipBottom: number } | null {
   if (!Number.isFinite(amount) || amount <= 0 || component.height <= 0) return null
-  const band = Math.min(amount, component.height / 3)
-  if (component.category === 'calca-coxa') return { shiftY: band, clipTop: component.height - band, clipBottom: 0 }
-  if (component.category === 'calca-canela') return { shiftY: -band, clipTop: 0, clipBottom: component.height - band }
+  const pivot = component.height / 2
+  const extension = Math.max(amount * 3, 48)
+  const stretch = 1 + extension / pivot
+  const shiftY = (1 - stretch) * pivot // keep middle seam stationary
+  if (component.category === 'calca-coxa') return { shiftY, scaleY: stretch, clipTop: pivot, clipBottom: 0 }
+  if (component.category === 'calca-canela') return { shiftY, scaleY: stretch, clipTop: 0, clipBottom: pivot }
   return null
 }
