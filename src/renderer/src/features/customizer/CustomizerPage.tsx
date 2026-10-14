@@ -157,13 +157,11 @@ export function CustomizerPage() {
           <div className="module-grid">
             {modules.map((module, index) => {
               const selectionAllowed = module.name !== 'Modelos' && module.name !== 'Poses'
-              const chosen = selectionAllowed && activeModule === module.name
               return (
               <button
-                className={`module-card ${chosen ? 'chosen' : ''}`}
+                className="module-card"
                 key={module.name}
-                onClick={() => setActiveModule(module.name === 'Modelos' ? 'Modelos' : chosen ? null : selectionAllowed ? module.name : null)}
-                aria-pressed={chosen}
+                onClick={() => setActiveModule(module.name === 'Modelos' ? 'Modelos' : selectionAllowed ? module.name : null)}
                 title={module.detail}
               >
                 <span className="module-icon"><Icon name={module.icon} /></span>

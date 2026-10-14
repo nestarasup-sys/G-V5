@@ -154,10 +154,10 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .module-count { padding-bottom: 1px; color: #c8bec7; font: 700 12px Manrope, sans-serif; }
 .module-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
 .module-card { height: 83px; min-width: 0; position: relative; display: flex; flex-direction: column; align-items: flex-start; justify-content: space-between; padding: 9px; border: 1px solid #eee9ed; border-radius: 10px; background: #fff; text-align: left; cursor: pointer; transition: .16s ease; }
-.module-card:hover { transform: translateY(-1px); border-color: #edc2d2; background: #fff9fb; box-shadow: 0 5px 13px #3d24300c; }
-.module-card.chosen { border-color: #e987aa; background: #fff2f6; box-shadow: inset 0 0 0 1px #f7d8e3; }
+.module-card:hover { transform: translateY(-1px); border-color: #ddd7dd; background: #fff; box-shadow: 0 5px 13px #3d24300c; }
+.module-card:focus-visible { outline: 2px solid #aaa1aa; outline-offset: 2px; }
 .module-icon { width: 31px; height: 31px; display: grid; place-items: center; border-radius: 9px; background: #faf4f7; color: #ac5374; }
-.module-card:hover .module-icon, .module-card.chosen .module-icon { background: #f8dfe8; color: #a43d64; }
+.module-card:hover .module-icon { background: #faf4f7; color: #ac5374; }
 .module-icon svg { width: 17px; height: 17px; }
 .module-name { max-width: 100%; overflow: hidden; color: #5f5860; font-size: 12px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
 .module-new { position: absolute; top: 8px; right: 7px; color: #cb6387; font-size: 12px; font-weight: 800; letter-spacing: .5px; }
