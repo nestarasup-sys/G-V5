@@ -15,7 +15,11 @@ const fabricatorApi: FabricatorDesktopApi = {
   deleteFabricatorPose: (modelSlot, slot) => ipcRenderer.invoke('fabricator:poses:delete', modelSlot, slot),
   loadFabricatorPoseDraft: (modelSlot) => ipcRenderer.invoke('fabricator:poses:draft:load', modelSlot),
   saveFabricatorPoseDraft: (modelSlot, draft, assets) => ipcRenderer.invoke('fabricator:poses:draft:save', modelSlot, draft, assets),
-  deleteFabricatorPoseDraft: (modelSlot) => ipcRenderer.invoke('fabricator:poses:draft:delete', modelSlot)
+  deleteFabricatorPoseDraft: (modelSlot) => ipcRenderer.invoke('fabricator:poses:draft:delete', modelSlot),
+  listWardrobeSets: (modelSlot) => ipcRenderer.invoke('fabricator:wardrobe:list', modelSlot),
+  loadWardrobeSet: (modelSlot, id) => ipcRenderer.invoke('fabricator:wardrobe:load', modelSlot, id),
+  saveWardrobeSet: (modelSlot, set, assets) => ipcRenderer.invoke('fabricator:wardrobe:save', modelSlot, set, assets),
+  deleteWardrobeSet: (modelSlot, id) => ipcRenderer.invoke('fabricator:wardrobe:delete', modelSlot, id)
 }
 
 contextBridge.exposeInMainWorld('desktop', {

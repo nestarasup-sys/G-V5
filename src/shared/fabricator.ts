@@ -72,6 +72,35 @@ export type FabricatorHistorySaveEntry = { action: FabricatorHistoryAction; proj
 export type FabricatorHistorySaveState = { undo: FabricatorHistorySaveEntry[]; redo: FabricatorHistorySaveEntry[] }
 
 export type PosePart = Omit<ModelPart, 'chromaBaseDataUrl' | 'chromaBaseSaved'>
+export type WardrobeCategory = 'camisa' | 'manga-superior' | 'manga-inferior' | 'calca-coxa' | 'calca-canela' | 'shorts'
+export type WardrobeComponent = {
+  id: string
+  name: string
+  category: WardrobeCategory
+  attachedPartId: string
+  x: number
+  y: number
+  width: number
+  height: number
+  rotation: number
+  dataUrl: string
+}
+export type WardrobeSet = {
+  schemaVersion: 1
+  id: string
+  modelSlot: number
+  modelName: string
+  name: string
+  width: number
+  height: number
+  components: WardrobeComponent[]
+  updatedAt: string
+}
+export type WardrobeSetSave = Omit<WardrobeSet, 'components'> & { components: Array<Omit<WardrobeComponent, 'dataUrl'>> }
+export type WardrobeSetSummary = Pick<WardrobeSet, 'id' | 'modelSlot' | 'modelName' | 'name' | 'updatedAt'> & { componentCount: number }
+export type WardrobeAssetSave = { id: string; dataUrl: string }
+export type PoseWardrobeAttachment = { setId: string; category: WardrobeCategory; attachedPartId: string; referenceAnchor: { x: number; y: number }; referenceRotation: number }
+export type WardrobePosePart = PosePart & { wardrobeAttachment?: PoseWardrobeAttachment }
 export type FabricatorPose = {
   schemaVersion: 1
   slot: number
@@ -81,13 +110,13 @@ export type FabricatorPose = {
   sourceModelUpdatedAt: string
   width: number
   height: number
-  parts: PosePart[]
+  parts: WardrobePosePart[]
   joints: JointLink[]
   layerOrder: string[]
   hiddenPartIds: string[]
   updatedAt: string
 }
-export type FabricatorPoseSave = Omit<FabricatorPose, 'parts'> & { parts: Array<Omit<PosePart, 'dataUrl'>> }
+export type FabricatorPoseSave = Omit<FabricatorPose, 'parts'> & { parts: Array<Omit<WardrobePosePart, 'dataUrl'>> }
 export type FabricatorPoseSummary = { slot: number; sourceModelSlot: number; name: string; sourceModelName: string; partCount: number; updatedAt: string } | null
 export type FabricatorPoseDraft = { editingSlot: number | null; project: Omit<FabricatorPose, 'slot'>; updatedAt: string }
 export type FabricatorPoseDraftSave = { editingSlot: number | null; project: Omit<FabricatorPoseSave, 'slot'>; updatedAt: string }
@@ -107,4 +136,8 @@ export type FabricatorDesktopApi = {
   loadFabricatorPoseDraft: (modelSlot: number) => Promise<FabricatorPoseDraft | null>
   saveFabricatorPoseDraft: (modelSlot: number, draft: FabricatorPoseDraftSave, assets: FabricatorAssetSave[]) => Promise<void>
   deleteFabricatorPoseDraft: (modelSlot: number) => Promise<void>
+  listWardrobeSets: (modelSlot: number) => Promise<WardrobeSetSummary[]>
+  loadWardrobeSet: (modelSlot: number, id: string) => Promise<WardrobeSet | null>
+  saveWardrobeSet: (modelSlot: number, set: WardrobeSetSave, assets: WardrobeAssetSave[]) => Promise<void>
+  deleteWardrobeSet: (modelSlot: number, id: string) => Promise<void>
 }

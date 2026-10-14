@@ -60,7 +60,7 @@ export function normalizeLayerOrder(parts: ModelPart[], order?: string[]): strin
   return normalized
 }
 
-export function orderedParts(parts: ModelPart[], order?: string[]): ModelPart[] {
+export function orderedParts<T extends ModelPart>(parts: T[], order?: string[]): T[] {
   const byId = new Map(parts.map((part) => [part.id, part]))
   return normalizeLayerOrder(parts, order).flatMap((id) => {
     const part = byId.get(id)

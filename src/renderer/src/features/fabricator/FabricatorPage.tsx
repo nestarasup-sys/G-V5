@@ -4,9 +4,10 @@ import { Icon, type IconName } from '../../ui/components/Icon'
 import { despillGreenFringes, sampleBackground } from './models/chroma'
 import { autoConnectParts, createJoint, jointPivot, normalizeLayerOrder, normalizePartAnchors, orderedParts, partJointAnchor, reorderLayer } from './models/rig'
 import { PoseWorkspace } from './PoseWorkspace'
+import { WardrobeWorkspace } from './wardrobe/WardrobeWorkspace'
 
 const sections: { label: string; icon: IconName }[] = [
-  { label: 'Modelos', icon: 'sparkles' }, { label: 'Poses', icon: 'expand' }
+  { label: 'Modelos', icon: 'sparkles' }, { label: 'Poses', icon: 'expand' }, { label: 'Roupas', icon: 'shirt' }
 ]
 
 type ProcessedPart = Omit<ModelPart, 'dataUrl' | 'chromaBaseDataUrl'> & { png: ArrayBuffer; basePng: ArrayBuffer }
@@ -982,7 +983,7 @@ export function FabricatorPage() {
         </nav>
       </aside>
 
-      {activeSection === 'Poses' ? <PoseWorkspace /> : (
+      {activeSection === 'Poses' ? <PoseWorkspace /> : activeSection === 'Roupas' ? <WardrobeWorkspace /> : (
         <section className="fabricator-model-editor" aria-label="Editor de modelos">
           <header className="model-slotbar">
             <div className="model-slot-title"><span className="model-slot-logo"><Icon name="sparkles" /></span><span><strong>Modelos</strong><small>10 espaços de trabalho</small></span></div>

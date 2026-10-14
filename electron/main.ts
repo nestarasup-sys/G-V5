@@ -3,7 +3,7 @@ import { mkdir, readFile, writeFile, readdir, unlink, rename, stat, access, rm, 
 import { basename, dirname, extname, join, resolve } from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
-import type { FabricatorAssetSave, FabricatorHistoryEntry, FabricatorHistorySaveEntry, FabricatorHistorySaveState, FabricatorHistoryState, FabricatorPose, FabricatorPoseDraft, FabricatorPoseDraftSave, FabricatorPoseSave, FabricatorPoseSummary, FabricatorProject, FabricatorProjectSave, FabricatorSlotSummary, ModelPart, PosePart } from '../src/shared/fabricator'
+import type { FabricatorAssetSave, FabricatorHistoryEntry, FabricatorHistorySaveEntry, FabricatorHistorySaveState, FabricatorHistoryState, FabricatorPose, FabricatorPoseDraft, FabricatorPoseDraftSave, FabricatorPoseSave, FabricatorPoseSummary, FabricatorProject, FabricatorProjectSave, FabricatorSlotSummary, ModelPart, PosePart, WardrobeAssetSave, WardrobeCategory, WardrobeSet, WardrobeSetSave, WardrobeSetSummary } from '../src/shared/fabricator'
 
 const slotCount = 10
 const poseSlotCount = 12
@@ -13,10 +13,55 @@ const poseLibraryPath = () => join(app.getPath('userData'), 'fabricator', 'poses
 const poseModelPath = (modelSlot: number) => join(poseLibraryPath(), `model-${modelSlot}`)
 const poseSlotPath = (modelSlot: number, slot: number) => join(poseModelPath(modelSlot), `slot-${slot}`)
 const poseDraftPath = (modelSlot: number) => join(poseModelPath(modelSlot), 'draft')
+const wardrobeLibraryPath = () => join(app.getPath('userData'), 'fabricator', 'wardrobe')
+const wardrobeModelPath = (modelSlot: number) => join(wardrobeLibraryPath(), `model-${modelSlot}`)
+const wardrobeSetPath = (modelSlot: number, id: string) => join(wardrobeModelPath(modelSlot), `set-${id}`)
 const fabricatorSaveQueues = new Map<number, Promise<void>>()
 let poseSaveQueue: Promise<void> = Promise.resolve()
 const poseSaveWrites = new Set<Promise<void>>()
 let poseMigration: Promise<void> | null = null
+let wardrobeSaveQueue: Promise<void> = Promise.resolve()
+
+const wardrobeCategories: WardrobeCategory[] = ['camisa', 'manga-superior', 'manga-inferior', 'calca-coxa', 'calca-canela', 'shorts']
+const isValidWardrobeId = (id: string) => /^[a-zA-Z0-9_-]{1,80}$/.test(id)
+
+async function writeWardrobeSet(modelSlot: number, set: WardrobeSetSave, assets: WardrobeAssetSave[]): Promise<void> {
+  if (!isValidModelSlot(modelSlot) || set.schemaVersion !== 1 || set.modelSlot !== modelSlot || !isValidWardrobeId(set.id) || !Array.isArray(set.components) || set.components.length < 1 || set.components.length > 100) throw new Error('Conjunto de roupa inválido.')
+  const folder = wardrobeSetPath(modelSlot, set.id)
+  const partsFolder = join(folder, 'parts')
+  await mkdir(partsFolder, { recursive: true })
+  const ids = new Set(set.components.map((component) => component.id))
+  if (ids.size !== set.components.length || set.components.some((component) => !isValidWardrobeId(component.id) || !wardrobeCategories.includes(component.category) || !isValidWardrobeId(component.attachedPartId))) throw new Error('Peças do conjunto inválidas.')
+  for (const asset of assets) if (ids.has(asset.id)) await writeFile(join(partsFolder, `${asset.id}.png`), dataUrlBuffer(asset.dataUrl))
+  for (const component of set.components) {
+    try { await access(join(partsFolder, `${component.id}.png`)) } catch (reason) {
+      if ((reason as NodeJS.ErrnoException).code !== 'ENOENT') throw reason
+      throw new Error(`Imagem ausente no conjunto: ${component.name} (${component.id}).`)
+    }
+  }
+  const temporary = join(folder, 'wardrobe.json.tmp')
+  await writeFile(temporary, JSON.stringify(set), 'utf8')
+  await rename(temporary, join(folder, 'wardrobe.json'))
+  const retained = new Set(set.components.map((component) => `${component.id}.png`))
+  for (const filename of await readdir(partsFolder)) if (filename.endsWith('.png') && !retained.has(filename)) await unlink(join(partsFolder, filename))
+}
+
+async function readWardrobeSet(modelSlot: number, id: string): Promise<WardrobeSet | null> {
+  if (!isValidModelSlot(modelSlot) || !isValidWardrobeId(id)) throw new Error('Conjunto de roupa inválido.')
+  try {
+    const folder = wardrobeSetPath(modelSlot, id)
+    const set = JSON.parse(await readFile(join(folder, 'wardrobe.json'), 'utf8')) as WardrobeSetSave
+    if (set.schemaVersion !== 1 || set.modelSlot !== modelSlot || set.id !== id || !Array.isArray(set.components) || set.components.length > 100) return null
+    const components = await Promise.all(set.components.map(async (component) => ({
+      ...component,
+      dataUrl: `data:image/png;base64,${(await readFile(join(folder, 'parts', `${component.id}.png`))).toString('base64')}`
+    })))
+    return { ...set, components }
+  } catch (reason) {
+    if ((reason as NodeJS.ErrnoException).code === 'ENOENT') return null
+    throw reason
+  }
+}
 
 function queuePoseWrite(operation: () => Promise<void>): Promise<void> {
   const next = poseSaveQueue.catch(() => undefined).then(operation)
@@ -501,6 +546,50 @@ async function registerFabricatorHandlers(): Promise<void> {
       if (dirname(target) !== base || basename(target) !== 'draft') throw new Error('Caminho de rascunho inválido.')
       await rm(target, { recursive: true, force: true })
     })
+  })
+
+  ipcMain.handle('fabricator:wardrobe:list', async (event, modelSlot: number): Promise<WardrobeSetSummary[]> => {
+    assertTrustedSender(event)
+    if (!isValidModelSlot(modelSlot)) throw new Error('Modelo inválido.')
+    const folder = wardrobeModelPath(modelSlot)
+    try {
+      const entries = await readdir(folder, { withFileTypes: true })
+      const sets: WardrobeSetSummary[] = []
+      for (const entry of entries) {
+        if (!entry.isDirectory() || !/^set-[a-zA-Z0-9_-]{1,80}$/.test(entry.name)) continue
+        try {
+          const set = JSON.parse(await readFile(join(folder, entry.name, 'wardrobe.json'), 'utf8')) as WardrobeSet
+          if (set.schemaVersion === 1 && set.modelSlot === modelSlot && set.id === entry.name.slice(4) && Array.isArray(set.components)) sets.push({ id: set.id, modelSlot, modelName: set.modelName, name: set.name, updatedAt: set.updatedAt, componentCount: set.components.length })
+        } catch { /* Manifestos inválidos não entram na biblioteca. */ }
+      }
+      return sets.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+    } catch (reason) {
+      if ((reason as NodeJS.ErrnoException).code === 'ENOENT') return []
+      throw reason
+    }
+  })
+
+  ipcMain.handle('fabricator:wardrobe:load', async (event, modelSlot: number, id: string): Promise<WardrobeSet | null> => {
+    assertTrustedSender(event)
+    return readWardrobeSet(modelSlot, id)
+  })
+
+  ipcMain.handle('fabricator:wardrobe:save', async (event, modelSlot: number, set: WardrobeSetSave, assets: WardrobeAssetSave[]): Promise<void> => {
+    assertTrustedSender(event)
+    const next = wardrobeSaveQueue.catch(() => undefined).then(() => writeWardrobeSet(modelSlot, set, assets))
+    wardrobeSaveQueue = next
+    await next
+  })
+
+  ipcMain.handle('fabricator:wardrobe:delete', async (event, modelSlot: number, id: string): Promise<void> => {
+    assertTrustedSender(event)
+    if (!isValidModelSlot(modelSlot) || !isValidWardrobeId(id)) throw new Error('Conjunto de roupa inválido.')
+    const base = resolve(wardrobeModelPath(modelSlot))
+    const target = resolve(wardrobeSetPath(modelSlot, id))
+    if (dirname(target) !== base || basename(target) !== `set-${id}`) throw new Error('Caminho de exclusão inválido.')
+    const next = wardrobeSaveQueue.catch(() => undefined).then(() => rm(target, { recursive: true, force: true }))
+    wardrobeSaveQueue = next
+    await next
   })
 }
 

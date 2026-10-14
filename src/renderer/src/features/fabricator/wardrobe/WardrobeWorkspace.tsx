@@ -1,0 +1,168 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { FabricatorProject, FabricatorSlotSummary, WardrobeCategory, WardrobeComponent, WardrobeSet, WardrobeSetSave, WardrobeSetSummary } from '../../../../../shared/fabricator'
+import { Icon } from '../../../ui/components/Icon'
+
+type WorkerPiece = Omit<WardrobeComponent, 'category' | 'attachedPartId' | 'rotation' | 'dataUrl'> & { png: ArrayBuffer }
+type WorkerMessage = { type: 'complete'; id: number; width: number; height: number; pieces: WorkerPiece[] } | { type: 'error'; id: number; message: string }
+const categoryNames: Record<WardrobeCategory, string> = {
+  camisa: 'Camisas', 'manga-superior': 'Mangas superiores', 'manga-inferior': 'Mangas inferiores', 'calca-coxa': 'Calças · coxas', 'calca-canela': 'Calças · canelas', shorts: 'Shorts'
+}
+const categories = Object.keys(categoryNames) as WardrobeCategory[]
+function dataUrl(buffer: ArrayBuffer): string {
+  let binary = ''; const bytes = new Uint8Array(buffer)
+  for (let start = 0; start < bytes.length; start += 0x8000) binary += String.fromCharCode(...bytes.subarray(start, Math.min(bytes.length, start + 0x8000)))
+  return `data:image/png;base64,${btoa(binary)}`
+}
+function readFile(file: File): Promise<string> {
+  return new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.onerror = () => reject(new Error('Não foi possível ler a imagem.')); reader.readAsDataURL(file) })
+}
+function guessCategory(piece: WorkerPiece, width: number, height: number): WardrobeCategory {
+  const cx = (piece.x + piece.width / 2) / width; const cy = (piece.y + piece.height / 2) / height
+  if (cy < .19 && Math.abs(cx - .5) > .1) return 'manga-superior'
+  if (cy < .39 && cx > .34 && cx < .66) return 'camisa'
+  if (cy > .62) return 'calca-canela'
+  if (cy > .34) return 'calca-coxa'
+  return 'manga-inferior'
+}
+function guessName(category: WardrobeCategory, x: number, width: number): string {
+  if (category === 'camisa') return 'Camisa'
+  if (category === 'shorts') return 'Shorts'
+  const side = x < width / 2 ? 'esquerda' : 'direita'
+  if (category === 'manga-superior') return `Manga superior ${side}`
+  if (category === 'manga-inferior') return `Manga inferior ${side}`
+  if (category === 'calca-coxa') return `Calça · coxa ${side}`
+  return `Calça · canela ${side}`
+}
+function guessBone(category: WardrobeCategory, x: number, width: number, model: FabricatorProject): string {
+  const left = x < width / 2
+  const all = model.parts
+  const side = left ? 'esquerd[oa]' : 'direit[oa]'
+  const find = (regex: RegExp) => all.find((part) => regex.test(part.name))?.id
+  if (category === 'camisa' || category === 'shorts') return find(/tronco|corpo/i) ?? all[0]?.id ?? ''
+  if (category === 'manga-superior') return find(new RegExp(`(?=.*${side})(?=.*braço)(?=.*(superior|alto))`, 'i')) ?? find(/braço.*(superior|alto)|(superior|alto).*braço/i) ?? all[0]?.id ?? ''
+  if (category === 'manga-inferior') return find(new RegExp(`(?=.*${side})(?=.*(antebraço|braço inferior))`, 'i')) ?? find(/antebraço|braço inferior/i) ?? all[0]?.id ?? ''
+  if (category === 'calca-coxa') return find(new RegExp(`(?=.*${side})(?=.*coxa)`, 'i')) ?? find(/coxa/i) ?? all[0]?.id ?? ''
+  return find(new RegExp(`(?=.*${side})(?=.*(canela|panturrilha|perna inferior))`, 'i')) ?? find(/canela|panturrilha|perna inferior/i) ?? all[0]?.id ?? ''
+}
+function transformComponent(part: WardrobeComponent, factor: number, offsetX: number, offsetY: number): WardrobeComponent {
+  return { ...part, x: part.x * factor + offsetX, y: part.y * factor + offsetY, width: part.width * factor, height: part.height * factor }
+}
+
+export function WardrobeWorkspace() {
+  const [models, setModels] = useState<FabricatorSlotSummary[]>(Array.from({ length: 10 }, () => null))
+  const [modelSlot, setModelSlot] = useState(1)
+  const [model, setModel] = useState<FabricatorProject | null>(null)
+  const [sets, setSets] = useState<WardrobeSetSummary[]>([])
+  const [activeSetId, setActiveSetId] = useState<string | null>(null)
+  const [draft, setDraft] = useState<WardrobeSet | null>(null)
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [processing, setProcessing] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [dirty, setDirty] = useState(false)
+  const [error, setError] = useState('')
+  const [zoom, setZoom] = useState(1)
+  const inputRef = useRef<HTMLInputElement>(null)
+  const workerRef = useRef<Worker | null>(null)
+  const requestRef = useRef(0)
+  const previewRef = useRef<HTMLDivElement>(null)
+  const [previewSize, setPreviewSize] = useState({ width: 0, height: 0 })
+  const selected = draft?.components.find((component) => component.id === selectedId) ?? null
+  const orderedModelParts = useMemo(() => model ? [...model.parts].sort((a, b) => (model.layerOrder ?? []).indexOf(a.id) - (model.layerOrder ?? []).indexOf(b.id)) : [], [model])
+  const scale = model && previewSize.width && previewSize.height ? Math.min((previewSize.width - 48) / model.width, (previewSize.height - 48) / model.height) * zoom : 1
+
+  const reload = useCallback(async (targetSlot: number) => {
+    setError('')
+    try {
+      const [savedModels, reference, library] = await Promise.all([window.desktop.listFabricatorSlots(), window.desktop.loadFabricatorSlot(targetSlot), window.desktop.listWardrobeSets(targetSlot)])
+      const firstAvailableModel = savedModels.find((slot) => slot)
+      if (!reference && firstAvailableModel && firstAvailableModel.slot !== targetSlot) { setModels(savedModels); setModelSlot(firstAvailableModel.slot); return }
+      setModels(savedModels); setModel(reference); setSets(library)
+      setActiveSetId(null); setDraft(null); setSelectedId(null); setDirty(false)
+    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível carregar a biblioteca de roupas.') }
+  }, [])
+  useEffect(() => { void reload(modelSlot) }, [modelSlot, reload])
+  useEffect(() => {
+    const element = previewRef.current
+    if (!element) return
+    const observer = new ResizeObserver(([entry]) => setPreviewSize({ width: entry.contentRect.width, height: entry.contentRect.height }))
+    observer.observe(element); return () => observer.disconnect()
+  }, [model])
+  useEffect(() => () => workerRef.current?.terminate(), [])
+
+  const openSet = async (id: string) => {
+    if (dirty && !window.confirm('Há alterações não salvas neste conjunto. Descartar e abrir outro?')) return
+    try {
+      const loaded = await window.desktop.loadWardrobeSet(modelSlot, id)
+      if (!loaded) throw new Error('O conjunto não foi encontrado.')
+      setDraft(loaded); setActiveSetId(id); setSelectedId(loaded.components[0]?.id ?? null); setDirty(false); setError('')
+    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível abrir o conjunto.') }
+  }
+  const importSheet = async (file?: File) => {
+    if (!file || !model) return
+    if (!/\.(png|jpe?g|webp)$/i.test(file.name)) { setError('Use uma imagem PNG, JPG ou WebP.'); return }
+    setProcessing(true); setError('')
+    try {
+      const source = await readFile(file)
+      workerRef.current?.terminate()
+      const worker = new Worker(new URL('./wardrobeProcessor.worker.ts', import.meta.url), { type: 'module' })
+      workerRef.current = worker
+      const id = ++requestRef.current
+      worker.onmessage = (event: MessageEvent<WorkerMessage>) => {
+        const message = event.data
+        if (message.id !== id) return
+        setProcessing(false); worker.terminate(); workerRef.current = null
+        if (message.type === 'error') { setError(message.message); return }
+        if (!message.pieces.length) { setError('Não encontrei peças visíveis. Confira se a folha tem transparência entre as peças.'); return }
+        const factor = model.height / message.height
+        const offsetX = (model.width - message.width * factor) / 2
+        const components = message.pieces.map((piece) => {
+          const category = guessCategory(piece, message.width, message.height)
+          const { png, ...metadata } = piece
+          const positioned = transformComponent({ ...metadata, category, attachedPartId: '', rotation: 0, dataUrl: dataUrl(png) }, factor, offsetX, 0)
+          return { ...positioned, name: guessName(category, positioned.x + positioned.width / 2, model.width), attachedPartId: guessBone(category, positioned.x + positioned.width / 2, model.width, model) }
+        })
+        setDraft({ schemaVersion: 1, id: crypto.randomUUID(), modelSlot, modelName: model.name, name: file.name.replace(/\.[^.]+$/, ''), width: model.width, height: model.height, components, updatedAt: new Date().toISOString() })
+        setActiveSetId(null); setSelectedId(components[0]?.id ?? null); setDirty(true)
+      }
+      worker.onerror = () => { setProcessing(false); setError('Falha ao processar a imagem localmente.'); worker.terminate(); workerRef.current = null }
+      worker.postMessage({ id, dataUrl: source })
+    } catch (reason) { setProcessing(false); setError(reason instanceof Error ? reason.message : 'Não foi possível importar a imagem.') }
+  }
+  const updateComponent = (id: string, values: Partial<WardrobeComponent>) => { setDirty(true); setDraft((current) => current ? ({ ...current, components: current.components.map((component) => component.id === id ? { ...component, ...values } : component), updatedAt: new Date().toISOString() }) : current) }
+  const save = async () => {
+    if (!draft || !draft.components.length || saving) return
+    setSaving(true); setError('')
+    try {
+      const set: WardrobeSet = { ...draft, modelSlot, modelName: model?.name ?? draft.modelName, updatedAt: new Date().toISOString() }
+      const serialized: WardrobeSetSave = { ...set, components: set.components.map(({ dataUrl: _dataUrl, ...component }) => component) }
+      await window.desktop.saveWardrobeSet(modelSlot, serialized, set.components.map(({ id, dataUrl: image }) => ({ id, dataUrl: image })))
+      setDraft(set); setActiveSetId(set.id); setDirty(false); setSets(await window.desktop.listWardrobeSets(modelSlot))
+    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível salvar o conjunto.') }
+    finally { setSaving(false) }
+  }
+  const deleteSet = async () => {
+    if (!activeSetId || !window.confirm(`Excluir permanentemente o conjunto “${draft?.name ?? activeSetId}”?`)) return
+    try { await window.desktop.deleteWardrobeSet(modelSlot, activeSetId); setDraft(null); setActiveSetId(null); setSelectedId(null); setDirty(false); setSets(await window.desktop.listWardrobeSets(modelSlot)) }
+    catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível excluir o conjunto.') }
+  }
+
+  return <section className="fabricator-workspace wardrobe-workspace" aria-label="Biblioteca de roupas">
+    <header className="wardrobe-toolbar">
+      <div className="wardrobe-title"><span className="model-slot-logo"><Icon name="shirt" /></span><span><strong>Roupas</strong><small>Biblioteca independente por modelo</small></span></div>
+      <label className="wardrobe-model-select">Modelo<select value={modelSlot} onChange={(event) => { if (dirty && !window.confirm('Há alterações não salvas. Descartar e trocar de modelo?')) return; setModelSlot(Number(event.target.value)) }}>{models.map((item, index) => <option key={index + 1} value={index + 1} disabled={!item}>{String(index + 1).padStart(2, '0')} · {item?.name ?? 'Vazio'}</option>)}</select></label>
+      {draft && <input aria-label="Nome do conjunto" className="wardrobe-name-input" value={draft.name} onChange={(event) => { setDirty(true); setDraft((current) => current ? { ...current, name: event.target.value } : current) }} placeholder="Nome do conjunto" />}
+      <div className="wardrobe-toolbar-actions"><span className={`wardrobe-save-state${dirty ? ' pending' : ''}`}><i />{dirty ? 'Alterações não salvas' : model ? `${model.parts.length} peças no modelo` : 'Escolha um modelo salvo'}</span><button className="pose-button secondary" disabled={!model || processing} onClick={() => { if (dirty && !window.confirm('Descartar as alterações atuais e importar outra folha?')) return; inputRef.current?.click() }} type="button"><Icon name="plus" /> Importar folha</button><button className="pose-button primary" disabled={!draft || saving} onClick={() => void save()} type="button"><Icon name="check" />{saving ? 'Salvando…' : activeSetId ? 'Salvar alterações' : 'Salvar conjunto'}</button>{activeSetId && <button className="pose-icon-button" title="Excluir conjunto" onClick={() => void deleteSet()} type="button"><Icon name="trash" /></button>}<input ref={inputRef} hidden type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => { void importSheet(event.target.files?.[0]); event.currentTarget.value = '' }} /></div>
+    </header>
+    {error && <div className="wardrobe-error" role="alert">{error}<button onClick={() => setError('')} type="button">Fechar</button></div>}
+    <div className="wardrobe-body">
+      <aside className="wardrobe-library"><header><span><strong>Conjuntos</strong><small>{sets.length} salvos para este modelo</small></span><span className="wardrobe-count">{sets.length}</span></header><div className="wardrobe-set-list">{sets.map((set) => <button className={`wardrobe-set-row${activeSetId === set.id ? ' active' : ''}`} key={set.id} onClick={() => void openSet(set.id)} type="button"><span className="wardrobe-set-icon"><Icon name="shirt" /></span><span><b>{set.name}</b><small>{set.componentCount} peças</small></span><Icon name="chevronRight" /></button>)}{!sets.length && <div className="wardrobe-library-empty"><Icon name="box" /><span>Nenhum conjunto salvo.<br />Importe sua primeira folha.</span></div>}</div><div className="wardrobe-category-legend"><strong>Categorias</strong>{categories.map((category) => <span key={category}><i />{categoryNames[category]}</span>)}</div></aside>
+      <section className="wardrobe-preview-card"><header><span><i /> PRÉVIA DE ENCAIXE</span><span>{model ? `${model.width} × ${model.height}` : 'Sem modelo'}</span></header><div ref={previewRef} className="wardrobe-preview-stage">{model && <div className="wardrobe-artboard" style={{ width: model.width * scale, height: model.height * scale }}>
+        {orderedModelParts.map((part, index) => <img key={part.id} src={part.dataUrl} alt={part.name} title={part.name} style={{ left: part.x * scale, top: part.y * scale, width: part.width * scale, height: part.height * scale, zIndex: index + 1, transform: `rotate(${part.rotation}deg)` }} />)}
+        {draft?.components.map((component, index) => <img key={component.id} className={`wardrobe-preview-part${component.id === selectedId ? ' selected' : ''}`} src={component.dataUrl} alt={component.name} title={`${component.name} · ${categoryNames[component.category]}`} onClick={() => setSelectedId(component.id)} style={{ left: component.x * scale, top: component.y * scale, width: component.width * scale, height: component.height * scale, zIndex: model.parts.length + index + 1, transform: `rotate(${component.rotation}deg)` }} />)}
+      </div>}{!model && <div className="wardrobe-empty"><Icon name="shirt" /><strong>Selecione um modelo salvo</strong><small>O modelo será usado como guia na prévia de encaixe.</small></div>}{model && !draft && <div className="wardrobe-stage-hint">Importe uma folha para começar · fundo transparente preservado</div>}<div className="wardrobe-zoom"><span>{Math.round(zoom * 100)}%</span><button onClick={() => setZoom((value) => Math.min(2.2, value + .1))} type="button">+</button><button onClick={() => setZoom((value) => Math.max(.55, value - .1))} type="button">−</button></div>{processing && <div className="wardrobe-processing"><span className="model-spinner" />Detectando peças transparentes…</div>}</div><footer>As coordenadas da folha são ajustadas à altura do modelo. Revise cada encaixe antes de salvar.</footer></section>
+      <aside className="wardrobe-edit-panel"><header><span><strong>Peças do conjunto</strong><small>{draft ? `${draft.components.length} partes detectadas` : 'Recortes automáticos'}</small></span>{draft && <span className="wardrobe-count">{draft.components.length}</span>}</header>
+        {draft ? <><div className="wardrobe-component-list">{draft.components.map((component) => <button key={component.id} className={`wardrobe-component-row${selectedId === component.id ? ' active' : ''}`} onClick={() => setSelectedId(component.id)} type="button"><img src={component.dataUrl} alt="" /><span><b>{component.name}</b><small>{categoryNames[component.category]}</small></span></button>)}</div>{selected && <div className="wardrobe-fields"><div className="wardrobe-field-title"><strong>Ajustar recorte</strong><button title="Remover esta peça do conjunto" onClick={() => { setDraft((current) => current ? { ...current, components: current.components.filter((component) => component.id !== selected.id) } : current); setSelectedId(draft.components.find((component) => component.id !== selected.id)?.id ?? null); setDirty(true) }} type="button"><Icon name="trash" /></button></div><label>Nome<input value={selected.name} onChange={(event) => updateComponent(selected.id, { name: event.target.value })} /></label><label>Categoria<select value={selected.category} onChange={(event) => updateComponent(selected.id, { category: event.target.value as WardrobeCategory })}>{categories.map((category) => <option key={category} value={category}>{categoryNames[category]}</option>)}</select></label><label>Peça do rig<select value={selected.attachedPartId} onChange={(event) => updateComponent(selected.id, { attachedPartId: event.target.value })}>{model?.parts.map((part) => <option key={part.id} value={part.id}>{part.name}</option>)}</select></label><div className="wardrobe-number-grid">{([['x', 'X'], ['y', 'Y'], ['width', 'Largura'], ['height', 'Altura'], ['rotation', 'Ângulo']] as const).map(([field, label]) => <label key={field}>{label}<input type="number" step={field === 'rotation' ? 1 : 2} value={Number(selected[field].toFixed(1))} onChange={(event) => updateComponent(selected.id, { [field]: Number(event.target.value) })} /></label>)}</div><small className="wardrobe-note">Ao vestir, esta peça seguirá “{model?.parts.find((part) => part.id === selected.attachedPartId)?.name ?? 'peça selecionada'}” no rig da pose.</small></div>}</> : <div className="wardrobe-edit-empty"><Icon name="sparkles" /><strong>Pré-encaixe automático</strong><small>A folha é separada por transparência. Depois você revisa categoria, peça do rig e posição de cada recorte.</small></div>}
+      </aside>
+    </div>
+  </section>
+}

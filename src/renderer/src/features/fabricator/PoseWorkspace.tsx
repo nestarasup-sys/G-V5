@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { FabricatorPose, FabricatorPoseDraft, FabricatorPoseDraftSave, FabricatorPoseSave, FabricatorPoseSummary, FabricatorProject, FabricatorSlotSummary, PosePart } from '../../../../shared/fabricator'
+import type { FabricatorPose, FabricatorPoseDraft, FabricatorPoseDraftSave, FabricatorPoseSave, FabricatorPoseSummary, FabricatorProject, FabricatorSlotSummary, PosePart, WardrobeSetSummary, WardrobeCategory } from '../../../../shared/fabricator'
 import { Icon } from '../../ui/components/Icon'
 import { normalizeLayerOrder, orderedParts, partJointAnchor } from './models/rig'
 
@@ -121,6 +121,8 @@ export function PoseWorkspace() {
   const [stageSize, setStageSize] = useState({ width: 1, height: 1 })
   const [panning, setPanning] = useState(false)
   const [selectingModel, setSelectingModel] = useState(false)
+  const [wardrobePickerOpen, setWardrobePickerOpen] = useState(false)
+  const [wardrobeSets, setWardrobeSets] = useState<WardrobeSetSummary[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [dirty, setDirty] = useState(false)
@@ -172,6 +174,10 @@ export function PoseWorkspace() {
   }, [])
 
   useEffect(() => { void loadLibraries() }, [loadLibraries])
+
+  useEffect(() => {
+    void window.desktop.listWardrobeSets(selectedModelSlot).then(setWardrobeSets).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : 'Não foi possível carregar as roupas deste modelo.'))
+  }, [selectedModelSlot])
 
   useEffect(() => {
     const element = stageRef.current
@@ -380,6 +386,48 @@ export function PoseWorkspace() {
     }
   }
 
+  const applyWardrobeSet = async (setId: string) => {
+    const current = projectRef.current
+    if (!current) { setError('Crie ou abra uma pose antes de vestir um conjunto.'); return }
+    try {
+      const outfit = await window.desktop.loadWardrobeSet(current.sourceModelSlot, setId)
+      if (!outfit) throw new Error('O conjunto não foi encontrado na biblioteca deste modelo.')
+      const components = outfit.components.flatMap((component) => {
+        const bone = current.parts.find((part) => part.id === component.attachedPartId)
+        if (!bone) return []
+        const referenceAnchor = partJointAnchor(bone, current.joints) ?? { x: bone.x + bone.width / 2, y: bone.y + bone.height / 2 }
+        const partId = crypto.randomUUID()
+        pendingAssets.current.set(partId, component.dataUrl)
+        return [{
+          id: partId, name: component.name, x: component.x, y: component.y, width: component.width, height: component.height, rotation: component.rotation, dataUrl: component.dataUrl,
+          wardrobeAttachment: { setId: outfit.id, category: component.category as WardrobeCategory, attachedPartId: component.attachedPartId, referenceAnchor, referenceRotation: bone.rotation }
+        }]
+      })
+      if (!components.length) throw new Error('Nenhuma peça do conjunto está ligada às peças deste modelo. Revise o rig correspondente na área Roupas.')
+      const previousClothing = current.parts.filter((part) => part.wardrobeAttachment)
+      const removedIds = new Set(previousClothing.map((part) => part.id))
+      changeProject((latest) => ({
+        ...latest,
+        parts: [...latest.parts.filter((part) => !part.wardrobeAttachment), ...components],
+        layerOrder: [...normalizeLayerOrder(latest.parts.filter((part) => !part.wardrobeAttachment), latest.layerOrder), ...components.map((part) => part.id)],
+        hiddenPartIds: latest.hiddenPartIds.filter((id) => !removedIds.has(id))
+      }))
+      for (const part of previousClothing) pendingAssets.current.delete(part.id)
+      setSelectedId(components[0].id)
+      setWardrobePickerOpen(false)
+      setTab('parts')
+      setError('')
+    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível vestir este conjunto.') }
+  }
+
+  const removeWardrobePart = (partId: string) => {
+    const current = projectRef.current
+    if (!current?.parts.some((part) => part.id === partId && part.wardrobeAttachment)) return
+    pendingAssets.current.delete(partId)
+    changeProject((latest) => ({ ...latest, parts: latest.parts.filter((part) => part.id !== partId), layerOrder: (latest.layerOrder ?? []).filter((id) => id !== partId), hiddenPartIds: latest.hiddenPartIds.filter((id) => id !== partId) }))
+    setSelectedId(projectRef.current?.parts.find((part) => !part.wardrobeAttachment)?.id ?? null)
+  }
+
     const displayProject = project ?? sourcePreview
     const parts = useMemo(() => displayProject ? orderedParts(displayProject.parts, displayProject.layerOrder) : [], [displayProject])
     const selectedPart = displayProject?.parts.find((part) => part.id === selectedId) ?? null
@@ -553,6 +601,7 @@ export function PoseWorkspace() {
       <header className="pose-toolbar">
         <div className="pose-toolbar-title"><span className="model-slot-logo"><Icon name="expand" /></span><span><strong>Poses</strong><small>Biblioteca independente por modelo</small></span><button className="pose-model-select" onClick={() => setSelectingModel(true)} type="button" title="Selecionar modelo"><Icon name="box" /><span>{selectedModelName}</span><Icon name="chevronRight" /></button></div>
         <div className="pose-toolbar-actions">
+          {project && <button className="pose-button secondary" onClick={() => setWardrobePickerOpen(true)} type="button"><Icon name="shirt" /> Vestir roupa</button>}
           <button className="pose-button secondary" onClick={() => void (async () => { if (!await canReplaceCurrent()) return; if (recoveredDraft && !project) { if (!window.confirm('Existe um rascunho recuperável para este modelo. Descartar e começar uma pose nova?')) return; await discardDraft() } await beginNewPose(selectedModelSlot) })()} disabled={!models[selectedModelSlot - 1]} type="button"><Icon name="plus" /> Nova pose</button>
           <button className="pose-icon-button" title="Desfazer" aria-label="Desfazer" disabled={!history.undo.length || !project} onClick={() => restoreHistory('undo')} type="button"><Icon name="undo" /></button>
           <button className="pose-icon-button" title="Refazer" aria-label="Refazer" disabled={!history.redo.length || !project} onClick={() => restoreHistory('redo')} type="button"><Icon name="redo" /></button>
@@ -570,7 +619,18 @@ export function PoseWorkspace() {
           <div className="pose-canvas-heading"><span><i />{project ? 'PRÉVIA DA POSE' : sourcePreview ? 'MODELO BASE · SOMENTE PRÉVIA' : 'PRÉVIA DA POSE'}</span><span>{displayProject ? `${displayProject.width} × ${displayProject.height}` : 'Escolha um modelo para começar'}</span></div>
           <div ref={stageRef} className={`pose-stage${panning ? ' panning' : ''}${moveToolActive ? ' move-tool-active' : ''}`} onPointerDown={beginPan} onPointerMove={moveCanvas} onPointerUp={stopCanvasGesture} onPointerCancel={stopCanvasGesture}>
             {displayProject ? <div className={`pose-artboard${!project ? ' source-preview' : ''}`} style={{ width: displayProject.width * scale, height: displayProject.height * scale, left: `calc(50% + ${pan.x}px)`, top: `calc(50% + ${pan.y}px)` }}>
-              {visibleParts.map((part, index) => <img key={part.id} className={`pose-part${selectedId === part.id ? ' selected' : ''}${project && !isMovablePoseRoot(project, part.id) ? ' move-locked' : ''}`} src={part.dataUrl} alt={part.name} draggable={false} onClick={(event) => { event.stopPropagation(); setSelectedId(part.id) }} onPointerDown={(event) => startPartDrag(event, part)} style={{ left: part.x * scale, top: part.y * scale, width: part.width * scale, height: part.height * scale, zIndex: index + 1, transform: `rotate(${part.rotation}deg)` }} />)}
+              {visibleParts.map((part, index) => {
+                const attachment = part.wardrobeAttachment
+                const bone = attachment ? displayProject.parts.find((item) => item.id === attachment.attachedPartId) : undefined
+                const currentAnchor = bone ? partJointAnchor(bone, displayProject.joints) ?? { x: bone.x + bone.width / 2, y: bone.y + bone.height / 2 } : null
+                const offsetX = attachment && currentAnchor ? currentAnchor.x - attachment.referenceAnchor.x : 0
+                const offsetY = attachment && currentAnchor ? currentAnchor.y - attachment.referenceAnchor.y : 0
+                const bodyRotation = attachment && bone ? bone.rotation - attachment.referenceRotation : 0
+                const image = <img key={part.id} className={`pose-part${attachment ? ' pose-wardrobe-part' : ''}${selectedId === part.id ? ' selected' : ''}${project && !attachment && !isMovablePoseRoot(project, part.id) ? ' move-locked' : ''}`} src={part.dataUrl} alt={part.name} draggable={false} onClick={(event) => { event.stopPropagation(); setSelectedId(part.id) }} onPointerDown={(event) => startPartDrag(event, part)} style={attachment ? { left: 0, top: 0, width: part.width * scale, height: part.height * scale, transform: `rotate(${part.rotation}deg)` } : { left: part.x * scale, top: part.y * scale, width: part.width * scale, height: part.height * scale, zIndex: index + 1, transform: `rotate(${part.rotation}deg)` }} />
+                return attachment
+                  ? <div key={part.id} className="pose-wardrobe-anchor" style={{ left: (part.x + offsetX) * scale, top: (part.y + offsetY) * scale, width: part.width * scale, height: part.height * scale, zIndex: index + 1, transformOrigin: `${(attachment.referenceAnchor.x - part.x) * scale}px ${(attachment.referenceAnchor.y - part.y) * scale}px`, transform: `rotate(${bodyRotation}deg)` }}>{image}</div>
+                  : image
+              })}
               {showJoints && <svg className="pose-joints" viewBox={`0 0 ${displayProject.width} ${displayProject.height}`} preserveAspectRatio="none">{displayProject.parts.filter((part) => !/tronco|corpo/i.test(part.name)).map((part) => {
                 const anchor = partJointAnchor(part, displayProject.joints)
                 if (!anchor) return null
@@ -595,7 +655,7 @@ export function PoseWorkspace() {
           </section>
 
           <section className="pose-tools-panel">
-            <header className="pose-tools-heading"><span><small>EDIÇÃO</small><strong>{project ? selectedPart?.name ?? 'Selecione uma peça' : 'Controles'}</strong></span>{project && <div className="pose-heading-actions"><button className={`pose-move-tool${moveToolActive ? ' active' : ''}`} aria-pressed={moveToolActive} title={moveToolActive ? 'Desativar modo mover peça' : 'Ativar modo mover peça'} onClick={() => setMoveToolActive((value) => !value)} type="button"><Icon name="move" /><span>{moveToolActive ? 'Mover ligado' : 'Mover peça'}</span></button><button className={`pose-eye-button${showJoints ? ' active' : ''}`} title={showJoints ? 'Ocultar juntas' : 'Mostrar juntas'} onClick={() => setShowJoints((value) => !value)} type="button"><Icon name={showJoints ? 'eye' : 'eyeOff'} /></button></div>}</header>
+            <header className="pose-tools-heading"><span><small>EDIÇÃO</small><strong>{project ? selectedPart?.name ?? 'Selecione uma peça' : 'Controles'}</strong></span>{project && <div className="pose-heading-actions">{selectedPart?.wardrobeAttachment && <button className="pose-eye-button" title="Remover roupa desta pose" aria-label="Remover roupa desta pose" onClick={() => removeWardrobePart(selectedPart.id)} type="button"><Icon name="trash" /></button>}<button className={`pose-move-tool${moveToolActive ? ' active' : ''}`} aria-pressed={moveToolActive} title={moveToolActive ? 'Desativar modo mover peça' : 'Ativar modo mover peça'} onClick={() => setMoveToolActive((value) => !value)} type="button"><Icon name="move" /><span>{moveToolActive ? 'Mover ligado' : 'Mover peça'}</span></button><button className={`pose-eye-button${showJoints ? ' active' : ''}`} title={showJoints ? 'Ocultar juntas' : 'Mostrar juntas'} onClick={() => setShowJoints((value) => !value)} type="button"><Icon name={showJoints ? 'eye' : 'eyeOff'} /></button></div>}</header>
             <nav className="pose-tabs" aria-label="Painel da pose">{([['parts', 'Peças'], ['layers', 'Camadas'], ['joints', 'Rig']] as const).map(([key, label]) => <button key={key} className={tab === key ? 'active' : ''} onClick={() => setTab(key)} type="button">{label}</button>)}</nav>
             {project && tab === 'parts' && <div className="pose-tool-content">
               <label className="pose-search"><Icon name="search" /><input value={partFilter} onChange={(event) => setPartFilter(event.target.value)} placeholder="Localizar peça" /></label>
@@ -626,6 +686,7 @@ export function PoseWorkspace() {
       </div>
 
       {selectingModel && <div className="pose-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setSelectingModel(false) }}><section className="pose-model-picker" role="dialog" aria-modal="true" aria-labelledby="pose-model-picker-title"><header><span><small>BIBLIOTECA DE POSES</small><strong id="pose-model-picker-title">Escolha o modelo</strong></span><button onClick={() => setSelectingModel(false)} aria-label="Fechar" type="button">×</button></header><p>Cada modelo tem seus próprios 12 slots. As poses salvas continuam disponíveis se o modelo de origem for excluído.</p><div className="pose-model-options">{models.map((model, index) => model && <button key={`model-${model.slot}`} className="pose-model-option" onClick={() => void selectModelLibrary(model.slot)} type="button"><span className="pose-model-number">{String(index + 1).padStart(2, '0')}</span><span><b>{model.name}</b><small>{model.partCount} peças · modelo pronto</small></span><Icon name="chevronRight" /></button>)}{Array.from(new Set(allPoseSlots.filter((pose) => pose && !models[pose.sourceModelSlot - 1]).map((pose) => pose!.sourceModelSlot))).map((modelSlot) => { const archivedName = allPoseSlots.find((pose) => pose?.sourceModelSlot === modelSlot)?.sourceModelName ?? `Modelo ${modelSlot}`; return <button key={`archive-${modelSlot}`} className="pose-model-option archived" onClick={() => void selectModelLibrary(modelSlot)} type="button"><span className="pose-model-number"><Icon name="box" /></span><span><b>{archivedName}</b><small>Modelo de origem removido · poses preservadas</small></span><Icon name="chevronRight" /></button>})}{models.every((model) => !model) && allPoseSlots.length === 0 && <div className="pose-model-none">Salve primeiro um modelo na aba Modelos para começar.</div>}</div></section></div>}
+      {wardrobePickerOpen && <div className="pose-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setWardrobePickerOpen(false) }}><section className="pose-model-picker wardrobe-picker" role="dialog" aria-modal="true" aria-labelledby="wardrobe-picker-title"><header><span><small>BIBLIOTECA DE ROUPAS</small><strong id="wardrobe-picker-title">Vista um conjunto</strong></span><button onClick={() => setWardrobePickerOpen(false)} aria-label="Fechar" type="button">×</button></header><p>As peças serão copiadas para esta pose e acompanharão os ossos definidos no conjunto.</p><div className="pose-model-options">{wardrobeSets.map((set) => <button key={set.id} className="pose-model-option" onClick={() => void applyWardrobeSet(set.id)} type="button"><span className="pose-model-number"><Icon name="shirt" /></span><span><b>{set.name}</b><small>{set.componentCount} peças · {set.modelName}</small></span><Icon name="chevronRight" /></button>)}{!wardrobeSets.length && <div className="pose-model-none">Este modelo ainda não tem roupas. Importe e salve um conjunto na área Roupas.</div>}</div></section></div>}
     </section>
   )
 }
