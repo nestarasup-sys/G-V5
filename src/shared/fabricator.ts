@@ -101,6 +101,8 @@ export type WardrobeSet = {
   width: number
   height: number
   components: WardrobeComponent[]
+  /** Optional per-set origin calibration. Never writes into the original model. */
+  sourceOverrides?: Record<string, NonNullable<ModelPart['sourceTransform']>>
   updatedAt: string
 }
 export type WardrobeSetSave = Omit<WardrobeSet, 'components'> & { components: Array<Omit<WardrobeComponent, 'dataUrl'>> }

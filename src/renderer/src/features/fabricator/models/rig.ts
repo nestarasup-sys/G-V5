@@ -63,11 +63,18 @@ export function sourcePointFromCanvas(part: ModelPart, point: Point): Point | nu
   const currentDy = point.y - currentCenter.y
   const localX = currentDx * Math.cos(toLocal) - currentDy * Math.sin(toLocal)
   const localY = currentDx * Math.sin(toLocal) + currentDy * Math.cos(toLocal)
+  // Historical rigs can have been resized on either axis independently.
+  // The source frame owns its own dimensions; using the assembled dimensions
+  // here used to corrupt anchors on re-open and during origin calibration.
+  const sourceWidth = source.width ?? part.width
+  const sourceHeight = source.height ?? part.height
+  const scaledX = localX * sourceWidth / Math.max(0.0001, part.width)
+  const scaledY = localY * sourceHeight / Math.max(0.0001, part.height)
   const fromSource = source.rotation * Math.PI / 180
-  const sourceCenter = { x: source.x + part.width / 2, y: source.y + part.height / 2 }
+  const sourceCenter = { x: source.x + sourceWidth / 2, y: source.y + sourceHeight / 2 }
   return {
-    x: sourceCenter.x + localX * Math.cos(fromSource) - localY * Math.sin(fromSource),
-    y: sourceCenter.y + localX * Math.sin(fromSource) + localY * Math.cos(fromSource)
+    x: sourceCenter.x + scaledX * Math.cos(fromSource) - scaledY * Math.sin(fromSource),
+    y: sourceCenter.y + scaledX * Math.sin(fromSource) + scaledY * Math.cos(fromSource)
   }
 }
 
