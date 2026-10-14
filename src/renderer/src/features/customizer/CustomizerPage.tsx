@@ -21,7 +21,7 @@ export function CustomizerPage() {
   const [rosterQuery, setRosterQuery] = useState('')
   const [models, setModels] = useState<FabricatorSlotSummary[]>([])
   const [model, setModel] = useState<FabricatorProject | null>(null)
-  const [poses, setPoses] = useState<FabricatorPoseSummary[]>([])
+  const [poses, setPoses] = useState<Array<NonNullable<FabricatorPoseSummary>>>([])
   const [loadedModelSlot, setLoadedModelSlot] = useState<number | null>(null)
   const [pose, setPose] = useState<FabricatorPose | null>(null)
   const [sets, setSets] = useState<WardrobeSet[]>([])
