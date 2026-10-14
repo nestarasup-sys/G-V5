@@ -101,7 +101,7 @@ async function splitImage(part: ModelPart, axis: 'horizontal' | 'vertical'): Pro
     baseCanvas.getContext('2d')?.drawImage(baseImage, region.x, region.y, region.width, region.height, 0, 0, region.width, region.height)
     const sourceX = (part.sourceTransform?.x ?? part.x) + region.x
     const sourceY = (part.sourceTransform?.y ?? part.y) + region.y
-    return { ...part, id: makeId(), name: `${part.name} ${index === 0 ? 'A' : 'B'}`, x: part.x + region.x, y: part.y + region.y, width: region.width, height: region.height, rotation: 0, jointAnchor: { x: part.x + region.x + region.width / 2, y: part.y + region.y + region.height / 2 }, sourceTransform: part.sourceTransform ? { x: sourceX, y: sourceY, rotation: part.sourceTransform.rotation, anchorVersion: 1, jointAnchor: { x: sourceX + region.width / 2, y: sourceY + region.height / 2 } } : undefined, chromaBaseSaved: true, chromaBaseDataUrl: baseCanvas.toDataURL('image/png'), dataUrl: canvas.toDataURL('image/png') }
+    return { ...part, id: makeId(), name: `${part.name} ${index === 0 ? 'A' : 'B'}`, x: part.x + region.x, y: part.y + region.y, width: region.width, height: region.height, rotation: 0, jointAnchor: { x: part.x + region.x + region.width / 2, y: part.y + region.y + region.height / 2 }, sourceTransform: part.sourceTransform ? { x: sourceX, y: sourceY, width: region.width, height: region.height, rotation: part.sourceTransform.rotation, anchorVersion: 1, jointAnchor: { x: sourceX + region.width / 2, y: sourceY + region.height / 2 } } : undefined, chromaBaseSaved: true, chromaBaseDataUrl: baseCanvas.toDataURL('image/png'), dataUrl: canvas.toDataURL('image/png') }
   }))
 }
 
@@ -520,7 +520,7 @@ export function FabricatorPage() {
       for (const part of parts) { dirtyAssets.current.set(part.id, part.dataUrl); if (part.chromaBaseDataUrl) dirtyChromaBases.current.set(part.id, part.chromaBaseDataUrl) }
       const detectedJoints = autoConnectParts(parts)
       const rig = normalizePartAnchors(parts, detectedJoints)
-      const sourceParts = rig.parts.map((part) => ({ ...part, sourceTransform: { x: part.x, y: part.y, rotation: part.rotation, anchorVersion: 1 as const, ...(part.jointAnchor ? { jointAnchor: { ...part.jointAnchor } } : {}) } }))
+      const sourceParts = rig.parts.map((part) => ({ ...part, sourceTransform: { x: part.x, y: part.y, width: part.width, height: part.height, rotation: part.rotation, anchorVersion: 1 as const, ...(part.jointAnchor ? { jointAnchor: { ...part.jointAnchor } } : {}) } }))
       const nextProject: FabricatorProject = {
         schemaVersion: 1, chromaVersion: 2, chromaBaseTolerance: 0, slot: metadata.slot, name: metadata.name, sourceName: metadata.sourceName,
         sourceAssetName: metadata.sourceAssetName, sourceDataUrl, width: message.width, height: message.height,

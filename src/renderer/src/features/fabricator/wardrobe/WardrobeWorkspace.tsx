@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPoi
 import type { FabricatorHistoryState, FabricatorPose, FabricatorPoseSummary, FabricatorProject, FabricatorProjectSave, FabricatorSlotSummary, WardrobeCategory, WardrobeComponent, WardrobeSet, WardrobeSetSave, WardrobeSetSummary } from '../../../../../shared/fabricator'
 import { Icon } from '../../../ui/components/Icon'
 import { orderedParts, partJointAnchor, sourcePointFromCanvas } from '../models/rig'
+import { mapWardrobeComponentToPose, poseDeltaToSource } from './poseTransform'
 
 type WorkerPiece = Omit<WardrobeComponent, 'category' | 'attachedPartId' | 'rotation' | 'dataUrl'> & { png: ArrayBuffer }
 type WorkerMessage = { type: 'complete'; id: number; width: number; height: number; pieces: WorkerPiece[] } | { type: 'error'; id: number; message: string }
@@ -45,11 +46,6 @@ function getBodyLayer(model: FabricatorProject | null, partId: string): number {
 function serializeModel(model: FabricatorProject): FabricatorProjectSave {
   const { sourceDataUrl: _sourceDataUrl, parts, ...metadata } = model
   return { ...metadata, parts: parts.map(({ dataUrl: _dataUrl, chromaBaseDataUrl: _chromaBaseDataUrl, ...part }) => part) }
-}
-function sourceAnchor(part: FabricatorProject['parts'][number]) {
-  return part.sourceTransform?.jointAnchor ?? (part.sourceTransform
-    ? { x: part.sourceTransform.x + part.width / 2, y: part.sourceTransform.y + part.height / 2 }
-    : null)
 }
 function guessBone(category: WardrobeCategory, x: number, width: number, model: FabricatorProject): FabricatorProject['parts'][number] | undefined {
   const side = x < width / 2 ? 'left' : 'right'
@@ -123,17 +119,19 @@ export function WardrobeWorkspace() {
           const recoveredParts = reference.parts.map((part) => {
             const sourcePart = originalParts.get(part.id)
             const baseTransform = part.sourceTransform ?? (sourcePart
-              ? { x: sourcePart.x, y: sourcePart.y, rotation: sourcePart.rotation }
+              ? { x: sourcePart.x, y: sourcePart.y, width: sourcePart.width, height: sourcePart.height, rotation: sourcePart.rotation }
               : undefined)
-            if (!baseTransform || part.sourceTransform?.anchorVersion === 1) return part
+            if (!baseTransform) return part
+            const completeTransform = { ...baseTransform, width: baseTransform.width ?? sourcePart?.width ?? part.width, height: baseTransform.height ?? sourcePart?.height ?? part.height }
+            if (part.sourceTransform?.anchorVersion === 1 && part.sourceTransform.width && part.sourceTransform.height) return part
             // Keep the user's current rig pivot, but express it in the original sheet's coordinates.
             const currentAnchor = partJointAnchor(part, reference.joints)
             const sourcePoint = currentAnchor
-              ? sourcePointFromCanvas({ ...part, sourceTransform: baseTransform }, currentAnchor)
+              ? sourcePointFromCanvas({ ...part, sourceTransform: completeTransform }, currentAnchor)
               : null
-            const fallbackAnchor = sourcePart ? partJointAnchor(sourcePart, original?.joints ?? []) : baseTransform.jointAnchor
+            const fallbackAnchor = sourcePart ? partJointAnchor(sourcePart, original?.joints ?? []) : completeTransform.jointAnchor
             const jointAnchor = sourcePoint ?? fallbackAnchor
-            return { ...part, sourceTransform: { ...baseTransform, anchorVersion: 1 as const, ...(jointAnchor ? { jointAnchor: { ...jointAnchor } } : {}) } }
+            return { ...part, sourceTransform: { ...completeTransform, anchorVersion: 1 as const, ...(jointAnchor ? { jointAnchor: { ...jointAnchor } } : {}) } }
           })
           if (recoveredParts.some((part, index) => part !== reference.parts[index])) {
             recoveredModel = { ...reference, parts: recoveredParts }
@@ -221,7 +219,7 @@ export function WardrobeWorkspace() {
     const localY = dx * Math.sin(radians) + dy * Math.cos(radians)
     const sourceCenter = { x: x - localX, y: y - localY }
     const parts = model.parts.map((part) => part.id === partId
-      ? { ...part, sourceTransform: { x: sourceCenter.x - part.width / 2, y: sourceCenter.y - part.height / 2, rotation: 0, anchorVersion: 1 as const, jointAnchor: { x, y } } }
+      ? { ...part, sourceTransform: { x: sourceCenter.x - part.width / 2, y: sourceCenter.y - part.height / 2, width: part.width, height: part.height, rotation: 0, anchorVersion: 1 as const, jointAnchor: { x, y } } }
       : part)
     const calibrated = { ...model, parts, updatedAt: new Date().toISOString() }
     setModel(calibrated); setCalibratingPartId(null); setError('')
@@ -263,10 +261,14 @@ export function WardrobeWorkspace() {
   const movePieceDrag = (event: ReactPointerEvent<HTMLImageElement>) => {
     const drag = pieceDragRef.current
     if (!drag || drag.pointerId !== event.pointerId) return
-    const x = drag.originX + (event.clientX - drag.pointerX) / scale
-    const y = drag.originY + (event.clientY - drag.pointerY) / scale
+    const delta = { x: (event.clientX - drag.pointerX) / scale, y: (event.clientY - drag.pointerY) / scale }
+    const component = draft?.components.find((item) => item.id === drag.componentId)
+    const modelBone = component && model?.parts.find((part) => part.id === component.attachedPartId)
+    const poseBone = component && testPose?.parts.find((part) => part.id === component.attachedPartId)
+    const sourceDelta = testPose && modelBone && poseBone ? poseDeltaToSource(delta, modelBone, poseBone) : delta
+    const x = drag.originX + sourceDelta.x
+    const y = drag.originY + sourceDelta.y
     if (testPose) {
-      const component = draft?.components.find((item) => item.id === drag.componentId)
       if (component) setTestDragOffsets((current) => ({ ...current, [drag.componentId]: { x: x - component.x, y: y - component.y } }))
     } else updateComponent(drag.componentId, { x, y })
   }
@@ -358,20 +360,19 @@ export function WardrobeWorkspace() {
           const layerBand = testPose ? previewLayerStride : draft.components.length + 1
           const modelBone = model?.parts.find((part) => part.id === component.attachedPartId)
           const poseBone = testPose?.parts.find((part) => part.id === component.attachedPartId)
-          const currentAnchor = poseBone && testPose ? partJointAnchor(poseBone, testPose.joints) ?? { x: poseBone.x + poseBone.width / 2, y: poseBone.y + poseBone.height / 2 } : null
-          const sourceFrame = poseBone?.sourceTransform?.anchorVersion === 1 ? poseBone.sourceTransform : modelBone?.sourceTransform
-          const referenceAnchor = sourceFrame && modelBone ? sourceAnchor({ ...modelBone, sourceTransform: sourceFrame }) : null
-          const offsetX = referenceAnchor && currentAnchor ? currentAnchor.x - referenceAnchor.x : 0
-          const offsetY = referenceAnchor && currentAnchor ? currentAnchor.y - referenceAnchor.y : 0
           const testOffset = testDragOffsets[component.id] ?? { x: 0, y: 0 }
           const componentX = component.x + (testPose ? testOffset.x : 0)
           const componentY = component.y + (testPose ? testOffset.y : 0)
-          const bodyRotation = sourceFrame && poseBone ? poseBone.rotation - sourceFrame.rotation : 0
+          const poseTransform = testPose && modelBone?.sourceTransform && poseBone
+            ? mapWardrobeComponentToPose({ ...component, x: componentX, y: componentY }, modelBone, poseBone)
+            : null
           const poseLayer = testPose?.layerOrder.indexOf(component.attachedPartId) ?? -1
           const zIndex = testPose ? 3 + Math.max(0, poseLayer) * layerBand + index : 2 + layer * layerBand + index
-          const image = <img className={`wardrobe-preview-part${component.id === selectedId ? ' selected' : ''}`} src={component.dataUrl} alt={component.name} title={`${component.name} · ${categoryNames[component.category]} · camada do modelo ${layer + 1}`} draggable={false} onClick={() => setSelectedId(component.id)} onPointerDown={(event) => beginPieceDrag(event, component)} onPointerMove={movePieceDrag} onPointerUp={finishPieceDrag} onPointerCancel={finishPieceDrag} style={{ left: 0, top: 0, width: component.width * scale, height: component.height * scale, transform: `rotate(${component.rotation}deg)` }} />
-          if (!testPose || !referenceAnchor || !currentAnchor || !modelBone?.sourceTransform) return <img key={component.id} className={`wardrobe-preview-part${component.id === selectedId ? ' selected' : ''}`} src={component.dataUrl} alt={component.name} title={`${component.name} · ${categoryNames[component.category]} · camada do modelo ${layer + 1}`} draggable={false} onClick={() => setSelectedId(component.id)} onPointerDown={(event) => beginPieceDrag(event, component)} onPointerMove={movePieceDrag} onPointerUp={finishPieceDrag} onPointerCancel={finishPieceDrag} style={{ left: component.x * scale, top: component.y * scale, width: component.width * scale, height: component.height * scale, zIndex, transform: `rotate(${component.rotation}deg)` }} />
-          return <div key={component.id} className="wardrobe-pose-garment" style={{ left: (componentX + offsetX) * scale, top: (componentY + offsetY) * scale, width: component.width * scale, height: component.height * scale, zIndex, transformOrigin: `${(referenceAnchor.x - componentX) * scale}px ${(referenceAnchor.y - componentY) * scale}px`, transform: `rotate(${bodyRotation}deg)` }}>{image}</div>
+          const imageClassName = `wardrobe-preview-part${component.id === selectedId ? ' selected' : ''}`
+          const imageTitle = `${component.name} · ${categoryNames[component.category]} · camada do modelo ${layer + 1}`
+          if (!testPose || !poseTransform) return <img key={component.id} className={imageClassName} src={component.dataUrl} alt={component.name} title={imageTitle} draggable={false} onClick={() => setSelectedId(component.id)} onPointerDown={(event) => beginPieceDrag(event, component)} onPointerMove={movePieceDrag} onPointerUp={finishPieceDrag} onPointerCancel={finishPieceDrag} style={{ left: component.x * scale, top: component.y * scale, width: component.width * scale, height: component.height * scale, zIndex, transform: `rotate(${component.rotation}deg)` }} />
+          const image = <img className={imageClassName} src={component.dataUrl} alt={component.name} title={imageTitle} draggable={false} onClick={() => setSelectedId(component.id)} onPointerDown={(event) => beginPieceDrag(event, component)} onPointerMove={movePieceDrag} onPointerUp={finishPieceDrag} onPointerCancel={finishPieceDrag} style={{ left: poseTransform.localLeft * scale, top: poseTransform.localTop * scale, width: component.width * scale, height: component.height * scale, transformOrigin: 'center', transform: `rotate(${poseTransform.localRotation}deg)` }} />
+          return <div key={component.id} className="wardrobe-pose-garment" style={{ left: poseTransform.origin.x * scale, top: poseTransform.origin.y * scale, width: 0, height: 0, zIndex, transformOrigin: '0 0', transform: poseTransform.matrix }}>{image}</div>
         })}
       </div>}{!model && <div className="wardrobe-empty"><Icon name="shirt" /><strong>Selecione um modelo salvo</strong><small>O modelo será usado como guia na prévia de encaixe.</small></div>}{model && !draft && !testPose && <div className="wardrobe-stage-hint">Importe uma folha para começar · fundo transparente preservado</div>}{testPose && <div className="wardrobe-stage-hint wardrobe-test-hint">Teste temporário · a pose salva não será alterada</div>}{calibratingPartId && <div className="wardrobe-stage-hint wardrobe-calibration-hint">Clique na junta de “{model?.parts.find((part) => part.id === calibratingPartId)?.name}” na folha original</div>}<div className="wardrobe-zoom"><span>{Math.round(zoom * 100)}%</span><button onClick={() => setZoom((value) => Math.min(2.2, value + .1))} type="button">+</button><button onClick={() => setZoom((value) => Math.max(.55, value - .1))} type="button">−</button></div>{processing && <div className="wardrobe-processing"><span className="model-spinner" />Detectando peças transparentes…</div>}</div><footer>{testPose ? 'Arraste as roupas para testar o encaixe. Use “Sair do teste” para voltar à folha original.' : 'A posição original da folha é preservada. Arraste cada peça para encaixar; use os controles rápidos para ajustar.'}</footer></section>
       <aside className="wardrobe-edit-panel"><header><span><strong>Peças do conjunto</strong><small>{draft ? `${draft.components.length} partes detectadas` : 'Recortes automáticos'}</small></span>{draft && <span className="wardrobe-count">{draft.components.length}</span>}</header>
