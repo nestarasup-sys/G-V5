@@ -304,6 +304,18 @@ export function PoseWorkspace() {
       const saved = await window.desktop.loadFabricatorPose(selectedModelSlot, slot)
       if (!saved) throw new Error('O slot de pose não pôde ser carregado.')
       const { slot: _slot, ...editable } = saved
+      if (saved.isInitialModelPose) {
+        pendingAssets.current.clear()
+        setSourcePreview(editable)
+        setEditingSlot(null)
+        editingSlotRef.current = null
+        setHistory(emptyHistory())
+        setSelectedId(null)
+        publishProject(null, false)
+        setSaveMessage('Montagem original do modelo · somente leitura')
+        setError('')
+        return
+      }
       // The draft is stored in a different folder from the saved pose, so copy
       // the pose's part images into the draft library on its next autosave.
       pendingAssets.current = new Map(editable.parts.map((part) => [part.id, part.dataUrl]))
