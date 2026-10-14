@@ -657,11 +657,13 @@ async function registerFabricatorHandlers(): Promise<void> {
         throw new Error('Dados de personagem inválidos.')
       }
     }
-    const folder = join(app.getPath('userData'), 'customizer')
-    await mkdir(folder, { recursive: true })
-    const temporary = join(folder, 'characters.json.tmp')
-    await writeFile(temporary, JSON.stringify(library), 'utf8')
-    await rename(temporary, join(folder, 'characters.json'))
+    await queuePoseWrite(async () => {
+      const folder = join(app.getPath('userData'), 'customizer')
+      await mkdir(folder, { recursive: true })
+      const temporary = join(folder, 'characters.json.tmp')
+      await writeFile(temporary, JSON.stringify(library), 'utf8')
+      await rename(temporary, join(folder, 'characters.json'))
+    })
   })
 
   ipcMain.handle('fabricator:wardrobe:list', async (event, modelSlot: number): Promise<WardrobeSetSummary[]> => {
