@@ -6,9 +6,10 @@ import { despillGreenFringes, sampleBackground } from './models/chroma'
 import { autoConnectParts, createJoint, jointPivot, normalizeLayerOrder, normalizePartAnchors, orderedParts, partJointAnchor, reorderLayer, sourcePointFromCanvas } from './models/rig'
 import { PoseWorkspace } from './PoseWorkspace'
 import { WardrobeWorkspace } from './wardrobe/WardrobeWorkspace'
+import { FaceWorkspace } from './face/FaceWorkspace'
 
 const sections: { label: string; icon: IconName }[] = [
-  { label: 'Modelos', icon: 'sparkles' }, { label: 'Poses', icon: 'expand' }, { label: 'Roupas', icon: 'shirt' }
+  { label: 'Modelos', icon: 'sparkles' }, { label: 'Poses', icon: 'expand' }, { label: 'Roupas', icon: 'shirt' }, { label: 'Rosto', icon: 'face' }
 ]
 
 type ProcessedPart = Omit<ModelPart, 'dataUrl' | 'chromaBaseDataUrl'> & { png: ArrayBuffer; basePng: ArrayBuffer }
@@ -989,7 +990,7 @@ export function FabricatorPage() {
         </nav>
       </aside>
 
-      {activeSection === 'Poses' ? <PoseWorkspace /> : activeSection === 'Roupas' ? <WardrobeWorkspace /> : (
+      {activeSection === 'Poses' ? <PoseWorkspace /> : activeSection === 'Roupas' ? <WardrobeWorkspace /> : activeSection === 'Rosto' ? <FaceWorkspace /> : (
         <section className="fabricator-model-editor" aria-label="Editor de modelos">
           <header className="model-slotbar">
             <div className="model-slot-title"><span className="model-slot-logo"><Icon name="sparkles" /></span><span><strong>Modelos</strong><small>10 espaços de trabalho</small></span></div>
