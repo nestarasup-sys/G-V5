@@ -681,8 +681,21 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .wardrobe-preview-stage { position:relative;min-width:0;min-height:0;flex:1;display:grid;place-items:center;overflow:hidden;background-color:#fdfcfd;background-image:linear-gradient(45deg,#f1edf1 25%,transparent 25%),linear-gradient(-45deg,#f1edf1 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#f1edf1 75%),linear-gradient(-45deg,transparent 75%,#f1edf1 75%);background-position:0 0,0 6px,6px -6px,-6px 0;background-size:12px 12px; }
 .wardrobe-artboard { position:relative;flex:0 0 auto;overflow:visible;filter:drop-shadow(0 3px 10px #44303a1a); }
 .wardrobe-artboard>img { position:absolute;object-fit:fill;user-select:none;-webkit-user-drag:none; }
-.wardrobe-preview-part { cursor:pointer; }
+.wardrobe-preview-part { cursor:grab;touch-action:none;user-select:none; }
+.wardrobe-preview-part:active { cursor:grabbing; }
 .wardrobe-preview-part.selected { filter:drop-shadow(0 0 2px #e15683) drop-shadow(0 0 4px #e156835e); }
+.wardrobe-quick-controls { display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;gap:9px;padding:8px;border:1px solid #f0e8ed;border-radius:9px;background:#fdfbfd; }
+.wardrobe-nudge-pad { display:grid;grid-template-columns:repeat(3,29px);grid-template-rows:repeat(3,25px);align-items:center;justify-items:center;gap:2px; }
+.wardrobe-nudge-pad button { width:26px;height:24px;border:1px solid #eadbe2;border-radius:6px;background:#fff;color:#8b5269;font-size:14px;cursor:pointer; }
+.wardrobe-nudge-pad button:first-child { grid-column:2;grid-row:1; }
+.wardrobe-nudge-pad button:nth-child(2) { grid-column:1;grid-row:2; }
+.wardrobe-nudge-pad span { grid-column:2;grid-row:2;color:#a79ba5;font-size:8px; }
+.wardrobe-nudge-pad button:nth-child(4) { grid-column:3;grid-row:2; }
+.wardrobe-nudge-pad button:nth-child(5) { grid-column:2;grid-row:3; }
+.wardrobe-quick-actions { display:flex;flex-wrap:wrap;gap:5px; }
+.wardrobe-quick-actions button { min-height:26px;padding:0 7px;border:1px solid #eadbe2;border-radius:6px;background:#fff;color:#755e6c;font-size:9px;cursor:pointer; }
+.wardrobe-quick-actions button:hover,.wardrobe-nudge-pad button:hover { border-color:#dc8daa;background:#fff4f8;color:#ad426c; }
+.wardrobe-quick-actions .wardrobe-origin-button { flex:1 0 100%; }
 .wardrobe-stage-hint { position:absolute;bottom:10px;left:10px;padding:6px 8px;border:1px solid #eee5eb;border-radius:7px;background:#ffffffde;color:#8d838e;font-size:10px; }
 .wardrobe-zoom { position:absolute;right:8px;bottom:8px;display:flex;align-items:center;gap:3px;padding:4px;border:1px solid #ece6eb;border-radius:8px;background:#ffffffdf; }
 .wardrobe-zoom span { min-width:34px;color:#948a95;font-size:10px;text-align:center; }

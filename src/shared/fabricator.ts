@@ -83,6 +83,11 @@ export type WardrobeComponent = {
   width: number
   height: number
   rotation: number
+  /** Posição original do recorte na folha importada, para restaurar o encaixe inicial. */
+  originX?: number
+  originY?: number
+  originWidth?: number
+  originHeight?: number
   dataUrl: string
 }
 export type WardrobeSet = {

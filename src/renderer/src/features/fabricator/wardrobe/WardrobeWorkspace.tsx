@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import type { FabricatorProject, FabricatorSlotSummary, WardrobeCategory, WardrobeComponent, WardrobeSet, WardrobeSetSave, WardrobeSetSummary } from '../../../../../shared/fabricator'
 import { Icon } from '../../../ui/components/Icon'
 
 type WorkerPiece = Omit<WardrobeComponent, 'category' | 'attachedPartId' | 'rotation' | 'dataUrl'> & { png: ArrayBuffer }
 type WorkerMessage = { type: 'complete'; id: number; width: number; height: number; pieces: WorkerPiece[] } | { type: 'error'; id: number; message: string }
 type ReferenceMessage = { type: 'complete'; id: number; png: ArrayBuffer } | { type: 'error'; id: number; message: string }
+type PieceDrag = { pointerId: number; componentId: string; pointerX: number; pointerY: number; originX: number; originY: number }
 const categoryNames: Record<WardrobeCategory, string> = {
   camisa: 'Camisas', 'manga-superior': 'Mangas superiores', 'manga-inferior': 'Mangas inferiores', 'calca-coxa': 'Calças · coxas', 'calca-canela': 'Calças · canelas', shorts: 'Shorts'
 }
@@ -34,6 +35,12 @@ function guessName(category: WardrobeCategory, x: number, width: number): string
   if (category === 'calca-coxa') return `Calça · coxa ${side}`
   return `Calça · canela ${side}`
 }
+function getBodyLayer(model: FabricatorProject | null, partId: string): number {
+  if (!model) return 0
+  const order = model.layerOrder ?? model.parts.map((part) => part.id)
+  const layer = order.indexOf(partId)
+  return layer >= 0 ? layer : Math.max(0, model.parts.findIndex((part) => part.id === partId))
+}
 function guessBone(category: WardrobeCategory, x: number, width: number, model: FabricatorProject): FabricatorProject['parts'][number] | undefined {
   const side = x < width / 2 ? 'left' : 'right'
   const target = category === 'camisa' ? { x: .5, y: .36 }
@@ -53,11 +60,6 @@ function guessBone(category: WardrobeCategory, x: number, width: number, model: 
   }
   return candidates.sort((a, b) => distance(a) - distance(b))[0] ?? model.parts[0]
 }
-function alignComponentToPart(component: WardrobeComponent, part: FabricatorProject['parts'][number] | undefined): WardrobeComponent {
-  if (!part) return component
-  return { ...component, x: part.x + part.width / 2 - component.width / 2, y: part.y + part.height / 2 - component.height / 2 }
-}
-
 export function WardrobeWorkspace() {
   const [models, setModels] = useState<FabricatorSlotSummary[]>(Array.from({ length: 10 }, () => null))
   const [modelSlot, setModelSlot] = useState(1)
@@ -74,6 +76,7 @@ export function WardrobeWorkspace() {
   const inputRef = useRef<HTMLInputElement>(null)
   const workerRef = useRef<Worker | null>(null)
   const requestRef = useRef(0)
+  const pieceDragRef = useRef<PieceDrag | null>(null)
   const previewRef = useRef<HTMLDivElement>(null)
   const [previewSize, setPreviewSize] = useState({ width: 0, height: 0 })
   const [referencePreview, setReferencePreview] = useState<{ sourceDataUrl: string; imageDataUrl: string } | null>(null)
@@ -138,14 +141,12 @@ export function WardrobeWorkspace() {
         setProcessing(false); worker.terminate(); workerRef.current = null
         if (message.type === 'error') { setError(message.message); return }
         if (!message.pieces.length) { setError('Não encontrei peças visíveis. Confira se a folha tem transparência entre as peças.'); return }
-        const offsetX = (model.width - message.width) / 2
-        const offsetY = (model.height - message.height) / 2
         const components = message.pieces.map((piece) => {
           const category = guessCategory(piece, message.width, message.height)
           const { png, ...metadata } = piece
-          const centeredOnCanvas = { ...metadata, x: metadata.x + offsetX, y: metadata.y + offsetY }
+          const sourcePlacement = { ...metadata, x: metadata.x, y: metadata.y }
           const bone = guessBone(category, piece.x + piece.width / 2, message.width, model)
-          const positioned = alignComponentToPart({ ...centeredOnCanvas, category, attachedPartId: bone?.id ?? '', rotation: 0, dataUrl: dataUrl(png) }, bone)
+          const positioned: WardrobeComponent = { ...sourcePlacement, category, attachedPartId: bone?.id ?? '', rotation: 0, originX: sourcePlacement.x, originY: sourcePlacement.y, originWidth: metadata.width, originHeight: metadata.height, dataUrl: dataUrl(png) }
           return { ...positioned, name: guessName(category, piece.x + piece.width / 2, message.width) }
         })
         setDraft({ schemaVersion: 1, id: crypto.randomUUID(), modelSlot, modelName: model.name, name: file.name.replace(/\.[^.]+$/, ''), width: model.width, height: model.height, components, updatedAt: new Date().toISOString() })
@@ -167,6 +168,32 @@ export function WardrobeWorkspace() {
       ;[components[index], components[target]] = [components[target], components[index]]
       return { ...current, components, updatedAt: new Date().toISOString() }
     })
+  }
+  const beginPieceDrag = (event: ReactPointerEvent<HTMLImageElement>, component: WardrobeComponent) => {
+    if (event.button !== 0) return
+    event.preventDefault()
+    event.stopPropagation()
+    event.currentTarget.setPointerCapture(event.pointerId)
+    pieceDragRef.current = { pointerId: event.pointerId, componentId: component.id, pointerX: event.clientX, pointerY: event.clientY, originX: component.x, originY: component.y }
+    setSelectedId(component.id)
+  }
+  const movePieceDrag = (event: ReactPointerEvent<HTMLImageElement>) => {
+    const drag = pieceDragRef.current
+    if (!drag || drag.pointerId !== event.pointerId) return
+    updateComponent(drag.componentId, { x: drag.originX + (event.clientX - drag.pointerX) / scale, y: drag.originY + (event.clientY - drag.pointerY) / scale })
+  }
+  const finishPieceDrag = (event: ReactPointerEvent<HTMLImageElement>) => {
+    if (pieceDragRef.current?.pointerId === event.pointerId) pieceDragRef.current = null
+  }
+  const nudgeSelected = (dx: number, dy: number) => { if (selected) updateComponent(selected.id, { x: selected.x + dx, y: selected.y + dy }) }
+  const resizeSelected = (factor: number) => {
+    if (!selected) return
+    const width = selected.width * factor; const height = selected.height * factor
+    updateComponent(selected.id, { x: selected.x + (selected.width - width) / 2, y: selected.y + (selected.height - height) / 2, width, height })
+  }
+  const restoreSelectedOrigin = () => {
+    if (!selected) return
+    updateComponent(selected.id, { x: selected.originX ?? selected.x, y: selected.originY ?? selected.y, width: selected.originWidth ?? selected.width, height: selected.originHeight ?? selected.height, rotation: 0 })
   }
   const save = async () => {
     if (!draft || !draft.components.length || saving) return
@@ -197,10 +224,14 @@ export function WardrobeWorkspace() {
       <aside className="wardrobe-library"><header><span><strong>Conjuntos</strong><small>{sets.length} salvos para este modelo</small></span><span className="wardrobe-count">{sets.length}</span></header><div className="wardrobe-set-list">{sets.map((set) => <button className={`wardrobe-set-row${activeSetId === set.id ? ' active' : ''}`} key={set.id} onClick={() => void openSet(set.id)} type="button"><span className="wardrobe-set-icon"><Icon name="shirt" /></span><span><b>{set.name}</b><small>{set.componentCount} peças</small></span><Icon name="chevronRight" /></button>)}{!sets.length && <div className="wardrobe-library-empty"><Icon name="box" /><span>Nenhum conjunto salvo.<br />Importe sua primeira folha.</span></div>}</div><div className="wardrobe-category-legend"><strong>Categorias</strong>{categories.map((category) => <span key={category}><i />{categoryNames[category]}</span>)}</div></aside>
       <section className="wardrobe-preview-card"><header><span><i /> PRÉVIA DE ENCAIXE · FOLHA ORIGINAL</span><span>{model ? `${model.width} × ${model.height}` : 'Sem modelo'}</span></header><div ref={previewRef} className="wardrobe-preview-stage">{model && <div className="wardrobe-artboard" style={{ width: model.width * scale, height: model.height * scale }}>
         {referencePreview?.sourceDataUrl === model.sourceDataUrl && <img className="wardrobe-base-image" src={referencePreview.imageDataUrl} alt={`Folha original desmontada do modelo ${model.name}`} title="Referência original desmontada com chroma key; o modelo salvo não será alterado" style={{ left: 0, top: 0, width: model.width * scale, height: model.height * scale, zIndex: 1 }} />}
-        {draft?.components.map((component, index) => <img key={component.id} className={`wardrobe-preview-part${component.id === selectedId ? ' selected' : ''}`} src={component.dataUrl} alt={component.name} title={`${component.name} · ${categoryNames[component.category]}`} onClick={() => setSelectedId(component.id)} style={{ left: component.x * scale, top: component.y * scale, width: component.width * scale, height: component.height * scale, zIndex: index + 2, transform: `rotate(${component.rotation}deg)` }} />)}
-      </div>}{!model && <div className="wardrobe-empty"><Icon name="shirt" /><strong>Selecione um modelo salvo</strong><small>O modelo será usado como guia na prévia de encaixe.</small></div>}{model && !draft && <div className="wardrobe-stage-hint">Importe uma folha para começar · fundo transparente preservado</div>}<div className="wardrobe-zoom"><span>{Math.round(zoom * 100)}%</span><button onClick={() => setZoom((value) => Math.min(2.2, value + .1))} type="button">+</button><button onClick={() => setZoom((value) => Math.max(.55, value - .1))} type="button">−</button></div>{processing && <div className="wardrobe-processing"><span className="model-spinner" />Detectando peças transparentes…</div>}</div><footer>Pré-encaixe pelo centro da peça do modelo, preservando o tamanho do recorte. Revise e ajuste antes de salvar.</footer></section>
+        {draft?.components.map((component, index) => {
+          const layer = getBodyLayer(model, component.attachedPartId)
+          const layerBand = draft.components.length + 1
+          return <img key={component.id} className={`wardrobe-preview-part${component.id === selectedId ? ' selected' : ''}`} src={component.dataUrl} alt={component.name} title={`${component.name} · ${categoryNames[component.category]} · camada do modelo ${layer + 1}`} draggable={false} onClick={() => setSelectedId(component.id)} onPointerDown={(event) => beginPieceDrag(event, component)} onPointerMove={movePieceDrag} onPointerUp={finishPieceDrag} onPointerCancel={finishPieceDrag} style={{ left: component.x * scale, top: component.y * scale, width: component.width * scale, height: component.height * scale, zIndex: 2 + layer * layerBand + index, transform: `rotate(${component.rotation}deg)` }} />
+        })}
+      </div>}{!model && <div className="wardrobe-empty"><Icon name="shirt" /><strong>Selecione um modelo salvo</strong><small>O modelo será usado como guia na prévia de encaixe.</small></div>}{model && !draft && <div className="wardrobe-stage-hint">Importe uma folha para começar · fundo transparente preservado</div>}<div className="wardrobe-zoom"><span>{Math.round(zoom * 100)}%</span><button onClick={() => setZoom((value) => Math.min(2.2, value + .1))} type="button">+</button><button onClick={() => setZoom((value) => Math.max(.55, value - .1))} type="button">−</button></div>{processing && <div className="wardrobe-processing"><span className="model-spinner" />Detectando peças transparentes…</div>}</div><footer>A posição original da folha é preservada. Arraste cada peça para encaixar; use os controles rápidos para ajustar.</footer></section>
       <aside className="wardrobe-edit-panel"><header><span><strong>Peças do conjunto</strong><small>{draft ? `${draft.components.length} partes detectadas` : 'Recortes automáticos'}</small></span>{draft && <span className="wardrobe-count">{draft.components.length}</span>}</header>
-        {draft ? <><div className="wardrobe-component-list">{draft.components.map((component) => <button key={component.id} className={`wardrobe-component-row${selectedId === component.id ? ' active' : ''}`} onClick={() => setSelectedId(component.id)} type="button"><img src={component.dataUrl} alt="" /><span><b>{component.name}</b><small>{categoryNames[component.category]}</small></span></button>)}</div>{selected && <div className="wardrobe-fields"><div className="wardrobe-field-title"><strong>Ajustar recorte · camada {selectedIndex + 1}</strong><button title="Subir camada" aria-label="Subir camada" disabled={selectedIndex === (draft?.components.length ?? 0) - 1} onClick={() => moveComponentLayer(selected.id, 1)} type="button">↑</button><button title="Descer camada" aria-label="Descer camada" disabled={selectedIndex <= 0} onClick={() => moveComponentLayer(selected.id, -1)} type="button">↓</button><button title="Remover esta peça do conjunto" onClick={() => { setDraft((current) => current ? { ...current, components: current.components.filter((component) => component.id !== selected.id) } : current); setSelectedId(draft.components.find((component) => component.id !== selected.id)?.id ?? null); setDirty(true) }} type="button"><Icon name="trash" /></button></div><label>Nome<input value={selected.name} onChange={(event) => updateComponent(selected.id, { name: event.target.value })} /></label><label>Categoria<select value={selected.category} onChange={(event) => updateComponent(selected.id, { category: event.target.value as WardrobeCategory })}>{categories.map((category) => <option key={category} value={category}>{categoryNames[category]}</option>)}</select></label><label>Parte correspondente<select value={selected.attachedPartId} onChange={(event) => updateComponent(selected.id, { attachedPartId: event.target.value })}>{model?.parts.map((part) => <option key={part.id} value={part.id}>{part.name}</option>)}</select></label><div className="wardrobe-number-grid">{([['x', 'X'], ['y', 'Y'], ['width', 'Largura'], ['height', 'Altura'], ['rotation', 'Ângulo']] as const).map(([field, label]) => <label key={field}>{label}<input type="number" step={field === 'rotation' ? 1 : 2} value={Number(selected[field].toFixed(1))} onChange={(event) => updateComponent(selected.id, { [field]: Number(event.target.value) })} /></label>)}</div><small className="wardrobe-note">Este vínculo ficará salvo para a futura integração em Customizar.</small></div>}</> : <div className="wardrobe-edit-empty"><Icon name="sparkles" /><strong>Pré-encaixe automático</strong><small>A folha é separada por transparência. Depois você revisa categoria, peça do corpo e posição de cada recorte.</small></div>}
+        {draft ? <><div className="wardrobe-component-list">{draft.components.map((component) => <button key={component.id} className={`wardrobe-component-row${selectedId === component.id ? ' active' : ''}`} onClick={() => setSelectedId(component.id)} type="button"><img src={component.dataUrl} alt="" /><span><b>{component.name}</b><small>{categoryNames[component.category]}</small></span></button>)}</div>{selected && <div className="wardrobe-fields"><div className="wardrobe-field-title"><strong>Editar peça · camada do modelo {getBodyLayer(model, selected.attachedPartId) + 1}</strong><button title="Subir camada" aria-label="Subir camada" disabled={selectedIndex === (draft?.components.length ?? 0) - 1} onClick={() => moveComponentLayer(selected.id, 1)} type="button">↑</button><button title="Descer camada" aria-label="Descer camada" disabled={selectedIndex <= 0} onClick={() => moveComponentLayer(selected.id, -1)} type="button">↓</button><button title="Remover esta peça do conjunto" onClick={() => { setDraft((current) => current ? { ...current, components: current.components.filter((component) => component.id !== selected.id) } : current); setSelectedId(draft.components.find((component) => component.id !== selected.id)?.id ?? null); setDirty(true) }} type="button"><Icon name="trash" /></button></div><label>Nome<input value={selected.name} onChange={(event) => updateComponent(selected.id, { name: event.target.value })} /></label><label>Categoria<select value={selected.category} onChange={(event) => updateComponent(selected.id, { category: event.target.value as WardrobeCategory })}>{categories.map((category) => <option key={category} value={category}>{categoryNames[category]}</option>)}</select></label><label>Parte correspondente<select value={selected.attachedPartId} onChange={(event) => updateComponent(selected.id, { attachedPartId: event.target.value })}>{model?.parts.map((part) => <option key={part.id} value={part.id}>{part.name}</option>)}</select></label><div className="wardrobe-quick-controls"><div className="wardrobe-nudge-pad"><button aria-label="Mover para cima" title="Mover para cima" onClick={() => nudgeSelected(0, -5)} type="button">↑</button><button aria-label="Mover para esquerda" title="Mover para esquerda" onClick={() => nudgeSelected(-5, 0)} type="button">←</button><span>mover</span><button aria-label="Mover para direita" title="Mover para direita" onClick={() => nudgeSelected(5, 0)} type="button">→</button><button aria-label="Mover para baixo" title="Mover para baixo" onClick={() => nudgeSelected(0, 5)} type="button">↓</button></div><div className="wardrobe-quick-actions"><button title="Diminuir tamanho em 10%" onClick={() => resizeSelected(.9)} type="button">− Tamanho</button><button title="Aumentar tamanho em 10%" onClick={() => resizeSelected(1.1)} type="button">+ Tamanho</button><button title="Girar 15 graus para a esquerda" onClick={() => updateComponent(selected.id, { rotation: selected.rotation - 15 })} type="button">↶ 15°</button><button title="Girar 15 graus para a direita" onClick={() => updateComponent(selected.id, { rotation: selected.rotation + 15 })} type="button">↷ 15°</button><button className="wardrobe-origin-button" onClick={restoreSelectedOrigin} type="button">Voltar à posição original</button></div></div><div className="wardrobe-number-grid">{([['x', 'X'], ['y', 'Y'], ['width', 'Largura'], ['height', 'Altura'], ['rotation', 'Ângulo']] as const).map(([field, label]) => <label key={field}>{label}<input type="number" step={field === 'rotation' ? 1 : 2} value={Number(selected[field].toFixed(1))} onChange={(event) => updateComponent(selected.id, { [field]: Number(event.target.value) })} /></label>)}</div><small className="wardrobe-note">Este vínculo ficará salvo para a futura integração em Customizar.</small></div>}</> : <div className="wardrobe-edit-empty"><Icon name="sparkles" /><strong>Pré-encaixe automático</strong><small>A folha é separada por transparência. Depois você revisa categoria, peça do corpo e posição de cada recorte.</small></div>}
       </aside>
     </div>
   </section>
