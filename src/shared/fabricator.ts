@@ -135,6 +135,9 @@ export type FaceSet = {
   sheets: Partial<Record<FaceSheetKind, FaceSheet>>
   pieces: FacePiece[]
   transforms: Record<FaceElementKind, FaceTransform>
+  /** Escala independente da cabeça e de todos os elementos já encaixados nela. */
+  headScaleX?: number
+  headScaleY?: number
   eyeLinked: boolean
   browLinked: boolean
   selectedNose: number

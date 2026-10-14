@@ -40,6 +40,7 @@
 .face-viewport { position:relative;min-height:220px;flex:1;overflow:hidden;display:flex;align-items:center;justify-content:center;touch-action:none;cursor:grab;background-image:linear-gradient(45deg,#0000000a 25%,transparent 25%),linear-gradient(-45deg,#0000000a 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#0000000a 75%),linear-gradient(-45deg,transparent 75%,#0000000a 75%);background-size:18px 18px; }
 .face-stage-zoom { width:min(72%,440px);max-height:93%;display:flex;justify-content:center;align-items:center;transform-origin:center center; }
 .face-head-stage { position:relative;width:100%;max-height:100%;overflow:visible;user-select:none; }
+.face-head-stage { transform-origin:center center; }
 .face-head-base { width:100%;height:100%;display:block;object-fit:fill;pointer-events:none;user-select:none; }
 .face-layer { position:absolute;object-fit:fill;user-select:none;touch-action:none; }
 .face-head-stage.interactive .face-layer { cursor:grab; }
@@ -51,6 +52,15 @@
 .face-comparison strong { color:#8c7180;font-size:10px; }
 .face-comparison .face-head-stage { width:auto;height:96px; }
 .face-control-group { display:grid;gap:8px;padding-top:11px;border-top:1px solid #f0e9ed; }
+.face-head-proportions { display:grid;gap:8px;padding:11px;border:1px solid #f0d9e3;border-radius:10px;background:#fff8fb; }
+.face-head-proportions>header { display:flex;align-items:center;justify-content:space-between;gap:8px; }
+.face-head-proportions>header strong { color:#6e455b;font-size:11px; }
+.face-head-proportions>header button { min-height:24px;padding:0 6px;font-size:10px; }
+.face-head-proportions>p { margin:0;color:#9b8190;font-size:10px;line-height:1.4; }
+.face-head-proportions>label { display:grid;grid-template-columns:54px minmax(0,1fr) 50px 9px;align-items:center;gap:5px;color:#755668;font-size:10px;font-weight:700; }
+.face-head-proportions input[type=range] { min-width:0;width:100%;accent-color:#d56892; }
+.face-head-proportions input[type=number] { width:50px;min-height:27px;box-sizing:border-box;padding:3px 4px;border:1px solid #ead8e1;border-radius:6px;background:#fff;color:#6d4b5b;text-align:right;font-size:10px; }
+.face-head-proportions small { color:#a88898;font-size:10px; }
 .face-control-group>small { color:#9e929b;font-size:10px;overflow:hidden;text-overflow:ellipsis; }
 .face-sheet-preview { position:relative;width:100%;max-height:180px;overflow:hidden;border:1px solid #eadde5;border-radius:8px;background:#faf7f9; }
 .face-sheet-preview img { display:block;width:100%;height:auto;max-height:180px;object-fit:fill; }

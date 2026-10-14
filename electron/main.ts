@@ -108,6 +108,8 @@ function validFaceSet(modelSlot: number, set: FaceSetSave): boolean {
     || typeof set.name !== 'string' || !set.name.trim() || set.name.length > 80
     || !Array.isArray(set.pieces) || set.pieces.length > 60 || !set.sheets || typeof set.sheets !== 'object'
     || !set.transforms || typeof set.transforms !== 'object') return false
+  if ((set.headScaleX !== undefined && (!Number.isFinite(set.headScaleX) || set.headScaleX < .2 || set.headScaleX > 3))
+    || (set.headScaleY !== undefined && (!Number.isFinite(set.headScaleY) || set.headScaleY < .2 || set.headScaleY > 3))) return false
   const ids = new Set<string>()
   for (const piece of set.pieces) {
     if (!isValidWardrobeId(piece.id) || ids.has(piece.id) || !faceSheetKinds.includes(piece.sheet)
