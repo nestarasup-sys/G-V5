@@ -3,7 +3,7 @@ import { mkdir, readFile, writeFile, readdir, unlink, rename, stat, access, rm, 
 import { basename, dirname, extname, join, resolve } from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
-import type { FabricatorAssetSave, FabricatorHistoryEntry, FabricatorHistorySaveEntry, FabricatorHistorySaveState, FabricatorHistoryState, FabricatorPose, FabricatorPoseDraft, FabricatorPoseDraftSave, FabricatorPoseSave, FabricatorPoseSummary, FabricatorProject, FabricatorProjectSave, FabricatorSlotSummary, ModelPart, PosePart, WardrobeAssetSave, WardrobeCategory, WardrobeSet, WardrobeSetSave, WardrobeSetSummary } from '../src/shared/fabricator'
+import type { FaceAssetSave, FaceElementKind, FaceSet, FaceSetSave, FaceSetSummary, FaceSheetKind, FabricatorAssetSave, FabricatorHistoryEntry, FabricatorHistorySaveEntry, FabricatorHistorySaveState, FabricatorHistoryState, FabricatorPose, FabricatorPoseDraft, FabricatorPoseDraftSave, FabricatorPoseSave, FabricatorPoseSummary, FabricatorProject, FabricatorProjectSave, FabricatorSlotSummary, ModelPart, PosePart, WardrobeAssetSave, WardrobeCategory, WardrobeSet, WardrobeSetSave, WardrobeSetSummary } from '../src/shared/fabricator'
 import type { CustomizerCharacter } from '../src/shared/customizer'
 
 const slotCount = 10
@@ -17,6 +17,8 @@ const poseDraftPath = (modelSlot: number) => join(poseModelPath(modelSlot), 'dra
 const wardrobeLibraryPath = () => join(app.getPath('userData'), 'fabricator', 'wardrobe')
 const wardrobeModelPath = (modelSlot: number) => join(wardrobeLibraryPath(), `model-${modelSlot}`)
 const wardrobeSetPath = (modelSlot: number, id: string) => join(wardrobeModelPath(modelSlot), `set-${id}`)
+const faceModelPath = (modelSlot: number) => join(app.getPath('userData'), 'fabricator', 'faces', `model-${modelSlot}`)
+const faceSetPath = (modelSlot: number, id: string) => join(faceModelPath(modelSlot), `set-${id}`)
 const characterLibraryPath = () => join(app.getPath('userData'), 'customizer', 'characters')
 const characterManifestPath = () => join(characterLibraryPath(), 'characters.json')
 const fabricatorSaveQueues = new Map<number, Promise<void>>()
@@ -24,6 +26,7 @@ let poseSaveQueue: Promise<void> = Promise.resolve()
 const poseSaveWrites = new Set<Promise<void>>()
 let poseMigration: Promise<void> | null = null
 let wardrobeSaveQueue: Promise<void> = Promise.resolve()
+let faceSaveQueue: Promise<void> = Promise.resolve()
 let characterSaveQueue: Promise<void> = Promise.resolve()
 
 const starterCharacters: Array<Pick<CustomizerCharacter, 'name' | 'hair' | 'outfit' | 'skin'>> = [
@@ -97,6 +100,68 @@ async function writeCustomizerCharacters(characters: CustomizerCharacter[]): Pro
 
 const wardrobeCategories: WardrobeCategory[] = ['camisa', 'manga-superior', 'manga-inferior', 'calca-coxa', 'calca-canela', 'shorts']
 const isValidWardrobeId = (id: string) => /^[a-zA-Z0-9_-]{1,80}$/.test(id)
+const faceSheetKinds: FaceSheetKind[] = ['eyes', 'eyebrows', 'nose', 'mouth-closed', 'mouth-open']
+const faceElementKinds: FaceElementKind[] = ['eye-left', 'eye-right', 'brow-left', 'brow-right', 'nose', 'mouth']
+
+function validFaceSet(modelSlot: number, set: FaceSetSave): boolean {
+  if (!isValidModelSlot(modelSlot) || set?.schemaVersion !== 1 || set.modelSlot !== modelSlot || !isValidWardrobeId(set.id)
+    || typeof set.name !== 'string' || !set.name.trim() || set.name.length > 80
+    || !Array.isArray(set.pieces) || set.pieces.length > 60 || !set.sheets || typeof set.sheets !== 'object'
+    || !set.transforms || typeof set.transforms !== 'object') return false
+  const ids = new Set<string>()
+  for (const piece of set.pieces) {
+    if (!isValidWardrobeId(piece.id) || ids.has(piece.id) || !faceSheetKinds.includes(piece.sheet)
+      || !Number.isInteger(piece.index) || piece.index < 0 || piece.index > 20
+      || (piece.side !== undefined && piece.side !== 'left' && piece.side !== 'right')
+      || !piece.crop || ![piece.crop.x, piece.crop.y, piece.crop.width, piece.crop.height, piece.width, piece.height].every(Number.isFinite)
+      || piece.crop.width <= 0 || piece.crop.height <= 0 || piece.width <= 0 || piece.height <= 0) return false
+    ids.add(piece.id)
+  }
+  for (const [kind, sheet] of Object.entries(set.sheets)) {
+    if (!faceSheetKinds.includes(kind as FaceSheetKind) || !sheet || !Number.isFinite(sheet.width)
+      || !Number.isFinite(sheet.height) || sheet.width <= 0 || sheet.height <= 0 || sheet.width * sheet.height > 32_000_000
+      || !Number.isFinite(sheet.tolerance) || sheet.tolerance < 0 || sheet.tolerance > 280) return false
+  }
+  for (const kind of faceElementKinds) {
+    const transform = set.transforms[kind]
+    if (!transform || ![transform.x, transform.y, transform.scaleX, transform.scaleY, transform.rotation].every(Number.isFinite)
+      || transform.scaleX <= 0 || transform.scaleY <= 0) return false
+  }
+  return Number.isInteger(set.selectedNose) && set.selectedNose >= 0 && set.selectedNose <= 5
+    && Number.isInteger(set.selectedExpression) && set.selectedExpression >= 0 && set.selectedExpression <= 20
+    && typeof set.eyeLinked === 'boolean' && typeof set.browLinked === 'boolean'
+}
+
+async function writeFaceSet(modelSlot: number, set: FaceSetSave, assets: FaceAssetSave[]): Promise<void> {
+  if (!validFaceSet(modelSlot, set)) throw new Error('Rosto inválido.')
+  const folder = faceSetPath(modelSlot, set.id)
+  const partsFolder = join(folder, 'images')
+  await mkdir(partsFolder, { recursive: true })
+  const expected = new Set([...set.pieces.map((piece) => piece.id), ...Object.keys(set.sheets).map((kind) => `sheet-${kind}`)])
+  if (assets.some((asset) => !expected.has(asset.id)) || new Set(assets.map((asset) => asset.id)).size !== assets.length) throw new Error('Imagens do rosto inválidas.')
+  for (const asset of assets) await writeFile(join(partsFolder, `${asset.id}.png`), dataUrlBuffer(asset.dataUrl))
+  for (const id of expected) await access(join(partsFolder, `${id}.png`))
+  const temporary = join(folder, 'face.json.tmp')
+  await writeFile(temporary, JSON.stringify(set), 'utf8')
+  await rename(temporary, join(folder, 'face.json'))
+  for (const filename of await readdir(partsFolder)) if (filename.endsWith('.png') && !expected.has(filename.slice(0, -4))) await unlink(join(partsFolder, filename))
+}
+
+async function readFaceSet(modelSlot: number, id: string): Promise<FaceSet | null> {
+  if (!isValidModelSlot(modelSlot) || !isValidWardrobeId(id)) throw new Error('Rosto inválido.')
+  try {
+    const folder = faceSetPath(modelSlot, id)
+    const set = JSON.parse(await readFile(join(folder, 'face.json'), 'utf8')) as FaceSetSave
+    if (!validFaceSet(modelSlot, set) || set.id !== id) return null
+    const sheets = { ...set.sheets } as FaceSet['sheets']
+    for (const kind of faceSheetKinds) if (sheets[kind]) sheets[kind] = { ...sheets[kind], dataUrl: `data:image/png;base64,${(await readFile(join(folder, 'images', `sheet-${kind}.png`))).toString('base64')}` }
+    const pieces = await Promise.all(set.pieces.map(async (piece) => ({ ...piece, dataUrl: `data:image/png;base64,${(await readFile(join(folder, 'images', `${piece.id}.png`))).toString('base64')}` })))
+    return { ...set, sheets, pieces }
+  } catch (reason) {
+    if ((reason as NodeJS.ErrnoException).code === 'ENOENT') return null
+    throw reason
+  }
+}
 
 async function writeWardrobeSet(modelSlot: number, set: WardrobeSetSave, assets: WardrobeAssetSave[]): Promise<void> {
   if (!isValidModelSlot(modelSlot) || set.schemaVersion !== 1 || set.modelSlot !== modelSlot || !isValidWardrobeId(set.id) || !Array.isArray(set.components) || set.components.length < 1 || set.components.length > 100) throw new Error('Conjunto de roupa inválido.')
@@ -715,6 +780,49 @@ async function registerFabricatorHandlers(): Promise<void> {
     if (dirname(target) !== base || basename(target) !== `set-${id}`) throw new Error('Caminho de exclusão inválido.')
     const next = wardrobeSaveQueue.catch(() => undefined).then(() => rm(target, { recursive: true, force: true }))
     wardrobeSaveQueue = next
+    await next
+  })
+
+  ipcMain.handle('fabricator:face:list', async (event, modelSlot: number): Promise<FaceSetSummary[]> => {
+    assertTrustedSender(event)
+    if (!isValidModelSlot(modelSlot)) throw new Error('Modelo inválido.')
+    try {
+      const entries = await readdir(faceModelPath(modelSlot), { withFileTypes: true })
+      const sets: FaceSetSummary[] = []
+      for (const entry of entries) {
+        if (!entry.isDirectory() || !/^set-[a-zA-Z0-9_-]{1,80}$/.test(entry.name)) continue
+        try {
+          const set = JSON.parse(await readFile(join(faceModelPath(modelSlot), entry.name, 'face.json'), 'utf8')) as FaceSetSave
+          if (validFaceSet(modelSlot, set) && set.id === entry.name.slice(4)) sets.push({ id: set.id, modelSlot, name: set.name, updatedAt: set.updatedAt, pieceCount: set.pieces.length })
+        } catch { /* Rostos incompletos não aparecem na biblioteca. */ }
+      }
+      return sets.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+    } catch (reason) {
+      if ((reason as NodeJS.ErrnoException).code === 'ENOENT') return []
+      throw reason
+    }
+  })
+
+  ipcMain.handle('fabricator:face:load', async (event, modelSlot: number, id: string): Promise<FaceSet | null> => {
+    assertTrustedSender(event)
+    return readFaceSet(modelSlot, id)
+  })
+
+  ipcMain.handle('fabricator:face:save', async (event, modelSlot: number, set: FaceSetSave, assets: FaceAssetSave[]): Promise<void> => {
+    assertTrustedSender(event)
+    const next = faceSaveQueue.catch(() => undefined).then(() => writeFaceSet(modelSlot, set, assets))
+    faceSaveQueue = next
+    await next
+  })
+
+  ipcMain.handle('fabricator:face:delete', async (event, modelSlot: number, id: string): Promise<void> => {
+    assertTrustedSender(event)
+    if (!isValidModelSlot(modelSlot) || !isValidWardrobeId(id)) throw new Error('Rosto inválido.')
+    const base = resolve(faceModelPath(modelSlot))
+    const target = resolve(faceSetPath(modelSlot, id))
+    if (dirname(target) !== base || basename(target) !== `set-${id}`) throw new Error('Caminho de exclusão inválido.')
+    const next = faceSaveQueue.catch(() => undefined).then(() => rm(target, { recursive: true, force: true }))
+    faceSaveQueue = next
     await next
   })
 }

@@ -121,6 +121,32 @@ export type WardrobeSet = {
 export type WardrobeSetSave = Omit<WardrobeSet, 'components'> & { components: Array<Omit<WardrobeComponent, 'dataUrl'>> }
 export type WardrobeSetSummary = Pick<WardrobeSet, 'id' | 'modelSlot' | 'modelName' | 'name' | 'updatedAt'> & { componentCount: number }
 export type WardrobeAssetSave = { id: string; dataUrl: string }
+export type FaceSheetKind = 'eyes' | 'eyebrows' | 'nose' | 'mouth-closed' | 'mouth-open'
+export type FaceElementKind = 'eye-left' | 'eye-right' | 'brow-left' | 'brow-right' | 'nose' | 'mouth'
+export type FaceTransform = { x: number; y: number; scaleX: number; scaleY: number; rotation: number }
+export type FaceCrop = { x: number; y: number; width: number; height: number }
+export type FacePiece = { id: string; sheet: FaceSheetKind; index: number; side?: 'left' | 'right'; crop: FaceCrop; width: number; height: number; dataUrl: string }
+export type FaceSheet = { kind: FaceSheetKind; name: string; width: number; height: number; tolerance: number; dataUrl: string }
+export type FaceSet = {
+  schemaVersion: 1
+  id: string
+  modelSlot: number
+  name: string
+  sheets: Partial<Record<FaceSheetKind, FaceSheet>>
+  pieces: FacePiece[]
+  transforms: Record<FaceElementKind, FaceTransform>
+  eyeLinked: boolean
+  browLinked: boolean
+  selectedNose: number
+  selectedExpression: number
+  updatedAt: string
+}
+export type FaceSetSave = Omit<FaceSet, 'sheets' | 'pieces'> & {
+  sheets: Partial<Record<FaceSheetKind, Omit<FaceSheet, 'dataUrl'>>>
+  pieces: Array<Omit<FacePiece, 'dataUrl'>>
+}
+export type FaceSetSummary = Pick<FaceSet, 'id' | 'modelSlot' | 'name' | 'updatedAt'> & { pieceCount: number }
+export type FaceAssetSave = { id: string; dataUrl: string }
 export type PoseWardrobeAttachment = { setId: string; category: WardrobeCategory; attachedPartId: string; referenceAnchor: { x: number; y: number }; referenceRotation: number }
 export type WardrobePosePart = PosePart & { wardrobeAttachment?: PoseWardrobeAttachment }
 export type FabricatorPose = {
@@ -162,4 +188,8 @@ export type FabricatorDesktopApi = {
   loadWardrobeSet: (modelSlot: number, id: string) => Promise<WardrobeSet | null>
   saveWardrobeSet: (modelSlot: number, set: WardrobeSetSave, assets: WardrobeAssetSave[]) => Promise<void>
   deleteWardrobeSet: (modelSlot: number, id: string) => Promise<void>
+  listFaceSets: (modelSlot: number) => Promise<FaceSetSummary[]>
+  loadFaceSet: (modelSlot: number, id: string) => Promise<FaceSet | null>
+  saveFaceSet: (modelSlot: number, set: FaceSetSave, assets: FaceAssetSave[]) => Promise<void>
+  deleteFaceSet: (modelSlot: number, id: string) => Promise<void>
 }
