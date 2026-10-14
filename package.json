@@ -11,7 +11,7 @@
     "build": "electron-vite build",
     "preview": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test:wardrobe": "node --experimental-strip-types --test tests/wardrobePoseTransform.test.mjs"
+    "test:wardrobe": "node --experimental-strip-types --test tests/wardrobePoseTransform.test.mjs tests/customizerSelection.test.mjs"
   },
   "dependencies": {
     "react": "^19.2.0",
