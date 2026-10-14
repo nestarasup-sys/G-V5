@@ -241,6 +241,8 @@ export function CustomizerPage() {
   const clothingDragRef = useRef<{ pointerId: number; clientX: number; clientY: number; scale: number; startX: number; startY: number; groupKey: string; characterId: string; latest: CustomizerCharacter | null } | null>(null)
   const wardrobeTransformDirty = useRef(false)
   const selectedCharacter = characters.find((character) => character.id === selectedCharacterId) ?? characters[0] ?? null
+  const characterWardrobeGroups = selectedCharacter?.customization.wardrobeGroups ?? []
+  const characterWardrobeHydrationKey = characterWardrobeGroups.map((group) => `${group.modelSlot}:${group.setId}:${group.category}`).sort().join('|')
   const visibleCharacters = characters
     .filter((character) => character.name.toLowerCase().includes(rosterQuery.trim().toLowerCase()))
 
@@ -442,6 +444,38 @@ export function CustomizerPage() {
     })()
     return () => { cancelled = true }
   }, [activeModule, wardrobeSets])
+
+  useEffect(() => {
+    if (!selectedCharacter || !characterWardrobeGroups.length) return
+    let cancelled = false
+    const groupsToRestore = [...characterWardrobeGroups]
+    void (async () => {
+      const restored = await Promise.all(groupsToRestore.map(async (group) => {
+        const key = `${group.modelSlot}:${group.setId}`
+        const set = await window.desktop.loadWardrobeSet(group.modelSlot, group.setId)
+        return { group, key, set }
+      }))
+      if (cancelled) return
+      setWardrobeDetails((current) => {
+        const next = { ...current }
+        for (const { key, set } of restored) if (set) next[key] = set
+        return next
+      })
+      for (const { group, set } of restored) {
+        if (!set) continue
+        const category = Object.values(clothingCategories).flat().find((definition) => definition.id === group.category)
+        if (!category) continue
+        const thumbnailKey = `${group.modelSlot}:${group.setId}:${group.category}`
+        if (wardrobeThumbnails[thumbnailKey]) continue
+        const thumbnail = await renderWardrobeThumbnail(set, category.source)
+        if (cancelled) return
+        if (thumbnail) setWardrobeThumbnails((current) => ({ ...current, [thumbnailKey]: thumbnail }))
+      }
+    })().catch((reason: unknown) => {
+      if (!cancelled) setCatalogError(reason instanceof Error ? reason.message : 'Não foi possível restaurar as roupas deste personagem.')
+    })
+    return () => { cancelled = true }
+  }, [selectedCharacter?.id, characterWardrobeHydrationKey])
 
   useEffect(() => {
     let cancelled = false
