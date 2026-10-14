@@ -22,6 +22,7 @@ export function CustomizerPage() {
   const [models, setModels] = useState<FabricatorSlotSummary[]>([])
   const [model, setModel] = useState<FabricatorProject | null>(null)
   const [poses, setPoses] = useState<FabricatorPoseSummary[]>([])
+  const [loadedModelSlot, setLoadedModelSlot] = useState<number | null>(null)
   const [pose, setPose] = useState<FabricatorPose | null>(null)
   const [sets, setSets] = useState<WardrobeSet[]>([])
   const [editingGarment, setEditingGarment] = useState<string | null>(null)
@@ -32,6 +33,7 @@ export function CustomizerPage() {
   const [zoom, setZoom] = useState(1)
   const stageRef = useRef<HTMLDivElement>(null)
   const saveQueue = useRef<Promise<void>>(Promise.resolve())
+  const saveRevision = useRef(0)
   const selected = library.characters.find((character) => character.id === selectedId) ?? null
   const modelSlot = selected?.modelSlot ?? null
   const poseSlot = selected?.poseSlot ?? 1
@@ -55,12 +57,13 @@ export function CustomizerPage() {
   useEffect(() => {
     if (!loaded) return
     setSaveStatus('Alterações pendentes')
+    const revision = ++saveRevision.current
     const timer = setTimeout(() => {
       const snapshot = library
       const next = saveQueue.current.catch(() => undefined).then(() => window.desktop.saveCustomizerLibrary(snapshot))
       saveQueue.current = next
-      void next.then(() => setSaveStatus('Salvo'), (reason: unknown) => {
-        setSaveStatus('Erro ao salvar')
+      void next.then(() => { if (revision === saveRevision.current) setSaveStatus('Salvo') }, (reason: unknown) => {
+        if (revision === saveRevision.current) setSaveStatus('Erro ao salvar')
         setError(reason instanceof Error ? reason.message : 'Não foi possível salvar o personagem.')
       })
     }, 350)
@@ -78,6 +81,7 @@ export function CustomizerPage() {
   useEffect(() => {
     let cancelled = false
     setModel(null)
+    setLoadedModelSlot(null)
     setSets([])
     setPoses([])
     setPose(null)
@@ -93,6 +97,7 @@ export function CustomizerPage() {
       setModel(loadedModel)
       setPoses(poseSummaries.filter((item): item is NonNullable<typeof item> => item !== null))
       setSets(allSets)
+      setLoadedModelSlot(modelSlot)
     }).catch((reason: unknown) => {
       if (!cancelled) setError(reason instanceof Error ? reason.message : 'Erro ao carregar modelo, poses ou roupas.')
     })
@@ -102,12 +107,12 @@ export function CustomizerPage() {
   useEffect(() => {
     let cancelled = false
     setPose(null)
-    if (modelSlot === null) return () => { cancelled = true }
+    if (modelSlot === null || modelSlot !== loadedModelSlot || !poses.some((item) => item?.slot === poseSlot)) return () => { cancelled = true }
     void window.desktop.loadFabricatorPose(modelSlot, poseSlot)
       .then((loadedPose) => { if (!cancelled) setPose(loadedPose) })
       .catch((reason: unknown) => { if (!cancelled) setError(reason instanceof Error ? reason.message : 'Erro ao carregar pose.') })
     return () => { cancelled = true }
-  }, [modelSlot, poseSlot])
+  }, [modelSlot, poseSlot, loadedModelSlot, poses])
 
   const updateCharacter = (modify: (character: CustomizerCharacter) => CustomizerCharacter) => {
     if (!selected) return
