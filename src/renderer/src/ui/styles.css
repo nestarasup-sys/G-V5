@@ -69,7 +69,7 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .customizer-model-option-name { max-width:100%;overflow:hidden;color:#5f5860;font-size:11px;font-weight:600;text-overflow:ellipsis;white-space:nowrap; }
 .customizer-model-option-new { position:absolute;top:7px;right:6px;color:#cb6387;font-size:9px;font-weight:800;letter-spacing:.4px; }
 .customizer-models-sidebar { min-width:0;min-height:0;display:flex;flex-direction:column;gap:12px;overflow:hidden; }
-.customizer-catalog-panel { min-width:0;min-height:0;flex:1;overflow:auto;padding:13px;border:1px solid #ede8ec;border-radius:12px;background:#fff; }
+.customizer-catalog-panel { min-width:0;min-height:0;flex:1;display:flex;flex-direction:column;overflow:auto;padding:13px;border:1px solid #ede8ec;border-radius:12px;background:#fff; }
 .customizer-catalog-heading { display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px; }
 .customizer-catalog-heading h2 { margin:4px 0 0;color:#332d35;font:700 15px Manrope,sans-serif; }
 .customizer-catalog-heading>small { color:#a69da5;font-size:11px; }
@@ -91,6 +91,36 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .customizer-catalog-empty button { min-height:30px;padding:0 10px;border:1px solid #eee9ed;border-radius:8px;background:#fff;color:#776b77;font-size:11px;cursor:pointer; }
 .customizer-catalog-error { margin:0 0 10px;color:#b6405d;font-size:11px; }
 .customizer-selected-artwork { position:absolute;inset:72px 68px 58px;z-index:1;width:calc(100% - 136px);height:calc(100% - 130px);object-fit:contain;pointer-events:none; }
+.customizer-wardrobe-overlay { position:absolute;inset:72px 68px 58px;z-index:2;width:calc(100% - 136px);height:calc(100% - 130px);object-fit:contain;cursor:grab;touch-action:none;user-select:none;-webkit-user-drag:none; }
+.customizer-wardrobe-overlay:active { cursor:grabbing; }
+.customizer-wardrobe-catalog { min-height:0;flex:1;display:flex;flex-direction:column;gap:10px; }
+.customizer-wardrobe-tabs { position:sticky;top:-13px;z-index:4;display:grid;grid-template-columns:1fr 1fr;gap:5px;margin:-1px -1px 0;padding:7px;border:1px solid #f0e9ee;border-radius:9px;background:#fff;box-shadow:0 4px 12px #35233808; }
+.customizer-wardrobe-tabs button { min-height:34px;border:1px solid transparent;border-radius:7px;background:#faf8fa;color:#7d727e;font-size:12px;font-weight:700;cursor:pointer; }
+.customizer-wardrobe-tabs button.active { border-color:#f0c5d4;background:#fff2f7;color:#ac426b; }
+.customizer-wardrobe-groups { min-height:0;flex:1;display:flex;flex-direction:column;gap:13px;overflow:auto;padding:1px 2px 8px;scrollbar-width:thin;scrollbar-color:#e7d3dc transparent; }
+.customizer-wardrobe-category { display:grid;gap:7px; }
+.customizer-wardrobe-category>header { display:flex;align-items:center;gap:7px;padding-bottom:5px;border-bottom:1px solid #f0ebef; }
+.customizer-wardrobe-category h3 { margin:0;color:#534a55;font:750 12px Manrope,sans-serif; }
+.customizer-wardrobe-category>header>span { min-width:19px;height:19px;display:grid;place-items:center;border-radius:6px;background:#f8f2f5;color:#a88d9b;font-size:9px;font-weight:750; }
+.customizer-wardrobe-items { display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:7px; }
+.customizer-wardrobe-item { min-width:0;position:relative;display:flex;align-items:center;gap:4px;padding:5px;border:1px solid #eee8ed;border-radius:9px;background:#fff; }
+.customizer-wardrobe-item.selected { border-color:#e78aa9;background:#fff7fa;box-shadow:inset 0 0 0 1px #f8d8e3; }
+.customizer-wardrobe-select { min-width:0;flex:1;display:flex;align-items:center;gap:9px;padding:0;border:0;background:transparent;color:#534a55;text-align:left;cursor:pointer; }
+.customizer-wardrobe-select>img,.customizer-wardrobe-select>.customizer-catalog-placeholder { width:52px;height:52px;flex:0 0 52px;overflow:hidden;border:1px solid #f0ebef;border-radius:7px;background-color:#fdfcfd;background-image:linear-gradient(45deg,#eee9ee 25%,transparent 25%),linear-gradient(-45deg,#eee9ee 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#eee9ee 75%),linear-gradient(-45deg,transparent 75%,#eee9ee 75%);background-size:8px 8px;object-fit:contain; }
+.customizer-wardrobe-item-copy { min-width:0;flex:1;display:grid;gap:4px; }
+.customizer-wardrobe-item-copy b { overflow:hidden;color:inherit;font-size:11px;text-overflow:ellipsis;white-space:nowrap; }
+.customizer-wardrobe-item-copy small { color:#9a909b;font-size:9px;line-height:1.35; }
+.customizer-wardrobe-item-status { color:#bb5077;font-size:9px;font-weight:750;white-space:nowrap; }
+.customizer-wardrobe-remove { align-self:stretch;padding:0 6px;border:0;border-left:1px solid #f0e9ee;background:transparent;color:#9c7787;font-size:9px;cursor:pointer; }
+.customizer-wardrobe-remove:hover { color:#be365f; }
+.customizer-wardrobe-empty { margin:0;padding:5px 1px;color:#aaa0aa;font-size:10px; }
+.customizer-wardrobe-transform { display:grid;gap:8px;padding:9px;border:1px solid #efccd9;border-radius:9px;background:linear-gradient(135deg,#fff7fa,#fff); }
+.customizer-wardrobe-transform>div:first-child { display:grid;gap:3px; }
+.customizer-wardrobe-transform b { color:#6b5360;font-size:10px; }
+.customizer-wardrobe-transform small { color:#9b8994;font-size:9px;line-height:1.4; }
+.customizer-wardrobe-transform-controls { display:flex;flex-wrap:wrap;gap:5px; }
+.customizer-wardrobe-transform-controls button { min-width:30px;height:27px;padding:0 7px;border:1px solid #eddae3;border-radius:6px;background:#fff;color:#805d6e;font-size:11px;font-weight:700;cursor:pointer; }
+.customizer-wardrobe-transform-controls button:hover { border-color:#dc8daa;background:#fff2f7;color:#a44166; }
 .customizer-preview-loading { position:absolute;top:50%;left:50%;z-index:4;padding:8px 12px;border:1px solid #eee9ed;border-radius:9px;background:#fffffff0;color:#756d76;font-size:12px;transform:translate(-50%,-50%); }
 .customizer-no-artwork { position:absolute;inset:72px 28px 58px;z-index:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;color:#a69da5;font-size:12px;text-align:center; }
 .customizer-no-artwork svg { width:30px;height:30px;color:#c7bac3; }

@@ -1,11 +1,122 @@
 import { useEffect, useRef, useState } from 'react'
 import { CharacterPortrait } from '../../ui/components/CharacterPortrait'
 import { Icon, type IconName } from '../../ui/components/Icon'
-import type { FabricatorPose, FabricatorPoseSummary, FabricatorProject, FabricatorSlotSummary } from '../../../../shared/fabricator'
-import type { CustomizerCharacter } from '../../../../shared/customizer'
+import type { FabricatorPose, FabricatorPoseSummary, FabricatorProject, FabricatorSlotSummary, WardrobeCategory, WardrobeSet, WardrobeSetSummary } from '../../../../shared/fabricator'
+import type { CustomizerCharacter, CustomizerWardrobeCategory, CustomizerWardrobeGroup } from '../../../../shared/customizer'
 import { usePreviewBackground } from '../fabricator/usePreviewBackground'
+import { mapWardrobeComponentToPose } from '../fabricator/wardrobe/poseTransform'
 
 type CatalogArtwork = Pick<FabricatorProject, 'width' | 'height' | 'parts' | 'layerOrder' | 'hiddenPartIds'>
+const wardrobeImageCache = new Map<string, Promise<HTMLImageElement>>()
+
+function loadCachedImage(source: string): Promise<HTMLImageElement> {
+  const cached = wardrobeImageCache.get(source)
+  if (cached) return cached
+  const promise = new Promise<HTMLImageElement>((resolve, reject) => {
+    const image = new Image()
+    image.onload = () => resolve(image)
+    image.onerror = () => reject(new Error('Não foi possível carregar a imagem da roupa.'))
+    image.src = source
+  })
+  wardrobeImageCache.set(source, promise)
+  void promise.catch(() => wardrobeImageCache.delete(source))
+  return promise
+}
+
+type ClothingGroupCategory = CustomizerWardrobeCategory
+const clothingCategories: Record<'Superior' | 'Inferior', Array<{ id: ClothingGroupCategory; label: string; source: WardrobeCategory[] }>> = {
+  Superior: [
+    { id: 'camisa', label: 'Camisas', source: ['camisa'] },
+    { id: 'manga-superior', label: 'Mangas superiores', source: ['manga-superior'] },
+    { id: 'manga-inferior', label: 'Mangas inferiores', source: ['manga-inferior'] }
+  ],
+  Inferior: [
+    { id: 'calca', label: 'Calças', source: ['calca-coxa', 'calca-canela'] },
+    { id: 'shorts', label: 'Shorts', source: ['shorts'] }
+  ]
+}
+
+async function renderWardrobeThumbnail(set: WardrobeSet, categories: WardrobeCategory[]): Promise<string | null> {
+  const pieces = set.components.filter((component) => categories.includes(component.category))
+  if (!pieces.length) return null
+  const left = Math.min(...pieces.map((piece) => piece.x))
+  const top = Math.min(...pieces.map((piece) => piece.y))
+  const right = Math.max(...pieces.map((piece) => piece.x + piece.width))
+  const bottom = Math.max(...pieces.map((piece) => piece.y + piece.height))
+  const scale = Math.min(112 / Math.max(1, right - left), 112 / Math.max(1, bottom - top))
+  const canvas = document.createElement('canvas')
+  canvas.width = Math.max(1, Math.ceil((right - left) * scale))
+  canvas.height = Math.max(1, Math.ceil((bottom - top) * scale))
+  const context = canvas.getContext('2d')
+  if (!context) return null
+  for (const piece of pieces) {
+    try {
+      const image = await loadCachedImage(piece.dataUrl)
+      context.save()
+      context.translate((piece.x - left + piece.width / 2) * scale, (piece.y - top + piece.height / 2) * scale)
+      context.rotate(piece.rotation * Math.PI / 180)
+      context.drawImage(image, -piece.width * scale / 2, -piece.height * scale / 2, piece.width * scale, piece.height * scale)
+      context.restore()
+    } catch { continue }
+  }
+  return canvas.toDataURL('image/png')
+}
+
+async function renderWardrobeOverlay(
+  groups: CustomizerWardrobeGroup[],
+  details: Record<string, WardrobeSet>,
+  artwork: CatalogArtwork,
+  modelSlot: number | null,
+  source: FabricatorProject | null
+): Promise<string | null> {
+  if (!groups.length || modelSlot === null || !source) return null
+  const output = document.createElement('canvas')
+  output.width = Math.max(1, artwork.width)
+  output.height = Math.max(1, artwork.height)
+  const outputContext = output.getContext('2d')
+  if (!outputContext) return null
+  for (const group of groups) {
+    const set = details[`${group.modelSlot}:${group.setId}`]
+    if (!set || group.modelSlot !== modelSlot) continue
+    const accepted = clothingCategories[group.category === 'calca' || group.category === 'shorts' ? 'Inferior' : 'Superior']
+      .find((category) => category.id === group.category)?.source
+    if (!accepted) continue
+    const components = set.components.filter((component) => accepted.includes(component.category))
+    if (!components.length) continue
+    const groupCanvas = document.createElement('canvas')
+    groupCanvas.width = output.width
+    groupCanvas.height = output.height
+    const groupContext = groupCanvas.getContext('2d')
+    if (!groupContext) continue
+    const centers: Array<{ x: number; y: number }> = []
+    for (const component of components) {
+      const sourceBone = source.parts.find((part) => part.id === component.attachedPartId)
+      const targetBone = artwork.parts.find((part) => part.id === component.attachedPartId)
+      if (!sourceBone || !targetBone) continue
+      const transform = mapWardrobeComponentToPose(component, sourceBone, targetBone)
+      centers.push({ x: transform.origin.x, y: transform.origin.y })
+      try {
+        const image = await loadCachedImage(component.dataUrl)
+        const matrix = /^matrix\(([^)]+)\)$/.exec(transform.matrix)?.[1].split(',').map(Number) ?? [1, 0, 0, 1, 0, 0]
+        groupContext.save()
+        groupContext.translate(transform.origin.x, transform.origin.y)
+        groupContext.transform(matrix[0], matrix[1], matrix[2], matrix[3], matrix[4], matrix[5])
+        groupContext.translate(transform.localLeft + transform.renderWidth / 2, transform.localTop + transform.renderHeight / 2)
+        groupContext.rotate(transform.localRotation * Math.PI / 180)
+        groupContext.drawImage(image, -transform.renderWidth / 2, -transform.renderHeight / 2, transform.renderWidth, transform.renderHeight)
+        groupContext.restore()
+      } catch { continue }
+    }
+    const center = centers.length ? centers.reduce((sum, point) => ({ x: sum.x + point.x / centers.length, y: sum.y + point.y / centers.length }), { x: 0, y: 0 }) : { x: output.width / 2, y: output.height / 2 }
+    outputContext.save()
+    outputContext.translate(center.x + group.offsetX, center.y + group.offsetY)
+    outputContext.rotate(group.rotation * Math.PI / 180)
+    outputContext.scale(group.scaleX, group.scaleY)
+    outputContext.drawImage(groupCanvas, -center.x, -center.y)
+    outputContext.restore()
+  }
+  return output.toDataURL('image/png')
+}
 
 async function renderArtwork(artwork: CatalogArtwork, maxSize: number): Promise<string | null> {
   if (artwork.width <= 0 || artwork.height <= 0) return null
@@ -80,11 +191,21 @@ export function CustomizerPage() {
   const [selectedCatalogPoseSlot, setSelectedCatalogPoseSlot] = useState<number | null>(null)
   const [modelThumbnails, setModelThumbnails] = useState<Record<number, string>>({})
   const [poseThumbnails, setPoseThumbnails] = useState<Record<string, string>>({})
+  const [clothingSection, setClothingSection] = useState<'Superior' | 'Inferior'>('Superior')
+  const [wardrobeSets, setWardrobeSets] = useState<WardrobeSetSummary[]>([])
+  const [wardrobeLoading, setWardrobeLoading] = useState(false)
+  const [wardrobeDetails, setWardrobeDetails] = useState<Record<string, WardrobeSet>>({})
+  const [wardrobeThumbnails, setWardrobeThumbnails] = useState<Record<string, string>>({})
+  const [selectedClothing, setSelectedClothing] = useState<{ setId: string; category: ClothingGroupCategory } | null>(null)
+  const [selectedWardrobeUrl, setSelectedWardrobeUrl] = useState<string | null>(null)
+  const [selectedArtworkProject, setSelectedArtworkProject] = useState<CatalogArtwork | null>(null)
+  const [selectedSourceModelProject, setSelectedSourceModelProject] = useState<FabricatorProject | null>(null)
   const [selectedArtworkUrl, setSelectedArtworkUrl] = useState<string | null>(null)
   const [selectedArtworkLabel, setSelectedArtworkLabel] = useState('')
   const [previewLoading, setPreviewLoading] = useState(true)
   const thumbnailCache = useRef(new Set<string>())
   const previewLoadRequest = useRef(0)
+  const clothingDragRef = useRef<{ pointerId: number; clientX: number; clientY: number; scale: number; startX: number; startY: number; groupKey: string; characterId: string; latest: CustomizerCharacter | null } | null>(null)
   const selectedCharacter = characters.find((character) => character.id === selectedCharacterId) ?? characters[0] ?? null
   const visibleCharacters = characters
     .filter((character) => character.name.toLowerCase().includes(rosterQuery.trim().toLowerCase()))
@@ -138,6 +259,9 @@ export function CustomizerPage() {
       setSelectedCatalogPoseSlot(null)
       setSelectedArtworkUrl(null)
       setSelectedArtworkLabel('')
+      setSelectedArtworkProject(null)
+      setSelectedSourceModelProject(null)
+      setSelectedWardrobeUrl(null)
       setPreviewLoading(false)
       return
     }
@@ -149,6 +273,9 @@ export function CustomizerPage() {
       setSelectedCatalogPoseSlot(null)
       setSelectedArtworkUrl(null)
       setSelectedArtworkLabel('')
+      setSelectedArtworkProject(null)
+      setSelectedSourceModelProject(null)
+      setSelectedWardrobeUrl(null)
       setPreviewLoading(false)
       return
     }
@@ -163,8 +290,11 @@ export function CustomizerPage() {
     setPreviewLoading(true)
     void (async () => {
       try {
-        const artwork = pose ? await window.desktop.loadFabricatorPose(model.slot, pose.slot) : await window.desktop.loadFabricatorSlot(model.slot)
+        const sourceProject = await window.desktop.loadFabricatorSlot(model.slot)
+        if (!sourceProject) throw new Error('O modelo de referência não está disponível no Fabricador Dev.')
+        const artwork = pose ? await window.desktop.loadFabricatorPose(model.slot, pose.slot) : sourceProject
         if (!artwork) throw new Error('Não foi possível carregar a prévia deste personagem.')
+        if (!cancelled && previewLoadRequest.current === requestId) { setSelectedArtworkProject(artwork); setSelectedSourceModelProject(sourceProject) }
         const artworkUrl = await renderArtwork(artwork, 720)
         if (!cancelled && previewLoadRequest.current === requestId) setSelectedArtworkUrl(artworkUrl)
       } catch (reason) {
@@ -175,6 +305,11 @@ export function CustomizerPage() {
     })()
     return () => { cancelled = true }
   }, [catalogLoading, catalogModels, catalogPoses, selectedCharacter?.id])
+
+  useEffect(() => {
+    const firstGroup = selectedCharacter?.customization.wardrobeGroups?.[0]
+    setSelectedClothing(firstGroup ? { setId: firstGroup.setId, category: firstGroup.category } : null)
+  }, [selectedCharacter?.id])
 
   useEffect(() => {
     if (activeModule !== 'Modelos' || catalogLoading) return
@@ -227,6 +362,59 @@ export function CustomizerPage() {
     return () => { cancelled = true }
   }, [activeModule, catalogLoading, catalogPoses, selectedCatalogModelSlot])
 
+  useEffect(() => {
+    if (activeModule !== 'Roupas' || selectedCatalogModelSlot === null) return
+    let cancelled = false
+    setWardrobeLoading(true)
+    void window.desktop.listWardrobeSets(selectedCatalogModelSlot).then((sets) => {
+      if (!cancelled) setWardrobeSets(sets)
+    }).catch((reason: unknown) => {
+      if (!cancelled) setCatalogError(reason instanceof Error ? reason.message : 'Não foi possível carregar o catálogo de roupas.')
+    }).finally(() => { if (!cancelled) setWardrobeLoading(false) })
+    return () => { cancelled = true }
+  }, [activeModule, selectedCatalogModelSlot])
+
+  useEffect(() => {
+    if (activeModule !== 'Roupas' || !wardrobeSets.length) return
+    let cancelled = false
+    void (async () => {
+      for (const summary of wardrobeSets) {
+        let set: WardrobeSet | null = null
+        try {
+          set = await window.desktop.loadWardrobeSet(summary.modelSlot, summary.id)
+          if (!set || cancelled) continue
+          setWardrobeDetails((current) => ({ ...current, [`${summary.modelSlot}:${summary.id}`]: set! }))
+          for (const group of Object.values(clothingCategories).flat()) {
+            if (!set.components.some((component) => group.source.includes(component.category))) continue
+            const key = `${summary.modelSlot}:${summary.id}:${group.id}`
+            if (wardrobeThumbnails[key]) continue
+            const thumbnail = await renderWardrobeThumbnail(set, group.source)
+            if (cancelled) return
+            if (thumbnail) setWardrobeThumbnails((current) => ({ ...current, [key]: thumbnail }))
+          }
+        } catch (reason) {
+          if (!cancelled) setCatalogError(reason instanceof Error ? reason.message : 'Não foi possível montar a miniatura da roupa.')
+        }
+      }
+    })()
+    return () => { cancelled = true }
+  }, [activeModule, wardrobeSets])
+
+  useEffect(() => {
+    let cancelled = false
+    const groups = selectedCharacter?.customization.wardrobeGroups ?? []
+    if (!selectedArtworkProject || !groups.length) {
+      setSelectedWardrobeUrl(null)
+      return
+    }
+    void renderWardrobeOverlay(groups, wardrobeDetails, selectedArtworkProject, selectedCatalogModelSlot, selectedSourceModelProject).then((url) => {
+      if (!cancelled) setSelectedWardrobeUrl(url)
+    }).catch((reason: unknown) => {
+      if (!cancelled) setCatalogError(reason instanceof Error ? reason.message : 'Não foi possível compor as roupas do personagem.')
+    })
+    return () => { cancelled = true }
+  }, [selectedCharacter?.id, selectedCharacter?.customization.wardrobeGroups, wardrobeDetails, selectedArtworkProject, selectedCatalogModelSlot, selectedSourceModelProject])
+
   function selectCharacter(id: string) {
     setSelectedCharacterId(id)
     setActiveModule(null)
@@ -250,6 +438,74 @@ export function CustomizerPage() {
   async function saveCharacterCustomization(patch: Partial<CustomizerCharacter['customization']>) {
     if (!selectedCharacter) return
     await saveCharacter({ ...selectedCharacter, customization: { ...selectedCharacter.customization, ...patch }, updatedAt: new Date().toISOString() })
+  }
+
+  function wardrobeGroupKey(group: Pick<CustomizerWardrobeGroup, 'modelSlot' | 'setId' | 'category'>) {
+    return `${group.modelSlot}:${group.setId}:${group.category}`
+  }
+
+  async function applyWardrobeGroup(set: WardrobeSetSummary, category: ClothingGroupCategory) {
+    if (!selectedCharacter) return
+    const groups = selectedCharacter.customization.wardrobeGroups ?? []
+    const existing = groups.find((group) => group.modelSlot === set.modelSlot && group.setId === set.id && group.category === category)
+    if (existing) {
+      setSelectedClothing({ setId: set.id, category })
+      return
+    }
+    const nextGroup: CustomizerWardrobeGroup = { modelSlot: set.modelSlot, setId: set.id, category, offsetX: 0, offsetY: 0, scaleX: 1, scaleY: 1, rotation: 0 }
+    setSelectedClothing({ setId: set.id, category })
+    await saveCharacterCustomization({ wardrobeGroups: [...groups.filter((group) => group.category !== category || group.modelSlot !== set.modelSlot), nextGroup] })
+  }
+
+  async function removeWardrobeGroup(setId: string, category: ClothingGroupCategory) {
+    if (!selectedCharacter) return
+    const groups = selectedCharacter.customization.wardrobeGroups ?? []
+    await saveCharacterCustomization({ wardrobeGroups: groups.filter((group) => !(group.setId === setId && group.category === category)) })
+    if (selectedClothing?.setId === setId && selectedClothing.category === category) setSelectedClothing(null)
+  }
+
+  async function adjustWardrobeGroup(patch: Partial<Pick<CustomizerWardrobeGroup, 'offsetX' | 'offsetY' | 'scaleX' | 'scaleY' | 'rotation'>>) {
+    if (!selectedCharacter || !selectedClothing) return
+    const groups = selectedCharacter.customization.wardrobeGroups ?? []
+    const nextGroups = groups.map((group) => group.setId === selectedClothing.setId && group.category === selectedClothing.category ? { ...group, ...patch } : group)
+    await saveCharacterCustomization({ wardrobeGroups: nextGroups })
+  }
+
+  function beginWardrobeDrag(event: import('react').PointerEvent<HTMLImageElement>) {
+    if (!selectedCharacter || !selectedClothing || !selectedArtworkProject) return
+    const group = (selectedCharacter.customization.wardrobeGroups ?? []).find((item) => item.setId === selectedClothing.setId && item.category === selectedClothing.category)
+    if (!group) return
+    const scene = event.currentTarget.closest('.stage-scene')
+    const rect = scene?.getBoundingClientRect()
+    if (!rect) return
+    const previewScale = Math.min((rect.width - 136) / selectedArtworkProject.width, (rect.height - 130) / selectedArtworkProject.height)
+    clothingDragRef.current = {
+      pointerId: event.pointerId, clientX: event.clientX, clientY: event.clientY, scale: Math.max(.01, previewScale),
+      startX: group.offsetX, startY: group.offsetY, groupKey: wardrobeGroupKey(group), characterId: selectedCharacter.id, latest: null
+    }
+    event.currentTarget.setPointerCapture(event.pointerId)
+    event.preventDefault()
+  }
+
+  function moveWardrobeDrag(event: import('react').PointerEvent<HTMLImageElement>) {
+    const drag = clothingDragRef.current
+    if (!drag || drag.pointerId !== event.pointerId || !selectedCharacter || selectedCharacter.id !== drag.characterId) return
+    const groups = selectedCharacter.customization.wardrobeGroups ?? []
+    const nextGroups = groups.map((group) => wardrobeGroupKey(group) === drag.groupKey ? {
+      ...group,
+      offsetX: drag.startX + (event.clientX - drag.clientX) / drag.scale,
+      offsetY: drag.startY + (event.clientY - drag.clientY) / drag.scale
+    } : group)
+    const nextCharacter = { ...selectedCharacter, customization: { ...selectedCharacter.customization, wardrobeGroups: nextGroups }, updatedAt: new Date().toISOString() }
+    drag.latest = nextCharacter
+    setCharacters((current) => current.map((character) => character.id === nextCharacter.id ? nextCharacter : character))
+  }
+
+  function finishWardrobeDrag(event: import('react').PointerEvent<HTMLImageElement>) {
+    const drag = clothingDragRef.current
+    if (!drag || drag.pointerId !== event.pointerId) return
+    clothingDragRef.current = null
+    if (drag.latest) void saveCharacter(drag.latest)
   }
 
   async function submitCharacterDialog(event: import('react').FormEvent<HTMLFormElement>) {
@@ -300,11 +556,13 @@ export function CustomizerPage() {
       const firstPose = catalogPoses.find((pose) => pose?.sourceModelSlot === model.slot && pose.slot === 1)
       setSelectedCatalogPoseSlot(firstPose?.slot ?? null)
       await saveCharacterCustomization({ modelSlot: model.slot, poseSlot: firstPose?.slot ?? null })
+      const sourceProject = await window.desktop.loadFabricatorSlot(model.slot)
+      if (!sourceProject) throw new Error('O modelo de referência não está disponível no Fabricador Dev.')
       let artwork: CatalogArtwork | null = firstPose ? await window.desktop.loadFabricatorPose(model.slot, 1) : null
-      if (!artwork) artwork = await window.desktop.loadFabricatorSlot(model.slot)
+      if (!artwork) artwork = sourceProject
       if (!artwork) throw new Error('Não foi possível abrir este modelo.')
       const artworkUrl = await renderArtwork(artwork, 720)
-      if (previewLoadRequest.current === requestId) setSelectedArtworkUrl(artworkUrl)
+      if (previewLoadRequest.current === requestId) { setSelectedArtworkProject(artwork); setSelectedSourceModelProject(sourceProject); setSelectedArtworkUrl(artworkUrl) }
     } catch (reason) {
       if (previewLoadRequest.current === requestId) setCatalogError(reason instanceof Error ? reason.message : 'Não foi possível abrir este modelo.')
     } finally {
@@ -321,10 +579,12 @@ export function CustomizerPage() {
     setCatalogError('')
     try {
       await saveCharacterCustomization({ modelSlot: pose.sourceModelSlot, poseSlot: pose.slot })
+      const sourceProject = selectedSourceModelProject?.slot === pose.sourceModelSlot ? selectedSourceModelProject : await window.desktop.loadFabricatorSlot(pose.sourceModelSlot)
+      if (!sourceProject) throw new Error('O modelo de referência desta pose não está disponível.')
       const artwork = await window.desktop.loadFabricatorPose(pose.sourceModelSlot, pose.slot)
       if (!artwork) throw new Error('Não foi possível abrir esta pose.')
       const artworkUrl = await renderArtwork(artwork, 720)
-      if (previewLoadRequest.current === requestId) setSelectedArtworkUrl(artworkUrl)
+      if (previewLoadRequest.current === requestId) { setSelectedArtworkProject(artwork); setSelectedSourceModelProject(sourceProject); setSelectedArtworkUrl(artworkUrl) }
     } catch (reason) {
       if (previewLoadRequest.current === requestId) setCatalogError(reason instanceof Error ? reason.message : 'Não foi possível abrir esta pose.')
     } finally {
@@ -335,6 +595,8 @@ export function CustomizerPage() {
   const availableModels = catalogModels.filter((model): model is NonNullable<typeof model> => model !== null)
   const availablePoses = catalogPoses.filter((pose): pose is NonNullable<typeof pose> => pose?.sourceModelSlot === selectedCatalogModelSlot)
   const selectedModelName = availableModels.find((model) => model.slot === selectedCatalogModelSlot)?.name
+  const wardrobeGroupDefinitions = clothingCategories[clothingSection]
+  const activeWardrobeGroup = selectedClothing ? (selectedCharacter?.customization.wardrobeGroups ?? []).find((group) => group.setId === selectedClothing.setId && group.category === selectedClothing.category) : undefined
 
   if (activeModule !== null && modules.some((module) => module.name === activeModule)) {
     return (
@@ -356,6 +618,7 @@ export function CustomizerPage() {
                   <button aria-label="Afastar" type="button"><Icon name="zoomOut" /></button>
                 </div>
                 {selectedArtworkUrl ? <img className="customizer-selected-artwork" src={selectedArtworkUrl} alt={selectedArtworkLabel} /> : !previewLoading && <div className="customizer-no-artwork"><Icon name="body" /><span>Nenhum modelo salvo para mostrar.</span></div>}
+                {selectedWardrobeUrl && selectedArtworkUrl && <img className="customizer-wardrobe-overlay" src={selectedWardrobeUrl} alt="Roupas do personagem" draggable={false} onPointerDown={beginWardrobeDrag} onPointerMove={moveWardrobeDrag} onPointerUp={finishWardrobeDrag} onPointerCancel={finishWardrobeDrag} />}
                 {previewLoading && <div className="customizer-preview-loading">Carregando prévia…</div>}
                 <div className="stage-caption"><span>{String(selectedCatalogModelSlot ?? 1).padStart(2, '0')}</span><i />{selectedArtworkLabel || selectedCharacter?.name || 'Personagem'}<small>{selectedArtworkUrl ? 'DO CATÁLOGO' : 'PERSONAGEM ATIVO'}</small></div>
               </div>
@@ -416,7 +679,51 @@ export function CustomizerPage() {
                         })}
                       </div>
               )}
-              {activeModule !== 'Modelos' && activeModule !== 'Poses' && <div className="customizer-catalog-empty">O catálogo de {activeModule} aparecerá aqui.</div>}
+              {activeModule === 'Roupas' && <div className="customizer-wardrobe-catalog">
+                <div className="customizer-wardrobe-tabs" role="tablist" aria-label="Tipo de roupa">
+                  {(['Superior', 'Inferior'] as const).map((section) => <button key={section} className={clothingSection === section ? 'active' : ''} role="tab" aria-selected={clothingSection === section} onClick={() => setClothingSection(section)} type="button">{section}</button>)}
+                </div>
+                {selectedCatalogModelSlot === null ? <div className="customizer-catalog-empty">Escolha um modelo para ver as roupas salvas dele.</div>
+                  : wardrobeLoading ? <div className="customizer-catalog-empty">Carregando roupas…</div>
+                    : <div className="customizer-wardrobe-groups">
+                      {wardrobeGroupDefinitions.map((definition) => {
+                        const matches = wardrobeSets.filter((summary) => wardrobeDetails[`${summary.modelSlot}:${summary.id}`]?.components.some((component) => definition.source.includes(component.category)))
+                        return <section className="customizer-wardrobe-category" key={definition.id} aria-label={definition.label}>
+                          <header><h3>{definition.label}</h3><span>{matches.length}</span></header>
+                          {matches.length === 0 ? <p className="customizer-wardrobe-empty">Nenhum conjunto salvo nesta categoria.</p>
+                            : <div className="customizer-wardrobe-items">{matches.map((summary) => {
+                              const detail = wardrobeDetails[`${summary.modelSlot}:${summary.id}`]
+                              const key = `${summary.modelSlot}:${summary.id}:${definition.id}`
+                              const groupPieces = detail?.components.filter((component) => definition.source.includes(component.category)) ?? []
+                              const applied = (selectedCharacter?.customization.wardrobeGroups ?? []).some((group) => group.modelSlot === summary.modelSlot && group.setId === summary.id && group.category === definition.id)
+                              const selected = selectedClothing?.setId === summary.id && selectedClothing.category === definition.id
+                              const pieceCount = definition.id === 'calca' ? groupPieces.filter((piece) => piece.category === 'calca-coxa').length + groupPieces.filter((piece) => piece.category === 'calca-canela').length : groupPieces.length
+                              return <article className={'customizer-wardrobe-item' + (selected ? ' selected' : '')} key={key}>
+                                <button className="customizer-wardrobe-select" onClick={() => void applyWardrobeGroup(summary, definition.id)} aria-pressed={selected} type="button">
+                                  {wardrobeThumbnails[key] ? <img src={wardrobeThumbnails[key]} alt="" /> : <span className="customizer-catalog-placeholder"><Icon name="shirt" /></span>}
+                                  <span className="customizer-wardrobe-item-copy"><b>{summary.name}</b><small>{definition.id === 'calca' ? `Conjunto · ${pieceCount} partes (coxas + canelas)` : `${pieceCount} ${pieceCount === 1 ? 'peça' : 'peças'}`}</small></span>
+                                  <span className="customizer-wardrobe-item-status">{applied ? 'Em uso' : 'Usar'}</span>
+                                </button>
+                                {applied && <button className="customizer-wardrobe-remove" onClick={() => void removeWardrobeGroup(summary.id, definition.id)} type="button">Remover</button>}
+                              </article>
+                            })}</div>}
+                        </section>
+                      })}
+                    </div>}
+                {activeWardrobeGroup && <section className="customizer-wardrobe-transform" aria-label="Ajustar conjunto selecionado">
+                  <div><b>Conjunto selecionado</b><small>Arraste a roupa na prévia; as peças da calça se movem juntas.</small></div>
+                  <div className="customizer-wardrobe-transform-controls">
+                    <button aria-label="Mover para cima" onClick={() => void adjustWardrobeGroup({ offsetY: activeWardrobeGroup.offsetY - 8 })} type="button">↑</button>
+                    <button aria-label="Mover para esquerda" onClick={() => void adjustWardrobeGroup({ offsetX: activeWardrobeGroup.offsetX - 8 })} type="button">←</button>
+                    <button aria-label="Mover para direita" onClick={() => void adjustWardrobeGroup({ offsetX: activeWardrobeGroup.offsetX + 8 })} type="button">→</button>
+                    <button aria-label="Mover para baixo" onClick={() => void adjustWardrobeGroup({ offsetY: activeWardrobeGroup.offsetY + 8 })} type="button">↓</button>
+                    <button aria-label="Diminuir escala" onClick={() => void adjustWardrobeGroup({ scaleX: Math.max(.1, activeWardrobeGroup.scaleX * .95), scaleY: Math.max(.1, activeWardrobeGroup.scaleY * .95) })} type="button">−</button>
+                    <button aria-label="Aumentar escala" onClick={() => void adjustWardrobeGroup({ scaleX: Math.min(5, activeWardrobeGroup.scaleX * 1.05), scaleY: Math.min(5, activeWardrobeGroup.scaleY * 1.05) })} type="button">+</button>
+                    <button aria-label="Girar conjunto" onClick={() => void adjustWardrobeGroup({ rotation: (activeWardrobeGroup.rotation + 5) % 360 })} type="button">↻ 5°</button>
+                  </div>
+                </section>}
+              </div>}
+              {activeModule !== 'Modelos' && activeModule !== 'Poses' && activeModule !== 'Roupas' && <div className="customizer-catalog-empty">O catálogo de {activeModule} aparecerá aqui.</div>}
             </section>
           </section>
         </div>
@@ -487,6 +794,7 @@ export function CustomizerPage() {
                 <button aria-label="Afastar"><Icon name="zoomOut" /></button>
               </div>
               {selectedArtworkUrl ? <img className="customizer-selected-artwork" src={selectedArtworkUrl} alt={selectedArtworkLabel} /> : !previewLoading && <div className="customizer-no-artwork"><Icon name="body" /><span>{selectedCharacter ? 'Importe um modelo no Fabricador Dev para começar.' : 'Crie um personagem para começar a personalizar.'}</span></div>}
+              {selectedWardrobeUrl && selectedArtworkUrl && <img className="customizer-wardrobe-overlay" src={selectedWardrobeUrl} alt="Roupas do personagem" draggable={false} onPointerDown={beginWardrobeDrag} onPointerMove={moveWardrobeDrag} onPointerUp={finishWardrobeDrag} onPointerCancel={finishWardrobeDrag} />}
               {previewLoading && <div className="customizer-preview-loading">Carregando prévia…</div>}
               <div className="stage-caption"><span>{String(selectedCatalogModelSlot ?? 1).padStart(2, '0')}</span><i />{selectedArtworkLabel || selectedCharacter?.name || 'Personagem'}<small>{selectedArtworkUrl ? 'MODELO DE REFERÊNCIA' : 'SEM MODELO'}</small></div>
             </div>

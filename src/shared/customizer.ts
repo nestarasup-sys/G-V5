@@ -5,6 +5,20 @@ export type CharacterCustomization = {
   /** Character-only edits are stored here, never written to the Fabricator library. */
   partOverrides: Record<string, { x?: number; y?: number; scaleX?: number; scaleY?: number; rotation?: number; hidden?: boolean }>
   layerOrder: string[]
+  /** Garments are character-owned placements; pants stay one group across thigh and calf pieces. */
+  wardrobeGroups?: CustomizerWardrobeGroup[]
+}
+
+export type CustomizerWardrobeCategory = 'camisa' | 'manga-superior' | 'manga-inferior' | 'calca' | 'shorts'
+export type CustomizerWardrobeGroup = {
+  modelSlot: number
+  setId: string
+  category: CustomizerWardrobeCategory
+  offsetX: number
+  offsetY: number
+  scaleX: number
+  scaleY: number
+  rotation: number
 }
 
 export type CustomizerCharacter = {

@@ -55,6 +55,14 @@ function isCustomizerCharacter(value: unknown): value is CustomizerCharacter {
     && Array.isArray(character.customization.layerOrder)
     && character.customization.layerOrder.length <= 1000
     && character.customization.layerOrder.every((id) => typeof id === 'string' && id.length <= 120)
+    && (character.customization.wardrobeGroups === undefined || (
+      Array.isArray(character.customization.wardrobeGroups) && character.customization.wardrobeGroups.length <= 100
+      && character.customization.wardrobeGroups.every((group) => group && isValidModelSlot(group.modelSlot)
+        && isValidWardrobeId(group.setId)
+        && ['camisa', 'manga-superior', 'manga-inferior', 'calca', 'shorts'].includes(group.category)
+        && [group.offsetX, group.offsetY, group.scaleX, group.scaleY, group.rotation].every(Number.isFinite)
+        && group.scaleX > 0 && group.scaleY > 0)
+    ))
     && typeof character.createdAt === 'string' && typeof character.updatedAt === 'string'
 }
 
