@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FabricatorPose, FabricatorPoseDraft, FabricatorPoseDraftSave, FabricatorPoseSave, FabricatorPoseSummary, FabricatorProject, FabricatorSlotSummary, PosePart } from '../../../../shared/fabricator'
 import { Icon } from '../../ui/components/Icon'
-import { jointPivot, normalizeLayerOrder, orderedParts, partJointAnchor } from './models/rig'
+import { normalizeLayerOrder, orderedParts, partJointAnchor } from './models/rig'
 
 type DraftProject = Omit<FabricatorPose, 'slot'>
 type PanelTab = 'parts' | 'layers' | 'joints'
 type PoseHistory = { undo: DraftProject[]; redo: DraftProject[] }
 type PanGesture = { pointerId: number; x: number; y: number; originX: number; originY: number }
-type PartGesture = { pointerId: number; partId: string; x: number; y: number; lastAngle: number; startRotation: number; accumulatedRotation: number; pivotX: number; pivotY: number; includeConnectedChildren: boolean; movePiece: boolean; before: DraftProject }
+type PartGesture = { pointerId: number; partId: string; x: number; y: number; lastAngle: number; startRotation: number; accumulatedRotation: number; pivotX: number; pivotY: number; includeConnectedChildren: boolean; movePiece: boolean; canMove: boolean; before: DraftProject }
 
 const SLOT_COUNT = 12
 const HISTORY_LIMIT = 50
@@ -24,22 +24,47 @@ function rotatePoint(point: { x: number; y: number }, origin: { x: number; y: nu
   return { x: origin.x + x * Math.cos(radians) - y * Math.sin(radians), y: origin.y + x * Math.sin(radians) + y * Math.cos(radians) }
 }
 
-function translatePart(project: DraftProject, partId: string, dx: number, dy: number): DraftProject {
+function isMovablePoseRoot(project: DraftProject, partId: string): boolean {
+  const part = project.parts.find((item) => item.id === partId)
+  if (!part || /tronco|corpo|cabeça|cabeca/i.test(part.name)) return false
+  const parentJoint = project.joints.find((joint) => joint.childPartId === partId)
+  if (!parentJoint?.fixed) return false
+  const parent = project.parts.find((item) => item.id === parentJoint.parentPartId)
+  return Boolean(parent && /tronco|corpo/i.test(parent.name))
+}
+
+function fixedPoseBranch(project: DraftProject, rootId: string): Set<string> {
+  const movingIds = new Set([rootId])
+  let changed = true
+  while (changed) {
+    changed = false
+    for (const joint of project.joints) if (joint.fixed && movingIds.has(joint.parentPartId) && !movingIds.has(joint.childPartId)) {
+      movingIds.add(joint.childPartId)
+      changed = true
+    }
+  }
+  return movingIds
+}
+
+function translateParts(project: DraftProject, partIds: Set<string>, dx: number, dy: number): DraftProject {
   return {
     ...project,
-    parts: project.parts.map((part) => part.id === partId ? {
+    parts: project.parts.map((part) => partIds.has(part.id) ? {
       ...part,
       x: part.x + dx,
       y: part.y + dy,
       ...(part.jointAnchor ? { jointAnchor: { x: part.jointAnchor.x + dx, y: part.jointAnchor.y + dy } } : {})
     } : part),
-    joints: project.joints.map((joint) => ({
-      ...joint,
-      ...((joint.parentPartId === partId || joint.childPartId === partId) ? { pivot: { x: jointPivot(joint).x + dx, y: jointPivot(joint).y + dy } } : {}),
-      ...(joint.parentPartId === partId ? { parentAnchor: { x: joint.parentAnchor.x + dx, y: joint.parentAnchor.y + dy } } : {}),
-      ...(joint.childPartId === partId ? { childAnchor: { x: joint.childAnchor.x + dx, y: joint.childAnchor.y + dy } } : {})
-    }))
+    joints: project.joints.map((joint) => {
+      const parentAnchor = partIds.has(joint.parentPartId) ? { x: joint.parentAnchor.x + dx, y: joint.parentAnchor.y + dy } : joint.parentAnchor
+      const childAnchor = partIds.has(joint.childPartId) ? { x: joint.childAnchor.x + dx, y: joint.childAnchor.y + dy } : joint.childAnchor
+      return { ...joint, parentAnchor, childAnchor, pivot: { x: (parentAnchor.x + childAnchor.x) / 2, y: (parentAnchor.y + childAnchor.y) / 2 } }
+    })
   }
+}
+
+function translatePoseBranch(project: DraftProject, rootId: string, dx: number, dy: number): DraftProject {
+  return translateParts(project, fixedPoseBranch(project, rootId), dx, dy)
 }
 
 function toSavedPose(project: DraftProject, slot: number): FabricatorPoseSave {
@@ -358,17 +383,18 @@ export function PoseWorkspace() {
     const displayProject = project ?? sourcePreview
     const parts = useMemo(() => displayProject ? orderedParts(displayProject.parts, displayProject.layerOrder) : [], [displayProject])
     const selectedPart = displayProject?.parts.find((part) => part.id === selectedId) ?? null
+    const selectedCanMove = Boolean(project && selectedPart && isMovablePoseRoot(project, selectedPart.id))
     const visibleParts = useMemo(() => parts.filter((part) => !displayProject?.hiddenPartIds.includes(part.id)), [parts, displayProject?.hiddenPartIds])
   const filteredParts = useMemo(() => parts.filter((part) => part.name.toLocaleLowerCase().includes(partFilter.toLocaleLowerCase())), [parts, partFilter])
   const scale = displayProject ? Math.max(0.05, Math.min((stageSize.width - 48) / displayProject.width, (stageSize.height - 48) / displayProject.height)) * zoom : 1
 
-  const movePart = (partId: string, dx: number, dy: number) => changeProject((current) => translatePart(current, partId, dx, dy), false)
+  const movePart = (partId: string, dx: number, dy: number) => changeProject((current) => isMovablePoseRoot(current, partId) ? translatePoseBranch(current, partId, dx, dy) : current, false)
 
   const setPartPosition = (partId: string, axis: 'x' | 'y', value: number) => changeProject((current) => {
     const part = current.parts.find((item) => item.id === partId)
-    if (!part || !Number.isFinite(value)) return current
+    if (!part || !Number.isFinite(value) || !isMovablePoseRoot(current, partId)) return current
     const delta = value - part[axis]
-    return axis === 'x' ? translatePart(current, partId, delta, 0) : translatePart(current, partId, 0, delta)
+    return axis === 'x' ? translatePoseBranch(current, partId, delta, 0) : translatePoseBranch(current, partId, 0, delta)
   })
 
   const rotateSelected = (partId: string, targetAngle: number, includeConnectedChildren: boolean) => changeProject((current) => {
@@ -471,7 +497,7 @@ export function PoseWorkspace() {
       if (drag.movePiece) {
         const dx = (event.clientX - drag.x) / scale
         const dy = (event.clientY - drag.y) / scale
-        if (dx || dy) movePart(drag.partId, dx, dy)
+        if (drag.canMove && (dx || dy)) movePart(drag.partId, dx, dy)
         drag.x = event.clientX
         drag.y = event.clientY
       } else {
@@ -517,6 +543,7 @@ export function PoseWorkspace() {
       pivotY,
       includeConnectedChildren: rotationMode === 'branch',
       movePiece: moveToolActive,
+      canMove: isMovablePoseRoot(project, part.id),
       before: cloneProject(project)
     }
   }
@@ -543,7 +570,7 @@ export function PoseWorkspace() {
           <div className="pose-canvas-heading"><span><i />{project ? 'PRÉVIA DA POSE' : sourcePreview ? 'MODELO BASE · SOMENTE PRÉVIA' : 'PRÉVIA DA POSE'}</span><span>{displayProject ? `${displayProject.width} × ${displayProject.height}` : 'Escolha um modelo para começar'}</span></div>
           <div ref={stageRef} className={`pose-stage${panning ? ' panning' : ''}${moveToolActive ? ' move-tool-active' : ''}`} onPointerDown={beginPan} onPointerMove={moveCanvas} onPointerUp={stopCanvasGesture} onPointerCancel={stopCanvasGesture}>
             {displayProject ? <div className={`pose-artboard${!project ? ' source-preview' : ''}`} style={{ width: displayProject.width * scale, height: displayProject.height * scale, left: `calc(50% + ${pan.x}px)`, top: `calc(50% + ${pan.y}px)` }}>
-              {visibleParts.map((part, index) => <img key={part.id} className={`pose-part${selectedId === part.id ? ' selected' : ''}`} src={part.dataUrl} alt={part.name} draggable={false} onClick={(event) => { event.stopPropagation(); setSelectedId(part.id) }} onPointerDown={(event) => startPartDrag(event, part)} style={{ left: part.x * scale, top: part.y * scale, width: part.width * scale, height: part.height * scale, zIndex: index + 1, transform: `rotate(${part.rotation}deg)` }} />)}
+              {visibleParts.map((part, index) => <img key={part.id} className={`pose-part${selectedId === part.id ? ' selected' : ''}${project && !isMovablePoseRoot(project, part.id) ? ' move-locked' : ''}`} src={part.dataUrl} alt={part.name} draggable={false} onClick={(event) => { event.stopPropagation(); setSelectedId(part.id) }} onPointerDown={(event) => startPartDrag(event, part)} style={{ left: part.x * scale, top: part.y * scale, width: part.width * scale, height: part.height * scale, zIndex: index + 1, transform: `rotate(${part.rotation}deg)` }} />)}
               {showJoints && <svg className="pose-joints" viewBox={`0 0 ${displayProject.width} ${displayProject.height}`} preserveAspectRatio="none">{displayProject.parts.filter((part) => !/tronco|corpo/i.test(part.name)).map((part) => {
                 const anchor = partJointAnchor(part, displayProject.joints)
                 if (!anchor) return null
@@ -575,7 +602,8 @@ export function PoseWorkspace() {
               <div className="pose-piece-list">{filteredParts.map((part) => <button key={part.id} className={`pose-piece-row${selectedId === part.id ? ' selected' : ''}`} onClick={() => setSelectedId(part.id)} type="button"><span className="pose-piece-thumb"><img src={part.dataUrl} alt="" /></span><span><b>{part.name}</b><small>{Math.round(part.rotation)}°</small></span></button>)}</div>
               {selectedPart && <div className="pose-transform-controls">
                 <div className="pose-control-heading"><strong>Posição e rotação</strong><span>A bolinha destacada é o pivô usado no modelo.</span></div>
-                <div className="pose-number-row"><label>X<input aria-label="Posição X" type="number" step="1" value={Number(selectedPart.x.toFixed(1))} onChange={(event) => setPartPosition(selectedPart.id, 'x', Number(event.target.value))} /></label><label>Y<input aria-label="Posição Y" type="number" step="1" value={Number(selectedPart.y.toFixed(1))} onChange={(event) => setPartPosition(selectedPart.id, 'y', Number(event.target.value))} /></label></div>
+                <div className="pose-number-row"><label>X<input aria-label="Posição X" title={selectedCanMove ? 'Mover esta peça e as filhas conectadas' : 'Só braços e coxas superiores fixados ao tronco podem ser movidos'} disabled={!selectedCanMove} type="number" step="1" value={Number(selectedPart.x.toFixed(1))} onChange={(event) => setPartPosition(selectedPart.id, 'x', Number(event.target.value))} /></label><label>Y<input aria-label="Posição Y" title={selectedCanMove ? 'Mover esta peça e as filhas conectadas' : 'Só braços e coxas superiores fixados ao tronco podem ser movidos'} disabled={!selectedCanMove} type="number" step="1" value={Number(selectedPart.y.toFixed(1))} onChange={(event) => setPartPosition(selectedPart.id, 'y', Number(event.target.value))} /></label></div>
+                <small className="pose-pivot-hint">{selectedCanMove ? 'Mover esta peça também leva os segmentos conectados abaixo dela.' : 'Movimento liberado para braços e coxas superiores fixados ao tronco.'}</small>
                 <div className="pose-rotation-card">
                   <span className="pose-rotation-title">Como quer girar?</span>
                   <div className="pose-mode-selector"><button className={rotationMode === 'branch' ? 'active' : ''} onClick={() => setRotationMode('branch')} type="button">Peça + conectadas</button><button className={rotationMode === 'part' ? 'active' : ''} onClick={() => setRotationMode('part')} type="button">Só esta peça</button></div>
