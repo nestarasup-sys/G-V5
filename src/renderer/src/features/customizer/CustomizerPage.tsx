@@ -692,19 +692,14 @@ export function CustomizerPage() {
                           <header><h3>{definition.label}</h3><span>{matches.length}</span></header>
                           {matches.length === 0 ? <p className="customizer-wardrobe-empty">Nenhum conjunto salvo nesta categoria.</p>
                             : <div className="customizer-wardrobe-items">{matches.map((summary) => {
-                              const detail = wardrobeDetails[`${summary.modelSlot}:${summary.id}`]
                               const key = `${summary.modelSlot}:${summary.id}:${definition.id}`
-                              const groupPieces = detail?.components.filter((component) => definition.source.includes(component.category)) ?? []
                               const applied = (selectedCharacter?.customization.wardrobeGroups ?? []).some((group) => group.modelSlot === summary.modelSlot && group.setId === summary.id && group.category === definition.id)
                               const selected = selectedClothing?.setId === summary.id && selectedClothing.category === definition.id
-                              const pieceCount = definition.id === 'calca' ? groupPieces.filter((piece) => piece.category === 'calca-coxa').length + groupPieces.filter((piece) => piece.category === 'calca-canela').length : groupPieces.length
                               return <article className={'customizer-wardrobe-item' + (selected ? ' selected' : '')} key={key}>
-                                <button className="customizer-wardrobe-select" onClick={() => void applyWardrobeGroup(summary, definition.id)} aria-pressed={selected} type="button">
+                                <button className="customizer-wardrobe-select" onClick={() => void applyWardrobeGroup(summary, definition.id)} aria-label={`${applied ? 'Selecionar' : 'Usar'} conjunto de ${definition.label.toLowerCase()}`} aria-pressed={selected} title={definition.id === 'calca' ? 'Calça completa: coxas e canelas juntas' : definition.label} type="button">
                                   {wardrobeThumbnails[key] ? <img src={wardrobeThumbnails[key]} alt="" /> : <span className="customizer-catalog-placeholder"><Icon name="shirt" /></span>}
-                                  <span className="customizer-wardrobe-item-copy"><b>{summary.name}</b><small>{definition.id === 'calca' ? `Conjunto · ${pieceCount} partes (coxas + canelas)` : `${pieceCount} ${pieceCount === 1 ? 'peça' : 'peças'}`}</small></span>
-                                  <span className="customizer-wardrobe-item-status">{applied ? 'Em uso' : 'Usar'}</span>
                                 </button>
-                                {applied && <button className="customizer-wardrobe-remove" onClick={() => void removeWardrobeGroup(summary.id, definition.id)} type="button">Remover</button>}
+                                {applied && <button className="customizer-wardrobe-remove" onClick={() => void removeWardrobeGroup(summary.id, definition.id)} aria-label="Remover roupa deste personagem" title="Remover" type="button"><Icon name="trash" /></button>}
                               </article>
                             })}</div>}
                         </section>
