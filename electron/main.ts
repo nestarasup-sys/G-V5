@@ -583,7 +583,7 @@ async function registerFabricatorHandlers(): Promise<void> {
         try {
           const manifest = JSON.parse(await readFile(join(poseSlotPath(modelSlot, slot), 'pose.json'), 'utf8')) as FabricatorPoseSave
           if (manifest.sourceModelSlot !== modelSlot || manifest.slot !== slot) continue
-          allSlots.push({ slot, sourceModelSlot: modelSlot, name: manifest.name, sourceModelName: manifest.sourceModelName, partCount: manifest.parts.length, updatedAt: manifest.updatedAt })
+          allSlots.push({ slot, isInitialModelPose: manifest.isInitialModelPose, sourceModelSlot: modelSlot, name: manifest.name, sourceModelName: manifest.sourceModelName, partCount: manifest.parts.length, updatedAt: manifest.updatedAt })
         } catch { /* Slots sem manifest válido aparecem vazios. */ }
       }
     }
@@ -597,12 +597,14 @@ async function registerFabricatorHandlers(): Promise<void> {
 
   ipcMain.handle('fabricator:poses:save', async (event, modelSlot: number, slot: number, project: FabricatorPoseSave, assets: FabricatorAssetSave[]): Promise<void> => {
     assertTrustedSender(event)
+    if (slot === 1) throw new Error('A pose 01 representa a montagem original. Crie ou edite uma pose em outro slot.')
     await queuePoseWrite(() => writePoseProject(modelSlot, slot, project, assets))
   })
 
   ipcMain.handle('fabricator:poses:delete', async (event, modelSlot: number, slot: number): Promise<void> => {
     assertTrustedSender(event)
     if (!isValidModelSlot(modelSlot) || !isValidPoseSlot(slot)) throw new Error('Slot de pose inválido.')
+    if (slot === 1) throw new Error('A pose 01 da montagem original não pode ser excluída.')
     await queuePoseWrite(async () => {
       const base = resolve(poseModelPath(modelSlot))
       const target = resolve(poseSlotPath(modelSlot, slot))
