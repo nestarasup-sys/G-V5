@@ -47,9 +47,16 @@ try {
   window.on('pageerror', (error) => console.error('Renderer error:', error.message))
   await window.evaluate(() => { location.hash = '#/fabricador-dev' })
   await window.getByRole('button', { name: 'Roupas', exact: true }).click()
-  await window.waitForTimeout(1200)
-  console.log('Wardrobe initial state:', await window.evaluate(() => ({ path: location.hash, text: document.body.innerText.slice(-2400), hasDesktop: Boolean(window.desktop), setRows: document.querySelectorAll('.wardrobe-set-row').length, error: document.querySelector('.wardrobe-error')?.textContent })))
-  await window.locator('.wardrobe-set-row').first().waitFor({ timeout: 12000 })
+  try {
+    await window.locator('.wardrobe-set-row').first().waitFor({ timeout: 60000 })
+  } catch (reason) {
+    console.error('Wardrobe did not load:', await window.evaluate(() => ({
+      path: location.hash,
+      text: document.body.innerText.slice(-2400),
+      error: document.querySelector('.wardrobe-error')?.textContent
+    })))
+    throw reason
+  }
   await window.locator('.wardrobe-set-row').first().click()
   await window.locator('.wardrobe-preview-part').first().waitFor()
   await window.screenshot({ path: join(output, 'reference.png') })
