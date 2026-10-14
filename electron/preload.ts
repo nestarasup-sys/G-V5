@@ -2,6 +2,8 @@ import { contextBridge, ipcRenderer } from 'electron'
 import type { FabricatorDesktopApi } from '../src/shared/fabricator'
 
 const fabricatorApi: FabricatorDesktopApi = {
+  loadCustomizerLibrary: () => ipcRenderer.invoke('customizer:load-library'),
+  saveCustomizerLibrary: (library) => ipcRenderer.invoke('customizer:save-library', library),
   listFabricatorSlots: () => ipcRenderer.invoke('fabricator:list-slots'),
   importFabricatorModel: (slot) => ipcRenderer.invoke('fabricator:import-model', slot),
   loadFabricatorSlot: (slot) => ipcRenderer.invoke('fabricator:load-slot', slot),
