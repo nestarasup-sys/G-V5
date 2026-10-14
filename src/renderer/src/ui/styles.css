@@ -684,6 +684,10 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .wardrobe-preview-part { cursor:grab;touch-action:none;user-select:none; }
 .wardrobe-preview-part:active { cursor:grabbing; }
 .wardrobe-preview-part.selected { filter:drop-shadow(0 0 2px #e15683) drop-shadow(0 0 4px #e156835e); }
+.wardrobe-pose-garment { position:absolute;pointer-events:none; }
+.wardrobe-pose-garment>.wardrobe-preview-part { position:absolute;pointer-events:auto; }
+.wardrobe-pose-body-part { pointer-events:none; }
+.wardrobe-test-hint { border-color:#edc6d6;background:#fff7fae8;color:#a34469; }
 .wardrobe-quick-controls { display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;gap:9px;padding:8px;border:1px solid #f0e8ed;border-radius:9px;background:#fdfbfd; }
 .wardrobe-nudge-pad { display:grid;grid-template-columns:repeat(3,29px);grid-template-rows:repeat(3,25px);align-items:center;justify-items:center;gap:2px; }
 .wardrobe-nudge-pad button { width:26px;height:24px;border:1px solid #eadbe2;border-radius:6px;background:#fff;color:#8b5269;font-size:14px;cursor:pointer; }
