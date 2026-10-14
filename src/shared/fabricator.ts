@@ -112,6 +112,8 @@ export type PoseWardrobeAttachment = { setId: string; category: WardrobeCategory
 export type WardrobePosePart = PosePart & { wardrobeAttachment?: PoseWardrobeAttachment }
 export type FabricatorPose = {
   schemaVersion: 1
+  /** Immutable assembled-model snapshot shown as pose 01. */
+  isInitialModelPose?: boolean
   slot: number
   name: string
   sourceModelSlot: number
@@ -126,11 +128,27 @@ export type FabricatorPose = {
   updatedAt: string
 }
 export type FabricatorPoseSave = Omit<FabricatorPose, 'parts'> & { parts: Array<Omit<WardrobePosePart, 'dataUrl'>> }
-export type FabricatorPoseSummary = { slot: number; sourceModelSlot: number; name: string; sourceModelName: string; partCount: number; updatedAt: string } | null
+export type FabricatorPoseSummary = { isInitialModelPose?: boolean; slot: number; sourceModelSlot: number; name: string; sourceModelName: string; partCount: number; updatedAt: string } | null
 export type FabricatorPoseDraft = { editingSlot: number | null; project: Omit<FabricatorPose, 'slot'>; updatedAt: string }
 export type FabricatorPoseDraftSave = { editingSlot: number | null; project: Omit<FabricatorPoseSave, 'slot'>; updatedAt: string }
 
+/** Customizer saves choices, not copies of Fabricador Dev art assets. */
+export type CharacterGarmentAdjustment = { dx: number; dy: number; scaleX: number; scaleY: number; rotation: number }
+export type CustomizerCharacter = {
+  id: string
+  name: string
+  modelSlot: number | null
+  poseSlot: number
+  /** Keyed by category + fitted body part; trousers are a single set selection. */
+  equipped: Record<string, string>
+  /** Key is "<wardrobe set ID>:<garment component ID>". */
+  adjustments: Record<string, CharacterGarmentAdjustment>
+}
+export type CustomizerLibrary = { schemaVersion: 1; characters: CustomizerCharacter[] }
+
 export type FabricatorDesktopApi = {
+  loadCustomizerLibrary: () => Promise<CustomizerLibrary>
+  saveCustomizerLibrary: (library: CustomizerLibrary) => Promise<void>
   listFabricatorSlots: () => Promise<FabricatorSlotSummary[]>
   importFabricatorModel: (slot: number) => Promise<{ sourceName: string; sourceAssetName: string; sourceDataUrl: string } | null>
   loadFabricatorSlot: (slot: number) => Promise<FabricatorProject | null>
