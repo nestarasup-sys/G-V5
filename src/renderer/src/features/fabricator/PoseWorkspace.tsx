@@ -7,7 +7,7 @@ type DraftProject = Omit<FabricatorPose, 'slot'>
 type PanelTab = 'parts' | 'layers' | 'joints'
 type PoseHistory = { undo: DraftProject[]; redo: DraftProject[] }
 type PanGesture = { pointerId: number; x: number; y: number; originX: number; originY: number }
-type PartGesture = { pointerId: number; partId: string; x: number; y: number; lastAngle: number; startRotation: number; accumulatedRotation: number; pivotX: number; pivotY: number; includeConnectedChildren: boolean; movePiece: boolean; canMove: boolean; before: DraftProject }
+type PartGesture = { pointerId: number; partId: string; x: number; y: number; lastAngle: number; startRotation: number; accumulatedRotation: number; pivotX: number; pivotY: number; includeConnectedChildren: boolean; movePiece: boolean; canMove: boolean; rotationStarted: boolean; before: DraftProject }
 
 const SLOT_COUNT = 12
 const HISTORY_LIMIT = 50
@@ -502,6 +502,14 @@ export function PoseWorkspace() {
         drag.y = event.clientY
       } else {
         const pointerAngle = Math.atan2(event.clientY - drag.pivotY, event.clientX - drag.pivotX) * 180 / Math.PI
+        // Selection/clicks must never rotate a limb. Wait for a real drag
+        // and start angle accumulation at that point, not at pointer-down.
+        if (!drag.rotationStarted) {
+          if (Math.hypot(event.clientX - drag.x, event.clientY - drag.y) < 6) return
+          drag.rotationStarted = true
+          drag.lastAngle = pointerAngle
+          return
+        }
         let step = pointerAngle - drag.lastAngle
         if (step > 180) step -= 360
         if (step < -180) step += 360
@@ -544,6 +552,7 @@ export function PoseWorkspace() {
       includeConnectedChildren: rotationMode === 'branch',
       movePiece: moveToolActive,
       canMove: isMovablePoseRoot(project, part.id),
+      rotationStarted: false,
       before: cloneProject(project)
     }
   }
