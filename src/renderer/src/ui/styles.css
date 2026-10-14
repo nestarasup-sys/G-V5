@@ -233,6 +233,8 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .pose-canvas-heading i { width: 6px; height: 6px; border-radius: 50%; background: #e786a6; }
 .pose-stage { min-width: 0; min-height: 0; flex: 1; position: relative; overflow: hidden; background-color: #fdfcfd; background-image: linear-gradient(45deg, #f1edf1 25%, transparent 25%), linear-gradient(-45deg, #f1edf1 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #f1edf1 75%), linear-gradient(-45deg, transparent 75%, #f1edf1 75%); background-position: 0 0, 0 6px, 6px -6px, -6px 0; background-size: 12px 12px; touch-action: none; cursor: grab; }
 .pose-stage.panning { cursor: grabbing; }
+.pose-stage.move-tool-active .pose-part { cursor: grab; }
+.pose-stage.move-tool-active .pose-part:active { cursor: grabbing; }
 .pose-artboard { position: absolute; top: 50%; left: 50%; overflow: visible; transform: translate(-50%, -50%); filter: drop-shadow(0 3px 10px #44303a1a); }
 .pose-part { position: absolute; object-fit: fill; cursor: crosshair; user-select: none; -webkit-user-drag: none; transform-origin: center center; }
 .pose-part:active { cursor: crosshair; }
@@ -269,6 +271,11 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .pose-slot.active { box-shadow: inset 0 0 0 2px #ffffffbd, 0 0 0 1px #55434e; }
 .pose-tools-panel { min-height: 0; flex: 1; display: flex; flex-direction: column; overflow: hidden; }
 .pose-tools-heading { flex: 0 0 auto; padding: 8px 10px; }
+.pose-heading-actions { display: flex; align-items: center; gap: 5px; }
+.pose-move-tool { min-height: 27px; display: inline-flex; align-items: center; gap: 5px; padding: 0 8px; border: 1px solid #eee7ec; border-radius: 7px; background: #fff; color: #827883; font-size: 9px; font-weight: 700; cursor: pointer; }
+.pose-move-tool svg { width: 13px; height: 13px; }
+.pose-move-tool:hover { border-color: #e7b4c5; color: #a44166; }
+.pose-move-tool.active { border-color: #d78aa5; background: #fff0f5; color: #a44166; box-shadow: inset 0 0 0 1px #f2cfdb; }
 .pose-eye-button { width: 26px; height: 26px; display: grid; place-items: center; border: 1px solid #eee7ec; border-radius: 7px; background: #fff; color: #867c87; cursor: pointer; }
 .pose-eye-button.active { color: #b3446b; }
 .pose-eye-button svg { width: 14px; height: 14px; }

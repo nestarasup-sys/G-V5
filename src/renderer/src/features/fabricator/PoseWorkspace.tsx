@@ -7,7 +7,7 @@ type DraftProject = Omit<FabricatorPose, 'slot'>
 type PanelTab = 'parts' | 'layers' | 'joints'
 type PoseHistory = { undo: DraftProject[]; redo: DraftProject[] }
 type PanGesture = { pointerId: number; x: number; y: number; originX: number; originY: number }
-type PartGesture = { pointerId: number; partId: string; lastAngle: number; startRotation: number; accumulatedRotation: number; pivotX: number; pivotY: number; includeConnectedChildren: boolean; before: DraftProject }
+type PartGesture = { pointerId: number; partId: string; x: number; y: number; lastAngle: number; startRotation: number; accumulatedRotation: number; pivotX: number; pivotY: number; includeConnectedChildren: boolean; movePiece: boolean; before: DraftProject }
 
 const SLOT_COUNT = 12
 const HISTORY_LIMIT = 50
@@ -90,6 +90,7 @@ export function PoseWorkspace() {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [tab, setTab] = useState<PanelTab>('parts')
   const [rotationMode, setRotationMode] = useState<'part' | 'branch'>('branch')
+  const [moveToolActive, setMoveToolActive] = useState(false)
   const [pan, setPan] = useState({ x: 0, y: 0 })
   const [zoom, setZoom] = useState(1)
   const [stageSize, setStageSize] = useState({ width: 1, height: 1 })
@@ -361,6 +362,8 @@ export function PoseWorkspace() {
   const filteredParts = useMemo(() => parts.filter((part) => part.name.toLocaleLowerCase().includes(partFilter.toLocaleLowerCase())), [parts, partFilter])
   const scale = displayProject ? Math.max(0.05, Math.min((stageSize.width - 48) / displayProject.width, (stageSize.height - 48) / displayProject.height)) * zoom : 1
 
+  const movePart = (partId: string, dx: number, dy: number) => changeProject((current) => translatePart(current, partId, dx, dy), false)
+
   const setPartPosition = (partId: string, axis: 'x' | 'y', value: number) => changeProject((current) => {
     const part = current.parts.find((item) => item.id === partId)
     if (!part || !Number.isFinite(value)) return current
@@ -465,13 +468,21 @@ export function PoseWorkspace() {
     if (panGesture?.pointerId === event.pointerId) setPan({ x: panGesture.originX + event.clientX - panGesture.x, y: panGesture.originY + event.clientY - panGesture.y })
     const drag = partDragRef.current
     if (drag?.pointerId === event.pointerId && project && scale) {
-      const pointerAngle = Math.atan2(event.clientY - drag.pivotY, event.clientX - drag.pivotX) * 180 / Math.PI
-      let step = pointerAngle - drag.lastAngle
-      if (step > 180) step -= 360
-      if (step < -180) step += 360
-      drag.accumulatedRotation += step
-      drag.lastAngle = pointerAngle
-      rotateSelected(drag.partId, drag.startRotation + drag.accumulatedRotation, drag.includeConnectedChildren)
+      if (drag.movePiece) {
+        const dx = (event.clientX - drag.x) / scale
+        const dy = (event.clientY - drag.y) / scale
+        if (dx || dy) movePart(drag.partId, dx, dy)
+        drag.x = event.clientX
+        drag.y = event.clientY
+      } else {
+        const pointerAngle = Math.atan2(event.clientY - drag.pivotY, event.clientX - drag.pivotX) * 180 / Math.PI
+        let step = pointerAngle - drag.lastAngle
+        if (step > 180) step -= 360
+        if (step < -180) step += 360
+        drag.accumulatedRotation += step
+        drag.lastAngle = pointerAngle
+        rotateSelected(drag.partId, drag.startRotation + drag.accumulatedRotation, drag.includeConnectedChildren)
+      }
     }
   }
 
@@ -497,12 +508,15 @@ export function PoseWorkspace() {
     partDragRef.current = {
       pointerId: event.pointerId,
       partId: part.id,
+      x: event.clientX,
+      y: event.clientY,
       lastAngle: Math.atan2(event.clientY - pivotY, event.clientX - pivotX) * 180 / Math.PI,
       startRotation: part.rotation,
       accumulatedRotation: 0,
       pivotX,
       pivotY,
       includeConnectedChildren: rotationMode === 'branch',
+      movePiece: moveToolActive,
       before: cloneProject(project)
     }
   }
@@ -527,7 +541,7 @@ export function PoseWorkspace() {
       <div className="pose-editor-body">
         <section className="pose-canvas-column" aria-label="Prévia da pose">
           <div className="pose-canvas-heading"><span><i />{project ? 'PRÉVIA DA POSE' : sourcePreview ? 'MODELO BASE · SOMENTE PRÉVIA' : 'PRÉVIA DA POSE'}</span><span>{displayProject ? `${displayProject.width} × ${displayProject.height}` : 'Escolha um modelo para começar'}</span></div>
-          <div ref={stageRef} className={`pose-stage${panning ? ' panning' : ''}`} onPointerDown={beginPan} onPointerMove={moveCanvas} onPointerUp={stopCanvasGesture} onPointerCancel={stopCanvasGesture}>
+          <div ref={stageRef} className={`pose-stage${panning ? ' panning' : ''}${moveToolActive ? ' move-tool-active' : ''}`} onPointerDown={beginPan} onPointerMove={moveCanvas} onPointerUp={stopCanvasGesture} onPointerCancel={stopCanvasGesture}>
             {displayProject ? <div className={`pose-artboard${!project ? ' source-preview' : ''}`} style={{ width: displayProject.width * scale, height: displayProject.height * scale, left: `calc(50% + ${pan.x}px)`, top: `calc(50% + ${pan.y}px)` }}>
               {visibleParts.map((part, index) => <img key={part.id} className={`pose-part${selectedId === part.id ? ' selected' : ''}`} src={part.dataUrl} alt={part.name} draggable={false} onClick={(event) => { event.stopPropagation(); setSelectedId(part.id) }} onPointerDown={(event) => startPartDrag(event, part)} style={{ left: part.x * scale, top: part.y * scale, width: part.width * scale, height: part.height * scale, zIndex: index + 1, transform: `rotate(${part.rotation}deg)` }} />)}
               {showJoints && <svg className="pose-joints" viewBox={`0 0 ${displayProject.width} ${displayProject.height}`} preserveAspectRatio="none">{displayProject.parts.filter((part) => !/tronco|corpo/i.test(part.name)).map((part) => {
@@ -539,7 +553,7 @@ export function PoseWorkspace() {
             </div> : <div className="pose-canvas-empty"><span><Icon name="expand" /></span><strong>{loading ? 'Carregando poses…' : 'Sua pose começa aqui'}</strong><small>Escolha um modelo salvo e crie uma pose independente.</small><button className="pose-button primary" onClick={() => setSelectingModel(true)} type="button"><Icon name="plus" /> Escolher modelo</button></div>}
             <div className="pose-stage-tools"><span>{Math.round(zoom * 100)}%</span><button title="Aumentar zoom" onClick={() => setZoom((value) => Math.min(2.5, value + 0.15))} type="button">+</button><button title="Diminuir zoom" onClick={() => setZoom((value) => Math.max(0.45, value - 0.15))} type="button">−</button><button title="Centralizar" onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }) }} type="button"><Icon name="frame" /></button></div>
           </div>
-          <footer className="pose-canvas-footer"><span><kbd>Arraste o fundo</kbd> para mover a prévia {project && <><i /> <kbd>Arraste a peça</kbd> para girar pela bolinha</>}</span><span>{displayProject ? `${displayProject.parts.length} peças · ${displayProject.joints.length} juntas` : 'O modelo original fica protegido'}</span></footer>
+          <footer className="pose-canvas-footer"><span><kbd>Arraste o fundo</kbd> para mover a prévia {project && <><i /> <kbd>Arraste a peça</kbd> para {moveToolActive ? 'mover' : 'girar pela bolinha'}</>}</span><span>{displayProject ? `${displayProject.parts.length} peças · ${displayProject.joints.length} juntas` : 'O modelo original fica protegido'}</span></footer>
         </section>
 
         <aside className="pose-side-panel" aria-label="Slots e ferramentas de pose">
@@ -554,7 +568,7 @@ export function PoseWorkspace() {
           </section>
 
           <section className="pose-tools-panel">
-            <header className="pose-tools-heading"><span><small>EDIÇÃO</small><strong>{project ? selectedPart?.name ?? 'Selecione uma peça' : 'Controles'}</strong></span>{project && <button className={`pose-eye-button${showJoints ? ' active' : ''}`} title={showJoints ? 'Ocultar juntas' : 'Mostrar juntas'} onClick={() => setShowJoints((value) => !value)} type="button"><Icon name={showJoints ? 'eye' : 'eyeOff'} /></button>}</header>
+            <header className="pose-tools-heading"><span><small>EDIÇÃO</small><strong>{project ? selectedPart?.name ?? 'Selecione uma peça' : 'Controles'}</strong></span>{project && <div className="pose-heading-actions"><button className={`pose-move-tool${moveToolActive ? ' active' : ''}`} aria-pressed={moveToolActive} title={moveToolActive ? 'Desativar modo mover peça' : 'Ativar modo mover peça'} onClick={() => setMoveToolActive((value) => !value)} type="button"><Icon name="move" /><span>{moveToolActive ? 'Mover ligado' : 'Mover peça'}</span></button><button className={`pose-eye-button${showJoints ? ' active' : ''}`} title={showJoints ? 'Ocultar juntas' : 'Mostrar juntas'} onClick={() => setShowJoints((value) => !value)} type="button"><Icon name={showJoints ? 'eye' : 'eyeOff'} /></button></div>}</header>
             <nav className="pose-tabs" aria-label="Painel da pose">{([['parts', 'Peças'], ['layers', 'Camadas'], ['joints', 'Rig']] as const).map(([key, label]) => <button key={key} className={tab === key ? 'active' : ''} onClick={() => setTab(key)} type="button">{label}</button>)}</nav>
             {project && tab === 'parts' && <div className="pose-tool-content">
               <label className="pose-search"><Icon name="search" /><input value={partFilter} onChange={(event) => setPartFilter(event.target.value)} placeholder="Localizar peça" /></label>
