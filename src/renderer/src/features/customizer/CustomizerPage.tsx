@@ -52,7 +52,6 @@ export function CustomizerPage() {
           <section className="customizer-model-preview" aria-label="Prévia do personagem">
             <div className="stage-wrap">
               <div className="stage-scene" style={{ '--preview-background': previewBackground } as import('react').CSSProperties}>
-                <div className="stage-glow" />
                 <div className="stage-label"><span className="online-dot" /> PREVIEW DO PERSONAGEM</div>
                 <button className="customizer-back-button customizer-preview-back" onClick={() => setActiveModule(null)} type="button"><span aria-hidden="true">←</span> Customizar</button>
                 <label className="scene-chip preview-scene-color" title="Mudar a cor do fundo de todas as prévias">
@@ -66,7 +65,6 @@ export function CustomizerPage() {
                   <button aria-label="Afastar" type="button"><Icon name="zoomOut" /></button>
                 </div>
                 <CharacterPreview character={selectedCharacter} />
-                <div className="stage-floor" />
                 <div className="stage-caption"><span>01</span><i />{selectedCharacter.name}<small>PERSONAGEM ATIVO</small></div>
               </div>
             </div>
@@ -142,7 +140,6 @@ export function CustomizerPage() {
 
           <div className="stage-wrap">
             <div className="stage-scene" style={{ '--preview-background': previewBackground } as import('react').CSSProperties}>
-              <div className="stage-glow" />
               <div className="stage-label"><span className="online-dot" /> PREVIEW DO PERSONAGEM</div>
               <label className="scene-chip preview-scene-color" title="Mudar a cor do fundo de todas as prévias">
                 <span className="preview-color-swatch" style={{ backgroundColor: previewBackground }} />
@@ -155,7 +152,6 @@ export function CustomizerPage() {
                 <button aria-label="Afastar"><Icon name="zoomOut" /></button>
               </div>
               <CharacterPreview character={selectedCharacter} />
-              <div className="stage-floor" />
               <div className="stage-caption"><span>01</span><i />{selectedCharacter.name}<small>PERSONAGEM ATIVO</small></div>
             </div>
             <div className="stage-underbar">
