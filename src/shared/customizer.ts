@@ -14,6 +14,8 @@ export type CustomizerWardrobeGroup = {
   modelSlot: number
   setId: string
   category: CustomizerWardrobeCategory
+  /** New placements are independent per garment component; missing means a legacy whole-category placement. */
+  componentId?: string
   offsetX: number
   offsetY: number
   scaleX: number

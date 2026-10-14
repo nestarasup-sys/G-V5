@@ -25,6 +25,7 @@ function loadCachedImage(source: string): Promise<HTMLImageElement> {
 
 type ClothingGroupCategory = CustomizerWardrobeCategory
 type WardrobeEditHistory = { characterId: string; undo: CustomizerWardrobeGroup[][]; redo: CustomizerWardrobeGroup[][] }
+type SelectedWardrobeComponent = { setId: string; category: ClothingGroupCategory; componentId: string }
 const clothingCategories: Record<'Superior' | 'Inferior', Array<{ id: ClothingGroupCategory; label: string; source: WardrobeCategory[] }>> = {
   Superior: [
     { id: 'camisa', label: 'Camisas', source: ['camisa'] },
@@ -68,14 +69,19 @@ async function renderWardrobeOverlay(
   details: Record<string, WardrobeSet>,
   artwork: CatalogArtwork,
   modelSlot: number | null,
-  source: FabricatorProject | null
-): Promise<string | null> {
-  if (!groups.length || modelSlot === null || !source) return null
+  source: FabricatorProject | null,
+  selected: SelectedWardrobeComponent | null
+): Promise<{ imageUrl: string | null; selectedUrl: string | null }> {
+  if (!groups.length || modelSlot === null || !source) return { imageUrl: null, selectedUrl: null }
   const output = document.createElement('canvas')
   output.width = Math.max(1, artwork.width)
   output.height = Math.max(1, artwork.height)
   const outputContext = output.getContext('2d')
-  if (!outputContext) return null
+  if (!outputContext) return { imageUrl: null, selectedUrl: null }
+  const selectionCanvas = document.createElement('canvas')
+  selectionCanvas.width = output.width
+  selectionCanvas.height = output.height
+  const selectionContext = selectionCanvas.getContext('2d')
   const hidden = new Set(artwork.hiddenPartIds ?? [])
   const bodyOrder = (artwork.layerOrder ?? []).filter((id, index, order) => artwork.parts.some((part) => part.id === id) && order.indexOf(id) === index)
   for (const part of artwork.parts) if (!bodyOrder.includes(part.id)) bodyOrder.push(part.id)
@@ -90,7 +96,7 @@ async function renderWardrobeOverlay(
     const accepted = clothingCategories[group.category === 'calca' || group.category === 'shorts' ? 'Inferior' : 'Superior']
       .find((category) => category.id === group.category)?.source
     if (!accepted) continue
-    const components = set.components.filter((component) => accepted.includes(component.category))
+    const components = set.components.filter((component) => accepted.includes(component.category) && (!group.componentId || group.componentId === component.id))
     if (!components.length) continue
     const mapped: Array<{ component: WardrobeSet['components'][number]; transform: ReturnType<typeof mapWardrobeComponentToPose>; center: { x: number; y: number }; sequence: number }> = []
     for (const component of components) {
@@ -132,21 +138,25 @@ async function renderWardrobeOverlay(
       try {
         const image = await loadCachedImage(garment.component.dataUrl)
         const matrix = /^matrix\(([^)]+)\)$/.exec(garment.transform.matrix)?.[1].split(',').map(Number) ?? [1, 0, 0, 1, 0, 0]
-        outputContext.save()
-        outputContext.translate(garment.center.x + garment.group.offsetX, garment.center.y + garment.group.offsetY)
-        outputContext.rotate(garment.group.rotation * Math.PI / 180)
-        outputContext.scale(garment.group.scaleX, garment.group.scaleY)
-        outputContext.translate(-garment.center.x, -garment.center.y)
-        outputContext.translate(garment.transform.origin.x, garment.transform.origin.y)
-        outputContext.transform(matrix[0], matrix[1], matrix[2], matrix[3], matrix[4], matrix[5])
-        outputContext.translate(garment.transform.localLeft + garment.transform.renderWidth / 2, garment.transform.localTop + garment.transform.renderHeight / 2)
-        outputContext.rotate(garment.transform.localRotation * Math.PI / 180)
-        outputContext.drawImage(image, -garment.transform.renderWidth / 2, -garment.transform.renderHeight / 2, garment.transform.renderWidth, garment.transform.renderHeight)
-        outputContext.restore()
+        const drawGarment = (context: CanvasRenderingContext2D) => {
+          context.save()
+          context.translate(garment.center.x + garment.group.offsetX, garment.center.y + garment.group.offsetY)
+          context.rotate(garment.group.rotation * Math.PI / 180)
+          context.scale(garment.group.scaleX, garment.group.scaleY)
+          context.translate(-garment.center.x, -garment.center.y)
+          context.translate(garment.transform.origin.x, garment.transform.origin.y)
+          context.transform(matrix[0], matrix[1], matrix[2], matrix[3], matrix[4], matrix[5])
+          context.translate(garment.transform.localLeft + garment.transform.renderWidth / 2, garment.transform.localTop + garment.transform.renderHeight / 2)
+          context.rotate(garment.transform.localRotation * Math.PI / 180)
+          context.drawImage(image, -garment.transform.renderWidth / 2, -garment.transform.renderHeight / 2, garment.transform.renderWidth, garment.transform.renderHeight)
+          context.restore()
+        }
+        drawGarment(outputContext)
+        if (selectionContext && selected && garment.group.setId === selected.setId && garment.group.category === selected.category && garment.component.id === selected.componentId) drawGarment(selectionContext)
       } catch { /* Keep rendering the remaining layers when one image is unavailable. */ }
     }
   }
-  return output.toDataURL('image/png')
+  return { imageUrl: output.toDataURL('image/png'), selectedUrl: selectionContext && selected ? selectionCanvas.toDataURL('image/png') : null }
 }
 
 async function renderArtwork(artwork: CatalogArtwork, maxSize: number): Promise<string | null> {
@@ -229,10 +239,12 @@ export function CustomizerPage() {
   const [wardrobeLoading, setWardrobeLoading] = useState(false)
   const [wardrobeDetails, setWardrobeDetails] = useState<Record<string, WardrobeSet>>({})
   const [wardrobeThumbnails, setWardrobeThumbnails] = useState<Record<string, string>>({})
-  const [selectedClothing, setSelectedClothing] = useState<{ setId: string; category: ClothingGroupCategory } | null>(null)
+  const [selectedClothing, setSelectedClothing] = useState<SelectedWardrobeComponent | null>(null)
   const [wardrobeTransformDraft, setWardrobeTransformDraft] = useState<Pick<CustomizerWardrobeGroup, 'offsetX' | 'offsetY' | 'scaleX' | 'scaleY' | 'rotation'> | null>(null)
   const [wardrobeHistory, setWardrobeHistory] = useState<WardrobeEditHistory>({ characterId: '', undo: [], redo: [] })
   const [selectedWardrobeUrl, setSelectedWardrobeUrl] = useState<string | null>(null)
+  const [selectedWardrobeHighlightUrl, setSelectedWardrobeHighlightUrl] = useState<string | null>(null)
+  const [wardrobeHighlightVisible, setWardrobeHighlightVisible] = useState(false)
   const [selectedArtworkProject, setSelectedArtworkProject] = useState<CatalogArtwork | null>(null)
   const [selectedSourceModelProject, setSelectedSourceModelProject] = useState<FabricatorProject | null>(null)
   const [selectedArtworkUrl, setSelectedArtworkUrl] = useState<string | null>(null)
@@ -245,7 +257,7 @@ export function CustomizerPage() {
   const wardrobeHistoryRef = useRef<WardrobeEditHistory>({ characterId: '', undo: [], redo: [] })
   const selectedCharacter = characters.find((character) => character.id === selectedCharacterId) ?? characters[0] ?? null
   const characterWardrobeGroups = selectedCharacter?.customization.wardrobeGroups ?? []
-  const characterWardrobeHydrationKey = characterWardrobeGroups.map((group) => `${group.modelSlot}:${group.setId}:${group.category}`).sort().join('|')
+  const characterWardrobeHydrationKey = characterWardrobeGroups.map((group) => `${group.modelSlot}:${group.setId}:${group.category}:${group.componentId ?? ''}`).sort().join('|')
   const visibleCharacters = characters
     .filter((character) => character.name.toLowerCase().includes(rosterQuery.trim().toLowerCase()))
 
@@ -347,17 +359,31 @@ export function CustomizerPage() {
   }, [catalogLoading, catalogModels, catalogPoses, selectedCharacter?.id])
 
   useEffect(() => {
-    const firstGroup = selectedCharacter?.customization.wardrobeGroups?.[0]
-    setSelectedClothing(firstGroup ? { setId: firstGroup.setId, category: firstGroup.category } : null)
+    setSelectedClothing(null)
+    setWardrobeHighlightVisible(false)
   }, [selectedCharacter?.id])
 
   useEffect(() => {
+    if (!selectedCharacter || selectedClothing) return
+    const firstGroup = selectedCharacter?.customization.wardrobeGroups?.[0]
+    const firstSet = firstGroup ? wardrobeDetails[`${firstGroup.modelSlot}:${firstGroup.setId}`] : undefined
+    const firstDefinition = firstGroup ? Object.values(clothingCategories).flat().find((item) => item.id === firstGroup.category) : undefined
+    const firstComponent = firstGroup && firstSet
+      ? firstGroup.componentId
+        ? firstSet.components.find((component) => component.id === firstGroup.componentId)
+        : firstSet.components.find((component) => firstDefinition?.source.includes(component.category))
+      : undefined
+    setSelectedClothing(firstGroup && firstComponent ? { setId: firstGroup.setId, category: firstGroup.category, componentId: firstComponent.id } : null)
+    setWardrobeHighlightVisible(Boolean(firstComponent))
+  }, [selectedCharacter?.id, selectedCharacter?.customization.wardrobeGroups, selectedClothing, wardrobeDetails])
+
+  useEffect(() => {
     const group = selectedClothing
-      ? selectedCharacter?.customization.wardrobeGroups?.find((item) => item.setId === selectedClothing.setId && item.category === selectedClothing.category)
+      ? selectedCharacter?.customization.wardrobeGroups?.find((item) => item.setId === selectedClothing.setId && item.category === selectedClothing.category && (item.componentId === selectedClothing.componentId || !item.componentId))
       : undefined
     wardrobeTransformDirty.current = false
     setWardrobeTransformDraft(group ? { offsetX: group.offsetX, offsetY: group.offsetY, scaleX: group.scaleX, scaleY: group.scaleY, rotation: group.rotation } : null)
-  }, [selectedCharacter?.id, selectedCharacter?.customization.wardrobeGroups, selectedClothing?.setId, selectedClothing?.category])
+  }, [selectedCharacter?.id, selectedCharacter?.customization.wardrobeGroups, selectedClothing?.setId, selectedClothing?.category, selectedClothing?.componentId])
 
   useEffect(() => {
     const next: WardrobeEditHistory = { characterId: activeModule === 'Roupas' && clothingSection === 'Customizar' ? selectedCharacter?.id ?? '' : '', undo: [], redo: [] }
@@ -470,6 +496,16 @@ export function CustomizerPage() {
         for (const { key, set } of restored) if (set) next[key] = set
         return next
       })
+      const migratedGroups = restored.flatMap(({ group, set }) => {
+        if (group.componentId || !set) return [group]
+        const definition = Object.values(clothingCategories).flat().find((item) => item.id === group.category)
+        const components = set.components.filter((component) => definition?.source.includes(component.category))
+        return components.length ? components.map((component) => ({ ...group, componentId: component.id })) : [group]
+      })
+      if (migratedGroups.some((group, index) => group.componentId !== groupsToRestore[index]?.componentId) || migratedGroups.length !== groupsToRestore.length) {
+        const current = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
+        await saveCharacter({ ...current, customization: { ...current.customization, wardrobeGroups: migratedGroups }, updatedAt: new Date().toISOString() })
+      }
       for (const { group, set } of restored) {
         if (!set) continue
         const category = Object.values(clothingCategories).flat().find((definition) => definition.id === group.category)
@@ -494,15 +530,15 @@ export function CustomizerPage() {
       return
     }
     const previewGroups = wardrobeTransformDraft && selectedClothing
-      ? groups.map((group) => group.setId === selectedClothing.setId && group.category === selectedClothing.category ? { ...group, ...wardrobeTransformDraft } : group)
+      ? groups.map((group) => group.setId === selectedClothing.setId && group.category === selectedClothing.category && (group.componentId === selectedClothing.componentId || !group.componentId) ? { ...group, componentId: selectedClothing.componentId, ...wardrobeTransformDraft } : group)
       : groups
-    void renderWardrobeOverlay(previewGroups, wardrobeDetails, selectedArtworkProject, selectedCatalogModelSlot, selectedSourceModelProject).then((url) => {
-      if (!cancelled) setSelectedWardrobeUrl(url)
+    void renderWardrobeOverlay(previewGroups, wardrobeDetails, selectedArtworkProject, selectedCatalogModelSlot, selectedSourceModelProject, wardrobeHighlightVisible ? selectedClothing : null).then((result) => {
+      if (!cancelled) { setSelectedWardrobeUrl(result.imageUrl); setSelectedWardrobeHighlightUrl(result.selectedUrl) }
     }).catch((reason: unknown) => {
       if (!cancelled) setCatalogError(reason instanceof Error ? reason.message : 'Não foi possível compor as roupas do personagem.')
     })
     return () => { cancelled = true }
-  }, [selectedCharacter?.id, selectedCharacter?.customization.wardrobeGroups, wardrobeDetails, selectedArtworkProject, selectedCatalogModelSlot, selectedSourceModelProject, selectedClothing?.setId, selectedClothing?.category, wardrobeTransformDraft])
+  }, [selectedCharacter?.id, selectedCharacter?.customization.wardrobeGroups, wardrobeDetails, selectedArtworkProject, selectedCatalogModelSlot, selectedSourceModelProject, selectedClothing?.setId, selectedClothing?.category, selectedClothing?.componentId, wardrobeTransformDraft, wardrobeHighlightVisible])
 
   function selectCharacter(id: string) {
     setSelectedCharacterId(id)
@@ -543,42 +579,58 @@ export function CustomizerPage() {
     await saveCharacter({ ...current, customization: { ...current.customization, ...changes }, updatedAt: new Date().toISOString() })
   }
 
-  function wardrobeGroupKey(group: Pick<CustomizerWardrobeGroup, 'modelSlot' | 'setId' | 'category'>) {
-    return `${group.modelSlot}:${group.setId}:${group.category}`
+  function wardrobeGroupKey(group: Pick<CustomizerWardrobeGroup, 'modelSlot' | 'setId' | 'category' | 'componentId'>) {
+    return `${group.modelSlot}:${group.setId}:${group.category}:${group.componentId ?? ''}`
   }
 
   async function applyWardrobeGroup(set: WardrobeSetSummary, category: ClothingGroupCategory) {
     if (!selectedCharacter) return
+    const detail = wardrobeDetails[`${set.modelSlot}:${set.id}`] ?? await window.desktop.loadWardrobeSet(set.modelSlot, set.id)
+    if (!detail) return
+    const accepted = clothingCategories[category === 'calca' || category === 'shorts' ? 'Inferior' : 'Superior'].find((item) => item.id === category)?.source ?? []
+    const components = detail.components.filter((component) => accepted.includes(component.category))
+    if (!components.length) return
     const current = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
     const groups = current.customization.wardrobeGroups ?? []
-    const existing = groups.find((group) => group.modelSlot === set.modelSlot && group.setId === set.id && group.category === category)
-    if (existing) {
-      setSelectedClothing({ setId: set.id, category })
+    const existing = groups.filter((group) => group.modelSlot === set.modelSlot && group.setId === set.id && group.category === category)
+    const existingIds = new Set(existing.flatMap((group) => group.componentId ? [group.componentId] : components.map((component) => component.id)))
+    const missingComponents = components.filter((component) => !existingIds.has(component.id))
+    if (existing.length && !missingComponents.length) {
+      const selected = existing.find((group) => group.componentId) ?? existing[0]
+      const componentId = selected.componentId ?? components[0].id
+      setSelectedClothing({ setId: set.id, category, componentId })
+      setWardrobeHighlightVisible(true)
       return
     }
-    const nextGroup: CustomizerWardrobeGroup = { modelSlot: set.modelSlot, setId: set.id, category, offsetX: 0, offsetY: 0, scaleX: 1, scaleY: 1, rotation: 0 }
-    setSelectedClothing({ setId: set.id, category })
+    const nextGroups = missingComponents.map((component): CustomizerWardrobeGroup => ({ modelSlot: set.modelSlot, setId: set.id, category, componentId: component.id, offsetX: 0, offsetY: 0, scaleX: 1, scaleY: 1, rotation: 0 }))
+    setSelectedClothing({ setId: set.id, category, componentId: missingComponents[0]?.id ?? components[0].id })
+    setWardrobeHighlightVisible(true)
     await saveCharacterCustomization((latest) => {
       const latestGroups = latest.wardrobeGroups ?? []
-      return { wardrobeGroups: [...latestGroups.filter((group) => group.category !== category || group.modelSlot !== set.modelSlot), nextGroup] }
+      return { wardrobeGroups: [...latestGroups.filter((group) => group.category !== category || group.modelSlot !== set.modelSlot || group.setId === set.id), ...nextGroups] }
     })
   }
 
-  async function removeWardrobeGroup(setId: string, category: ClothingGroupCategory) {
+  async function removeWardrobeGroup(setId: string, category: ClothingGroupCategory, componentId?: string) {
     if (!selectedCharacter) return
     const current = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
     const before = current.customization.wardrobeGroups ?? []
-    const after = before.filter((group) => !(group.setId === setId && group.category === category))
+    const after = before.filter((group) => !(group.setId === setId && group.category === category && (!componentId || !group.componentId || group.componentId === componentId)))
     recordWardrobeHistory(before, after)
     await saveCharacterCustomization({ wardrobeGroups: after })
-    if (selectedClothing?.setId === setId && selectedClothing.category === category) setSelectedClothing(null)
+    if (selectedClothing?.setId === setId && selectedClothing.category === category && (!componentId || selectedClothing.componentId === componentId)) {
+      const fallback = after.find((group) => group.modelSlot === selectedCatalogModelSlot)
+      setSelectedClothing(fallback?.componentId ? { setId: fallback.setId, category: fallback.category, componentId: fallback.componentId } : null)
+      setWardrobeHighlightVisible(Boolean(fallback?.componentId))
+    }
   }
 
   async function adjustWardrobeGroup(patch: Partial<Pick<CustomizerWardrobeGroup, 'offsetX' | 'offsetY' | 'scaleX' | 'scaleY' | 'rotation'>>) {
     if (!selectedCharacter || !selectedClothing) return
     const current = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
     const before = current.customization.wardrobeGroups ?? []
-    const after = before.map((group) => group.setId === selectedClothing.setId && group.category === selectedClothing.category ? { ...group, ...patch } : group)
+    const after = before.map((group) => group.setId === selectedClothing.setId && group.category === selectedClothing.category && (group.componentId === selectedClothing.componentId || !group.componentId) ? { ...group, componentId: selectedClothing.componentId, ...patch } : group)
+    setWardrobeHighlightVisible(false)
     recordWardrobeHistory(before, after)
     await saveCharacterCustomization({ wardrobeGroups: after })
   }
@@ -611,15 +663,17 @@ export function CustomizerPage() {
       : { characterId: current.characterId, undo: [...current.undo, currentGroups].slice(-20), redo: current.redo.slice(0, -1) }
     wardrobeHistoryRef.current = next
     setWardrobeHistory(next)
-    const selectedStillExists = selectedClothing && restored.some((group) => group.setId === selectedClothing.setId && group.category === selectedClothing.category)
+    const selectedStillExists = selectedClothing && restored.some((group) => group.setId === selectedClothing.setId && group.category === selectedClothing.category && (group.componentId === selectedClothing.componentId || !group.componentId))
     const fallback = restored[restored.length - 1]
-    if (!selectedStillExists) setSelectedClothing(fallback ? { setId: fallback.setId, category: fallback.category } : null)
+    if (!selectedStillExists) setSelectedClothing(fallback?.componentId ? { setId: fallback.setId, category: fallback.category, componentId: fallback.componentId } : null)
+    setWardrobeHighlightVisible(Boolean(selectedStillExists))
     await saveCharacter({ ...character, customization: { ...character.customization, wardrobeGroups: restored }, updatedAt: new Date().toISOString() })
   }
 
   function changeWardrobeTransform(patch: Partial<Pick<CustomizerWardrobeGroup, 'offsetX' | 'offsetY' | 'scaleX' | 'scaleY' | 'rotation'>>) {
     setWardrobeTransformDraft((current) => current ? { ...current, ...patch } : current)
     wardrobeTransformDirty.current = true
+    setWardrobeHighlightVisible(false)
   }
 
   function commitWardrobeTransform() {
@@ -632,7 +686,8 @@ export function CustomizerPage() {
     if (activeModule !== 'Roupas' || clothingSection !== 'Customizar' || !selectedCharacter || !selectedClothing || !selectedArtworkProject) return
     const current = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
     const beforeGroups = (current.customization.wardrobeGroups ?? []).map((item) => ({ ...item }))
-    const group = beforeGroups.find((item) => item.setId === selectedClothing.setId && item.category === selectedClothing.category)
+    const group = beforeGroups.find((item) => item.setId === selectedClothing.setId && item.category === selectedClothing.category && (item.componentId === selectedClothing.componentId || !item.componentId))
+    setWardrobeHighlightVisible(false)
     if (!group) return
     const scene = event.currentTarget.closest('.stage-scene')
     const rect = scene?.getBoundingClientRect()
@@ -761,13 +816,26 @@ export function CustomizerPage() {
   const availablePoses = catalogPoses.filter((pose): pose is NonNullable<typeof pose> => pose?.sourceModelSlot === selectedCatalogModelSlot)
   const selectedModelName = availableModels.find((model) => model.slot === selectedCatalogModelSlot)?.name
   const wardrobeGroupDefinitions = clothingSection === 'Customizar' ? [] : clothingCategories[clothingSection]
-  const activeWardrobeGroup = selectedClothing ? (selectedCharacter?.customization.wardrobeGroups ?? []).find((group) => group.setId === selectedClothing.setId && group.category === selectedClothing.category) : undefined
-  const activeWardrobeTransform = wardrobeTransformDraft ?? activeWardrobeGroup
-  const wardrobePreviewDraggable = activeModule === 'Roupas' && clothingSection === 'Customizar' && Boolean(activeWardrobeGroup)
   const wardrobeCategoryLabels: Record<ClothingGroupCategory, string> = { calca: 'Calças', shorts: 'Shorts', 'manga-inferior': 'Mangas inferiores', 'manga-superior': 'Mangas superiores', camisa: 'Camisas' }
-  const appliedWardrobeGroups = [...(selectedCharacter?.customization.wardrobeGroups ?? [])]
+  const activeWardrobeGroup = selectedClothing ? (selectedCharacter?.customization.wardrobeGroups ?? []).find((group) => group.setId === selectedClothing.setId && group.category === selectedClothing.category && (group.componentId === selectedClothing.componentId || !group.componentId)) : undefined
+  const activeWardrobeTransform = wardrobeTransformDraft ?? activeWardrobeGroup
+  const activeWardrobeComponent = selectedClothing ? wardrobeDetails[`${activeWardrobeGroup?.modelSlot ?? selectedCatalogModelSlot}:${selectedClothing.setId}`]?.components.find((component) => component.id === selectedClothing.componentId) : undefined
+  const activeWardrobePartName = selectedSourceModelProject?.parts.find((part) => part.id === activeWardrobeComponent?.attachedPartId)?.name ?? activeWardrobeComponent?.name ?? 'Peça'
+  const wardrobePreviewDraggable = activeModule === 'Roupas' && clothingSection === 'Customizar' && Boolean(activeWardrobeGroup)
+  const appliedWardrobeEntries = [...(selectedCharacter?.customization.wardrobeGroups ?? [])]
     .filter((group) => group.modelSlot === selectedCatalogModelSlot)
-    .sort((a, b) => ['calca', 'shorts', 'manga-inferior', 'manga-superior', 'camisa'].indexOf(a.category) - ['calca', 'shorts', 'manga-inferior', 'manga-superior', 'camisa'].indexOf(b.category))
+    .flatMap((group) => {
+      const set = wardrobeDetails[`${group.modelSlot}:${group.setId}`]
+      const definition = Object.values(clothingCategories).flat().find((item) => item.id === group.category)
+      if (!set || !definition) return []
+      const components = set.components.filter((component) => definition.source.includes(component.category) && (!group.componentId || group.componentId === component.id))
+      return components.map((component) => {
+        const bodyPart = selectedSourceModelProject?.parts.find((part) => part.id === component.attachedPartId)
+        const key = `${group.modelSlot}:${group.setId}:${group.category}:${component.id}`
+        return { group, component, key, bodyPartName: bodyPart?.name ?? component.name }
+      })
+    })
+    .sort((a, b) => ['calca', 'shorts', 'manga-inferior', 'manga-superior', 'camisa'].indexOf(a.group.category) - ['calca', 'shorts', 'manga-inferior', 'manga-superior', 'camisa'].indexOf(b.group.category))
 
   if (activeModule !== null && modules.some((module) => module.name === activeModule)) {
     return (
@@ -789,7 +857,8 @@ export function CustomizerPage() {
                   <button aria-label="Afastar" type="button"><Icon name="zoomOut" /></button>
                 </div>
                 {selectedArtworkUrl ? <img className="customizer-selected-artwork" src={selectedArtworkUrl} alt={selectedArtworkLabel} /> : !previewLoading && <div className="customizer-no-artwork"><Icon name="body" /><span>Nenhum modelo salvo para mostrar.</span></div>}
-                {selectedWardrobeUrl && selectedArtworkUrl && <img className={'customizer-wardrobe-overlay' + (wardrobePreviewDraggable ? ' draggable' : '')} src={selectedWardrobeUrl} alt="Roupas do personagem" draggable={false} onPointerDown={wardrobePreviewDraggable ? beginWardrobeDrag : undefined} onPointerMove={wardrobePreviewDraggable ? moveWardrobeDrag : undefined} onPointerUp={wardrobePreviewDraggable ? finishWardrobeDrag : undefined} onPointerCancel={wardrobePreviewDraggable ? finishWardrobeDrag : undefined} />}
+              {selectedWardrobeUrl && selectedArtworkUrl && <img className={'customizer-wardrobe-overlay' + (wardrobePreviewDraggable ? ' draggable' : '')} src={selectedWardrobeUrl} alt="Roupas do personagem" draggable={false} onPointerDown={wardrobePreviewDraggable ? beginWardrobeDrag : undefined} onPointerMove={wardrobePreviewDraggable ? moveWardrobeDrag : undefined} onPointerUp={wardrobePreviewDraggable ? finishWardrobeDrag : undefined} onPointerCancel={wardrobePreviewDraggable ? finishWardrobeDrag : undefined} />}
+              {wardrobeHighlightVisible && selectedWardrobeHighlightUrl && <img className="customizer-wardrobe-selection-halo" src={selectedWardrobeHighlightUrl} alt="Peça de roupa selecionada" draggable={false} />}
                 {previewLoading && <div className="customizer-preview-loading">Carregando prévia…</div>}
                 <div className="stage-caption"><span>{String(selectedCatalogModelSlot ?? 1).padStart(2, '0')}</span><i />{selectedArtworkLabel || selectedCharacter?.name || 'Personagem'}<small>{selectedArtworkUrl ? 'DO CATÁLOGO' : 'PERSONAGEM ATIVO'}</small></div>
               </div>
@@ -867,22 +936,21 @@ export function CustomizerPage() {
                       {clothingSection === 'Customizar' ? <div className="customizer-wardrobe-editor">
                         <section className="customizer-wardrobe-applied" aria-label="Roupas aplicadas neste personagem">
                           <header><h3>Itens selecionados</h3><small>De baixo para cima</small></header>
-                          {appliedWardrobeGroups.length === 0 ? <p className="customizer-wardrobe-empty">Escolha roupas em Superior ou Inferior para começar.</p>
-                            : <div className="customizer-wardrobe-applied-grid">{appliedWardrobeGroups.map((group) => {
-                              const key = `${group.modelSlot}:${group.setId}:${group.category}`
-                              const selected = selectedClothing?.setId === group.setId && selectedClothing.category === group.category
+                          {appliedWardrobeEntries.length === 0 ? <p className="customizer-wardrobe-empty">Escolha roupas em Superior ou Inferior para começar.</p>
+                            : <div className="customizer-wardrobe-applied-grid">{appliedWardrobeEntries.map(({ group, component, key, bodyPartName }) => {
+                              const selected = selectedClothing?.setId === group.setId && selectedClothing.category === group.category && selectedClothing.componentId === component.id
                               return <article className={'customizer-wardrobe-applied-item' + (selected ? ' selected' : '')} key={key}>
-                                <button onClick={() => setSelectedClothing({ setId: group.setId, category: group.category })} aria-pressed={selected} type="button">
-                                  {wardrobeThumbnails[key] ? <img src={wardrobeThumbnails[key]} alt="" /> : <span><Icon name="shirt" /></span>}
-                                  <b>{wardrobeCategoryLabels[group.category]}</b>
+                                <button onClick={() => { setSelectedClothing({ setId: group.setId, category: group.category, componentId: component.id }); setWardrobeHighlightVisible(true) }} aria-pressed={selected} title={`${wardrobeCategoryLabels[group.category]} · ${bodyPartName}`} type="button">
+                                  <img src={component.dataUrl} alt="" />
+                                  <span className="customizer-wardrobe-piece-label"><b>{wardrobeCategoryLabels[group.category]}</b><small>{bodyPartName}</small></span>
                                 </button>
-                                <button className="customizer-wardrobe-applied-remove" onClick={() => void removeWardrobeGroup(group.setId, group.category)} aria-label={`Remover ${wardrobeCategoryLabels[group.category]}`} title="Remover" type="button"><Icon name="trash" /></button>
+                                <button className="customizer-wardrobe-applied-remove" onClick={() => void removeWardrobeGroup(group.setId, group.category, component.id)} aria-label={`Remover ${wardrobeCategoryLabels[group.category]} · ${bodyPartName}`} title="Remover" type="button"><Icon name="trash" /></button>
                               </article>
                             })}</div>}
                         </section>
                         <section className="customizer-wardrobe-controls" aria-label="Controles da roupa selecionada">
                           {activeWardrobeGroup && activeWardrobeTransform ? <>
-                            <header><h3>{wardrobeCategoryLabels[activeWardrobeGroup.category]}</h3><small>Esta peça e só este conjunto serão alterados.</small></header>
+                            <header><h3>{wardrobeCategoryLabels[activeWardrobeGroup.category]} · {activeWardrobePartName}</h3><small>Esta peça e este personagem serão alterados.</small></header>
                             <div className="customizer-wardrobe-position-grid">
                               {([['offsetX', 'Posição X'], ['offsetY', 'Posição Y']] as const).map(([field, label]) => <label key={field}>{label}<input type="number" step="1" value={Number(activeWardrobeTransform[field].toFixed(1))} onChange={(event) => changeWardrobeTransform({ [field]: Number(event.target.value) })} onBlur={commitWardrobeTransform} onKeyDown={(event) => { if (event.key === 'Enter') { commitWardrobeTransform(); event.currentTarget.blur() } }} /></label>)}
                             </div>
@@ -991,7 +1059,8 @@ export function CustomizerPage() {
                 <button aria-label="Afastar"><Icon name="zoomOut" /></button>
               </div>
               {selectedArtworkUrl ? <img className="customizer-selected-artwork" src={selectedArtworkUrl} alt={selectedArtworkLabel} /> : !previewLoading && <div className="customizer-no-artwork"><Icon name="body" /><span>{selectedCharacter ? 'Importe um modelo no Fabricador Dev para começar.' : 'Crie um personagem para começar a personalizar.'}</span></div>}
-              {selectedWardrobeUrl && selectedArtworkUrl && <img className={'customizer-wardrobe-overlay' + (wardrobePreviewDraggable ? ' draggable' : '')} src={selectedWardrobeUrl} alt="Roupas do personagem" draggable={false} onPointerDown={wardrobePreviewDraggable ? beginWardrobeDrag : undefined} onPointerMove={wardrobePreviewDraggable ? moveWardrobeDrag : undefined} onPointerUp={wardrobePreviewDraggable ? finishWardrobeDrag : undefined} onPointerCancel={wardrobePreviewDraggable ? finishWardrobeDrag : undefined} />}
+                {selectedWardrobeUrl && selectedArtworkUrl && <img className={'customizer-wardrobe-overlay' + (wardrobePreviewDraggable ? ' draggable' : '')} src={selectedWardrobeUrl} alt="Roupas do personagem" draggable={false} onPointerDown={wardrobePreviewDraggable ? beginWardrobeDrag : undefined} onPointerMove={wardrobePreviewDraggable ? moveWardrobeDrag : undefined} onPointerUp={wardrobePreviewDraggable ? finishWardrobeDrag : undefined} onPointerCancel={wardrobePreviewDraggable ? finishWardrobeDrag : undefined} />}
+                {wardrobeHighlightVisible && selectedWardrobeHighlightUrl && <img className="customizer-wardrobe-selection-halo" src={selectedWardrobeHighlightUrl} alt="Peça de roupa selecionada" draggable={false} />}
               {previewLoading && <div className="customizer-preview-loading">Carregando prévia…</div>}
               <div className="stage-caption"><span>{String(selectedCatalogModelSlot ?? 1).padStart(2, '0')}</span><i />{selectedArtworkLabel || selectedCharacter?.name || 'Personagem'}<small>{selectedArtworkUrl ? 'MODELO DE REFERÊNCIA' : 'SEM MODELO'}</small></div>
             </div>
