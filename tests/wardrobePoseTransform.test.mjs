@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
-import { applyAffine, cssAffine, invertAffine, kneeBand, mapWardrobeComponentToPose, multiplyAffine, poseDeltaToSource, sourceSheetToPose } from '../src/renderer/src/features/fabricator/wardrobe/poseTransform.ts'
+import { applyAffine, cssAffine, invertAffine, mapWardrobeComponentToPose, multiplyAffine, poseDeltaToSource, sourceSheetToPose } from '../src/renderer/src/features/fabricator/wardrobe/poseTransform.ts'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const fixture = (path) => JSON.parse(readFileSync(resolve(root, 'app-data/fabricator', path), 'utf8'))
@@ -81,29 +81,14 @@ test('drag inverse is exactly the inverse of source-to-pose linear mapping', () 
   }
 })
 
-test('knee bands cover neutral seams without resizing the original garment', () => {
-  const thighs = wardrobe.components.filter((p) => p.category === 'calca-coxa')
-  const calves = wardrobe.components.filter((p) => p.category === 'calca-canela')
-  for (const thigh of thighs) {
-    const childJoint = neutral.joints.find((joint) => joint.parentPartId === thigh.attachedPartId)
-    const calf = calves.find((part) => part.attachedPartId === childJoint?.childPartId)
-    assert.ok(calf, 'Every fitted thigh has a linked calf')
-    const thighBand = kneeBand(thigh, 18), calfBand = kneeBand(calf, 18)
-    assert.ok(thighBand && calfBand)
-    assert.ok(thighBand.shiftY < -18)
-    assert.ok(calfBand.shiftY < -18)
-    assert.equal(thighBand.clipTop, thigh.height / 2)
-    assert.equal(calfBand.clipBottom, calf.height / 2)
-    const upper = mapWardrobeComponentToPose(thigh, sourceAt(thigh), poseAt(thigh, neutral))
-    const lower = mapWardrobeComponentToPose(calf, sourceAt(calf), poseAt(calf, neutral))
-    const upperEnd = applyAffine(upper, { x: thigh.width / 2, y: thigh.height })
-    const lowerStart = applyAffine(lower, { x: calf.width / 2, y: 0 })
-    // The attached limbs in the user's neutral fixture have a small raw seam gap.
-    const gap = lowerStart.y - upperEnd.y
-    assert.ok(gap > 0 && gap < 36, `Unexpected knee seam gap ${gap}`)
-    assert.ok(upperEnd.y - thighBand.shiftY >= lowerStart.y + calfBand.shiftY, 'Knee bands must overlap')
-    assert.equal(thigh.height, 280)
-    assert.equal(calf.height, 352)
+test('calf and thigh crops retain their independently fitted exact geometry', () => {
+  for (const garment of wardrobe.components.filter((piece) => piece.category.startsWith('calca-'))) {
+    const pose = poseAt(garment, neutral)
+    const mapping = mapWardrobeComponentToPose(garment, sourceAt(garment), pose)
+    const expected = sourceSheetToPose(sourceAt(garment), pose)
+    // The placed crop is transformed once: no seam filler, no auto-sizing.
+    pointNear(applyAffine(mapping, { x: 0, y: 0 }), applyAffine(expected, { x: garment.x, y: garment.y }), garment.name)
+    assert.ok(garment.width > 0 && garment.height > 0)
   }
 })
 
@@ -119,9 +104,6 @@ test('CSS zoom applies once, and transformations never change model, pose or war
     approximate(numbers[3], matrix.d, 'linear zoom Y')
     approximate(numbers[4], matrix.e * .4, 'translate zoom X')
     approximate(numbers[5], matrix.f * .4, 'translate zoom Y')
-    const shifted = cssAffine(matrix, .4, 18).slice(7, -1).split(',').map(Number)
-    approximate(shifted[4], (matrix.e + matrix.c * 18) * .4, 'knee X shift')
-    approximate(shifted[5], (matrix.f + matrix.d * 18) * .4, 'knee Y shift')
     // Exercise inversion/composition as well: no hidden mutation or rounding.
     const product = multiplyAffine(matrix, invertAffine(matrix))
     pointNear(applyAffine(product, { x: 19, y: 37 }), { x: 19, y: 37 }, garment.name + ' identity')
