@@ -1,5 +1,5 @@
 import { app, BrowserWindow, dialog, ipcMain, type IpcMainInvokeEvent } from 'electron'
-import { mkdir, readFile, writeFile, readdir, unlink, rename, stat, access, rm, copyFile } from 'node:fs/promises'
+import { mkdir, readFile, writeFile, readdir, unlink, rename, stat, access, rm, copyFile, cp } from 'node:fs/promises'
 import { basename, dirname, extname, join, resolve } from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
@@ -350,6 +350,90 @@ async function readPoseProject(modelSlot: number, slot: number): Promise<Fabrica
   }
 }
 
+
+/**
+ * Slot 01 belongs to the assembled source model. A user's pre-existing pose in
+ * slot 01 is copied to the first unused slot BEFORE publishing the base pose.
+ * This is intentionally lazy: reading the pose library syncs the latest saved
+ * model snapshot, never an intermediate drag from the model editor.
+ */
+async function ensureInitialModelPose(modelSlot: number): Promise<void> {
+  let model: FabricatorProjectSave
+  try {
+    model = JSON.parse(await readFile(join(slotPath(modelSlot), 'project.json'), 'utf8')) as FabricatorProjectSave
+  } catch (reason) {
+    if ((reason as NodeJS.ErrnoException).code === 'ENOENT') return
+    throw reason
+  }
+  if (!model.parts?.length || model.slot !== modelSlot || model.schemaVersion !== 1) return
+  const firstFolder = poseSlotPath(modelSlot, 1)
+  let first: FabricatorPoseSave | null = null
+  try {
+    first = JSON.parse(await readFile(join(firstFolder, 'pose.json'), 'utf8')) as FabricatorPoseSave
+  } catch (reason) {
+    if ((reason as NodeJS.ErrnoException).code !== 'ENOENT') throw reason
+  }
+  if (first?.isInitialModelPose && first.sourceModelUpdatedAt === model.updatedAt) return
+
+  if (first && !first.isInitialModelPose) {
+    let targetSlot: number | null = null
+    for (let slot = 2; slot <= poseSlotCount; slot += 1) {
+      try { await access(poseSlotPath(modelSlot, slot)) }
+      catch (reason) {
+        if ((reason as NodeJS.ErrnoException).code !== 'ENOENT') throw reason
+        targetSlot = slot
+        break
+      }
+    }
+    if (!targetSlot) throw new Error('Não há slot livre para preservar a pose 01. Libere um slot antes de criar a pose da montagem.')
+    const backupFolder = poseSlotPath(modelSlot, targetSlot)
+    await cp(firstFolder, backupFolder, { recursive: true, force: false, errorOnExist: true })
+    const moved = { ...first, slot: targetSlot }
+    const backupTemp = join(backupFolder, 'pose.json.tmp')
+    await writeFile(backupTemp, JSON.stringify(moved), 'utf8')
+    await rename(backupTemp, join(backupFolder, 'pose.json'))
+    // A user editing the old slot 01 must continue editing its moved copy.
+    const draftFile = join(poseDraftPath(modelSlot), 'draft.json')
+    try {
+      const draft = JSON.parse(await readFile(draftFile, 'utf8')) as FabricatorPoseDraftSave
+      if (draft.editingSlot === 1) {
+        const temp = draftFile + '.tmp'
+        await writeFile(temp, JSON.stringify({ ...draft, editingSlot: targetSlot }), 'utf8')
+        await rename(temp, draftFile)
+      }
+    } catch (reason) {
+      if ((reason as NodeJS.ErrnoException).code !== 'ENOENT') throw reason
+    }
+  }
+
+  const parts = model.parts.map(({ chromaBaseSaved: _chromaBaseSaved, ...part }) => part)
+  const basePose: FabricatorPoseSave = {
+    schemaVersion: 1,
+    slot: 1,
+    isInitialModelPose: true,
+    name: `Montagem original · ${model.name}`,
+    sourceModelSlot: modelSlot,
+    sourceModelName: model.name,
+    sourceModelUpdatedAt: model.updatedAt,
+    width: model.width,
+    height: model.height,
+    parts,
+    joints: model.joints,
+    layerOrder: model.layerOrder ?? parts.map((part) => part.id),
+    hiddenPartIds: model.hiddenPartIds ?? [],
+    updatedAt: new Date().toISOString()
+  }
+  const partsFolder = join(firstFolder, 'parts')
+  await mkdir(partsFolder, { recursive: true })
+  // The original model PNGs are authoritative, including after model updates.
+  for (const part of parts) {
+    await copyFile(join(slotPath(modelSlot), 'parts', `${part.id}.png`), join(partsFolder, `${part.id}.png`))
+  }
+  const temporary = join(firstFolder, 'pose.json.tmp')
+  await writeFile(temporary, JSON.stringify(basePose), 'utf8')
+  await rename(temporary, join(firstFolder, 'pose.json'))
+}
+
 async function writePoseDraft(modelSlot: number, draft: FabricatorPoseDraftSave, assets: FabricatorAssetSave[]): Promise<void> {
   if (!isValidModelSlot(modelSlot) || draft.project.sourceModelSlot !== modelSlot) throw new Error('Modelo do rascunho inválido.')
   if (draft.editingSlot !== null && !isValidPoseSlot(draft.editingSlot)) throw new Error('Rascunho de pose inválido.')
@@ -494,6 +578,7 @@ async function registerFabricatorHandlers(): Promise<void> {
     const modelSlots = requestedModelSlot === undefined ? Array.from({ length: slotCount }, (_, index) => index + 1) : [requestedModelSlot]
     const allSlots: FabricatorPoseSummary[] = []
     for (const modelSlot of modelSlots) {
+      await queuePoseWrite(() => ensureInitialModelPose(modelSlot))
       for (let slot = 1; slot <= poseSlotCount; slot += 1) {
         try {
           const manifest = JSON.parse(await readFile(join(poseSlotPath(modelSlot, slot), 'pose.json'), 'utf8')) as FabricatorPoseSave
