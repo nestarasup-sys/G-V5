@@ -133,7 +133,7 @@ export function FaceWorkspace() {
 
   function create() {
     if (!head || dirty && !window.confirm('Descartar alterações não salvas deste rosto?')) return
-    setDraft(emptyFace(modelSlot, head)); setDirty(false); setSelected('eye-left'); setEyeState(0); setNotice('Novo rosto. Importe uma folha para começar.')
+    setDraft(emptyFace(modelSlot, head)); setDirty(false); setSelected('eye-left'); setEyeState(0); setNoseMode('auto'); setNotice('Novo rosto. Importe uma folha para começar.')
   }
 
   async function open(id: string) {
@@ -142,7 +142,7 @@ export function FaceWorkspace() {
     try {
       const loaded = await window.desktop.loadFaceSet(modelSlot, id)
       if (!loaded) throw new Error('Rosto não encontrado.')
-      setDraft(loaded); setDirty(false); setSelected('eye-left'); setEyeState(0); setMouthOpen(false)
+      setDraft(loaded); setDirty(false); setSelected('eye-left'); setEyeState(0); setMouthOpen(false); setNoseMode('auto')
     } catch (reason) { setError(String(reason)) } finally { setBusy(false) }
   }
 
@@ -177,10 +177,11 @@ export function FaceWorkspace() {
     setBusy(true); setError('')
     try {
       const oldCount = draft.pieces.filter((piece) => piece.sheet === kind).length
-      const changedNoseLayout = kind === 'nose' && (mode === 'one' && oldCount === 6 || mode === 'six' && oldCount === 1)
+      const effectiveMode = kind === 'nose' && mode === 'auto' ? oldCount === 6 ? 'six' : oldCount === 1 ? 'one' : 'auto' : mode
+      const changedNoseLayout = kind === 'nose' && (effectiveMode === 'one' && oldCount === 6 || effectiveMode === 'six' && oldCount === 1)
       const crops = changedNoseLayout ? {} : Object.fromEntries(draft.pieces.filter((piece) => piece.sheet === kind).map((piece) => [piece.id, piece.crop])) as Record<string, FaceCrop>
       if (updatedCrop && selectedPiece?.sheet === kind) crops[selectedPiece.id] = updatedCrop
-      const processed = await processSheet(kind, sheet.dataUrl, tolerance, crops, mode)
+      const processed = await processSheet(kind, sheet.dataUrl, tolerance, crops, effectiveMode)
       changeDraft((current) => ({ ...current, sheets: { ...current.sheets, [kind]: { ...sheet, tolerance } }, pieces: [...current.pieces.filter((piece) => piece.sheet !== kind), ...processed.pieces], selectedNose: kind === 'nose' ? 0 : current.selectedNose }))
       setNotice('Recortes atualizados. Revise a prévia antes de salvar.')
     } catch (reason) { setError(String(reason)) } finally { setBusy(false) }
