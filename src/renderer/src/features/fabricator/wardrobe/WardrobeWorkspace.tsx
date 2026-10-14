@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPoi
 import type { FabricatorHistoryState, FabricatorPose, FabricatorPoseSummary, FabricatorProject, FabricatorSlotSummary, WardrobeCategory, WardrobeComponent, WardrobeSet, WardrobeSetSave, WardrobeSetSummary } from '../../../../../shared/fabricator'
 import { Icon } from '../../../ui/components/Icon'
 import { orderedParts, partJointAnchor, sourcePointFromCanvas } from '../models/rig'
-import { cssAffine, kneeBand, mapWardrobeComponentToPose, poseDeltaToSource } from './poseTransform'
+import { cssAffine, mapWardrobeComponentToPose, poseDeltaToSource } from './poseTransform'
 
 type WorkerPiece = Omit<WardrobeComponent, 'category' | 'attachedPartId' | 'rotation' | 'dataUrl'> & { png: ArrayBuffer }
 type WorkerMessage = { type: 'complete'; id: number; width: number; height: number; pieces: WorkerPiece[] } | { type: 'error'; id: number; message: string }
@@ -363,15 +363,6 @@ export function WardrobeWorkspace() {
           const testOffset = testDragOffsets[component.id] ?? { x: 0, y: 0 }
           const componentX = component.x + (testPose ? testOffset.x : 0)
           const componentY = component.y + (testPose ? testOffset.y : 0)
-          // A knee must be paired by the rig, never by a matching category on the other leg.
-          const pairedKnee = Boolean(testPose?.joints.some((joint) =>
-            component.category === 'calca-coxa'
-              ? joint.parentPartId === component.attachedPartId && draft.components.some((other) => other.category === 'calca-canela' && other.attachedPartId === joint.childPartId)
-              : component.category === 'calca-canela'
-                ? joint.childPartId === component.attachedPartId && draft.components.some((other) => other.category === 'calca-coxa' && other.attachedPartId === joint.parentPartId)
-                : false
-          ))
-          const band = testPose && pairedKnee ? kneeBand(component, 18) : null
           const poseMatrix = testPose && modelBone?.sourceTransform && poseBone
             ? mapWardrobeComponentToPose({ ...component, x: componentX, y: componentY }, modelBone, poseBone)
             : null
@@ -385,7 +376,6 @@ export function WardrobeWorkspace() {
           const dimensions = { position: 'absolute' as const, left: 0, top: 0, width: component.width * scale, height: component.height * scale, transformOrigin: '0 0' }
           return <div key={component.id} className="wardrobe-pose-garment" style={{ inset: 0, zIndex, pointerEvents: 'none' }}>
             <img className={imageClassName} src={component.dataUrl} alt={component.name} title={imageTitle} draggable={false} onClick={() => setSelectedId(component.id)} onPointerDown={(event) => beginPieceDrag(event, component)} onPointerMove={movePieceDrag} onPointerUp={finishPieceDrag} onPointerCancel={finishPieceDrag} style={{ ...dimensions, pointerEvents: 'auto', transform: cssAffine(poseMatrix, scale) }} />
-            {band && <img className="wardrobe-knee-band" src={component.dataUrl} alt="" aria-hidden="true" draggable={false} style={{ ...dimensions, pointerEvents: 'none', transform: cssAffine(poseMatrix, scale, band.shiftY, band.scaleY), clipPath: `inset(${band.clipTop * scale}px 0px ${band.clipBottom * scale}px 0px)` }} />}
           </div>
         })}
       </div>}{!model && <div className="wardrobe-empty"><Icon name="shirt" /><strong>Selecione um modelo salvo</strong><small>O modelo será usado como guia na prévia de encaixe.</small></div>}{model && !draft && !testPose && <div className="wardrobe-stage-hint">Importe uma folha para começar · fundo transparente preservado</div>}{testPose && <div className="wardrobe-stage-hint wardrobe-test-hint">Teste temporário · a pose salva não será alterada</div>}{calibratingPartId && <div className="wardrobe-stage-hint wardrobe-calibration-hint">Clique na junta de “{model?.parts.find((part) => part.id === calibratingPartId)?.name}” na folha original</div>}<div className="wardrobe-zoom"><span>{Math.round(zoom * 100)}%</span><button onClick={() => setZoom((value) => Math.min(2.2, value + .1))} type="button">+</button><button onClick={() => setZoom((value) => Math.max(.55, value - .1))} type="button">−</button></div>{processing && <div className="wardrobe-processing"><span className="model-spinner" />Detectando peças transparentes…</div>}</div><footer>{testPose ? 'Arraste as roupas para testar o encaixe. Use “Sair do teste” para voltar à folha original.' : 'A posição original da folha é preservada. Arraste cada peça para encaixar; use os controles rápidos para ajustar.'}</footer></section>
