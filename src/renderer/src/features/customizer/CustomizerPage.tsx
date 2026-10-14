@@ -32,7 +32,6 @@ const modules: { name: string; icon: IconName; detail: string }[] = [
 export function CustomizerPage() {
   const [selectedIndex, setSelectedIndex] = useState(0)
   const [activeModule, setActiveModule] = useState<string | null>(null)
-  const [selectedModelOption, setSelectedModelOption] = useState<string | null>(null)
   const [previewBackground, setPreviewBackground] = usePreviewBackground()
   const [rosterQuery, setRosterQuery] = useState('')
   const selectedCharacter = characters[selectedIndex]
@@ -45,7 +44,7 @@ export function CustomizerPage() {
     setActiveModule(null)
   }
 
-  if (activeModule === 'Modelos') {
+  if (activeModule !== null && modules.some((module) => module.name === activeModule)) {
     return (
       <div className="customizer-models-view">
         <div className="customizer-models-columns">
@@ -73,10 +72,10 @@ export function CustomizerPage() {
             <div className="customizer-models-options-grid">
               {modules.map((module, index) => (
                 <button
-                  className={`customizer-model-option${selectedModelOption === module.name ? ' selected' : ''}`}
+                  className={`customizer-model-option${activeModule === module.name ? ' selected' : ''}`}
                   key={module.name}
-                  onClick={() => setSelectedModelOption((current) => current === module.name ? null : module.name)}
-                  aria-pressed={selectedModelOption === module.name}
+                  onClick={() => setActiveModule(module.name)}
+                  aria-pressed={activeModule === module.name}
                   title={module.detail}
                   type="button"
                 >
@@ -176,21 +175,18 @@ export function CustomizerPage() {
             <span className="module-count">09</span>
           </div>
           <div className="module-grid">
-            {modules.map((module, index) => {
-              const selectionAllowed = module.name !== 'Modelos' && module.name !== 'Poses'
-              return (
+            {modules.map((module, index) => (
               <button
                 className="module-card"
                 key={module.name}
-                onClick={() => setActiveModule(module.name === 'Modelos' ? 'Modelos' : selectionAllowed ? module.name : null)}
+                onClick={() => setActiveModule(module.name)}
                 title={module.detail}
               >
                 <span className="module-icon"><Icon name={module.icon} /></span>
                 <span className="module-name">{module.name}</span>
                 {index === 0 && <span className="module-new">NOVO</span>}
               </button>
-              )
-            })}
+            ))}
           </div>
           <button className="help-link" onClick={() => setActiveModule('Central de ajuda')}><span className="help-icon">?</span><span><strong>Precisa de uma ideia?</strong><small>Explore o guia rápido do Nymi</small></span><Icon name="chevronRight" /></button>
         </aside>
