@@ -24,3 +24,17 @@ jobs:
         run: npm run typecheck
       - name: Electron renderer and main build
         run: npm run build
+      - name: Install virtual display and Electron UI driver
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq xvfb libgtk-3-0 libnss3 libxss1 libxtst6 libasound2t64 libgbm1
+          npm install --no-save playwright@1.55.1
+      - name: Launch Electron and screenshot the real test poses
+        run: xvfb-run --auto-servernum node tests/wardrobeElectron.smoke.mjs
+      - name: Upload visual comparison screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: wardrobe-visual-evidence
+          path: wardrobe-screenshots/
+          if-no-files-found: ignore
