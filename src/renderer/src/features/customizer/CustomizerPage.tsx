@@ -32,6 +32,7 @@ const modules: { name: string; icon: IconName; detail: string }[] = [
 export function CustomizerPage() {
   const [selectedIndex, setSelectedIndex] = useState(0)
   const [activeModule, setActiveModule] = useState<string | null>(null)
+  const [selectedModelOption, setSelectedModelOption] = useState<string | null>(null)
   const [previewBackground, setPreviewBackground] = usePreviewBackground()
   const [rosterQuery, setRosterQuery] = useState('')
   const selectedCharacter = characters[selectedIndex]
@@ -70,7 +71,24 @@ export function CustomizerPage() {
               </div>
             </div>
           </section>
-          <section className="customizer-models-empty" aria-label="Área de modelos" />
+          <section className="customizer-models-options" aria-label="Opções de personalização">
+            <div className="customizer-models-options-grid">
+              {modules.map((module, index) => (
+                <button
+                  className={`customizer-model-option${selectedModelOption === module.name ? ' selected' : ''}`}
+                  key={module.name}
+                  onClick={() => setSelectedModelOption((current) => current === module.name ? null : module.name)}
+                  aria-pressed={selectedModelOption === module.name}
+                  title={module.detail}
+                  type="button"
+                >
+                  <span className="customizer-model-option-icon"><Icon name={module.icon} /></span>
+                  <span className="customizer-model-option-name">{module.name}</span>
+                  {index === 0 && <span className="customizer-model-option-new">NOVO</span>}
+                </button>
+              ))}
+            </div>
+          </section>
         </div>
       </div>
     )
