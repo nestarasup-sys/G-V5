@@ -223,12 +223,13 @@ export function CustomizerPage() {
   const [selectedCatalogPoseSlot, setSelectedCatalogPoseSlot] = useState<number | null>(null)
   const [modelThumbnails, setModelThumbnails] = useState<Record<number, string>>({})
   const [poseThumbnails, setPoseThumbnails] = useState<Record<string, string>>({})
-  const [clothingSection, setClothingSection] = useState<'Superior' | 'Inferior'>('Superior')
+  const [clothingSection, setClothingSection] = useState<'Customizar' | 'Superior' | 'Inferior'>('Superior')
   const [wardrobeSets, setWardrobeSets] = useState<WardrobeSetSummary[]>([])
   const [wardrobeLoading, setWardrobeLoading] = useState(false)
   const [wardrobeDetails, setWardrobeDetails] = useState<Record<string, WardrobeSet>>({})
   const [wardrobeThumbnails, setWardrobeThumbnails] = useState<Record<string, string>>({})
   const [selectedClothing, setSelectedClothing] = useState<{ setId: string; category: ClothingGroupCategory } | null>(null)
+  const [wardrobeTransformDraft, setWardrobeTransformDraft] = useState<Pick<CustomizerWardrobeGroup, 'offsetX' | 'offsetY' | 'scaleX' | 'scaleY' | 'rotation'> | null>(null)
   const [selectedWardrobeUrl, setSelectedWardrobeUrl] = useState<string | null>(null)
   const [selectedArtworkProject, setSelectedArtworkProject] = useState<CatalogArtwork | null>(null)
   const [selectedSourceModelProject, setSelectedSourceModelProject] = useState<FabricatorProject | null>(null)
@@ -238,6 +239,7 @@ export function CustomizerPage() {
   const thumbnailCache = useRef(new Set<string>())
   const previewLoadRequest = useRef(0)
   const clothingDragRef = useRef<{ pointerId: number; clientX: number; clientY: number; scale: number; startX: number; startY: number; groupKey: string; characterId: string; latest: CustomizerCharacter | null } | null>(null)
+  const wardrobeTransformDirty = useRef(false)
   const selectedCharacter = characters.find((character) => character.id === selectedCharacterId) ?? characters[0] ?? null
   const visibleCharacters = characters
     .filter((character) => character.name.toLowerCase().includes(rosterQuery.trim().toLowerCase()))
@@ -345,6 +347,14 @@ export function CustomizerPage() {
   }, [selectedCharacter?.id])
 
   useEffect(() => {
+    const group = selectedClothing
+      ? selectedCharacter?.customization.wardrobeGroups?.find((item) => item.setId === selectedClothing.setId && item.category === selectedClothing.category)
+      : undefined
+    wardrobeTransformDirty.current = false
+    setWardrobeTransformDraft(group ? { offsetX: group.offsetX, offsetY: group.offsetY, scaleX: group.scaleX, scaleY: group.scaleY, rotation: group.rotation } : null)
+  }, [selectedCharacter?.id, selectedCharacter?.customization.wardrobeGroups, selectedClothing?.setId, selectedClothing?.category])
+
+  useEffect(() => {
     if (activeModule !== 'Modelos' || catalogLoading) return
     let cancelled = false
     void (async () => {
@@ -440,13 +450,16 @@ export function CustomizerPage() {
       setSelectedWardrobeUrl(null)
       return
     }
-    void renderWardrobeOverlay(groups, wardrobeDetails, selectedArtworkProject, selectedCatalogModelSlot, selectedSourceModelProject).then((url) => {
+    const previewGroups = wardrobeTransformDraft && selectedClothing
+      ? groups.map((group) => group.setId === selectedClothing.setId && group.category === selectedClothing.category ? { ...group, ...wardrobeTransformDraft } : group)
+      : groups
+    void renderWardrobeOverlay(previewGroups, wardrobeDetails, selectedArtworkProject, selectedCatalogModelSlot, selectedSourceModelProject).then((url) => {
       if (!cancelled) setSelectedWardrobeUrl(url)
     }).catch((reason: unknown) => {
       if (!cancelled) setCatalogError(reason instanceof Error ? reason.message : 'Não foi possível compor as roupas do personagem.')
     })
     return () => { cancelled = true }
-  }, [selectedCharacter?.id, selectedCharacter?.customization.wardrobeGroups, wardrobeDetails, selectedArtworkProject, selectedCatalogModelSlot, selectedSourceModelProject])
+  }, [selectedCharacter?.id, selectedCharacter?.customization.wardrobeGroups, wardrobeDetails, selectedArtworkProject, selectedCatalogModelSlot, selectedSourceModelProject, selectedClothing?.setId, selectedClothing?.category, wardrobeTransformDraft])
 
   function selectCharacter(id: string) {
     setSelectedCharacterId(id)
@@ -519,8 +532,19 @@ export function CustomizerPage() {
     await saveCharacterCustomization((current) => ({ wardrobeGroups: (current.wardrobeGroups ?? []).map((group) => group.setId === selectedClothing.setId && group.category === selectedClothing.category ? { ...group, ...patch } : group) }))
   }
 
+  function changeWardrobeTransform(patch: Partial<Pick<CustomizerWardrobeGroup, 'offsetX' | 'offsetY' | 'scaleX' | 'scaleY' | 'rotation'>>) {
+    setWardrobeTransformDraft((current) => current ? { ...current, ...patch } : current)
+    wardrobeTransformDirty.current = true
+  }
+
+  function commitWardrobeTransform() {
+    if (!wardrobeTransformDirty.current || !wardrobeTransformDraft) return
+    wardrobeTransformDirty.current = false
+    void adjustWardrobeGroup(wardrobeTransformDraft)
+  }
+
   function beginWardrobeDrag(event: import('react').PointerEvent<HTMLImageElement>) {
-    if (!selectedCharacter || !selectedClothing || !selectedArtworkProject) return
+    if (activeModule !== 'Roupas' || clothingSection !== 'Customizar' || !selectedCharacter || !selectedClothing || !selectedArtworkProject) return
     const group = (selectedCharacter.customization.wardrobeGroups ?? []).find((item) => item.setId === selectedClothing.setId && item.category === selectedClothing.category)
     if (!group) return
     const scene = event.currentTarget.closest('.stage-scene')
@@ -537,7 +561,7 @@ export function CustomizerPage() {
 
   function moveWardrobeDrag(event: import('react').PointerEvent<HTMLImageElement>) {
     const drag = clothingDragRef.current
-    if (!drag || drag.pointerId !== event.pointerId || !selectedCharacter || selectedCharacter.id !== drag.characterId) return
+    if (activeModule !== 'Roupas' || clothingSection !== 'Customizar' || !drag || drag.pointerId !== event.pointerId || !selectedCharacter || selectedCharacter.id !== drag.characterId) return
     const groups = selectedCharacter.customization.wardrobeGroups ?? []
     const nextGroups = groups.map((group) => wardrobeGroupKey(group) === drag.groupKey ? {
       ...group,
@@ -646,8 +670,14 @@ export function CustomizerPage() {
   const availableModels = catalogModels.filter((model): model is NonNullable<typeof model> => model !== null)
   const availablePoses = catalogPoses.filter((pose): pose is NonNullable<typeof pose> => pose?.sourceModelSlot === selectedCatalogModelSlot)
   const selectedModelName = availableModels.find((model) => model.slot === selectedCatalogModelSlot)?.name
-  const wardrobeGroupDefinitions = clothingCategories[clothingSection]
+  const wardrobeGroupDefinitions = clothingSection === 'Customizar' ? [] : clothingCategories[clothingSection]
   const activeWardrobeGroup = selectedClothing ? (selectedCharacter?.customization.wardrobeGroups ?? []).find((group) => group.setId === selectedClothing.setId && group.category === selectedClothing.category) : undefined
+  const activeWardrobeTransform = wardrobeTransformDraft ?? activeWardrobeGroup
+  const wardrobePreviewDraggable = activeModule === 'Roupas' && clothingSection === 'Customizar' && Boolean(activeWardrobeGroup)
+  const wardrobeCategoryLabels: Record<ClothingGroupCategory, string> = { calca: 'Calças', shorts: 'Shorts', 'manga-inferior': 'Mangas inferiores', 'manga-superior': 'Mangas superiores', camisa: 'Camisas' }
+  const appliedWardrobeGroups = [...(selectedCharacter?.customization.wardrobeGroups ?? [])]
+    .filter((group) => group.modelSlot === selectedCatalogModelSlot)
+    .sort((a, b) => ['calca', 'shorts', 'manga-inferior', 'manga-superior', 'camisa'].indexOf(a.category) - ['calca', 'shorts', 'manga-inferior', 'manga-superior', 'camisa'].indexOf(b.category))
 
   if (activeModule !== null && modules.some((module) => module.name === activeModule)) {
     return (
@@ -669,7 +699,7 @@ export function CustomizerPage() {
                   <button aria-label="Afastar" type="button"><Icon name="zoomOut" /></button>
                 </div>
                 {selectedArtworkUrl ? <img className="customizer-selected-artwork" src={selectedArtworkUrl} alt={selectedArtworkLabel} /> : !previewLoading && <div className="customizer-no-artwork"><Icon name="body" /><span>Nenhum modelo salvo para mostrar.</span></div>}
-                {selectedWardrobeUrl && selectedArtworkUrl && <img className="customizer-wardrobe-overlay" src={selectedWardrobeUrl} alt="Roupas do personagem" draggable={false} onPointerDown={beginWardrobeDrag} onPointerMove={moveWardrobeDrag} onPointerUp={finishWardrobeDrag} onPointerCancel={finishWardrobeDrag} />}
+                {selectedWardrobeUrl && selectedArtworkUrl && <img className={'customizer-wardrobe-overlay' + (wardrobePreviewDraggable ? ' draggable' : '')} src={selectedWardrobeUrl} alt="Roupas do personagem" draggable={false} onPointerDown={wardrobePreviewDraggable ? beginWardrobeDrag : undefined} onPointerMove={wardrobePreviewDraggable ? moveWardrobeDrag : undefined} onPointerUp={wardrobePreviewDraggable ? finishWardrobeDrag : undefined} onPointerCancel={wardrobePreviewDraggable ? finishWardrobeDrag : undefined} />}
                 {previewLoading && <div className="customizer-preview-loading">Carregando prévia…</div>}
                 <div className="stage-caption"><span>{String(selectedCatalogModelSlot ?? 1).padStart(2, '0')}</span><i />{selectedArtworkLabel || selectedCharacter?.name || 'Personagem'}<small>{selectedArtworkUrl ? 'DO CATÁLOGO' : 'PERSONAGEM ATIVO'}</small></div>
               </div>
@@ -731,43 +761,68 @@ export function CustomizerPage() {
                       </div>
               )}
               {activeModule === 'Roupas' && <div className="customizer-wardrobe-catalog">
-                <div className="customizer-wardrobe-tabs" role="tablist" aria-label="Tipo de roupa">
-                  {(['Superior', 'Inferior'] as const).map((section) => <button key={section} className={clothingSection === section ? 'active' : ''} role="tab" aria-selected={clothingSection === section} onClick={() => setClothingSection(section)} type="button">{section}</button>)}
-                </div>
                 {selectedCatalogModelSlot === null ? <div className="customizer-catalog-empty">Escolha um modelo para ver as roupas salvas dele.</div>
                   : wardrobeLoading ? <div className="customizer-catalog-empty">Carregando roupas…</div>
-                    : <div className="customizer-wardrobe-groups">
-                      {wardrobeGroupDefinitions.map((definition) => {
-                        const matches = wardrobeSets.filter((summary) => wardrobeDetails[`${summary.modelSlot}:${summary.id}`]?.components.some((component) => definition.source.includes(component.category)))
-                        return <section className="customizer-wardrobe-category" key={definition.id} aria-label={definition.label}>
-                          <header><h3>{definition.label}</h3><span>{matches.length}</span></header>
-                          {matches.length === 0 ? <p className="customizer-wardrobe-empty">Nenhum conjunto salvo nesta categoria.</p>
-                            : <div className="customizer-wardrobe-items">{matches.map((summary) => {
-                              const key = `${summary.modelSlot}:${summary.id}:${definition.id}`
-                              const applied = (selectedCharacter?.customization.wardrobeGroups ?? []).some((group) => group.modelSlot === summary.modelSlot && group.setId === summary.id && group.category === definition.id)
-                              const selected = selectedClothing?.setId === summary.id && selectedClothing.category === definition.id
-                              return <article className={'customizer-wardrobe-item' + (selected ? ' selected' : '')} key={key}>
-                                <button className="customizer-wardrobe-select" onClick={() => void applyWardrobeGroup(summary, definition.id)} aria-label={`${applied ? 'Selecionar' : 'Usar'} conjunto de ${definition.label.toLowerCase()}`} aria-pressed={selected} title={definition.id === 'calca' ? 'Calça completa: coxas e canelas juntas' : definition.label} type="button">
-                                  {wardrobeThumbnails[key] ? <img src={wardrobeThumbnails[key]} alt="" /> : <span className="customizer-catalog-placeholder"><Icon name="shirt" /></span>}
+                    : <>
+                      <button className={`customizer-wardrobe-customize-tab${clothingSection === 'Customizar' ? ' active' : ''}`} onClick={() => setClothingSection((current) => current === 'Customizar' ? 'Superior' : 'Customizar')} aria-pressed={clothingSection === 'Customizar'} type="button"><Icon name="sliders" /> Customizar</button>
+                      <div className="customizer-wardrobe-tabs" role="tablist" aria-label="Tipo de roupa">
+                        {(['Superior', 'Inferior'] as const).map((section) => <button key={section} className={clothingSection === section ? 'active' : ''} role="tab" aria-selected={clothingSection === section} onClick={() => setClothingSection(section)} type="button">{section}</button>)}
+                      </div>
+                      {clothingSection === 'Customizar' ? <div className="customizer-wardrobe-editor">
+                        <section className="customizer-wardrobe-applied" aria-label="Roupas aplicadas neste personagem">
+                          <header><h3>Itens selecionados</h3><small>De baixo para cima</small></header>
+                          {appliedWardrobeGroups.length === 0 ? <p className="customizer-wardrobe-empty">Escolha roupas em Superior ou Inferior para começar.</p>
+                            : <div className="customizer-wardrobe-applied-grid">{appliedWardrobeGroups.map((group) => {
+                              const key = `${group.modelSlot}:${group.setId}:${group.category}`
+                              const selected = selectedClothing?.setId === group.setId && selectedClothing.category === group.category
+                              return <article className={'customizer-wardrobe-applied-item' + (selected ? ' selected' : '')} key={key}>
+                                <button onClick={() => setSelectedClothing({ setId: group.setId, category: group.category })} aria-pressed={selected} type="button">
+                                  {wardrobeThumbnails[key] ? <img src={wardrobeThumbnails[key]} alt="" /> : <span><Icon name="shirt" /></span>}
+                                  <b>{wardrobeCategoryLabels[group.category]}</b>
                                 </button>
-                                {applied && <button className="customizer-wardrobe-remove" onClick={() => void removeWardrobeGroup(summary.id, definition.id)} aria-label="Remover roupa deste personagem" title="Remover" type="button"><Icon name="trash" /></button>}
+                                <button className="customizer-wardrobe-applied-remove" onClick={() => void removeWardrobeGroup(group.setId, group.category)} aria-label={`Remover ${wardrobeCategoryLabels[group.category]}`} title="Remover" type="button"><Icon name="trash" /></button>
                               </article>
                             })}</div>}
                         </section>
-                      })}
-                    </div>}
-                {activeWardrobeGroup && <section className="customizer-wardrobe-transform" aria-label="Ajustar conjunto selecionado">
-                  <div><b>Conjunto selecionado</b><small>Arraste a roupa na prévia; as peças da calça se movem juntas.</small></div>
-                  <div className="customizer-wardrobe-transform-controls">
-                    <button aria-label="Mover para cima" onClick={() => void adjustWardrobeGroup({ offsetY: activeWardrobeGroup.offsetY - 8 })} type="button">↑</button>
-                    <button aria-label="Mover para esquerda" onClick={() => void adjustWardrobeGroup({ offsetX: activeWardrobeGroup.offsetX - 8 })} type="button">←</button>
-                    <button aria-label="Mover para direita" onClick={() => void adjustWardrobeGroup({ offsetX: activeWardrobeGroup.offsetX + 8 })} type="button">→</button>
-                    <button aria-label="Mover para baixo" onClick={() => void adjustWardrobeGroup({ offsetY: activeWardrobeGroup.offsetY + 8 })} type="button">↓</button>
-                    <button aria-label="Diminuir escala" onClick={() => void adjustWardrobeGroup({ scaleX: Math.max(.1, activeWardrobeGroup.scaleX * .95), scaleY: Math.max(.1, activeWardrobeGroup.scaleY * .95) })} type="button">−</button>
-                    <button aria-label="Aumentar escala" onClick={() => void adjustWardrobeGroup({ scaleX: Math.min(5, activeWardrobeGroup.scaleX * 1.05), scaleY: Math.min(5, activeWardrobeGroup.scaleY * 1.05) })} type="button">+</button>
-                    <button aria-label="Girar conjunto" onClick={() => void adjustWardrobeGroup({ rotation: (activeWardrobeGroup.rotation + 5) % 360 })} type="button">↻ 5°</button>
-                  </div>
-                </section>}
+                        <section className="customizer-wardrobe-controls" aria-label="Controles da roupa selecionada">
+                          {activeWardrobeGroup && activeWardrobeTransform ? <>
+                            <header><h3>{wardrobeCategoryLabels[activeWardrobeGroup.category]}</h3><small>Esta peça e só este conjunto serão alterados.</small></header>
+                            <div className="customizer-wardrobe-position-grid">
+                              {([['offsetX', 'Posição X'], ['offsetY', 'Posição Y']] as const).map(([field, label]) => <label key={field}>{label}<input type="number" step="1" value={Number(activeWardrobeTransform[field].toFixed(1))} onChange={(event) => changeWardrobeTransform({ [field]: Number(event.target.value) })} onBlur={commitWardrobeTransform} onKeyDown={(event) => { if (event.key === 'Enter') { commitWardrobeTransform(); event.currentTarget.blur() } }} /></label>)}
+                            </div>
+                            {([['scaleX', 'Escala horizontal'], ['scaleY', 'Escala vertical']] as const).map(([field, label]) => <label className="customizer-wardrobe-range" key={field}><span><b>{label}</b><output>{Math.round(activeWardrobeTransform[field] * 100)}%</output></span><input type="range" min="10" max="500" step="1" value={Math.max(10, Math.min(500, Math.round(activeWardrobeTransform[field] * 100)))} onChange={(event) => changeWardrobeTransform({ [field]: Number(event.target.value) / 100 })} onPointerUp={commitWardrobeTransform} onBlur={commitWardrobeTransform} /></label>)}
+                            <label className="customizer-wardrobe-range"><span><b>Rotação</b><output>{Math.round(activeWardrobeTransform.rotation)}°</output></span><input type="range" min="-180" max="180" step="1" value={Math.max(-180, Math.min(180, Math.round(activeWardrobeTransform.rotation)))} onChange={(event) => changeWardrobeTransform({ rotation: Number(event.target.value) })} onPointerUp={commitWardrobeTransform} onBlur={commitWardrobeTransform} /></label>
+                            <div className="customizer-wardrobe-nudge" aria-label="Mover roupa">
+                              <button aria-label="Mover para cima" onClick={() => void adjustWardrobeGroup({ offsetY: activeWardrobeTransform.offsetY - 4 })} type="button">↑</button>
+                              <button aria-label="Mover para esquerda" onClick={() => void adjustWardrobeGroup({ offsetX: activeWardrobeTransform.offsetX - 4 })} type="button">←</button>
+                              <span>Mover</span>
+                              <button aria-label="Mover para direita" onClick={() => void adjustWardrobeGroup({ offsetX: activeWardrobeTransform.offsetX + 4 })} type="button">→</button>
+                              <button aria-label="Mover para baixo" onClick={() => void adjustWardrobeGroup({ offsetY: activeWardrobeTransform.offsetY + 4 })} type="button">↓</button>
+                            </div>
+                            <button className="customizer-wardrobe-reset" onClick={() => void adjustWardrobeGroup({ offsetX: 0, offsetY: 0, scaleX: 1, scaleY: 1, rotation: 0 })} type="button">Resetar ajustes desta roupa</button>
+                          </> : <div className="customizer-wardrobe-empty">Selecione uma roupa na lista para ajustar.</div>}
+                        </section>
+                      </div> : <div className="customizer-wardrobe-groups">
+                          {wardrobeGroupDefinitions.map((definition) => {
+                            const matches = wardrobeSets.filter((summary) => wardrobeDetails[`${summary.modelSlot}:${summary.id}`]?.components.some((component) => definition.source.includes(component.category)))
+                            return <section className="customizer-wardrobe-category" key={definition.id} aria-label={definition.label}>
+                              <header><h3>{definition.label}</h3><span>{matches.length}</span></header>
+                              {matches.length === 0 ? <p className="customizer-wardrobe-empty">Nenhum conjunto salvo nesta categoria.</p>
+                                : <div className="customizer-wardrobe-items">{matches.map((summary) => {
+                                  const key = `${summary.modelSlot}:${summary.id}:${definition.id}`
+                                  const applied = (selectedCharacter?.customization.wardrobeGroups ?? []).some((group) => group.modelSlot === summary.modelSlot && group.setId === summary.id && group.category === definition.id)
+                                  const selected = selectedClothing?.setId === summary.id && selectedClothing.category === definition.id
+                                  return <article className={'customizer-wardrobe-item' + (selected ? ' selected' : '')} key={key}>
+                                    <button className="customizer-wardrobe-select" onClick={() => void applyWardrobeGroup(summary, definition.id)} aria-label={`${applied ? 'Selecionar' : 'Usar'} conjunto de ${definition.label.toLowerCase()}`} aria-pressed={selected} title={definition.id === 'calca' ? 'Calça completa: coxas e canelas juntas' : definition.label} type="button">
+                                      {wardrobeThumbnails[key] ? <img src={wardrobeThumbnails[key]} alt="" /> : <span className="customizer-catalog-placeholder"><Icon name="shirt" /></span>}
+                                    </button>
+                                    {applied && <button className="customizer-wardrobe-remove" onClick={() => void removeWardrobeGroup(summary.id, definition.id)} aria-label="Remover roupa deste personagem" title="Remover" type="button"><Icon name="trash" /></button>}
+                                  </article>
+                                })}</div>}
+                            </section>
+                          })}
+                      </div>}
+                    </>}
               </div>}
               {activeModule !== 'Modelos' && activeModule !== 'Poses' && activeModule !== 'Roupas' && <div className="customizer-catalog-empty">O catálogo de {activeModule} aparecerá aqui.</div>}
             </section>
@@ -840,7 +895,7 @@ export function CustomizerPage() {
                 <button aria-label="Afastar"><Icon name="zoomOut" /></button>
               </div>
               {selectedArtworkUrl ? <img className="customizer-selected-artwork" src={selectedArtworkUrl} alt={selectedArtworkLabel} /> : !previewLoading && <div className="customizer-no-artwork"><Icon name="body" /><span>{selectedCharacter ? 'Importe um modelo no Fabricador Dev para começar.' : 'Crie um personagem para começar a personalizar.'}</span></div>}
-              {selectedWardrobeUrl && selectedArtworkUrl && <img className="customizer-wardrobe-overlay" src={selectedWardrobeUrl} alt="Roupas do personagem" draggable={false} onPointerDown={beginWardrobeDrag} onPointerMove={moveWardrobeDrag} onPointerUp={finishWardrobeDrag} onPointerCancel={finishWardrobeDrag} />}
+              {selectedWardrobeUrl && selectedArtworkUrl && <img className={'customizer-wardrobe-overlay' + (wardrobePreviewDraggable ? ' draggable' : '')} src={selectedWardrobeUrl} alt="Roupas do personagem" draggable={false} onPointerDown={wardrobePreviewDraggable ? beginWardrobeDrag : undefined} onPointerMove={wardrobePreviewDraggable ? moveWardrobeDrag : undefined} onPointerUp={wardrobePreviewDraggable ? finishWardrobeDrag : undefined} onPointerCancel={wardrobePreviewDraggable ? finishWardrobeDrag : undefined} />}
               {previewLoading && <div className="customizer-preview-loading">Carregando prévia…</div>}
               <div className="stage-caption"><span>{String(selectedCatalogModelSlot ?? 1).padStart(2, '0')}</span><i />{selectedArtworkLabel || selectedCharacter?.name || 'Personagem'}<small>{selectedArtworkUrl ? 'MODELO DE REFERÊNCIA' : 'SEM MODELO'}</small></div>
             </div>
