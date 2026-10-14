@@ -56,10 +56,11 @@ export function mapWardrobeComponentToPose(
   component: WardrobeComponent,
   sourceBone: ModelPart,
   poseBone: ModelPart,
-  kneeOverlap = 0
+  kneeOverlap = 0,
+  edgePadding = 0
 ): WardrobePoseTransform {
   const binding = component.binding?.boneId === sourceBone.id ? component.binding : null
-  if (binding) return mapBoundWardrobeComponentToPose(binding, poseBone, kneeOverlap)
+  if (binding) return mapBoundWardrobeComponentToPose(binding, poseBone, kneeOverlap, edgePadding)
   const source = sourceBone.sourceTransform
   const sourceWidth = Math.max(1, source?.width ?? sourceBone.width)
   const sourceHeight = Math.max(1, source?.height ?? sourceBone.height)
@@ -79,20 +80,23 @@ export function mapWardrobeComponentToPose(
   const matrix = [Math.cos(radians) * scaleX, Math.sin(radians) * scaleX, -Math.sin(radians) * scaleY, Math.cos(radians) * scaleY, 0, 0]
     .map((value) => Number(value.toFixed(8))).join(',')
   const overlap = Math.max(0, kneeOverlap)
+  const edge = Math.max(0, edgePadding)
+  const renderWidth = component.width + edge * 2
+  const renderHeight = component.height + overlap + edge * 2
   return {
     origin: { x: poseBone.x + poseBone.width / 2, y: poseBone.y + poseBone.height / 2 },
-    localLeft: localCenter.x - component.width / 2,
+    localLeft: localCenter.x - renderWidth / 2,
     // Expand evenly around the fitted center so the overlap cannot shift the
     // garment away from its bone. This tiny test-only stretch closes the knee.
-    localTop: localCenter.y - (component.height + overlap) / 2,
-    renderWidth: component.width,
-    renderHeight: component.height + overlap,
+    localTop: localCenter.y - renderHeight / 2,
+    renderWidth,
+    renderHeight,
     localRotation: component.rotation - sourceRotation,
     matrix: `matrix(${matrix})`, scaleX, scaleY
   }
 }
 
-function mapBoundWardrobeComponentToPose(binding: WardrobeBinding, poseBone: ModelPart, kneeOverlap: number): WardrobePoseTransform {
+function mapBoundWardrobeComponentToPose(binding: WardrobeBinding, poseBone: ModelPart, kneeOverlap: number, edgePadding: number): WardrobePoseTransform {
   const scaleX = Math.max(0.0001, poseBone.width / binding.boneWidth)
   const scaleY = Math.max(0.0001, poseBone.height / binding.boneHeight)
   const localCenter = { x: binding.localCenterX * poseBone.width, y: binding.localCenterY * poseBone.height }
@@ -100,8 +104,9 @@ function mapBoundWardrobeComponentToPose(binding: WardrobeBinding, poseBone: Mod
   const cosine = Math.cos(radians)
   const sine = Math.sin(radians)
   const overlap = Math.max(0, kneeOverlap)
-  const width = Math.max(1, binding.widthRatio * poseBone.width)
-  const height = Math.max(1, binding.heightRatio * poseBone.height)
+  const edge = Math.max(0, edgePadding)
+  const width = Math.max(1, binding.widthRatio * poseBone.width) + edge * 2
+  const height = Math.max(1, binding.heightRatio * poseBone.height) + edge * 2
   const matrix = [cosine, sine, -sine, cosine, 0, 0].map((value) => Number(value.toFixed(8))).join(',')
   return {
     origin: { x: poseBone.x + poseBone.width / 2, y: poseBone.y + poseBone.height / 2 },

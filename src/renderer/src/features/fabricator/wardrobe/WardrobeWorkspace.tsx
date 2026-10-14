@@ -485,8 +485,9 @@ export function WardrobeWorkspace() {
           if (testPose && modelBone && (testOffset.x !== 0 || testOffset.y !== 0)) testComponent.binding = bindWardrobeComponent(testComponent, modelBone)
           const hasThighAndCalf = Boolean(draft?.components.some((item) => item.category === 'calca-coxa') && draft?.components.some((item) => item.category === 'calca-canela'))
           const kneeOverlap = testPose && hasThighAndCalf && (component.category === 'calca-coxa' || component.category === 'calca-canela') ? 18 : 0
+          const sleeveEdgePadding = testPose && (component.category === 'manga-superior' || component.category === 'manga-inferior') ? Math.max(8, Math.min(14, Math.round(Math.min(component.width, component.height) * .06))) : 0
           const poseTransform = testPose && modelBone?.sourceTransform && poseBone
-            ? mapWardrobeComponentToPose(testComponent, modelBone, poseBone, kneeOverlap)
+            ? mapWardrobeComponentToPose(testComponent, modelBone, poseBone, kneeOverlap, sleeveEdgePadding)
             : null
           const poseLayer = testPose?.layerOrder.indexOf(component.attachedPartId) ?? -1
           const zIndex = testPose ? 3 + Math.max(0, poseLayer) * layerBand + index : 2 + layer * layerBand + index
