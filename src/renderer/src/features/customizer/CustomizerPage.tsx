@@ -42,6 +42,37 @@ export function CustomizerPage() {
     setActiveModule(null)
   }
 
+  if (activeModule === 'Modelos') {
+    return (
+      <div className="customizer-models-view">
+        <header className="customizer-subpage-heading">
+          <button className="customizer-back-button" onClick={() => setActiveModule(null)} type="button"><span aria-hidden="true">←</span> Customizar</button>
+          <div><p className="eyebrow">CUSTOMIZAR</p><h1>Modelos</h1></div>
+        </header>
+        <div className="customizer-models-columns">
+          <section className="customizer-model-preview" aria-label="Prévia do personagem">
+            <div className="stage-wrap">
+              <div className="stage-scene">
+                <div className="stage-glow" />
+                <div className="stage-label"><span className="online-dot" /> PREVIEW DO PERSONAGEM</div>
+                <div className="scene-chip"><span /> Estúdio • Luz suave</div>
+                <div className="stage-tools" aria-label="Controles do preview">
+                  <button aria-label="Ajustar enquadramento" type="button"><Icon name="frame" /></button>
+                  <button aria-label="Aproximar" type="button"><Icon name="zoomIn" /></button>
+                  <button aria-label="Afastar" type="button"><Icon name="zoomOut" /></button>
+                </div>
+                <CharacterPreview character={selectedCharacter} />
+                <div className="stage-floor" />
+                <div className="stage-caption"><span>01</span><i />{selectedCharacter.name}<small>PERSONAGEM ATIVO</small></div>
+              </div>
+            </div>
+          </section>
+          <section className="customizer-models-empty" aria-label="Área de modelos" />
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="home-layout">
         <aside className="roster-panel panel" aria-label="Personagens">
@@ -131,7 +162,7 @@ export function CustomizerPage() {
               <button
                 className={`module-card ${chosen ? 'chosen' : ''}`}
                 key={module.name}
-                onClick={() => setActiveModule(chosen ? null : selectionAllowed ? module.name : null)}
+                onClick={() => setActiveModule(module.name === 'Modelos' ? 'Modelos' : chosen ? null : selectionAllowed ? module.name : null)}
                 aria-pressed={chosen}
                 title={module.detail}
               >
