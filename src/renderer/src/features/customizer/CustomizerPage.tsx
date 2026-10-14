@@ -1,8 +1,52 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { CharacterPreview } from '../../ui/components/CharacterPreview'
 import { CharacterPortrait } from '../../ui/components/CharacterPortrait'
 import { Icon, type IconName } from '../../ui/components/Icon'
+import type { FabricatorPose, FabricatorPoseSummary, FabricatorProject, FabricatorSlotSummary } from '../../../../shared/fabricator'
 import { usePreviewBackground } from '../fabricator/usePreviewBackground'
+
+type CatalogArtwork = Pick<FabricatorProject, 'width' | 'height' | 'parts' | 'layerOrder' | 'hiddenPartIds'>
+
+async function renderArtwork(artwork: CatalogArtwork, maxSize: number): Promise<string | null> {
+  if (artwork.width <= 0 || artwork.height <= 0) return null
+  const scale = Math.min(maxSize / artwork.width, maxSize / artwork.height)
+  const canvas = document.createElement('canvas')
+  canvas.width = Math.max(1, Math.round(artwork.width * scale))
+  canvas.height = Math.max(1, Math.round(artwork.height * scale))
+  const context = canvas.getContext('2d')
+  if (!context) return null
+
+  const hidden = new Set(artwork.hiddenPartIds ?? [])
+  const layerIndex = new Map((artwork.layerOrder ?? []).map((id, index) => [id, index]))
+  const parts = artwork.parts
+    .filter((part) => !hidden.has(part.id))
+    .map((part, index) => ({ part, index }))
+    .sort((a, b) => (layerIndex.get(a.part.id) ?? a.index) - (layerIndex.get(b.part.id) ?? b.index))
+
+  for (const { part } of parts) {
+    try {
+      const image = new Image()
+      image.src = part.dataUrl
+      if (image.decode) await image.decode()
+      else await new Promise<void>((resolve, reject) => {
+        image.onload = () => resolve()
+        image.onerror = () => reject(new Error('Não foi possível carregar uma parte da prévia.'))
+      })
+      context.save()
+      try {
+        context.translate((part.x + part.width / 2) * scale, (part.y + part.height / 2) * scale)
+        context.rotate(part.rotation * Math.PI / 180)
+        context.drawImage(image, -part.width * scale / 2, -part.height * scale / 2, part.width * scale, part.height * scale)
+      } finally {
+        context.restore()
+      }
+    } catch {
+      continue
+    }
+  }
+
+  return canvas.toDataURL('image/png')
+}
 
 const characters = [
   { name: 'Chloe', hair: '#cfaa78', outfit: '#f2d771', skin: '#f5d7c7' },
@@ -34,15 +78,134 @@ export function CustomizerPage() {
   const [activeModule, setActiveModule] = useState<string | null>(null)
   const [previewBackground, setPreviewBackground] = usePreviewBackground()
   const [rosterQuery, setRosterQuery] = useState('')
+  const [catalogModels, setCatalogModels] = useState<FabricatorSlotSummary[]>([])
+  const [catalogPoses, setCatalogPoses] = useState<FabricatorPoseSummary[]>([])
+  const [catalogLoading, setCatalogLoading] = useState(true)
+  const [catalogError, setCatalogError] = useState('')
+  const [selectedCatalogModelSlot, setSelectedCatalogModelSlot] = useState<number | null>(null)
+  const [selectedCatalogPoseSlot, setSelectedCatalogPoseSlot] = useState<number | null>(null)
+  const [modelThumbnails, setModelThumbnails] = useState<Record<number, string>>({})
+  const [poseThumbnails, setPoseThumbnails] = useState<Record<string, string>>({})
+  const [selectedArtworkUrl, setSelectedArtworkUrl] = useState<string | null>(null)
+  const [selectedArtworkLabel, setSelectedArtworkLabel] = useState('')
+  const [previewLoading, setPreviewLoading] = useState(false)
+  const thumbnailCache = useRef(new Set<string>())
   const selectedCharacter = characters[selectedIndex]
   const visibleCharacters = characters
     .map((character, index) => ({ character, index }))
     .filter(({ character }) => character.name.toLowerCase().includes(rosterQuery.trim().toLowerCase()))
 
+  useEffect(() => {
+    let cancelled = false
+    void Promise.all([window.desktop.listFabricatorSlots(), window.desktop.listFabricatorPoseSlots()])
+      .then(([models, poses]) => {
+        if (cancelled) return
+        setCatalogModels(models)
+        setCatalogPoses(poses)
+      })
+      .catch((reason: unknown) => {
+        if (!cancelled) setCatalogError(reason instanceof Error ? reason.message : 'Não foi possível carregar o catálogo.')
+      })
+      .finally(() => { if (!cancelled) setCatalogLoading(false) })
+    return () => { cancelled = true }
+  }, [])
+
+  useEffect(() => {
+    if (activeModule !== 'Modelos' || catalogLoading) return
+    let cancelled = false
+    void (async () => {
+      for (const model of catalogModels) {
+        if (!model || thumbnailCache.current.has(`model:${model.slot}`)) continue
+        let artwork: CatalogArtwork | null = null
+        const firstPose = catalogPoses.find((pose) => pose?.sourceModelSlot === model.slot && pose.slot === 1)
+        try {
+          if (firstPose) artwork = await window.desktop.loadFabricatorPose(model.slot, 1)
+          if (!artwork) artwork = await window.desktop.loadFabricatorSlot(model.slot)
+          if (!artwork) continue
+          const thumbnail = await renderArtwork(artwork, 144)
+          if (cancelled) return
+          if (thumbnail) {
+            thumbnailCache.current.add(`model:${model.slot}`)
+            setModelThumbnails((current) => ({ ...current, [model.slot]: thumbnail }))
+          }
+        } catch (reason) {
+          if (!cancelled) setCatalogError(reason instanceof Error ? reason.message : 'Não foi possível gerar uma miniatura do modelo.')
+        }
+      }
+    })()
+    return () => { cancelled = true }
+  }, [activeModule, catalogLoading, catalogModels, catalogPoses])
+
+  useEffect(() => {
+    if (activeModule !== 'Poses' || selectedCatalogModelSlot === null || catalogLoading) return
+    let cancelled = false
+    const modelPoses = catalogPoses.filter((pose): pose is NonNullable<typeof pose> => pose?.sourceModelSlot === selectedCatalogModelSlot)
+    void (async () => {
+      for (const pose of modelPoses) {
+        const key = `${pose.sourceModelSlot}:${pose.slot}`
+        if (thumbnailCache.current.has(`pose:${key}`)) continue
+        try {
+          const artwork: FabricatorPose | null = await window.desktop.loadFabricatorPose(pose.sourceModelSlot, pose.slot)
+          if (!artwork) continue
+          const thumbnail = await renderArtwork(artwork, 144)
+          if (cancelled) return
+          if (thumbnail) {
+            thumbnailCache.current.add(`pose:${key}`)
+            setPoseThumbnails((current) => ({ ...current, [key]: thumbnail }))
+          }
+        } catch (reason) {
+          if (!cancelled) setCatalogError(reason instanceof Error ? reason.message : 'Não foi possível gerar uma miniatura da pose.')
+        }
+      }
+    })()
+    return () => { cancelled = true }
+  }, [activeModule, catalogLoading, catalogPoses, selectedCatalogModelSlot])
+
   function selectCharacter(index: number) {
     setSelectedIndex((index + characters.length) % characters.length)
     setActiveModule(null)
   }
+
+  async function selectCatalogModel(model: NonNullable<FabricatorSlotSummary>) {
+    setSelectedCatalogModelSlot(model.slot)
+    setSelectedCatalogPoseSlot(null)
+    setSelectedArtworkLabel(model.name)
+    setSelectedArtworkUrl(null)
+    setPreviewLoading(true)
+    setCatalogError('')
+    try {
+      const firstPose = catalogPoses.find((pose) => pose?.sourceModelSlot === model.slot && pose.slot === 1)
+      let artwork: CatalogArtwork | null = firstPose ? await window.desktop.loadFabricatorPose(model.slot, 1) : null
+      if (!artwork) artwork = await window.desktop.loadFabricatorSlot(model.slot)
+      if (!artwork) throw new Error('Não foi possível abrir este modelo.')
+      setSelectedArtworkUrl(await renderArtwork(artwork, 720))
+    } catch (reason) {
+      setCatalogError(reason instanceof Error ? reason.message : 'Não foi possível abrir este modelo.')
+    } finally {
+      setPreviewLoading(false)
+    }
+  }
+
+  async function selectCatalogPose(pose: NonNullable<FabricatorPoseSummary>) {
+    setSelectedCatalogPoseSlot(pose.slot)
+    setSelectedArtworkLabel(pose.name)
+    setSelectedArtworkUrl(null)
+    setPreviewLoading(true)
+    setCatalogError('')
+    try {
+      const artwork = await window.desktop.loadFabricatorPose(pose.sourceModelSlot, pose.slot)
+      if (!artwork) throw new Error('Não foi possível abrir esta pose.')
+      setSelectedArtworkUrl(await renderArtwork(artwork, 720))
+    } catch (reason) {
+      setCatalogError(reason instanceof Error ? reason.message : 'Não foi possível abrir esta pose.')
+    } finally {
+      setPreviewLoading(false)
+    }
+  }
+
+  const availableModels = catalogModels.filter((model): model is NonNullable<typeof model> => model !== null)
+  const availablePoses = catalogPoses.filter((pose): pose is NonNullable<typeof pose> => pose?.sourceModelSlot === selectedCatalogModelSlot)
+  const selectedModelName = availableModels.find((model) => model.slot === selectedCatalogModelSlot)?.name
 
   if (activeModule !== null && modules.some((module) => module.name === activeModule)) {
     return (
@@ -63,18 +226,25 @@ export function CustomizerPage() {
                   <button aria-label="Aproximar" type="button"><Icon name="zoomIn" /></button>
                   <button aria-label="Afastar" type="button"><Icon name="zoomOut" /></button>
                 </div>
-                <CharacterPreview character={selectedCharacter} />
-                <div className="stage-caption"><span>01</span><i />{selectedCharacter.name}<small>PERSONAGEM ATIVO</small></div>
+                {selectedArtworkUrl ? <img className="customizer-selected-artwork" src={selectedArtworkUrl} alt={selectedArtworkLabel} /> : <CharacterPreview character={selectedCharacter} />}
+                {previewLoading && <div className="customizer-preview-loading">Carregando prévia…</div>}
+                <div className="stage-caption"><span>{String(selectedCatalogModelSlot ?? 1).padStart(2, '0')}</span><i />{selectedArtworkLabel || selectedCharacter.name}<small>{selectedArtworkUrl ? 'DO CATÁLOGO' : 'PERSONAGEM ATIVO'}</small></div>
               </div>
             </div>
           </section>
-          <section className="customizer-models-options" aria-label="Opções de personalização">
+          <section className="customizer-models-sidebar" aria-label="Opções e catálogo de personalização">
             <div className="customizer-models-options-grid">
               {modules.map((module, index) => (
                 <button
                   className={`customizer-model-option${activeModule === module.name ? ' selected' : ''}`}
                   key={module.name}
-                  onClick={() => setActiveModule(module.name)}
+                  onClick={() => {
+                    setActiveModule(module.name)
+                    if (module.name === 'Modelos' && selectedCatalogModelSlot !== null) {
+                      const selectedModel = availableModels.find((model) => model.slot === selectedCatalogModelSlot)
+                      if (selectedModel) void selectCatalogModel(selectedModel)
+                    }
+                  }}
                   aria-pressed={activeModule === module.name}
                   title={module.detail}
                   type="button"
@@ -85,6 +255,40 @@ export function CustomizerPage() {
                 </button>
               ))}
             </div>
+            <section className="customizer-catalog-panel" aria-label={'Catálogo de ' + activeModule}>
+              <header className="customizer-catalog-heading">
+                <div><p className="eyebrow">CATÁLOGO</p><h2>{activeModule === 'Poses' ? selectedModelName ?? 'Escolha um modelo' : activeModule}</h2></div>
+                {activeModule === 'Modelos' && <small>{availableModels.length} modelos</small>}
+                {activeModule === 'Poses' && selectedCatalogModelSlot !== null && <small>{availablePoses.length} poses</small>}
+              </header>
+              {catalogError && <p className="customizer-catalog-error" role="alert">{catalogError}</p>}
+              {activeModule === 'Modelos' && (
+                catalogLoading ? <div className="customizer-catalog-empty">Carregando modelos…</div>
+                  : availableModels.length === 0 ? <div className="customizer-catalog-empty">Nenhum modelo salvo ainda.</div>
+                    : <div className="customizer-catalog-grid customizer-model-catalog">
+                      {availableModels.map((model) => (
+                        <button className={'customizer-catalog-card model-catalog-card' + (selectedCatalogModelSlot === model.slot ? ' selected' : '')} key={model.slot} onClick={() => void selectCatalogModel(model)} aria-label={'Selecionar ' + model.name} aria-pressed={selectedCatalogModelSlot === model.slot} title={model.name} type="button">
+                          {modelThumbnails[model.slot] ? <img src={modelThumbnails[model.slot]} alt="" /> : <span className="customizer-catalog-placeholder"><Icon name="body" /></span>}
+                        </button>
+                      ))}
+                    </div>
+              )}
+              {activeModule === 'Poses' && (
+                selectedCatalogModelSlot === null ? <div className="customizer-catalog-empty"><span>Selecione um modelo para ver as poses dele.</span><button onClick={() => setActiveModule('Modelos')} type="button">Ver modelos</button></div>
+                  : catalogLoading ? <div className="customizer-catalog-empty">Carregando poses…</div>
+                    : availablePoses.length === 0 ? <div className="customizer-catalog-empty">Este modelo ainda não tem poses salvas.</div>
+                      : <div className="customizer-catalog-grid customizer-pose-catalog">
+                        {availablePoses.map((pose) => {
+                          const key = pose.sourceModelSlot + ':' + pose.slot
+                          return <button className={'customizer-catalog-card pose-catalog-card' + (selectedCatalogPoseSlot === pose.slot ? ' selected' : '')} key={key} onClick={() => void selectCatalogPose(pose)} aria-pressed={selectedCatalogPoseSlot === pose.slot} title={pose.name} type="button">
+                            {poseThumbnails[key] ? <img src={poseThumbnails[key]} alt="" /> : <span className="customizer-catalog-placeholder"><Icon name="body" /></span>}
+                            <span className="customizer-pose-caption"><b>Pose {String(pose.slot).padStart(2, '0')}</b><small>{pose.name}</small></span>
+                          </button>
+                        })}
+                      </div>
+              )}
+              {activeModule !== 'Modelos' && activeModule !== 'Poses' && <div className="customizer-catalog-empty">O catálogo de {activeModule} aparecerá aqui.</div>}
+            </section>
           </section>
         </div>
       </div>
