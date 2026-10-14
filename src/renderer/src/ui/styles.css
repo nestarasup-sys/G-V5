@@ -92,6 +92,8 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .customizer-catalog-error { margin:0 0 10px;color:#b6405d;font-size:11px; }
 .customizer-selected-artwork { position:absolute;inset:72px 68px 58px;z-index:1;width:calc(100% - 136px);height:calc(100% - 130px);object-fit:contain;pointer-events:none; }
 .customizer-preview-loading { position:absolute;top:50%;left:50%;z-index:4;padding:8px 12px;border:1px solid #eee9ed;border-radius:9px;background:#fffffff0;color:#756d76;font-size:12px;transform:translate(-50%,-50%); }
+.customizer-no-artwork { position:absolute;inset:72px 28px 58px;z-index:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;color:#a69da5;font-size:12px;text-align:center; }
+.customizer-no-artwork svg { width:30px;height:30px;color:#c7bac3; }
 .panel { min-height: 0; overflow: hidden; border: 1px solid #ede8ec; border-radius: 15px; background: #fff; box-shadow: 0 4px 18px #32223208; }
 .roster-panel { display: flex; flex-direction: column; padding: 17px 13px 12px; }
 .panel-heading { display: flex; align-items: center; justify-content: space-between; }

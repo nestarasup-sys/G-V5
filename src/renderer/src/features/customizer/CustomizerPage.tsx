@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from 'react'
-import { CharacterPreview } from '../../ui/components/CharacterPreview'
 import { CharacterPortrait } from '../../ui/components/CharacterPortrait'
 import { Icon, type IconName } from '../../ui/components/Icon'
 import type { FabricatorPose, FabricatorPoseSummary, FabricatorProject, FabricatorSlotSummary } from '../../../../shared/fabricator'
@@ -88,8 +87,9 @@ export function CustomizerPage() {
   const [poseThumbnails, setPoseThumbnails] = useState<Record<string, string>>({})
   const [selectedArtworkUrl, setSelectedArtworkUrl] = useState<string | null>(null)
   const [selectedArtworkLabel, setSelectedArtworkLabel] = useState('')
-  const [previewLoading, setPreviewLoading] = useState(false)
+  const [previewLoading, setPreviewLoading] = useState(true)
   const thumbnailCache = useRef(new Set<string>())
+  const previewLoadRequest = useRef(0)
   const selectedCharacter = characters[selectedIndex]
   const visibleCharacters = characters
     .map((character, index) => ({ character, index }))
@@ -98,16 +98,44 @@ export function CustomizerPage() {
   useEffect(() => {
     let cancelled = false
     void Promise.all([window.desktop.listFabricatorSlots(), window.desktop.listFabricatorPoseSlots()])
-      .then(([models, poses]) => {
+      .then(async ([models, poses]) => {
         if (cancelled) return
         setCatalogModels(models)
         setCatalogPoses(poses)
+        const preferredModel = models.find((model) => model?.slot === 1) ?? models.find((model) => model !== null)
+        if (!preferredModel) {
+          setSelectedCatalogModelSlot(null)
+          setPreviewLoading(false)
+          return
+        }
+
+        setSelectedCatalogModelSlot(preferredModel.slot)
+        setSelectedArtworkLabel(preferredModel.name)
+        const requestId = ++previewLoadRequest.current
+        try {
+          const firstPose = poses.find((pose) => pose?.sourceModelSlot === preferredModel.slot && pose.slot === 1)
+          let artwork: CatalogArtwork | null = firstPose ? await window.desktop.loadFabricatorPose(preferredModel.slot, 1) : null
+          if (!artwork) artwork = await window.desktop.loadFabricatorSlot(preferredModel.slot)
+          if (!artwork) throw new Error('Não foi possível abrir o Modelo 01.')
+          const artworkUrl = await renderArtwork(artwork, 720)
+          if (!cancelled && previewLoadRequest.current === requestId) setSelectedArtworkUrl(artworkUrl)
+        } catch (reason) {
+          if (!cancelled && previewLoadRequest.current === requestId) setCatalogError(reason instanceof Error ? reason.message : 'Não foi possível abrir o Modelo 01.')
+        } finally {
+          if (!cancelled && previewLoadRequest.current === requestId) setPreviewLoading(false)
+        }
       })
       .catch((reason: unknown) => {
-        if (!cancelled) setCatalogError(reason instanceof Error ? reason.message : 'Não foi possível carregar o catálogo.')
+        if (!cancelled) {
+          setCatalogError(reason instanceof Error ? reason.message : 'Não foi possível carregar o catálogo.')
+          setPreviewLoading(false)
+        }
       })
       .finally(() => { if (!cancelled) setCatalogLoading(false) })
-    return () => { cancelled = true }
+    return () => {
+      cancelled = true
+      previewLoadRequest.current += 1
+    }
   }, [])
 
   useEffect(() => {
@@ -167,6 +195,7 @@ export function CustomizerPage() {
   }
 
   async function selectCatalogModel(model: NonNullable<FabricatorSlotSummary>) {
+    const requestId = ++previewLoadRequest.current
     setSelectedCatalogModelSlot(model.slot)
     setSelectedCatalogPoseSlot(null)
     setSelectedArtworkLabel(model.name)
@@ -178,15 +207,17 @@ export function CustomizerPage() {
       let artwork: CatalogArtwork | null = firstPose ? await window.desktop.loadFabricatorPose(model.slot, 1) : null
       if (!artwork) artwork = await window.desktop.loadFabricatorSlot(model.slot)
       if (!artwork) throw new Error('Não foi possível abrir este modelo.')
-      setSelectedArtworkUrl(await renderArtwork(artwork, 720))
+      const artworkUrl = await renderArtwork(artwork, 720)
+      if (previewLoadRequest.current === requestId) setSelectedArtworkUrl(artworkUrl)
     } catch (reason) {
-      setCatalogError(reason instanceof Error ? reason.message : 'Não foi possível abrir este modelo.')
+      if (previewLoadRequest.current === requestId) setCatalogError(reason instanceof Error ? reason.message : 'Não foi possível abrir este modelo.')
     } finally {
-      setPreviewLoading(false)
+      if (previewLoadRequest.current === requestId) setPreviewLoading(false)
     }
   }
 
   async function selectCatalogPose(pose: NonNullable<FabricatorPoseSummary>) {
+    const requestId = ++previewLoadRequest.current
     setSelectedCatalogPoseSlot(pose.slot)
     setSelectedArtworkLabel(pose.name)
     setSelectedArtworkUrl(null)
@@ -195,11 +226,12 @@ export function CustomizerPage() {
     try {
       const artwork = await window.desktop.loadFabricatorPose(pose.sourceModelSlot, pose.slot)
       if (!artwork) throw new Error('Não foi possível abrir esta pose.')
-      setSelectedArtworkUrl(await renderArtwork(artwork, 720))
+      const artworkUrl = await renderArtwork(artwork, 720)
+      if (previewLoadRequest.current === requestId) setSelectedArtworkUrl(artworkUrl)
     } catch (reason) {
-      setCatalogError(reason instanceof Error ? reason.message : 'Não foi possível abrir esta pose.')
+      if (previewLoadRequest.current === requestId) setCatalogError(reason instanceof Error ? reason.message : 'Não foi possível abrir esta pose.')
     } finally {
-      setPreviewLoading(false)
+      if (previewLoadRequest.current === requestId) setPreviewLoading(false)
     }
   }
 
@@ -226,7 +258,7 @@ export function CustomizerPage() {
                   <button aria-label="Aproximar" type="button"><Icon name="zoomIn" /></button>
                   <button aria-label="Afastar" type="button"><Icon name="zoomOut" /></button>
                 </div>
-                {selectedArtworkUrl ? <img className="customizer-selected-artwork" src={selectedArtworkUrl} alt={selectedArtworkLabel} /> : <CharacterPreview character={selectedCharacter} />}
+                {selectedArtworkUrl ? <img className="customizer-selected-artwork" src={selectedArtworkUrl} alt={selectedArtworkLabel} /> : !previewLoading && <div className="customizer-no-artwork"><Icon name="body" /><span>Nenhum modelo salvo para mostrar.</span></div>}
                 {previewLoading && <div className="customizer-preview-loading">Carregando prévia…</div>}
                 <div className="stage-caption"><span>{String(selectedCatalogModelSlot ?? 1).padStart(2, '0')}</span><i />{selectedArtworkLabel || selectedCharacter.name}<small>{selectedArtworkUrl ? 'DO CATÁLOGO' : 'PERSONAGEM ATIVO'}</small></div>
               </div>
@@ -333,7 +365,7 @@ export function CustomizerPage() {
           <div className="preview-heading">
             <div className="preview-title">
               <p className="eyebrow">CUSTOMIZAR <span>/</span> PERSONAGEM</p>
-              <h1>{selectedCharacter.name}<button className="rename-button" aria-label="Editar nome"><Icon name="edit" /></button></h1>
+              <h1>{selectedArtworkLabel || (previewLoading ? 'Carregando modelo…' : 'Nenhum modelo')}<button className="rename-button" aria-label="Editar nome"><Icon name="edit" /></button></h1>
             </div>
             <div className="preview-actions">
               <button className="quiet-button" ><Icon name="check" /> Salvo</button>
@@ -354,8 +386,9 @@ export function CustomizerPage() {
                 <button aria-label="Aproximar"><Icon name="zoomIn" /></button>
                 <button aria-label="Afastar"><Icon name="zoomOut" /></button>
               </div>
-              <CharacterPreview character={selectedCharacter} />
-              <div className="stage-caption"><span>01</span><i />{selectedCharacter.name}<small>PERSONAGEM ATIVO</small></div>
+              {selectedArtworkUrl ? <img className="customizer-selected-artwork" src={selectedArtworkUrl} alt={selectedArtworkLabel} /> : !previewLoading && <div className="customizer-no-artwork"><Icon name="body" /><span>Importe um modelo no Fabricador Dev para começar.</span></div>}
+              {previewLoading && <div className="customizer-preview-loading">Carregando prévia…</div>}
+              <div className="stage-caption"><span>{String(selectedCatalogModelSlot ?? 1).padStart(2, '0')}</span><i />{selectedArtworkLabel || selectedCharacter.name}<small>{selectedArtworkUrl ? 'MODELO ATIVO' : 'SEM MODELO'}</small></div>
             </div>
             <div className="stage-underbar">
               <div className="background-picker"><span className="background-swatch" /><span>Fundo do preview</span><Icon name="chevronDown" /></div>
