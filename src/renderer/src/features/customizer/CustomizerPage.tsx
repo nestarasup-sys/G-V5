@@ -45,16 +45,13 @@ export function CustomizerPage() {
   if (activeModule === 'Modelos') {
     return (
       <div className="customizer-models-view">
-        <header className="customizer-subpage-heading">
-          <button className="customizer-back-button" onClick={() => setActiveModule(null)} type="button"><span aria-hidden="true">←</span> Customizar</button>
-          <div><p className="eyebrow">CUSTOMIZAR</p><h1>Modelos</h1></div>
-        </header>
         <div className="customizer-models-columns">
           <section className="customizer-model-preview" aria-label="Prévia do personagem">
             <div className="stage-wrap">
               <div className="stage-scene">
                 <div className="stage-glow" />
                 <div className="stage-label"><span className="online-dot" /> PREVIEW DO PERSONAGEM</div>
+                <button className="customizer-back-button customizer-preview-back" onClick={() => setActiveModule(null)} type="button"><span aria-hidden="true">←</span> Customizar</button>
                 <div className="scene-chip"><span /> Estúdio • Luz suave</div>
                 <div className="stage-tools" aria-label="Controles do preview">
                   <button aria-label="Ajustar enquadramento" type="button"><Icon name="frame" /></button>
