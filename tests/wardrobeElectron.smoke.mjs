@@ -32,6 +32,7 @@ function hashTree(folder) {
   return JSON.stringify(walk(folder))
 }
 const originalHash = hashTree(appData)
+let migratedHash = null
 let electronApp
 try {
   electronApp = await electron.launch({
@@ -51,9 +52,19 @@ try {
   await window.locator('.wardrobe-preview-part').first().waitFor()
   await window.screenshot({ path: join(output, 'reference.png') })
 
-  for (const slot of [2, 1]) {
+  for (const slot of [2, 3, 1]) {
     await window.getByRole('button', { name: /Testar pose/i }).click()
     await window.locator('.pose-model-option').first().waitFor()
+    if (migratedHash === null) {
+      migratedHash = hashTree(appData)
+      assert.notEqual(migratedHash, originalHash, 'First visit should back up occupied slot 01 and create canonical assembly pose')
+      const moved = JSON.parse(readFileSync(join(appData, 'poses', 'model-1', 'slot-3', 'pose.json'), 'utf8'))
+      const initial = JSON.parse(readFileSync(join(appData, 'poses', 'model-1', 'slot-1', 'pose.json'), 'utf8'))
+      assert.equal(moved.name, 'Pose de Design sem nome (54)')
+      assert.equal(moved.slot, 3)
+      assert.equal(initial.isInitialModelPose, true)
+      assert.equal(initial.slot, 1)
+    }
     const id = String(slot).padStart(2, '0')
     const choice = window.locator('.pose-model-option').filter({ has: window.locator('.pose-model-number', { hasText: id }) })
     await choice.click()
@@ -79,10 +90,10 @@ try {
     assert.equal(await window.locator('.wardrobe-save-state.pending').count(), 0)
     await window.getByRole('button', { name: /Sair do teste/i }).click()
     assert.equal(await window.locator('.wardrobe-pose-garment').count(), 0)
-    assert.equal(hashTree(appData), originalHash, 'Try-on must not change the userData files')
+    assert.equal(hashTree(appData), migratedHash, 'Try-on must not modify poses, model, or garments after canonical pose initialization')
   }
-  assert.ok(existsSync(join(output, 'pose-01.png')) && existsSync(join(output, 'pose-02.png')))
-  console.log('Electron smoke passed: original sheet + neutral/rotated pose + exact clothes/no knee overlays + read-only exit')
+  assert.ok(existsSync(join(output, 'pose-01.png')) && existsSync(join(output, 'pose-02.png')) && existsSync(join(output, 'pose-03.png')))
+  console.log('Electron smoke passed: original sheet + original/neutral/rotated poses + exact clothes/no knee overlays + read-only exit')
 } finally {
   if (electronApp) await electronApp.close()
 }
