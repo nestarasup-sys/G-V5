@@ -75,6 +75,14 @@ async function renderWardrobeOverlay(
   output.height = Math.max(1, artwork.height)
   const outputContext = output.getContext('2d')
   if (!outputContext) return null
+  const hidden = new Set(artwork.hiddenPartIds ?? [])
+  const bodyOrder = (artwork.layerOrder ?? []).filter((id, index, order) => artwork.parts.some((part) => part.id === id) && order.indexOf(id) === index)
+  for (const part of artwork.parts) if (!bodyOrder.includes(part.id)) bodyOrder.push(part.id)
+  const garmentLayers = new Map<string, Array<{ group: CustomizerWardrobeGroup; component: WardrobeSet['components'][number]; transform: ReturnType<typeof mapWardrobeComponentToPose>; center: { x: number; y: number }; sequence: number }>>()
+  let sequence = 0
+
+  // Match the wardrobe pose test: each garment is inserted immediately above
+  // the model layer it is attached to, before the next body layer is drawn.
   for (const group of groups) {
     const set = details[`${group.modelSlot}:${group.setId}`]
     if (!set || group.modelSlot !== modelSlot) continue
@@ -83,37 +91,59 @@ async function renderWardrobeOverlay(
     if (!accepted) continue
     const components = set.components.filter((component) => accepted.includes(component.category))
     if (!components.length) continue
-    const groupCanvas = document.createElement('canvas')
-    groupCanvas.width = output.width
-    groupCanvas.height = output.height
-    const groupContext = groupCanvas.getContext('2d')
-    if (!groupContext) continue
-    const centers: Array<{ x: number; y: number }> = []
+    const mapped: Array<{ component: WardrobeSet['components'][number]; transform: ReturnType<typeof mapWardrobeComponentToPose>; center: { x: number; y: number }; sequence: number }> = []
     for (const component of components) {
       const sourceBone = source.parts.find((part) => part.id === component.attachedPartId)
       const targetBone = artwork.parts.find((part) => part.id === component.attachedPartId)
       if (!sourceBone || !targetBone) continue
-      const transform = mapWardrobeComponentToPose(component, sourceBone, targetBone)
-      centers.push({ x: transform.origin.x, y: transform.origin.y })
-      try {
-        const image = await loadCachedImage(component.dataUrl)
-        const matrix = /^matrix\(([^)]+)\)$/.exec(transform.matrix)?.[1].split(',').map(Number) ?? [1, 0, 0, 1, 0, 0]
-        groupContext.save()
-        groupContext.translate(transform.origin.x, transform.origin.y)
-        groupContext.transform(matrix[0], matrix[1], matrix[2], matrix[3], matrix[4], matrix[5])
-        groupContext.translate(transform.localLeft + transform.renderWidth / 2, transform.localTop + transform.renderHeight / 2)
-        groupContext.rotate(transform.localRotation * Math.PI / 180)
-        groupContext.drawImage(image, -transform.renderWidth / 2, -transform.renderHeight / 2, transform.renderWidth, transform.renderHeight)
-        groupContext.restore()
-      } catch { continue }
+      const hasThighAndCalf = components.some((piece) => piece.category === 'calca-coxa') && components.some((piece) => piece.category === 'calca-canela')
+      const kneeOverlap = hasThighAndCalf && (component.category === 'calca-coxa' || component.category === 'calca-canela') ? 18 : 0
+      const sleeveEdgePadding = component.category === 'manga-superior' || component.category === 'manga-inferior'
+        ? Math.max(8, Math.min(14, Math.round(Math.min(component.width, component.height) * .06)))
+        : 0
+      const transform = mapWardrobeComponentToPose(component, sourceBone, targetBone, kneeOverlap, sleeveEdgePadding)
+      mapped.push({ component, transform, center: transform.origin, sequence: sequence++ })
     }
-    const center = centers.length ? centers.reduce((sum, point) => ({ x: sum.x + point.x / centers.length, y: sum.y + point.y / centers.length }), { x: 0, y: 0 }) : { x: output.width / 2, y: output.height / 2 }
-    outputContext.save()
-    outputContext.translate(center.x + group.offsetX, center.y + group.offsetY)
-    outputContext.rotate(group.rotation * Math.PI / 180)
-    outputContext.scale(group.scaleX, group.scaleY)
-    outputContext.drawImage(groupCanvas, -center.x, -center.y)
-    outputContext.restore()
+    if (!mapped.length) continue
+    const center = mapped.reduce((sum, item) => ({ x: sum.x + item.center.x / mapped.length, y: sum.y + item.center.y / mapped.length }), { x: 0, y: 0 })
+    for (const item of mapped) {
+      const layer = garmentLayers.get(item.component.attachedPartId) ?? []
+      layer.push({ group, ...item, center })
+      garmentLayers.set(item.component.attachedPartId, layer)
+    }
+  }
+
+  for (const partId of bodyOrder) {
+    const part = artwork.parts.find((item) => item.id === partId)
+    if (!part) continue
+    if (!hidden.has(part.id)) {
+      try {
+        const image = await loadCachedImage(part.dataUrl)
+        outputContext.save()
+        outputContext.translate(part.x + part.width / 2, part.y + part.height / 2)
+        outputContext.rotate(part.rotation * Math.PI / 180)
+        outputContext.drawImage(image, -part.width / 2, -part.height / 2, part.width, part.height)
+        outputContext.restore()
+      } catch { /* Keep rendering the remaining layers when one image is unavailable. */ }
+    }
+    const garments = (garmentLayers.get(part.id) ?? []).sort((a, b) => a.sequence - b.sequence)
+    for (const garment of garments) {
+      try {
+        const image = await loadCachedImage(garment.component.dataUrl)
+        const matrix = /^matrix\(([^)]+)\)$/.exec(garment.transform.matrix)?.[1].split(',').map(Number) ?? [1, 0, 0, 1, 0, 0]
+        outputContext.save()
+        outputContext.translate(garment.center.x + garment.group.offsetX, garment.center.y + garment.group.offsetY)
+        outputContext.rotate(garment.group.rotation * Math.PI / 180)
+        outputContext.scale(garment.group.scaleX, garment.group.scaleY)
+        outputContext.translate(-garment.center.x, -garment.center.y)
+        outputContext.translate(garment.transform.origin.x, garment.transform.origin.y)
+        outputContext.transform(matrix[0], matrix[1], matrix[2], matrix[3], matrix[4], matrix[5])
+        outputContext.translate(garment.transform.localLeft + garment.transform.renderWidth / 2, garment.transform.localTop + garment.transform.renderHeight / 2)
+        outputContext.rotate(garment.transform.localRotation * Math.PI / 180)
+        outputContext.drawImage(image, -garment.transform.renderWidth / 2, -garment.transform.renderHeight / 2, garment.transform.renderWidth, garment.transform.renderHeight)
+        outputContext.restore()
+      } catch { /* Keep rendering the remaining layers when one image is unavailable. */ }
+    }
   }
   return output.toDataURL('image/png')
 }
