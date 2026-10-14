@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
-import type { FabricatorHistoryState, FabricatorPose, FabricatorPoseSummary, FabricatorProject, FabricatorProjectSave, FabricatorSlotSummary, WardrobeCategory, WardrobeComponent, WardrobeSet, WardrobeSetSave, WardrobeSetSummary } from '../../../../../shared/fabricator'
+import type { FabricatorHistoryState, FabricatorPose, FabricatorPoseSummary, FabricatorProject, FabricatorSlotSummary, WardrobeCategory, WardrobeComponent, WardrobeSet, WardrobeSetSave, WardrobeSetSummary } from '../../../../../shared/fabricator'
 import { Icon } from '../../../ui/components/Icon'
 import { orderedParts, partJointAnchor, sourcePointFromCanvas } from '../models/rig'
 import { cssAffine, kneeBand, mapWardrobeComponentToPose, poseDeltaToSource } from './poseTransform'
@@ -43,9 +43,11 @@ function getBodyLayer(model: FabricatorProject | null, partId: string): number {
   const layer = order.indexOf(partId)
   return layer >= 0 ? layer : Math.max(0, model.parts.findIndex((part) => part.id === partId))
 }
-function serializeModel(model: FabricatorProject): FabricatorProjectSave {
-  const { sourceDataUrl: _sourceDataUrl, parts, ...metadata } = model
-  return { ...metadata, parts: parts.map(({ dataUrl: _dataUrl, chromaBaseDataUrl: _chromaBaseDataUrl, ...part }) => part) }
+/** Per-set source calibration overrides never mutate the model or its saved poses. */
+function fittedBone(bone: FabricatorProject['parts'][number] | undefined, set: WardrobeSet | null) {
+  if (!bone) return undefined
+  const sourceTransform = set?.sourceOverrides?.[bone.id]
+  return sourceTransform ? { ...bone, sourceTransform } : bone
 }
 function guessBone(category: WardrobeCategory, x: number, width: number, model: FabricatorProject): FabricatorProject['parts'][number] | undefined {
   const side = x < width / 2 ? 'left' : 'right'
@@ -135,8 +137,8 @@ export function WardrobeWorkspace() {
           })
           if (recoveredParts.some((part, index) => part !== reference.parts[index])) {
             recoveredModel = { ...reference, parts: recoveredParts }
-            try { await window.desktop.saveFabricatorProject(serializeModel(recoveredModel), []) }
-            catch { setError('Recuperei a origem das peças pelo histórico, mas não consegui gravá-la no modelo. Ela ficará disponível nesta sessão.') }
+            // Recovery is read-only. Opening the wardrobe must not write to the model.
+            // A historical source frame remains usable for this session.
           }
         }
       }
@@ -206,7 +208,7 @@ export function WardrobeWorkspace() {
     } catch (reason) { setProcessing(false); setError(reason instanceof Error ? reason.message : 'Não foi possível importar a imagem.') }
   }
   const updateComponent = (id: string, values: Partial<WardrobeComponent>) => { setDirty(true); setDraft((current) => current ? ({ ...current, components: current.components.map((component) => component.id === id ? { ...component, ...values } : component), updatedAt: new Date().toISOString() }) : current) }
-  const calibrateSourceAnchor = async (partId: string, x: number, y: number) => {
+  const calibrateSourceAnchor = (partId: string, x: number, y: number) => {
     if (!model) return
     const selectedPart = model.parts.find((part) => part.id === partId)
     if (!selectedPart) return
@@ -218,19 +220,17 @@ export function WardrobeWorkspace() {
     const localX = dx * Math.cos(radians) - dy * Math.sin(radians)
     const localY = dx * Math.sin(radians) + dy * Math.cos(radians)
     const sourceCenter = { x: x - localX, y: y - localY }
-    const parts = model.parts.map((part) => part.id === partId
-      ? { ...part, sourceTransform: { x: sourceCenter.x - part.width / 2, y: sourceCenter.y - part.height / 2, width: part.width, height: part.height, rotation: 0, anchorVersion: 1 as const, jointAnchor: { x, y } } }
-      : part)
-    const calibrated = { ...model, parts, updatedAt: new Date().toISOString() }
-    setModel(calibrated); setCalibratingPartId(null); setError('')
-    try { await window.desktop.saveFabricatorProject(serializeModel(calibrated), []) }
-    catch (reason) { setError(reason instanceof Error ? `Calibração aplicada nesta sessão, mas não foi salva: ${reason.message}` : 'Calibração aplicada nesta sessão, mas não foi salva.') }
+    const sourceTransform = { x: sourceCenter.x - part.width / 2, y: sourceCenter.y - part.height / 2, width: part.width, height: part.height, rotation: 0, anchorVersion: 1 as const, jointAnchor: { x, y } }
+    setDraft((current) => current ? { ...current, sourceOverrides: { ...current.sourceOverrides, [partId]: sourceTransform }, updatedAt: new Date().toISOString() } : current)
+    setDirty(true)
+    setCalibratingPartId(null)
+    setError('Origem ajustada somente neste conjunto. Salve o conjunto para manter a calibração; o modelo original não será modificado.')
   }
   const handleArtboardPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (!calibratingPartId || !previewRef.current) return
     event.preventDefault(); event.stopPropagation()
     const bounds = event.currentTarget.getBoundingClientRect()
-    void calibrateSourceAnchor(calibratingPartId, (event.clientX - bounds.left) / scale, (event.clientY - bounds.top) / scale)
+    calibrateSourceAnchor(calibratingPartId, (event.clientX - bounds.left) / scale, (event.clientY - bounds.top) / scale)
   }
   const moveComponentLayer = (id: string, direction: -1 | 1) => {
     setDirty(true)
@@ -250,7 +250,7 @@ export function WardrobeWorkspace() {
     event.stopPropagation()
     if (calibratingPartId && !testPose) {
       const bounds = event.currentTarget.parentElement?.getBoundingClientRect()
-      if (bounds) void calibrateSourceAnchor(calibratingPartId, (event.clientX - bounds.left) / scale, (event.clientY - bounds.top) / scale)
+      if (bounds) calibrateSourceAnchor(calibratingPartId, (event.clientX - bounds.left) / scale, (event.clientY - bounds.top) / scale)
       return
     }
     event.currentTarget.setPointerCapture(event.pointerId)
@@ -263,7 +263,7 @@ export function WardrobeWorkspace() {
     if (!drag || drag.pointerId !== event.pointerId) return
     const delta = { x: (event.clientX - drag.pointerX) / scale, y: (event.clientY - drag.pointerY) / scale }
     const component = draft?.components.find((item) => item.id === drag.componentId)
-    const modelBone = component && model?.parts.find((part) => part.id === component.attachedPartId)
+    const modelBone = component && fittedBone(model?.parts.find((part) => part.id === component.attachedPartId), draft)
     const poseBone = component && testPose?.parts.find((part) => part.id === component.attachedPartId)
     const sourceDelta = testPose && modelBone && poseBone ? poseDeltaToSource(delta, modelBone, poseBone) : delta
     const x = drag.originX + sourceDelta.x
@@ -314,7 +314,7 @@ export function WardrobeWorkspace() {
   }
   const openTestPosePicker = async () => {
     const missingOrigins = Array.from(new Set((draft?.components ?? []).filter((component) => {
-      const bone = model?.parts.find((part) => part.id === component.attachedPartId)
+      const bone = fittedBone(model?.parts.find((part) => part.id === component.attachedPartId), draft)
       return !bone?.sourceTransform
     }).map((component) => model?.parts.find((part) => part.id === component.attachedPartId)?.name ?? component.name)))
     if (missingOrigins.length) {
@@ -358,7 +358,7 @@ export function WardrobeWorkspace() {
         {draft?.components.map((component, index) => {
           const layer = getBodyLayer(model, component.attachedPartId)
           const layerBand = testPose ? previewLayerStride : draft.components.length + 1
-          const modelBone = model?.parts.find((part) => part.id === component.attachedPartId)
+          const modelBone = fittedBone(model?.parts.find((part) => part.id === component.attachedPartId), draft)
           const poseBone = testPose?.parts.find((part) => part.id === component.attachedPartId)
           const testOffset = testDragOffsets[component.id] ?? { x: 0, y: 0 }
           const componentX = component.x + (testPose ? testOffset.x : 0)
