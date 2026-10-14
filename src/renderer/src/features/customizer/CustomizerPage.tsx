@@ -34,6 +34,8 @@ export function CustomizerPage() {
   const stageRef = useRef<HTMLDivElement>(null)
   const saveQueue = useRef<Promise<void>>(Promise.resolve())
   const saveRevision = useRef(0)
+  const latestLibrary = useRef(library)
+  latestLibrary.current = library
   const selected = library.characters.find((character) => character.id === selectedId) ?? null
   const modelSlot = selected?.modelSlot ?? null
   const poseSlot = selected?.poseSlot ?? 1
@@ -69,6 +71,16 @@ export function CustomizerPage() {
     }, 350)
     return () => clearTimeout(timer)
   }, [library, loaded])
+
+  useEffect(() => {
+    if (!loaded) return
+    return () => {
+      // Flush the last keystroke or slider change even when leaving Customizar
+      // before the debounce interval has finished.
+      saveQueue.current = saveQueue.current.catch(() => undefined)
+        .then(() => window.desktop.saveCustomizerLibrary(latestLibrary.current))
+    }
+  }, [loaded])
 
   useEffect(() => {
     const element = stageRef.current
