@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FabricatorPose, FabricatorPoseDraft, FabricatorPoseDraftSave, FabricatorPoseSave, FabricatorPoseSummary, FabricatorProject, FabricatorSlotSummary, PosePart } from '../../../../shared/fabricator'
 import { Icon } from '../../ui/components/Icon'
+import { usePreviewBackground } from './usePreviewBackground'
 import { normalizeLayerOrder, orderedParts, partJointAnchor } from './models/rig'
 
 type DraftProject = Omit<FabricatorPose, 'slot'>
@@ -104,6 +105,7 @@ function poseFromModel(model: FabricatorProject): DraftProject {
 }
 
 export function PoseWorkspace() {
+  const [previewBackground] = usePreviewBackground()
   const [models, setModels] = useState<FabricatorSlotSummary[]>(Array.from({ length: 10 }, () => null))
   const [allPoseSlots, setAllPoseSlots] = useState<FabricatorPoseSummary[]>([])
   const [selectedModelSlot, setSelectedModelSlot] = useState(1)
@@ -568,7 +570,7 @@ export function PoseWorkspace() {
       <div className="pose-editor-body">
         <section className="pose-canvas-column" aria-label="Prévia da pose">
           <div className="pose-canvas-heading"><span><i />{project ? 'PRÉVIA DA POSE' : sourcePreview ? 'MODELO BASE · SOMENTE PRÉVIA' : 'PRÉVIA DA POSE'}</span><span>{displayProject ? `${displayProject.width} × ${displayProject.height}` : 'Escolha um modelo para começar'}</span></div>
-          <div ref={stageRef} className={`pose-stage${panning ? ' panning' : ''}${moveToolActive ? ' move-tool-active' : ''}`} onPointerDown={beginPan} onPointerMove={moveCanvas} onPointerUp={stopCanvasGesture} onPointerCancel={stopCanvasGesture}>
+          <div ref={stageRef} className={`pose-stage${panning ? ' panning' : ''}${moveToolActive ? ' move-tool-active' : ''}`} style={{ '--preview-background': previewBackground } as import('react').CSSProperties} onPointerDown={beginPan} onPointerMove={moveCanvas} onPointerUp={stopCanvasGesture} onPointerCancel={stopCanvasGesture}>
             {displayProject ? <div className={`pose-artboard${!project ? ' source-preview' : ''}`} style={{ width: displayProject.width * scale, height: displayProject.height * scale, left: `calc(50% + ${pan.x}px)`, top: `calc(50% + ${pan.y}px)` }}>
               {visibleParts.map((part, index) => {
                 const attachment = part.wardrobeAttachment
