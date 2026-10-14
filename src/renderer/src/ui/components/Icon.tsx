@@ -2,7 +2,7 @@ export type IconName =
   | 'plus' | 'search' | 'check' | 'expand' | 'frame' | 'zoomIn' | 'zoomOut'
   | 'chevronDown' | 'sliders' | 'chevronRight' | 'sparkles'
   | 'body' | 'face' | 'shirt' | 'flower' | 'message' | 'paw' | 'box' | 'user'
-  | 'bow' | 'camera' | 'settings' | 'download' | 'star' | 'edit' | 'bell' | 'link' | 'eye' | 'eyeOff' | 'trash' | 'brush' | 'reset' | 'undo' | 'redo' | 'eraser' | 'move'
+  | 'bow' | 'camera' | 'settings' | 'download' | 'star' | 'edit' | 'bell' | 'link' | 'eye' | 'eyeOff' | 'trash' | 'brush' | 'reset' | 'undo' | 'redo' | 'eraser' | 'move' | 'warning'
 
 const paths: Record<IconName, string> = {
   plus: 'M12 5v14M5 12h14',
@@ -40,7 +40,8 @@ const paths: Record<IconName, string> = {
   undo: 'M9 14 4 9l5-5M4 9h9a7 7 0 0 1 0 14h-2',
   redo: 'm15 14 5-5-5-5m5 5h-9a7 7 0 0 0 0 14h2',
   eraser: 'm7 21 10-10m-5-5 8 8a2 2 0 0 1 0 3l-3 3a2 2 0 0 1-3 0l-8-8a2 2 0 0 1 0-3l3-3a2 2 0 0 1 3 0Z',
-  move: 'M12 2v20m0-20-3 3m3-3 3 3m-3 17-3-3m3 3 3-3M2 12h20m-20 0 3-3m-3 3 3 3m17-3-3-3m3 3-3 3'
+  move: 'M12 2v20m0-20-3 3m3-3 3 3m-3 17-3-3m3 3 3-3M2 12h20m-20 0 3-3m-3 3 3 3m17-3-3-3m3 3-3 3',
+  warning: 'M12 3 2.8 19h18.4L12 3Zm0 6v4m0 3h.01'
 }
 
 export function Icon({ name, className }: { name: IconName; className?: string }) {

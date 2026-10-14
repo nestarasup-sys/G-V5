@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { FabricatorDesktopApi } from '../src/shared/fabricator'
+import type { CustomizerDesktopApi } from '../src/shared/customizer'
 
 const fabricatorApi: FabricatorDesktopApi = {
   listFabricatorSlots: () => ipcRenderer.invoke('fabricator:list-slots'),
@@ -22,8 +23,16 @@ const fabricatorApi: FabricatorDesktopApi = {
   deleteWardrobeSet: (modelSlot, id) => ipcRenderer.invoke('fabricator:wardrobe:delete', modelSlot, id)
 }
 
+const customizerApi: CustomizerDesktopApi = {
+  listCustomizerCharacters: () => ipcRenderer.invoke('customizer:characters:list'),
+  saveCustomizerCharacter: (character) => ipcRenderer.invoke('customizer:characters:save', character),
+  createCustomizerCharacter: (name) => ipcRenderer.invoke('customizer:characters:create', name),
+  deleteCustomizerCharacter: (id) => ipcRenderer.invoke('customizer:characters:delete', id)
+}
+
 contextBridge.exposeInMainWorld('desktop', {
   platform: process.platform,
   appName: 'Gacha Nymi',
-  ...fabricatorApi
+  ...fabricatorApi,
+  ...customizerApi
 })

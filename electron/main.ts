@@ -4,6 +4,7 @@ import { basename, dirname, extname, join, resolve } from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import type { FabricatorAssetSave, FabricatorHistoryEntry, FabricatorHistorySaveEntry, FabricatorHistorySaveState, FabricatorHistoryState, FabricatorPose, FabricatorPoseDraft, FabricatorPoseDraftSave, FabricatorPoseSave, FabricatorPoseSummary, FabricatorProject, FabricatorProjectSave, FabricatorSlotSummary, ModelPart, PosePart, WardrobeAssetSave, WardrobeCategory, WardrobeSet, WardrobeSetSave, WardrobeSetSummary } from '../src/shared/fabricator'
+import type { CustomizerCharacter } from '../src/shared/customizer'
 
 const slotCount = 10
 const poseSlotCount = 12
@@ -16,11 +17,75 @@ const poseDraftPath = (modelSlot: number) => join(poseModelPath(modelSlot), 'dra
 const wardrobeLibraryPath = () => join(app.getPath('userData'), 'fabricator', 'wardrobe')
 const wardrobeModelPath = (modelSlot: number) => join(wardrobeLibraryPath(), `model-${modelSlot}`)
 const wardrobeSetPath = (modelSlot: number, id: string) => join(wardrobeModelPath(modelSlot), `set-${id}`)
+const characterLibraryPath = () => join(app.getPath('userData'), 'customizer', 'characters')
+const characterManifestPath = () => join(characterLibraryPath(), 'characters.json')
 const fabricatorSaveQueues = new Map<number, Promise<void>>()
 let poseSaveQueue: Promise<void> = Promise.resolve()
 const poseSaveWrites = new Set<Promise<void>>()
 let poseMigration: Promise<void> | null = null
 let wardrobeSaveQueue: Promise<void> = Promise.resolve()
+let characterSaveQueue: Promise<void> = Promise.resolve()
+
+const starterCharacters: Array<Pick<CustomizerCharacter, 'name' | 'hair' | 'outfit' | 'skin'>> = [
+  { name: 'Chloe', hair: '#cfaa78', outfit: '#f2d771', skin: '#f5d7c7' },
+  { name: 'Miri', hair: '#7c7aa4', outfit: '#a8b7e8', skin: '#f2d6c5' },
+  { name: 'Drystan', hair: '#c18b50', outfit: '#7194ad', skin: '#f1d4c3' },
+  { name: 'Drogo', hair: '#c8cbd5', outfit: '#adb6c9', skin: '#f2d9cc' },
+  { name: 'Loki', hair: '#282933', outfit: '#b898dd', skin: '#e8c5b5' },
+  { name: 'Henry', hair: '#4b3335', outfit: '#d89593', skin: '#c58e78' },
+  { name: 'Lauren', hair: '#d1c3a1', outfit: '#a8c5ba', skin: '#f0d3c0' },
+  { name: 'Luka', hair: '#263f57', outfit: '#88adcc', skin: '#eccdbb' },
+  { name: 'Marinette', hair: '#24527e', outfit: '#bc8bce', skin: '#f2d9c9' },
+  { name: 'Ayla', hair: '#47354b', outfit: '#df9ab6', skin: '#d69d85' }
+]
+
+function isCustomizerCharacter(value: unknown): value is CustomizerCharacter {
+  if (!value || typeof value !== 'object') return false
+  const character = value as Partial<CustomizerCharacter>
+  return typeof character.id === 'string' && /^[a-zA-Z0-9_-]{1,80}$/.test(character.id)
+    && typeof character.name === 'string' && character.name.trim().length > 0 && character.name.length <= 80
+    && typeof character.hair === 'string' && /^#[0-9a-fA-F]{6}$/.test(character.hair)
+    && typeof character.outfit === 'string' && /^#[0-9a-fA-F]{6}$/.test(character.outfit)
+    && typeof character.skin === 'string' && /^#[0-9a-fA-F]{6}$/.test(character.skin)
+    && !!character.customization && typeof character.customization === 'object'
+    && (character.customization.modelSlot === null || isValidModelSlot(character.customization.modelSlot))
+    && (character.customization.poseSlot === null || (Number.isInteger(character.customization.poseSlot) && character.customization.poseSlot >= 1 && character.customization.poseSlot <= poseSlotCount))
+    && !!character.customization.partOverrides && typeof character.customization.partOverrides === 'object'
+    && Object.keys(character.customization.partOverrides).length <= 1000
+    && Array.isArray(character.customization.layerOrder)
+    && character.customization.layerOrder.length <= 1000
+    && character.customization.layerOrder.every((id) => typeof id === 'string' && id.length <= 120)
+    && typeof character.createdAt === 'string' && typeof character.updatedAt === 'string'
+}
+
+async function readCustomizerCharacters(): Promise<CustomizerCharacter[]> {
+  try {
+    const parsed = JSON.parse(await readFile(characterManifestPath(), 'utf8')) as unknown
+    if (!Array.isArray(parsed) || !parsed.every(isCustomizerCharacter)) throw new Error('A biblioteca de personagens está inválida.')
+    return parsed
+  } catch (reason) {
+    if ((reason as NodeJS.ErrnoException).code !== 'ENOENT') throw reason
+    const now = new Date().toISOString()
+    const seeded = starterCharacters.map((character) => ({
+      ...character,
+      id: randomUUID(),
+      customization: { modelSlot: 1, poseSlot: 1, partOverrides: {}, layerOrder: [] },
+      createdAt: now,
+      updatedAt: now
+    }))
+    await writeCustomizerCharacters(seeded)
+    return seeded
+  }
+}
+
+async function writeCustomizerCharacters(characters: CustomizerCharacter[]): Promise<void> {
+  if (!Array.isArray(characters) || characters.length > 500 || !characters.every(isCustomizerCharacter)) throw new Error('Dados de personagem inválidos.')
+  if (new Set(characters.map((character) => character.id)).size !== characters.length) throw new Error('Há personagens com identificadores repetidos.')
+  await mkdir(characterLibraryPath(), { recursive: true })
+  const temporary = `${characterManifestPath()}.tmp`
+  await writeFile(temporary, JSON.stringify(characters), 'utf8')
+  await rename(temporary, characterManifestPath())
+}
 
 const wardrobeCategories: WardrobeCategory[] = ['camisa', 'manga-superior', 'manga-inferior', 'calca-coxa', 'calca-canela', 'shorts']
 const isValidWardrobeId = (id: string) => /^[a-zA-Z0-9_-]{1,80}$/.test(id)
@@ -376,6 +441,59 @@ async function readPoseDraft(modelSlot: number): Promise<FabricatorPoseDraft | n
 }
 
 async function registerFabricatorHandlers(): Promise<void> {
+  ipcMain.handle('customizer:characters:list', async (event): Promise<CustomizerCharacter[]> => {
+    assertTrustedSender(event)
+    return readCustomizerCharacters()
+  })
+
+  ipcMain.handle('customizer:characters:save', async (event, character: CustomizerCharacter): Promise<void> => {
+    assertTrustedSender(event)
+    if (!isCustomizerCharacter(character)) throw new Error('Dados de personagem inválidos.')
+    const next = characterSaveQueue.catch(() => undefined).then(async () => {
+      const characters = await readCustomizerCharacters()
+      const index = characters.findIndex((item) => item.id === character.id)
+      if (index < 0) throw new Error('Personagem não encontrado.')
+      characters[index] = { ...character, name: character.name.trim(), updatedAt: new Date().toISOString() }
+      await writeCustomizerCharacters(characters)
+    })
+    characterSaveQueue = next
+    await next
+  })
+
+  ipcMain.handle('customizer:characters:create', async (event, requestedName: string): Promise<CustomizerCharacter> => {
+    assertTrustedSender(event)
+    const name = typeof requestedName === 'string' ? requestedName.trim().slice(0, 80) : ''
+    if (!name) throw new Error('Digite um nome para o personagem.')
+    let created!: CustomizerCharacter
+    const next = characterSaveQueue.catch(() => undefined).then(async () => {
+      const characters = await readCustomizerCharacters()
+      const now = new Date().toISOString()
+      created = {
+        id: randomUUID(), name,
+        hair: '#47354b', outfit: '#df9ab6', skin: '#f2d9c9',
+        customization: { modelSlot: 1, poseSlot: 1, partOverrides: {}, layerOrder: [] },
+        createdAt: now, updatedAt: now
+      }
+      characters.push(created)
+      await writeCustomizerCharacters(characters)
+    })
+    characterSaveQueue = next
+    await next
+    return created
+  })
+
+  ipcMain.handle('customizer:characters:delete', async (event, id: string): Promise<void> => {
+    assertTrustedSender(event)
+    if (typeof id !== 'string' || !/^[a-zA-Z0-9_-]{1,80}$/.test(id)) throw new Error('Identificador de personagem inválido.')
+    const next = characterSaveQueue.catch(() => undefined).then(async () => {
+      const characters = await readCustomizerCharacters()
+      if (!characters.some((character) => character.id === id)) throw new Error('Personagem não encontrado.')
+      await writeCustomizerCharacters(characters.filter((character) => character.id !== id))
+    })
+    characterSaveQueue = next
+    await next
+  })
+
   ipcMain.handle('fabricator:list-slots', async (event): Promise<FabricatorSlotSummary[]> => {
     assertTrustedSender(event)
     const slots: FabricatorSlotSummary[] = Array.from({ length: slotCount }, () => null)

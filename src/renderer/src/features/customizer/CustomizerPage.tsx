@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { CharacterPortrait } from '../../ui/components/CharacterPortrait'
 import { Icon, type IconName } from '../../ui/components/Icon'
 import type { FabricatorPose, FabricatorPoseSummary, FabricatorProject, FabricatorSlotSummary } from '../../../../shared/fabricator'
+import type { CustomizerCharacter } from '../../../../shared/customizer'
 import { usePreviewBackground } from '../fabricator/usePreviewBackground'
 
 type CatalogArtwork = Pick<FabricatorProject, 'width' | 'height' | 'parts' | 'layerOrder' | 'hiddenPartIds'>
@@ -47,19 +48,6 @@ async function renderArtwork(artwork: CatalogArtwork, maxSize: number): Promise<
   return canvas.toDataURL('image/png')
 }
 
-const characters = [
-  { name: 'Chloe', hair: '#cfaa78', outfit: '#f2d771', skin: '#f5d7c7' },
-  { name: 'Miri', hair: '#7c7aa4', outfit: '#a8b7e8', skin: '#f2d6c5' },
-  { name: 'Drystan', hair: '#c18b50', outfit: '#7194ad', skin: '#f1d4c3' },
-  { name: 'Drogo', hair: '#c8cbd5', outfit: '#adb6c9', skin: '#f2d9cc' },
-  { name: 'Loki', hair: '#282933', outfit: '#b898dd', skin: '#e8c5b5' },
-  { name: 'Henry', hair: '#4b3335', outfit: '#d89593', skin: '#c58e78' },
-  { name: 'Lauren', hair: '#d1c3a1', outfit: '#a8c5ba', skin: '#f0d3c0' },
-  { name: 'Luka', hair: '#263f57', outfit: '#88adcc', skin: '#eccdbb' },
-  { name: 'Marinette', hair: '#24527e', outfit: '#bc8bce', skin: '#f2d9c9' },
-  { name: 'Ayla', hair: '#47354b', outfit: '#df9ab6', skin: '#d69d85' }
-]
-
 const modules: { name: string; icon: IconName; detail: string }[] = [
   { name: 'Modelos', icon: 'sparkles', detail: 'Looks prontos para começar' },
   { name: 'Poses', icon: 'body', detail: 'Pose, proporções e detalhes' },
@@ -73,7 +61,14 @@ const modules: { name: string; icon: IconName; detail: string }[] = [
 ]
 
 export function CustomizerPage() {
-  const [selectedIndex, setSelectedIndex] = useState(0)
+  const [characters, setCharacters] = useState<CustomizerCharacter[]>([])
+  const [selectedCharacterId, setSelectedCharacterId] = useState('')
+  const [charactersLoading, setCharactersLoading] = useState(true)
+  const [charactersError, setCharactersError] = useState('')
+  const [characterSaveState, setCharacterSaveState] = useState<'saved' | 'saving' | 'error'>('saved')
+  const [dialogMode, setDialogMode] = useState<'create' | 'rename' | null>(null)
+  const [nameDraft, setNameDraft] = useState('')
+  const [savingCharacter, setSavingCharacter] = useState(false)
   const [activeModule, setActiveModule] = useState<string | null>(null)
   const [previewBackground, setPreviewBackground] = usePreviewBackground()
   const [rosterQuery, setRosterQuery] = useState('')
@@ -90,10 +85,30 @@ export function CustomizerPage() {
   const [previewLoading, setPreviewLoading] = useState(true)
   const thumbnailCache = useRef(new Set<string>())
   const previewLoadRequest = useRef(0)
-  const selectedCharacter = characters[selectedIndex]
+  const selectedCharacter = characters.find((character) => character.id === selectedCharacterId) ?? characters[0] ?? null
   const visibleCharacters = characters
-    .map((character, index) => ({ character, index }))
-    .filter(({ character }) => character.name.toLowerCase().includes(rosterQuery.trim().toLowerCase()))
+    .filter((character) => character.name.toLowerCase().includes(rosterQuery.trim().toLowerCase()))
+
+  useEffect(() => {
+    let cancelled = false
+    void window.desktop.listCustomizerCharacters().then((loaded) => {
+      if (cancelled) return
+      setCharacters(loaded)
+      let remembered = ''
+      try { remembered = localStorage.getItem('nymi.customizer.activeCharacter') ?? '' } catch { /* Storage preferences are optional. */ }
+      setSelectedCharacterId(loaded.some((character) => character.id === remembered) ? remembered : loaded[0]?.id ?? '')
+    }).catch((reason: unknown) => {
+      if (!cancelled) setCharactersError(reason instanceof Error ? reason.message : 'Não foi possível carregar os personagens.')
+    }).finally(() => { if (!cancelled) setCharactersLoading(false) })
+    return () => { cancelled = true }
+  }, [])
+
+  useEffect(() => {
+    try {
+      if (selectedCharacterId) localStorage.setItem('nymi.customizer.activeCharacter', selectedCharacterId)
+      else localStorage.removeItem('nymi.customizer.activeCharacter')
+    } catch { /* Selection persistence is best-effort; character data is stored by Electron. */ }
+  }, [selectedCharacterId])
 
   useEffect(() => {
     let cancelled = false
@@ -102,28 +117,6 @@ export function CustomizerPage() {
         if (cancelled) return
         setCatalogModels(models)
         setCatalogPoses(poses)
-        const preferredModel = models.find((model) => model?.slot === 1) ?? models.find((model) => model !== null)
-        if (!preferredModel) {
-          setSelectedCatalogModelSlot(null)
-          setPreviewLoading(false)
-          return
-        }
-
-        setSelectedCatalogModelSlot(preferredModel.slot)
-        setSelectedArtworkLabel(preferredModel.name)
-        const requestId = ++previewLoadRequest.current
-        try {
-          const firstPose = poses.find((pose) => pose?.sourceModelSlot === preferredModel.slot && pose.slot === 1)
-          let artwork: CatalogArtwork | null = firstPose ? await window.desktop.loadFabricatorPose(preferredModel.slot, 1) : null
-          if (!artwork) artwork = await window.desktop.loadFabricatorSlot(preferredModel.slot)
-          if (!artwork) throw new Error('Não foi possível abrir o Modelo 01.')
-          const artworkUrl = await renderArtwork(artwork, 720)
-          if (!cancelled && previewLoadRequest.current === requestId) setSelectedArtworkUrl(artworkUrl)
-        } catch (reason) {
-          if (!cancelled && previewLoadRequest.current === requestId) setCatalogError(reason instanceof Error ? reason.message : 'Não foi possível abrir o Modelo 01.')
-        } finally {
-          if (!cancelled && previewLoadRequest.current === requestId) setPreviewLoading(false)
-        }
       })
       .catch((reason: unknown) => {
         if (!cancelled) {
@@ -137,6 +130,51 @@ export function CustomizerPage() {
       previewLoadRequest.current += 1
     }
   }, [])
+
+  useEffect(() => {
+    if (catalogLoading) return
+    if (!selectedCharacter) {
+      setSelectedCatalogModelSlot(null)
+      setSelectedCatalogPoseSlot(null)
+      setSelectedArtworkUrl(null)
+      setSelectedArtworkLabel('')
+      setPreviewLoading(false)
+      return
+    }
+    const model = catalogModels.find((item) => item?.slot === selectedCharacter.customization.modelSlot)
+      ?? catalogModels.find((item) => item?.slot === 1)
+      ?? catalogModels.find((item) => item !== null)
+    if (!model) {
+      setSelectedCatalogModelSlot(null)
+      setSelectedCatalogPoseSlot(null)
+      setSelectedArtworkUrl(null)
+      setSelectedArtworkLabel('')
+      setPreviewLoading(false)
+      return
+    }
+    const requestedPose = selectedCharacter.customization.poseSlot
+    const pose = requestedPose === null ? null : catalogPoses.find((item) => item?.sourceModelSlot === model.slot && item.slot === requestedPose)
+    const requestId = ++previewLoadRequest.current
+    let cancelled = false
+    setSelectedCatalogModelSlot(model.slot)
+    setSelectedCatalogPoseSlot(pose?.slot ?? null)
+    setSelectedArtworkLabel(pose?.name ?? model.name)
+    setSelectedArtworkUrl(null)
+    setPreviewLoading(true)
+    void (async () => {
+      try {
+        const artwork = pose ? await window.desktop.loadFabricatorPose(model.slot, pose.slot) : await window.desktop.loadFabricatorSlot(model.slot)
+        if (!artwork) throw new Error('Não foi possível carregar a prévia deste personagem.')
+        const artworkUrl = await renderArtwork(artwork, 720)
+        if (!cancelled && previewLoadRequest.current === requestId) setSelectedArtworkUrl(artworkUrl)
+      } catch (reason) {
+        if (!cancelled && previewLoadRequest.current === requestId) setCatalogError(reason instanceof Error ? reason.message : 'Não foi possível carregar a prévia.')
+      } finally {
+        if (!cancelled && previewLoadRequest.current === requestId) setPreviewLoading(false)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [catalogLoading, catalogModels, catalogPoses, selectedCharacter?.id])
 
   useEffect(() => {
     if (activeModule !== 'Modelos' || catalogLoading) return
@@ -189,21 +227,79 @@ export function CustomizerPage() {
     return () => { cancelled = true }
   }, [activeModule, catalogLoading, catalogPoses, selectedCatalogModelSlot])
 
-  function selectCharacter(index: number) {
-    setSelectedIndex((index + characters.length) % characters.length)
+  function selectCharacter(id: string) {
+    setSelectedCharacterId(id)
     setActiveModule(null)
+  }
+
+  async function saveCharacter(next: CustomizerCharacter) {
+    setCharactersError('')
+    setCharacterSaveState('saving')
+    setCharacters((current) => current.map((character) => character.id === next.id ? next : character))
+    try {
+      await window.desktop.saveCustomizerCharacter(next)
+      setCharacterSaveState('saved')
+    } catch (reason) {
+      setCharacterSaveState('error')
+      setCharactersError(reason instanceof Error ? reason.message : 'Não foi possível salvar o personagem.')
+      const latest = await window.desktop.listCustomizerCharacters().catch(() => null)
+      if (latest) setCharacters(latest)
+    }
+  }
+
+  async function saveCharacterCustomization(patch: Partial<CustomizerCharacter['customization']>) {
+    if (!selectedCharacter) return
+    await saveCharacter({ ...selectedCharacter, customization: { ...selectedCharacter.customization, ...patch }, updatedAt: new Date().toISOString() })
+  }
+
+  async function submitCharacterDialog(event: import('react').FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const name = nameDraft.trim()
+    if (!name || savingCharacter) return
+    setSavingCharacter(true)
+    setCharactersError('')
+    try {
+      if (dialogMode === 'create') {
+        const character = await window.desktop.createCustomizerCharacter(name)
+        setCharacters((current) => [...current, character])
+        setSelectedCharacterId(character.id)
+        setActiveModule(null)
+      } else if (dialogMode === 'rename' && selectedCharacter) {
+        await saveCharacter({ ...selectedCharacter, name, updatedAt: new Date().toISOString() })
+      }
+      setDialogMode(null)
+    } catch (reason) {
+      setCharactersError(reason instanceof Error ? reason.message : 'Não foi possível salvar o personagem.')
+    } finally {
+      setSavingCharacter(false)
+    }
+  }
+
+  async function deleteSelectedCharacter() {
+    if (!selectedCharacter || !window.confirm(`Excluir ${selectedCharacter.name}? Esta ação não remove modelos nem poses do Fabricador Dev.`)) return
+    try {
+      await window.desktop.deleteCustomizerCharacter(selectedCharacter.id)
+      const remaining = characters.filter((character) => character.id !== selectedCharacter.id)
+      setCharacters(remaining)
+      setSelectedCharacterId(remaining[0]?.id ?? '')
+      setActiveModule(null)
+      setCharactersError('')
+    } catch (reason) {
+      setCharactersError(reason instanceof Error ? reason.message : 'Não foi possível excluir o personagem.')
+    }
   }
 
   async function selectCatalogModel(model: NonNullable<FabricatorSlotSummary>) {
     const requestId = ++previewLoadRequest.current
     setSelectedCatalogModelSlot(model.slot)
-    setSelectedCatalogPoseSlot(null)
     setSelectedArtworkLabel(model.name)
     setSelectedArtworkUrl(null)
     setPreviewLoading(true)
     setCatalogError('')
     try {
       const firstPose = catalogPoses.find((pose) => pose?.sourceModelSlot === model.slot && pose.slot === 1)
+      setSelectedCatalogPoseSlot(firstPose?.slot ?? null)
+      await saveCharacterCustomization({ modelSlot: model.slot, poseSlot: firstPose?.slot ?? null })
       let artwork: CatalogArtwork | null = firstPose ? await window.desktop.loadFabricatorPose(model.slot, 1) : null
       if (!artwork) artwork = await window.desktop.loadFabricatorSlot(model.slot)
       if (!artwork) throw new Error('Não foi possível abrir este modelo.')
@@ -224,6 +320,7 @@ export function CustomizerPage() {
     setPreviewLoading(true)
     setCatalogError('')
     try {
+      await saveCharacterCustomization({ modelSlot: pose.sourceModelSlot, poseSlot: pose.slot })
       const artwork = await window.desktop.loadFabricatorPose(pose.sourceModelSlot, pose.slot)
       if (!artwork) throw new Error('Não foi possível abrir esta pose.')
       const artworkUrl = await renderArtwork(artwork, 720)
@@ -260,7 +357,7 @@ export function CustomizerPage() {
                 </div>
                 {selectedArtworkUrl ? <img className="customizer-selected-artwork" src={selectedArtworkUrl} alt={selectedArtworkLabel} /> : !previewLoading && <div className="customizer-no-artwork"><Icon name="body" /><span>Nenhum modelo salvo para mostrar.</span></div>}
                 {previewLoading && <div className="customizer-preview-loading">Carregando prévia…</div>}
-                <div className="stage-caption"><span>{String(selectedCatalogModelSlot ?? 1).padStart(2, '0')}</span><i />{selectedArtworkLabel || selectedCharacter.name}<small>{selectedArtworkUrl ? 'DO CATÁLOGO' : 'PERSONAGEM ATIVO'}</small></div>
+                <div className="stage-caption"><span>{String(selectedCatalogModelSlot ?? 1).padStart(2, '0')}</span><i />{selectedArtworkLabel || selectedCharacter?.name || 'Personagem'}<small>{selectedArtworkUrl ? 'DO CATÁLOGO' : 'PERSONAGEM ATIVO'}</small></div>
               </div>
             </div>
           </section>
@@ -335,7 +432,8 @@ export function CustomizerPage() {
               <p className="eyebrow">SUA COLEÇÃO</p>
               <h2>Personagens <span>{characters.length.toString().padStart(2, '0')}</span></h2>
             </div>
-            <button className="icon-button add-button" aria-label="Adicionar personagem" onClick={() => setActiveModule('Novo personagem')}>
+            {selectedCharacter && <button className="icon-button roster-delete-button" aria-label={'Excluir ' + selectedCharacter.name} title="Excluir personagem" onClick={() => void deleteSelectedCharacter()} type="button"><Icon name="trash" /></button>}
+            <button className="icon-button add-button" aria-label="Adicionar personagem" onClick={() => { setNameDraft(''); setDialogMode('create') }} type="button">
               <Icon name="plus" />
             </button>
           </div>
@@ -345,30 +443,32 @@ export function CustomizerPage() {
             <kbd>/</kbd>
           </label>
           <div className="character-grid">
-            {visibleCharacters.map(({ character, index }) => (
+            {visibleCharacters.map((character) => (
               <button
-                className={`character-card ${selectedIndex === index ? 'selected' : ''}`}
-                key={character.name}
-                onClick={() => selectCharacter(index)}
-                aria-pressed={selectedIndex === index}
+                className={`character-card ${selectedCharacter?.id === character.id ? 'selected' : ''}`}
+                key={character.id}
+                onClick={() => selectCharacter(character.id)}
+                aria-pressed={selectedCharacter?.id === character.id}
               >
                 <CharacterPortrait character={character} />
                 <span>{character.name}</span>
               </button>
             ))}
-            {visibleCharacters.length === 0 && <p className="empty-roster">Nenhum personagem encontrado.</p>}
+            {charactersLoading && <p className="empty-roster">Carregando personagens…</p>}
+            {!charactersLoading && characters.length === 0 && <p className="empty-roster">Sua coleção está vazia. Use + para criar o primeiro personagem.</p>}
+            {!charactersLoading && characters.length > 0 && visibleCharacters.length === 0 && <p className="empty-roster">Nenhum personagem encontrado.</p>}
           </div>
-          <div className="roster-footer"><span className="online-dot" /> Tudo salvo neste dispositivo</div>
+          <div className="roster-footer"><span className={'online-dot' + (charactersError || characterSaveState === 'error' ? ' roster-error-dot' : '')} /> {charactersError || (characterSaveState === 'saving' ? `Salvando ${selectedCharacter?.name ?? 'personagem'}…` : characterSaveState === 'error' ? 'Falha ao salvar personagem' : selectedCharacter ? `Alterações de ${selectedCharacter.name} salvas` : 'Personagens salvos neste dispositivo')}</div>
         </aside>
 
         <section className="preview-column" aria-label="Preview do personagem">
           <div className="preview-heading">
             <div className="preview-title">
               <p className="eyebrow">CUSTOMIZAR <span>/</span> PERSONAGEM</p>
-              <h1>{selectedArtworkLabel || (previewLoading ? 'Carregando modelo…' : 'Nenhum modelo')}<button className="rename-button" aria-label="Editar nome"><Icon name="edit" /></button></h1>
+              <h1>{selectedCharacter?.name ?? (charactersLoading ? 'Carregando personagens…' : 'Crie um personagem')}<button className="rename-button" aria-label="Editar nome do personagem" disabled={!selectedCharacter} onClick={() => { setNameDraft(selectedCharacter?.name ?? ''); setDialogMode('rename') }} type="button"><Icon name="edit" /></button></h1>
             </div>
             <div className="preview-actions">
-              <button className="quiet-button" ><Icon name="check" /> Salvo</button>
+              <button className="quiet-button" aria-live="polite"><Icon name={characterSaveState === 'error' ? 'warning' : characterSaveState === 'saving' ? 'reset' : 'check'} /> {characterSaveState === 'saving' ? 'Salvando' : characterSaveState === 'error' ? 'Falha ao salvar' : 'Salvo'}</button>
               <button className="icon-button" aria-label="Tela cheia"><Icon name="expand" /></button>
             </div>
           </div>
@@ -386,9 +486,9 @@ export function CustomizerPage() {
                 <button aria-label="Aproximar"><Icon name="zoomIn" /></button>
                 <button aria-label="Afastar"><Icon name="zoomOut" /></button>
               </div>
-              {selectedArtworkUrl ? <img className="customizer-selected-artwork" src={selectedArtworkUrl} alt={selectedArtworkLabel} /> : !previewLoading && <div className="customizer-no-artwork"><Icon name="body" /><span>Importe um modelo no Fabricador Dev para começar.</span></div>}
+              {selectedArtworkUrl ? <img className="customizer-selected-artwork" src={selectedArtworkUrl} alt={selectedArtworkLabel} /> : !previewLoading && <div className="customizer-no-artwork"><Icon name="body" /><span>{selectedCharacter ? 'Importe um modelo no Fabricador Dev para começar.' : 'Crie um personagem para começar a personalizar.'}</span></div>}
               {previewLoading && <div className="customizer-preview-loading">Carregando prévia…</div>}
-              <div className="stage-caption"><span>{String(selectedCatalogModelSlot ?? 1).padStart(2, '0')}</span><i />{selectedArtworkLabel || selectedCharacter.name}<small>{selectedArtworkUrl ? 'MODELO ATIVO' : 'SEM MODELO'}</small></div>
+              <div className="stage-caption"><span>{String(selectedCatalogModelSlot ?? 1).padStart(2, '0')}</span><i />{selectedArtworkLabel || selectedCharacter?.name || 'Personagem'}<small>{selectedArtworkUrl ? 'MODELO DE REFERÊNCIA' : 'SEM MODELO'}</small></div>
             </div>
             <div className="stage-underbar">
               <div className="background-picker"><span className="background-swatch" /><span>Fundo do preview</span><Icon name="chevronDown" /></div>
@@ -427,6 +527,16 @@ export function CustomizerPage() {
           </div>
           <button className="help-link" onClick={() => setActiveModule('Central de ajuda')}><span className="help-icon">?</span><span><strong>Precisa de uma ideia?</strong><small>Explore o guia rápido do Nymi</small></span><Icon name="chevronRight" /></button>
         </aside>
+      {dialogMode && <div className="character-dialog-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setDialogMode(null) }}>
+        <form className="character-dialog" onSubmit={(event) => void submitCharacterDialog(event)} aria-labelledby="character-dialog-title">
+          <p className="eyebrow">SUA COLEÇÃO</p>
+          <h2 id="character-dialog-title">{dialogMode === 'create' ? 'Novo personagem' : 'Renomear personagem'}</h2>
+          <label htmlFor="character-name">Nome</label>
+          <input id="character-name" autoFocus maxLength={80} value={nameDraft} onChange={(event) => setNameDraft(event.target.value)} placeholder="Ex.: Chloe" />
+          {charactersError && <p className="character-dialog-error" role="alert">{charactersError}</p>}
+          <div className="character-dialog-actions"><button className="quiet-button" type="button" onClick={() => setDialogMode(null)}>Cancelar</button><button className="primary-button" type="submit" disabled={!nameDraft.trim() || savingCharacter}>{savingCharacter ? 'Salvando…' : 'Salvar'}</button></div>
+        </form>
+      </div>}
     </div>
   )
 }
