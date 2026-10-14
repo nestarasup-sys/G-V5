@@ -153,8 +153,10 @@ export function WardrobeWorkspace() {
         const components = message.pieces.map((piece) => {
           const category = guessCategory(piece, message.width, message.height)
           const { png, ...metadata } = piece
-          const sourcePlacement = { ...metadata, x: metadata.x, y: metadata.y }
           const bone = guessBone(category, piece.x + piece.width / 2, message.width, model)
+          // The clothing sheet can have a different canvas layout than the assembled model.
+          // Keep each cutout's size, but start it centered over the body part it will follow.
+          const sourcePlacement = { ...metadata, x: bone ? bone.x + (bone.width - metadata.width) / 2 : metadata.x, y: bone ? bone.y + (bone.height - metadata.height) / 2 : metadata.y }
           const positioned: WardrobeComponent = { ...sourcePlacement, category, attachedPartId: bone?.id ?? '', rotation: 0, originX: sourcePlacement.x, originY: sourcePlacement.y, originWidth: metadata.width, originHeight: metadata.height, dataUrl: dataUrl(png) }
           return { ...positioned, name: guessName(category, piece.x + piece.width / 2, message.width) }
         })
@@ -166,6 +168,14 @@ export function WardrobeWorkspace() {
     } catch (reason) { setProcessing(false); setError(reason instanceof Error ? reason.message : 'Não foi possível importar a imagem.') }
   }
   const updateComponent = (id: string, values: Partial<WardrobeComponent>) => { setDirty(true); setDraft((current) => current ? ({ ...current, components: current.components.map((component) => component.id === id ? { ...component, ...values } : component), updatedAt: new Date().toISOString() }) : current) }
+  const alignSetToModel = () => {
+    if (!model || !draft?.components.length) return
+    setDirty(true)
+    setDraft((current) => current ? ({ ...current, components: current.components.map((component) => {
+      const bone = model.parts.find((part) => part.id === component.attachedPartId)
+      return bone ? { ...component, x: bone.x + (bone.width - component.width) / 2, y: bone.y + (bone.height - component.height) / 2 } : component
+    }), updatedAt: new Date().toISOString() }) : current)
+  }
   const moveComponentLayer = (id: string, direction: -1 | 1) => {
     setDirty(true)
     setDraft((current) => {
@@ -257,7 +267,7 @@ export function WardrobeWorkspace() {
       <div className="wardrobe-title"><span className="model-slot-logo"><Icon name="shirt" /></span><span><strong>Roupas</strong><small>Biblioteca independente por modelo</small></span></div>
       <label className="wardrobe-model-select">Modelo<select value={modelSlot} onChange={(event) => { if (dirty && !window.confirm('Há alterações não salvas. Descartar e trocar de modelo?')) return; setTestPose(null); setModelSlot(Number(event.target.value)) }}>{models.map((item, index) => <option key={index + 1} value={index + 1} disabled={!item}>{String(index + 1).padStart(2, '0')} · {item?.name ?? 'Vazio'}</option>)}</select></label>
       {draft && <input aria-label="Nome do conjunto" className="wardrobe-name-input" value={draft.name} onChange={(event) => { setDirty(true); setDraft((current) => current ? { ...current, name: event.target.value } : current) }} placeholder="Nome do conjunto" />}
-      <div className="wardrobe-toolbar-actions"><span className={`wardrobe-save-state${dirty ? ' pending' : ''}`}><i />{dirty ? 'Alterações não salvas' : model ? `${model.parts.length} peças no modelo` : 'Escolha um modelo salvo'}</span><button className="pose-button secondary" disabled={!model || processing} onClick={() => { if (dirty && !window.confirm('Descartar as alterações atuais e importar outra folha?')) return; inputRef.current?.click() }} type="button"><Icon name="plus" /> Importar folha</button>{testPose ? <button className="pose-button danger" onClick={exitTestPose} type="button"><Icon name="eyeOff" /> Sair do teste</button> : <button className="pose-button secondary" disabled={!model || !draft?.components.length} onClick={() => void openTestPosePicker()} type="button"><Icon name="eye" /> Testar pose</button>}<button className="pose-button primary" disabled={!draft || saving} onClick={() => void save()} type="button"><Icon name="check" />{saving ? 'Salvando…' : activeSetId ? 'Salvar alterações' : 'Salvar conjunto'}</button>{activeSetId && <button className="pose-icon-button" title="Excluir conjunto" onClick={() => void deleteSet()} type="button"><Icon name="trash" /></button>}<input ref={inputRef} hidden type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => { void importSheet(event.target.files?.[0]); event.currentTarget.value = '' }} /></div>
+      <div className="wardrobe-toolbar-actions"><span className={`wardrobe-save-state${dirty ? ' pending' : ''}`}><i />{dirty ? 'Alterações não salvas' : model ? `${model.parts.length} peças no modelo` : 'Escolha um modelo salvo'}</span><button className="pose-button secondary" disabled={!model || processing} onClick={() => { if (dirty && !window.confirm('Descartar as alterações atuais e importar outra folha?')) return; inputRef.current?.click() }} type="button"><Icon name="plus" /> Importar folha</button>{draft?.components.length ? <button className="pose-button secondary" onClick={alignSetToModel} type="button" title="Centraliza cada roupa sobre a parte do modelo vinculada, mantendo o tamanho atual"><Icon name="frame" /> Alinhar ao modelo</button> : null}{testPose ? <button className="pose-button danger" onClick={exitTestPose} type="button"><Icon name="eyeOff" /> Sair do teste</button> : <button className="pose-button secondary" disabled={!model || !draft?.components.length} onClick={() => void openTestPosePicker()} type="button"><Icon name="eye" /> Testar pose</button>}<button className="pose-button primary" disabled={!draft || saving} onClick={() => void save()} type="button"><Icon name="check" />{saving ? 'Salvando…' : activeSetId ? 'Salvar alterações' : 'Salvar conjunto'}</button>{activeSetId && <button className="pose-icon-button" title="Excluir conjunto" onClick={() => void deleteSet()} type="button"><Icon name="trash" /></button>}<input ref={inputRef} hidden type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => { void importSheet(event.target.files?.[0]); event.currentTarget.value = '' }} /></div>
     </header>
     {error && <div className="wardrobe-error" role="alert">{error}<button onClick={() => setError('')} type="button">Fechar</button></div>}
     <div className="wardrobe-body">
