@@ -127,7 +127,9 @@ export function StudioPage() {
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [availableCharacters, setAvailableCharacters] = useState<CustomizerCharacter[]>([])
-  const [addingCharacterId, setAddingCharacterId] = useState<string | null>(null)
+  const [castPickerOpen, setCastPickerOpen] = useState(false)
+  const [castSelection, setCastSelection] = useState<string[]>([])
+  const [savingCast, setSavingCast] = useState(false)
   const [inspectorTab, setInspectorTab] = useState<'editor' | 'custom'>('editor')
   const [studioFolder, setStudioFolder] = useState('')
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -353,29 +355,50 @@ export function StudioPage() {
     setSelectedElementId(element.id)
   }
 
-  const addCharacterToStudio = async (character: CustomizerCharacter) => {
-    if (!activeStudio || addingCharacterId) return
-    setAddingCharacterId(character.id)
+  const openCastPicker = () => {
+    setCastSelection(stageCharacters.map((element) => element.characterId).filter((id): id is string => Boolean(id)))
+    setCastPickerOpen(true)
+  }
+
+  const saveCastSelection = async () => {
+    if (!activeStudio || savingCast) return
+    setSavingCast(true)
     try {
+      const selectedIds = new Set(castSelection)
+      const retained = activeStudio.elements.filter((element) => element.kind !== 'character' || !element.characterId || selectedIds.has(element.characterId))
+      const removedCharacterAssetIds = new Set(activeStudio.elements.filter((element) => element.kind === 'character' && element.characterId && !selectedIds.has(element.characterId)).map((element) => element.assetId).filter((id): id is string => Boolean(id)))
+      const retainedCharacters = new Set(retained.filter((element) => element.kind === 'character').map((element) => element.characterId))
+      const additions = availableCharacters.filter((character) => selectedIds.has(character.id) && !retainedCharacters.has(character.id))
       const { renderSavedCharacter } = await import('../customizer/CustomizerPage')
-      const rendered = await renderSavedCharacter(character)
-      const asset: StudioAsset = { id: crypto.randomUUID(), category: 'character', name: character.name, mimeType: 'image/png', dataUrl: rendered.dataUrl }
+      const assets: StudioAsset[] = []
+      const elements: StudioElement[] = []
       const stageWidth = sceneRef.current?.clientWidth ?? 1000
       const stageHeight = sceneRef.current?.clientHeight ?? 562
-      const width = 20
-      const height = Math.min(82, width * stageWidth / stageHeight * rendered.height / rendered.width)
-      const element: StudioElement = {
-        id: crypto.randomUUID(), kind: 'character', assetId: asset.id, characterId: character.id, text: character.name,
-        x: 0, y: 0, width, height, rotation: 0, zIndex: Math.max(0, ...activeStudio.elements.map((item) => item.zIndex)) + 1
+      let zIndex = Math.max(0, ...retained.map((item) => item.zIndex))
+      for (const character of additions) {
+        const rendered = await renderSavedCharacter(character)
+        const asset: StudioAsset = { id: crypto.randomUUID(), category: 'character', name: character.name, mimeType: 'image/png', dataUrl: rendered.dataUrl }
+        const width = 20
+        const height = Math.min(82, width * stageWidth / stageHeight * rendered.height / rendered.width)
+        assets.push(asset)
+        elements.push({ id: crypto.randomUUID(), kind: 'character', assetId: asset.id, characterId: character.id, text: character.name, x: 0, y: 0, width, height, rotation: 0, zIndex: ++zIndex })
       }
-      changeScene((studio) => ({ ...studio, assets: [...studio.assets, asset], elements: [...studio.elements, element], updatedAt: new Date().toISOString() }))
-      setSelectedElementId(element.id)
+      const nextElements = [...retained, ...elements]
+      const retainedAssetIds = new Set(retained.map((element) => element.assetId).filter((id): id is string => Boolean(id)))
+      changeScene((studio) => ({
+        ...studio,
+        elements: nextElements,
+        assets: [...studio.assets.filter((asset) => !removedCharacterAssetIds.has(asset.id) || retainedAssetIds.has(asset.id)), ...assets],
+        updatedAt: new Date().toISOString()
+      }))
+      setCastPickerOpen(false)
       setActiveTool(null)
       setInspectorTab('editor')
+      setSelectedElementId(elements.at(-1)?.id ?? null)
       setError(null)
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : `Não foi possível adicionar ${character.name} ao Studio.`)
-    } finally { setAddingCharacterId(null) }
+      setError(reason instanceof Error ? reason.message : 'Não foi possível atualizar o elenco do Studio.')
+    } finally { setSavingCast(false) }
   }
 
   const removeStageCharacter = (element: StudioElement) => {
@@ -488,13 +511,14 @@ export function StudioPage() {
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && fullView) setFullView(false)
+      if (event.key === 'Escape' && castPickerOpen && !savingCast) setCastPickerOpen(false)
+      else if (event.key === 'Escape' && fullView) setFullView(false)
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z') { event.preventDefault(); event.shiftKey ? redo() : undo() }
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'y') { event.preventDefault(); redo() }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [fullView, activeStudio, historyVersion])
+  }, [castPickerOpen, savingCast, fullView, activeStudio, historyVersion])
 
   const imageStyle = (x: number, y: number, width: number, height: number, rotation: number) => ({
     left: `calc(50% + ${x}%)`, top: `calc(50% + ${y}%)`, width: `${width}%`, height: `${height}%`,
@@ -538,7 +562,7 @@ export function StudioPage() {
   }
 
   const castPanel = () => <div className="studio-cast-content">
-    <header><h2>Elenco</h2><small>{stageCharacters.length} na cena</small></header>
+    <header><span><h2>Elenco</h2><small>{stageCharacters.length} na cena</small></span><button className="studio-cast-add-button" onClick={openCastPicker} type="button"><Icon name="plus" />Adicionar</button></header>
     <section className="studio-cast-section" aria-label="Personagens na cena">
       <h3>Na cena</h3>
       {stageCharacters.length ? stageCharacters.map((element) => {
@@ -551,12 +575,6 @@ export function StudioPage() {
           <button className="studio-cast-remove" onClick={() => removeStageCharacter(element)} aria-label={`Remover ${element.text} do elenco`} title="Remover da cena" type="button">×</button>
         </article>
       }) : <p className="studio-cast-empty">Adicione personagens para montar a cena.</p>}
-    </section>
-    <section className="studio-cast-section" aria-label="Adicionar personagem">
-      <h3>Adicionar</h3>
-      {availableCharacters.length ? availableCharacters.map((character) => <button className="studio-cast-add" key={character.id} onClick={() => void addCharacterToStudio(character)} disabled={addingCharacterId !== null} type="button">
-        <CharacterPortrait character={character} /><span>{character.name}</span><b>{addingCharacterId === character.id ? '…' : '+'}</b>
-      </button>) : <p className="studio-cast-empty">Crie personagens em Customizar para adicioná-los aqui.</p>}
     </section>
   </div>
 
@@ -614,6 +632,21 @@ export function StudioPage() {
           </div>
         </section>
         {!fullView && <aside className="studio-editor-rail studio-editor-right" aria-label="Elenco do Studio">{castPanel()}</aside>}
+        {castPickerOpen && <div className="studio-cast-modal-backdrop" onPointerDown={(event) => { if (event.target === event.currentTarget && !savingCast) setCastPickerOpen(false) }}>
+          <section className="studio-cast-modal" role="dialog" aria-modal="true" aria-labelledby="studio-cast-modal-title">
+            <header><span><small>EDITAR ELENCO</small><h2 id="studio-cast-modal-title">Personagens do Studio</h2></span><button className="studio-cast-modal-close" onClick={() => setCastPickerOpen(false)} aria-label="Fechar" disabled={savingCast} type="button">×</button></header>
+            <div className="studio-cast-modal-summary"><strong>Escolha os personagens</strong><span>{castSelection.length} selecionado{castSelection.length === 1 ? '' : 's'}</span></div>
+            <div className="studio-cast-modal-list">
+              {availableCharacters.length ? availableCharacters.map((character) => {
+                const selected = castSelection.includes(character.id)
+                return <button className={`studio-cast-modal-option${selected ? ' selected' : ''}`} key={character.id} onClick={() => setCastSelection((current) => selected ? current.filter((id) => id !== character.id) : [...current, character.id])} disabled={savingCast} type="button">
+                  <CharacterPortrait character={character} /><strong>{character.name}</strong><i>{selected ? '✓' : '+'}</i>
+                </button>
+              }) : <p className="studio-cast-modal-empty">Crie personagens em Customizar para adicioná-los ao elenco.</p>}
+            </div>
+            <footer><button className="studio-cast-modal-cancel" onClick={() => setCastPickerOpen(false)} disabled={savingCast} type="button">Cancelar</button><button className="studio-cast-modal-save" onClick={() => void saveCastSelection()} disabled={savingCast} type="button">{savingCast ? 'Salvando…' : 'Salvar elenco'}</button></footer>
+          </section>
+        </div>}
       </main>
     )
   }
