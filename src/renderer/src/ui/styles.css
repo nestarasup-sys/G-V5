@@ -181,8 +181,8 @@ button:focus-visible, input:focus-visible { outline: 3px solid #ed8caf; outline-
 .studio-inspector-right { right:0;border-radius:0 5px 5px 0; }
 .studio-inspector-left { left:0;border-radius:5px 0 0 5px; }
 .studio-inspector-tabs { height:40px;flex:0 0 40px;display:grid;grid-template-columns:1fr 1fr;padding:4px;border-bottom:1px solid #eee4eb;background:#fff; }
-.studio-inspector-tabs button { border:0;border-radius:6px;background:transparent;color:#8b7d8b;font-size:10px;font-weight:700;cursor:pointer; }
-.studio-inspector-tabs button.active { background:#fff0f6;color:#b34570; }
+.studio-inspector-tabs button { border:0;border-radius:6px;background:#111;color:#fff;font-size:10px;font-weight:700;cursor:pointer; }
+.studio-inspector-tabs button.active { background:#000;color:#fff; }
 .studio-inspector-presets { min-height:32px;flex:0 0 32px;display:flex;align-items:center;justify-content:center;gap:6px;margin:7px 10px 0;border:1px solid #ead8e2;border-radius:7px;background:#fff;color:#8b6477;font-size:10px;font-weight:700;cursor:pointer; }
 .studio-inspector-presets svg { width:13px;height:13px; }
 .studio-inspector-presets:hover,.studio-inspector-presets.active { border-color:#e879a3;background:#fff0f6;color:#ae4168; }
