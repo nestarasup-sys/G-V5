@@ -18,6 +18,8 @@ export type ModelPart = {
   y: number
   width: number
   height: number
+  /** Dimensões antes de ajustar as proporções desta peça. */
+  resizeBase?: { width: number; height: number }
   dataUrl: string
   /** Recorte original com uma pequena margem recuperável para reajustar o chroma. */
   chromaBaseDataUrl?: string

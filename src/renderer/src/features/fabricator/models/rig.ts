@@ -64,10 +64,14 @@ export function sourcePointFromCanvas(part: ModelPart, point: Point): Point | nu
   const localX = currentDx * Math.cos(toLocal) - currentDy * Math.sin(toLocal)
   const localY = currentDx * Math.sin(toLocal) + currentDy * Math.cos(toLocal)
   const fromSource = source.rotation * Math.PI / 180
-  const sourceCenter = { x: source.x + part.width / 2, y: source.y + part.height / 2 }
+  const sourceWidth = source.width ?? part.width
+  const sourceHeight = source.height ?? part.height
+  const sourceCenter = { x: source.x + sourceWidth / 2, y: source.y + sourceHeight / 2 }
+  const sourceLocalX = localX * sourceWidth / part.width
+  const sourceLocalY = localY * sourceHeight / part.height
   return {
-    x: sourceCenter.x + localX * Math.cos(fromSource) - localY * Math.sin(fromSource),
-    y: sourceCenter.y + localX * Math.sin(fromSource) + localY * Math.cos(fromSource)
+    x: sourceCenter.x + sourceLocalX * Math.cos(fromSource) - sourceLocalY * Math.sin(fromSource),
+    y: sourceCenter.y + sourceLocalX * Math.sin(fromSource) + sourceLocalY * Math.cos(fromSource)
   }
 }
 
