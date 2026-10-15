@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import { Icon } from '../../ui/components/Icon'
+import { CharacterPortrait } from '../../ui/components/CharacterPortrait'
 import type { StudioAsset, StudioDocument, StudioElement } from '../../../../shared/studio'
+import type { CustomizerCharacter } from '../../../../shared/customizer'
 
 type StudioCard = StudioDocument
 type StudioSnapshot = Pick<StudioDocument, 'backgroundColor' | 'backgroundAssetId' | 'backgroundX' | 'backgroundY' | 'backgroundWidth' | 'backgroundHeight' | 'backgroundRotation' | 'assets' | 'elements'>
@@ -108,7 +110,7 @@ function makeCanvasPrint(studio: StudioDocument): Promise<string> {
         const bg = studio.assets.find((asset) => asset.id === studio.backgroundAssetId)
         if (bg) await drawImage(bg.dataUrl, studio.backgroundX, studio.backgroundY, studio.backgroundWidth, studio.backgroundHeight, studio.backgroundRotation)
         for (const element of [...studio.elements].sort((a, b) => a.zIndex - b.zIndex)) {
-          if (element.kind === 'image') {
+          if (element.kind === 'image' || element.kind === 'character') {
             const asset = studio.assets.find((item) => item.id === element.assetId)
             if (asset) await drawImage(asset.dataUrl, element.x, element.y, element.width, element.height, element.rotation)
           } else drawText(element)
@@ -124,6 +126,9 @@ export function StudioPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
+  const [availableCharacters, setAvailableCharacters] = useState<CustomizerCharacter[]>([])
+  const [addingCharacterId, setAddingCharacterId] = useState<string | null>(null)
+  const [inspectorTab, setInspectorTab] = useState<'editor' | 'custom'>('editor')
   const [studioFolder, setStudioFolder] = useState('')
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [activeStudioId, setActiveStudioId] = useState<string | null>(null)
@@ -144,6 +149,7 @@ export function StudioPage() {
   const activeStudio = studios.find((studio) => studio.id === activeStudioId) ?? null
   const selectedElement = activeStudio?.elements.find((element) => element.id === selectedElementId) ?? null
   const selectedBackgroundAsset = activeStudio?.assets.find((asset) => asset.id === activeStudio.backgroundAssetId) ?? null
+  const stageCharacters = activeStudio?.elements.filter((element) => element.kind === 'character') ?? []
 
   useEffect(() => {
     let cancelled = false
@@ -173,6 +179,16 @@ export function StudioPage() {
         if (!cancelled) setLoading(false)
       }
     })()
+    return () => { cancelled = true }
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    void window.desktop.listCustomizerCharacters().then((characters) => {
+      if (!cancelled) setAvailableCharacters(characters)
+    }).catch((reason: unknown) => {
+      if (!cancelled) setError(reason instanceof Error ? reason.message : 'Não foi possível carregar o elenco de personagens.')
+    })
     return () => { cancelled = true }
   }, [])
 
@@ -337,6 +353,44 @@ export function StudioPage() {
     setSelectedElementId(element.id)
   }
 
+  const addCharacterToStudio = async (character: CustomizerCharacter) => {
+    if (!activeStudio || addingCharacterId) return
+    setAddingCharacterId(character.id)
+    try {
+      const { renderSavedCharacter } = await import('../customizer/CustomizerPage')
+      const rendered = await renderSavedCharacter(character)
+      const asset: StudioAsset = { id: crypto.randomUUID(), category: 'character', name: character.name, mimeType: 'image/png', dataUrl: rendered.dataUrl }
+      const stageWidth = sceneRef.current?.clientWidth ?? 1000
+      const stageHeight = sceneRef.current?.clientHeight ?? 562
+      const width = 20
+      const height = Math.min(82, width * stageWidth / stageHeight * rendered.height / rendered.width)
+      const element: StudioElement = {
+        id: crypto.randomUUID(), kind: 'character', assetId: asset.id, characterId: character.id, text: character.name,
+        x: 0, y: 0, width, height, rotation: 0, zIndex: Math.max(0, ...activeStudio.elements.map((item) => item.zIndex)) + 1
+      }
+      changeScene((studio) => ({ ...studio, assets: [...studio.assets, asset], elements: [...studio.elements, element], updatedAt: new Date().toISOString() }))
+      setSelectedElementId(element.id)
+      setActiveTool(null)
+      setInspectorTab('editor')
+      setError(null)
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : `Não foi possível adicionar ${character.name} ao Studio.`)
+    } finally { setAddingCharacterId(null) }
+  }
+
+  const removeStageCharacter = (element: StudioElement) => {
+    changeScene((studio) => {
+      const elements = studio.elements.filter((item) => item.id !== element.id)
+      const stillUsed = new Set(elements.map((item) => item.assetId).filter(Boolean))
+      return {
+        ...studio, elements,
+        assets: studio.assets.filter((asset) => asset.id !== element.assetId || stillUsed.has(asset.id)),
+        updatedAt: new Date().toISOString()
+      }
+    })
+    if (selectedElementId === element.id) setSelectedElementId(null)
+  }
+
   const updateElement = (id: string, values: Partial<StudioElement>, record = true) => {
     const update = (studio: StudioDocument) => ({ ...studio, elements: studio.elements.map((element) => element.id === id ? { ...element, ...values } : element), updatedAt: new Date().toISOString() })
     if (record) changeScene(update)
@@ -355,6 +409,7 @@ export function StudioPage() {
       const rect = sceneRef.current.getBoundingClientRect()
       recordHistory()
       setSelectedElementId('background')
+      setActiveTool('background')
       dragRef.current = { id, pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, originalX: activeStudio.backgroundX, originalY: activeStudio.backgroundY, width: rect.width, height: rect.height }
       event.currentTarget.setPointerCapture(event.pointerId)
       return
@@ -364,6 +419,7 @@ export function StudioPage() {
     const rect = sceneRef.current.getBoundingClientRect()
     recordHistory()
     setSelectedElementId(id)
+    setActiveTool(null)
     dragRef.current = { id, pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, originalX: element.x, originalY: element.y, width: rect.width, height: rect.height }
     event.currentTarget.setPointerCapture(event.pointerId)
   }
@@ -388,7 +444,9 @@ export function StudioPage() {
       changeScene((studio) => ({ ...studio, backgroundAssetId: null, updatedAt: new Date().toISOString() }))
       setSelectedElementId(null)
     } else if (selectedElementId) {
-      changeScene((studio) => ({ ...studio, elements: studio.elements.filter((element) => element.id !== selectedElementId), updatedAt: new Date().toISOString() }))
+      const current = activeStudio.elements.find((element) => element.id === selectedElementId)
+      if (current?.kind === 'character') removeStageCharacter(current)
+      else changeScene((studio) => ({ ...studio, elements: studio.elements.filter((element) => element.id !== selectedElementId), updatedAt: new Date().toISOString() }))
       setSelectedElementId(null)
     }
   }
@@ -467,8 +525,8 @@ export function StudioPage() {
       {selectedElementId && selectedElement && <ElementControls element={selectedElement} update={(values) => updateElement(selectedElement.id, values)} remove={deleteSelected} control={control} />}
     </div>
     if (selectedElement && activeStudio) return <div className="studio-side-content">
-      <h2>{selectedElement.kind === 'image' ? 'Objeto selecionado' : selectedElement.kind === 'narrator' ? 'Narrador' : selectedElement.kind === 'speech' ? 'Balão de fala' : 'Balão de pensamento'}</h2>
-      {selectedElement.kind !== 'image' && <label className="studio-text-control">Texto<textarea value={selectedElement.text} onChange={(event) => updateElement(selectedElement.id, { text: event.target.value })} rows={3} /></label>}
+      <h2>{selectedElement.kind === 'character' ? selectedElement.text : selectedElement.kind === 'image' ? 'Objeto selecionado' : selectedElement.kind === 'narrator' ? 'Narrador' : selectedElement.kind === 'speech' ? 'Balão de fala' : 'Balão de pensamento'}</h2>
+      {selectedElement.kind !== 'image' && selectedElement.kind !== 'character' && <label className="studio-text-control">Texto<textarea value={selectedElement.text} onChange={(event) => updateElement(selectedElement.id, { text: event.target.value })} rows={3} /></label>}
       <ElementControls element={selectedElement} update={(values) => updateElement(selectedElement.id, values)} remove={deleteSelected} control={control} />
     </div>
     if (selectedElementId === 'background' && selectedBackgroundAsset) return <div className="studio-side-content">
@@ -479,8 +537,40 @@ export function StudioPage() {
     return <div className="studio-side-content"><h2>Cena</h2><p>Escolha uma ferramenta à esquerda ou selecione um elemento na cena.</p><small>{activeStudio.elements.length} elemento(s)</small></div>
   }
 
+  const castPanel = () => <div className="studio-cast-content">
+    <header><h2>Elenco</h2><small>{stageCharacters.length} na cena</small></header>
+    <section className="studio-cast-section" aria-label="Personagens na cena">
+      <h3>Na cena</h3>
+      {stageCharacters.length ? stageCharacters.map((element) => {
+        const character = availableCharacters.find((item) => item.id === element.characterId)
+        return <article className={`studio-cast-item${selectedElementId === element.id ? ' selected' : ''}`} key={element.id}>
+          <button className="studio-cast-select" onClick={() => { setSelectedElementId(element.id); setActiveTool(null); setInspectorTab('editor') }} type="button">
+            {character ? <CharacterPortrait character={character} /> : <span className="studio-cast-fallback">{element.text.slice(0, 1)}</span>}
+            <span>{element.text}</span>
+          </button>
+          <button className="studio-cast-remove" onClick={() => removeStageCharacter(element)} aria-label={`Remover ${element.text} do elenco`} title="Remover da cena" type="button">×</button>
+        </article>
+      }) : <p className="studio-cast-empty">Adicione personagens para montar a cena.</p>}
+    </section>
+    <section className="studio-cast-section" aria-label="Adicionar personagem">
+      <h3>Adicionar</h3>
+      {availableCharacters.length ? availableCharacters.map((character) => <button className="studio-cast-add" key={character.id} onClick={() => void addCharacterToStudio(character)} disabled={addingCharacterId !== null} type="button">
+        <CharacterPortrait character={character} /><span>{character.name}</span><b>{addingCharacterId === character.id ? '…' : '+'}</b>
+      </button>) : <p className="studio-cast-empty">Crie personagens em Customizar para adicioná-los aqui.</p>}
+    </section>
+  </div>
+
   if (activeStudio) {
     const backgroundAsset = activeStudio.assets.find((asset) => asset.id === activeStudio.backgroundAssetId)
+    const inspectorWidth = sceneRef.current ? Math.min(38, 276 / sceneRef.current.clientWidth * 100) : 28
+    const selectedBounds = selectedElement
+      ? { left: 50 + selectedElement.x - selectedElement.width / 2, right: 50 + selectedElement.x + selectedElement.width / 2 }
+      : selectedElementId === 'background'
+        ? { left: 50 + activeStudio.backgroundX - activeStudio.backgroundWidth / 2, right: 50 + activeStudio.backgroundX + activeStudio.backgroundWidth / 2 }
+        : null
+    const inspectorSide = selectedBounds?.right !== undefined && selectedBounds.right > 100 - inspectorWidth
+      ? 'left'
+      : selectedBounds?.left !== undefined && selectedBounds.left < inspectorWidth ? 'right' : 'right'
     return (
       <main className={`studio-editor${fullView ? ' full-view' : ''}`} aria-label={`Editor do ${activeStudio.title}`}>
         {!fullView && <aside className="studio-editor-rail studio-editor-left" aria-label="Ferramentas do Studio">
@@ -512,14 +602,18 @@ export function StudioPage() {
             {[...activeStudio.elements].sort((a, b) => a.zIndex - b.zIndex).map((element) => {
               const asset = element.assetId ? activeStudio.assets.find((item) => item.id === element.assetId) : undefined
               return <div key={element.id} className={`studio-canvas-element studio-element-${element.kind}${selectedElementId === element.id && !fullView ? ' selected' : ''}`} style={{ ...imageStyle(element.x, element.y, element.width, element.height, element.rotation), zIndex: element.zIndex + 1 }} onPointerDown={(event) => startDrag(event, element.id)} onPointerMove={moveDrag} onPointerUp={endDrag} onPointerCancel={endDrag}>
-                {element.kind === 'image' && asset ? <img src={asset.dataUrl} alt={asset.name} draggable={false} /> : <span>{element.text}</span>}
+                {(element.kind === 'image' || element.kind === 'character') && asset ? <img src={asset.dataUrl} alt={asset.name} draggable={false} /> : <span>{element.text}</span>}
               </div>
             })}
             {fullView && <button className="studio-exit-view" onClick={() => setFullView(false)} type="button">Sair da visualização <kbd>Esc</kbd></button>}
             {!fullView && <span className="studio-scene-title">{activeStudio.title}</span>}
+            {!fullView && <aside className={`studio-inspector studio-inspector-${inspectorSide}`} aria-label="Inspector da cena">
+              <header className="studio-inspector-tabs"><button className={inspectorTab === 'editor' ? 'active' : ''} onClick={() => setInspectorTab('editor')} type="button">Editor</button><button className={inspectorTab === 'custom' ? 'active' : ''} onClick={() => setInspectorTab('custom')} type="button">Custom</button></header>
+              {inspectorTab === 'editor' ? <div className="studio-inspector-content">{propertyPanel()}</div> : <div className="studio-inspector-empty" />}
+            </aside>}
           </div>
         </section>
-        {!fullView && <aside className="studio-editor-rail studio-editor-right" aria-label="Biblioteca e controles da cena">{propertyPanel()}</aside>}
+        {!fullView && <aside className="studio-editor-rail studio-editor-right" aria-label="Elenco do Studio">{castPanel()}</aside>}
       </main>
     )
   }
@@ -558,7 +652,7 @@ function ElementControls({ element, update, remove, control }: {
       {control('Altura', element.height, (value) => update({ height: value }), 1, 200)}
       {control('Rotação', element.rotation, (value) => update({ rotation: value }), -180, 180, '°')}
     </div>
-    {element.kind === 'image' && <div className="studio-layer-actions"><button type="button" onClick={() => update({ zIndex: element.zIndex + 1 })}>Trazer para frente</button><button type="button" onClick={() => update({ zIndex: Math.max(0, element.zIndex - 1) })}>Enviar para trás</button></div>}
+    {(element.kind === 'image' || element.kind === 'character') && <div className="studio-layer-actions"><button type="button" onClick={() => update({ zIndex: element.zIndex + 1 })}>Trazer para frente</button><button type="button" onClick={() => update({ zIndex: Math.max(0, element.zIndex - 1) })}>Enviar para trás</button></div>}
     <button className="studio-side-danger" type="button" onClick={remove}><Icon name="trash" />Excluir da cena</button>
   </>
 }

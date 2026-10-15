@@ -1,6 +1,6 @@
 export type StudioAsset = {
   id: string
-  category: 'background' | 'object'
+  category: 'background' | 'object' | 'character'
   name: string
   mimeType: 'image/png' | 'image/jpeg' | 'image/webp'
   dataUrl: string
@@ -8,8 +8,9 @@ export type StudioAsset = {
 
 export type StudioElement = {
   id: string
-  kind: 'image' | 'narrator' | 'speech' | 'thought'
+  kind: 'image' | 'character' | 'narrator' | 'speech' | 'thought'
   assetId?: string
+  characterId?: string
   text: string
   x: number
   y: number

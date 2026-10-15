@@ -427,6 +427,66 @@ async function renderFaceCatalogOverlay(artwork: CatalogArtwork, source: Fabrica
   return canvas.toDataURL('image/png')
 }
 
+/** Render the selected Customizer character as one self-contained Studio actor image. */
+export async function renderSavedCharacter(character: CustomizerCharacter): Promise<{ dataUrl: string; width: number; height: number }> {
+  const modelSlot = character.customization.modelSlot ?? 1
+  const source = await window.desktop.loadFabricatorSlot(modelSlot)
+  if (!source) throw new Error(`O modelo de ${character.name} não está disponível.`)
+  const pose = character.customization.poseSlot === null ? null : await window.desktop.loadFabricatorPose(modelSlot, character.customization.poseSlot)
+  const artwork: CatalogArtwork = pose ?? source
+  const hairAppearance = character.customization.hairAppearance
+  const hairStyle = async (side: HairCatalogSide): Promise<HairStyle | null> => {
+    const id = hairAppearanceStyleId(hairAppearance, side)
+    if (!id || hairAppearance?.modelSlot !== modelSlot) return null
+    return window.desktop.loadHairStyle(modelSlot, id)
+  }
+  const [backStyle, frontStyle] = await Promise.all([hairStyle('back'), hairStyle('front')])
+  const baseUrl = await renderArtworkWithHair(artwork, source, backStyle, 960, character.customization.modelSkinTone)
+  if (!baseUrl) throw new Error(`Não foi possível montar a prévia de ${character.name}.`)
+
+  const groups = (character.customization.wardrobeGroups ?? []).filter((group) => group.modelSlot === modelSlot)
+  const details: Record<string, WardrobeSet> = {}
+  await Promise.all(groups.map(async (group) => {
+    const key = `${group.modelSlot}:${group.setId}`
+    if (details[key]) return
+    const set = await window.desktop.loadWardrobeSet(group.modelSlot, group.setId)
+    if (set) details[key] = set
+  }))
+  const wardrobe = await renderWardrobeOverlay(groups, details, artwork, modelSlot, source, null, character.customization.modelSkinTone)
+
+  let faceUrl: string | null = null
+  const appearance = character.customization.faceAppearance
+  if (appearance?.modelSlot === modelSlot) {
+    if (appearance.eyeCatalogId || appearance.eyebrowCatalogId || appearance.noseCatalogId || appearance.mouthClosedCatalogId || appearance.mouthOpenCatalogId) {
+      const selections: Array<[FaceSheetKind, string | undefined]> = [
+        ['eyes', appearance.eyeCatalogId], ['eyebrows', appearance.eyebrowCatalogId], ['nose', appearance.noseCatalogId],
+        ['mouth-closed', appearance.mouthClosedCatalogId], ['mouth-open', appearance.mouthOpenCatalogId]
+      ]
+      const entries = await Promise.all(selections.filter((entry): entry is [FaceSheetKind, string] => Boolean(entry[1])).map(async ([category, id]) => [category, await window.desktop.loadFaceCatalogItem(modelSlot, id)] as const))
+      const items: Partial<Record<FaceSheetKind, FaceCatalogItem>> = {}
+      for (const [category, item] of entries) if (item) items[category] = item
+      faceUrl = await renderFaceCatalogOverlay(artwork, source, items, appearance)
+    } else if (appearance.setId) {
+      const face = await window.desktop.loadFaceSet(modelSlot, appearance.setId)
+      if (face) faceUrl = await renderFaceOverlay(artwork, source, face, appearance)
+    }
+  }
+  const frontHairUrl = frontStyle ? await renderFrontHairOverlay(artwork, source, frontStyle, 960) : null
+  const baseImage = await loadCachedImage(baseUrl)
+  const canvas = document.createElement('canvas')
+  canvas.width = Math.max(1, artwork.width)
+  canvas.height = Math.max(1, artwork.height)
+  const context = canvas.getContext('2d')
+  if (!context) throw new Error('Não foi possível preparar a imagem do personagem.')
+  context.drawImage(baseImage, 0, 0, canvas.width, canvas.height)
+  for (const overlayUrl of [wardrobe.imageUrl, faceUrl, frontHairUrl]) {
+    if (!overlayUrl) continue
+    const overlay = await loadCachedImage(overlayUrl)
+    context.drawImage(overlay, 0, 0, canvas.width, canvas.height)
+  }
+  return { dataUrl: canvas.toDataURL('image/png'), width: canvas.width, height: canvas.height }
+}
+
 const modules: { name: string; icon: IconName; detail: string }[] = [
   { name: 'Modelos', icon: 'sparkles', detail: 'Looks prontos para começar' },
   { name: 'Poses', icon: 'body', detail: 'Pose, proporções e detalhes' },

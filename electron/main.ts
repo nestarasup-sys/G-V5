@@ -548,8 +548,9 @@ function isStudioDocument(value: unknown): value is StudioDocument {
     && Array.isArray(elements) && elements.length <= 1000
     && (studio.backgroundAssetId === null || assets.some((asset) => asset.id === studio.backgroundAssetId && asset.category === 'background'))
     && elements.every((element) => Boolean(element && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(element.id) && typeof element.text === 'string'
-      && ['image', 'narrator', 'speech', 'thought'].includes(element.kind)
+      && ['image', 'character', 'narrator', 'speech', 'thought'].includes(element.kind)
       && (element.kind !== 'image' || assets.some((asset) => asset.id === element.assetId && asset.category === 'object'))
+      && (element.kind !== 'character' || (typeof element.characterId === 'string' && assets.some((asset) => asset.id === element.assetId && asset.category === 'character')))
       && [element.x, element.y, element.width, element.height, element.rotation, element.zIndex].every(Number.isFinite)))
 }
 
@@ -557,7 +558,7 @@ function isStudioAsset(value: unknown): value is StudioAsset {
   if (!value || typeof value !== 'object') return false
   const asset = value as Partial<StudioAsset>
   return typeof asset.id === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(asset.id)
-    && (asset.category === 'background' || asset.category === 'object')
+    && (asset.category === 'background' || asset.category === 'object' || asset.category === 'character')
     && typeof asset.name === 'string' && asset.name.length <= 255
     && (asset.mimeType === 'image/png' || asset.mimeType === 'image/jpeg' || asset.mimeType === 'image/webp')
     && typeof asset.dataUrl === 'string' && asset.dataUrl.startsWith(`data:${asset.mimeType};base64,`) && asset.dataUrl.length <= 70_000_000
@@ -591,10 +592,11 @@ async function readStudio(id: string): Promise<StudioDocument | null> {
     const folder = studioPath(id)
     const assets = await Promise.all(normalized.assets.map(async (asset) => {
       if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(asset.id)
-        || (asset.category !== 'background' && asset.category !== 'object')
+        || !['background', 'object', 'character'].includes(asset.category)
         || !['image/png', 'image/jpeg', 'image/webp'].includes(asset.mimeType)) throw new Error('Biblioteca de imagens do Studio inválida.')
       const extension = asset.mimeType === 'image/jpeg' ? 'jpg' : asset.mimeType.slice('image/'.length)
-      const data = await readFile(join(folder, 'assets', asset.category === 'background' ? 'backgrounds' : 'objects', `${asset.id}.${extension}`))
+      const categoryFolder = asset.category === 'background' ? 'backgrounds' : asset.category === 'character' ? 'characters' : 'objects'
+      const data = await readFile(join(folder, 'assets', categoryFolder, `${asset.id}.${extension}`))
       return { ...asset, dataUrl: `data:${asset.mimeType};base64,${data.toString('base64')}` }
     }))
     const document = { ...normalized, assets }
@@ -619,7 +621,8 @@ async function writeStudio(studio: StudioDocument): Promise<void> {
   for (const asset of studio.assets) {
     const extension = asset.mimeType === 'image/jpeg' ? 'jpg' : asset.mimeType.slice('image/'.length)
     const bytes = Buffer.from(asset.dataUrl.slice(asset.dataUrl.indexOf(',') + 1), 'base64')
-    await writeFile(join(folder, 'assets', asset.category === 'background' ? 'backgrounds' : 'objects', `${asset.id}.${extension}`), bytes)
+    const categoryFolder = asset.category === 'background' ? 'backgrounds' : asset.category === 'character' ? 'characters' : 'objects'
+    await writeFile(join(folder, 'assets', categoryFolder, `${asset.id}.${extension}`), bytes)
     const { dataUrl: _dataUrl, ...metadata } = asset
     assetManifest.push(metadata)
   }
