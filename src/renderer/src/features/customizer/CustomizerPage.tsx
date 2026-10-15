@@ -210,7 +210,7 @@ async function renderWardrobeOverlay(
   return { imageUrl: output.toDataURL('image/png'), selectedUrl: selectionContext && selected ? selectionCanvas.toDataURL('image/png') : null }
 }
 
-export async function renderArtwork(artwork: CatalogArtwork, maxSize: number, skinTone?: string): Promise<string | null> {
+export async function renderArtwork(artwork: CatalogArtwork, maxSize: number, skinTone?: string, trimTransparent = false): Promise<string | null> {
   if (artwork.width <= 0 || artwork.height <= 0) return null
   const scale = Math.min(maxSize / artwork.width, maxSize / artwork.height)
   const canvas = document.createElement('canvas')
@@ -242,7 +242,29 @@ export async function renderArtwork(artwork: CatalogArtwork, maxSize: number, sk
     }
   }
 
-  return canvas.toDataURL('image/png')
+  if (!trimTransparent) return canvas.toDataURL('image/png')
+
+  const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data
+  let left = canvas.width
+  let top = canvas.height
+  let right = -1
+  let bottom = -1
+  for (let y = 0; y < canvas.height; y += 1) {
+    for (let x = 0; x < canvas.width; x += 1) {
+      if (pixels[(y * canvas.width + x) * 4 + 3] === 0) continue
+      left = Math.min(left, x)
+      top = Math.min(top, y)
+      right = Math.max(right, x)
+      bottom = Math.max(bottom, y)
+    }
+  }
+  if (right < left || bottom < top) return canvas.toDataURL('image/png')
+  const margin = Math.max(2, Math.ceil(Math.max(right - left + 1, bottom - top + 1) * 0.03))
+  const trimmed = document.createElement('canvas')
+  trimmed.width = right - left + 1 + margin * 2
+  trimmed.height = bottom - top + 1 + margin * 2
+  trimmed.getContext('2d')?.drawImage(canvas, left, top, right - left + 1, bottom - top + 1, margin, margin, right - left + 1, bottom - top + 1)
+  return trimmed.toDataURL('image/png')
 }
 
 async function renderArtworkWithHair(artwork: CatalogArtwork, source: FabricatorProject, backStyle: HairStyle | null, maxSize: number, skinTone?: string): Promise<string | null> {
@@ -799,7 +821,7 @@ export function CustomizerPage() {
         try {
           const artwork: FabricatorPose | null = await window.desktop.loadFabricatorPose(pose.sourceModelSlot, pose.slot)
           if (!artwork) continue
-          const thumbnail = await renderArtwork(artwork, 144)
+          const thumbnail = await renderArtwork(artwork, 420, undefined, true)
           if (cancelled) return
           if (thumbnail) {
             thumbnailCache.current.add(`pose:${key}`)
