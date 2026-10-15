@@ -537,6 +537,15 @@ const modules: { name: string; icon: IconName; detail: string }[] = [
   { name: 'Objetos', icon: 'box', detail: 'Itens para compor a cena' }
 ]
 
+const customizerTopTabs: { id: string; label: string; icon: IconName }[] = [
+  { id: 'modelos', label: 'Modelos', icon: 'sparkles' },
+  { id: 'corpo', label: 'Corpo', icon: 'body' },
+  { id: 'cabeca', label: 'Cabeça', icon: 'face' },
+  { id: 'roupas', label: 'Roupas', icon: 'shirt' },
+  { id: 'outros', label: 'Outros', icon: 'flower' },
+  { id: 'perfil', label: 'Perfil', icon: 'user' }
+]
+
 export function CustomizerPage() {
   const [characters, setCharacters] = useState<CustomizerCharacter[]>([])
   const charactersRef = useRef<CustomizerCharacter[]>([])
@@ -549,6 +558,7 @@ export function CustomizerPage() {
   const [nameDraft, setNameDraft] = useState('')
   const [savingCharacter, setSavingCharacter] = useState(false)
   const [activeModule, setActiveModule] = useState<string | null>(null)
+  const [selectedCustomizerTopTab, setSelectedCustomizerTopTab] = useState('corpo')
   const [previewBackground, setPreviewBackground] = usePreviewBackground()
   const [rosterQuery, setRosterQuery] = useState('')
   const [catalogModels, setCatalogModels] = useState<FabricatorSlotSummary[]>([])
@@ -1416,7 +1426,18 @@ export function CustomizerPage() {
               </div>
             </div>
           </section>
-          <section className="customizer-models-sidebar" aria-label="Opções e catálogo de personalização" hidden>
+          <section className="customizer-models-sidebar" aria-label="Categorias de personalização">
+            <nav className="customizer-top-tabs" aria-label="Áreas do Customizar" role="tablist">
+              {customizerTopTabs.map((tab) => <button
+                key={tab.id}
+                className={selectedCustomizerTopTab === tab.id ? 'active' : ''}
+                onClick={() => setSelectedCustomizerTopTab(tab.id)}
+                aria-selected={selectedCustomizerTopTab === tab.id}
+                role="tab"
+                type="button"
+              ><Icon name={tab.icon} /><span>{tab.label}</span></button>)}
+            </nav>
+            <div className="customizer-models-content" hidden>
             <div className="customizer-models-options-grid">
               {modules.map((module, index) => (
                 <button
@@ -1608,6 +1629,7 @@ export function CustomizerPage() {
               </div>}
               {activeModule !== 'Modelos' && activeModule !== 'Poses' && activeModule !== 'Roupas' && <div className="customizer-catalog-empty">O catálogo de {activeModule} aparecerá aqui.</div>}
             </section>
+            </div>
           </section>
         </div>
       </div>
