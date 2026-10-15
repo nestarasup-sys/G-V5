@@ -19,6 +19,58 @@ const studioTools = [
 ] as const
 const isUuid = (value: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
 
+type TrimmedImage = { dataUrl: string; width: number; height: number; left: number; top: number; sourceWidth: number; sourceHeight: number }
+
+function trimTransparentImage(dataUrl: string): Promise<TrimmedImage | null> {
+  return new Promise((resolve) => {
+    const image = new Image()
+    image.onload = () => {
+      const canvas = document.createElement('canvas')
+      canvas.width = image.naturalWidth
+      canvas.height = image.naturalHeight
+      const context = canvas.getContext('2d', { willReadFrequently: true })
+      if (!context || !canvas.width || !canvas.height) return resolve(null)
+      context.drawImage(image, 0, 0)
+      let pixels: Uint8ClampedArray
+      try { pixels = context.getImageData(0, 0, canvas.width, canvas.height).data } catch { return resolve(null) }
+      let left = canvas.width, top = canvas.height, right = -1, bottom = -1
+      for (let y = 0; y < canvas.height; y++) for (let x = 0; x < canvas.width; x++) {
+        if (pixels[(y * canvas.width + x) * 4 + 3] <= 8) continue
+        if (x < left) left = x
+        if (x > right) right = x
+        if (y < top) top = y
+        if (y > bottom) bottom = y
+      }
+      if (right < left || bottom < top) return resolve(null)
+      const width = right - left + 1
+      const height = bottom - top + 1
+      if (left === 0 && top === 0 && width === canvas.width && height === canvas.height) return resolve(null)
+      const cropped = document.createElement('canvas')
+      cropped.width = width
+      cropped.height = height
+      cropped.getContext('2d')?.drawImage(image, left, top, width, height, 0, 0, width, height)
+      resolve({ dataUrl: cropped.toDataURL('image/png'), width, height, left, top, sourceWidth: canvas.width, sourceHeight: canvas.height })
+    }
+    image.onerror = () => resolve(null)
+    image.src = dataUrl
+  })
+}
+
+function fitElementToTrim(element: StudioElement, crop: TrimmedImage): StudioElement {
+  const offsetX = ((crop.left + crop.width / 2) / crop.sourceWidth - 0.5) * element.width * (element.flipX ? -1 : 1)
+  const offsetY = ((crop.top + crop.height / 2) / crop.sourceHeight - 0.5) * element.height
+  const radians = element.rotation * Math.PI / 180
+  const x = offsetX * Math.cos(radians) - offsetY * (9 / 16) * Math.sin(radians)
+  const y = offsetX * (16 / 9) * Math.sin(radians) + offsetY * Math.cos(radians)
+  return {
+    ...element,
+    x: element.x + x,
+    y: element.y + y,
+    width: element.width * crop.width / crop.sourceWidth,
+    height: element.height * crop.height / crop.sourceHeight
+  }
+}
+
 function loadLegacyStudios(): Array<{ id: string; title: string; color: string }> {
   try {
     const saved: unknown = JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? '[]')
@@ -155,6 +207,7 @@ export function StudioPage() {
   const undoRef = useRef<StudioSnapshot[]>([])
   const redoRef = useRef<StudioSnapshot[]>([])
   const saveGenerationRef = useRef(0)
+  const normalizedStudioIdsRef = useRef(new Set<string>())
   const nextStudioNumber = useRef(1)
   const selectedStudio = studios.find((studio) => studio.id === selectedId) ?? null
   const activeStudio = studios.find((studio) => studio.id === activeStudioId) ?? null
@@ -238,6 +291,34 @@ export function StudioPage() {
     setHistoryVersion((value) => value + 1)
     setSelectedElementId(null)
   }, [activeStudioId])
+
+  useEffect(() => {
+    if (!activeStudio || normalizedStudioIdsRef.current.has(activeStudio.id)) return
+    let cancelled = false
+    const studioId = activeStudio.id
+    void (async () => {
+      const characterAssets = activeStudio.assets.filter((asset) => asset.category === 'character' && activeStudio.elements.some((element) => element.kind === 'character' && element.assetId === asset.id))
+      const crops = await Promise.all(characterAssets.map(async (asset) => ({ assetId: asset.id, crop: await trimTransparentImage(asset.dataUrl) })))
+      if (cancelled) return
+      normalizedStudioIdsRef.current.add(studioId)
+      const byAsset = new Map(crops.filter((entry): entry is { assetId: string; crop: TrimmedImage } => entry.crop !== null).map((entry) => [entry.assetId, entry.crop]))
+      if (!byAsset.size) return
+      setStudios((current) => current.map((studio) => studio.id !== studioId ? studio : {
+        ...studio,
+        assets: studio.assets.map((asset) => {
+          const crop = byAsset.get(asset.id)
+          return crop ? { ...asset, dataUrl: crop.dataUrl, mimeType: 'image/png' } : asset
+        }),
+        elements: studio.elements.map((element) => {
+          const crop = element.kind === 'character' && element.assetId ? byAsset.get(element.assetId) : undefined
+          return crop ? fitElementToTrim(element, crop) : element
+        }),
+        updatedAt: new Date().toISOString()
+      }))
+      setSaved(false)
+    })()
+    return () => { cancelled = true }
+  }, [activeStudio])
 
   const allocateNumber = () => {
     const highest = studios.reduce((max, studio) => Math.max(max, Number(studio.title.match(/^Studio\s+(\d+)/i)?.[1] ?? 0)), 0)
@@ -418,9 +499,13 @@ export function StudioPage() {
       let zIndex = Math.max(0, ...retained.map((item) => item.zIndex))
       for (const character of additions) {
         const rendered = await renderSavedCharacter(character)
-        const asset: StudioAsset = { id: crypto.randomUUID(), category: 'character', name: character.name, mimeType: 'image/png', dataUrl: rendered.dataUrl }
+        const crop = await trimTransparentImage(rendered.dataUrl)
+        const imageData = crop?.dataUrl ?? rendered.dataUrl
+        const imageWidth = crop?.width ?? rendered.width
+        const imageHeight = crop?.height ?? rendered.height
+        const asset: StudioAsset = { id: crypto.randomUUID(), category: 'character', name: character.name, mimeType: 'image/png', dataUrl: imageData }
         const width = 20
-        const height = Math.min(82, width * stageWidth / stageHeight * rendered.height / rendered.width)
+        const height = Math.min(82, width * stageWidth / stageHeight * imageHeight / imageWidth)
         assets.push(asset)
         elements.push({ id: crypto.randomUUID(), kind: 'character', assetId: asset.id, characterId: character.id, text: character.name, x: 0, y: 0, width, height, rotation: 0, zIndex: ++zIndex })
       }
