@@ -339,6 +339,23 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .customizer-proportions>header button:disabled { opacity:.5;cursor:default; }
 .customizer-proportions-grid { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px; }
 .customizer-proportion-control { min-width:0;display:grid;gap:5px;padding:8px;border:1px solid #efd9e3;border-radius:8px;background:#fff; }
+.customizer-body-shape { flex:0 0 auto;display:grid;gap:10px;padding:11px;border:1px solid #d9d3ef;border-radius:10px;background:#faf9ff; }
+.customizer-body-shape>header { display:flex;align-items:flex-start;justify-content:space-between;gap:10px; }
+.customizer-body-shape>header span { display:grid;gap:3px; }
+.customizer-body-shape>header strong { color:#493a78;font-size:14px; }
+.customizer-body-shape>header small,.customizer-body-balance small { color:#766f86;font-size:10px;line-height:1.4; }
+.customizer-body-shape>header button { flex:0 0 auto;padding:4px 9px;border:1px solid #d5c9ed;border-radius:6px;background:#fff;color:#685294;font-size:11px;font-weight:700;cursor:pointer; }
+.customizer-body-shape>header button:disabled { opacity:.5;cursor:default; }
+.customizer-body-shape-grid { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px; }
+.customizer-body-part { min-width:0;display:grid;gap:6px;margin:0;padding:8px;border:1px solid #e3def0;border-radius:8px;background:#fff; }
+.customizer-body-part legend { padding:0 4px;color:#51456f;font-size:11px;font-weight:750; }
+.customizer-body-axis { display:grid;gap:4px;color:#625a73;font-size:10px; }
+.customizer-body-axis>span,.customizer-body-balance>span { display:flex;justify-content:space-between;gap:6px; }
+.customizer-body-axis output,.customizer-body-balance output { color:#7458a4;font-weight:750; }
+.customizer-body-axis .customizer-proportion-inputs { gap:4px; }
+.customizer-body-axis .customizer-proportion-inputs button { width:20px;height:20px; }
+.customizer-body-balance { display:grid;gap:4px;padding:8px;border:1px solid #e3def0;border-radius:8px;background:#fff;color:#55496f;font-size:11px; }
+.customizer-body-shape input[type="range"] { min-width:0;width:100%;accent-color:#8a6bb6; }
 .customizer-proportion-heading,.customizer-proportion-inputs { display:flex;align-items:center;justify-content:space-between;gap:5px; }
 .customizer-proportion-heading label { overflow:hidden;color:#64445a;font-size:11px;font-weight:750;text-overflow:ellipsis;white-space:nowrap; }
 .customizer-proportion-heading output { flex:0 0 auto;color:#ce4d8d;font-size:11px;font-weight:800; }

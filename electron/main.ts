@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url'
 import type { AnimatorAnimation, AnimatorAnimationAsset, AnimatorAnimationDraft, AnimatorAnimationSave, AnimatorAnimationSummary, FaceAssetSave, FaceCatalogItem, FaceCatalogItemSave, FaceCatalogItemSummary, FaceElementKind, FaceSet, FaceSetSave, FaceSetSummary, FaceSheetKind, FabricatorAssetSave, FabricatorHistoryEntry, FabricatorHistorySaveEntry, FabricatorHistorySaveState, FabricatorHistoryState, FabricatorPose, FabricatorPoseDraft, FabricatorPoseDraftSave, FabricatorPoseSave, FabricatorPoseSummary, FabricatorProject, FabricatorProjectSave, FabricatorSlotSummary, HairStyle, HairStyleAsset, HairStyleSave, HairStyleSummary, HairWorkspace, HairWorkspaceAsset, HairWorkspaceSave, ModelPart, PosePart, WardrobeAssetSave, WardrobeCategory, WardrobeSet, WardrobeSetSave, WardrobeSetSummary } from '../src/shared/fabricator'
 import { resolvePoseCategory } from '../src/shared/fabricator'
 import type { CustomizerCharacter } from '../src/shared/customizer'
-import { characterProportionLimits } from '../src/shared/customizer'
+import { characterBodyDimensionLimits, characterProportionLimits } from '../src/shared/customizer'
 import type { StudioAsset, StudioDocument, StudioFaceTransform, StudioFaceTransforms } from '../src/shared/studio'
 import { applyModelHeadShape } from '../src/shared/headShape'
 
@@ -77,6 +77,14 @@ function isCustomizerCharacter(value: unknown): value is CustomizerCharacter {
         const { min, max } = characterProportionLimits[key]
         return (value === undefined && (key === 'headWidth' || key === 'headHeight'))
           || (typeof value === 'number' && Number.isFinite(value) && value >= min && value <= max)
+      })
+    ))
+    && (character.customization.bodyDimensions === undefined || (
+      !!character.customization.bodyDimensions && typeof character.customization.bodyDimensions === 'object'
+      && (Object.keys(characterBodyDimensionLimits) as Array<keyof typeof characterBodyDimensionLimits>).every((key) => {
+        const value = character.customization!.bodyDimensions?.[key]
+        const { min, max } = characterBodyDimensionLimits[key]
+        return value === undefined || (typeof value === 'number' && Number.isFinite(value) && value >= min && value <= max)
       })
     ))
     && !!character.customization.partOverrides && typeof character.customization.partOverrides === 'object'

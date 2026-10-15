@@ -4,7 +4,7 @@ import { Icon, type IconName } from '../../ui/components/Icon'
 import type { FaceCatalogItem, FaceCatalogItemSummary, FaceElementKind, FaceSet, FaceSheetKind, FabricatorPose, FabricatorPoseSummary, FabricatorProject, FabricatorSlotSummary, HairStyle, HairStyleSummary, WardrobeCategory, WardrobeSet, WardrobeSetSummary } from '../../../../shared/fabricator'
 import { resolvePoseCategory } from '../../../../shared/fabricator'
 import type { CustomizerCharacter, CustomizerFaceAppearance, CustomizerWardrobeCategory, CustomizerWardrobeGroup } from '../../../../shared/customizer'
-import { characterProportionLimits, defaultCharacterProportions, getCharacterProportions, type CharacterProportions } from '../../../../shared/customizer'
+import { characterBodyDimensionLimits, characterProportionLimits, defaultCharacterBodyDimensions, defaultCharacterProportions, getCharacterBodyDimensions, getCharacterProportions, type CharacterBodyDimensions, type CharacterProportions } from '../../../../shared/customizer'
 import type { StudioFaceTransforms } from '../../../../shared/studio'
 import { usePreviewBackground } from '../fabricator/usePreviewBackground'
 import { mapWardrobeComponentToPose } from '../fabricator/wardrobe/poseTransform'
@@ -31,6 +31,35 @@ function withCharacterHeadSize(artwork: CatalogArtwork, proportions: CharacterPr
 
 function characterShapeScale(proportions: CharacterProportions): { x: number; y: number } {
   return { x: proportions.scale * proportions.width / 10000, y: proportions.scale * proportions.height / 10000 }
+}
+const bodyPartPatterns: Record<'chest' | 'abdomen' | 'arms' | 'legs', RegExp> = {
+  chest: /peito|tor[aá]x|tronco|torso|chest/i,
+  abdomen: /abd[oô]men|abdomen|cintura|barriga|waist/i,
+  arms: /bra[cç]o|m[aã]o|antebra[cç]o|arm|hand/i,
+  legs: /coxa|perna|canela|panturrilha|joelho|thigh|calf|leg/i
+}
+function withCharacterBodyDimensions<T extends CatalogArtwork>(artwork: T, dimensions: CharacterBodyDimensions): T {
+  const legFactor = ((dimensions.legsWidth + dimensions.legsHeight) / 2 - 100) / 100
+  const balanceFactor = legFactor * dimensions.balance / 100
+  const multipliers = {
+    chest: { x: (dimensions.chestWidth + balanceFactor * 100) / 100, y: (dimensions.chestHeight + balanceFactor * 100) / 100 },
+    abdomen: { x: (dimensions.abdomenWidth + balanceFactor * 100) / 100, y: (dimensions.abdomenHeight + balanceFactor * 100) / 100 },
+    arms: { x: dimensions.armsWidth / 100, y: dimensions.armsHeight / 100 },
+    legs: { x: dimensions.legsWidth / 100, y: dimensions.legsHeight / 100 }
+  }
+  let changed = false
+  const parts = artwork.parts.map((part) => {
+    const group = (Object.keys(bodyPartPatterns) as Array<keyof typeof bodyPartPatterns>).find((key) => bodyPartPatterns[key].test(part.name))
+    if (!group) return part
+    const { x: scaleX, y: scaleY } = multipliers[group]
+    if (scaleX === 1 && scaleY === 1) return part
+    changed = true
+    const width = part.width * scaleX
+    const height = part.height * scaleY
+    const anchor = part.jointAnchor
+    return { ...part, x: anchor ? anchor.x - (anchor.x - part.x) * scaleX : part.x - (width - part.width) / 2, y: anchor ? anchor.y - (anchor.y - part.y) * scaleY : part.y - (height - part.height) / 2, width, height }
+  })
+  return changed ? { ...artwork, parts } : artwork
 }
 const wardrobeImageCache = new Map<string, Promise<HTMLImageElement>>()
 const skinTintImageCache = new Map<string, Promise<HTMLImageElement>>()
@@ -477,7 +506,7 @@ export async function prepareSavedCharacterRenderer(character: CustomizerCharact
   if (!source) throw new Error(`O modelo de ${character.name} não está disponível.`)
   const pose = character.customization.poseSlot === null ? null : await window.desktop.loadFabricatorPose(modelSlot, character.customization.poseSlot)
   const proportions = getCharacterProportions(character.customization)
-  const artwork = withCharacterHeadSize(pose ?? source, proportions)
+  const artwork = withCharacterBodyDimensions(withCharacterHeadSize(pose ?? source, proportions), getCharacterBodyDimensions(character.customization))
   const hairAppearance = character.customization.hairAppearance
   const hairStyle = async (side: HairCatalogSide): Promise<HairStyle | null> => {
     const id = hairAppearanceStyleId(hairAppearance, side)
@@ -676,6 +705,7 @@ export function CustomizerPage() {
   const [wardrobeHighlightVisible, setWardrobeHighlightVisible] = useState(false)
   const [selectedArtworkProject, setSelectedArtworkProject] = useState<CatalogArtwork | null>(null)
   const [proportionEdit, setProportionEdit] = useState<{ characterId: string; values: CharacterProportions } | null>(null)
+  const [bodyDimensionEdit, setBodyDimensionEdit] = useState<{ characterId: string; values: CharacterBodyDimensions } | null>(null)
   const [selectedSourceModelProject, setSelectedSourceModelProject] = useState<FabricatorProject | null>(null)
   const [selectedArtworkUrl, setSelectedArtworkUrl] = useState<string | null>(null)
   const [selectedFaceUrl, setSelectedFaceUrl] = useState<string | null>(null)
@@ -691,8 +721,11 @@ export function CustomizerPage() {
   const activeProportions = proportionEdit && selectedCharacter && proportionEdit.characterId === selectedCharacter.id
     ? proportionEdit.values
     : getCharacterProportions(selectedCharacter?.customization)
+  const activeBodyDimensions = useMemo(() => bodyDimensionEdit && selectedCharacter && bodyDimensionEdit.characterId === selectedCharacter.id
+    ? bodyDimensionEdit.values
+    : getCharacterBodyDimensions(selectedCharacter?.customization), [bodyDimensionEdit, selectedCharacter?.id, selectedCharacter?.customization.bodyDimensions])
   const activeShapeScale = characterShapeScale(activeProportions)
-  const displayArtworkProject = useMemo(() => selectedArtworkProject ? withCharacterHeadSize(selectedArtworkProject, activeProportions) : null, [selectedArtworkProject, activeProportions.head, activeProportions.headWidth, activeProportions.headHeight])
+  const displayArtworkProject = useMemo(() => selectedArtworkProject ? withCharacterBodyDimensions(withCharacterHeadSize(selectedArtworkProject, activeProportions), activeBodyDimensions) : null, [selectedArtworkProject, activeProportions.head, activeProportions.headWidth, activeProportions.headHeight, activeBodyDimensions])
   const previewStyle = { '--preview-background': previewBackground, '--character-scale-x': activeShapeScale.x, '--character-scale-y': activeShapeScale.y } as import('react').CSSProperties
   const characterWardrobeGroups = selectedCharacter?.customization.wardrobeGroups ?? []
   const characterFaceAppearance = selectedCharacter?.customization.faceAppearance
@@ -790,7 +823,7 @@ export function CustomizerPage() {
         const artwork = pose ? await window.desktop.loadFabricatorPose(model.slot, pose.slot) : sourceProject
         if (!artwork) throw new Error('Não foi possível carregar a prévia deste personagem.')
         if (!cancelled && previewLoadRequest.current === requestId) { setSelectedArtworkProject(artwork); setSelectedSourceModelProject(sourceProject) }
-        const artworkUrl = await renderArtwork(withCharacterHeadSize(artwork, activeProportions), 720, selectedCharacter.customization.modelSkinTone)
+        const artworkUrl = await renderArtwork(withCharacterBodyDimensions(withCharacterHeadSize(artwork, activeProportions), activeBodyDimensions), 720, selectedCharacter.customization.modelSkinTone)
         if (!cancelled && previewLoadRequest.current === requestId) setSelectedArtworkUrl(artworkUrl)
       } catch (reason) {
         if (!cancelled && previewLoadRequest.current === requestId) setCatalogError(reason instanceof Error ? reason.message : 'Não foi possível carregar a prévia.')
@@ -800,6 +833,17 @@ export function CustomizerPage() {
     })()
     return () => { cancelled = true }
   }, [catalogLoading, catalogModels, catalogPoses, selectedCharacter?.id, selectedCharacter?.customization.modelSkinTone])
+
+  useEffect(() => {
+    if (!displayArtworkProject) return
+    let cancelled = false
+    void renderArtwork(displayArtworkProject, 720, selectedCharacter?.customization.modelSkinTone).then((url) => {
+      if (!cancelled) setSelectedArtworkUrl(url)
+    }).catch((reason: unknown) => {
+      if (!cancelled) setCatalogError(reason instanceof Error ? reason.message : 'Não foi possível atualizar a forma do corpo.')
+    })
+    return () => { cancelled = true }
+  }, [displayArtworkProject, selectedCharacter?.customization.modelSkinTone])
 
   useEffect(() => {
     setSelectedClothing(null)
@@ -1161,6 +1205,27 @@ export function CustomizerPage() {
     commitProportions({ ...activeProportions, [key]: Math.min(max, Math.max(min, Math.round(value))) })
   }
 
+  function commitBodyDimensions(values: CharacterBodyDimensions) {
+    if (!selectedCharacter) return
+    const current = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
+    const saved = getCharacterBodyDimensions(current.customization)
+    if ((Object.keys(values) as Array<keyof CharacterBodyDimensions>).every((key) => saved[key] === values[key])) return
+    void saveCharacterCustomization({ bodyDimensions: values })
+  }
+
+  function commitBodyDimension(key: keyof CharacterBodyDimensions, value: number) {
+    const { min, max } = characterBodyDimensionLimits[key]
+    const values = { ...activeBodyDimensions, [key]: Math.min(max, Math.max(min, Math.round(value))) }
+    setBodyDimensionEdit(selectedCharacter ? { characterId: selectedCharacter.id, values } : null)
+    commitBodyDimensions(values)
+  }
+
+  function changeBodyDimension(key: keyof CharacterBodyDimensions, value: number) {
+    if (!selectedCharacter) return
+    const { min, max } = characterBodyDimensionLimits[key]
+    setBodyDimensionEdit({ characterId: selectedCharacter.id, values: { ...activeBodyDimensions, [key]: Math.min(max, Math.max(min, Math.round(value))) } })
+  }
+
   async function chooseFaceCatalogItem(summary: FaceCatalogItemSummary) {
     const item = faceCatalogDetails[`${summary.modelSlot}:${summary.id}`] ?? await window.desktop.loadFaceCatalogItem(summary.modelSlot, summary.id)
     if (!item || !selectedCharacter) return
@@ -1432,7 +1497,7 @@ export function CustomizerPage() {
       let artwork: CatalogArtwork | null = firstPose ? await window.desktop.loadFabricatorPose(model.slot, 1) : null
       if (!artwork) artwork = sourceProject
       if (!artwork) throw new Error('Não foi possível abrir este modelo.')
-      const artworkUrl = await renderArtwork(withCharacterHeadSize(artwork, activeProportions), 720, selectedCharacter?.customization.modelSkinTone)
+      const artworkUrl = await renderArtwork(withCharacterBodyDimensions(withCharacterHeadSize(artwork, activeProportions), activeBodyDimensions), 720, selectedCharacter?.customization.modelSkinTone)
       if (previewLoadRequest.current === requestId) { setSelectedArtworkProject(artwork); setSelectedSourceModelProject(sourceProject); setSelectedArtworkUrl(artworkUrl) }
     } catch (reason) {
       if (previewLoadRequest.current === requestId) setCatalogError(reason instanceof Error ? reason.message : 'Não foi possível abrir este modelo.')
@@ -1455,7 +1520,7 @@ export function CustomizerPage() {
       if (!sourceProject) throw new Error('O modelo de referência desta pose não está disponível.')
       const artwork = await window.desktop.loadFabricatorPose(pose.sourceModelSlot, pose.slot)
       if (!artwork) throw new Error('Não foi possível abrir esta pose.')
-      const artworkUrl = await renderArtwork(withCharacterHeadSize(artwork, activeProportions), 720, selectedCharacter?.customization.modelSkinTone)
+      const artworkUrl = await renderArtwork(withCharacterBodyDimensions(withCharacterHeadSize(artwork, activeProportions), activeBodyDimensions), 720, selectedCharacter?.customization.modelSkinTone)
       if (previewLoadRequest.current === requestId) { setSelectedArtworkProject(artwork); setSelectedSourceModelProject(sourceProject); setSelectedArtworkUrl(artworkUrl) }
     } catch (reason) {
       if (previewLoadRequest.current === requestId) setCatalogError(reason instanceof Error ? reason.message : 'Não foi possível abrir esta pose.')
@@ -1601,6 +1666,23 @@ export function CustomizerPage() {
                   </div>
                 </div>
               })}</div>
+            </section>}
+            {selectedCustomizerTopTab === 'modelos' && <section className="customizer-body-shape" aria-label="Ajuste de largura e altura das partes do corpo">
+              <header><span><strong>Corpo · ajuste por peça</strong><small>Peito, abdômen, braços e pernas, como os controles de corpo do Elden Ring.</small></span><button onClick={() => { setBodyDimensionEdit(selectedCharacter ? { characterId: selectedCharacter.id, values: { ...defaultCharacterBodyDimensions } } : null); commitBodyDimensions({ ...defaultCharacterBodyDimensions }) }} disabled={!selectedCharacter} type="button">Restaurar</button></header>
+              <div className="customizer-body-shape-grid">{([
+                { name: 'Peito', width: 'chestWidth', height: 'chestHeight' },
+                { name: 'Abdômen', width: 'abdomenWidth', height: 'abdomenHeight' },
+                { name: 'Braços', width: 'armsWidth', height: 'armsHeight' },
+                { name: 'Pernas e coxas', width: 'legsWidth', height: 'legsHeight' }
+              ] as const).map(({ name, width, height }) => <fieldset className="customizer-body-part" key={name}>
+                <legend>{name}</legend>
+                {([['width', width, 'Largura'], ['height', height, 'Altura']] as const).map(([axis, key, label]) => {
+                  const limits = characterBodyDimensionLimits[key]
+                  const finish = (value: number) => commitBodyDimension(key, value)
+                  return <label className="customizer-body-axis" key={axis}><span>{label}<output>{activeBodyDimensions[key]}%</output></span><div className="customizer-proportion-inputs"><button aria-label={`Diminuir ${label.toLowerCase()} de ${name}`} disabled={!selectedCharacter || activeBodyDimensions[key] <= limits.min} onClick={() => finish(activeBodyDimensions[key] - 1)} type="button">−</button><input aria-label={`${label} de ${name}`} type="range" min={limits.min} max={limits.max} step="1" value={activeBodyDimensions[key]} disabled={!selectedCharacter} onChange={(event) => changeBodyDimension(key, Number(event.target.value))} onPointerUp={(event) => finish(Number(event.currentTarget.value))} onPointerCancel={(event) => finish(Number(event.currentTarget.value))} onKeyUp={(event) => finish(Number(event.currentTarget.value))} onBlur={(event) => finish(Number(event.currentTarget.value))} /><button aria-label={`Aumentar ${label.toLowerCase()} de ${name}`} disabled={!selectedCharacter || activeBodyDimensions[key] >= limits.max} onClick={() => finish(activeBodyDimensions[key] + 1)} type="button">+</button></div></label>
+                })}
+              </fieldset>)}</div>
+              <label className="customizer-body-balance"><span><b>Equilíbrio do tronco</b><output>{activeBodyDimensions.balance}%</output></span><small>Ao mudar as pernas, peito e abdômen acompanham um pouco para manter o conjunto equilibrado.</small><input aria-label="Equilíbrio do tronco" type="range" min="0" max="100" step="1" value={activeBodyDimensions.balance} disabled={!selectedCharacter} onChange={(event) => changeBodyDimension('balance', Number(event.target.value))} onPointerUp={(event) => commitBodyDimension('balance', Number(event.currentTarget.value))} onPointerCancel={(event) => commitBodyDimension('balance', Number(event.currentTarget.value))} onKeyUp={(event) => commitBodyDimension('balance', Number(event.currentTarget.value))} onBlur={(event) => commitBodyDimension('balance', Number(event.currentTarget.value))} /></label>
             </section>}
             <div className="customizer-models-content" hidden>
             <div className="customizer-models-options-grid">
