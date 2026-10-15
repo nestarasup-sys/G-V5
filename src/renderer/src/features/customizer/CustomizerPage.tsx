@@ -1400,8 +1400,6 @@ export function CustomizerPage() {
     const categoryIndex = poseCategories.indexOf(selectedPoseCategory)
     const nextCategory = poseCategories[(categoryIndex + direction + poseCategories.length) % poseCategories.length]
     setSelectedPoseCategory(nextCategory)
-    const nextPose = availablePoses.find((pose) => resolvePoseCategory(pose) === nextCategory)
-    if (selectedCharacter && nextPose && !previewLoading) void selectCatalogPose(nextPose)
   }
   const selectedModelName = availableModels.find((model) => model.slot === selectedCatalogModelSlot)?.name
   const activeFaceAppearance = characterFaceAppearance?.modelSlot === selectedCatalogModelSlot ? characterFaceAppearance : undefined
