@@ -203,6 +203,7 @@ export function StudioPage() {
   const [studioPresetCategory, setStudioPresetCategory] = useState<'pose' | 'expression'>('pose')
   const [studioPoseSlots, setStudioPoseSlots] = useState<Array<NonNullable<FabricatorPoseSummary>>>([])
   const [studioPoseThumbnails, setStudioPoseThumbnails] = useState<Record<number, string>>({})
+  const [studioPoseDimensions, setStudioPoseDimensions] = useState<Record<number, { width: number; height: number }>>({})
   const [inspectorOpen, setInspectorOpen] = useState(true)
   const [studioFaceCategory, setStudioFaceCategory] = useState<'eyes' | 'eyebrows' | 'nose' | 'mouth'>('eyes')
   const [studioFaceItems, setStudioFaceItems] = useState<FaceCatalogItemSummary[]>([])
@@ -309,21 +310,26 @@ export function StudioPage() {
   }, [selectedStudioCharacterModelSlot])
 
   useEffect(() => {
-    if (!selectedStudioCharacter || selectedElement?.kind !== 'character' || !studioPoseSlots.length) { setStudioPoseThumbnails({}); return }
+    if (!studioPoseSlots.length) { setStudioPoseThumbnails({}); setStudioPoseDimensions({}); return }
     let cancelled = false
     void (async () => {
-      const { renderSavedCharacter } = await import('../customizer/CustomizerPage')
+      const { renderArtwork } = await import('../customizer/CustomizerPage')
       const thumbnails = await Promise.all(studioPoseSlots.map(async (pose) => {
         try {
-          const characterCopy: CustomizerCharacter = { ...selectedStudioCharacter, customization: { ...selectedStudioCharacter.customization, poseSlot: pose.slot, faceAppearance: selectedElement.faceAppearance ?? selectedStudioCharacter.customization.faceAppearance } }
-          const rendered = await renderSavedCharacter(characterCopy, selectedElement.faceTransforms)
-          return [pose.slot, rendered.dataUrl] as const
+          const artwork = await window.desktop.loadFabricatorPose(pose.sourceModelSlot, pose.slot)
+          if (!artwork) return null
+          const thumbnail = await renderArtwork(artwork, 180)
+          return thumbnail ? { slot: pose.slot, thumbnail, width: artwork.width, height: artwork.height } : null
         } catch { return null }
       }))
-      if (!cancelled) setStudioPoseThumbnails(Object.fromEntries(thumbnails.filter((entry): entry is readonly [number, string] => entry !== null)))
-    })().catch(() => { if (!cancelled) setStudioPoseThumbnails({}) })
+      if (!cancelled) {
+        const ready = thumbnails.filter((entry): entry is NonNullable<typeof entry> => entry !== null)
+        setStudioPoseThumbnails(Object.fromEntries(ready.map((entry) => [entry.slot, entry.thumbnail])))
+        setStudioPoseDimensions(Object.fromEntries(ready.map((entry) => [entry.slot, { width: entry.width, height: entry.height }])))
+      }
+    })().catch(() => { if (!cancelled) { setStudioPoseThumbnails({}); setStudioPoseDimensions({}) } })
     return () => { cancelled = true }
-  }, [selectedStudioCharacter, selectedElement?.id, selectedElement?.faceAppearance, selectedElement?.faceTransforms, studioPoseSlots])
+  }, [studioPoseSlots])
 
   useEffect(() => {
     const modelSlot = selectedStudioCharacterModelSlot
@@ -978,11 +984,13 @@ export function StudioPage() {
       <div className="studio-preset-buttons" aria-label="Categorias de presets">
         {presetOptions.map((option) => <button key={option.id} className={`studio-preset-button${option.id === studioPresetCategory ? ' active' : ''}${option.id.startsWith('reserved') ? ' reserved' : ''}`} disabled={option.id.startsWith('reserved')} onClick={() => { if (option.id === 'pose' || option.id === 'expression') setStudioPresetCategory(option.id) }} type="button"><Icon name={option.icon} /><span>{option.label}</span></button>)}
       </div>
-      {studioPresetCategory === 'pose' && <section className="studio-preset-catalog" aria-label="Catálogo de poses">
+        {studioPresetCategory === 'pose' && <section className="studio-preset-catalog" aria-label="Catálogo de poses">
         <h3>Poses do modelo</h3>
         <div className="studio-preset-list">
-          <button className={`studio-pose-option${selectedStudioPoseSlot === null ? ' selected' : ''}`} onClick={() => void applyStudioPose(null)} disabled={studioFaceBusy} type="button"><span className="studio-pose-thumb"><CharacterPortrait character={selectedStudioCharacter} /></span><b>Modelo base</b></button>
-          {studioPoseSlots.filter((pose): pose is NonNullable<FabricatorPoseSummary> => pose !== null).map((pose) => <button className={`studio-pose-option${selectedStudioPoseSlot === pose.slot ? ' selected' : ''}`} key={pose.slot} onClick={() => void applyStudioPose(pose.slot)} disabled={studioFaceBusy} type="button"><span className="studio-pose-thumb">{studioPoseThumbnails[pose.slot] ? <img src={studioPoseThumbnails[pose.slot]} alt="" /> : <CharacterPortrait character={selectedStudioCharacter} />}</span><b>{pose.name}</b></button>)}
+          {studioPoseSlots.filter((pose): pose is NonNullable<FabricatorPoseSummary> => pose !== null).map((pose) => {
+            const dimensions = studioPoseDimensions[pose.slot]
+            return <button className={`studio-pose-option${selectedStudioPoseSlot === pose.slot ? ' selected' : ''}`} key={pose.slot} onClick={() => void applyStudioPose(pose.slot)} disabled={studioFaceBusy} aria-label={`Selecionar pose ${pose.name}`} title={pose.name} style={dimensions ? { aspectRatio: `${dimensions.width}/${dimensions.height}` } : undefined} type="button">{studioPoseThumbnails[pose.slot] ? <img src={studioPoseThumbnails[pose.slot]} alt="" /> : <span className="studio-pose-thumb-placeholder" />}</button>
+          })}
           {!studioPoseSlots.length && <p className="studio-custom-hint">Este modelo ainda não tem poses salvas.</p>}
         </div>
       </section>}

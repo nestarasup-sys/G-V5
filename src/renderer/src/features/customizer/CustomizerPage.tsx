@@ -226,7 +226,7 @@ async function renderWardrobeOverlay(
   return { imageUrl: output.toDataURL('image/png'), selectedUrl: selectionContext && selected ? selectionCanvas.toDataURL('image/png') : null }
 }
 
-async function renderArtwork(artwork: CatalogArtwork, maxSize: number, skinTone?: string): Promise<string | null> {
+export async function renderArtwork(artwork: CatalogArtwork, maxSize: number, skinTone?: string): Promise<string | null> {
   if (artwork.width <= 0 || artwork.height <= 0) return null
   const scale = Math.min(maxSize / artwork.width, maxSize / artwork.height)
   const canvas = document.createElement('canvas')
