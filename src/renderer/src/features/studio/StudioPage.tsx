@@ -205,6 +205,7 @@ export function StudioPage() {
   const [savingCast, setSavingCast] = useState(false)
   const [inspectorTab, setInspectorTab] = useState<'editor' | 'custom'>('editor')
   const [inspectorCustomView, setInspectorCustomView] = useState<'face' | 'presets'>('face')
+  const characterInspectorViewRef = useRef<{ tab: 'editor' | 'custom'; customView: 'face' | 'presets' }>({ tab: 'editor', customView: 'face' })
   const [studioPresetCategory, setStudioPresetCategory] = useState<'pose' | 'expression'>('pose')
   const [studioPoseSlots, setStudioPoseSlots] = useState<Array<NonNullable<FabricatorPoseSummary>>>([])
   const [studioPoseThumbnails, setStudioPoseThumbnails] = useState<Record<number, string>>({})
@@ -249,6 +250,13 @@ export function StudioPage() {
     : undefined
   const selectedBackgroundAsset = activeStudio?.assets.find((asset) => asset.id === activeStudio.backgroundAssetId) ?? null
   const stageCharacters = activeStudio?.elements.filter((element) => element.kind === 'character') ?? []
+  const rememberCharacterInspectorView = (tab: 'editor' | 'custom', customView: 'face' | 'presets' = inspectorCustomView) => {
+    if (selectedElement?.kind === 'character') characterInspectorViewRef.current = { tab, customView }
+  }
+  const restoreCharacterInspectorView = () => {
+    setInspectorTab(characterInspectorViewRef.current.tab)
+    setInspectorCustomView(characterInspectorViewRef.current.customView)
+  }
 
   useEffect(() => {
     if (selectedElement?.kind === 'character') studioFaceTransformsRef.current[selectedElement.id] = selectedElement.faceTransforms ?? {}
@@ -589,7 +597,7 @@ export function StudioPage() {
       }))
       setCastPickerOpen(false)
       setActiveTool(null)
-      setInspectorTab('editor')
+      restoreCharacterInspectorView()
       setInspectorOpen(true)
       setSelectedElementId(elements.at(-1)?.id ?? null)
       setError(null)
@@ -831,7 +839,8 @@ export function StudioPage() {
     setSelectedElementId(id)
     setActiveTool(null)
     setInspectorOpen(true)
-    setInspectorTab('editor')
+    if (element.kind === 'character') restoreCharacterInspectorView()
+    else setInspectorTab('editor')
     dragRef.current = { id, pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, originalX: element.x, originalY: element.y, width: rect.width, height: rect.height }
     event.currentTarget.setPointerCapture(event.pointerId)
   }
@@ -1040,7 +1049,7 @@ export function StudioPage() {
         const character = availableCharacters.find((item) => item.id === element.characterId)
         const firstName = (character?.name ?? element.text).trim().split(/\s+/)[0] || element.text
         return <article className={`studio-cast-item${selectedElementId === element.id ? ' selected' : ''}`} key={element.id}>
-          <button className="studio-cast-select" onClick={() => { setSelectedElementId(element.id); setActiveTool(null); setInspectorOpen(true); setInspectorTab('editor') }} type="button">
+          <button className="studio-cast-select" onClick={() => { setSelectedElementId(element.id); setActiveTool(null); setInspectorOpen(true); restoreCharacterInspectorView() }} type="button">
             {character ? <CharacterPortrait character={character} /> : <span className="studio-cast-fallback">{element.text.slice(0, 1)}</span>}
             <span>{firstName}</span>
           </button>
@@ -1099,8 +1108,8 @@ export function StudioPage() {
             {fullView && <button className="studio-exit-view" onClick={() => setFullView(false)} type="button">Sair da visualização <kbd>Esc</kbd></button>}
             {!fullView && <span className="studio-scene-title">{activeStudio.title}</span>}
             {!fullView && inspectorOpen && <aside className={`studio-inspector studio-inspector-${inspectorSide}`} aria-label="Inspector da cena" onPointerDown={(event) => event.stopPropagation()}>
-              <header className="studio-inspector-tabs"><button className={inspectorTab === 'editor' ? 'active' : ''} onClick={() => setInspectorTab('editor')} type="button">Editor</button><button className={inspectorTab === 'custom' && inspectorCustomView === 'face' ? 'active' : ''} onClick={() => { setInspectorTab('custom'); setInspectorCustomView('face') }} type="button">Custom</button><button className="studio-inspector-close" onClick={() => setInspectorOpen(false)} aria-label="Fechar inspector" title="Fechar" type="button">×</button></header>
-              <button className={`studio-inspector-presets${inspectorTab === 'custom' && inspectorCustomView === 'presets' ? ' active' : ''}`} onClick={() => { setInspectorTab('custom'); setInspectorCustomView('presets') }} type="button"><Icon name="sparkles" />Presets</button>
+              <header className="studio-inspector-tabs"><button className={inspectorTab === 'editor' ? 'active' : ''} onClick={() => { setInspectorTab('editor'); rememberCharacterInspectorView('editor') }} type="button">Editor</button><button className={inspectorTab === 'custom' && inspectorCustomView === 'face' ? 'active' : ''} onClick={() => { setInspectorTab('custom'); setInspectorCustomView('face'); rememberCharacterInspectorView('custom', 'face') }} type="button">Custom</button><button className="studio-inspector-close" onClick={() => setInspectorOpen(false)} aria-label="Fechar inspector" title="Fechar" type="button">×</button></header>
+              <button className={`studio-inspector-presets${inspectorTab === 'custom' && inspectorCustomView === 'presets' ? ' active' : ''}`} onClick={() => { setInspectorTab('custom'); setInspectorCustomView('presets'); rememberCharacterInspectorView('custom', 'presets') }} type="button"><Icon name="sparkles" />Presets</button>
               {inspectorTab === 'editor' ? <div className="studio-inspector-content">{propertyPanel()}</div> : <div className="studio-inspector-content">{inspectorCustomView === 'presets' ? presetsPanel() : customPanel()}</div>}
             </aside>}
           </div>
