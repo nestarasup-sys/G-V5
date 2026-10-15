@@ -5,6 +5,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import type { AnimatorAnimation, AnimatorAnimationAsset, AnimatorAnimationDraft, AnimatorAnimationSave, AnimatorAnimationSummary, FaceAssetSave, FaceCatalogItem, FaceCatalogItemSave, FaceCatalogItemSummary, FaceElementKind, FaceSet, FaceSetSave, FaceSetSummary, FaceSheetKind, FabricatorAssetSave, FabricatorHistoryEntry, FabricatorHistorySaveEntry, FabricatorHistorySaveState, FabricatorHistoryState, FabricatorPose, FabricatorPoseDraft, FabricatorPoseDraftSave, FabricatorPoseSave, FabricatorPoseSummary, FabricatorProject, FabricatorProjectSave, FabricatorSlotSummary, HairStyle, HairStyleAsset, HairStyleSave, HairStyleSummary, HairWorkspace, HairWorkspaceAsset, HairWorkspaceSave, ModelPart, PosePart, WardrobeAssetSave, WardrobeCategory, WardrobeSet, WardrobeSetSave, WardrobeSetSummary } from '../src/shared/fabricator'
 import type { CustomizerCharacter } from '../src/shared/customizer'
+import type { StudioDocument } from '../src/shared/studio'
 import { applyModelHeadShape } from '../src/shared/headShape'
 
 const slotCount = 10
@@ -29,6 +30,9 @@ const faceCatalogItemPath = (modelSlot: number, id: string) => join(faceCatalogP
 const hairModelPath = (modelSlot: number) => join(app.getPath('userData'), 'fabricator', 'hair', `model-${modelSlot}`)
 const hairStylePath = (modelSlot: number, id: string) => join(hairModelPath(modelSlot), 'styles', `style-${id}`)
 const characterLibraryPath = () => join(app.getPath('userData'), 'customizer', 'characters')
+const studioLibraryPath = () => join(app.getPath('userData'), 'studios', 'Studio Principal')
+const studioPath = (id: string) => join(studioLibraryPath(), `studio-${id}`)
+let studioSaveQueue: Promise<void> = Promise.resolve()
 const characterManifestPath = () => join(characterLibraryPath(), 'characters.json')
 const fabricatorSaveQueues = new Map<number, Promise<void>>()
 let poseSaveQueue: Promise<void> = Promise.resolve()
@@ -525,6 +529,53 @@ function assertTrustedSender(event: IpcMainInvokeEvent): void {
   }
 }
 
+function isStudioDocument(value: unknown): value is StudioDocument {
+  if (!value || typeof value !== 'object') return false
+  const studio = value as Partial<StudioDocument>
+  return studio.schemaVersion === 1
+    && typeof studio.id === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(studio.id)
+    && typeof studio.title === 'string' && studio.title.trim().length > 0 && studio.title.length <= 100
+    && typeof studio.color === 'string' && /^(#[0-9a-f]{6}|hsl\([\d.]+\s+[\d.]+%\s+[\d.]+%\))$/i.test(studio.color)
+    && typeof studio.createdAt === 'string' && Number.isFinite(Date.parse(studio.createdAt))
+    && typeof studio.updatedAt === 'string' && Number.isFinite(Date.parse(studio.updatedAt))
+}
+
+async function readStudio(id: string): Promise<StudioDocument | null> {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)) throw new Error('Identificador de Studio inválido.')
+  try {
+    const raw = JSON.parse(await readFile(join(studioPath(id), 'studio.json'), 'utf8')) as unknown
+    if (!isStudioDocument(raw) || raw.id !== id) throw new Error(`Os dados do Studio ${id} estão inválidos.`)
+    return raw
+  } catch (reason) {
+    if ((reason as NodeJS.ErrnoException).code === 'ENOENT') return null
+    throw reason
+  }
+}
+
+async function writeStudio(studio: StudioDocument): Promise<void> {
+  if (!isStudioDocument(studio)) throw new Error('Dados do Studio inválidos.')
+  const folder = studioPath(studio.id)
+  await Promise.all([
+    mkdir(join(folder, 'assets', 'backgrounds'), { recursive: true }),
+    mkdir(join(folder, 'assets', 'objects'), { recursive: true }),
+    mkdir(join(folder, 'assets', 'characters'), { recursive: true }),
+    mkdir(join(folder, 'prints'), { recursive: true })
+  ])
+  const temporary = join(folder, 'studio.json.tmp')
+  await writeFile(temporary, JSON.stringify({ ...studio, title: studio.title.trim() }, null, 2), 'utf8')
+  await rename(temporary, join(folder, 'studio.json'))
+}
+
+async function listStudios(): Promise<StudioDocument[]> {
+  await mkdir(studioLibraryPath(), { recursive: true })
+  const entries = await readdir(studioLibraryPath(), { withFileTypes: true })
+  const documents = await Promise.all(entries
+    .filter((entry) => entry.isDirectory() && /^studio-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(entry.name))
+    .map((entry) => readStudio(entry.name.slice('studio-'.length))))
+  return documents.filter((studio): studio is StudioDocument => studio !== null)
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.title.localeCompare(b.title))
+}
+
 function dataUrlBuffer(dataUrl: string): Buffer {
   const match = /^data:image\/png;base64,([A-Za-z0-9+/=]+)$/.exec(dataUrl)
   if (!match) throw new Error('Arquivo de peça inválido.')
@@ -892,6 +943,35 @@ async function readAnimatorDraft(modelSlot: number): Promise<AnimatorAnimationDr
 }
 
 async function registerFabricatorHandlers(): Promise<void> {
+  ipcMain.handle('studio:list', async (event): Promise<StudioDocument[]> => {
+    assertTrustedSender(event)
+    return listStudios()
+  })
+
+  ipcMain.handle('studio:save', async (event, studio: StudioDocument): Promise<void> => {
+    assertTrustedSender(event)
+    const next = studioSaveQueue.catch(() => undefined).then(() => writeStudio(studio))
+    studioSaveQueue = next
+    await next
+  })
+
+  ipcMain.handle('studio:delete', async (event, id: string): Promise<void> => {
+    assertTrustedSender(event)
+    if (typeof id !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)) throw new Error('Identificador de Studio inválido.')
+    const next = studioSaveQueue.catch(() => undefined).then(async () => {
+      const folder = resolve(studioPath(id))
+      if (dirname(folder) !== resolve(studioLibraryPath()) || basename(folder) !== `studio-${id}`) throw new Error('Pasta do Studio inválida.')
+      await rm(folder, { recursive: true, force: true })
+    })
+    studioSaveQueue = next
+    await next
+  })
+
+  ipcMain.handle('studio:folder', (event): string => {
+    assertTrustedSender(event)
+    return studioLibraryPath()
+  })
+
   ipcMain.handle('customizer:characters:list', async (event): Promise<CustomizerCharacter[]> => {
     assertTrustedSender(event)
     return readCustomizerCharacters()
@@ -1440,7 +1520,7 @@ app.on('window-all-closed', () => {
 
 let waitingForFabricatorWritesBeforeQuit = false
 app.on('before-quit', (event) => {
-  const pendingWrites = [...fabricatorSaveQueues.values(), ...poseSaveWrites, ...hairSaveQueues.values()]
+  const pendingWrites = [...fabricatorSaveQueues.values(), ...poseSaveWrites, ...hairSaveQueues.values(), studioSaveQueue]
   if (pendingWrites.length === 0 || waitingForFabricatorWritesBeforeQuit) return
   event.preventDefault()
   waitingForFabricatorWritesBeforeQuit = true

@@ -37,8 +37,10 @@ button:focus-visible, input:focus-visible { outline: 3px solid #ed8caf; outline-
 .route-content { min-height: 0; flex: 1; display: flex; }
 .blank-page { min-width: 0; min-height: 0; flex: 1; background: #f5f3f4; }
 .studio-page { min-width:0;min-height:0;flex:1;display:flex;flex-direction:column;overflow:auto;padding:22px 28px 30px;background:#f5f3f4; }
-.studio-page-header { flex:0 0 auto;display:flex;justify-content:center;margin:2px 0 16px; }
+.studio-page-header { flex:0 0 auto;display:flex;flex-direction:column;align-items:center;gap:4px;margin:2px 0 16px; }
 .studio-page-header h1 { margin:0;color:#342e36;font:800 22px/1.25 Manrope,sans-serif;letter-spacing:-.45px; }
+.studio-page-header small { max-width:100%;overflow:hidden;color:#968c97;font-size:9px;text-overflow:ellipsis;white-space:nowrap; }
+.studio-error-message { color:#b34555;font-size:11px; }
 .studio-toolbar { flex:0 0 auto;display:flex;justify-content:center;gap:8px;margin-bottom:22px; }
 .studio-action { min-height:34px;display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:0 12px;border:1px solid #e9e2e8;border-radius:8px;background:#fff;color:#706672;font-size:11px;font-weight:700;cursor:pointer;transition:.15s ease; }
 .studio-action:hover:not(:disabled) { border-color:#e5aec2;background:#fff8fb;color:#a44166; }

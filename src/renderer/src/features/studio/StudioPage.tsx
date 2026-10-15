@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { Icon } from '../../ui/components/Icon'
+import type { StudioDocument } from '../../../../shared/studio'
 
-type StudioCard = { id: string; title: string; color: string }
+type StudioCard = StudioDocument
 
 const STORAGE_KEY = 'gacha-nymi-studio-catalog-v1'
 const studioColor = (number: number) => `hsl(${(number * 137.508) % 360} 45% 78%)`
@@ -13,7 +14,7 @@ const studioTools = [
   { id: 'thought', label: 'Pensamento', icon: 'face' }
 ] as const
 
-function loadStudios(): StudioCard[] {
+function loadLegacyStudios(): Array<{ id: string; title: string; color: string }> {
   try {
     const saved: unknown = JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? '[]')
     if (!Array.isArray(saved)) return []
@@ -23,7 +24,10 @@ function loadStudios(): StudioCard[] {
 }
 
 export function StudioPage() {
-  const [studios, setStudios] = useState<StudioCard[]>(loadStudios)
+  const [studios, setStudios] = useState<StudioCard[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [studioFolder, setStudioFolder] = useState('')
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [activeStudioId, setActiveStudioId] = useState<string | null>(null)
   const [activeTool, setActiveTool] = useState<string | null>(null)
@@ -32,6 +36,33 @@ export function StudioPage() {
   const nextStudioNumber = useRef(1)
   const selectedStudio = studios.find((studio) => studio.id === selectedId) ?? null
   const activeStudio = studios.find((studio) => studio.id === activeStudioId) ?? null
+
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      try {
+        const existing = await window.desktop.listStudios()
+        const knownIds = new Set(existing.map((studio) => studio.id))
+        const legacy = loadLegacyStudios()
+        const now = new Date().toISOString()
+        for (const old of legacy) {
+          if (knownIds.has(old.id) || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(old.id)) continue
+          await window.desktop.saveStudio({ schemaVersion: 1, ...old, createdAt: now, updatedAt: now })
+        }
+        const loaded = await window.desktop.listStudios()
+        const folder = await window.desktop.getStudioFolder()
+        if (cancelled) return
+        setStudios(loaded)
+        setStudioFolder(folder)
+        if (legacy.length) window.localStorage.removeItem(STORAGE_KEY)
+      } catch (reason) {
+        if (!cancelled) setError(reason instanceof Error ? reason.message : 'Não foi possível carregar os Studios.')
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [])
 
   const allocateNumber = () => {
     const highest = studios.reduce((max, studio) => {
@@ -43,54 +74,74 @@ export function StudioPage() {
     return number
   }
 
-  const createStudio = () => {
+  const createStudio = async () => {
     const number = allocateNumber()
+    const now = new Date().toISOString()
     const studio: StudioCard = {
+      schemaVersion: 1,
       id: crypto.randomUUID(),
       title: `Studio ${String(number).padStart(2, '0')}`,
-      color: studioColor(number)
+      color: studioColor(number),
+      createdAt: now,
+      updatedAt: now
     }
-    setStudios((current) => [...current, studio])
-    setSelectedId(studio.id)
-    setSaved(false)
+    try {
+      setError(null)
+      await window.desktop.saveStudio(studio)
+      setStudios((current) => [...current, studio])
+      setSelectedId(studio.id)
+      setSaved(true)
+    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível criar o Studio.') }
   }
 
-  const duplicateStudio = () => {
+  const duplicateStudio = async () => {
     if (!selectedStudio) return
     const number = allocateNumber()
     const duplicate: StudioCard = {
       ...selectedStudio,
       id: crypto.randomUUID(),
       title: `Studio ${String(number).padStart(2, '0')}`,
-      color: studioColor(number)
+      color: studioColor(number),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
     }
-    setStudios((current) => [...current, duplicate])
-    setSelectedId(duplicate.id)
-    setSaved(false)
+    try {
+      setError(null)
+      await window.desktop.saveStudio(duplicate)
+      setStudios((current) => [...current, duplicate])
+      setSelectedId(duplicate.id)
+      setSaved(true)
+    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível duplicar o Studio.') }
   }
 
-  const saveStudios = () => {
+  const saveStudio = async () => {
+    if (!activeStudio) return true
     try {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(studios))
+      const updated = { ...activeStudio, updatedAt: new Date().toISOString() }
+      await window.desktop.saveStudio(updated)
+      setStudios((current) => current.map((studio) => studio.id === updated.id ? updated : studio))
+      setError(null)
       setSaved(true)
       return true
-    } catch {
-      window.alert('Não foi possível salvar os Studios neste dispositivo.')
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Não foi possível salvar o Studio neste dispositivo.')
       return false
     }
   }
 
-  const deleteStudio = () => {
+  const deleteStudio = async () => {
     if (!selectedStudio || !window.confirm(`Excluir ${selectedStudio.title}?`)) return
-    const next = studios.filter((studio) => studio.id !== selectedStudio.id)
-    setStudios(next)
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
-    setSelectedId(null)
-    setSaved(true)
+    try {
+      await window.desktop.deleteStudio(selectedStudio.id)
+      setStudios((current) => current.filter((studio) => studio.id !== selectedStudio.id))
+      setSelectedId(null)
+      setSaved(true)
+      setError(null)
+    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível excluir o Studio.') }
   }
 
-  const leaveStudio = () => {
-    if (!saveStudios()) return
+  const leaveStudio = async () => {
+    if (!await saveStudio()) return
     setActiveStudioId(null)
     setActiveTool(null)
     setFullView(false)
@@ -111,7 +162,7 @@ export function StudioPage() {
         {!fullView && <aside className="studio-editor-rail studio-editor-left" aria-label="Ferramentas do Studio">
           <div className="studio-editor-quick-actions">
             <button className="studio-round-action" onClick={leaveStudio} title="Salvar e voltar à lista" aria-label="Voltar para Seus Studios" type="button"><span>←</span></button>
-            <button className="studio-round-action" onClick={saveStudios} title="Salvar no dispositivo" aria-label="Salvar Studio" type="button"><Icon name="check" /></button>
+            <button className="studio-round-action" onClick={() => void saveStudio()} title="Salvar no dispositivo" aria-label="Salvar Studio" type="button"><Icon name="check" /></button>
           </div>
           <div className="studio-editor-quick-actions studio-history-actions">
             <button className="studio-round-action" disabled title="Desfazer ficará disponível ao editar a cena" aria-label="Desfazer" type="button"><Icon name="undo" /></button>
@@ -125,6 +176,7 @@ export function StudioPage() {
             <button className="studio-tool-button studio-view-button" onClick={() => setFullView(true)} type="button"><Icon name="expand" /><span>View</span></button>
           </nav>
           <small className={`studio-save-indicator${saved ? '' : ' unsaved'}`}><i />{saved ? 'Salvo neste dispositivo' : 'Alterações não salvas'}</small>
+          {error && <small className="studio-error-message" role="alert">{error}</small>}
         </aside>}
         <section className="studio-scene-area" aria-label="Prévia da cena">
           <div className="studio-scene-canvas" style={{ backgroundColor: activeStudio.color }}>
@@ -140,14 +192,15 @@ export function StudioPage() {
 
   return (
     <main className="studio-page" aria-label="Studio">
-      <header className="studio-page-header"><h1>Seus Studios</h1></header>
+      <header className="studio-page-header"><h1>Seus Studios</h1>{studioFolder && <small>Dados locais: {studioFolder}</small>}</header>
       <div className="studio-toolbar" aria-label="Ações dos Studios">
-        <button className="studio-action studio-action-primary" onClick={createStudio} type="button"><Icon name="plus" />Criar</button>
+        <button className="studio-action studio-action-primary" onClick={() => void createStudio()} disabled={loading} type="button"><Icon name="plus" />Criar</button>
         <button className="studio-action" onClick={() => selectedStudio && setActiveStudioId(selectedStudio.id)} disabled={!selectedStudio} type="button"><Icon name="expand" />Abrir</button>
         <button className="studio-action" onClick={duplicateStudio} disabled={!selectedStudio} type="button"><span className="studio-duplicate-icon" aria-hidden="true">▢</span>Duplicar</button>
         <button className="studio-action studio-action-danger" onClick={deleteStudio} disabled={!selectedStudio} type="button"><Icon name="trash" />Excluir</button>
       </div>
-      {studios.length ? (
+      {error && <p className="studio-error-message" role="alert">{error}</p>}
+      {loading ? <section className="studio-empty-state"><strong>Carregando Studios…</strong></section> : studios.length ? (
         <section className="studio-grid" aria-label="Studios criados">
           {studios.map((studio) => (
             <article className={`studio-card${selectedId === studio.id ? ' selected' : ''}`} key={studio.id}>
