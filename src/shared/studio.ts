@@ -11,7 +11,8 @@ export type StudioAsset = {
 /** Studio-local adjustment shared by a facial category and its variant frames. */
 export type StudioFaceTransform = { x: number; y: number; width: number; height: number; rotation: number }
 export type StudioFaceTransformCategory = 'eyes' | 'eyebrows' | 'nose' | 'mouth'
-export type StudioFaceTransforms = Partial<Record<StudioFaceTransformCategory, StudioFaceTransform>>
+/** Keys are category:itemId; bare category keys remain supported for older Studio data. */
+export type StudioFaceTransforms = Record<string, StudioFaceTransform>
 
 export type StudioElement = {
   id: string
@@ -21,7 +22,7 @@ export type StudioElement = {
   flipX?: boolean
   /** Face choices made to this actor inside this Studio only. */
   faceAppearance?: CustomizerFaceAppearance
-  /** Face-piece transforms are stored on the Studio actor, never on its source character. */
+  /** Face-piece transforms are stored per selected catalog sheet on this Studio actor. */
   faceTransforms?: StudioFaceTransforms
   text: string
   x: number

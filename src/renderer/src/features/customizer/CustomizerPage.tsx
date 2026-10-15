@@ -409,7 +409,7 @@ async function renderFaceCatalogOverlay(artwork: CatalogArtwork, source: Fabrica
     const piece = item.pieces.find((candidate) => candidate.sheet === sheet && candidate.index === index && candidate.side === side)
     const transform = item.transforms[element]
     const studioCategory = sheet === 'eyes' ? 'eyes' : sheet === 'eyebrows' ? 'eyebrows' : sheet === 'nose' ? 'nose' : 'mouth'
-    const studioTransform = studioFaceTransforms?.[studioCategory]
+    const studioTransform = studioFaceTransforms?.[`${sheet}:${item.id}`] ?? studioFaceTransforms?.[studioCategory]
     if (!piece || !transform) continue
     try {
       const image = await loadCachedImage(piece.dataUrl)

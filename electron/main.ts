@@ -532,10 +532,8 @@ function assertTrustedSender(event: IpcMainInvokeEvent): void {
 function isStudioFaceTransforms(value: unknown): value is StudioFaceTransforms {
   if (value === undefined) return true
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false
-  const transforms = value as Partial<Record<keyof StudioFaceTransforms, unknown>>
-  return (['eyes', 'eyebrows', 'nose', 'mouth'] as const).every((category) => {
-    const entry = transforms[category]
-    if (entry === undefined) return true
+  return Object.entries(value).every(([key, entry]) => {
+    if (!/^(eyes|eyebrows|nose|mouth|mouth-closed|mouth-open)(:[^:]+)?$/i.test(key)) return false
     if (!entry || typeof entry !== 'object') return false
     const transform = entry as Partial<StudioFaceTransform>
     return [transform.x, transform.y, transform.width, transform.height, transform.rotation].every((number) => typeof number === 'number' && Number.isFinite(number))
