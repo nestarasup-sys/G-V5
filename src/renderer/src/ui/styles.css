@@ -175,6 +175,8 @@ button:focus-visible, input:focus-visible { outline: 3px solid #ed8caf; outline-
 .studio-inspector-tabs { height:40px;flex:0 0 40px;display:grid;grid-template-columns:1fr 1fr;padding:4px;border-bottom:1px solid #eee4eb;background:#fff; }
 .studio-inspector-tabs button { border:0;border-radius:6px;background:transparent;color:#8b7d8b;font-size:10px;font-weight:700;cursor:pointer; }
 .studio-inspector-tabs button.active { background:#fff0f6;color:#b34570; }
+.studio-inspector-close { min-height:30px;flex:0 0 30px;margin:8px 10px 0;border:1px solid #ead8e2;border-radius:7px;background:#fff;color:#8b6477;font-size:10px;font-weight:700;cursor:pointer; }
+.studio-inspector-close:hover { border-color:#e76391;background:#fff3f7;color:#a7446b; }
 .studio-inspector-content { min-height:0;overflow:auto;padding:10px; }
 .studio-inspector-content .studio-side-content { gap:8px; }
 .studio-inspector-empty { flex:1; }

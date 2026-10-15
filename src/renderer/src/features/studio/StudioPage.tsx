@@ -131,6 +131,7 @@ export function StudioPage() {
   const [castSelection, setCastSelection] = useState<string[]>([])
   const [savingCast, setSavingCast] = useState(false)
   const [inspectorTab, setInspectorTab] = useState<'editor' | 'custom'>('editor')
+  const [inspectorOpen, setInspectorOpen] = useState(true)
   const [studioFolder, setStudioFolder] = useState('')
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [activeStudioId, setActiveStudioId] = useState<string | null>(null)
@@ -339,6 +340,8 @@ export function StudioPage() {
         setSelectedElementId(element.id)
       }
       setActiveTool(category === 'background' ? 'background' : 'objects')
+      setInspectorOpen(true)
+      setInspectorTab('editor')
       setError(null)
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível importar a imagem.') }
   }
@@ -346,6 +349,8 @@ export function StudioPage() {
   const selectBackground = (asset: StudioAsset) => {
     changeScene((studio) => ({ ...studio, backgroundAssetId: asset.id, backgroundX: 0, backgroundY: 0, backgroundWidth: 100, backgroundHeight: 100, backgroundRotation: 0, updatedAt: new Date().toISOString() }))
     setSelectedElementId('background')
+    setInspectorOpen(true)
+    setInspectorTab('editor')
   }
 
   const addTextElement = (kind: 'narrator' | 'speech' | 'thought') => {
@@ -353,6 +358,8 @@ export function StudioPage() {
     const element = makeElement(kind, Math.max(0, ...activeStudio.elements.map((item) => item.zIndex)) + 1)
     changeScene((studio) => ({ ...studio, elements: [...studio.elements, element], updatedAt: new Date().toISOString() }))
     setSelectedElementId(element.id)
+    setInspectorOpen(true)
+    setInspectorTab('editor')
   }
 
   const openCastPicker = () => {
@@ -394,6 +401,7 @@ export function StudioPage() {
       setCastPickerOpen(false)
       setActiveTool(null)
       setInspectorTab('editor')
+      setInspectorOpen(true)
       setSelectedElementId(elements.at(-1)?.id ?? null)
       setError(null)
     } catch (reason) {
@@ -433,6 +441,8 @@ export function StudioPage() {
       recordHistory()
       setSelectedElementId('background')
       setActiveTool('background')
+      setInspectorOpen(true)
+      setInspectorTab('editor')
       dragRef.current = { id, pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, originalX: activeStudio.backgroundX, originalY: activeStudio.backgroundY, width: rect.width, height: rect.height }
       event.currentTarget.setPointerCapture(event.pointerId)
       return
@@ -443,6 +453,8 @@ export function StudioPage() {
     recordHistory()
     setSelectedElementId(id)
     setActiveTool(null)
+    setInspectorOpen(true)
+    setInspectorTab('editor')
     dragRef.current = { id, pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, originalX: element.x, originalY: element.y, width: rect.width, height: rect.height }
     event.currentTarget.setPointerCapture(event.pointerId)
   }
@@ -545,6 +557,8 @@ export function StudioPage() {
         const element: StudioElement = { id: crypto.randomUUID(), kind: 'image', assetId: asset.id, text: '', x: 0, y: 0, width: 25, height: 25, rotation: 0, zIndex: Math.max(0, ...activeStudio.elements.map((item) => item.zIndex)) + 1 }
         changeScene((studio) => ({ ...studio, elements: [...studio.elements, element], updatedAt: new Date().toISOString() }))
         setSelectedElementId(element.id)
+        setInspectorOpen(true)
+        setInspectorTab('editor')
       }}><img src={asset.dataUrl} alt="" /><span>{asset.name}</span></button>)}</div>
       {selectedElementId && selectedElement && <ElementControls element={selectedElement} update={(values) => updateElement(selectedElement.id, values)} remove={deleteSelected} control={control} />}
     </div>
@@ -569,7 +583,7 @@ export function StudioPage() {
         const character = availableCharacters.find((item) => item.id === element.characterId)
         const firstName = (character?.name ?? element.text).trim().split(/\s+/)[0] || element.text
         return <article className={`studio-cast-item${selectedElementId === element.id ? ' selected' : ''}`} key={element.id}>
-          <button className="studio-cast-select" onClick={() => { setSelectedElementId(element.id); setActiveTool(null); setInspectorTab('editor') }} type="button">
+          <button className="studio-cast-select" onClick={() => { setSelectedElementId(element.id); setActiveTool(null); setInspectorOpen(true); setInspectorTab('editor') }} type="button">
             {character ? <CharacterPortrait character={character} /> : <span className="studio-cast-fallback">{element.text.slice(0, 1)}</span>}
             <span>{firstName}</span>
           </button>
@@ -602,7 +616,7 @@ export function StudioPage() {
             <button className="studio-round-action" disabled={!canRedo} onClick={redo} title="Refazer (Ctrl+Y)" aria-label="Refazer" type="button"><Icon name="redo" /></button>
           </div>
           <nav className="studio-tool-list" aria-label="Ferramentas da cena">
-            {studioTools.map((tool) => <button className={`studio-tool-button${activeTool === tool.id ? ' active' : ''}`} key={tool.id} onClick={() => setActiveTool(tool.id)} type="button"><Icon name={tool.icon} /><span>{tool.label}</span><i aria-hidden="true">✦</i></button>)}
+            {studioTools.map((tool) => <button className={`studio-tool-button${activeTool === tool.id ? ' active' : ''}`} key={tool.id} onClick={() => { setActiveTool(tool.id); setInspectorOpen(true); setInspectorTab('editor') }} type="button"><Icon name={tool.icon} /><span>{tool.label}</span><i aria-hidden="true">✦</i></button>)}
             <button className="studio-tool-button" onClick={() => addTextElement('narrator')} type="button"><Icon name="message" /><span>Narrador</span><i aria-hidden="true">✦</i></button>
             <button className="studio-tool-button" onClick={() => addTextElement('speech')} type="button"><Icon name="message" /><span>Fala</span><i aria-hidden="true">✦</i></button>
             <button className="studio-tool-button" onClick={() => addTextElement('thought')} type="button"><Icon name="face" /><span>Pensamento</span><i aria-hidden="true">✦</i></button>
@@ -626,8 +640,9 @@ export function StudioPage() {
             })}
             {fullView && <button className="studio-exit-view" onClick={() => setFullView(false)} type="button">Sair da visualização <kbd>Esc</kbd></button>}
             {!fullView && <span className="studio-scene-title">{activeStudio.title}</span>}
-            {!fullView && <aside className={`studio-inspector studio-inspector-${inspectorSide}`} aria-label="Inspector da cena">
+            {!fullView && inspectorOpen && <aside className={`studio-inspector studio-inspector-${inspectorSide}`} aria-label="Inspector da cena">
               <header className="studio-inspector-tabs"><button className={inspectorTab === 'editor' ? 'active' : ''} onClick={() => setInspectorTab('editor')} type="button">Editor</button><button className={inspectorTab === 'custom' ? 'active' : ''} onClick={() => setInspectorTab('custom')} type="button">Custom</button></header>
+              <button className="studio-inspector-close" onClick={() => setInspectorOpen(false)} type="button">Fechar</button>
               {inspectorTab === 'editor' ? <div className="studio-inspector-content">{propertyPanel()}</div> : <div className="studio-inspector-empty" />}
             </aside>}
           </div>
