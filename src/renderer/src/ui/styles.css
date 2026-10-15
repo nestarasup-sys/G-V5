@@ -1047,8 +1047,10 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .wardrobe-reference-body-part { pointer-events:none;touch-action:none; }
 .wardrobe-reference-body-part.movable { pointer-events:auto;cursor:grab;filter:drop-shadow(0 0 3px #3284f5a8); }
 .wardrobe-reference-body-part.movable:active { cursor:grabbing; }
-.wardrobe-binding-marker { position:absolute;z-index:2000;width:16px;height:16px;transform:translate(-50%,-50%);border:3px solid white;border-radius:50%;background:#2685e9;box-shadow:0 0 0 2px #1768bd,0 2px 7px #173b7999;pointer-events:none; }
-.wardrobe-binding-marker.selected { width:20px;height:20px;background:#39adff;box-shadow:0 0 0 3px #1557a8,0 0 12px #0e80ff; }
+.wardrobe-binding-marker { position:absolute;z-index:3000;width:18px;height:18px;margin:0;padding:0;transform:translate(-50%,-50%);border:3px solid white;border-radius:50%;background:#2685e9;box-shadow:0 0 0 2px #1768bd,0 2px 7px #173b7999;cursor:grab;touch-action:none;user-select:none; }
+.wardrobe-binding-marker:hover,.wardrobe-binding-marker:focus-visible { outline:2px solid #0e80ff;outline-offset:3px; }
+.wardrobe-binding-marker:active { cursor:grabbing; }
+.wardrobe-binding-marker.selected { width:22px;height:22px;background:#39adff;box-shadow:0 0 0 3px #1557a8,0 0 12px #0e80ff; }
 .wardrobe-bind-dot { width:10px;height:10px;flex:0 0 10px;border:2px solid #fff;border-radius:50%;background:#2685e9;box-shadow:0 0 0 1px #1768bd; }
 .wardrobe-preview-part { cursor:grab;touch-action:none;user-select:none; }
 .wardrobe-preview-part:active { cursor:grabbing; }
