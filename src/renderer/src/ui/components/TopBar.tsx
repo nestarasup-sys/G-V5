@@ -12,7 +12,7 @@ export function TopBar({ saved, onSave }: { saved: boolean; onSave: () => void }
   return (
     <header className="top-bar">
       <div className="top-brand">
-        <span className="top-brand-mark">n</span>
+        <img className="top-brand-mark" src="/gacha-nymi.ico" alt="Logo Gacha Nymi" />
         <span className="top-brand-name">Gacha Nymi<span>estúdio criativo</span></span>
       </div>
       <span className="top-divider" />

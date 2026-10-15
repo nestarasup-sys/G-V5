@@ -25,7 +25,7 @@ button:focus-visible, input:focus-visible { outline: 3px solid #ed8caf; outline-
 .app-shell { width: 100%; height: 100%; min-height: 560px; display: flex; flex-direction: column; background: #f5f3f4; }
 .top-bar { height: 67px; min-height: 67px; display: flex; align-items: center; gap: 12px; padding: 0 25px; background: #fff; border-bottom: 1px solid #eee9ed; user-select: none; }
 .top-brand { display: flex; align-items: center; gap: 10px; }
-.top-brand-mark { width: 33px; height: 33px; display: grid; place-items: center; border-radius: 11px; background: var(--ink); color: #fff; font: 800 25px/1 Manrope, sans-serif; letter-spacing: -2px; padding: 0 2px 4px 0; }
+.top-brand-mark { width: 33px; height: 33px; flex: 0 0 auto; display: block; border:1px solid #f5dce8; border-radius: 11px; background: var(--ink); object-fit:cover; }
 .top-brand-name { display: flex; flex-direction: column; font: 800 20px/1 Manrope, sans-serif; letter-spacing: -.8px; }
 .top-brand-name span { margin-top: 4px; color: #a69da5; font: 600 12px/1 'DM Sans', sans-serif; letter-spacing: 1.15px; text-transform: uppercase; }
 .top-divider { width: 1px; height: 26px; background: #ece7eb; }
@@ -531,7 +531,7 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .modules-panel { display: flex; flex-direction: column; padding: 15px 15px 12px; }
 .modules-topline { height: 32px; min-height: 32px; display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
 .app-wordmark { display: flex; align-items: center; gap: 8px; color: #302a32; font: 800 17px Manrope, sans-serif; letter-spacing: -.7px; }
-.wordmark-icon { width: 25px; height: 25px; display: grid; place-items: center; border-radius: 8px; background: var(--rose-pale); color: var(--rose-dark); font: 800 22px Manrope, sans-serif; padding: 0 2px 3px 0; }
+.wordmark-icon { width: 25px; height: 25px; flex:0 0 auto; display:block; border:1px solid #f5dce8; border-radius: 8px; background: var(--rose-pale); object-fit:cover; }
 .app-wordmark > span:last-child { display: flex; flex-direction: column; gap: 2px; }
 .app-wordmark small { color: #a89fa8; font: 700 12px 'DM Sans', sans-serif; letter-spacing: 1px; }
 .favorite-button { width: 28px; height: 28px; border: 0; background: #faf8fa; }

@@ -1608,6 +1608,7 @@ function createMainWindow(): void {
     minHeight: 720,
     backgroundColor: '#f7f8fa',
     title: 'Gacha Nymi',
+    icon: join(__dirname, '../renderer/gacha-nymi.ico'),
     webPreferences: {
       preload: join(__dirname, '../preload/preload.cjs'),
       contextIsolation: true,
