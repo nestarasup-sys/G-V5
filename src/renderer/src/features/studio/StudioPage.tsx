@@ -250,6 +250,16 @@ export function StudioPage() {
     : undefined
   const selectedBackgroundAsset = activeStudio?.assets.find((asset) => asset.id === activeStudio.backgroundAssetId) ?? null
   const stageCharacters = activeStudio?.elements.filter((element) => element.kind === 'character') ?? []
+  const allStageCharactersLocked = stageCharacters.length > 0 && stageCharacters.every((element) => element.positionLocked === true)
+  const toggleStageCharacterPositionLock = () => {
+    if (!activeStudio || !stageCharacters.length) return
+    const nextLocked = !allStageCharactersLocked
+    changeScene((studio) => ({
+      ...studio,
+      elements: studio.elements.map((element) => element.kind === 'character' ? { ...element, positionLocked: nextLocked } : element),
+      updatedAt: new Date().toISOString()
+    }))
+  }
   const rememberCharacterInspectorView = (tab: 'editor' | 'custom', customView: 'face' | 'presets' = inspectorCustomView) => {
     if (selectedElement?.kind === 'character') characterInspectorViewRef.current = { tab, customView }
   }
@@ -834,6 +844,13 @@ export function StudioPage() {
     }
     const element = activeStudio.elements.find((item) => item.id === id)
     if (!element) return
+    if (element.kind === 'character' && element.positionLocked) {
+      setSelectedElementId(id)
+      setActiveTool(null)
+      setInspectorOpen(true)
+      restoreCharacterInspectorView()
+      return
+    }
     const rect = sceneRef.current.getBoundingClientRect()
     recordHistory()
     setSelectedElementId(id)
@@ -1044,7 +1061,7 @@ export function StudioPage() {
   const castPanel = () => <div className="studio-cast-content">
     <header><span><h2>Elenco</h2><small>{stageCharacters.length} na cena</small></span><button className="studio-cast-add-button" onClick={openCastPicker} type="button"><Icon name="plus" />Adicionar</button></header>
     <section className="studio-cast-section" aria-label="Personagens na cena">
-      <h3>Na cena</h3>
+      <header><h3>Na cena</h3><button className={`studio-cast-lock${allStageCharactersLocked ? ' active' : ''}`} onClick={toggleStageCharacterPositionLock} disabled={!stageCharacters.length} aria-label={allStageCharactersLocked ? 'Desbloquear posição dos personagens' : 'Bloquear posição dos personagens'} title={allStageCharactersLocked ? 'Desbloquear posições' : 'Bloquear posições'} type="button"><Icon name={allStageCharactersLocked ? 'lock' : 'unlock'} /></button></header>
       {stageCharacters.length ? stageCharacters.map((element) => {
         const character = availableCharacters.find((item) => item.id === element.characterId)
         const firstName = (character?.name ?? element.text).trim().split(/\s+/)[0] || element.text

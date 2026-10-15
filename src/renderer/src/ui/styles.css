@@ -82,7 +82,12 @@ button:focus-visible, input:focus-visible { outline: 3px solid #ed8caf; outline-
 .studio-cast-add-button svg { width:15px;height:15px; }
 .studio-cast-add-button:hover { transform:translateY(-1px); }
 .studio-cast-section { display:flex;flex-direction:column;gap:8px; }
+.studio-cast-section>header { display:flex;align-items:center;justify-content:space-between;gap:8px; }
 .studio-cast-section h3 { margin:0;color:#8f7e8d;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.7px; }
+.studio-cast-lock { width:26px;height:26px;display:grid;place-items:center;padding:0;border:1px solid #eadfe7;border-radius:7px;background:#fff;color:#8f7e8d;cursor:pointer;transition:background .15s ease,border-color .15s ease,color .15s ease; }
+.studio-cast-lock svg { width:15px;height:15px; }
+.studio-cast-lock:hover:not(:disabled),.studio-cast-lock.active { border-color:#e76391;background:#fff0f6;color:#b34570; }
+.studio-cast-lock:disabled { opacity:.45;cursor:not-allowed; }
 .studio-cast-item { min-width:0;position:relative;display:flex;align-items:center;gap:5px;padding:5px;border:1px solid #eadfe7;border-radius:10px;background:linear-gradient(135deg,#fff,#fffbfd);box-shadow:0 2px 7px #46303e0a;transition:border-color .15s ease,box-shadow .15s ease; }
 .studio-cast-item.selected { border-color:#e76391;background:#fff4f8;box-shadow:0 0 0 2px #e7639120,0 3px 9px #46303e0d; }
 .studio-cast-select { min-width:0;flex:1;display:flex;align-items:center;gap:7px;overflow:hidden;padding:0;border:0;background:transparent;color:#514651;font-size:12px;font-weight:700;text-align:left;cursor:pointer; }

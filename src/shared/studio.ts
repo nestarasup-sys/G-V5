@@ -20,6 +20,8 @@ export type StudioElement = {
   assetId?: string
   characterId?: string
   flipX?: boolean
+  /** Prevents mouse dragging this character inside this Studio. */
+  positionLocked?: boolean
   /** Face choices made to this actor inside this Studio only. */
   faceAppearance?: CustomizerFaceAppearance
   /** Face-piece transforms are stored per selected catalog sheet on this Studio actor. */
