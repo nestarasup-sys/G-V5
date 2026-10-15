@@ -149,6 +149,20 @@ export type FaceSetSave = Omit<FaceSet, 'sheets' | 'pieces'> & {
 }
 export type FaceSetSummary = Pick<FaceSet, 'id' | 'modelSlot' | 'name' | 'updatedAt'> & { pieceCount: number }
 export type FaceAssetSave = { id: string; dataUrl: string }
+export type HairTransform = { x: number; y: number; scaleX: number; scaleY: number; rotation: number }
+export type HairWorkspace = {
+  schemaVersion: 1
+  modelSlot: number
+  front: { dataUrl: string; width: number; height: number } | null
+  back: { dataUrl: string; width: number; height: number } | null
+  transforms: { front: HairTransform; back: HairTransform }
+  updatedAt: string
+}
+export type HairWorkspaceSave = Omit<HairWorkspace, 'front' | 'back'> & {
+  front: Omit<NonNullable<HairWorkspace['front']>, 'dataUrl'> | null
+  back: Omit<NonNullable<HairWorkspace['back']>, 'dataUrl'> | null
+}
+export type HairWorkspaceAsset = { id: 'front' | 'back'; dataUrl: string }
 export type PoseWardrobeAttachment = { setId: string; category: WardrobeCategory; attachedPartId: string; referenceAnchor: { x: number; y: number }; referenceRotation: number }
 export type WardrobePosePart = PosePart & { wardrobeAttachment?: PoseWardrobeAttachment }
 export type FabricatorPose = {
@@ -194,4 +208,6 @@ export type FabricatorDesktopApi = {
   loadFaceSet: (modelSlot: number, id: string) => Promise<FaceSet | null>
   saveFaceSet: (modelSlot: number, set: FaceSetSave, assets: FaceAssetSave[]) => Promise<void>
   deleteFaceSet: (modelSlot: number, id: string) => Promise<void>
+  loadHairWorkspace: (modelSlot: number) => Promise<HairWorkspace | null>
+  saveHairWorkspace: (modelSlot: number, workspace: HairWorkspaceSave, assets: HairWorkspaceAsset[]) => Promise<void>
 }

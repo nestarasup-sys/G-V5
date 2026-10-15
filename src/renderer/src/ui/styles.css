@@ -367,12 +367,51 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .hair-dev-toolbar small { color:#aaa1aa;font-size:10px; }
 .hair-dev-toolbar label { display:grid;gap:3px;margin-left:auto;color:#8e7e8c;font-size:10px;font-weight:700; }
 .hair-dev-toolbar select { max-width:260px;min-height:31px;padding:0 8px;border:1px solid #e9dfe6;border-radius:8px;background:#fff;color:#54444f;font-size:11px; }
+.hair-dev-save { min-height:32px;display:flex;align-items:center;justify-content:center;gap:6px;padding:0 10px;border:1px solid #e5aac0;border-radius:8px;background:#fff3f7;color:#a9436d;font-size:11px;font-weight:700;cursor:pointer; }
+.hair-dev-save:disabled { opacity:.5;cursor:not-allowed; }
+.hair-dev-save svg { width:14px;height:14px; }
 .hair-dev-body { min-width:0;min-height:0;flex:1;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr); }
 .hair-dev-preview { min-width:0;min-height:0;display:flex;flex-direction:column;border-right:1px solid #f0e9ed; }
 .hair-dev-preview-heading { min-height:32px;display:flex;align-items:center;justify-content:space-between;padding:0 13px;border-bottom:1px solid #f1e9ee;color:#aa9ba5;font-size:10px;letter-spacing:.5px; }
 .hair-dev-preview-stage { position:relative;min-height:220px;flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden;background-image:linear-gradient(45deg,#0000000a 25%,transparent 25%),linear-gradient(-45deg,#0000000a 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#0000000a 75%),linear-gradient(-45deg,transparent 75%,#0000000a 75%);background-size:18px 18px; }
-.hair-dev-preview-stage img { max-width:min(72%,440px);max-height:92%;object-fit:contain;user-select:none;-webkit-user-drag:none; }
+.hair-dev-head-stage { position:relative;width:min(72%,440px);max-height:93%;overflow:visible;transform-origin:center center;touch-action:none;user-select:none; }
+.hair-dev-head-base { position:absolute;inset:0;z-index:2;width:100%;height:100%;display:block;object-fit:fill;pointer-events:none;user-select:none;-webkit-user-drag:none; }
+.hair-dev-piece { position:absolute;z-index:1;object-fit:fill;cursor:grab;touch-action:none;user-select:none;-webkit-user-drag:none; }
+.hair-dev-piece:active { cursor:grabbing; }
+.hair-dev-piece-front { z-index:3; }
+.hair-dev-piece.selected { filter:drop-shadow(0 0 2px #fff) drop-shadow(0 0 4px #e7609a); }
 .hair-dev-message { position:absolute;max-width:260px;padding:10px 14px;border:1px solid #eee7eb;border-radius:9px;background:#ffffffed;color:#8c7c88;font-size:11px;text-align:center; }
+.hair-dev-zoom-tools { position:absolute;right:9px;bottom:9px;z-index:5;display:flex;align-items:center;gap:5px;padding:3px;border:1px solid #eee7eb;border-radius:8px;background:#ffffffdf;color:#847784;font-size:10px; }
+.hair-dev-zoom-tools button { width:25px;height:24px;border:0;border-radius:5px;background:#fff;color:#846173;font-size:15px;cursor:pointer; }
+.hair-dev-status { min-height:28px;padding:6px 10px;border-top:1px solid #eee9ec;color:#826d7a;font-size:10px; }
+.hair-dev-status.error { color:#b6385a;background:#fff0f4; }
+.hair-dev-controls { min-width:0;min-height:0;display:flex;flex-direction:column;gap:11px;overflow:auto;padding:15px; }
+.hair-dev-controls>header { display:flex;flex-direction:column;gap:4px;padding-bottom:9px;border-bottom:1px solid #f0ebef; }
+.hair-dev-controls>header strong { color:#3c333c;font-size:13px; }
+.hair-dev-controls>header small,.hair-dev-control-title small { color:#9e929b;font-size:10px;line-height:1.4; }
+.hair-dev-upload { min-height:38px;display:flex;align-items:center;justify-content:center;gap:7px;border:1px dashed #dc9eb5;border-radius:8px;background:#fff7fa;color:#a9436d;font-size:11px;font-weight:700;cursor:pointer; }
+.hair-dev-upload:disabled { opacity:.5;cursor:not-allowed; }
+.hair-dev-upload svg { width:15px;height:15px; }
+.hair-dev-file { display:none; }
+.hair-dev-part-tabs { display:grid;gap:6px; }
+.hair-dev-part-tabs button { min-height:43px;display:flex;align-items:center;justify-content:space-between;gap:7px;padding:6px 9px;border:1px solid #eee7ec;border-radius:8px;background:#fff;color:#685965;text-align:left;cursor:pointer; }
+.hair-dev-part-tabs button.active { border-color:#e17ba0;background:#fff1f6;color:#a9436d; }
+.hair-dev-part-tabs button:disabled { opacity:.5;cursor:not-allowed; }
+.hair-dev-part-tabs span { font-size:10px;font-weight:700; }
+.hair-dev-part-tabs small { color:#a397a1;font-size:9px; }
+.hair-dev-control-title { display:grid;gap:4px;padding-top:5px;border-top:1px solid #f0e9ed; }
+.hair-dev-control-title b { color:#68545f;font-size:11px; }
+.hair-dev-position-grid { display:grid;grid-template-columns:1fr 1fr;gap:8px; }
+.hair-dev-position-grid label { display:grid;gap:4px;color:#776d78;font-size:10px;font-weight:700; }
+.hair-dev-position-grid input,.hair-dev-range-number { width:100%;height:30px;padding:0 7px;border:1px solid #ece4e9;border-radius:7px;background:#fff;color:#514852;font-size:11px; }
+.hair-dev-range { display:grid;grid-template-columns:minmax(0,1fr) 58px;align-items:center;gap:4px 8px;color:#766b76;font-size:10px; }
+.hair-dev-range>span { grid-column:1/-1;display:flex;justify-content:space-between;gap:6px; }
+.hair-dev-range>span b { font-size:10px; }
+.hair-dev-range output { color:#ad4f73;font-weight:750; }
+.hair-dev-range input[type=range] { width:100%;accent-color:#c64f7d; }
+.hair-dev-reset { min-height:31px;border:1px solid #eddae3;border-radius:7px;background:#fff;color:#8d596e;font-size:10px;font-weight:700;cursor:pointer; }
+.hair-dev-reset:hover { border-color:#dc8daa;background:#fff5f8; }
+.hair-dev-empty { margin:4px 0;padding:10px;border:1px dashed #eee2e9;border-radius:8px;color:#9b8994;font-size:10px;line-height:1.5;text-align:center; }
 .hair-dev-editor-space { min-width:0;min-height:0;background:#fff; }
 .model-transform-controls { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; padding: 7px; border: 1px solid #f0ebef; border-radius: 8px; background: #fdfbfc; }
 .model-transform-controls > strong { grid-column: 1 / -1; color: #746b75; font-size: 11px; }
