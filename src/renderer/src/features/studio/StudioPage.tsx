@@ -212,6 +212,9 @@ export function StudioPage() {
   const undoRef = useRef<StudioSnapshot[]>([])
   const redoRef = useRef<StudioSnapshot[]>([])
   const studioFaceTransformsRef = useRef<Record<string, StudioFaceTransforms>>({})
+  const studioFaceRenderTimerRef = useRef<number | null>(null)
+  const studioFaceRenderVersionRef = useRef(0)
+  const studioFaceRenderPendingRef = useRef<{ studioId: string; elementId: string; assetId: string; character: CustomizerCharacter; appearance: CustomizerFaceAppearance; transforms: StudioFaceTransforms } | null>(null)
   const saveGenerationRef = useRef(0)
   const normalizedStudioIdsRef = useRef(new Set<string>())
   const nextStudioNumber = useRef(1)
@@ -656,13 +659,60 @@ export function StudioPage() {
     const next = { ...saved, [transformKey]: transform }
     studioFaceTransformsRef.current[selectedElement.id] = next
     updateElement(selectedElement.id, { faceTransforms: next }, record)
+    if (selectedStudioCharacter && selectedStudioFaceAppearance && selectedElement.assetId && activeStudioId) {
+      scheduleStudioFacePreview({ studioId: activeStudioId, elementId: selectedElement.id, assetId: selectedElement.assetId, character: selectedStudioCharacter, appearance: selectedStudioFaceAppearance, transforms: next })
+    }
   }
 
   const finishStudioFaceTransform = (transformKey: string) => {
-    if (!selectedElement || selectedElement.kind !== 'character' || !selectedStudioFaceAppearance) return
+    if (!selectedElement || selectedElement.kind !== 'character') return
     const faceTransforms = studioFaceTransformsRef.current[selectedElement.id] ?? selectedElement.faceTransforms ?? {}
     if (!faceTransforms[transformKey]) return
-    void applyStudioFaceAppearance(selectedStudioFaceAppearance, faceTransforms, false)
+    flushStudioFacePreview()
+  }
+
+  const scheduleStudioFacePreview = (job: NonNullable<typeof studioFaceRenderPendingRef.current>) => {
+    studioFaceRenderPendingRef.current = job
+    studioFaceRenderVersionRef.current += 1
+    if (studioFaceRenderTimerRef.current !== null) return
+    studioFaceRenderTimerRef.current = window.setTimeout(() => {
+      studioFaceRenderTimerRef.current = null
+      void renderPendingStudioFacePreview()
+    }, 55)
+  }
+
+  const flushStudioFacePreview = () => {
+    if (studioFaceRenderTimerRef.current !== null) window.clearTimeout(studioFaceRenderTimerRef.current)
+    studioFaceRenderTimerRef.current = null
+    void renderPendingStudioFacePreview()
+  }
+
+  const renderPendingStudioFacePreview = async () => {
+    const job = studioFaceRenderPendingRef.current
+    if (!job) return
+    const version = studioFaceRenderVersionRef.current
+    try {
+      const { renderSavedCharacter } = await import('../customizer/CustomizerPage')
+      const characterCopy: CustomizerCharacter = { ...job.character, customization: { ...job.character.customization, faceAppearance: job.appearance } }
+      const rendered = await renderSavedCharacter(characterCopy, job.transforms)
+      const trimmed = await trimTransparentImage(rendered.dataUrl)
+      const studioDataUrl = trimmed?.dataUrl ?? rendered.dataUrl
+      if (version === studioFaceRenderVersionRef.current && job.studioId === activeStudioId) {
+        patchStudio((studio) => ({
+          ...studio,
+          assets: studio.assets.map((asset) => asset.id === job.assetId ? { ...asset, dataUrl: studioDataUrl, mimeType: 'image/png' } : asset),
+          updatedAt: new Date().toISOString()
+        }))
+      }
+    } catch (reason) {
+      if (version === studioFaceRenderVersionRef.current && job.studioId === activeStudioId) setError(reason instanceof Error ? reason.message : 'Não foi possível atualizar a prévia facial.')
+    }
+    if (version !== studioFaceRenderVersionRef.current && studioFaceRenderTimerRef.current === null && studioFaceRenderPendingRef.current) {
+      studioFaceRenderTimerRef.current = window.setTimeout(() => {
+        studioFaceRenderTimerRef.current = null
+        void renderPendingStudioFacePreview()
+      }, 0)
+    }
   }
 
   const removeStageCharacter = (element: StudioElement) => {
