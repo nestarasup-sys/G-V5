@@ -40,25 +40,23 @@ function loadImage(dataUrl: string): Promise<HTMLImageElement> {
   })
 }
 
-async function cropHalf(image: HTMLImageElement, top: number, height: number): Promise<HairAsset> {
-  const canvas = document.createElement('canvas')
-  canvas.width = image.naturalWidth; canvas.height = height
-  const context = canvas.getContext('2d', { willReadFrequently: true })
-  if (!context) throw new Error('Não foi possível separar as duas partes da folha.')
-  context.drawImage(image, 0, top, image.naturalWidth, height, 0, 0, image.naturalWidth, height)
-  const alpha = context.getImageData(0, 0, canvas.width, canvas.height).data
-  let left = canvas.width, right = -1, upper = canvas.height, lower = -1
-  for (let y = 0; y < canvas.height; y++) for (let x = 0; x < canvas.width; x++) {
-    if (alpha[(y * canvas.width + x) * 4 + 3] < 8) continue
-    left = Math.min(left, x); right = Math.max(right, x); upper = Math.min(upper, y); lower = Math.max(lower, y)
-  }
-  if (right < left || lower < upper) return { dataUrl: canvas.toDataURL('image/png'), width: canvas.width, height: canvas.height }
-  const cropped = document.createElement('canvas')
-  cropped.width = right - left + 1; cropped.height = lower - upper + 1
-  const croppedContext = cropped.getContext('2d')
-  if (!croppedContext) throw new Error('Não foi possível recortar uma das partes do cabelo.')
-  croppedContext.drawImage(canvas, left, upper, cropped.width, cropped.height, 0, 0, cropped.width, cropped.height)
-  return { dataUrl: cropped.toDataURL('image/png'), width: cropped.width, height: cropped.height }
+function processHairSheet(dataUrl: string): Promise<{ front: HairAsset; back: HairAsset }> {
+  return new Promise((resolve, reject) => {
+    const worker = new Worker(new URL('./hairProcessor.worker.ts', import.meta.url), { type: 'module' })
+    worker.onmessage = ({ data }: MessageEvent<{ type: 'complete'; front: { png: ArrayBuffer; width: number; height: number }; back: { png: ArrayBuffer; width: number; height: number } } | { type: 'error'; message: string }>) => {
+      worker.terminate()
+      if (data.type === 'error') { reject(new Error(data.message)); return }
+      // Convert binary PNGs without spreading large arrays onto the call stack.
+      const toDataUrl = (buffer: ArrayBuffer) => {
+        const bytes = new Uint8Array(buffer); let binary = ''
+        for (let offset = 0; offset < bytes.length; offset += 0x8000) binary += String.fromCharCode(...bytes.subarray(offset, Math.min(offset + 0x8000, bytes.length)))
+        return `data:image/png;base64,${btoa(binary)}`
+      }
+      resolve({ front: { dataUrl: toDataUrl(data.front.png), width: data.front.width, height: data.front.height }, back: { dataUrl: toDataUrl(data.back.png), width: data.back.width, height: data.back.height } })
+    }
+    worker.onerror = () => { worker.terminate(); reject(new Error('Não foi possível processar o chroma da folha de cabelo.')) }
+    worker.postMessage({ dataUrl })
+  })
 }
 
 export function HairWorkspace() {
@@ -141,11 +139,10 @@ export function HairWorkspace() {
     if (!file || !head || !hairWorkspace) return
     setError(''); setNotice('')
     try {
-      const image = await loadImage(await readFileDataUrl(file))
+      const dataUrl = await readFileDataUrl(file)
+      const image = await loadImage(dataUrl)
       if (image.naturalHeight < 2) throw new Error('A folha precisa ter o cabelo frontal em cima e o traseiro em baixo.')
-      const upperHeight = Math.floor(image.naturalHeight / 2)
-      const front = await cropHalf(image, 0, upperHeight)
-      const back = await cropHalf(image, upperHeight, image.naturalHeight - upperHeight)
+      const { front, back } = await processHairSheet(dataUrl)
       updateWorkspace((current) => ({ ...current, front, back, transforms: { front: initialTransform('front', head, front), back: initialTransform('back', head, back) } }))
       setSelectedSide('front')
       setNotice('Folha separada: frontal na metade de cima e traseiro na metade de baixo. Ajuste cada parte na prévia.')
