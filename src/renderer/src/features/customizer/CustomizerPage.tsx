@@ -1,13 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
 import { CharacterPortrait } from '../../ui/components/CharacterPortrait'
 import { Icon, type IconName } from '../../ui/components/Icon'
-import type { FabricatorPose, FabricatorPoseSummary, FabricatorProject, FabricatorSlotSummary, WardrobeCategory, WardrobeSet, WardrobeSetSummary } from '../../../../shared/fabricator'
-import type { CustomizerCharacter, CustomizerWardrobeCategory, CustomizerWardrobeGroup } from '../../../../shared/customizer'
+import type { FaceElementKind, FaceSet, FaceSetSummary, FabricatorPose, FabricatorPoseSummary, FabricatorProject, FabricatorSlotSummary, WardrobeCategory, WardrobeSet, WardrobeSetSummary } from '../../../../shared/fabricator'
+import type { CustomizerCharacter, CustomizerFaceAppearance, CustomizerWardrobeCategory, CustomizerWardrobeGroup } from '../../../../shared/customizer'
 import { usePreviewBackground } from '../fabricator/usePreviewBackground'
 import { mapWardrobeComponentToPose } from '../fabricator/wardrobe/poseTransform'
 
 type CatalogArtwork = Pick<FabricatorProject, 'width' | 'height' | 'parts' | 'layerOrder' | 'hiddenPartIds'>
 const wardrobeImageCache = new Map<string, Promise<HTMLImageElement>>()
+const faceElementOrder: FaceElementKind[] = ['brow-left', 'brow-right', 'eye-left', 'eye-right', 'nose', 'mouth']
 
 function loadCachedImage(source: string): Promise<HTMLImageElement> {
   const cached = wardrobeImageCache.get(source)
@@ -200,6 +201,42 @@ async function renderArtwork(artwork: CatalogArtwork, maxSize: number): Promise<
   return canvas.toDataURL('image/png')
 }
 
+async function renderFaceOverlay(artwork: CatalogArtwork, source: FabricatorProject | null, face: FaceSet | null, appearance: CustomizerFaceAppearance | undefined): Promise<string | null> {
+  if (!source || !face || !appearance || appearance.setId !== face.id || appearance.modelSlot !== source.slot) return null
+  const sourceHead = source.parts.find((part) => /cabe[çc]a|head/i.test(part.name))
+  const targetHead = artwork.parts.find((part) => /cabe[çc]a|head/i.test(part.name))
+  if (!sourceHead || !targetHead || sourceHead.width <= 0 || sourceHead.height <= 0) return null
+  const canvas = document.createElement('canvas')
+  canvas.width = Math.max(1, artwork.width)
+  canvas.height = Math.max(1, artwork.height)
+  const context = canvas.getContext('2d')
+  if (!context) return null
+  for (const element of faceElementOrder) {
+    if (element.startsWith('brow') && !appearance.eyebrows) continue
+    const sheet = element.startsWith('eye') ? 'eyes' : element.startsWith('brow') ? 'eyebrows' : element === 'nose' ? 'nose' : appearance.mouthOpen ? 'mouth-open' : 'mouth-closed'
+    const index = sheet === 'eyes' ? appearance.eyeState : sheet === 'nose' ? appearance.noseIndex : sheet.startsWith('mouth') ? appearance.expressionIndex : 0
+    const side = element.endsWith('left') ? 'left' : element.endsWith('right') ? 'right' : undefined
+    const piece = face.pieces.find((item) => item.sheet === sheet && item.index === index && item.side === side)
+    if (!piece) continue
+    const transform = face.transforms[element]
+    try {
+      const image = await loadCachedImage(piece.dataUrl)
+      const localX = transform.x / sourceHead.width * targetHead.width
+      const localY = transform.y / sourceHead.height * targetHead.height
+      const x = targetHead.x + targetHead.width / 2 + (localX - targetHead.width / 2) * Math.cos(targetHead.rotation * Math.PI / 180) - (localY - targetHead.height / 2) * Math.sin(targetHead.rotation * Math.PI / 180)
+      const y = targetHead.y + targetHead.height / 2 + (localX - targetHead.width / 2) * Math.sin(targetHead.rotation * Math.PI / 180) + (localY - targetHead.height / 2) * Math.cos(targetHead.rotation * Math.PI / 180)
+      const width = piece.width * transform.scaleX / sourceHead.width * targetHead.width
+      const height = piece.height * transform.scaleY / sourceHead.height * targetHead.height
+      context.save()
+      context.translate(x, y)
+      context.rotate((targetHead.rotation + transform.rotation) * Math.PI / 180)
+      context.drawImage(image, -width / 2, -height / 2, width, height)
+      context.restore()
+    } catch { /* Skip a missing facial asset without hiding the character preview. */ }
+  }
+  return canvas.toDataURL('image/png')
+}
+
 const modules: { name: string; icon: IconName; detail: string }[] = [
   { name: 'Modelos', icon: 'sparkles', detail: 'Looks prontos para começar' },
   { name: 'Poses', icon: 'body', detail: 'Pose, proporções e detalhes' },
@@ -239,6 +276,10 @@ export function CustomizerPage() {
   const [wardrobeLoading, setWardrobeLoading] = useState(false)
   const [wardrobeDetails, setWardrobeDetails] = useState<Record<string, WardrobeSet>>({})
   const [wardrobeThumbnails, setWardrobeThumbnails] = useState<Record<string, string>>({})
+  const [faceSets, setFaceSets] = useState<FaceSetSummary[]>([])
+  const [faceDetails, setFaceDetails] = useState<Record<string, FaceSet>>({})
+  const [faceLoading, setFaceLoading] = useState(false)
+  const [faceCategory, setFaceCategory] = useState<'eyes' | 'eyebrows' | 'nose' | 'mouth'>('eyes')
   const [selectedClothing, setSelectedClothing] = useState<SelectedWardrobeComponent | null>(null)
   const [wardrobeTransformDraft, setWardrobeTransformDraft] = useState<Pick<CustomizerWardrobeGroup, 'offsetX' | 'offsetY' | 'scaleX' | 'scaleY' | 'rotation'> | null>(null)
   const [wardrobeHistory, setWardrobeHistory] = useState<WardrobeEditHistory>({ characterId: '', undo: [], redo: [] })
@@ -248,6 +289,7 @@ export function CustomizerPage() {
   const [selectedArtworkProject, setSelectedArtworkProject] = useState<CatalogArtwork | null>(null)
   const [selectedSourceModelProject, setSelectedSourceModelProject] = useState<FabricatorProject | null>(null)
   const [selectedArtworkUrl, setSelectedArtworkUrl] = useState<string | null>(null)
+  const [selectedFaceUrl, setSelectedFaceUrl] = useState<string | null>(null)
   const [selectedArtworkLabel, setSelectedArtworkLabel] = useState('')
   const [previewLoading, setPreviewLoading] = useState(true)
   const thumbnailCache = useRef(new Set<string>())
@@ -257,6 +299,7 @@ export function CustomizerPage() {
   const wardrobeHistoryRef = useRef<WardrobeEditHistory>({ characterId: '', undo: [], redo: [] })
   const selectedCharacter = characters.find((character) => character.id === selectedCharacterId) ?? characters[0] ?? null
   const characterWardrobeGroups = selectedCharacter?.customization.wardrobeGroups ?? []
+  const characterFaceAppearance = selectedCharacter?.customization.faceAppearance
   const characterWardrobeHydrationKey = characterWardrobeGroups.map((group) => `${group.modelSlot}:${group.setId}:${group.category}:${group.componentId ?? ''}`).sort().join('|')
   const visibleCharacters = characters
     .filter((character) => character.name.toLowerCase().includes(rosterQuery.trim().toLowerCase()))
@@ -455,6 +498,38 @@ export function CustomizerPage() {
   }, [activeModule, selectedCatalogModelSlot])
 
   useEffect(() => {
+    if (selectedCatalogModelSlot === null) { setFaceSets([]); return }
+    let cancelled = false
+    setFaceLoading(true)
+    void window.desktop.listFaceSets(selectedCatalogModelSlot).then(async (summaries) => {
+      if (cancelled) return
+      setFaceSets(summaries)
+      const loaded = await Promise.all(summaries.map(async (summary) => ({ key: `${summary.modelSlot}:${summary.id}`, face: await window.desktop.loadFaceSet(summary.modelSlot, summary.id) })))
+      if (cancelled) return
+      setFaceDetails((current) => {
+        const next = { ...current }
+        for (const item of loaded) if (item.face) next[item.key] = item.face
+        return next
+      })
+    }).catch((reason: unknown) => {
+      if (!cancelled && activeModule === 'Cabeça') setCatalogError(reason instanceof Error ? reason.message : 'Não foi possível carregar os rostos salvos.')
+    }).finally(() => { if (!cancelled) setFaceLoading(false) })
+    return () => { cancelled = true }
+  }, [selectedCatalogModelSlot, activeModule])
+
+  useEffect(() => {
+    let cancelled = false
+    const face = characterFaceAppearance ? faceDetails[`${characterFaceAppearance.modelSlot}:${characterFaceAppearance.setId}`] : null
+    if (!selectedArtworkProject || !selectedSourceModelProject || !face) { setSelectedFaceUrl(null); return }
+    void renderFaceOverlay(selectedArtworkProject, selectedSourceModelProject, face, characterFaceAppearance).then((url) => {
+      if (!cancelled) setSelectedFaceUrl(url)
+    }).catch((reason: unknown) => {
+      if (!cancelled) setCatalogError(reason instanceof Error ? reason.message : 'Não foi possível montar o rosto do personagem.')
+    })
+    return () => { cancelled = true }
+  }, [characterFaceAppearance, faceDetails, selectedArtworkProject, selectedSourceModelProject])
+
+  useEffect(() => {
     if (activeModule !== 'Roupas' || !wardrobeSets.length) return
     let cancelled = false
     void (async () => {
@@ -577,6 +652,29 @@ export function CustomizerPage() {
     const current = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
     const changes = typeof patch === 'function' ? patch(current.customization) : patch
     await saveCharacter({ ...current, customization: { ...current.customization, ...changes }, updatedAt: new Date().toISOString() })
+  }
+
+  async function chooseFaceSet(summary: FaceSetSummary) {
+    const face = faceDetails[`${summary.modelSlot}:${summary.id}`] ?? await window.desktop.loadFaceSet(summary.modelSlot, summary.id)
+    if (!face || !selectedCharacter) return
+    setFaceDetails((current) => ({ ...current, [`${summary.modelSlot}:${summary.id}`]: face }))
+    const current = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
+    const previous = current.customization.faceAppearance
+    const appearance: CustomizerFaceAppearance = previous?.setId === face.id && previous.modelSlot === face.modelSlot
+      ? previous
+      : { modelSlot: face.modelSlot, setId: face.id, eyeState: 0, eyebrows: true, noseIndex: face.selectedNose, expressionIndex: face.selectedExpression, mouthOpen: false }
+    setFaceCategory('eyes')
+    await saveCharacterCustomization({ faceAppearance: appearance })
+  }
+
+  async function updateFaceAppearance(patch: Partial<CustomizerFaceAppearance>) {
+    if (!selectedCharacter || !activeFaceSet) return
+    const current = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
+    const old = current.customization.faceAppearance
+    const base: CustomizerFaceAppearance = old?.setId === activeFaceSet.id && old.modelSlot === activeFaceSet.modelSlot
+      ? old
+      : { modelSlot: activeFaceSet.modelSlot, setId: activeFaceSet.id, eyeState: 0, eyebrows: true, noseIndex: activeFaceSet.selectedNose, expressionIndex: activeFaceSet.selectedExpression, mouthOpen: false }
+    await saveCharacterCustomization({ faceAppearance: { ...base, ...patch } })
   }
 
   function wardrobeGroupKey(group: Pick<CustomizerWardrobeGroup, 'modelSlot' | 'setId' | 'category' | 'componentId'>) {
@@ -815,6 +913,8 @@ export function CustomizerPage() {
   const availableModels = catalogModels.filter((model): model is NonNullable<typeof model> => model !== null)
   const availablePoses = catalogPoses.filter((pose): pose is NonNullable<typeof pose> => pose?.sourceModelSlot === selectedCatalogModelSlot)
   const selectedModelName = availableModels.find((model) => model.slot === selectedCatalogModelSlot)?.name
+  const activeFaceAppearance = characterFaceAppearance?.modelSlot === selectedCatalogModelSlot ? characterFaceAppearance : undefined
+  const activeFaceSet = activeFaceAppearance ? faceDetails[`${activeFaceAppearance.modelSlot}:${activeFaceAppearance.setId}`] ?? null : null
   const wardrobeGroupDefinitions = clothingSection === 'Customizar' ? [] : clothingCategories[clothingSection]
   const wardrobeCategoryLabels: Record<ClothingGroupCategory, string> = { calca: 'Calças', shorts: 'Shorts', 'manga-inferior': 'Mangas inferiores', 'manga-superior': 'Mangas superiores', camisa: 'Camisas' }
   const activeWardrobeGroup = selectedClothing ? (selectedCharacter?.customization.wardrobeGroups ?? []).find((group) => group.setId === selectedClothing.setId && group.category === selectedClothing.category && (group.componentId === selectedClothing.componentId || !group.componentId)) : undefined
@@ -858,6 +958,7 @@ export function CustomizerPage() {
                 </div>
                 {selectedArtworkUrl ? <img className="customizer-selected-artwork" src={selectedArtworkUrl} alt={selectedArtworkLabel} /> : !previewLoading && <div className="customizer-no-artwork"><Icon name="body" /><span>Nenhum modelo salvo para mostrar.</span></div>}
               {selectedWardrobeUrl && selectedArtworkUrl && <img className={'customizer-wardrobe-overlay' + (wardrobePreviewDraggable ? ' draggable' : '')} src={selectedWardrobeUrl} alt="Roupas do personagem" draggable={false} onPointerDown={wardrobePreviewDraggable ? beginWardrobeDrag : undefined} onPointerMove={wardrobePreviewDraggable ? moveWardrobeDrag : undefined} onPointerUp={wardrobePreviewDraggable ? finishWardrobeDrag : undefined} onPointerCancel={wardrobePreviewDraggable ? finishWardrobeDrag : undefined} />}
+              {selectedFaceUrl && selectedArtworkUrl && <img className="customizer-face-overlay" src={selectedFaceUrl} alt="Rosto do personagem" draggable={false} />}
               {activeModule === 'Roupas' && clothingSection === 'Customizar' && wardrobeHighlightVisible && selectedWardrobeHighlightUrl && <img className="customizer-wardrobe-selection-halo" src={selectedWardrobeHighlightUrl} alt="Peça de roupa selecionada" draggable={false} />}
                 {previewLoading && <div className="customizer-preview-loading">Carregando prévia…</div>}
                 <div className="stage-caption"><span>{String(selectedCatalogModelSlot ?? 1).padStart(2, '0')}</span><i />{selectedArtworkLabel || selectedCharacter?.name || 'Personagem'}<small>{selectedArtworkUrl ? 'DO CATÁLOGO' : 'PERSONAGEM ATIVO'}</small></div>
@@ -919,6 +1020,41 @@ export function CustomizerPage() {
                         })}
                       </div>
               )}
+              {activeModule === 'Cabeça' && <div className="customizer-face-catalog">
+                {selectedCatalogModelSlot === null ? <div className="customizer-catalog-empty">Escolha um modelo para ver os rostos salvos.</div>
+                  : faceLoading ? <div className="customizer-catalog-empty">Carregando rostos…</div>
+                    : faceSets.length === 0 ? <div className="customizer-catalog-empty">Este modelo ainda não tem rostos salvos no Fabricador Dev.</div>
+                      : <>
+                        <section className="customizer-face-sets" aria-label="Rostos salvos">
+                          <header><h3>Rostos prontos</h3><small>Salvos para este modelo</small></header>
+                          <div className="customizer-face-set-list">{faceSets.map((summary) => {
+                            const detail = faceDetails[`${summary.modelSlot}:${summary.id}`]
+                            const selected = activeFaceAppearance?.setId === summary.id
+                            const cover = detail?.pieces.find((piece) => piece.sheet === 'eyes' && piece.index === 0 && piece.side === 'left') ?? detail?.pieces[0]
+                            return <button className={'customizer-face-set' + (selected ? ' selected' : '')} key={summary.id} onClick={() => void chooseFaceSet(summary)} aria-pressed={selected} title={summary.name} type="button">
+                              {cover ? <img src={cover.dataUrl} alt="" /> : <span><Icon name="face" /></span>}
+                              <b>{summary.name}</b>
+                            </button>
+                          })}</div>
+                        </section>
+                        {activeFaceSet && activeFaceAppearance && <>
+                          <nav className="customizer-face-tabs" aria-label="Categorias do rosto">
+                            {([{ id: 'eyes', label: 'Olhos' }, { id: 'eyebrows', label: 'Sobrancelhas' }, { id: 'nose', label: 'Narizes' }, { id: 'mouth', label: 'Bocas' }] as const).map((category) => <button key={category.id} className={faceCategory === category.id ? 'active' : ''} onClick={() => setFaceCategory(category.id)} type="button">{category.label}</button>)}
+                          </nav>
+                          <section className="customizer-face-options" aria-label={`Opções de ${faceCategory}`}>
+                            {faceCategory === 'eyes' && <div className="customizer-face-grid">{[0, 1, 2].map((index) => {
+                              const pieces = activeFaceSet.pieces.filter((piece) => piece.sheet === 'eyes' && piece.index === index)
+                              const labels = ['Olhando para direita', 'Olhando para esquerda', 'Olhos fechados']
+                              return <button className={'customizer-face-option' + (activeFaceAppearance.eyeState === index ? ' selected' : '')} key={index} onClick={() => void updateFaceAppearance({ eyeState: index as 0 | 1 | 2 })} aria-pressed={activeFaceAppearance.eyeState === index} type="button"><span>{pieces.map((piece) => <img key={piece.id} src={piece.dataUrl} alt="" />)}</span><b>{labels[index]}</b></button>
+                            })}</div>}
+                            {faceCategory === 'eyebrows' && <>{activeFaceSet.pieces.some((piece) => piece.sheet === 'eyebrows') ? <button className={'customizer-face-option customizer-face-toggle' + (activeFaceAppearance.eyebrows ? ' selected' : '')} onClick={() => void updateFaceAppearance({ eyebrows: !activeFaceAppearance.eyebrows })} aria-pressed={activeFaceAppearance.eyebrows} type="button"><span>{activeFaceSet.pieces.filter((piece) => piece.sheet === 'eyebrows').map((piece) => <img key={piece.id} src={piece.dataUrl} alt="" />)}</span><b>{activeFaceAppearance.eyebrows ? 'Sobrancelhas visíveis' : 'Sobrancelhas ocultas'}</b></button> : <p className="customizer-face-empty">Este rosto não tem sobrancelhas importadas.</p>}</>}
+                            {faceCategory === 'nose' && <div className="customizer-face-grid">{activeFaceSet.pieces.filter((piece) => piece.sheet === 'nose').map((piece) => <button className={'customizer-face-option' + (activeFaceAppearance.noseIndex === piece.index ? ' selected' : '')} key={piece.id} onClick={() => void updateFaceAppearance({ noseIndex: piece.index })} aria-pressed={activeFaceAppearance.noseIndex === piece.index} type="button"><span><img src={piece.dataUrl} alt="" /></span><b>Nariz {piece.index + 1}</b></button>)}</div>}
+                            {faceCategory === 'mouth' && <><div className="customizer-face-mouth-tabs"><button className={!activeFaceAppearance.mouthOpen ? 'active' : ''} onClick={() => void updateFaceAppearance({ mouthOpen: false })} type="button">Fechadas</button><button className={activeFaceAppearance.mouthOpen ? 'active' : ''} onClick={() => void updateFaceAppearance({ mouthOpen: true })} type="button">Abertas</button></div><div className="customizer-face-grid">{activeFaceSet.pieces.filter((piece) => piece.sheet === (activeFaceAppearance.mouthOpen ? 'mouth-open' : 'mouth-closed')).map((piece) => <button className={'customizer-face-option' + (activeFaceAppearance.expressionIndex === piece.index ? ' selected' : '')} key={piece.id} onClick={() => void updateFaceAppearance({ expressionIndex: piece.index })} aria-pressed={activeFaceAppearance.expressionIndex === piece.index} type="button"><span><img src={piece.dataUrl} alt="" /></span><b>Boca {String(piece.index + 1).padStart(2, '0')}</b></button>)}</div></>}
+                          </section>
+                        </>}
+                        {!activeFaceSet && <p className="customizer-face-empty">Selecione um rosto para escolher os elementos. A seleção fica salva somente neste personagem.</p>}
+                      </>}
+              </div>}
               {activeModule === 'Roupas' && <div className="customizer-wardrobe-catalog">
                 {selectedCatalogModelSlot === null ? <div className="customizer-catalog-empty">Escolha um modelo para ver as roupas salvas dele.</div>
                   : wardrobeLoading ? <div className="customizer-catalog-empty">Carregando roupas…</div>
@@ -1060,6 +1196,7 @@ export function CustomizerPage() {
               </div>
               {selectedArtworkUrl ? <img className="customizer-selected-artwork" src={selectedArtworkUrl} alt={selectedArtworkLabel} /> : !previewLoading && <div className="customizer-no-artwork"><Icon name="body" /><span>{selectedCharacter ? 'Importe um modelo no Fabricador Dev para começar.' : 'Crie um personagem para começar a personalizar.'}</span></div>}
                 {selectedWardrobeUrl && selectedArtworkUrl && <img className={'customizer-wardrobe-overlay' + (wardrobePreviewDraggable ? ' draggable' : '')} src={selectedWardrobeUrl} alt="Roupas do personagem" draggable={false} onPointerDown={wardrobePreviewDraggable ? beginWardrobeDrag : undefined} onPointerMove={wardrobePreviewDraggable ? moveWardrobeDrag : undefined} onPointerUp={wardrobePreviewDraggable ? finishWardrobeDrag : undefined} onPointerCancel={wardrobePreviewDraggable ? finishWardrobeDrag : undefined} />}
+                {selectedFaceUrl && selectedArtworkUrl && <img className="customizer-face-overlay" src={selectedFaceUrl} alt="Rosto do personagem" draggable={false} />}
                 {activeModule === 'Roupas' && clothingSection === 'Customizar' && wardrobeHighlightVisible && selectedWardrobeHighlightUrl && <img className="customizer-wardrobe-selection-halo" src={selectedWardrobeHighlightUrl} alt="Peça de roupa selecionada" draggable={false} />}
               {previewLoading && <div className="customizer-preview-loading">Carregando prévia…</div>}
               <div className="stage-caption"><span>{String(selectedCatalogModelSlot ?? 1).padStart(2, '0')}</span><i />{selectedArtworkLabel || selectedCharacter?.name || 'Personagem'}<small>{selectedArtworkUrl ? 'MODELO DE REFERÊNCIA' : 'SEM MODELO'}</small></div>

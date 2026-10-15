@@ -95,6 +95,32 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .customizer-wardrobe-overlay.draggable { pointer-events:auto;cursor:grab;touch-action:none; }
 .customizer-wardrobe-overlay.draggable:active { cursor:grabbing; }
 .customizer-wardrobe-selection-halo { position:absolute;inset:72px 68px 58px;z-index:3;width:calc(100% - 136px);height:calc(100% - 130px);object-fit:contain;pointer-events:none;user-select:none;-webkit-user-drag:none;filter:drop-shadow(0 0 2px #fff) drop-shadow(0 0 5px #ed6c9f) drop-shadow(0 0 9px #eb5d98); }
+.customizer-face-overlay { position:absolute;inset:72px 68px 58px;z-index:3;width:calc(100% - 136px);height:calc(100% - 130px);object-fit:contain;pointer-events:none;user-select:none;-webkit-user-drag:none; }
+.customizer-face-catalog { min-height:0;flex:1;display:flex;flex-direction:column;gap:10px;overflow:auto; }
+.customizer-face-sets { display:grid;gap:7px; }
+.customizer-face-sets>header { display:flex;align-items:center;justify-content:space-between;gap:8px;padding-bottom:5px;border-bottom:1px solid #f0ebef; }
+.customizer-face-sets h3 { margin:0;color:#534a55;font:750 12px Manrope,sans-serif; }
+.customizer-face-sets small { color:#9b8994;font-size:9px; }
+.customizer-face-set-list { display:grid;grid-template-columns:repeat(auto-fill,minmax(74px,1fr));gap:7px; }
+.customizer-face-set { min-width:0;height:72px;display:flex;align-items:center;justify-content:center;gap:4px;overflow:hidden;padding:5px;border:1px solid #eee8ed;border-radius:8px;background:#fff;cursor:pointer; }
+.customizer-face-set img { width:30px;height:30px;object-fit:contain; }
+.customizer-face-set>span { width:30px;height:30px;display:grid;place-items:center;color:#c7bac3; }
+.customizer-face-set>span svg { width:20px;height:20px; }
+.customizer-face-set b { max-width:100%;overflow:hidden;color:#675d68;font-size:9px;text-overflow:ellipsis;white-space:nowrap; }
+.customizer-face-set:hover,.customizer-face-set.selected { border-color:#e987aa;background:#fff7fa;box-shadow:inset 0 0 0 1px #f7d8e3; }
+.customizer-face-tabs,.customizer-face-mouth-tabs { display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:5px; }
+.customizer-face-tabs button,.customizer-face-mouth-tabs button { min-height:31px;padding:0 5px;border:1px solid #eee9ed;border-radius:7px;background:#faf8fa;color:#7d727e;font-size:10px;font-weight:700;cursor:pointer; }
+.customizer-face-tabs button.active,.customizer-face-mouth-tabs button.active { border-color:#f0c5d4;background:#fff2f7;color:#ac426b; }
+.customizer-face-mouth-tabs { grid-template-columns:1fr 1fr;margin-bottom:8px; }
+.customizer-face-options { min-height:0;display:flex;flex-direction:column;gap:8px; }
+.customizer-face-grid { display:grid;grid-template-columns:repeat(auto-fill,minmax(68px,1fr));gap:7px; }
+.customizer-face-option { min-width:0;min-height:76px;display:flex;flex-direction:column;align-items:center;justify-content:space-between;gap:5px;overflow:hidden;padding:6px 4px;border:1px solid #eee8ed;border-radius:8px;background:#fff;cursor:pointer; }
+.customizer-face-option>span { width:100%;height:45px;display:flex;align-items:center;justify-content:center;gap:1px;overflow:hidden; }
+.customizer-face-option img { max-width:48%;max-height:100%;object-fit:contain; }
+.customizer-face-option b { max-width:100%;overflow:hidden;color:#675d68;font-size:9px;text-overflow:ellipsis;white-space:nowrap; }
+.customizer-face-option:hover,.customizer-face-option.selected { border-color:#e987aa;background:#fff7fa;box-shadow:inset 0 0 0 1px #f7d8e3; }
+.customizer-face-toggle { max-width:160px; }
+.customizer-face-empty { margin:4px 0;padding:10px;border:1px dashed #eee2e9;border-radius:8px;color:#9b8994;font-size:10px;line-height:1.5;text-align:center; }
 .customizer-wardrobe-catalog { min-height:0;flex:1;display:flex;flex-direction:column;gap:10px; }
 .customizer-wardrobe-toolbar { display:flex;align-items:center;gap:7px; }
 .customizer-wardrobe-customize-tab { min-width:0;min-height:36px;flex:1;display:flex;align-items:center;justify-content:center;gap:7px;border:1px solid #eee9ed;border-radius:8px;background:#fff;color:#706773;font-size:12px;font-weight:750;cursor:pointer; }

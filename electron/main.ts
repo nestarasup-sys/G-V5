@@ -67,6 +67,16 @@ function isCustomizerCharacter(value: unknown): value is CustomizerCharacter {
         && [group.offsetX, group.offsetY, group.scaleX, group.scaleY, group.rotation].every(Number.isFinite)
         && group.scaleX > 0 && group.scaleY > 0)
     ))
+    && (character.customization.faceAppearance === undefined || (
+      !!character.customization.faceAppearance
+      && isValidModelSlot(character.customization.faceAppearance.modelSlot)
+      && isValidWardrobeId(character.customization.faceAppearance.setId)
+      && [0, 1, 2].includes(character.customization.faceAppearance.eyeState)
+      && typeof character.customization.faceAppearance.eyebrows === 'boolean'
+      && Number.isInteger(character.customization.faceAppearance.noseIndex) && character.customization.faceAppearance.noseIndex >= 0 && character.customization.faceAppearance.noseIndex <= 5
+      && Number.isInteger(character.customization.faceAppearance.expressionIndex) && character.customization.faceAppearance.expressionIndex >= 0 && character.customization.faceAppearance.expressionIndex <= 20
+      && typeof character.customization.faceAppearance.mouthOpen === 'boolean'
+    ))
     && typeof character.createdAt === 'string' && typeof character.updatedAt === 'string'
 }
 

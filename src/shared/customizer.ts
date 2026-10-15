@@ -7,6 +7,18 @@ export type CharacterCustomization = {
   layerOrder: string[]
   /** Garments are character-owned placements; pants stay one group across thigh and calf pieces. */
   wardrobeGroups?: CustomizerWardrobeGroup[]
+  /** Facial features chosen from the read-only face library, isolated per character. */
+  faceAppearance?: CustomizerFaceAppearance
+}
+
+export type CustomizerFaceAppearance = {
+  modelSlot: number
+  setId: string
+  eyeState: 0 | 1 | 2
+  eyebrows: boolean
+  noseIndex: number
+  expressionIndex: number
+  mouthOpen: boolean
 }
 
 export type CustomizerWardrobeCategory = 'camisa' | 'manga-superior' | 'manga-inferior' | 'calca' | 'shorts'
