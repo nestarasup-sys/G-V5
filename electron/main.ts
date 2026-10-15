@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url'
 import type { AnimatorAnimation, AnimatorAnimationAsset, AnimatorAnimationDraft, AnimatorAnimationSave, AnimatorAnimationSummary, FaceAssetSave, FaceCatalogItem, FaceCatalogItemSave, FaceCatalogItemSummary, FaceElementKind, FaceSet, FaceSetSave, FaceSetSummary, FaceSheetKind, FabricatorAssetSave, FabricatorHistoryEntry, FabricatorHistorySaveEntry, FabricatorHistorySaveState, FabricatorHistoryState, FabricatorPose, FabricatorPoseDraft, FabricatorPoseDraftSave, FabricatorPoseSave, FabricatorPoseSummary, FabricatorProject, FabricatorProjectSave, FabricatorSlotSummary, HairStyle, HairStyleAsset, HairStyleSave, HairStyleSummary, HairWorkspace, HairWorkspaceAsset, HairWorkspaceSave, ModelPart, PosePart, WardrobeAssetSave, WardrobeCategory, WardrobeSet, WardrobeSetSave, WardrobeSetSummary } from '../src/shared/fabricator'
 import { resolvePoseCategory } from '../src/shared/fabricator'
 import type { CustomizerCharacter } from '../src/shared/customizer'
+import { characterProportionLimits } from '../src/shared/customizer'
 import type { StudioAsset, StudioDocument, StudioFaceTransform, StudioFaceTransforms } from '../src/shared/studio'
 import { applyModelHeadShape } from '../src/shared/headShape'
 
@@ -69,6 +70,14 @@ function isCustomizerCharacter(value: unknown): value is CustomizerCharacter {
     && !!character.customization && typeof character.customization === 'object'
     && (character.customization.modelSlot === null || isValidModelSlot(character.customization.modelSlot))
     && (character.customization.poseSlot === null || (Number.isInteger(character.customization.poseSlot) && character.customization.poseSlot >= 1 && character.customization.poseSlot <= poseSlotCount))
+    && (character.customization.proportions === undefined || (
+      !!character.customization.proportions && typeof character.customization.proportions === 'object'
+      && (Object.keys(characterProportionLimits) as Array<keyof typeof characterProportionLimits>).every((key) => {
+        const value = character.customization!.proportions?.[key]
+        const { min, max } = characterProportionLimits[key]
+        return typeof value === 'number' && Number.isFinite(value) && value >= min && value <= max
+      })
+    ))
     && !!character.customization.partOverrides && typeof character.customization.partOverrides === 'object'
     && Object.keys(character.customization.partOverrides).length <= 1000
     && Array.isArray(character.customization.layerOrder)

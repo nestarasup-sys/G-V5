@@ -1,15 +1,36 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { CharacterPortrait } from '../../ui/components/CharacterPortrait'
 import { Icon, type IconName } from '../../ui/components/Icon'
 import type { FaceCatalogItem, FaceCatalogItemSummary, FaceElementKind, FaceSet, FaceSheetKind, FabricatorPose, FabricatorPoseSummary, FabricatorProject, FabricatorSlotSummary, HairStyle, HairStyleSummary, WardrobeCategory, WardrobeSet, WardrobeSetSummary } from '../../../../shared/fabricator'
 import { resolvePoseCategory } from '../../../../shared/fabricator'
 import type { CustomizerCharacter, CustomizerFaceAppearance, CustomizerWardrobeCategory, CustomizerWardrobeGroup } from '../../../../shared/customizer'
+import { characterProportionLimits, defaultCharacterProportions, getCharacterProportions, type CharacterProportions } from '../../../../shared/customizer'
 import type { StudioFaceTransforms } from '../../../../shared/studio'
 import { usePreviewBackground } from '../fabricator/usePreviewBackground'
 import { mapWardrobeComponentToPose } from '../fabricator/wardrobe/poseTransform'
 import { tintSkinPixels } from './skinTint'
 
 type CatalogArtwork = Pick<FabricatorProject, 'width' | 'height' | 'parts' | 'layerOrder' | 'hiddenPartIds'>
+function withCharacterHeadSize(artwork: CatalogArtwork, percent: number): CatalogArtwork {
+  if (percent === 100) return artwork
+  const head = artwork.parts.find((part) => /cabe[çc]a|head/i.test(part.name))
+  if (!head) return artwork
+  const factor = percent / 100
+  return {
+    ...artwork,
+    parts: artwork.parts.map((part) => part.id === head.id ? {
+      ...part,
+      x: part.x - (part.width * factor - part.width) / 2,
+      y: part.y - (part.height * factor - part.height),
+      width: part.width * factor,
+      height: part.height * factor
+    } : part)
+  }
+}
+
+function characterShapeScale(proportions: CharacterProportions): { x: number; y: number } {
+  return { x: proportions.scale * proportions.width / 10000, y: proportions.scale * proportions.height / 10000 }
+}
 const wardrobeImageCache = new Map<string, Promise<HTMLImageElement>>()
 const skinTintImageCache = new Map<string, Promise<HTMLImageElement>>()
 const faceElementOrder: FaceElementKind[] = ['brow-left', 'brow-right', 'eye-left', 'eye-right', 'nose', 'mouth']
@@ -23,6 +44,12 @@ const skinTonePresets = [
   { id: '#493027', name: 'Retinta' }
 ] as const
 const customizerSkinTonePresets = [skinTonePresets[0], skinTonePresets[1], skinTonePresets[2], skinTonePresets[4], skinTonePresets[6]]
+const proportionControls: Array<{ key: keyof CharacterProportions; label: string; description: string }> = [
+  { key: 'scale', label: 'Escala geral', description: 'Aumenta ou diminui o personagem inteiro' },
+  { key: 'head', label: 'Tamanho da cabeça', description: 'Altera apenas a cabeça, rosto e cabelo' },
+  { key: 'width', label: 'Largura', description: 'Estica ou comprime o personagem na horizontal' },
+  { key: 'height', label: 'Altura', description: 'Estica ou comprime o personagem na vertical' }
+]
 function loadCachedImage(source: string): Promise<HTMLImageElement> {
   const cached = wardrobeImageCache.get(source)
   if (cached) return cached
@@ -446,7 +473,8 @@ export async function prepareSavedCharacterRenderer(character: CustomizerCharact
   const source = await window.desktop.loadFabricatorSlot(modelSlot)
   if (!source) throw new Error(`O modelo de ${character.name} não está disponível.`)
   const pose = character.customization.poseSlot === null ? null : await window.desktop.loadFabricatorPose(modelSlot, character.customization.poseSlot)
-  const artwork: CatalogArtwork = pose ?? source
+  const proportions = getCharacterProportions(character.customization)
+  const artwork = withCharacterHeadSize(pose ?? source, proportions.head)
   const hairAppearance = character.customization.hairAppearance
   const hairStyle = async (side: HairCatalogSide): Promise<HairStyle | null> => {
     const id = hairAppearanceStyleId(hairAppearance, side)
@@ -494,6 +522,9 @@ export async function prepareSavedCharacterRenderer(character: CustomizerCharact
   canvas.height = Math.max(1, artwork.height)
   const context = canvas.getContext('2d')
   if (!context) throw new Error('Não foi possível preparar a imagem do personagem.')
+  const shapeScale = characterShapeScale(proportions)
+  const outputWidth = Math.max(canvas.width, Math.ceil(canvas.width * shapeScale.x))
+  const outputHeight = Math.max(canvas.height, Math.ceil(canvas.height * shapeScale.y))
   const render = async (currentAppearance: CustomizerFaceAppearance | undefined = appearance, studioFaceTransforms?: StudioFaceTransforms) => {
     context.clearRect(0, 0, canvas.width, canvas.height)
     context.drawImage(baseImage, 0, 0, canvas.width, canvas.height)
@@ -523,9 +554,18 @@ export async function prepareSavedCharacterRenderer(character: CustomizerCharact
       else if (!hasCatalogSelection && legacyFaceImage && currentAppearance.setId === appearance?.setId) context.drawImage(legacyFaceImage, 0, 0, canvas.width, canvas.height)
     } else if (legacyFaceImage) context.drawImage(legacyFaceImage, 0, 0, canvas.width, canvas.height)
     if (frontHairImage) context.drawImage(frontHairImage, 0, 0, canvas.width, canvas.height)
-    return { dataUrl: canvas.toDataURL('image/png'), width: canvas.width, height: canvas.height }
+    if (shapeScale.x === 1 && shapeScale.y === 1) return { dataUrl: canvas.toDataURL('image/png'), width: canvas.width, height: canvas.height }
+    const output = document.createElement('canvas')
+    output.width = outputWidth
+    output.height = outputHeight
+    const outputContext = output.getContext('2d')
+    if (!outputContext) throw new Error('Não foi possível aplicar as proporções do personagem.')
+    outputContext.translate(outputWidth / 2, outputHeight / 2)
+    outputContext.scale(shapeScale.x, shapeScale.y)
+    outputContext.drawImage(canvas, -canvas.width / 2, -canvas.height / 2)
+    return { dataUrl: output.toDataURL('image/png'), width: outputWidth, height: outputHeight }
   }
-  return { width: canvas.width, height: canvas.height, render }
+  return { width: outputWidth, height: outputHeight, render }
 }
 
 export async function renderSavedCharacter(character: CustomizerCharacter, studioFaceTransforms?: StudioFaceTransforms): Promise<{ dataUrl: string; width: number; height: number }> {
@@ -632,6 +672,7 @@ export function CustomizerPage() {
   const [selectedWardrobeHighlightUrl, setSelectedWardrobeHighlightUrl] = useState<string | null>(null)
   const [wardrobeHighlightVisible, setWardrobeHighlightVisible] = useState(false)
   const [selectedArtworkProject, setSelectedArtworkProject] = useState<CatalogArtwork | null>(null)
+  const [proportionEdit, setProportionEdit] = useState<{ characterId: string; values: CharacterProportions } | null>(null)
   const [selectedSourceModelProject, setSelectedSourceModelProject] = useState<FabricatorProject | null>(null)
   const [selectedArtworkUrl, setSelectedArtworkUrl] = useState<string | null>(null)
   const [selectedFaceUrl, setSelectedFaceUrl] = useState<string | null>(null)
@@ -640,10 +681,14 @@ export function CustomizerPage() {
   const [previewLoading, setPreviewLoading] = useState(true)
   const thumbnailCache = useRef(new Set<string>())
   const previewLoadRequest = useRef(0)
-  const clothingDragRef = useRef<{ pointerId: number; clientX: number; clientY: number; scale: number; startX: number; startY: number; groupKey: string; characterId: string; beforeGroups: CustomizerWardrobeGroup[]; latest: CustomizerCharacter | null } | null>(null)
+  const clothingDragRef = useRef<{ pointerId: number; clientX: number; clientY: number; scaleX: number; scaleY: number; startX: number; startY: number; groupKey: string; characterId: string; beforeGroups: CustomizerWardrobeGroup[]; latest: CustomizerCharacter | null } | null>(null)
   const wardrobeTransformDirty = useRef(false)
   const wardrobeHistoryRef = useRef<WardrobeEditHistory>({ characterId: '', undo: [], redo: [] })
   const selectedCharacter = characters.find((character) => character.id === selectedCharacterId) ?? characters[0] ?? null
+  const activeProportions = proportionEdit?.characterId === selectedCharacter?.id ? proportionEdit.values : getCharacterProportions(selectedCharacter?.customization)
+  const activeShapeScale = characterShapeScale(activeProportions)
+  const displayArtworkProject = useMemo(() => selectedArtworkProject ? withCharacterHeadSize(selectedArtworkProject, activeProportions.head) : null, [selectedArtworkProject, activeProportions.head])
+  const previewStyle = { '--preview-background': previewBackground, '--character-scale-x': activeShapeScale.x, '--character-scale-y': activeShapeScale.y } as import('react').CSSProperties
   const characterWardrobeGroups = selectedCharacter?.customization.wardrobeGroups ?? []
   const characterFaceAppearance = selectedCharacter?.customization.faceAppearance
   const characterHairAppearance = selectedCharacter?.customization.hairAppearance
@@ -740,7 +785,7 @@ export function CustomizerPage() {
         const artwork = pose ? await window.desktop.loadFabricatorPose(model.slot, pose.slot) : sourceProject
         if (!artwork) throw new Error('Não foi possível carregar a prévia deste personagem.')
         if (!cancelled && previewLoadRequest.current === requestId) { setSelectedArtworkProject(artwork); setSelectedSourceModelProject(sourceProject) }
-        const artworkUrl = await renderArtwork(artwork, 720, selectedCharacter.customization.modelSkinTone)
+        const artworkUrl = await renderArtwork(withCharacterHeadSize(artwork, activeProportions.head), 720, selectedCharacter.customization.modelSkinTone)
         if (!cancelled && previewLoadRequest.current === requestId) setSelectedArtworkUrl(artworkUrl)
       } catch (reason) {
         if (!cancelled && previewLoadRequest.current === requestId) setCatalogError(reason instanceof Error ? reason.message : 'Não foi possível carregar a prévia.')
@@ -915,21 +960,21 @@ export function CustomizerPage() {
         if (item) catalogItems[category] = item
       }
     }
-    if (!selectedArtworkProject || !selectedSourceModelProject || !appearance || (!hasCatalogSelection && !face)) { setSelectedFaceUrl(null); return }
+    if (!displayArtworkProject || !selectedSourceModelProject || !appearance || (!hasCatalogSelection && !face)) { setSelectedFaceUrl(null); return }
     const render = hasCatalogSelection
-      ? renderFaceCatalogOverlay(selectedArtworkProject, selectedSourceModelProject, catalogItems, appearance)
-      : renderFaceOverlay(selectedArtworkProject, selectedSourceModelProject, face, appearance)
+      ? renderFaceCatalogOverlay(displayArtworkProject, selectedSourceModelProject, catalogItems, appearance)
+      : renderFaceOverlay(displayArtworkProject, selectedSourceModelProject, face, appearance)
     void render.then((url) => {
       if (!cancelled) setSelectedFaceUrl(url)
     }).catch((reason: unknown) => {
       if (!cancelled) setCatalogError(reason instanceof Error ? reason.message : 'Não foi possível montar o rosto do personagem.')
     })
     return () => { cancelled = true }
-  }, [characterFaceAppearance, faceCatalogDetails, faceDetails, selectedArtworkProject, selectedSourceModelProject])
+  }, [characterFaceAppearance, faceCatalogDetails, faceDetails, displayArtworkProject, selectedSourceModelProject])
 
   useEffect(() => {
     let cancelled = false
-    const artwork = selectedArtworkProject
+    const artwork = displayArtworkProject
     const source = selectedSourceModelProject
     const appearance = selectedCharacter?.customization.hairAppearance
     if (!artwork || !source) return
@@ -964,7 +1009,7 @@ export function CustomizerPage() {
       if (!cancelled) setCatalogError(reason instanceof Error ? reason.message : 'Não foi possível montar o cabelo do personagem.')
     })
     return () => { cancelled = true }
-  }, [selectedArtworkProject, selectedSourceModelProject, selectedCharacter?.id, selectedCharacter?.customization.hairAppearance, selectedCharacter?.customization.modelSkinTone, hairDetails])
+  }, [displayArtworkProject, selectedSourceModelProject, selectedCharacter?.id, selectedCharacter?.customization.hairAppearance, selectedCharacter?.customization.modelSkinTone, hairDetails])
 
   useEffect(() => {
     if (activeModule !== 'Roupas' || !wardrobeSets.length) return
@@ -1037,20 +1082,20 @@ export function CustomizerPage() {
   useEffect(() => {
     let cancelled = false
     const groups = selectedCharacter?.customization.wardrobeGroups ?? []
-    if (!selectedArtworkProject || !groups.length) {
+    if (!displayArtworkProject || !groups.length) {
       setSelectedWardrobeUrl(null)
       return
     }
     const previewGroups = wardrobeTransformDraft && selectedClothing
       ? groups.map((group) => group.setId === selectedClothing.setId && group.category === selectedClothing.category && (group.componentId === selectedClothing.componentId || !group.componentId) ? { ...group, componentId: selectedClothing.componentId, ...wardrobeTransformDraft } : group)
       : groups
-    void renderWardrobeOverlay(previewGroups, wardrobeDetails, selectedArtworkProject, selectedCatalogModelSlot, selectedSourceModelProject, wardrobeHighlightVisible ? selectedClothing : null, selectedCharacter?.customization.modelSkinTone).then((result) => {
+    void renderWardrobeOverlay(previewGroups, wardrobeDetails, displayArtworkProject, selectedCatalogModelSlot, selectedSourceModelProject, wardrobeHighlightVisible ? selectedClothing : null, selectedCharacter?.customization.modelSkinTone).then((result) => {
       if (!cancelled) { setSelectedWardrobeUrl(result.imageUrl); setSelectedWardrobeHighlightUrl(result.selectedUrl) }
     }).catch((reason: unknown) => {
       if (!cancelled) setCatalogError(reason instanceof Error ? reason.message : 'Não foi possível compor as roupas do personagem.')
     })
     return () => { cancelled = true }
-  }, [selectedCharacter?.id, selectedCharacter?.customization.modelSkinTone, selectedCharacter?.customization.wardrobeGroups, wardrobeDetails, selectedArtworkProject, selectedCatalogModelSlot, selectedSourceModelProject, selectedClothing?.setId, selectedClothing?.category, selectedClothing?.componentId, wardrobeTransformDraft, wardrobeHighlightVisible])
+  }, [selectedCharacter?.id, selectedCharacter?.customization.modelSkinTone, selectedCharacter?.customization.wardrobeGroups, wardrobeDetails, displayArtworkProject, selectedCatalogModelSlot, selectedSourceModelProject, selectedClothing?.setId, selectedClothing?.category, selectedClothing?.componentId, wardrobeTransformDraft, wardrobeHighlightVisible])
 
   function selectCharacter(id: string) {
     setSelectedCharacterId(id)
@@ -1089,6 +1134,26 @@ export function CustomizerPage() {
     const current = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
     const changes = typeof patch === 'function' ? patch(current.customization) : patch
     await saveCharacter({ ...current, customization: { ...current.customization, ...changes }, updatedAt: new Date().toISOString() })
+  }
+
+  function changeProportion(key: keyof CharacterProportions, value: number) {
+    if (!selectedCharacter) return
+    const { min, max } = characterProportionLimits[key]
+    setProportionEdit({ characterId: selectedCharacter.id, values: { ...activeProportions, [key]: Math.min(max, Math.max(min, Math.round(value))) } })
+  }
+
+  function commitProportions(values: CharacterProportions) {
+    if (!selectedCharacter) return
+    setProportionEdit({ characterId: selectedCharacter.id, values })
+    const current = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
+    const saved = getCharacterProportions(current.customization)
+    if ((Object.keys(values) as Array<keyof CharacterProportions>).every((key) => saved[key] === values[key])) return
+    void saveCharacterCustomization({ proportions: values })
+  }
+
+  function commitProportion(key: keyof CharacterProportions, value: number) {
+    const { min, max } = characterProportionLimits[key]
+    commitProportions({ ...activeProportions, [key]: Math.min(max, Math.max(min, Math.round(value))) })
   }
 
   async function chooseFaceCatalogItem(summary: FaceCatalogItemSummary) {
@@ -1273,7 +1338,8 @@ export function CustomizerPage() {
     if (!rect) return
     const previewScale = Math.min((rect.width - 136) / selectedArtworkProject.width, (rect.height - 130) / selectedArtworkProject.height)
     clothingDragRef.current = {
-      pointerId: event.pointerId, clientX: event.clientX, clientY: event.clientY, scale: Math.max(.01, previewScale),
+      pointerId: event.pointerId, clientX: event.clientX, clientY: event.clientY,
+      scaleX: Math.max(.01, previewScale * activeShapeScale.x), scaleY: Math.max(.01, previewScale * activeShapeScale.y),
       startX: group.offsetX, startY: group.offsetY, groupKey: wardrobeGroupKey(group), characterId: selectedCharacter.id, beforeGroups, latest: null
     }
     event.currentTarget.setPointerCapture(event.pointerId)
@@ -1286,8 +1352,8 @@ export function CustomizerPage() {
     const groups = selectedCharacter.customization.wardrobeGroups ?? []
     const nextGroups = groups.map((group) => wardrobeGroupKey(group) === drag.groupKey ? {
       ...group,
-      offsetX: drag.startX + (event.clientX - drag.clientX) / drag.scale,
-      offsetY: drag.startY + (event.clientY - drag.clientY) / drag.scale
+      offsetX: drag.startX + (event.clientX - drag.clientX) / drag.scaleX,
+      offsetY: drag.startY + (event.clientY - drag.clientY) / drag.scaleY
     } : group)
     const nextCharacter = { ...selectedCharacter, customization: { ...selectedCharacter.customization, wardrobeGroups: nextGroups }, updatedAt: new Date().toISOString() }
     drag.latest = nextCharacter
@@ -1361,7 +1427,7 @@ export function CustomizerPage() {
       let artwork: CatalogArtwork | null = firstPose ? await window.desktop.loadFabricatorPose(model.slot, 1) : null
       if (!artwork) artwork = sourceProject
       if (!artwork) throw new Error('Não foi possível abrir este modelo.')
-      const artworkUrl = await renderArtwork(artwork, 720, selectedCharacter?.customization.modelSkinTone)
+      const artworkUrl = await renderArtwork(withCharacterHeadSize(artwork, activeProportions.head), 720, selectedCharacter?.customization.modelSkinTone)
       if (previewLoadRequest.current === requestId) { setSelectedArtworkProject(artwork); setSelectedSourceModelProject(sourceProject); setSelectedArtworkUrl(artworkUrl) }
     } catch (reason) {
       if (previewLoadRequest.current === requestId) setCatalogError(reason instanceof Error ? reason.message : 'Não foi possível abrir este modelo.')
@@ -1384,7 +1450,7 @@ export function CustomizerPage() {
       if (!sourceProject) throw new Error('O modelo de referência desta pose não está disponível.')
       const artwork = await window.desktop.loadFabricatorPose(pose.sourceModelSlot, pose.slot)
       if (!artwork) throw new Error('Não foi possível abrir esta pose.')
-      const artworkUrl = await renderArtwork(artwork, 720, selectedCharacter?.customization.modelSkinTone)
+      const artworkUrl = await renderArtwork(withCharacterHeadSize(artwork, activeProportions.head), 720, selectedCharacter?.customization.modelSkinTone)
       if (previewLoadRequest.current === requestId) { setSelectedArtworkProject(artwork); setSelectedSourceModelProject(sourceProject); setSelectedArtworkUrl(artworkUrl) }
     } catch (reason) {
       if (previewLoadRequest.current === requestId) setCatalogError(reason instanceof Error ? reason.message : 'Não foi possível abrir esta pose.')
@@ -1457,7 +1523,7 @@ export function CustomizerPage() {
         <div className="customizer-models-columns">
           <section className="customizer-model-preview" aria-label="Prévia do personagem">
             <div className="stage-wrap">
-              <div className="stage-scene" style={{ '--preview-background': previewBackground } as import('react').CSSProperties}>
+              <div className="stage-scene" style={previewStyle}>
                 <div className="stage-label"><span className="online-dot" /> PREVIEW DO PERSONAGEM</div>
                 <button className="customizer-back-button customizer-preview-back" onClick={() => setActiveModule(null)} type="button"><span aria-hidden="true">←</span> Customizar</button>
                 <label className="scene-chip preview-scene-color" title="Mudar a cor do fundo de todas as prévias">
@@ -1480,7 +1546,7 @@ export function CustomizerPage() {
               </div>
             </div>
           </section>
-          <section className="customizer-models-sidebar" aria-label="Categorias de personalização">
+          <section className={'customizer-models-sidebar' + (selectedCustomizerTopTab === 'modelos' ? ' models-active' : '')} aria-label="Categorias de personalização">
             <nav className="customizer-top-tabs" aria-label="Áreas do Customizar" role="tablist">
               {customizerTopTabs.map((tab) => <button
                 key={tab.id}
@@ -1516,6 +1582,20 @@ export function CustomizerPage() {
                 </div>
                 <button className="customizer-pose-carousel-arrow" aria-label="Próxima categoria de poses" title="Próxima categoria" onClick={() => showAdjacentPoseCategory(1)} type="button"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M19 2 32 16 19 30v-8H0V10h19z" /></svg></button>
               </div>
+            </section>}
+            {selectedCustomizerTopTab === 'modelos' && <section className="customizer-proportions" aria-label="Proporções do personagem">
+              <header><strong>Proporções</strong><button onClick={() => commitProportions({ ...defaultCharacterProportions })} disabled={!selectedCharacter} type="button">Restaurar</button></header>
+              <div className="customizer-proportions-grid">{proportionControls.map(({ key, label, description }) => {
+                const limits = characterProportionLimits[key]
+                return <div className="customizer-proportion-control" key={key} title={description}>
+                  <div className="customizer-proportion-heading"><label htmlFor={`character-proportion-${key}`}>{label}</label><output>{activeProportions[key]}%</output></div>
+                  <div className="customizer-proportion-inputs">
+                    <button aria-label={`Diminuir ${label.toLowerCase()}`} disabled={!selectedCharacter || activeProportions[key] <= limits.min} onClick={() => commitProportion(key, activeProportions[key] - 1)} type="button">−</button>
+                    <input id={`character-proportion-${key}`} type="range" min={limits.min} max={limits.max} step="1" value={activeProportions[key]} disabled={!selectedCharacter} onChange={(event) => changeProportion(key, Number(event.target.value))} onPointerUp={(event) => commitProportion(key, Number(event.currentTarget.value))} onPointerCancel={(event) => commitProportion(key, Number(event.currentTarget.value))} onKeyUp={(event) => commitProportion(key, Number(event.currentTarget.value))} onBlur={(event) => commitProportion(key, Number(event.currentTarget.value))} />
+                    <button aria-label={`Aumentar ${label.toLowerCase()}`} disabled={!selectedCharacter || activeProportions[key] >= limits.max} onClick={() => commitProportion(key, activeProportions[key] + 1)} type="button">+</button>
+                  </div>
+                </div>
+              })}</div>
             </section>}
             <div className="customizer-models-content" hidden>
             <div className="customizer-models-options-grid">
@@ -1766,7 +1846,7 @@ export function CustomizerPage() {
           </div>
 
           <div className="stage-wrap">
-            <div className="stage-scene" style={{ '--preview-background': previewBackground } as import('react').CSSProperties}>
+            <div className="stage-scene" style={previewStyle}>
               <div className="stage-label"><span className="online-dot" /> PREVIEW DO PERSONAGEM</div>
               <label className="scene-chip preview-scene-color" title="Mudar a cor do fundo de todas as prévias">
                 <span className="preview-color-swatch" style={{ backgroundColor: previewBackground }} />
