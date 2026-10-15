@@ -560,9 +560,11 @@ export function StudioPage() {
         const imageHeight = crop?.height ?? rendered.height
         const asset: StudioAsset = { id: crypto.randomUUID(), category: 'character', name: character.name, mimeType: 'image/png', dataUrl: imageData }
         const width = 20
-        const height = Math.min(82, width * stageWidth / stageHeight * imageHeight / imageWidth)
+        const characterCanvasWidth = width * rendered.width / imageWidth
+        const canvasHeight = characterCanvasWidth * stageWidth / stageHeight * rendered.height / rendered.width
+        const height = Math.min(82, canvasHeight * imageHeight / rendered.height)
         assets.push(asset)
-        elements.push({ id: crypto.randomUUID(), kind: 'character', assetId: asset.id, characterId: character.id, poseSlot: character.customization.poseSlot, characterScale: 100, characterWidthScale: 100, characterHeightScale: 100, text: character.name, x: 0, y: 0, width, height, rotation: 0, zIndex: ++zIndex })
+        elements.push({ id: crypto.randomUUID(), kind: 'character', assetId: asset.id, characterId: character.id, poseSlot: character.customization.poseSlot, characterScale: 100, characterWidthScale: 100, characterHeightScale: 100, characterCanvasWidth, text: character.name, x: 0, y: 0, width, height, rotation: 0, zIndex: ++zIndex })
       }
       const nextElements = [...retained, ...elements]
       const retainedAssetIds = new Set(retained.map((element) => element.assetId).filter((id): id is string => Boolean(id)))
@@ -616,15 +618,29 @@ export function StudioPage() {
     setStudioFaceBusy(true)
     try {
       const { renderSavedCharacter } = await import('../customizer/CustomizerPage')
+      let characterCanvasWidth = selectedElement.characterCanvasWidth
+      if (!characterCanvasWidth) {
+        const currentPoseCharacter: CustomizerCharacter = { ...selectedStudioCharacter, customization: { ...selectedStudioCharacter.customization, poseSlot: selectedElement.poseSlot ?? selectedStudioCharacter.customization.poseSlot, faceAppearance: selectedElement.faceAppearance ?? selectedStudioCharacter.customization.faceAppearance } }
+        const currentRendered = await renderSavedCharacter(currentPoseCharacter, selectedElement.faceTransforms)
+        const currentCrop = await trimTransparentImage(currentRendered.dataUrl)
+        characterCanvasWidth = selectedElement.width * currentRendered.width / (currentCrop?.width ?? currentRendered.width)
+      }
       const characterCopy: CustomizerCharacter = { ...selectedStudioCharacter, customization: { ...selectedStudioCharacter.customization, poseSlot } }
       const rendered = await renderSavedCharacter(characterCopy, selectedElement.faceTransforms)
       const trimmed = await trimTransparentImage(rendered.dataUrl)
       const dataUrl = trimmed?.dataUrl ?? rendered.dataUrl
+      const cropWidth = trimmed?.width ?? rendered.width
+      const cropHeight = trimmed?.height ?? rendered.height
+      const stageWidth = sceneRef.current?.clientWidth ?? 1000
+      const stageHeight = sceneRef.current?.clientHeight ?? 562
+      const fullCanvasHeight = characterCanvasWidth * stageWidth / stageHeight * rendered.height / rendered.width
+      const width = characterCanvasWidth * cropWidth / rendered.width
+      const height = fullCanvasHeight * cropHeight / rendered.height
       const elementId = selectedElement.id
       const assetId = selectedElement.assetId
       changeScene((studio) => ({
         ...studio,
-        elements: studio.elements.map((element) => element.id === elementId ? { ...element, poseSlot } : element),
+        elements: studio.elements.map((element) => element.id === elementId ? { ...element, poseSlot, characterCanvasWidth, width, height } : element),
         assets: studio.assets.map((asset) => asset.id === assetId ? { ...asset, dataUrl, mimeType: 'image/png' } : asset),
         updatedAt: new Date().toISOString()
       }))

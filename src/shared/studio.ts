@@ -30,6 +30,8 @@ export type StudioElement = {
   characterScale?: number
   characterWidthScale?: number
   characterHeightScale?: number
+  /** Width of the untrimmed character artwork relative to the Studio canvas. */
+  characterCanvasWidth?: number
   text: string
   x: number
   y: number
