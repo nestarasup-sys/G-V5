@@ -3,6 +3,8 @@ import { Icon } from '../../ui/components/Icon'
 import { CharacterPortrait } from '../../ui/components/CharacterPortrait'
 import type { StudioAsset, StudioDocument, StudioElement } from '../../../../shared/studio'
 import type { CustomizerCharacter } from '../../../../shared/customizer'
+import type { CustomizerFaceAppearance } from '../../../../shared/customizer'
+import type { FaceCatalogItem, FaceCatalogItemSummary, FaceSheetKind } from '../../../../shared/fabricator'
 
 type StudioCard = StudioDocument
 type StudioSnapshot = Pick<StudioDocument, 'backgroundColor' | 'backgroundAssetId' | 'backgroundX' | 'backgroundY' | 'backgroundWidth' | 'backgroundHeight' | 'backgroundRotation' | 'assets' | 'elements'>
@@ -132,6 +134,11 @@ export function StudioPage() {
   const [savingCast, setSavingCast] = useState(false)
   const [inspectorTab, setInspectorTab] = useState<'editor' | 'custom'>('editor')
   const [inspectorOpen, setInspectorOpen] = useState(true)
+  const [studioFaceCategory, setStudioFaceCategory] = useState<'eyes' | 'eyebrows' | 'nose' | 'mouth'>('eyes')
+  const [studioFaceItems, setStudioFaceItems] = useState<FaceCatalogItemSummary[]>([])
+  const [studioFaceDetails, setStudioFaceDetails] = useState<Record<string, FaceCatalogItem>>({})
+  const [studioFaceLoading, setStudioFaceLoading] = useState(false)
+  const [studioFaceBusy, setStudioFaceBusy] = useState(false)
   const [studioFolder, setStudioFolder] = useState('')
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [activeStudioId, setActiveStudioId] = useState<string | null>(null)
@@ -151,6 +158,11 @@ export function StudioPage() {
   const selectedStudio = studios.find((studio) => studio.id === selectedId) ?? null
   const activeStudio = studios.find((studio) => studio.id === activeStudioId) ?? null
   const selectedElement = activeStudio?.elements.find((element) => element.id === selectedElementId) ?? null
+  const selectedStudioCharacter = selectedElement?.kind === 'character' ? availableCharacters.find((character) => character.id === selectedElement.characterId) ?? null : null
+  const selectedStudioCharacterModelSlot = selectedStudioCharacter ? selectedStudioCharacter.customization.modelSlot ?? 1 : null
+  const selectedStudioFaceAppearance = selectedElement?.kind === 'character'
+    ? selectedElement.faceAppearance ?? selectedStudioCharacter?.customization.faceAppearance
+    : undefined
   const selectedBackgroundAsset = activeStudio?.assets.find((asset) => asset.id === activeStudio.backgroundAssetId) ?? null
   const stageCharacters = activeStudio?.elements.filter((element) => element.kind === 'character') ?? []
 
@@ -194,6 +206,27 @@ export function StudioPage() {
     })
     return () => { cancelled = true }
   }, [])
+
+  useEffect(() => {
+    const modelSlot = selectedStudioCharacterModelSlot
+    if (modelSlot === null) { setStudioFaceItems([]); return }
+    let cancelled = false
+    setStudioFaceLoading(true)
+    void window.desktop.listFaceCatalog(modelSlot).then(async (summaries) => {
+      if (cancelled) return
+      setStudioFaceItems(summaries)
+      const items = await Promise.all(summaries.map(async (summary) => ({ key: `${summary.modelSlot}:${summary.id}`, item: await window.desktop.loadFaceCatalogItem(summary.modelSlot, summary.id) })))
+      if (cancelled) return
+      setStudioFaceDetails((current) => {
+        const next = { ...current }
+        for (const { key, item } of items) if (item) next[key] = item
+        return next
+      })
+    }).catch((reason: unknown) => {
+      if (!cancelled) setError(reason instanceof Error ? reason.message : 'Não foi possível carregar o catálogo de rosto.')
+    }).finally(() => { if (!cancelled) setStudioFaceLoading(false) })
+    return () => { cancelled = true }
+  }, [selectedStudioCharacterModelSlot])
 
   useEffect(() => {
     if (!activeStudioId) return
@@ -409,6 +442,61 @@ export function StudioPage() {
     } finally { setSavingCast(false) }
   }
 
+  const applyStudioFaceAppearance = async (appearance: CustomizerFaceAppearance) => {
+    if (!activeStudio || selectedElement?.kind !== 'character' || !selectedStudioCharacter || !selectedElement.assetId || studioFaceBusy) return
+    setStudioFaceBusy(true)
+    try {
+      const { renderSavedCharacter } = await import('../customizer/CustomizerPage')
+      const characterCopy: CustomizerCharacter = {
+        ...selectedStudioCharacter,
+        customization: { ...selectedStudioCharacter.customization, faceAppearance: appearance }
+      }
+      const rendered = await renderSavedCharacter(characterCopy)
+      const elementId = selectedElement.id
+      const assetId = selectedElement.assetId
+      changeScene((studio) => ({
+        ...studio,
+        elements: studio.elements.map((element) => element.id === elementId ? { ...element, faceAppearance: appearance } : element),
+        assets: studio.assets.map((asset) => asset.id === assetId ? { ...asset, dataUrl: rendered.dataUrl, mimeType: 'image/png' } : asset),
+        updatedAt: new Date().toISOString()
+      }))
+      setError(null)
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Não foi possível aplicar a peça facial neste Studio.')
+    } finally { setStudioFaceBusy(false) }
+  }
+
+  const chooseStudioFaceSheet = async (summary: FaceCatalogItemSummary) => {
+    if (!selectedStudioCharacter) return
+    const key = `${summary.modelSlot}:${summary.id}`
+    const item = studioFaceDetails[key] ?? await window.desktop.loadFaceCatalogItem(summary.modelSlot, summary.id)
+    if (!item) return
+    setStudioFaceDetails((current) => ({ ...current, [key]: item }))
+    const previous = selectedStudioFaceAppearance
+    const sameModel = previous?.modelSlot === item.modelSlot
+    const field: Record<FaceSheetKind, keyof CustomizerFaceAppearance> = {
+      eyes: 'eyeCatalogId', eyebrows: 'eyebrowCatalogId', nose: 'noseCatalogId',
+      'mouth-closed': 'mouthClosedCatalogId', 'mouth-open': 'mouthOpenCatalogId'
+    }
+    const appearance: CustomizerFaceAppearance = {
+      ...(sameModel ? previous : undefined),
+      modelSlot: item.modelSlot,
+      setId: undefined,
+      [field[item.category]]: item.id,
+      eyeState: sameModel ? previous.eyeState : 0,
+      eyebrows: sameModel ? previous.eyebrows : true,
+      noseIndex: item.category === 'nose' ? item.selectedNose : sameModel ? previous.noseIndex : item.selectedNose,
+      expressionIndex: item.category.startsWith('mouth') ? item.selectedExpression : sameModel ? previous.expressionIndex : item.selectedExpression,
+      mouthOpen: item.category === 'mouth-open' ? true : item.category === 'mouth-closed' ? false : sameModel ? previous.mouthOpen : false
+    }
+    await applyStudioFaceAppearance(appearance)
+  }
+
+  const updateStudioFaceVariant = (patch: Partial<CustomizerFaceAppearance>) => {
+    if (!selectedStudioFaceAppearance || selectedStudioCharacterModelSlot === null) return
+    void applyStudioFaceAppearance({ ...selectedStudioFaceAppearance, ...patch })
+  }
+
   const removeStageCharacter = (element: StudioElement) => {
     changeScene((studio) => {
       const elements = studio.elements.filter((item) => item.id !== element.id)
@@ -575,6 +663,65 @@ export function StudioPage() {
     return <div className="studio-side-content"><h2>Cena</h2><p>Escolha uma ferramenta à esquerda ou selecione um elemento na cena.</p><small>{activeStudio.elements.length} elemento(s)</small></div>
   }
 
+  const customPanel = (): ReactNode => {
+    if (!selectedStudioCharacter || selectedElement?.kind !== 'character' || selectedStudioCharacterModelSlot === null) {
+      return <div className="studio-custom-empty"><strong>Personalizar personagem</strong><span>Selecione um personagem na prévia ou no elenco para escolher as peças do rosto.</span></div>
+    }
+    const sheetKind: FaceSheetKind = studioFaceCategory === 'mouth'
+      ? selectedStudioFaceAppearance?.mouthOpen ? 'mouth-open' : 'mouth-closed'
+      : studioFaceCategory
+    const selectedItemId = sheetKind === 'eyes' ? selectedStudioFaceAppearance?.eyeCatalogId
+      : sheetKind === 'eyebrows' ? selectedStudioFaceAppearance?.eyebrowCatalogId
+        : sheetKind === 'nose' ? selectedStudioFaceAppearance?.noseCatalogId
+          : sheetKind === 'mouth-open' ? selectedStudioFaceAppearance?.mouthOpenCatalogId
+            : selectedStudioFaceAppearance?.mouthClosedCatalogId
+    const activeItem = selectedItemId ? studioFaceDetails[`${selectedStudioCharacterModelSlot}:${selectedItemId}`] : null
+    const catalogItems = studioFaceItems.filter((item) => item.category === sheetKind)
+    const samplePieces = (item: FaceCatalogItem, index = 0) => item.pieces.filter((piece) => piece.index === index && (sheetKind !== 'eyes' && sheetKind !== 'eyebrows' || piece.side === 'left' || piece.side === 'right'))
+    const renderPair = (pieces: FaceCatalogItem['pieces']) => pieces.slice(0, 2).map((piece) => <img key={piece.id} src={piece.dataUrl} alt="" />)
+    const previewIndex = sheetKind === 'eyes' ? selectedStudioFaceAppearance?.eyeState ?? 0
+      : sheetKind === 'nose' ? selectedStudioFaceAppearance?.noseIndex ?? activeItem?.selectedNose ?? 0
+        : sheetKind.startsWith('mouth') ? selectedStudioFaceAppearance?.expressionIndex ?? activeItem?.selectedExpression ?? 0 : 0
+    const previewPieces = activeItem ? activeItem.pieces.filter((piece) => piece.index === previewIndex && (sheetKind !== 'eyes' && sheetKind !== 'eyebrows' || piece.side === 'left' || piece.side === 'right')) : []
+    const categoryButtons = [
+      { id: 'eyes', label: 'Olhos' }, { id: 'eyebrows', label: 'Sobrancelhas' },
+      { id: 'nose', label: 'Nariz' }, { id: 'mouth', label: 'Boca' }
+    ] as const
+    return <div className="studio-custom-face">
+      <div className="studio-custom-face-categories" aria-label="Categorias do rosto">
+        {categoryButtons.map((category) => <button key={category.id} className={studioFaceCategory === category.id ? 'active' : ''} onClick={() => setStudioFaceCategory(category.id)} type="button">{category.label}</button>)}
+      </div>
+      {studioFaceCategory === 'mouth' && <div className="studio-custom-mouth-tabs"><button className={!selectedStudioFaceAppearance?.mouthOpen ? 'active' : ''} onClick={() => updateStudioFaceVariant({ mouthOpen: false })} disabled={!selectedStudioFaceAppearance || studioFaceBusy} type="button">Fechada</button><button className={selectedStudioFaceAppearance?.mouthOpen ? 'active' : ''} onClick={() => updateStudioFaceVariant({ mouthOpen: true })} disabled={!selectedStudioFaceAppearance || studioFaceBusy} type="button">Aberta</button></div>}
+      {studioFaceLoading ? <p className="studio-custom-hint">Carregando catálogo facial…</p> : <div className="studio-custom-face-sheets">
+        {catalogItems.map((summary) => {
+          const item = studioFaceDetails[`${summary.modelSlot}:${summary.id}`]
+          const selected = selectedItemId === summary.id
+          return <button className={`studio-custom-face-sheet${selected ? ' selected' : ''}`} key={summary.id} onClick={() => void chooseStudioFaceSheet(summary)} disabled={studioFaceBusy} aria-pressed={selected} title={summary.name} type="button">
+            <span>{item ? renderPair(samplePieces(item)) : <Icon name="face" />}</span><b>{summary.name}</b>
+          </button>
+        })}
+        {!catalogItems.length && <p className="studio-custom-hint">Nenhuma peça salva nesta categoria para o Modelo {String(selectedStudioCharacterModelSlot).padStart(2, '0')}.</p>}
+      </div>}
+      {studioFaceCategory === 'eyebrows' && selectedStudioFaceAppearance?.eyebrowCatalogId && <button className={`studio-custom-toggle${selectedStudioFaceAppearance.eyebrows ? ' active' : ''}`} onClick={() => updateStudioFaceVariant({ eyebrows: !selectedStudioFaceAppearance.eyebrows })} disabled={studioFaceBusy} type="button">{selectedStudioFaceAppearance.eyebrows ? 'Ocultar sobrancelhas' : 'Mostrar sobrancelhas'}</button>}
+      {activeItem && <>
+        {sheetKind === 'eyes' && <div className="studio-custom-face-variants">{[0, 1, 2].map((index) => {
+          const pieces = activeItem.pieces.filter((piece) => piece.index === index)
+          const labels = ['Direita', 'Esquerda', 'Fechados']
+          return <button className={(selectedStudioFaceAppearance?.eyeState === index ? 'selected' : '')} key={index} onClick={() => updateStudioFaceVariant({ eyeState: index as 0 | 1 | 2 })} disabled={studioFaceBusy} type="button"><span>{renderPair(pieces)}</span><b>{labels[index]}</b></button>
+        })}</div>}
+        {sheetKind === 'nose' && <div className="studio-custom-face-variants studio-custom-face-grid">{activeItem.pieces.map((piece) => <button className={(selectedStudioFaceAppearance?.noseIndex === piece.index ? 'selected' : '')} key={piece.id} onClick={() => updateStudioFaceVariant({ noseIndex: piece.index })} disabled={studioFaceBusy} type="button"><span><img src={piece.dataUrl} alt="" /></span><b>{piece.index + 1}</b></button>)}</div>}
+        {sheetKind.startsWith('mouth') && <div className="studio-custom-face-variants studio-custom-face-grid">{activeItem.pieces.map((piece) => <button className={(selectedStudioFaceAppearance?.expressionIndex === piece.index ? 'selected' : '')} key={piece.id} onClick={() => updateStudioFaceVariant({ expressionIndex: piece.index })} disabled={studioFaceBusy} type="button"><span><img src={piece.dataUrl} alt="" /></span><b>{String(piece.index + 1).padStart(2, '0')}</b></button>)}</div>}
+        <section className="studio-custom-face-preview" aria-label="Prévia ampliada da peça selecionada">
+          <strong>Prévia ampliada</strong>
+          <div className={`studio-custom-face-preview-art${sheetKind === 'eyes' || sheetKind === 'eyebrows' ? ' pair' : ''}`}>
+            {previewPieces.length ? renderPair(previewPieces) : <span>Selecione uma variante</span>}
+          </div>
+        </section>
+      </>}
+      {studioFaceBusy && <p className="studio-custom-hint" role="status">Atualizando personagem…</p>}
+    </div>
+  }
+
   const castPanel = () => <div className="studio-cast-content">
     <header><span><h2>Elenco</h2><small>{stageCharacters.length} na cena</small></span><button className="studio-cast-add-button" onClick={openCastPicker} type="button"><Icon name="plus" />Adicionar</button></header>
     <section className="studio-cast-section" aria-label="Personagens na cena">
@@ -643,7 +790,7 @@ export function StudioPage() {
             {!fullView && inspectorOpen && <aside className={`studio-inspector studio-inspector-${inspectorSide}`} aria-label="Inspector da cena" onPointerDown={(event) => event.stopPropagation()}>
               <header className="studio-inspector-tabs"><button className={inspectorTab === 'editor' ? 'active' : ''} onClick={() => setInspectorTab('editor')} type="button">Editor</button><button className={inspectorTab === 'custom' ? 'active' : ''} onClick={() => setInspectorTab('custom')} type="button">Custom</button></header>
               <button className="studio-inspector-close" onClick={() => setInspectorOpen(false)} type="button">Fechar</button>
-              {inspectorTab === 'editor' ? <div className="studio-inspector-content">{propertyPanel()}</div> : <div className="studio-inspector-empty" />}
+              {inspectorTab === 'editor' ? <div className="studio-inspector-content">{propertyPanel()}</div> : <div className="studio-inspector-content">{customPanel()}</div>}
             </aside>}
           </div>
         </section>

@@ -1,3 +1,5 @@
+import type { CustomizerFaceAppearance } from './customizer'
+
 export type StudioAsset = {
   id: string
   category: 'background' | 'object' | 'character'
@@ -11,6 +13,8 @@ export type StudioElement = {
   kind: 'image' | 'character' | 'narrator' | 'speech' | 'thought'
   assetId?: string
   characterId?: string
+  /** Face choices made to this actor inside this Studio only. */
+  faceAppearance?: CustomizerFaceAppearance
   text: string
   x: number
   y: number
