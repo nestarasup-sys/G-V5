@@ -187,6 +187,9 @@ button:focus-visible, input:focus-visible { outline: 3px solid #ed8caf; outline-
 .studio-inspector-content .studio-side-content { gap:8px; }
 .studio-inspector-empty { flex:1; }
 .studio-custom-face { min-width:0;display:flex;flex-direction:column;gap:9px; }
+.studio-custom-eye-sheet-select { min-width:0;display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;gap:7px;color:#746975;font-size:9px;font-weight:700; }
+.studio-custom-eye-sheet-select select { min-width:0;height:29px;padding:0 7px;border:1px solid #eadce5;border-radius:6px;background:#fff;color:#514651;font-size:9px; }
+.studio-custom-eye-controls { gap:9px; }
 .studio-custom-face-categories { display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px; }
 .studio-custom-face-categories button,.studio-custom-mouth-tabs button { min-width:0;min-height:30px;padding:4px 2px;border:1px solid #eee1e9;border-radius:7px;background:#fff;color:#786b78;font-size:9px;font-weight:700;cursor:pointer; }
 .studio-custom-face-categories button.active,.studio-custom-mouth-tabs button.active { border-color:#e879a3;background:#fff0f6;color:#ae4168; }

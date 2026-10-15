@@ -5,7 +5,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import type { AnimatorAnimation, AnimatorAnimationAsset, AnimatorAnimationDraft, AnimatorAnimationSave, AnimatorAnimationSummary, FaceAssetSave, FaceCatalogItem, FaceCatalogItemSave, FaceCatalogItemSummary, FaceElementKind, FaceSet, FaceSetSave, FaceSetSummary, FaceSheetKind, FabricatorAssetSave, FabricatorHistoryEntry, FabricatorHistorySaveEntry, FabricatorHistorySaveState, FabricatorHistoryState, FabricatorPose, FabricatorPoseDraft, FabricatorPoseDraftSave, FabricatorPoseSave, FabricatorPoseSummary, FabricatorProject, FabricatorProjectSave, FabricatorSlotSummary, HairStyle, HairStyleAsset, HairStyleSave, HairStyleSummary, HairWorkspace, HairWorkspaceAsset, HairWorkspaceSave, ModelPart, PosePart, WardrobeAssetSave, WardrobeCategory, WardrobeSet, WardrobeSetSave, WardrobeSetSummary } from '../src/shared/fabricator'
 import type { CustomizerCharacter } from '../src/shared/customizer'
-import type { StudioAsset, StudioDocument } from '../src/shared/studio'
+import type { StudioAsset, StudioDocument, StudioFaceTransform } from '../src/shared/studio'
 import { applyModelHeadShape } from '../src/shared/headShape'
 
 const slotCount = 10
@@ -529,6 +529,16 @@ function assertTrustedSender(event: IpcMainInvokeEvent): void {
   }
 }
 
+function isStudioFaceTransforms(value: unknown): value is Partial<Record<'eyes', StudioFaceTransform>> {
+  if (value === undefined) return true
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+  const eyes = (value as { eyes?: unknown }).eyes
+  if (eyes === undefined) return true
+  if (!eyes || typeof eyes !== 'object') return false
+  const transform = eyes as Partial<StudioFaceTransform>
+  return [transform.x, transform.y, transform.width, transform.height, transform.rotation].every((number) => typeof number === 'number' && Number.isFinite(number))
+}
+
 function isStudioDocument(value: unknown): value is StudioDocument {
   if (!value || typeof value !== 'object') return false
   const studio = value as Partial<StudioDocument>
@@ -549,6 +559,7 @@ function isStudioDocument(value: unknown): value is StudioDocument {
     && (studio.backgroundAssetId === null || assets.some((asset) => asset.id === studio.backgroundAssetId && asset.category === 'background'))
     && elements.every((element) => Boolean(element && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(element.id) && typeof element.text === 'string'
       && ['image', 'character', 'narrator', 'speech', 'thought'].includes(element.kind)
+      && isStudioFaceTransforms(element.faceTransforms)
       && (element.kind !== 'image' || assets.some((asset) => asset.id === element.assetId && asset.category === 'object'))
       && (element.kind !== 'character' || (typeof element.characterId === 'string' && assets.some((asset) => asset.id === element.assetId && asset.category === 'character')))
       && [element.x, element.y, element.width, element.height, element.rotation, element.zIndex].every(Number.isFinite)))
