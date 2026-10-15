@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { CharacterPortrait } from '../../ui/components/CharacterPortrait'
 import { Icon, type IconName } from '../../ui/components/Icon'
-import type { FaceElementKind, FaceSet, FaceSetSummary, FabricatorPose, FabricatorPoseSummary, FabricatorProject, FabricatorSlotSummary, WardrobeCategory, WardrobeSet, WardrobeSetSummary } from '../../../../shared/fabricator'
+import type { FaceElementKind, FaceSet, FaceSetSummary, FabricatorPose, FabricatorPoseSummary, FabricatorProject, FabricatorSlotSummary, HairStyle, HairStyleSummary, WardrobeCategory, WardrobeSet, WardrobeSetSummary } from '../../../../shared/fabricator'
 import type { CustomizerCharacter, CustomizerFaceAppearance, CustomizerWardrobeCategory, CustomizerWardrobeGroup } from '../../../../shared/customizer'
 import { usePreviewBackground } from '../fabricator/usePreviewBackground'
 import { mapWardrobeComponentToPose } from '../fabricator/wardrobe/poseTransform'
@@ -201,6 +201,60 @@ async function renderArtwork(artwork: CatalogArtwork, maxSize: number): Promise<
   return canvas.toDataURL('image/png')
 }
 
+async function renderArtworkWithHair(artwork: CatalogArtwork, source: FabricatorProject, style: HairStyle | null, maxSize: number): Promise<string | null> {
+  if (!style || style.modelSlot !== source.slot) return renderArtwork(artwork, maxSize)
+  const sourceHead = source.parts.find((part) => /cabe[çc]a|head/i.test(part.name))
+  const targetHead = artwork.parts.find((part) => /cabe[çc]a|head/i.test(part.name))
+  if (!sourceHead || !targetHead || !sourceHead.width || !sourceHead.height) return renderArtwork(artwork, maxSize)
+  const scale = Math.min(maxSize / artwork.width, maxSize / artwork.height)
+  const canvas = document.createElement('canvas')
+  canvas.width = Math.max(1, Math.round(artwork.width * scale)); canvas.height = Math.max(1, Math.round(artwork.height * scale))
+  const context = canvas.getContext('2d')
+  if (!context) return null
+  const hidden = new Set(artwork.hiddenPartIds ?? [])
+  const order = (artwork.layerOrder ?? []).filter((id, index, ids) => ids.indexOf(id) === index && artwork.parts.some((part) => part.id === id))
+  for (const part of artwork.parts) if (!order.includes(part.id)) order.push(part.id)
+  const drawHair = async (side: 'back' | 'front') => {
+    const asset = style[side]
+    if (!asset) return
+    try {
+      const transform = style.transforms[side]
+      const localX = transform.x / sourceHead.width * targetHead.width
+      const localY = transform.y / sourceHead.height * targetHead.height
+      const radians = targetHead.rotation * Math.PI / 180
+      const x = targetHead.x + targetHead.width / 2 + (localX - targetHead.width / 2) * Math.cos(radians) - (localY - targetHead.height / 2) * Math.sin(radians)
+      const y = targetHead.y + targetHead.height / 2 + (localX - targetHead.width / 2) * Math.sin(radians) + (localY - targetHead.height / 2) * Math.cos(radians)
+      const width = asset.width * transform.scaleX / sourceHead.width * targetHead.width
+      const height = asset.height * transform.scaleY / sourceHead.height * targetHead.height
+      const image = await loadCachedImage(asset.dataUrl)
+      context.save()
+      context.translate(x * scale, y * scale)
+      context.rotate((targetHead.rotation + transform.rotation) * Math.PI / 180)
+      context.scale(transform.flipX ? -1 : 1, 1)
+      context.drawImage(image, -width * scale / 2, -height * scale / 2, width * scale, height * scale)
+      context.restore()
+    } catch { /* One missing hair layer must not hide the model preview. */ }
+  }
+  for (const id of order) {
+    const part = artwork.parts.find((item) => item.id === id)
+    if (!part) continue
+    const isHead = part.id === targetHead.id
+    if (isHead) await drawHair('back')
+    if (!hidden.has(part.id)) {
+      try {
+        const image = await loadCachedImage(part.dataUrl)
+        context.save()
+        context.translate((part.x + part.width / 2) * scale, (part.y + part.height / 2) * scale)
+        context.rotate(part.rotation * Math.PI / 180)
+        context.drawImage(image, -part.width * scale / 2, -part.height * scale / 2, part.width * scale, part.height * scale)
+        context.restore()
+      } catch { /* Continue rendering the remaining model layers. */ }
+    }
+    if (isHead) await drawHair('front')
+  }
+  return canvas.toDataURL('image/png')
+}
+
 async function renderFaceOverlay(artwork: CatalogArtwork, source: FabricatorProject | null, face: FaceSet | null, appearance: CustomizerFaceAppearance | undefined): Promise<string | null> {
   if (!source || !face || !appearance || appearance.setId !== face.id || appearance.modelSlot !== source.slot) return null
   const sourceHead = source.parts.find((part) => /cabe[çc]a|head/i.test(part.name))
@@ -280,6 +334,9 @@ export function CustomizerPage() {
   const [faceSets, setFaceSets] = useState<FaceSetSummary[]>([])
   const [faceDetails, setFaceDetails] = useState<Record<string, FaceSet>>({})
   const [faceLoading, setFaceLoading] = useState(false)
+  const [hairStyles, setHairStyles] = useState<HairStyleSummary[]>([])
+  const [hairDetails, setHairDetails] = useState<Record<string, HairStyle>>({})
+  const [hairLoading, setHairLoading] = useState(false)
   const [faceCategory, setFaceCategory] = useState<'eyes' | 'eyebrows' | 'nose' | 'mouth'>('eyes')
   const [selectedClothing, setSelectedClothing] = useState<SelectedWardrobeComponent | null>(null)
   const [wardrobeTransformDraft, setWardrobeTransformDraft] = useState<Pick<CustomizerWardrobeGroup, 'offsetX' | 'offsetY' | 'scaleX' | 'scaleY' | 'rotation'> | null>(null)
@@ -301,6 +358,7 @@ export function CustomizerPage() {
   const selectedCharacter = characters.find((character) => character.id === selectedCharacterId) ?? characters[0] ?? null
   const characterWardrobeGroups = selectedCharacter?.customization.wardrobeGroups ?? []
   const characterFaceAppearance = selectedCharacter?.customization.faceAppearance
+  const characterHairAppearance = selectedCharacter?.customization.hairAppearance
   const characterWardrobeHydrationKey = characterWardrobeGroups.map((group) => `${group.modelSlot}:${group.setId}:${group.category}:${group.componentId ?? ''}`).sort().join('|')
   const visibleCharacters = characters
     .filter((character) => character.name.toLowerCase().includes(rosterQuery.trim().toLowerCase()))
@@ -519,6 +577,25 @@ export function CustomizerPage() {
   }, [selectedCatalogModelSlot, activeModule])
 
   useEffect(() => {
+    if (selectedCatalogModelSlot === null || activeModule !== 'Cabelos') { setHairStyles([]); return }
+    let cancelled = false
+    setHairLoading(true)
+    void window.desktop.listHairStyles(selectedCatalogModelSlot).then(async (summaries) => {
+      const styles = await Promise.all(summaries.map((summary) => window.desktop.loadHairStyle(selectedCatalogModelSlot, summary.id)))
+      if (cancelled) return
+      setHairStyles(summaries)
+      setHairDetails((current) => {
+        const next = { ...current }
+        for (const style of styles) if (style) next[`${selectedCatalogModelSlot}:${style.id}`] = style
+        return next
+      })
+    }).catch((reason: unknown) => {
+      if (!cancelled) setCatalogError(reason instanceof Error ? reason.message : 'Não foi possível carregar o catálogo de cabelos.')
+    }).finally(() => { if (!cancelled) setHairLoading(false) })
+    return () => { cancelled = true }
+  }, [activeModule, selectedCatalogModelSlot])
+
+  useEffect(() => {
     let cancelled = false
     const face = characterFaceAppearance ? faceDetails[`${characterFaceAppearance.modelSlot}:${characterFaceAppearance.setId}`] : null
     if (!selectedArtworkProject || !selectedSourceModelProject || !face) { setSelectedFaceUrl(null); return }
@@ -529,6 +606,28 @@ export function CustomizerPage() {
     })
     return () => { cancelled = true }
   }, [characterFaceAppearance, faceDetails, selectedArtworkProject, selectedSourceModelProject])
+
+  useEffect(() => {
+    let cancelled = false
+    const artwork = selectedArtworkProject
+    const source = selectedSourceModelProject
+    const appearance = selectedCharacter?.customization.hairAppearance
+    if (!artwork || !source) return
+    void (async () => {
+      const key = appearance ? `${appearance.modelSlot}:${appearance.styleId}` : ''
+      const cachedStyle = appearance ? hairDetails[key] : undefined
+      const style = appearance?.modelSlot === source.slot
+        ? cachedStyle ?? await window.desktop.loadHairStyle(appearance.modelSlot, appearance.styleId)
+        : null
+      if (cancelled) return
+      if (style && appearance && !cachedStyle) setHairDetails((current) => ({ ...current, [key]: style }))
+      const url = await renderArtworkWithHair(artwork, source, style, 720)
+      if (!cancelled) setSelectedArtworkUrl(url)
+    })().catch((reason: unknown) => {
+      if (!cancelled) setCatalogError(reason instanceof Error ? reason.message : 'Não foi possível montar o cabelo do personagem.')
+    })
+    return () => { cancelled = true }
+  }, [selectedArtworkProject, selectedSourceModelProject, selectedCharacter?.id, selectedCharacter?.customization.hairAppearance, hairDetails])
 
   useEffect(() => {
     if (activeModule !== 'Roupas' || !wardrobeSets.length) return
@@ -666,6 +765,12 @@ export function CustomizerPage() {
       : { modelSlot: face.modelSlot, setId: face.id, eyeState: 0, eyebrows: true, noseIndex: face.selectedNose, expressionIndex: face.selectedExpression, mouthOpen: false }
     setFaceCategory('eyes')
     await saveCharacterCustomization({ faceAppearance: appearance })
+  }
+
+  async function chooseHairStyle(summary: HairStyleSummary | null) {
+    if (!selectedCharacter) return
+    if (summary) await saveCharacterCustomization({ hairAppearance: { modelSlot: summary.modelSlot, styleId: summary.id } })
+    else await saveCharacterCustomization({ hairAppearance: undefined })
   }
 
   async function updateFaceAppearance(patch: Partial<CustomizerFaceAppearance>) {
@@ -1054,6 +1159,24 @@ export function CustomizerPage() {
                           </section>
                         </>}
                         {!activeFaceSet && <p className="customizer-face-empty">Selecione um rosto para escolher os elementos. A seleção fica salva somente neste personagem.</p>}
+                      </>}
+              </div>}
+              {activeModule === 'Cabelos' && <div className="customizer-hair-catalog">
+                {selectedCatalogModelSlot === null ? <div className="customizer-catalog-empty">Escolha um modelo para ver os cabelos salvos.</div>
+                  : hairLoading ? <div className="customizer-catalog-empty">Carregando cabelos…</div>
+                    : hairStyles.length === 0 ? <div className="customizer-catalog-empty">Este modelo ainda não tem cabelos no catálogo. Importe e salve um cabelo em Cabelos Dev.</div>
+                      : <>
+                        <div className="customizer-hair-heading"><span><strong>Cabelos do Modelo {String(selectedCatalogModelSlot).padStart(2, '0')}</strong><small>Aplicação salva somente em {selectedCharacter?.name ?? 'este personagem'}.</small></span>
+                          {characterHairAppearance?.modelSlot === selectedCatalogModelSlot && <button onClick={() => void chooseHairStyle(null)} type="button"><Icon name="eyeOff" /> Remover do personagem</button>}
+                        </div>
+                        <div className="customizer-hair-grid">{hairStyles.map((summary) => {
+                          const detail = hairDetails[String(summary.modelSlot) + ':' + summary.id]
+                          const selected = characterHairAppearance?.modelSlot === summary.modelSlot && characterHairAppearance.styleId === summary.id
+                          return <button className={'customizer-hair-card' + (selected ? ' selected' : '')} key={summary.id} onClick={() => void chooseHairStyle(summary)} aria-pressed={selected} title={'Aplicar ' + summary.name + ' em ' + (selectedCharacter?.name ?? 'personagem')} type="button">
+                            <span className="customizer-hair-art">{detail?.back && <img className="back" src={detail.back.dataUrl} alt="" />}{detail?.front && <img className="front" src={detail.front.dataUrl} alt="" />}{!detail && <span><Icon name="bow" /></span>}</span>
+                            <b>{summary.name}</b><small>{selected ? 'Aplicado' : 'Usar cabelo'}</small>
+                          </button>
+                        })}</div>
                       </>}
               </div>}
               {activeModule === 'Roupas' && <div className="customizer-wardrobe-catalog">

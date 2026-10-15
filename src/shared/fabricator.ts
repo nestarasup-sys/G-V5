@@ -149,7 +149,7 @@ export type FaceSetSave = Omit<FaceSet, 'sheets' | 'pieces'> & {
 }
 export type FaceSetSummary = Pick<FaceSet, 'id' | 'modelSlot' | 'name' | 'updatedAt'> & { pieceCount: number }
 export type FaceAssetSave = { id: string; dataUrl: string }
-export type HairTransform = { x: number; y: number; scaleX: number; scaleY: number; rotation: number }
+export type HairTransform = { x: number; y: number; scaleX: number; scaleY: number; rotation: number; flipX?: boolean }
 export type HairWorkspace = {
   schemaVersion: 1
   modelSlot: number
@@ -163,6 +163,26 @@ export type HairWorkspaceSave = Omit<HairWorkspace, 'front' | 'back'> & {
   back: Omit<NonNullable<HairWorkspace['back']>, 'dataUrl'> | null
 }
 export type HairWorkspaceAsset = { id: 'front' | 'back'; dataUrl: string }
+export type HairStyle = {
+  schemaVersion: 1
+  id: string
+  modelSlot: number
+  name: string
+  front: { dataUrl: string; width: number; height: number } | null
+  back: { dataUrl: string; width: number; height: number } | null
+  transforms: { front: HairTransform; back: HairTransform }
+  createdAt: string
+  updatedAt: string
+}
+export type HairStyleSave = Omit<HairStyle, 'front' | 'back'> & {
+  front: Omit<NonNullable<HairStyle['front']>, 'dataUrl'> | null
+  back: Omit<NonNullable<HairStyle['back']>, 'dataUrl'> | null
+}
+export type HairStyleSummary = Omit<HairStyle, 'front' | 'back'> & {
+  front: Omit<NonNullable<HairStyle['front']>, 'dataUrl'> | null
+  back: Omit<NonNullable<HairStyle['back']>, 'dataUrl'> | null
+}
+export type HairStyleAsset = { id: 'front' | 'back'; dataUrl: string }
 export type PoseWardrobeAttachment = { setId: string; category: WardrobeCategory; attachedPartId: string; referenceAnchor: { x: number; y: number }; referenceRotation: number }
 export type WardrobePosePart = PosePart & { wardrobeAttachment?: PoseWardrobeAttachment }
 export type FabricatorPose = {
@@ -210,4 +230,8 @@ export type FabricatorDesktopApi = {
   deleteFaceSet: (modelSlot: number, id: string) => Promise<void>
   loadHairWorkspace: (modelSlot: number) => Promise<HairWorkspace | null>
   saveHairWorkspace: (modelSlot: number, workspace: HairWorkspaceSave, assets: HairWorkspaceAsset[]) => Promise<void>
+  listHairStyles: (modelSlot: number) => Promise<HairStyleSummary[]>
+  loadHairStyle: (modelSlot: number, id: string) => Promise<HairStyle | null>
+  saveHairStyle: (modelSlot: number, style: HairStyleSave, assets: HairStyleAsset[]) => Promise<void>
+  deleteHairStyle: (modelSlot: number, id: string) => Promise<void>
 }

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type PointerEvent } from 'react'
-import type { FabricatorProject, FabricatorSlotSummary, HairTransform, HairWorkspace as HairWorkspaceData, HairWorkspaceSave, ModelPart } from '../../../../shared/fabricator'
+import type { FabricatorProject, FabricatorSlotSummary, HairStyle, HairStyleSave, HairTransform, HairWorkspace as HairWorkspaceData, HairWorkspaceSave, ModelPart } from '../../../../shared/fabricator'
 import { Icon } from '../../ui/components/Icon'
 import { usePreviewBackground } from './usePreviewBackground'
 
@@ -65,6 +65,8 @@ export function HairWorkspace() {
   const [modelSlot, setModelSlot] = useState(1)
   const [project, setProject] = useState<FabricatorProject | null>(null)
   const [hairWorkspace, setHairWorkspace] = useState<HairWorkspaceData | null>(null)
+  const [hairStyles, setHairStyles] = useState<HairStyle[]>([])
+  const [activeStyleId, setActiveStyleId] = useState<string | null>(null)
   const [selectedSide, setSelectedSide] = useState<HairSide>('front')
   const [loadingModels, setLoadingModels] = useState(true)
   const [loadingProject, setLoadingProject] = useState(false)
@@ -95,6 +97,7 @@ export function HairWorkspace() {
 
   useEffect(() => {
     let cancelled = false
+    setActiveStyleId(null)
     setProject(null)
     setHairWorkspace(null)
     setDirty(false)
@@ -127,6 +130,17 @@ export function HairWorkspace() {
     return () => { cancelled = true }
   }, [modelSlot, head])
 
+  useEffect(() => {
+    let cancelled = false
+    void window.desktop.listHairStyles(modelSlot).then(async (summaries) => {
+      const styles = await Promise.all(summaries.map((summary) => window.desktop.loadHairStyle(modelSlot, summary.id)))
+      if (!cancelled) setHairStyles(styles.filter((style): style is HairStyle => Boolean(style)))
+    }).catch((reason: unknown) => {
+      if (!cancelled) setError(reason instanceof Error ? reason.message : 'Não foi possível carregar o catálogo de cabelos.')
+    })
+    return () => { cancelled = true }
+  }, [modelSlot])
+
   function updateWorkspace(updater: (current: HairWorkspaceData) => HairWorkspaceData) {
     setHairWorkspace((current) => current ? { ...updater(current), updatedAt: new Date().toISOString() } : current)
     setDirty(true)
@@ -144,6 +158,7 @@ export function HairWorkspace() {
       if (image.naturalHeight < 2) throw new Error('A folha precisa ter o cabelo frontal em cima e o traseiro em baixo.')
       const { front, back } = await processHairSheet(dataUrl)
       updateWorkspace((current) => ({ ...current, front, back, transforms: { front: initialTransform('front', head, front), back: initialTransform('back', head, back) } }))
+      setActiveStyleId(null)
       setSelectedSide('front')
       setNotice('Folha separada: frontal na metade de cima e traseiro na metade de baixo. Ajuste cada parte na prévia.')
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível separar a folha de cabelo.') }
@@ -192,6 +207,50 @@ export function HairWorkspace() {
     finally { setSaving(false) }
   }
 
+  async function saveStyle() {
+    if (!hairWorkspace || (!hairWorkspace.front && !hairWorkspace.back) || saving) return
+    setSaving(true); setError(''); setNotice('')
+    try {
+      const id = activeStyleId ?? crypto.randomUUID()
+      const existing = hairStyles.find((style) => style.id === id)
+      const { front, back, ...rest } = hairWorkspace
+      const now = new Date().toISOString()
+      const saved: HairStyleSave = {
+        ...rest, id, name: existing?.name ?? `Cabelo ${String(hairStyles.length + 1).padStart(2, '0')}`,
+        front: front ? { width: front.width, height: front.height } : null,
+        back: back ? { width: back.width, height: back.height } : null,
+        createdAt: existing?.createdAt ?? now, updatedAt: now
+      }
+      const assets = [front && { id: 'front' as const, dataUrl: front.dataUrl }, back && { id: 'back' as const, dataUrl: back.dataUrl }].filter((asset): asset is NonNullable<typeof asset> => asset !== null)
+      await window.desktop.saveHairStyle(modelSlot, saved, assets)
+      const detail: HairStyle = { ...saved, front: front ? { ...front } : null, back: back ? { ...back } : null }
+      setHairStyles((current) => [detail, ...current.filter((style) => style.id !== id)])
+      setActiveStyleId(id); setDirty(false); setNotice('Cabelo salvo no catálogo deste modelo e disponível em Customizar.')
+    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível salvar o cabelo no catálogo.') }
+    finally { setSaving(false) }
+  }
+
+  function openStyle(style: HairStyle) {
+    if (dirty && !window.confirm('Há alterações não salvas. Abrir este cabelo e descartar as alterações?')) return
+    setHairWorkspace((current) => current ? { ...current, front: style.front ? { ...style.front } : null, back: style.back ? { ...style.back } : null, transforms: structuredClone(style.transforms), updatedAt: new Date().toISOString() } : current)
+    setSelectedSide(style.front ? 'front' : 'back')
+    setActiveStyleId(style.id); setDirty(false); setError(''); setNotice(`Editando ${style.name}. Salve para atualizar ou use Salvar como novo cabelo após importar outra folha.`)
+  }
+
+  async function deleteStyle(style: HairStyle) {
+    if (!window.confirm(`Excluir ${style.name} do catálogo deste modelo? Personagens que já usam esse cabelo deixarão de encontrá-lo.`)) return
+    try {
+      await window.desktop.deleteHairStyle(modelSlot, style.id)
+      setHairStyles((current) => current.filter((item) => item.id !== style.id))
+      if (activeStyleId === style.id) setActiveStyleId(null)
+      setNotice(`${style.name} foi excluído do catálogo.`)
+    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível excluir o cabelo.') }
+  }
+
+  function flipSelectedHair() {
+    changeTransform({ flipX: !selectedTransform?.flipX })
+  }
+
   function resetSelectedTransform() {
     if (!head || !selectedAsset) return
     changeTransform(initialTransform(selectedSide, head, selectedAsset))
@@ -202,7 +261,7 @@ export function HairWorkspace() {
       <span className="model-slot-logo"><Icon name="bow" /></span>
       <span><strong>Cabelos Dev</strong><small>Monte os cabelos para cada modelo</small></span>
       <label>Modelo de referência<select value={modelSlot} onChange={(event) => setModelSlot(Number(event.target.value))} disabled={loadingModels}>{models.map((model, index) => model && <option key={model.slot} value={model.slot}>Modelo {String(index + 1).padStart(2, '0')} · {model.name}</option>)}</select></label>
-      <button className="hair-dev-save" onClick={() => void saveHair()} disabled={!hairWorkspace || !dirty || saving || loadingHair} type="button"><Icon name="check" />{saving ? 'Salvando…' : 'Salvar'}</button>
+      <button className="hair-dev-save" onClick={() => void saveHair()} disabled={!hairWorkspace || !dirty || saving || loadingHair} title="Salvar a edição de trabalho deste modelo" type="button"><Icon name="check" />Salvar rascunho</button>
     </header>
     <div className="hair-dev-body">
       <section className="hair-dev-preview" aria-label="Prévia da cabeça">
@@ -234,8 +293,15 @@ export function HairWorkspace() {
           </div>
           {([['scaleX', 'Largura · espremer/esticar'], ['scaleY', 'Altura · espremer/esticar']] as const).map(([field, label]) => <label className="hair-dev-range" key={field}><span><b>{label}</b><output>{Math.round(selectedTransform[field] * 100)}%</output></span><input type="range" min="10" max="500" step="1" value={Math.max(10, Math.min(500, Math.round(selectedTransform[field] * 100)))} onChange={(event) => changeTransform({ [field]: Number(event.target.value) / 100 })} /><input className="hair-dev-range-number" type="number" min="10" max="1000" step="1" aria-label={label + ' em porcentagem'} value={Math.round(selectedTransform[field] * 100)} onChange={(event) => changeTransform({ [field]: Math.max(.1, Math.min(10, Number(event.target.value) / 100)) })} /></label>)}
           <label className="hair-dev-range"><span><b>Rotação</b><output>{Math.round(selectedTransform.rotation)}°</output></span><input type="range" min="-180" max="180" step="1" value={Math.max(-180, Math.min(180, Math.round(selectedTransform.rotation)))} onChange={(event) => changeTransform({ rotation: Number(event.target.value) })} /></label>
-          <button className="hair-dev-reset" onClick={resetSelectedTransform} type="button">Restaurar encaixe inicial</button>
+          <div className="hair-dev-piece-actions"><button className="hair-dev-reset" onClick={flipSelectedHair} type="button"><Icon name="flipHorizontal" /> Inverter na horizontal</button><button className="hair-dev-reset" onClick={resetSelectedTransform} type="button">Restaurar encaixe inicial</button></div>
         </> : <p className="hair-dev-empty">Envie a folha para selecionar e ajustar cada parte do cabelo separadamente.</p>}
+        <section className="hair-dev-catalog" aria-label="Catálogo de cabelos">
+          <header><span><strong>Catálogo deste modelo</strong><small>{hairStyles.length} cabelos salvos</small></span><button className="hair-dev-catalog-save" onClick={() => void saveStyle()} disabled={!hairWorkspace || (!hairWorkspace.front && !hairWorkspace.back) || saving || loadingHair} type="button"><Icon name="check" />{activeStyleId ? 'Salvar cabelo' : 'Salvar no catálogo'}</button></header>
+          {hairStyles.length ? <div className="hair-dev-catalog-grid">{hairStyles.map((style) => <article className={'hair-dev-catalog-card' + (style.id === activeStyleId ? ' active' : '')} key={style.id}>
+            <button className="hair-dev-catalog-open" onClick={() => openStyle(style)} title={`Editar ${style.name}`} type="button"><span>{style.back && <img src={style.back.dataUrl} alt="" />}{style.front && <img src={style.front.dataUrl} alt="" />}</span><b>{style.name}</b></button>
+            <button className="hair-dev-catalog-delete" onClick={() => void deleteStyle(style)} aria-label={`Excluir ${style.name}`} title="Excluir cabelo" type="button"><Icon name="trash" /></button>
+          </article>)}</div> : <p className="hair-dev-catalog-empty">Ajuste o cabelo na prévia e clique em “Salvar no catálogo”.</p>}
+        </section>
       </section>
     </div>
   </section>
@@ -244,5 +310,5 @@ export function HairWorkspace() {
 function HairPiece({ side, asset, transform, head, selected, onPointerDown }: { side: HairSide; asset: HairAsset; transform: HairTransform; head: ModelPart; selected: boolean; onPointerDown: (event: PointerEvent<HTMLImageElement>, side: HairSide) => void }) {
   const width = asset.width * transform.scaleX / head.width * 100
   const height = asset.height * transform.scaleY / head.height * 100
-  return <img className={'hair-dev-piece hair-dev-piece-' + side + (selected ? ' selected' : '')} src={asset.dataUrl} alt={'Cabelo ' + (side === 'front' ? 'frontal' : 'traseiro')} draggable={false} onPointerDown={(event) => onPointerDown(event, side)} style={{ left: transform.x / head.width * 100 + '%', top: transform.y / head.height * 100 + '%', width: width + '%', height: height + '%', transform: 'translate(-50%, -50%) rotate(' + transform.rotation + 'deg)' }} />
+  return <img className={'hair-dev-piece hair-dev-piece-' + side + (selected ? ' selected' : '')} src={asset.dataUrl} alt={'Cabelo ' + (side === 'front' ? 'frontal' : 'traseiro')} draggable={false} onPointerDown={(event) => onPointerDown(event, side)} style={{ left: transform.x / head.width * 100 + '%', top: transform.y / head.height * 100 + '%', width: width + '%', height: height + '%', transform: 'translate(-50%, -50%) rotate(' + transform.rotation + 'deg) scaleX(' + (transform.flipX ? -1 : 1) + ')' }} />
 }

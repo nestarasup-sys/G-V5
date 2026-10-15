@@ -121,6 +121,24 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .customizer-face-option:hover,.customizer-face-option.selected { border-color:#e987aa;background:#fff7fa;box-shadow:inset 0 0 0 1px #f7d8e3; }
 .customizer-face-toggle { max-width:160px; }
 .customizer-face-empty { margin:4px 0;padding:10px;border:1px dashed #eee2e9;border-radius:8px;color:#9b8994;font-size:10px;line-height:1.5;text-align:center; }
+.customizer-hair-catalog { min-height:0;flex:1;display:flex;flex-direction:column;gap:10px;overflow:auto; }
+.customizer-hair-heading { display:flex;align-items:center;justify-content:space-between;gap:8px; }
+.customizer-hair-heading>span { display:grid;gap:4px; }
+.customizer-hair-heading strong { color:#534a55;font:750 12px Manrope,sans-serif; }
+.customizer-hair-heading small { color:#9b8994;font-size:9px; }
+.customizer-hair-heading button { min-height:29px;display:flex;align-items:center;gap:5px;padding:0 8px;border:1px solid #eee2e8;border-radius:7px;background:#fff;color:#8b6677;font-size:10px;font-weight:700;cursor:pointer; }
+.customizer-hair-heading button svg { width:13px;height:13px; }
+.customizer-hair-grid { display:grid;grid-template-columns:repeat(auto-fill,minmax(92px,1fr));align-content:start;gap:8px; }
+.customizer-hair-card { min-width:0;display:grid;gap:5px;padding:6px;border:1px solid #eee8ed;border-radius:9px;background:#fff;color:#675d68;text-align:center;cursor:pointer; }
+.customizer-hair-card:hover,.customizer-hair-card.selected { border-color:#e987aa;background:#fff7fa;box-shadow:inset 0 0 0 1px #f7d8e3; }
+.customizer-hair-art { position:relative;width:100%;height:82px;display:block;overflow:hidden;border-radius:6px;background-color:#fdfcfd;background-image:linear-gradient(45deg,#eee9ee 25%,transparent 25%),linear-gradient(-45deg,#eee9ee 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#eee9ee 75%),linear-gradient(-45deg,transparent 75%,#eee9ee 75%);background-size:12px 12px; }
+.customizer-hair-art img { position:absolute;inset:7px;width:calc(100% - 14px);height:calc(100% - 14px);object-fit:contain; }
+.customizer-hair-art img.back { z-index:1; }
+.customizer-hair-art img.front { z-index:2; }
+.customizer-hair-art>span { width:100%;height:100%;display:grid;place-items:center;color:#bd7893; }
+.customizer-hair-art svg { width:24px;height:24px; }
+.customizer-hair-card>b { overflow:hidden;font-size:10px;text-overflow:ellipsis;white-space:nowrap; }
+.customizer-hair-card>small { color:#9d8290;font-size:9px; }
 .customizer-wardrobe-catalog { min-height:0;flex:1;display:flex;flex-direction:column;gap:10px; }
 .customizer-wardrobe-toolbar { display:flex;align-items:center;gap:7px; }
 .customizer-wardrobe-customize-tab { min-width:0;min-height:36px;flex:1;display:flex;align-items:center;justify-content:center;gap:7px;border:1px solid #eee9ed;border-radius:8px;background:#fff;color:#706773;font-size:12px;font-weight:750;cursor:pointer; }
@@ -411,6 +429,28 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .hair-dev-range input[type=range] { width:100%;accent-color:#c64f7d; }
 .hair-dev-reset { min-height:31px;border:1px solid #eddae3;border-radius:7px;background:#fff;color:#8d596e;font-size:10px;font-weight:700;cursor:pointer; }
 .hair-dev-reset:hover { border-color:#dc8daa;background:#fff5f8; }
+.hair-dev-piece-actions { display:grid;grid-template-columns:1fr 1fr;gap:7px; }
+.hair-dev-piece-actions .hair-dev-reset { display:flex;align-items:center;justify-content:center;gap:5px;padding:0 7px; }
+.hair-dev-piece-actions svg { width:13px;height:13px; }
+.hair-dev-catalog { display:flex;flex-direction:column;gap:8px;margin-top:4px;padding-top:10px;border-top:1px solid #f0e9ed; }
+.hair-dev-catalog>header { display:flex;align-items:center;justify-content:space-between;gap:7px; }
+.hair-dev-catalog>header>span { display:grid;gap:3px; }
+.hair-dev-catalog>header strong { color:#514651;font-size:11px; }
+.hair-dev-catalog>header small { color:#9e929b;font-size:9px; }
+.hair-dev-catalog-save { min-height:29px;display:flex;align-items:center;gap:5px;padding:0 8px;border:1px solid #e5aac0;border-radius:7px;background:#fff3f7;color:#a9436d;font-size:9px;font-weight:750;cursor:pointer; }
+.hair-dev-catalog-save:disabled { opacity:.48;cursor:not-allowed; }
+.hair-dev-catalog-save svg { width:13px;height:13px; }
+.hair-dev-catalog-grid { display:grid;grid-template-columns:repeat(auto-fill,minmax(82px,1fr));gap:7px; }
+.hair-dev-catalog-card { min-width:0;position:relative;overflow:hidden;border:1px solid #eee8ed;border-radius:8px;background:#fff; }
+.hair-dev-catalog-card.active { border-color:#e987aa;box-shadow:inset 0 0 0 1px #f7d8e3; }
+.hair-dev-catalog-open { width:100%;display:grid;gap:4px;padding:5px;border:0;background:transparent;cursor:pointer; }
+.hair-dev-catalog-open>span { position:relative;height:74px;display:block;overflow:hidden;border-radius:5px;background-color:#fdfcfd;background-image:linear-gradient(45deg,#eee9ee 25%,transparent 25%),linear-gradient(-45deg,#eee9ee 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#eee9ee 75%),linear-gradient(-45deg,transparent 75%,#eee9ee 75%);background-size:12px 12px; }
+.hair-dev-catalog-open img { position:absolute;inset:5px;width:calc(100% - 10px);height:calc(100% - 10px);object-fit:contain; }
+.hair-dev-catalog-open b { overflow:hidden;color:#665b67;font-size:9px;text-overflow:ellipsis;white-space:nowrap; }
+.hair-dev-catalog-delete { position:absolute;top:4px;right:4px;width:23px;height:23px;display:grid;place-items:center;padding:0;border:1px solid #f0d6dd;border-radius:6px;background:#ffffffed;color:#a75d75;cursor:pointer; }
+.hair-dev-catalog-delete:hover { color:#be365f;background:#fff1f4; }
+.hair-dev-catalog-delete svg { width:13px;height:13px; }
+.hair-dev-catalog-empty { margin:0;padding:8px;border:1px dashed #eee2e9;border-radius:8px;color:#9b8994;font-size:9px;line-height:1.5;text-align:center; }
 .hair-dev-empty { margin:4px 0;padding:10px;border:1px dashed #eee2e9;border-radius:8px;color:#9b8994;font-size:10px;line-height:1.5;text-align:center; }
 .hair-dev-editor-space { min-width:0;min-height:0;background:#fff; }
 .model-transform-controls { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; padding: 7px; border: 1px solid #f0ebef; border-radius: 8px; background: #fdfbfc; }

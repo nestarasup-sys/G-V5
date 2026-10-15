@@ -26,7 +26,11 @@ const fabricatorApi: FabricatorDesktopApi = {
   saveFaceSet: (modelSlot, set, assets) => ipcRenderer.invoke('fabricator:face:save', modelSlot, set, assets),
   deleteFaceSet: (modelSlot, id) => ipcRenderer.invoke('fabricator:face:delete', modelSlot, id),
   loadHairWorkspace: (modelSlot) => ipcRenderer.invoke('fabricator:hair:load', modelSlot),
-  saveHairWorkspace: (modelSlot, workspace, assets) => ipcRenderer.invoke('fabricator:hair:save', modelSlot, workspace, assets)
+  saveHairWorkspace: (modelSlot, workspace, assets) => ipcRenderer.invoke('fabricator:hair:save', modelSlot, workspace, assets),
+  listHairStyles: (modelSlot) => ipcRenderer.invoke('fabricator:hair:styles:list', modelSlot),
+  loadHairStyle: (modelSlot, id) => ipcRenderer.invoke('fabricator:hair:styles:load', modelSlot, id),
+  saveHairStyle: (modelSlot, style, assets) => ipcRenderer.invoke('fabricator:hair:styles:save', modelSlot, style, assets),
+  deleteHairStyle: (modelSlot, id) => ipcRenderer.invoke('fabricator:hair:styles:delete', modelSlot, id)
 }
 
 const customizerApi: CustomizerDesktopApi = {

@@ -3,7 +3,7 @@ import { mkdir, readFile, writeFile, readdir, unlink, rename, stat, access, rm, 
 import { basename, dirname, extname, join, resolve } from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
-import type { FaceAssetSave, FaceElementKind, FaceSet, FaceSetSave, FaceSetSummary, FaceSheetKind, FabricatorAssetSave, FabricatorHistoryEntry, FabricatorHistorySaveEntry, FabricatorHistorySaveState, FabricatorHistoryState, FabricatorPose, FabricatorPoseDraft, FabricatorPoseDraftSave, FabricatorPoseSave, FabricatorPoseSummary, FabricatorProject, FabricatorProjectSave, FabricatorSlotSummary, HairWorkspace, HairWorkspaceAsset, HairWorkspaceSave, ModelPart, PosePart, WardrobeAssetSave, WardrobeCategory, WardrobeSet, WardrobeSetSave, WardrobeSetSummary } from '../src/shared/fabricator'
+import type { FaceAssetSave, FaceElementKind, FaceSet, FaceSetSave, FaceSetSummary, FaceSheetKind, FabricatorAssetSave, FabricatorHistoryEntry, FabricatorHistorySaveEntry, FabricatorHistorySaveState, FabricatorHistoryState, FabricatorPose, FabricatorPoseDraft, FabricatorPoseDraftSave, FabricatorPoseSave, FabricatorPoseSummary, FabricatorProject, FabricatorProjectSave, FabricatorSlotSummary, HairStyle, HairStyleAsset, HairStyleSave, HairStyleSummary, HairWorkspace, HairWorkspaceAsset, HairWorkspaceSave, ModelPart, PosePart, WardrobeAssetSave, WardrobeCategory, WardrobeSet, WardrobeSetSave, WardrobeSetSummary } from '../src/shared/fabricator'
 import type { CustomizerCharacter } from '../src/shared/customizer'
 import { applyModelHeadShape } from '../src/shared/headShape'
 
@@ -21,6 +21,7 @@ const wardrobeSetPath = (modelSlot: number, id: string) => join(wardrobeModelPat
 const faceModelPath = (modelSlot: number) => join(app.getPath('userData'), 'fabricator', 'faces', `model-${modelSlot}`)
 const faceSetPath = (modelSlot: number, id: string) => join(faceModelPath(modelSlot), `set-${id}`)
 const hairModelPath = (modelSlot: number) => join(app.getPath('userData'), 'fabricator', 'hair', `model-${modelSlot}`)
+const hairStylePath = (modelSlot: number, id: string) => join(hairModelPath(modelSlot), 'styles', `style-${id}`)
 const characterLibraryPath = () => join(app.getPath('userData'), 'customizer', 'characters')
 const characterManifestPath = () => join(characterLibraryPath(), 'characters.json')
 const fabricatorSaveQueues = new Map<number, Promise<void>>()
@@ -78,6 +79,11 @@ function isCustomizerCharacter(value: unknown): value is CustomizerCharacter {
       && Number.isInteger(character.customization.faceAppearance.noseIndex) && character.customization.faceAppearance.noseIndex >= 0 && character.customization.faceAppearance.noseIndex <= 5
       && Number.isInteger(character.customization.faceAppearance.expressionIndex) && character.customization.faceAppearance.expressionIndex >= 0 && character.customization.faceAppearance.expressionIndex <= 20
       && typeof character.customization.faceAppearance.mouthOpen === 'boolean'
+    ))
+    && (character.customization.hairAppearance === undefined || (
+      !!character.customization.hairAppearance
+      && isValidModelSlot(character.customization.hairAppearance.modelSlot)
+      && isValidWardrobeId(character.customization.hairAppearance.styleId)
     ))
     && typeof character.createdAt === 'string' && typeof character.updatedAt === 'string'
 }
@@ -183,7 +189,8 @@ function validHairWorkspace(modelSlot: number, workspace: HairWorkspaceSave): bo
     const transform = workspace.transforms[side]
     if (asset && (!Number.isFinite(asset.width) || !Number.isFinite(asset.height) || asset.width <= 0 || asset.height <= 0 || asset.width * asset.height > 32_000_000)) return false
     if (!transform || ![transform.x, transform.y, transform.scaleX, transform.scaleY, transform.rotation].every(Number.isFinite)
-      || Math.abs(transform.x) > 100_000 || Math.abs(transform.y) > 100_000 || transform.scaleX <= 0 || transform.scaleY <= 0 || transform.scaleX > 20 || transform.scaleY > 20) return false
+      || Math.abs(transform.x) > 100_000 || Math.abs(transform.y) > 100_000 || transform.scaleX <= 0 || transform.scaleY <= 0 || transform.scaleX > 20 || transform.scaleY > 20
+      || (transform.flipX !== undefined && typeof transform.flipX !== 'boolean')) return false
   }
   return typeof workspace.updatedAt === 'string'
 }
@@ -214,6 +221,57 @@ async function readHairWorkspace(modelSlot: number): Promise<HairWorkspace | nul
     const folder = hairModelPath(modelSlot)
     const saved = JSON.parse(await readFile(join(folder, 'hair.json'), 'utf8')) as HairWorkspaceSave
     if (!validHairWorkspace(modelSlot, saved)) return null
+    const loadPart = async (side: 'front' | 'back') => saved[side]
+      ? { ...saved[side]!, dataUrl: `data:image/png;base64,${(await readFile(join(folder, 'images', `${side}.png`))).toString('base64')}` }
+      : null
+    return { ...saved, front: await loadPart('front'), back: await loadPart('back') }
+  } catch (reason) {
+    if ((reason as NodeJS.ErrnoException).code === 'ENOENT') return null
+    throw reason
+  }
+}
+
+function validHairStyle(modelSlot: number, style: HairStyleSave): boolean {
+  if (!isValidModelSlot(modelSlot) || style?.schemaVersion !== 1 || style.modelSlot !== modelSlot || !isValidWardrobeId(style.id)
+    || typeof style.name !== 'string' || !style.name.trim() || style.name.length > 80 || !style.transforms) return false
+  if (!style.front && !style.back) return false
+  for (const side of ['front', 'back'] as const) {
+    const asset = style[side]
+    const transform = style.transforms[side]
+    if (asset && (!Number.isFinite(asset.width) || !Number.isFinite(asset.height) || asset.width <= 0 || asset.height <= 0 || asset.width * asset.height > 32_000_000)) return false
+    if (!transform || ![transform.x, transform.y, transform.scaleX, transform.scaleY, transform.rotation].every(Number.isFinite)
+      || Math.abs(transform.x) > 100_000 || Math.abs(transform.y) > 100_000 || transform.scaleX <= 0 || transform.scaleY <= 0 || transform.scaleX > 20 || transform.scaleY > 20
+      || (transform.flipX !== undefined && typeof transform.flipX !== 'boolean')) return false
+  }
+  return typeof style.createdAt === 'string' && typeof style.updatedAt === 'string'
+}
+
+async function writeHairStyle(modelSlot: number, style: HairStyleSave, assets: HairStyleAsset[]): Promise<void> {
+  if (!validHairStyle(modelSlot, style)) throw new Error('Estilo de cabelo inválido.')
+  const folder = hairStylePath(modelSlot, style.id)
+  const images = join(folder, 'images')
+  await mkdir(images, { recursive: true })
+  const expected = new Set((['front', 'back'] as const).filter((side) => style[side] !== null))
+  if (assets.some((asset) => !expected.has(asset.id)) || new Set(assets.map((asset) => asset.id)).size !== assets.length) throw new Error('Imagens do cabelo inválidas.')
+  for (const asset of assets) await writeFile(join(images, `${asset.id}.png`), dataUrlBuffer(asset.dataUrl))
+  for (const side of expected) {
+    try { await access(join(images, `${side}.png`)) } catch (reason) {
+      if ((reason as NodeJS.ErrnoException).code !== 'ENOENT') throw reason
+      throw new Error(`Imagem de cabelo ausente: ${side}.`)
+    }
+  }
+  for (const side of ['front', 'back'] as const) if (!expected.has(side)) await unlink(join(images, `${side}.png`)).catch((reason: NodeJS.ErrnoException) => { if (reason.code !== 'ENOENT') throw reason })
+  const temporary = join(folder, 'hair-style.json.tmp')
+  await writeFile(temporary, JSON.stringify(style), 'utf8')
+  await rename(temporary, join(folder, 'hair-style.json'))
+}
+
+async function readHairStyle(modelSlot: number, id: string): Promise<HairStyle | null> {
+  if (!isValidModelSlot(modelSlot) || !isValidWardrobeId(id)) throw new Error('Estilo de cabelo inválido.')
+  try {
+    const folder = hairStylePath(modelSlot, id)
+    const saved = JSON.parse(await readFile(join(folder, 'hair-style.json'), 'utf8')) as HairStyleSave
+    if (!validHairStyle(modelSlot, saved) || saved.id !== id) return null
     const loadPart = async (side: 'front' | 'back') => saved[side]
       ? { ...saved[side]!, dataUrl: `data:image/png;base64,${(await readFile(join(folder, 'images', `${side}.png`))).toString('base64')}` }
       : null
@@ -933,6 +991,71 @@ async function registerFabricatorHandlers(): Promise<void> {
     assertTrustedSender(event)
     const previous = hairSaveQueues.get(modelSlot) ?? Promise.resolve()
     const current = previous.catch(() => undefined).then(() => writeHairWorkspace(modelSlot, workspace, assets))
+    hairSaveQueues.set(modelSlot, current)
+    try { await current } finally { if (hairSaveQueues.get(modelSlot) === current) hairSaveQueues.delete(modelSlot) }
+  })
+
+  ipcMain.handle('fabricator:hair:styles:list', async (event, modelSlot: number): Promise<HairStyleSummary[]> => {
+    assertTrustedSender(event)
+    if (!isValidModelSlot(modelSlot)) throw new Error('Modelo inválido.')
+    try {
+      const stylesFolder = join(hairModelPath(modelSlot), 'styles')
+      await mkdir(stylesFolder, { recursive: true })
+      const entries = await readdir(stylesFolder, { withFileTypes: true })
+      const styles: HairStyleSummary[] = []
+      for (const entry of entries) {
+        if (!entry.isDirectory() || !/^style-[a-zA-Z0-9_-]{1,80}$/.test(entry.name)) continue
+        try {
+          const saved = JSON.parse(await readFile(join(hairModelPath(modelSlot), 'styles', entry.name, 'hair-style.json'), 'utf8')) as HairStyleSave
+          if (validHairStyle(modelSlot, saved) && saved.id === entry.name.slice(6)) styles.push({ ...saved, front: saved.front, back: saved.back })
+        } catch { /* Configurações incompletas não aparecem no catálogo. */ }
+      }
+      const migrationMarker = join(hairModelPath(modelSlot), 'hair-style-migration-v1')
+      try { await access(migrationMarker) } catch (reason) {
+        if ((reason as NodeJS.ErrnoException).code !== 'ENOENT') throw reason
+        const legacy = await readHairWorkspace(modelSlot)
+        if (legacy && (legacy.front || legacy.back) && !styles.some((style) => style.id === 'legacy-workspace')) {
+          const now = legacy.updatedAt || new Date().toISOString()
+          const saved: HairStyleSave = {
+            schemaVersion: 1, id: 'legacy-workspace', modelSlot, name: 'Cabelo 01',
+            front: legacy.front ? { width: legacy.front.width, height: legacy.front.height } : null,
+            back: legacy.back ? { width: legacy.back.width, height: legacy.back.height } : null,
+            transforms: legacy.transforms, createdAt: now, updatedAt: now
+          }
+          const assets = [legacy.front && { id: 'front' as const, dataUrl: legacy.front.dataUrl }, legacy.back && { id: 'back' as const, dataUrl: legacy.back.dataUrl }].filter((asset): asset is NonNullable<typeof asset> => asset !== null)
+          await writeHairStyle(modelSlot, saved, assets)
+          styles.push(saved)
+        }
+        await writeFile(migrationMarker, new Date().toISOString(), 'utf8')
+      }
+      return styles.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+    } catch (reason) {
+      if ((reason as NodeJS.ErrnoException).code === 'ENOENT') return []
+      throw reason
+    }
+  })
+
+  ipcMain.handle('fabricator:hair:styles:load', async (event, modelSlot: number, id: string): Promise<HairStyle | null> => {
+    assertTrustedSender(event)
+    return readHairStyle(modelSlot, id)
+  })
+
+  ipcMain.handle('fabricator:hair:styles:save', async (event, modelSlot: number, style: HairStyleSave, assets: HairStyleAsset[]): Promise<void> => {
+    assertTrustedSender(event)
+    const previous = hairSaveQueues.get(modelSlot) ?? Promise.resolve()
+    const current = previous.catch(() => undefined).then(() => writeHairStyle(modelSlot, style, assets))
+    hairSaveQueues.set(modelSlot, current)
+    try { await current } finally { if (hairSaveQueues.get(modelSlot) === current) hairSaveQueues.delete(modelSlot) }
+  })
+
+  ipcMain.handle('fabricator:hair:styles:delete', async (event, modelSlot: number, id: string): Promise<void> => {
+    assertTrustedSender(event)
+    if (!isValidModelSlot(modelSlot) || !isValidWardrobeId(id)) throw new Error('Estilo de cabelo inválido.')
+    const base = resolve(join(hairModelPath(modelSlot), 'styles'))
+    const target = resolve(hairStylePath(modelSlot, id))
+    if (dirname(target) !== base || basename(target) !== `style-${id}`) throw new Error('Caminho de exclusão inválido.')
+    const previous = hairSaveQueues.get(modelSlot) ?? Promise.resolve()
+    const current = previous.catch(() => undefined).then(() => rm(target, { recursive: true, force: true }))
     hairSaveQueues.set(modelSlot, current)
     try { await current } finally { if (hairSaveQueues.get(modelSlot) === current) hairSaveQueues.delete(modelSlot) }
   })
