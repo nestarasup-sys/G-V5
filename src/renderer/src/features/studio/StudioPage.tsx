@@ -602,8 +602,10 @@ export function StudioPage() {
     else patchStudio(update)
   }
 
-  const updateBackground = (values: Partial<Pick<StudioDocument, 'backgroundColor' | 'backgroundX' | 'backgroundY' | 'backgroundWidth' | 'backgroundHeight' | 'backgroundRotation'>>) => {
-    changeScene((studio) => ({ ...studio, ...values, updatedAt: new Date().toISOString() }))
+  const updateBackground = (values: Partial<Pick<StudioDocument, 'backgroundColor' | 'backgroundX' | 'backgroundY' | 'backgroundWidth' | 'backgroundHeight' | 'backgroundRotation'>>, record = true) => {
+    const update = (studio: StudioDocument) => ({ ...studio, ...values, updatedAt: new Date().toISOString() })
+    if (record) changeScene(update)
+    else patchStudio(update)
   }
 
   const startDrag = (event: ReactPointerEvent<HTMLElement>, id: string) => {
@@ -711,8 +713,8 @@ export function StudioPage() {
     transform: `translate(-50%, -50%) rotate(${rotation}deg) scaleX(${flipX ? -1 : 1})`
   })
 
-  const control = (label: string, value: number, onChange: (value: number) => void, min: number, max: number, suffix = '%') => (
-    <StudioNumericControl key={label} label={label} value={value} onChange={onChange} min={min} max={max} suffix={suffix} />
+  const control = (label: string, value: number, onChange: (value: number, record?: boolean) => void, min: number, max: number, suffix = '%') => (
+    <StudioNumericControl key={label} label={label} value={value} onChange={onChange} onStart={recordHistory} min={min} max={max} suffix={suffix} />
   )
 
   const propertyPanel = (): ReactNode => {
@@ -722,7 +724,7 @@ export function StudioPage() {
       <label className="studio-color-control">Cor sólida<input type="color" value={activeStudio.backgroundColor} onChange={(event) => updateBackground({ backgroundColor: event.target.value })} /></label>
       <button className="studio-side-primary" type="button" onClick={() => void importImage('background')}><Icon name="plus" />Adicionar imagem</button>
       <div className="studio-asset-grid">{activeStudio.assets.filter((asset) => asset.category === 'background').map((asset) => <button key={asset.id} className={`studio-asset-card${activeStudio.backgroundAssetId === asset.id ? ' active' : ''}`} type="button" onClick={() => selectBackground(asset)}><img src={asset.dataUrl} alt="" /><span>{asset.name}</span></button>)}</div>
-      {selectedBackgroundAsset && selectedElementId === 'background' && <><div className="studio-controls-grid">{control('X', activeStudio.backgroundX, (value) => updateBackground({ backgroundX: value }), -100, 100)}{control('Y', activeStudio.backgroundY, (value) => updateBackground({ backgroundY: value }), -100, 100)}{control('Largura', activeStudio.backgroundWidth, (value) => updateBackground({ backgroundWidth: value }), 1, 300)}{control('Altura', activeStudio.backgroundHeight, (value) => updateBackground({ backgroundHeight: value }), 1, 300)}{control('Rotação', activeStudio.backgroundRotation, (value) => updateBackground({ backgroundRotation: value }), -180, 180, '°')}</div><button className="studio-side-danger" type="button" onClick={deleteSelected}><Icon name="trash" />Remover fundo da cena</button></>}
+      {selectedBackgroundAsset && selectedElementId === 'background' && <><div className="studio-controls-grid">{control('X', activeStudio.backgroundX, (value, record) => updateBackground({ backgroundX: value }, record), -100, 100)}{control('Y', activeStudio.backgroundY, (value, record) => updateBackground({ backgroundY: value }, record), -100, 100)}{control('Largura', activeStudio.backgroundWidth, (value, record) => updateBackground({ backgroundWidth: value }, record), 1, 300)}{control('Altura', activeStudio.backgroundHeight, (value, record) => updateBackground({ backgroundHeight: value }, record), 1, 300)}{control('Rotação', activeStudio.backgroundRotation, (value, record) => updateBackground({ backgroundRotation: value }, record), -180, 180, '°')}</div><button className="studio-side-danger" type="button" onClick={deleteSelected}><Icon name="trash" />Remover fundo da cena</button></>}
     </div>
     if (activeTool === 'objects') return <div className="studio-side-content">
       <h2>Objetos</h2><p>Imagens importadas ficam disponíveis neste Studio.</p>
@@ -734,16 +736,16 @@ export function StudioPage() {
         setInspectorOpen(true)
         setInspectorTab('editor')
       }}><img src={asset.dataUrl} alt="" /><span>{asset.name}</span></button>)}</div>
-      {selectedElementId && selectedElement && <ElementControls element={selectedElement} update={(values) => updateElement(selectedElement.id, values)} remove={deleteSelected} control={control} />}
+      {selectedElementId && selectedElement && <ElementControls element={selectedElement} update={(values, record) => updateElement(selectedElement.id, values, record)} remove={deleteSelected} control={control} />}
     </div>
     if (selectedElement && activeStudio) return <div className="studio-side-content">
       <h2>{selectedElement.kind === 'character' ? selectedElement.text : selectedElement.kind === 'image' ? 'Objeto selecionado' : selectedElement.kind === 'narrator' ? 'Narrador' : selectedElement.kind === 'speech' ? 'Balão de fala' : 'Balão de pensamento'}</h2>
       {selectedElement.kind !== 'image' && selectedElement.kind !== 'character' && <label className="studio-text-control">Texto<textarea value={selectedElement.text} onChange={(event) => updateElement(selectedElement.id, { text: event.target.value })} rows={3} /></label>}
-      <ElementControls element={selectedElement} update={(values) => updateElement(selectedElement.id, values)} remove={deleteSelected} control={control} />
+      <ElementControls element={selectedElement} update={(values, record) => updateElement(selectedElement.id, values, record)} remove={deleteSelected} control={control} />
     </div>
     if (selectedElementId === 'background' && selectedBackgroundAsset) return <div className="studio-side-content">
       <h2>Imagem de fundo</h2><p>{selectedBackgroundAsset.name}</p>
-      <div className="studio-controls-grid">{control('X', activeStudio.backgroundX, (value) => updateBackground({ backgroundX: value }), -100, 100)}{control('Y', activeStudio.backgroundY, (value) => updateBackground({ backgroundY: value }), -100, 100)}{control('Largura', activeStudio.backgroundWidth, (value) => updateBackground({ backgroundWidth: value }), 1, 300)}{control('Altura', activeStudio.backgroundHeight, (value) => updateBackground({ backgroundHeight: value }), 1, 300)}{control('Rotação', activeStudio.backgroundRotation, (value) => updateBackground({ backgroundRotation: value }), -180, 180, '°')}</div>
+      <div className="studio-controls-grid">{control('X', activeStudio.backgroundX, (value, record) => updateBackground({ backgroundX: value }, record), -100, 100)}{control('Y', activeStudio.backgroundY, (value, record) => updateBackground({ backgroundY: value }, record), -100, 100)}{control('Largura', activeStudio.backgroundWidth, (value, record) => updateBackground({ backgroundWidth: value }, record), 1, 300)}{control('Altura', activeStudio.backgroundHeight, (value, record) => updateBackground({ backgroundHeight: value }, record), 1, 300)}{control('Rotação', activeStudio.backgroundRotation, (value, record) => updateBackground({ backgroundRotation: value }, record), -180, 180, '°')}</div>
       <button className="studio-side-danger" type="button" onClick={deleteSelected}><Icon name="trash" />Remover fundo</button>
     </div>
     return <div className="studio-side-content"><h2>Cena</h2><p>Escolha uma ferramenta à esquerda ou selecione um elemento na cena.</p><small>{activeStudio.elements.length} elemento(s)</small></div>
@@ -919,10 +921,11 @@ export function StudioPage() {
   )
 }
 
-function StudioNumericControl({ label, value, onChange, min, max, suffix }: {
+function StudioNumericControl({ label, value, onChange, onStart, min, max, suffix }: {
   label: string
   value: number
-  onChange: (value: number) => void
+  onChange: (value: number, record?: boolean) => void
+  onStart: () => void
   min: number
   max: number
   suffix: string
@@ -940,39 +943,55 @@ function StudioNumericControl({ label, value, onChange, min, max, suffix }: {
     }
     const next = Math.min(max, Math.max(min, parsed))
     setDraft(format(next))
-    if (next !== value) onChange(next)
+    if (next !== value) { onStart(); onChange(next, false) }
   }
 
-  return <label className="studio-control"><span>{label}</span><input
-    type="number"
-    inputMode="decimal"
-    value={draft}
-    min={min}
-    max={max}
-    step="0.1"
-    onChange={(event) => setDraft(event.target.value)}
-    onBlur={commit}
-    onKeyDown={(event) => {
-      if (event.key === 'Enter') { event.preventDefault(); commit() }
-      if (event.key === 'Escape') { setDraft(format(value)) }
-    }}
-    aria-label={label}
-  /><small>{suffix}</small></label>
+  return <div className="studio-control">
+    <span>{label}</span>
+    <input
+      type="number"
+      inputMode="decimal"
+      value={draft}
+      min={min}
+      max={max}
+      step="0.1"
+      onChange={(event) => setDraft(event.target.value)}
+      onBlur={commit}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter') { event.preventDefault(); commit() }
+        if (event.key === 'Escape') { setDraft(format(value)) }
+      }}
+      aria-label={label}
+    />
+    <small>{suffix}</small>
+    <input
+      className="studio-control-range"
+      type="range"
+      min={min}
+      max={max}
+      step="0.1"
+      value={Math.min(max, Math.max(min, value))}
+      onPointerDown={onStart}
+      onKeyDown={(event) => { if (event.key.startsWith('Arrow') || event.key === 'Home' || event.key === 'End') onStart() }}
+      onChange={(event) => { const next = Number(event.target.value); setDraft(format(next)); onChange(next, false) }}
+      aria-label={`${label} pela barra`}
+    />
+  </div>
 }
 
 function ElementControls({ element, update, remove, control }: {
   element: StudioElement
-  update: (values: Partial<StudioElement>) => void
+  update: (values: Partial<StudioElement>, record?: boolean) => void
   remove: () => void
-  control: (label: string, value: number, onChange: (value: number) => void, min: number, max: number, suffix?: string) => ReactNode
+  control: (label: string, value: number, onChange: (value: number, record?: boolean) => void, min: number, max: number, suffix?: string) => ReactNode
 }) {
   return <>
     <div className="studio-controls-grid">
-      {control('X', element.x, (value) => update({ x: value }), -100, 100)}
-      {control('Y', element.y, (value) => update({ y: value }), -100, 100)}
-      {control('Largura', element.width, (value) => update({ width: value }), 1, 200)}
-      {control('Altura', element.height, (value) => update({ height: value }), 1, 200)}
-      {control('Rotação', element.rotation, (value) => update({ rotation: value }), -180, 180, '°')}
+      {control('X', element.x, (value, record) => update({ x: value }, record), -100, 100)}
+      {control('Y', element.y, (value, record) => update({ y: value }, record), -100, 100)}
+      {control('Largura', element.width, (value, record) => update({ width: value }, record), 1, 200)}
+      {control('Altura', element.height, (value, record) => update({ height: value }, record), 1, 200)}
+      {control('Rotação', element.rotation, (value, record) => update({ rotation: value }, record), -180, 180, '°')}
     </div>
     {element.kind === 'character' && <div className="studio-layer-actions studio-character-actions"><button type="button" onClick={() => update({ flipX: !element.flipX })}><Icon name="flipHorizontal" />Espelhar personagem</button><button type="button" onClick={() => update({ zIndex: Math.max(0, element.zIndex - 1) })}>Para trás</button><button type="button" onClick={() => update({ zIndex: element.zIndex + 1 })}>Para frente</button></div>}
     {element.kind === 'image' && <div className="studio-layer-actions"><button type="button" onClick={() => update({ zIndex: element.zIndex + 1 })}>Para frente</button><button type="button" onClick={() => update({ zIndex: Math.max(0, element.zIndex - 1) })}>Para trás</button></div>}
