@@ -67,7 +67,7 @@ function rotateJointBranch(project: FabricatorProject, partId: string, amount: n
   let changed = true
   while (changed) {
     changed = false
-    for (const joint of project.joints) if (joint.fixed && affected.has(joint.parentPartId) && !affected.has(joint.childPartId)) { affected.add(joint.childPartId); changed = true }
+    for (const joint of project.joints) if (affected.has(joint.parentPartId) && !affected.has(joint.childPartId)) { affected.add(joint.childPartId); changed = true }
   }
   const parts = project.parts.map((part) => {
     if (!affected.has(part.id)) return part
