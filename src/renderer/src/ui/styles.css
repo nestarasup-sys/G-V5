@@ -361,10 +361,19 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .fabricator-section-button.active svg { color: #b2476e; }
 .fabricator-workspace { min-width: 0; min-height: 0; border: 1px solid #ede8ec; border-radius: 14px; background: #fff; box-shadow: 0 4px 18px #32223208; }
 .hair-dev-workspace { display:flex;flex-direction:column;overflow:hidden; }
-.hair-dev-workspace>header { min-height:65px;display:flex;align-items:center;gap:10px;padding:8px 14px;border-bottom:1px solid #f0ebef; }
-.hair-dev-workspace>header>span:last-child { display:flex;flex-direction:column;gap:4px; }
-.hair-dev-workspace>header strong { color:#342e36;font:700 12px Manrope,sans-serif; }
-.hair-dev-workspace>header small { color:#aaa1aa;font-size:10px; }
+.hair-dev-toolbar { min-height:65px;display:flex;align-items:center;gap:10px;padding:8px 14px;border-bottom:1px solid #f0ebef; }
+.hair-dev-toolbar>span:nth-child(2) { display:flex;flex-direction:column;gap:4px; }
+.hair-dev-toolbar strong { color:#342e36;font:700 12px Manrope,sans-serif; }
+.hair-dev-toolbar small { color:#aaa1aa;font-size:10px; }
+.hair-dev-toolbar label { display:grid;gap:3px;margin-left:auto;color:#8e7e8c;font-size:10px;font-weight:700; }
+.hair-dev-toolbar select { max-width:260px;min-height:31px;padding:0 8px;border:1px solid #e9dfe6;border-radius:8px;background:#fff;color:#54444f;font-size:11px; }
+.hair-dev-body { min-width:0;min-height:0;flex:1;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr); }
+.hair-dev-preview { min-width:0;min-height:0;display:flex;flex-direction:column;border-right:1px solid #f0e9ed; }
+.hair-dev-preview-heading { min-height:32px;display:flex;align-items:center;justify-content:space-between;padding:0 13px;border-bottom:1px solid #f1e9ee;color:#aa9ba5;font-size:10px;letter-spacing:.5px; }
+.hair-dev-preview-stage { position:relative;min-height:220px;flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden;background-image:linear-gradient(45deg,#0000000a 25%,transparent 25%),linear-gradient(-45deg,#0000000a 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#0000000a 75%),linear-gradient(-45deg,transparent 75%,#0000000a 75%);background-size:18px 18px; }
+.hair-dev-preview-stage img { max-width:min(72%,440px);max-height:92%;object-fit:contain;user-select:none;-webkit-user-drag:none; }
+.hair-dev-message { position:absolute;max-width:260px;padding:10px 14px;border:1px solid #eee7eb;border-radius:9px;background:#ffffffed;color:#8c7c88;font-size:11px;text-align:center; }
+.hair-dev-editor-space { min-width:0;min-height:0;background:#fff; }
 .model-transform-controls { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; padding: 7px; border: 1px solid #f0ebef; border-radius: 8px; background: #fdfbfc; }
 .model-transform-controls > strong { grid-column: 1 / -1; color: #746b75; font-size: 11px; }
 .model-transform-controls label { display: grid; gap: 3px; color: #968c97; font-size: 10px; }
