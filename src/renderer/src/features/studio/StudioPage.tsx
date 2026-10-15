@@ -227,25 +227,25 @@ export function StudioPage() {
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível criar o Studio.') }
   }
 
-  const duplicateStudio = async () => {
-    if (!selectedStudio) return
+  const duplicateStudio = async (source: StudioCard | null = selectedStudio) => {
+    if (!source) return
     const number = allocateNumber()
     const now = new Date().toISOString()
     const duplicate: StudioCard = {
-      ...selectedStudio, id: crypto.randomUUID(), title: `Studio ${String(number).padStart(2, '0')}`,
+      ...source, id: crypto.randomUUID(), title: `Studio ${String(number).padStart(2, '0')}`,
       color: studioColor(number), createdAt: now, updatedAt: now,
-      assets: selectedStudio.assets.map((asset) => ({ ...asset, id: crypto.randomUUID() })),
-      elements: selectedStudio.elements.map((element) => ({
+      assets: source.assets.map((asset) => ({ ...asset, id: crypto.randomUUID() })),
+      elements: source.elements.map((element) => ({
         ...element, id: crypto.randomUUID(), assetId: element.assetId
-          ? selectedStudio.assets.find((asset) => asset.id === element.assetId)?.id
+          ? source.assets.find((asset) => asset.id === element.assetId)?.id
           : undefined
       }))
     }
-    const oldToNew = new Map(selectedStudio.assets.map((asset, index) => [asset.id, duplicate.assets[index]?.id ?? '']))
-    duplicate.elements = selectedStudio.elements.map((element, index) => ({
+    const oldToNew = new Map(source.assets.map((asset, index) => [asset.id, duplicate.assets[index]?.id ?? '']))
+    duplicate.elements = source.elements.map((element, index) => ({
       ...duplicate.elements[index], assetId: element.assetId ? oldToNew.get(element.assetId) : undefined
     }))
-    duplicate.backgroundAssetId = selectedStudio.backgroundAssetId ? oldToNew.get(selectedStudio.backgroundAssetId) ?? null : null
+    duplicate.backgroundAssetId = source.backgroundAssetId ? oldToNew.get(source.backgroundAssetId) ?? null : null
     try {
       setError(null)
       await window.desktop.saveStudio(duplicate)
@@ -451,12 +451,12 @@ export function StudioPage() {
     }
   }
 
-  const deleteStudio = async () => {
-    if (!selectedStudio || !window.confirm(`Excluir ${selectedStudio.title}?`)) return
+  const deleteStudio = async (target: StudioCard | null = selectedStudio) => {
+    if (!target || !window.confirm(`Excluir ${target.title}?`)) return
     try {
-      await window.desktop.deleteStudio(selectedStudio.id)
-      setStudios((current) => current.filter((studio) => studio.id !== selectedStudio.id))
-      setSelectedId(null)
+      await window.desktop.deleteStudio(target.id)
+      setStudios((current) => current.filter((studio) => studio.id !== target.id))
+      setSelectedId((current) => current === target.id ? null : current)
       setSaved(true)
       setError(null)
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível excluir o Studio.') }
@@ -623,15 +623,14 @@ export function StudioPage() {
       <header className="studio-page-header"><h1>Seus Studios</h1>{studioFolder && <small>Dados locais: {studioFolder}</small>}</header>
       <div className="studio-toolbar" aria-label="Ações dos Studios">
         <button className="studio-action studio-action-primary" onClick={() => void createStudio()} disabled={loading} type="button"><Icon name="plus" />Criar</button>
-        <button className="studio-action" onClick={() => void duplicateStudio()} disabled={!selectedStudio} type="button"><span className="studio-duplicate-icon" aria-hidden="true">▢</span>Duplicar</button>
-        <button className="studio-action studio-action-danger" onClick={() => void deleteStudio()} disabled={!selectedStudio} type="button"><Icon name="trash" />Excluir</button>
       </div>
       {error && <p className="studio-error-message" role="alert">{error}</p>}
       {loading ? <section className="studio-empty-state"><strong>Carregando Studios…</strong></section> : studios.length ? (
         <section className="studio-grid" aria-label="Studios criados">
-          {studios.map((studio) => <button className={`studio-card${selectedId === studio.id ? ' selected' : ''}`} key={studio.id} onClick={() => { setSelectedId(studio.id); setActiveStudioId(studio.id) }} aria-label={`Abrir ${studio.title}`} type="button">
-            <h2>{studio.title}</h2><span className="studio-cover" style={{ backgroundColor: studio.color }} />
-          </button>)}
+          {studios.map((studio) => <article className={`studio-card${selectedId === studio.id ? ' selected' : ''}`} key={studio.id}>
+            <header className="studio-card-heading"><button className="studio-card-open" onClick={() => { setSelectedId(studio.id); setActiveStudioId(studio.id) }} aria-label={`Abrir ${studio.title}`} type="button">{studio.title}</button><div className="studio-card-actions"><button className="studio-card-action" onClick={() => void duplicateStudio(studio)} aria-label={`Duplicar ${studio.title}`} title={`Duplicar ${studio.title}`} type="button"><span className="studio-duplicate-icon" aria-hidden="true">▢</span></button><button className="studio-card-action danger" onClick={() => void deleteStudio(studio)} aria-label={`Excluir ${studio.title}`} title={`Excluir ${studio.title}`} type="button"><Icon name="trash" /></button></div></header>
+            <button className="studio-cover" style={{ backgroundColor: studio.color }} onClick={() => { setSelectedId(studio.id); setActiveStudioId(studio.id) }} aria-label={`Abrir ${studio.title}`} type="button" />
+          </article>)}
         </section>
       ) : <section className="studio-empty-state"><span><Icon name="camera" /></span><strong>Nenhum Studio criado</strong><small>Crie um Studio para começar sua coleção.</small></section>}
     </main>
