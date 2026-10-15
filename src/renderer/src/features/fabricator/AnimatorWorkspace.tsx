@@ -325,7 +325,7 @@ export function AnimatorWorkspace() {
         if (!asset || !style) continue
         const transform = style.transforms[side]
         const placement = mapHeadOverlay(sourceHead, targetHead, transform.x, transform.y, asset.width, asset.height, transform.rotation, transform.scaleX, transform.scaleY, transform.flipX)
-        result.push({ key: `hair-${side}`, dataUrl: asset.dataUrl, ...placement, zIndex: (layerIndex.get(targetHead.id) ?? 0) * layerStride + (side === 'back' ? 1 : layerStride - 1) })
+        result.push({ key: `hair-${side}`, dataUrl: asset.dataUrl, ...placement, zIndex: side === 'back' ? 0 : (layerIndex.get(targetHead.id) ?? 0) * layerStride + layerStride - 1 })
       }
     }
     const appearance = selectedCharacter.customization.faceAppearance
