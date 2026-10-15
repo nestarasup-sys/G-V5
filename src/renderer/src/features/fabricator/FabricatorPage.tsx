@@ -9,9 +9,10 @@ import { PoseWorkspace } from './PoseWorkspace'
 import { WardrobeWorkspace } from './wardrobe/WardrobeWorkspace'
 import { FaceWorkspace } from './face/FaceWorkspace'
 import { HairWorkspace } from './HairWorkspace'
+import { AnimatorWorkspace } from './AnimatorWorkspace'
 
 const sections: { id: string; label: string; icon: IconName }[] = [
-  { id: 'Modelos', label: 'Modelos Dev', icon: 'sparkles' }, { id: 'Poses', label: 'Poses Dev', icon: 'expand' }, { id: 'Roupas', label: 'Roupas Dev', icon: 'shirt' }, { id: 'Rosto', label: 'Rosto Dev', icon: 'face' }, { id: 'Cabelos Dev', label: 'Cabelos Dev', icon: 'bow' }
+  { id: 'Modelos', label: 'Modelos Dev', icon: 'sparkles' }, { id: 'Poses', label: 'Poses Dev', icon: 'expand' }, { id: 'Roupas', label: 'Roupas Dev', icon: 'shirt' }, { id: 'Rosto', label: 'Rosto Dev', icon: 'face' }, { id: 'Cabelos Dev', label: 'Cabelos Dev', icon: 'bow' }, { id: 'Animador Dev', label: 'Animador Dev', icon: 'body' }
 ]
 
 type ProcessedPart = Omit<ModelPart, 'dataUrl' | 'chromaBaseDataUrl'> & { png: ArrayBuffer; basePng: ArrayBuffer }
@@ -992,7 +993,7 @@ export function FabricatorPage() {
         </nav>
       </aside>
 
-      {activeSection === 'Poses' ? <PoseWorkspace /> : activeSection === 'Roupas' ? <WardrobeWorkspace /> : activeSection === 'Rosto' ? <FaceWorkspace /> : activeSection === 'Cabelos Dev' ? <HairWorkspace /> : (
+      {activeSection === 'Poses' ? <PoseWorkspace /> : activeSection === 'Roupas' ? <WardrobeWorkspace /> : activeSection === 'Rosto' ? <FaceWorkspace /> : activeSection === 'Cabelos Dev' ? <HairWorkspace /> : activeSection === 'Animador Dev' ? <AnimatorWorkspace /> : (
         <section className="fabricator-model-editor" aria-label="Editor de modelos">
           <header className="model-slotbar">
             <div className="model-slot-title"><span className="model-slot-logo"><Icon name="sparkles" /></span><span><strong>Modelos</strong><small>10 espaços de trabalho</small></span></div>
