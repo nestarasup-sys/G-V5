@@ -315,13 +315,13 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .customizer-pose-carousel-arrow:not(:disabled):hover { transform:scale(1.12); }
 .customizer-pose-carousel-arrow:disabled { opacity:.35;cursor:default; }
 .customizer-pose-carousel-arrow svg { width:32px;height:32px;fill:currentColor; }
-.customizer-pose-carousel-poses { min-width:0;min-height:0;display:grid;grid-auto-flow:column;grid-auto-columns:calc((100% - 32px)/5);gap:8px;overflow-x:auto;scrollbar-width:thin;scrollbar-color:#a83d83 #f6e6f0; }
+.customizer-pose-carousel-poses { min-width:0;min-height:0;display:grid;grid-template-rows:minmax(0,1fr);grid-auto-flow:column;grid-auto-columns:calc((100% - 32px)/5);gap:8px;overflow-x:auto;scrollbar-width:thin;scrollbar-color:#a83d83 #f6e6f0; }
 .customizer-pose-carousel-image,.customizer-pose-carousel-empty { min-width:0;min-height:0;display:grid;place-items:center;overflow:hidden;border:0;background:#fff; }
 .customizer-pose-carousel-image { position:relative;padding:0;cursor:pointer; }
 .customizer-pose-carousel-image.selected { background:#ffe3f0;box-shadow:inset 0 0 0 3px #eb5b9c; }
 .customizer-pose-carousel-image:focus-visible { outline:3px solid #682878;outline-offset:-3px; }
 .customizer-pose-carousel-image:disabled { cursor:default; }
-.customizer-pose-carousel-image img { width:100%;height:100%;object-fit:contain; }
+.customizer-pose-carousel-image img { position:absolute;inset:0;width:100%;height:100%;object-fit:contain;object-position:center; }
 .customizer-pose-carousel-image>span { color:#ac859b;font-size:9px;line-height:1.2;text-align:center; }
 .customizer-catalog-panel { min-width:0;min-height:0;flex:1;display:flex;flex-direction:column;overflow:auto;padding:13px;border:1px solid #ede8ec;border-radius:12px;background:#fff; }
 .customizer-head-workspace { min-width:0;min-height:0;flex:1;display:flex;flex-direction:column;gap:10px;overflow:hidden; }
