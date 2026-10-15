@@ -1,11 +1,11 @@
-import { app, BrowserWindow, dialog, ipcMain, type IpcMainInvokeEvent } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, shell, type IpcMainInvokeEvent } from 'electron'
 import { mkdir, readFile, writeFile, readdir, unlink, rename, stat, access, rm, copyFile } from 'node:fs/promises'
 import { basename, dirname, extname, join, resolve } from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import type { AnimatorAnimation, AnimatorAnimationAsset, AnimatorAnimationDraft, AnimatorAnimationSave, AnimatorAnimationSummary, FaceAssetSave, FaceCatalogItem, FaceCatalogItemSave, FaceCatalogItemSummary, FaceElementKind, FaceSet, FaceSetSave, FaceSetSummary, FaceSheetKind, FabricatorAssetSave, FabricatorHistoryEntry, FabricatorHistorySaveEntry, FabricatorHistorySaveState, FabricatorHistoryState, FabricatorPose, FabricatorPoseDraft, FabricatorPoseDraftSave, FabricatorPoseSave, FabricatorPoseSummary, FabricatorProject, FabricatorProjectSave, FabricatorSlotSummary, HairStyle, HairStyleAsset, HairStyleSave, HairStyleSummary, HairWorkspace, HairWorkspaceAsset, HairWorkspaceSave, ModelPart, PosePart, WardrobeAssetSave, WardrobeCategory, WardrobeSet, WardrobeSetSave, WardrobeSetSummary } from '../src/shared/fabricator'
 import type { CustomizerCharacter } from '../src/shared/customizer'
-import type { StudioDocument } from '../src/shared/studio'
+import type { StudioAsset, StudioDocument } from '../src/shared/studio'
 import { applyModelHeadShape } from '../src/shared/headShape'
 
 const slotCount = 10
@@ -532,20 +532,74 @@ function assertTrustedSender(event: IpcMainInvokeEvent): void {
 function isStudioDocument(value: unknown): value is StudioDocument {
   if (!value || typeof value !== 'object') return false
   const studio = value as Partial<StudioDocument>
+  const assets = studio.assets
+  const elements = studio.elements
   return studio.schemaVersion === 1
     && typeof studio.id === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(studio.id)
     && typeof studio.title === 'string' && studio.title.trim().length > 0 && studio.title.length <= 100
     && typeof studio.color === 'string' && /^(#[0-9a-f]{6}|hsl\([\d.]+\s+[\d.]+%\s+[\d.]+%\))$/i.test(studio.color)
     && typeof studio.createdAt === 'string' && Number.isFinite(Date.parse(studio.createdAt))
     && typeof studio.updatedAt === 'string' && Number.isFinite(Date.parse(studio.updatedAt))
+    && typeof studio.backgroundColor === 'string' && /^#[0-9a-f]{6}$/i.test(studio.backgroundColor)
+    && (studio.backgroundAssetId === null || typeof studio.backgroundAssetId === 'string')
+    && [studio.backgroundX, studio.backgroundY, studio.backgroundWidth, studio.backgroundHeight, studio.backgroundRotation].every(Number.isFinite)
+    && Array.isArray(assets) && assets.length <= 500
+    && assets.every((asset) => isStudioAsset(asset))
+    && Array.isArray(elements) && elements.length <= 1000
+    && (studio.backgroundAssetId === null || assets.some((asset) => asset.id === studio.backgroundAssetId && asset.category === 'background'))
+    && elements.every((element) => Boolean(element && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(element.id) && typeof element.text === 'string'
+      && ['image', 'narrator', 'speech', 'thought'].includes(element.kind)
+      && (element.kind !== 'image' || assets.some((asset) => asset.id === element.assetId && asset.category === 'object'))
+      && [element.x, element.y, element.width, element.height, element.rotation, element.zIndex].every(Number.isFinite)))
+}
+
+function isStudioAsset(value: unknown): value is StudioAsset {
+  if (!value || typeof value !== 'object') return false
+  const asset = value as Partial<StudioAsset>
+  return typeof asset.id === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(asset.id)
+    && (asset.category === 'background' || asset.category === 'object')
+    && typeof asset.name === 'string' && asset.name.length <= 255
+    && (asset.mimeType === 'image/png' || asset.mimeType === 'image/jpeg' || asset.mimeType === 'image/webp')
+    && typeof asset.dataUrl === 'string' && asset.dataUrl.startsWith(`data:${asset.mimeType};base64,`) && asset.dataUrl.length <= 70_000_000
+}
+
+function normalizeStudio(value: Record<string, unknown>, id: string): StudioDocument {
+  return {
+    schemaVersion: 1,
+    id,
+    title: String(value.title ?? 'Studio').slice(0, 100),
+    color: String(value.color ?? '#d7b5cd'),
+    createdAt: String(value.createdAt ?? new Date().toISOString()),
+    updatedAt: String(value.updatedAt ?? new Date().toISOString()),
+    backgroundColor: typeof value.backgroundColor === 'string' && /^#[0-9a-f]{6}$/i.test(value.backgroundColor) ? value.backgroundColor : '#d7b5cd',
+    backgroundAssetId: typeof value.backgroundAssetId === 'string' ? value.backgroundAssetId : null,
+    backgroundX: typeof value.backgroundX === 'number' && Number.isFinite(value.backgroundX) ? value.backgroundX : 0,
+    backgroundY: typeof value.backgroundY === 'number' && Number.isFinite(value.backgroundY) ? value.backgroundY : 0,
+    backgroundWidth: typeof value.backgroundWidth === 'number' && Number.isFinite(value.backgroundWidth) ? value.backgroundWidth : 100,
+    backgroundHeight: typeof value.backgroundHeight === 'number' && Number.isFinite(value.backgroundHeight) ? value.backgroundHeight : 100,
+    backgroundRotation: typeof value.backgroundRotation === 'number' && Number.isFinite(value.backgroundRotation) ? value.backgroundRotation : 0,
+    assets: Array.isArray(value.assets) ? value.assets as StudioAsset[] : [],
+    elements: Array.isArray(value.elements) ? value.elements as StudioDocument['elements'] : []
+  }
 }
 
 async function readStudio(id: string): Promise<StudioDocument | null> {
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)) throw new Error('Identificador de Studio inválido.')
   try {
-    const raw = JSON.parse(await readFile(join(studioPath(id), 'studio.json'), 'utf8')) as unknown
-    if (!isStudioDocument(raw) || raw.id !== id) throw new Error(`Os dados do Studio ${id} estão inválidos.`)
-    return raw
+    const raw = JSON.parse(await readFile(join(studioPath(id), 'studio.json'), 'utf8')) as Record<string, unknown>
+    const normalized = normalizeStudio(raw, id)
+    const folder = studioPath(id)
+    const assets = await Promise.all(normalized.assets.map(async (asset) => {
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(asset.id)
+        || (asset.category !== 'background' && asset.category !== 'object')
+        || !['image/png', 'image/jpeg', 'image/webp'].includes(asset.mimeType)) throw new Error('Biblioteca de imagens do Studio inválida.')
+      const extension = asset.mimeType === 'image/jpeg' ? 'jpg' : asset.mimeType.slice('image/'.length)
+      const data = await readFile(join(folder, 'assets', asset.category === 'background' ? 'backgrounds' : 'objects', `${asset.id}.${extension}`))
+      return { ...asset, dataUrl: `data:${asset.mimeType};base64,${data.toString('base64')}` }
+    }))
+    const document = { ...normalized, assets }
+    if (!isStudioDocument(document)) throw new Error(`Os dados do Studio ${id} estão inválidos.`)
+    return document
   } catch (reason) {
     if ((reason as NodeJS.ErrnoException).code === 'ENOENT') return null
     throw reason
@@ -561,8 +615,17 @@ async function writeStudio(studio: StudioDocument): Promise<void> {
     mkdir(join(folder, 'assets', 'characters'), { recursive: true }),
     mkdir(join(folder, 'prints'), { recursive: true })
   ])
+  const assetManifest: Array<Omit<StudioAsset, 'dataUrl'>> = []
+  for (const asset of studio.assets) {
+    const extension = asset.mimeType === 'image/jpeg' ? 'jpg' : asset.mimeType.slice('image/'.length)
+    const bytes = Buffer.from(asset.dataUrl.slice(asset.dataUrl.indexOf(',') + 1), 'base64')
+    await writeFile(join(folder, 'assets', asset.category === 'background' ? 'backgrounds' : 'objects', `${asset.id}.${extension}`), bytes)
+    const { dataUrl: _dataUrl, ...metadata } = asset
+    assetManifest.push(metadata)
+  }
   const temporary = join(folder, 'studio.json.tmp')
-  await writeFile(temporary, JSON.stringify({ ...studio, title: studio.title.trim() }, null, 2), 'utf8')
+  const { assets: _assets, ...metadata } = studio
+  await writeFile(temporary, JSON.stringify({ ...metadata, title: studio.title.trim(), assets: assetManifest }, null, 2), 'utf8')
   await rename(temporary, join(folder, 'studio.json'))
 }
 
@@ -970,6 +1033,46 @@ async function registerFabricatorHandlers(): Promise<void> {
   ipcMain.handle('studio:folder', (event): string => {
     assertTrustedSender(event)
     return studioLibraryPath()
+  })
+
+  ipcMain.handle('studio:import-image', async (event, category: StudioAsset['category']): Promise<StudioAsset | null> => {
+    assertTrustedSender(event)
+    if (category !== 'background' && category !== 'object') throw new Error('Categoria de imagem inválida.')
+    const result = await dialog.showOpenDialog({
+      title: category === 'background' ? 'Adicionar imagem de fundo' : 'Adicionar objeto à cena',
+      properties: ['openFile'],
+      filters: [{ name: 'Imagens', extensions: ['png', 'jpg', 'jpeg', 'webp'] }]
+    })
+    if (result.canceled || !result.filePaths[0]) return null
+    const path = result.filePaths[0]
+    const extension = extname(path).toLowerCase()
+    const size = (await stat(path)).size
+    if (size > 50 * 1024 * 1024) throw new Error('A imagem excede o limite de 50 MB.')
+    const mimeType: StudioAsset['mimeType'] = extension === '.png' ? 'image/png' : extension === '.webp' ? 'image/webp' : 'image/jpeg'
+    const bytes = await readFile(path)
+    return { id: randomUUID(), category, name: basename(path), mimeType, dataUrl: `data:${mimeType};base64,${bytes.toString('base64')}` }
+  })
+
+  ipcMain.handle('studio:save-print', async (event, id: string, dataUrl: string): Promise<string | null> => {
+    assertTrustedSender(event)
+    if (typeof id !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)) throw new Error('Identificador de Studio inválido.')
+    const bytes = dataUrlBuffer(dataUrl)
+    if (bytes.length > 50 * 1024 * 1024) throw new Error('O print excede o limite de 50 MB.')
+    const printsFolder = join(studioPath(id), 'prints')
+    await mkdir(printsFolder, { recursive: true })
+    const printPath = join(printsFolder, `print-${new Date().toISOString().replace(/[:.]/g, '-')}-${randomUUID().slice(0, 8)}.png`)
+    await writeFile(printPath, bytes)
+    return printPath
+  })
+
+  ipcMain.handle('studio:open-prints', async (event, id: string): Promise<void> => {
+    assertTrustedSender(event)
+    if (typeof id !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)) throw new Error('Identificador de Studio inválido.')
+    const printsFolder = resolve(studioPath(id), 'prints')
+    if (dirname(printsFolder) !== resolve(studioPath(id))) throw new Error('Pasta de prints inválida.')
+    await mkdir(printsFolder, { recursive: true })
+    const error = await shell.openPath(printsFolder)
+    if (error) throw new Error(`Não foi possível abrir a pasta de prints: ${error}`)
   })
 
   ipcMain.handle('customizer:characters:list', async (event): Promise<CustomizerCharacter[]> => {

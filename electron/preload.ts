@@ -57,7 +57,10 @@ const studioApi: StudioDesktopApi = {
   listStudios: () => ipcRenderer.invoke('studio:list'),
   saveStudio: (studio) => ipcRenderer.invoke('studio:save', studio),
   deleteStudio: (id) => ipcRenderer.invoke('studio:delete', id),
-  getStudioFolder: () => ipcRenderer.invoke('studio:folder')
+  getStudioFolder: () => ipcRenderer.invoke('studio:folder'),
+  importStudioImage: (category) => ipcRenderer.invoke('studio:import-image', category),
+  saveStudioPrint: (studioId, dataUrl) => ipcRenderer.invoke('studio:save-print', studioId, dataUrl),
+  openStudioPrints: (studioId) => ipcRenderer.invoke('studio:open-prints', studioId)
 }
 
 contextBridge.exposeInMainWorld('desktop', {
