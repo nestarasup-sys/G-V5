@@ -685,7 +685,9 @@ export function CustomizerPage() {
   const wardrobeTransformDirty = useRef(false)
   const wardrobeHistoryRef = useRef<WardrobeEditHistory>({ characterId: '', undo: [], redo: [] })
   const selectedCharacter = characters.find((character) => character.id === selectedCharacterId) ?? characters[0] ?? null
-  const activeProportions = proportionEdit?.characterId === selectedCharacter?.id ? proportionEdit.values : getCharacterProportions(selectedCharacter?.customization)
+  const activeProportions = proportionEdit && selectedCharacter && proportionEdit.characterId === selectedCharacter.id
+    ? proportionEdit.values
+    : getCharacterProportions(selectedCharacter?.customization)
   const activeShapeScale = characterShapeScale(activeProportions)
   const displayArtworkProject = useMemo(() => selectedArtworkProject ? withCharacterHeadSize(selectedArtworkProject, activeProportions.head) : null, [selectedArtworkProject, activeProportions.head])
   const previewStyle = { '--preview-background': previewBackground, '--character-scale-x': activeShapeScale.x, '--character-scale-y': activeShapeScale.y } as import('react').CSSProperties
