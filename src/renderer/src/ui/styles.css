@@ -545,6 +545,10 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .animator-player-actions button { min-height:25px;padding:0 7px;border:1px solid #eee8ed;border-radius:6px;background:#fff;color:#746977;font-size:9px;font-weight:700;cursor:pointer; }
 .animator-player-actions button.animator-play { border-color:#d66e94;background:#d66e94;color:#fff; }
 .animator-player-actions button:disabled { opacity:.4;cursor:not-allowed; }
+.animator-loop-toggle { min-height:25px;display:inline-flex;align-items:center;gap:4px;padding:0 7px;border:1px solid #eee8ed;border-radius:6px;background:#fff;color:#746977;font-size:9px;font-weight:700;cursor:pointer; }
+.animator-loop-toggle input { width:12px;height:12px;margin:0;accent-color:#c84c77; }
+.animator-loop-toggle:has(input:checked) { border-color:#d78aa5;background:#fff0f5;color:#a44166; }
+.animator-loop-toggle:has(input:disabled) { opacity:.45;cursor:not-allowed; }
 .animator-frame-strip { min-height:0;flex:1;display:flex;align-items:stretch;gap:6px;overflow-x:auto;padding:6px 8px;scrollbar-width:thin; }
 .animator-scrubber { flex:0 0 12px;width:calc(100% - 18px);height:11px;margin:2px 9px 0;accent-color:#c84c77; }
 .animator-frame-card { position:relative;flex:0 0 82px;display:grid;grid-template-rows:1fr auto auto;align-items:center;justify-items:center;gap:2px;padding:3px;border:1px solid #eee8ed;border-radius:7px;background:#fff;color:#786c79;cursor:pointer; }
