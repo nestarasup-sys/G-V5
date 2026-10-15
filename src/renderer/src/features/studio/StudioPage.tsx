@@ -99,6 +99,15 @@ function withSnapshot(studio: StudioDocument, next: StudioSnapshot): StudioDocum
   return { ...studio, ...next, updatedAt: new Date().toISOString() }
 }
 
+function studioElementSize(element: StudioElement) {
+  if (element.kind !== 'character') return { width: element.width, height: element.height }
+  const scale = (element.characterScale ?? 100) / 100
+  return {
+    width: element.width * scale * (element.characterWidthScale ?? 100) / 100,
+    height: element.height * scale * (element.characterHeightScale ?? 100) / 100
+  }
+}
+
 function makeElement(kind: StudioElement['kind'], zIndex: number): StudioElement {
   return {
     id: crypto.randomUUID(), kind, text: kind === 'narrator' ? 'Texto do narrador' : 'Digite aqui',
@@ -168,7 +177,10 @@ function makeCanvasPrint(studio: StudioDocument): Promise<string> {
         for (const element of [...studio.elements].sort((a, b) => a.zIndex - b.zIndex)) {
           if (element.kind === 'image' || element.kind === 'character') {
             const asset = studio.assets.find((item) => item.id === element.assetId)
-            if (asset) await drawImage(asset.dataUrl, element.x, element.y, element.width, element.height, element.rotation, element.kind === 'character' && element.flipX === true)
+            if (asset) {
+              const size = studioElementSize(element)
+              await drawImage(asset.dataUrl, element.x, element.y, size.width, size.height, element.rotation, element.kind === 'character' && element.flipX === true)
+            }
           } else drawText(element)
         }
         resolve(canvas.toDataURL('image/png'))
@@ -550,7 +562,7 @@ export function StudioPage() {
         const width = 20
         const height = Math.min(82, width * stageWidth / stageHeight * imageHeight / imageWidth)
         assets.push(asset)
-        elements.push({ id: crypto.randomUUID(), kind: 'character', assetId: asset.id, characterId: character.id, poseSlot: character.customization.poseSlot, text: character.name, x: 0, y: 0, width, height, rotation: 0, zIndex: ++zIndex })
+        elements.push({ id: crypto.randomUUID(), kind: 'character', assetId: asset.id, characterId: character.id, poseSlot: character.customization.poseSlot, characterScale: 100, characterWidthScale: 100, characterHeightScale: 100, text: character.name, x: 0, y: 0, width, height, rotation: 0, zIndex: ++zIndex })
       }
       const nextElements = [...retained, ...elements]
       const retainedAssetIds = new Set(retained.map((element) => element.assetId).filter((id): id is string => Boolean(id)))
@@ -983,7 +995,7 @@ export function StudioPage() {
     const backgroundAsset = activeStudio.assets.find((asset) => asset.id === activeStudio.backgroundAssetId)
     const inspectorWidth = sceneRef.current ? Math.min(38, 276 / sceneRef.current.clientWidth * 100) : 28
     const selectedBounds = selectedElement
-      ? { left: 50 + selectedElement.x - selectedElement.width / 2, right: 50 + selectedElement.x + selectedElement.width / 2 }
+      ? { left: 50 + selectedElement.x - studioElementSize(selectedElement).width / 2, right: 50 + selectedElement.x + studioElementSize(selectedElement).width / 2 }
       : selectedElementId === 'background'
         ? { left: 50 + activeStudio.backgroundX - activeStudio.backgroundWidth / 2, right: 50 + activeStudio.backgroundX + activeStudio.backgroundWidth / 2 }
         : null
@@ -1020,7 +1032,8 @@ export function StudioPage() {
             {backgroundAsset && <img className={`studio-canvas-background${selectedElementId === 'background' && !fullView ? ' selected' : ''}`} src={backgroundAsset.dataUrl} alt="" style={imageStyle(activeStudio.backgroundX, activeStudio.backgroundY, activeStudio.backgroundWidth, activeStudio.backgroundHeight, activeStudio.backgroundRotation)} onPointerDown={(event) => startDrag(event, 'background')} onPointerMove={moveDrag} onPointerUp={endDrag} onPointerCancel={endDrag} />}
             {[...activeStudio.elements].sort((a, b) => a.zIndex - b.zIndex).map((element) => {
               const asset = element.assetId ? activeStudio.assets.find((item) => item.id === element.assetId) : undefined
-              return <div key={element.id} className={`studio-canvas-element studio-element-${element.kind}${selectedElementId === element.id && !fullView ? ' selected' : ''}`} style={{ ...imageStyle(element.x, element.y, element.width, element.height, element.rotation, element.kind === 'character' && element.flipX === true), zIndex: element.zIndex + 1 }} onPointerDown={(event) => startDrag(event, element.id)} onPointerMove={moveDrag} onPointerUp={endDrag} onPointerCancel={endDrag}>
+              const size = studioElementSize(element)
+              return <div key={element.id} className={`studio-canvas-element studio-element-${element.kind}${selectedElementId === element.id && !fullView ? ' selected' : ''}`} style={{ ...imageStyle(element.x, element.y, size.width, size.height, element.rotation, element.kind === 'character' && element.flipX === true), zIndex: element.zIndex + 1 }} onPointerDown={(event) => startDrag(event, element.id)} onPointerMove={moveDrag} onPointerUp={endDrag} onPointerCancel={endDrag}>
                 {(element.kind === 'image' || element.kind === 'character') && asset ? <img src={asset.dataUrl} alt={asset.name} draggable={false} /> : <span>{element.text}</span>}
               </div>
             })}
@@ -1148,8 +1161,16 @@ function ElementControls({ element, update, remove, control }: {
     <div className="studio-controls-grid">
       {control('X', element.x, (value, record) => update({ x: value }, record), -100, 100)}
       {control('Y', element.y, (value, record) => update({ y: value }, record), -100, 100)}
-      {control('Largura', element.width, (value, record) => update({ width: value }, record), 1, 200)}
-      {control('Altura', element.height, (value, record) => update({ height: value }, record), 1, 200)}
+      {element.kind === 'character' && control('Scale', element.characterScale ?? 100, (value, record) => update({ characterScale: value }, record), 1, 300)}
+      {element.kind === 'character'
+        ? <>
+          {control('Largura', element.characterWidthScale ?? 100, (value, record) => update({ characterWidthScale: value }, record), 1, 300)}
+          {control('Altura', element.characterHeightScale ?? 100, (value, record) => update({ characterHeightScale: value }, record), 1, 300)}
+        </>
+        : <>
+          {control('Largura', element.width, (value, record) => update({ width: value }, record), 1, 200)}
+          {control('Altura', element.height, (value, record) => update({ height: value }, record), 1, 200)}
+        </>}
       {control('Rotação', element.rotation, (value, record) => update({ rotation: value }, record), -180, 180, '°')}
     </div>
     {element.kind === 'character' && <div className="studio-layer-actions studio-character-actions"><button type="button" onClick={() => update({ flipX: !element.flipX })}><Icon name="flipHorizontal" />Espelhar personagem</button><button type="button" onClick={() => update({ zIndex: Math.max(0, element.zIndex - 1) })}>Para trás</button><button type="button" onClick={() => update({ zIndex: element.zIndex + 1 })}>Para frente</button></div>}

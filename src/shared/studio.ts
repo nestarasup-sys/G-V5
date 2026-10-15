@@ -26,6 +26,10 @@ export type StudioElement = {
   faceTransforms?: StudioFaceTransforms
   /** Pose selected for this actor inside this Studio only. */
   poseSlot?: number | null
+  /** Uniform actor size and independent axis squeeze, in percent of its saved base size. */
+  characterScale?: number
+  characterWidthScale?: number
+  characterHeightScale?: number
   text: string
   x: number
   y: number
