@@ -851,11 +851,16 @@ export function AnimatorWorkspace() {
       else if (animation.loopMode === 'pingpong') {
         if (time >= totalDuration) { directionRef.current = -1; setPlayDirection(-1); time = Math.max(0, totalDuration - (time - totalDuration)) }
         else if (time <= 0 && directionRef.current < 0) { directionRef.current = 1; setPlayDirection(1); time = Math.min(totalDuration, -time) }
-      } else if (time >= totalDuration) { time = totalDuration; setPlaying(false) }
+      } else if (time >= totalDuration) {
+        time = totalDuration
+        const lastFrame = animation.frames.at(-1)
+        if (lastFrame) setEditorState({ animation, transforms: structuredClone(lastFrame.transforms), joints: structuredClone(lastFrame.joints), frameId: lastFrame.id })
+        setPlaying(false)
+      }
       playheadRef.current = time; setPlayhead(time); raf = requestAnimationFrame(tick)
     }
     raf = requestAnimationFrame(tick); return () => cancelAnimationFrame(raf)
-  }, [playing, animation, totalDuration])
+  }, [playing, animation, totalDuration, setEditorState])
 
   useEffect(() => {
     if (!animation || modelSlot === null || saving) return
