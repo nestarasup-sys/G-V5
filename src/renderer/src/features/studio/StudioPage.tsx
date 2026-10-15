@@ -529,16 +529,15 @@ export function StudioPage() {
       <header className="studio-page-header"><h1>Seus Studios</h1>{studioFolder && <small>Dados locais: {studioFolder}</small>}</header>
       <div className="studio-toolbar" aria-label="Ações dos Studios">
         <button className="studio-action studio-action-primary" onClick={() => void createStudio()} disabled={loading} type="button"><Icon name="plus" />Criar</button>
-        <button className="studio-action" onClick={() => selectedStudio && setActiveStudioId(selectedStudio.id)} disabled={!selectedStudio} type="button"><Icon name="expand" />Abrir</button>
         <button className="studio-action" onClick={() => void duplicateStudio()} disabled={!selectedStudio} type="button"><span className="studio-duplicate-icon" aria-hidden="true">▢</span>Duplicar</button>
         <button className="studio-action studio-action-danger" onClick={() => void deleteStudio()} disabled={!selectedStudio} type="button"><Icon name="trash" />Excluir</button>
       </div>
       {error && <p className="studio-error-message" role="alert">{error}</p>}
       {loading ? <section className="studio-empty-state"><strong>Carregando Studios…</strong></section> : studios.length ? (
         <section className="studio-grid" aria-label="Studios criados">
-          {studios.map((studio) => <article className={`studio-card${selectedId === studio.id ? ' selected' : ''}`} key={studio.id}>
-            <h2>{studio.title}</h2><button className="studio-cover" style={{ backgroundColor: studio.color }} onClick={() => setSelectedId(studio.id)} onDoubleClick={() => setActiveStudioId(studio.id)} aria-label={`Selecionar ${studio.title}; clique duas vezes para abrir`} aria-pressed={selectedId === studio.id} type="button" />
-          </article>)}
+          {studios.map((studio) => <button className={`studio-card${selectedId === studio.id ? ' selected' : ''}`} key={studio.id} onClick={() => { setSelectedId(studio.id); setActiveStudioId(studio.id) }} aria-label={`Abrir ${studio.title}`} type="button">
+            <h2>{studio.title}</h2><span className="studio-cover" style={{ backgroundColor: studio.color }} />
+          </button>)}
         </section>
       ) : <section className="studio-empty-state"><span><Icon name="camera" /></span><strong>Nenhum Studio criado</strong><small>Crie um Studio para começar sua coleção.</small></section>}
     </main>
