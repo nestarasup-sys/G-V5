@@ -151,7 +151,7 @@ export function evaluateMotion(source: FabricatorProject, rig: MotionRigMap, mot
   }
   const crossArms = (amount: number) => {
     angle('upperArm', 'left', -42 * amount); angle('upperArm', 'right', 42 * amount)
-    angle('forearm', 'left', 112 * amount); angle('forearm', 'right', -112 * amount)
+    angle('forearm', 'left', -112 * amount); angle('forearm', 'right', 112 * amount)
   }
   const gait = (stride: number, lift: number, arms: number) => {
     angle('thigh', 'left', -stride); angle('thigh', 'right', stride)
@@ -174,36 +174,36 @@ export function evaluateMotion(source: FabricatorProject, rig: MotionRigMap, mot
     }
     case 'run': gait(39 * wave, 48, 27); break
     case 'wave':
-      angle('upperArm', 'right', -78); angle('forearm', 'right', 72 + 24 * Math.sin(progress * Math.PI * 6))
-      angle('upperArm', 'left', 7); break
+      angle('upperArm', 'right', -125 * amount); angle('forearm', 'right', (-72 + 24 * Math.sin(progress * Math.PI * 6)) * amount)
+      angle('upperArm', 'left', 7 * amount); break
     case 'clap': {
       const beat = Math.abs(Math.sin(progress * Math.PI * 4))
       angle('upperArm', 'left', -32 + 8 * beat); angle('upperArm', 'right', 32 - 8 * beat)
-      angle('forearm', 'left', 102 - 24 * beat); angle('forearm', 'right', -102 + 24 * beat)
+      angle('forearm', 'left', -102 + 24 * beat); angle('forearm', 'right', 102 - 24 * beat)
       break
     }
     case 'cheer':
-      angle('upperArm', 'left', -118 * amount); angle('upperArm', 'right', 118 * amount)
+      angle('upperArm', 'left', 118 * amount); angle('upperArm', 'right', -118 * amount)
       angle('forearm', 'left', 24 * amount); angle('forearm', 'right', -24 * amount)
       angle('thigh', 'left', -8 * amount); angle('thigh', 'right', 8 * amount); break
     case 'point':
-      angle('upperArm', 'right', 36 * amount); angle('forearm', 'right', -52 * amount)
+      angle('upperArm', 'right', -78 * amount); angle('forearm', 'right', 12 * amount)
       angle('upperArm', 'left', -12 * amount); break
     case 'jump': {
       const jump = Math.sin(Math.PI * progress)
       angle('thigh', 'left', -28 * jump); angle('thigh', 'right', 28 * jump)
       angle('calf', 'left', 42 * jump); angle('calf', 'right', -42 * jump)
-      angle('upperArm', 'left', -42 * jump); angle('upperArm', 'right', 42 * jump)
+      angle('upperArm', 'left', 95 * jump); angle('upperArm', 'right', -105 * jump)
       break
     }
     case 'kick': {
       const kick = smooth(Math.min(1, progress * 2.3)) * (1 - smooth(Math.max(0, (progress - .55) * 2.2)))
-      angle('thigh', 'right', -54 * kick); angle('calf', 'right', 92 * kick)
+      angle('thigh', 'right', -54 * kick); angle('calf', 'right', -24 * kick)
       angle('thigh', 'left', 8 * kick); angle('upperArm', 'left', -18 * kick); angle('upperArm', 'right', 18 * kick)
       break
     }
     case 'stretch':
-      angle('upperArm', 'left', -105 * amount); angle('upperArm', 'right', 105 * amount)
+      angle('upperArm', 'left', 105 * amount); angle('upperArm', 'right', -105 * amount)
       angle('forearm', 'left', -18 * amount); angle('forearm', 'right', 18 * amount); break
     case 'dance':
       angle('thigh', 'left', -24 * wave); angle('thigh', 'right', 24 * wave)
@@ -211,10 +211,10 @@ export function evaluateMotion(source: FabricatorProject, rig: MotionRigMap, mot
       angle('upperArm', 'left', 38 * Math.sin(progress * Math.PI * 4)); angle('upperArm', 'right', -38 * Math.sin(progress * Math.PI * 4))
       angle('forearm', 'left', 24 * wave); angle('forearm', 'right', -24 * wave); break
     case 'crouch':
-      angle('thigh', 'left', 64 * amount); angle('thigh', 'right', -64 * amount)
-      angle('calf', 'left', -58 * amount); angle('calf', 'right', 58 * amount)
+      angle('thigh', 'left', -54 * amount); angle('thigh', 'right', 51 * amount)
+      angle('calf', 'left', 48 * amount); angle('calf', 'right', -39 * amount)
       angle('upperArm', 'left', -22 * amount); angle('upperArm', 'right', 22 * amount)
-      angle('forearm', 'left', 45 * amount); angle('forearm', 'right', -45 * amount); break
+      angle('forearm', 'left', -45 * amount); angle('forearm', 'right', 45 * amount); break
   }
   return project
 }
