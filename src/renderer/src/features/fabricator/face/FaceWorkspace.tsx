@@ -83,6 +83,42 @@ function activePiece(set: FaceSet, element: FaceElementKind, eyeState: EyeState,
   return set.pieces.find((piece) => piece.sheet === sheet && piece.index === index && piece.side === side)
 }
 
+function loadFaceImage(dataUrl: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const image = new Image()
+    image.onload = () => resolve(image)
+    image.onerror = () => reject(new Error('Não foi possível montar a miniatura do rosto.'))
+    image.src = dataUrl
+  })
+}
+
+async function makeFaceThumbnail(set: FaceSet, head: ModelPart): Promise<string> {
+  const size = 128
+  const scale = Math.min(94 / head.width, 94 / head.height)
+  const canvas = document.createElement('canvas')
+  canvas.width = size; canvas.height = size
+  const context = canvas.getContext('2d')
+  if (!context) throw new Error('Não foi possível preparar a miniatura do rosto.')
+  const offsetX = (size - head.width * scale) / 2
+  const offsetY = (size - head.height * scale) / 2
+  const base = await loadFaceImage(head.dataUrl)
+  context.drawImage(base, offsetX, offsetY, head.width * scale, head.height * scale)
+  for (const element of ['brow-left', 'brow-right', 'eye-left', 'eye-right', 'nose', 'mouth'] as FaceElementKind[]) {
+    const piece = activePiece(set, element, 0, false)
+    if (!piece) continue
+    const transform = set.transforms[element]
+    try {
+      const image = await loadFaceImage(piece.dataUrl)
+      context.save()
+      context.translate(offsetX + transform.x * scale, offsetY + transform.y * scale)
+      context.rotate(transform.rotation * Math.PI / 180)
+      context.drawImage(image, -piece.width * transform.scaleX * scale / 2, -piece.height * transform.scaleY * scale / 2, piece.width * transform.scaleX * scale, piece.height * transform.scaleY * scale)
+      context.restore()
+    } catch { /* Keep the other facial elements visible if one asset is unavailable. */ }
+  }
+  return canvas.toDataURL('image/png')
+}
+
 function clamp(value: number, min: number, max: number): number { return Math.max(min, Math.min(max, value)) }
 
 export function FaceWorkspace() {
@@ -90,6 +126,8 @@ export function FaceWorkspace() {
   const [modelSlot, setModelSlot] = useState(1)
   const [model, setModel] = useState<FabricatorProject | null>(null)
   const [library, setLibrary] = useState<FaceSetSummary[]>([])
+  const [catalogCards, setCatalogCards] = useState<Record<string, { thumbnail: string; sheets: FaceSheetKind[] }>>({})
+  const [catalogLoading, setCatalogLoading] = useState(false)
   const [draft, setDraft] = useState<FaceSet | null>(null)
   const [selected, setSelected] = useState<FaceElementKind>('eye-left')
   const [eyeState, setEyeState] = useState<EyeState>(0)
@@ -130,6 +168,23 @@ export function FaceWorkspace() {
     }).catch((reason) => { if (active) setError(String(reason)) })
     return () => { active = false }
   }, [modelSlot])
+
+  useEffect(() => {
+    if (!head || !library.length) { setCatalogCards({}); setCatalogLoading(false); return }
+    let active = true
+    setCatalogLoading(true)
+    void Promise.all(library.map(async (summary) => {
+      const face = await window.desktop.loadFaceSet(modelSlot, summary.id)
+      if (!face) return null
+      return { id: summary.id, thumbnail: await makeFaceThumbnail(face, head), sheets: Object.keys(face.sheets) as FaceSheetKind[] }
+    })).then((cards) => {
+      if (!active) return
+      setCatalogCards(Object.fromEntries(cards.filter((card): card is NonNullable<typeof card> => Boolean(card)).map(({ id, ...card }) => [id, card])))
+    }).catch((reason: unknown) => {
+      if (active) setError(reason instanceof Error ? reason.message : 'Não foi possível preparar o catálogo de rostos.')
+    }).finally(() => { if (active) setCatalogLoading(false) })
+    return () => { active = false }
+  }, [head, library, modelSlot])
 
   useEffect(() => { setCropDraft(selectedPiece ? { ...selectedPiece.crop } : null) }, [selectedPiece?.id, draft?.sheets[selectedPiece?.sheet ?? 'eyes']?.tolerance])
   useEffect(() => { if (selectedPiece) setToleranceDraft(draft?.sheets[selectedPiece.sheet]?.tolerance ?? 42) }, [selectedPiece?.sheet, draft?.id])
@@ -291,7 +346,7 @@ export function FaceWorkspace() {
   return <section className="fabricator-workspace face-workspace" aria-label="Editor de rostos">
     <header className="face-toolbar"><span className="face-toolbar-title"><Icon name="face" /><span><strong>Rosto</strong><small>Biblioteca independente por modelo</small></span></span><label>Modelo de referência<select value={modelSlot} disabled={busy} onChange={(event) => changeModel(Number(event.target.value))}>{models.map((entry, index) => entry && <option key={index + 1} value={index + 1}>Modelo {String(index + 1).padStart(2, '0')} · {entry.name}</option>)}</select></label><button onClick={create} disabled={!head || busy} type="button"><Icon name="plus" /> Novo rosto</button><button className="primary" onClick={() => void save()} disabled={!draft || busy || !dirty} type="button"><Icon name="check" /> Salvar</button></header>
     <div className="face-body">
-      <aside className="face-library"><header><strong>Rostos do modelo</strong><small>{library.length} salvos</small></header><div className="face-library-list">{library.map((item) => <button key={item.id} className={draft?.id === item.id ? 'active' : ''} onClick={() => void open(item.id)} disabled={busy} type="button"><Icon name="face" /><span>{item.name}</span><small>{item.pieceCount}</small></button>)}{!library.length && <p>Crie o primeiro rosto deste modelo.</p>}</div><div className="face-sheet-list"><strong>Folhas</strong>{sheetKinds.map((kind) => { const active = isSheetSelected(kind, selected, mouthOpen); return <div key={kind} className={`face-sheet-card${draft?.sheets[kind] ? ' ready' : ''}${active ? ' selected' : ''}`}><button className="face-sheet-select" aria-pressed={active} onClick={() => selectSheet(kind)} disabled={busy || !head} type="button"><span>{sheetLabels[kind]}</span><small>{active ? `Selecionada · ${elementLabels[sheetSelection[kind]]}` : draft?.sheets[kind] ? 'Pronta' : 'Não importada'}</small></button><label className="face-sheet-change" title={`${draft?.sheets[kind] ? 'Trocar' : 'Importar'} apenas ${sheetLabels[kind].toLowerCase()}`}><span>{draft?.sheets[kind] ? 'Trocar' : 'Importar'}</span><input type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => void importSheet(kind, event)} disabled={busy || !head} /></label></div>})}</div></aside>
+      <aside className="face-library"><header><strong>Catálogo de rostos</strong><small>{library.length} salvos</small></header><div className="face-library-list">{catalogLoading ? <p>Preparando miniaturas…</p> : library.map((item) => { const card = catalogCards[item.id]; return <button key={item.id} className={draft?.id === item.id ? 'active' : ''} onClick={() => void open(item.id)} disabled={busy} type="button"><span className="face-catalog-thumb">{card ? <img src={card.thumbnail} alt="" /> : <Icon name="face" />}</span><b>{item.name}</b><small>{item.pieceCount} elementos</small><span className="face-catalog-categories">{card?.sheets.map((kind) => <i key={kind} title={sheetLabels[kind]}>{({ eyes: 'Olhos', eyebrows: 'Sobr.', nose: 'Nariz', 'mouth-closed': 'Boca', 'mouth-open': 'Boca +' })[kind]}</i>)}</span></button>})}{!catalogLoading && !library.length && <p>Monte um rosto e salve para adicioná-lo ao catálogo.</p>}</div><div className="face-sheet-list"><strong>Folhas do rosto atual</strong>{sheetKinds.map((kind) => { const active = isSheetSelected(kind, selected, mouthOpen); return <div key={kind} className={`face-sheet-card${draft?.sheets[kind] ? ' ready' : ''}${active ? ' selected' : ''}`}><button className="face-sheet-select" aria-pressed={active} onClick={() => selectSheet(kind)} disabled={busy || !head} type="button"><span>{sheetLabels[kind]}</span><small>{active ? `Selecionada · ${elementLabels[sheetSelection[kind]]}` : draft?.sheets[kind] ? 'Pronta' : 'Não importada'}</small></button><label className="face-sheet-change" title={`${draft?.sheets[kind] ? 'Trocar' : 'Importar'} apenas ${sheetLabels[kind].toLowerCase()}`}><span>{draft?.sheets[kind] ? 'Trocar' : 'Importar'}</span><input type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => void importSheet(kind, event)} disabled={busy || !head} /></label></div>})}</div></aside>
       <div className="face-preview-column"><div className="face-preview-header"><strong>PRÉVIA DA CABEÇA</strong><span>{head ? `${Math.round(head.width)} × ${Math.round(head.height)}` : 'Selecione um modelo com cabeça'}</span></div><div className="face-preview-tools"><div className="face-segment" aria-label="Estado dos olhos">{eyeLabels.map((label, index) => <button key={label} className={eyeState === index ? 'active' : ''} onClick={() => setEyeState(index as EyeState)} type="button">{label}</button>)}</div><button className={showAllEyes ? 'active' : ''} onClick={() => setShowAllEyes((value) => !value)} type="button">{showAllEyes ? 'Ocultar comparação' : 'Ver os 3 olhos'}</button><button onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }) }} type="button"><Icon name="frame" /> Centralizar</button></div><div className="face-viewport" style={{ backgroundColor: background }} onPointerDown={(event) => { if (event.target === event.currentTarget) pointerDown(event) }} onPointerMove={pointerMove} onPointerUp={pointerUp} onPointerCancel={pointerUp} onWheel={wheel}><div className="face-stage-zoom" style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})` }} onPointerDown={(event) => { if (event.target === event.currentTarget || (event.target as HTMLElement).classList.contains('face-head-base')) pointerDown(event) }}>{renderHead(eyeState, true)}</div>{!head && <p className="face-preview-empty">Este modelo ainda não tem uma peça chamada Cabeça.</p>}</div><div className="face-preview-footer"><span>Arraste o elemento selecionado para mover · arraste o fundo para mover a prévia · roda para zoom</span><span>{Math.round(zoom * 100)}%</span></div>{showAllEyes && head && <div className="face-comparison">{eyeLabels.map((label, index) => <div key={label}><strong>{label}</strong>{renderHead(index as EyeState, false)}</div>)}</div>}</div>
       <aside className="face-controls"><header><strong>Editar rosto</strong>{draft && <button className="danger" onClick={() => void remove()} disabled={busy} title="Excluir rosto salvo" type="button"><Icon name="trash" /></button>}</header>{draft ? <><label className="face-field">Nome do rosto<input value={draft.name} onChange={(event) => changeDraft((current) => ({ ...current, name: event.target.value }))} maxLength={80} /></label><div className="face-control-group"><strong>Elemento</strong><div className="face-element-grid">{(Object.keys(elementLabels) as FaceElementKind[]).map((element) => <button key={element} className={selected === element ? 'active' : ''} onClick={() => setSelected(element)} type="button">{elementLabels[element]}</button>)}</div></div>{(selected.startsWith('eye') || selected.startsWith('brow')) && <label className="face-check"><input type="checkbox" checked={selected.startsWith('eye') ? draft.eyeLinked : draft.browLinked} onChange={(event) => changeDraft((current) => selected.startsWith('eye') ? { ...current, eyeLinked: event.target.checked } : { ...current, browLinked: event.target.checked })} /> Mover e dimensionar o par junto</label>}{selected === 'nose' && draft.pieces.some((piece) => piece.sheet === 'nose') && <><label className="face-field">Nariz<select value={draft.selectedNose} onChange={(event) => changeDraft((current) => ({ ...current, selectedNose: Number(event.target.value) }))}>{draft.pieces.filter((piece) => piece.sheet === 'nose').map((piece) => <option key={piece.id} value={piece.index}>Variante {piece.index + 1}</option>)}</select></label><label className="face-field">Formato da folha<select value={draft.pieces.filter((piece) => piece.sheet === 'nose').length === 6 ? 'six' : 'one'} onChange={(event) => { setNoseMode(event.target.value as 'one' | 'six'); void recut('nose', draft.sheets.nose?.tolerance ?? 42, undefined, event.target.value as 'one' | 'six') }}><option value="one">Um nariz</option><option value="six">Seis narizes · 3 × 2</option></select></label></>}{selected === 'mouth' && <><label className="face-field">Expressão<select value={draft.selectedExpression} onChange={(event) => changeDraft((current) => ({ ...current, selectedExpression: Number(event.target.value) }))}>{Array.from({ length: 21 }, (_, index) => <option key={index} value={index}>Expressão {String(index + 1).padStart(2, '0')}</option>)}</select></label><div className="face-segment"><button className={!mouthOpen ? 'active' : ''} onClick={() => setMouthOpen(false)} type="button">Fechada</button><button className={mouthOpen ? 'active' : ''} onClick={() => setMouthOpen(true)} type="button">Aberta</button></div></>}
       <div className="face-control-group"><strong>Encaixe · {elementLabels[selected]}</strong><div className="face-number-grid">{(['x', 'y', 'scaleX', 'scaleY', 'rotation'] as const).map((field) => <label key={field}>{({ x: 'Posição X', y: 'Posição Y', scaleX: 'Largura %', scaleY: 'Altura %', rotation: 'Rotação °' })[field]}<input type="number" step={field.startsWith('scale') ? 1 : 1} value={field.startsWith('scale') ? Math.round(draft.transforms[selected][field] * 100) : Math.round(draft.transforms[selected][field] * 10) / 10} onChange={(event) => { const value = Number(event.target.value); if (Number.isFinite(value)) updateTransform(selected, { [field]: field.startsWith('scale') ? clamp(value / 100, .01, 10) : value }) }} /></label>)}</div><div className="face-nudge"><button onClick={() => updateTransform(selected, { x: draft.transforms[selected].x - 1 })} type="button">←</button><button onClick={() => updateTransform(selected, { y: draft.transforms[selected].y - 1 })} type="button">↑</button><button onClick={() => updateTransform(selected, { y: draft.transforms[selected].y + 1 })} type="button">↓</button><button onClick={() => updateTransform(selected, { x: draft.transforms[selected].x + 1 })} type="button">→</button></div></div>
