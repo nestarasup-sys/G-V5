@@ -241,6 +241,7 @@ const modules: { name: string; icon: IconName; detail: string }[] = [
   { name: 'Modelos', icon: 'sparkles', detail: 'Looks prontos para começar' },
   { name: 'Poses', icon: 'body', detail: 'Pose, proporções e detalhes' },
   { name: 'Cabeça', icon: 'face', detail: 'Rosto, cabelo e expressões' },
+  { name: 'Cabelos', icon: 'bow', detail: 'Biblioteca de cabelos do personagem' },
   { name: 'Roupas', icon: 'shirt', detail: 'Monte um visual único' },
   { name: 'Acessórios', icon: 'flower', detail: 'Peças e objetos de cena' },
   { name: 'Diálogos', icon: 'message', detail: 'Balões e falas' },
