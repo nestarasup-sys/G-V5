@@ -22,6 +22,11 @@ const skinTonePresets = [
   { id: '#493027', name: 'Retinta' }
 ] as const
 const customizerSkinTonePresets = [skinTonePresets[0], skinTonePresets[1], skinTonePresets[2], skinTonePresets[4], skinTonePresets[6]]
+type PoseCategory = 'parado' | 'sentado'
+
+function poseCategory(pose: Pick<NonNullable<FabricatorPoseSummary>, 'slot' | 'name'> | null | undefined): PoseCategory {
+  return pose?.slot === 2 || /sentad/i.test(pose?.name ?? '') ? 'sentado' : 'parado'
+}
 
 function loadCachedImage(source: string): Promise<HTMLImageElement> {
   const cached = wardrobeImageCache.get(source)
@@ -585,8 +590,7 @@ export function CustomizerPage() {
   const [catalogError, setCatalogError] = useState('')
   const [selectedCatalogModelSlot, setSelectedCatalogModelSlot] = useState<number | null>(null)
   const [selectedCatalogPoseSlot, setSelectedCatalogPoseSlot] = useState<number | null>(null)
-  const [selectedPosePreviewUrl, setSelectedPosePreviewUrl] = useState<string | null>(null)
-  const [posePreviewStatus, setPosePreviewStatus] = useState<'loading' | 'ready' | 'unavailable'>('unavailable')
+  const [selectedPoseCategory, setSelectedPoseCategory] = useState<PoseCategory>('parado')
   const [modelThumbnails, setModelThumbnails] = useState<Record<number, string>>({})
   const [poseThumbnails, setPoseThumbnails] = useState<Record<string, string>>({})
   const [clothingSection, setClothingSection] = useState<'Customizar' | 'Superior' | 'Inferior'>('Superior')
@@ -678,6 +682,7 @@ export function CustomizerPage() {
     if (!selectedCharacter) {
       setSelectedCatalogModelSlot(null)
       setSelectedCatalogPoseSlot(null)
+      setSelectedPoseCategory('parado')
       setSelectedArtworkUrl(null)
       setSelectedArtworkLabel('')
       setSelectedArtworkProject(null)
@@ -692,6 +697,7 @@ export function CustomizerPage() {
     if (!model) {
       setSelectedCatalogModelSlot(null)
       setSelectedCatalogPoseSlot(null)
+      setSelectedPoseCategory('parado')
       setSelectedArtworkUrl(null)
       setSelectedArtworkLabel('')
       setSelectedArtworkProject(null)
@@ -706,6 +712,7 @@ export function CustomizerPage() {
     let cancelled = false
     setSelectedCatalogModelSlot(model.slot)
     setSelectedCatalogPoseSlot(pose?.slot ?? null)
+    setSelectedPoseCategory(poseCategory(pose))
     setSelectedArtworkLabel(pose?.name ?? model.name)
     setSelectedArtworkUrl(null)
     setPreviewLoading(true)
@@ -787,7 +794,7 @@ export function CustomizerPage() {
   }, [activeModule, catalogLoading, catalogModels, catalogPoses])
 
   useEffect(() => {
-    if (activeModule !== 'Poses' || selectedCatalogModelSlot === null || catalogLoading) return
+    if ((activeModule !== 'Poses' && selectedCustomizerTopTab !== 'modelos') || selectedCatalogModelSlot === null || catalogLoading) return
     let cancelled = false
     const modelPoses = catalogPoses.filter((pose): pose is NonNullable<typeof pose> => pose?.sourceModelSlot === selectedCatalogModelSlot)
     void (async () => {
@@ -809,23 +816,7 @@ export function CustomizerPage() {
       }
     })()
     return () => { cancelled = true }
-  }, [activeModule, catalogLoading, catalogPoses, selectedCatalogModelSlot])
-
-  useEffect(() => {
-    if (selectedCustomizerTopTab !== 'modelos' || previewLoading || !selectedArtworkProject) {
-      setSelectedPosePreviewUrl(null)
-      setPosePreviewStatus(previewLoading ? 'loading' : 'unavailable')
-      return
-    }
-    let cancelled = false
-    setPosePreviewStatus('loading')
-    void renderArtwork(selectedArtworkProject, 420).then((url) => {
-      if (!cancelled) { setSelectedPosePreviewUrl(url); setPosePreviewStatus(url ? 'ready' : 'unavailable') }
-    }).catch(() => {
-      if (!cancelled) { setSelectedPosePreviewUrl(null); setPosePreviewStatus('unavailable') }
-    })
-    return () => { cancelled = true }
-  }, [selectedCustomizerTopTab, previewLoading, selectedArtworkProject])
+  }, [activeModule, catalogLoading, catalogPoses, selectedCatalogModelSlot, selectedCustomizerTopTab])
 
   useEffect(() => {
     if (activeModule !== 'Roupas' || selectedCatalogModelSlot === null) return
@@ -1345,6 +1336,7 @@ export function CustomizerPage() {
     try {
       const firstPose = catalogPoses.find((pose) => pose?.sourceModelSlot === model.slot && pose.slot === 1)
       setSelectedCatalogPoseSlot(firstPose?.slot ?? null)
+      setSelectedPoseCategory('parado')
       await saveCharacterCustomization({ modelSlot: model.slot, poseSlot: firstPose?.slot ?? null })
       const sourceProject = await window.desktop.loadFabricatorSlot(model.slot)
       if (!sourceProject) throw new Error('O modelo de referência não está disponível no Fabricador Dev.')
@@ -1363,6 +1355,7 @@ export function CustomizerPage() {
   async function selectCatalogPose(pose: NonNullable<FabricatorPoseSummary>) {
     const requestId = ++previewLoadRequest.current
     setSelectedCatalogPoseSlot(pose.slot)
+    setSelectedPoseCategory(poseCategory(pose))
     setSelectedArtworkLabel(pose.name)
     setSelectedArtworkUrl(null)
     setPreviewLoading(true)
@@ -1384,14 +1377,12 @@ export function CustomizerPage() {
 
   const availableModels = catalogModels.filter((model): model is NonNullable<typeof model> => model !== null)
   const availablePoses = catalogPoses.filter((pose): pose is NonNullable<typeof pose> => pose?.sourceModelSlot === selectedCatalogModelSlot).sort((a, b) => a.slot - b.slot)
-  const currentPose = availablePoses.find((pose) => pose.slot === selectedCatalogPoseSlot)
-  const currentPoseIndex = currentPose ? availablePoses.indexOf(currentPose) : -1
-  const showAdjacentPose = (direction: -1 | 1) => {
-    if (!selectedCharacter || !availablePoses.length || previewLoading) return
-    const nextIndex = currentPoseIndex < 0
-      ? direction > 0 ? 0 : availablePoses.length - 1
-      : (currentPoseIndex + direction + availablePoses.length) % availablePoses.length
-    void selectCatalogPose(availablePoses[nextIndex])
+  const categoryPoses = availablePoses.filter((pose) => poseCategory(pose) === selectedPoseCategory)
+  const showAdjacentPoseCategory = () => {
+    const nextCategory = selectedPoseCategory === 'parado' ? 'sentado' : 'parado'
+    setSelectedPoseCategory(nextCategory)
+    const nextPose = availablePoses.find((pose) => poseCategory(pose) === nextCategory)
+    if (selectedCharacter && nextPose && !previewLoading) void selectCatalogPose(nextPose)
   }
   const selectedModelName = availableModels.find((model) => model.slot === selectedCatalogModelSlot)?.name
   const activeFaceAppearance = characterFaceAppearance?.modelSlot === selectedCatalogModelSlot ? characterFaceAppearance : undefined
@@ -1497,14 +1488,15 @@ export function CustomizerPage() {
             </section>}
             {selectedCustomizerTopTab === 'modelos' && <section className="customizer-pose-carousel" aria-label="Pose do modelo">
               <header className="customizer-pose-carousel-heading" aria-live="polite">
-                <strong>{currentPose ? `Pose ${String(currentPose.slot).padStart(2, '0')}` : 'Modelo base'}</strong>
+                <strong>{selectedPoseCategory === 'parado' ? 'Parado' : 'Sentado'}</strong>
               </header>
               <div className="customizer-pose-carousel-body">
-                <button className="customizer-pose-carousel-arrow" aria-label="Pose anterior" title="Pose anterior" disabled={!selectedCharacter || !availablePoses.length || previewLoading || (availablePoses.length === 1 && Boolean(currentPose))} onClick={() => showAdjacentPose(-1)} type="button"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M21 5 10 16l11 11" /></svg></button>
-                <div className="customizer-pose-carousel-image">
-                  {selectedPosePreviewUrl ? <img src={selectedPosePreviewUrl} alt={currentPose ? `Modelo original na pose ${String(currentPose.slot).padStart(2, '0')}` : 'Modelo original na pose base'} /> : <span>{posePreviewStatus === 'loading' ? 'Carregando pose…' : selectedCatalogModelSlot === null ? 'Escolha um modelo' : 'Prévia indisponível'}</span>}
+                <button className="customizer-pose-carousel-arrow" aria-label="Categoria anterior de poses" title="Categoria anterior" onClick={showAdjacentPoseCategory} type="button"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M13 2 0 16l13 14v-8h19V10H13z" /></svg></button>
+                <div className="customizer-pose-carousel-poses">
+                  {categoryPoses.map((pose) => <button className={`customizer-pose-carousel-image${selectedCatalogPoseSlot === pose.slot ? ' selected' : ''}`} key={`${pose.sourceModelSlot}:${pose.slot}`} onClick={() => void selectCatalogPose(pose)} disabled={!selectedCharacter || previewLoading} title={`Pose ${String(pose.slot).padStart(2, '0')}: ${pose.name}`} aria-label={`Selecionar pose ${String(pose.slot).padStart(2, '0')}`} aria-pressed={selectedCatalogPoseSlot === pose.slot} type="button">{poseThumbnails[`${pose.sourceModelSlot}:${pose.slot}`] ? <img src={poseThumbnails[`${pose.sourceModelSlot}:${pose.slot}`]} alt="" /> : <span>Pose {String(pose.slot).padStart(2, '0')}</span>}</button>)}
+                  {Array.from({ length: Math.max(0, 5 - categoryPoses.length) }, (_, index) => <span className="customizer-pose-carousel-empty" key={`empty-${index}`} />)}
                 </div>
-                <button className="customizer-pose-carousel-arrow" aria-label="Próxima pose" title="Próxima pose" disabled={!selectedCharacter || !availablePoses.length || previewLoading || (availablePoses.length === 1 && Boolean(currentPose))} onClick={() => showAdjacentPose(1)} type="button"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="m11 5 11 11-11 11" /></svg></button>
+                <button className="customizer-pose-carousel-arrow" aria-label="Próxima categoria de poses" title="Próxima categoria" onClick={showAdjacentPoseCategory} type="button"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M19 2 32 16 19 30v-8H0V10h19z" /></svg></button>
               </div>
             </section>}
             <div className="customizer-models-content" hidden>
