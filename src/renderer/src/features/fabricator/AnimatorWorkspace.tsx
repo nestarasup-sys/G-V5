@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react'
+import type { CSSProperties, FormEvent, PointerEvent as ReactPointerEvent } from 'react'
 import type { AnimatorAnimation, AnimatorAnimationAsset, AnimatorAnimationDraft, AnimatorFrame, AnimatorAnimationSave, AnimatorAnimationSummary, AnimatorFrameTransform, FaceCatalogItem, FaceElementKind, FaceSet, FaceSheetKind, FabricatorPose, FabricatorProject, FabricatorSlotSummary, HairStyle, JointLink, PosePart, WardrobeSet } from '../../../../shared/fabricator'
 import type { CustomizerCharacter, CustomizerWardrobeGroup } from '../../../../shared/customizer'
 import { Icon } from '../../ui/components/Icon'
@@ -255,6 +255,7 @@ export function AnimatorWorkspace() {
   const [error, setError] = useState('')
   const [saveMessage, setSaveMessage] = useState('')
   const [largePreview, setLargePreview] = useState(false)
+  const [nameDialog, setNameDialog] = useState<{ mode: 'rename' | 'duplicate'; value: string } | null>(null)
   const [background] = usePreviewBackground()
   const stageRef = useRef<HTMLDivElement | null>(null)
   const gestureRef = useRef<Gesture | null>(null)
@@ -550,8 +551,7 @@ export function AnimatorWorkspace() {
     if (animation && savedAnimationRef.current !== null) occupied.add(animation.slot)
     const slot = Array.from({ length: SLOT_COUNT }, (_, index) => index + 1).find((candidate) => !occupied.has(candidate)) ?? 0
     if (!slot) { setError('Os 12 slots deste modelo estão ocupados. Exclua uma animação para liberar espaço.'); return }
-    const name = window.prompt('Nome da animação', `Animação ${String(slot).padStart(2, '0')}`)?.trim()
-    if (!name) return
+    const name = `Animação ${String(slot).padStart(2, '0')}`
     try {
       const created = await makeInitialAnimation(slot, baseProject, name)
       pendingAssets.current = new Map(created.parts.map((part) => [part.id, part.dataUrl]))
@@ -630,9 +630,7 @@ export function AnimatorWorkspace() {
 
   const renameAnimation = () => {
     if (saving || !animation) return
-    const name = window.prompt('Novo nome da animação', animation.name)?.trim()
-    if (!name || name === animation.name) return
-    pushHistory(); setAnimation((current) => current ? { ...current, name, updatedAt: new Date().toISOString() } : current)
+    setNameDialog({ mode: 'rename', value: animation.name })
   }
 
   const updatePlaybackSettings = (patch: Partial<Pick<AnimatorAnimation, 'interpolation' | 'loopMode' | 'speed'>>) => {
@@ -643,7 +641,7 @@ export function AnimatorWorkspace() {
     if (stateRef.current) stateRef.current = { ...stateRef.current, animation: updated }
   }
 
-  const duplicateAnimation = async () => {
+  const duplicateAnimation = async (requestedName: string) => {
     if (saving || !animation) return
     if (savedAnimationRef.current === null || JSON.stringify(serializeAnimation(animation)) !== savedAnimationRef.current || dirtyFrame) {
       if (!window.confirm('A animação atual tem alterações. Salvar antes de duplicar?')) return
@@ -651,12 +649,22 @@ export function AnimatorWorkspace() {
     }
     const slot = Array.from({ length: SLOT_COUNT }, (_, index) => index + 1).find((candidate) => !summaries.some((item) => item.slot === candidate)) ?? 0
     if (!slot) { setError('Os 12 slots deste modelo estão ocupados.'); return }
-    const name = window.prompt('Nome da cópia', `${animation.name} — cópia`)?.trim()
+    const name = requestedName.trim()
     if (!name) return
     const copy = { ...structuredClone(animation), slot, name, frames: animation.frames.map((frame) => ({ ...structuredClone(frame), id: crypto.randomUUID() })), updatedAt: new Date().toISOString() }
     pendingAssets.current = new Map(copy.parts.map((part) => [part.id, part.dataUrl])); draftAssetsPersisted.current = false
     savedAnimationRef.current = null
     setAnimation(copy); setActiveSlot(slot); setSelectedFrameId(copy.frames[0].id); setCurrentTransforms(copy.frames[0].transforms); setCurrentJoints(copy.frames[0].joints); setUndoStack([]); setRedoStack([]); setSaveMessage('Cópia não salva')
+  }
+
+  const submitNameDialog = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const name = nameDialog?.value.trim()
+    if (!name || !nameDialog) return
+    if (nameDialog.mode === 'rename' && animation) {
+      pushHistory(); setAnimation((current) => current ? { ...current, name, updatedAt: new Date().toISOString() } : current)
+    } else if (nameDialog.mode === 'duplicate') void duplicateAnimation(name)
+    setNameDialog(null)
   }
 
   const deleteAnimation = async () => {
@@ -911,12 +919,13 @@ export function AnimatorWorkspace() {
       <label className="animator-character">Personagem<select value={characterId} onChange={(event) => { void changeCharacter(event.target.value) }}><option value="">Sem personagem</option>{characters.filter((character) => character.customization.modelSlot !== null).map((character) => <option key={character.id} value={character.id}>{character.name}</option>)}</select></label>
       <label className="animator-model">Modelo<select value={modelSlot ?? ''} onChange={(event) => { void changeModel(Number(event.target.value)) }}><option value="" disabled>Escolher modelo</option>{modelOptions.map((model) => <option key={model.slot} value={model.slot}>{model.label}</option>)}</select></label>
       <span className="animator-toolbar-spacer" />
-      <button className="pose-button secondary" onClick={() => void createAnimation()} disabled={!baseProject || loading} type="button"><Icon name="plus" /> Nova animação</button>
+      <button className="pose-button secondary" onClick={() => void createAnimation()} disabled={!baseProject || loading || saving} type="button"><Icon name="plus" /> Nova animação</button>
       <button className="pose-icon-button" title="Desfazer (Ctrl+Z)" disabled={!undoStack.length} onClick={undo} type="button"><Icon name="undo" /></button>
       <button className="pose-icon-button" title="Refazer (Ctrl+Shift+Z)" disabled={!redoStack.length} onClick={redo} type="button"><Icon name="redo" /></button>
-      {animation && <><button className="pose-button secondary" onClick={renameAnimation} type="button">Renomear</button><button className="pose-button secondary" onClick={() => void duplicateAnimation()} type="button">Duplicar</button><button className="pose-button danger" onClick={() => void deleteAnimation()} type="button"><Icon name="trash" /></button><button className="pose-button primary" onClick={() => void saveAnimation()} disabled={saving} type="button"><Icon name="check" />{saving ? 'Salvando…' : 'Salvar animação'}</button></>}
+      {animation && <><button className="pose-button secondary" onClick={renameAnimation} disabled={saving} type="button">Renomear</button><button className="pose-button secondary" onClick={() => setNameDialog({ mode: 'duplicate', value: `${animation.name} — cópia` })} disabled={saving} type="button">Duplicar</button><button className="pose-button danger" onClick={() => void deleteAnimation()} disabled={saving} type="button"><Icon name="trash" /></button><button className="pose-button primary" onClick={() => void saveAnimation()} disabled={saving} type="button"><Icon name="check" />{saving ? 'Salvando…' : 'Salvar animação'}</button></>}
       <span className={`pose-save-state${dirtyFrame ? ' pending' : ''}`}><i />{saveMessage || (animation ? 'Animação aberta' : 'Biblioteca vazia')}</span>
     </header>
+    {nameDialog && <div className="animator-dialog-backdrop"><form className="animator-name-dialog" onSubmit={submitNameDialog} role="dialog" aria-modal="true" aria-labelledby="animator-name-title"><strong id="animator-name-title">{nameDialog.mode === 'rename' ? 'Renomear animação' : 'Duplicar animação'}</strong><input autoFocus maxLength={80} value={nameDialog.value} onChange={(event) => setNameDialog((current) => current ? { ...current, value: event.target.value } : current)} aria-label="Nome da animação" /><div><button className="pose-button secondary" onClick={() => setNameDialog(null)} type="button">Cancelar</button><button className="pose-button primary" disabled={!nameDialog.value.trim() || saving} type="submit">{nameDialog.mode === 'rename' ? 'Renomear' : 'Duplicar'}</button></div></form></div>}
     {error && <div className="animator-error" role="alert"><span>{error}</span><button onClick={() => setError('')} type="button">Fechar</button></div>}
     {draft && !animation && <div className="pose-recovery"><span><strong>Rascunho de animação recuperável</strong><small>{draft.animation.name} · {draft.animation.frames.length} frames</small></span><div><button onClick={() => { void window.desktop.deleteAnimatorDraft(modelSlot!).then(() => setDraft(null)) }} type="button">Descartar</button><button className="pose-recover-button" onClick={() => {
       const restoredParts = draft.animation.parts as unknown as PosePart[]

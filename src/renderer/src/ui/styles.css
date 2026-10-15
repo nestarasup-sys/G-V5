@@ -392,7 +392,7 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .fabricator-section-button.active { border-color: #f3d5e0; background: #fff1f6; color: #a43d64; }
 .fabricator-section-button.active svg { color: #b2476e; }
 .fabricator-workspace { min-width: 0; min-height: 0; border: 1px solid #ede8ec; border-radius: 14px; background: #fff; box-shadow: 0 4px 18px #32223208; }
-.animator-workspace { display:flex;flex-direction:column;overflow:hidden; }
+.animator-workspace { position:relative;display:flex;flex-direction:column;overflow:hidden; }
 .animator-toolbar { min-height:58px;display:flex;align-items:center;gap:12px;padding:8px 13px;border-bottom:1px solid #eee8ed; }
 .animator-title { display:flex;align-items:center;gap:9px;margin-right:auto; }
 .animator-title>svg { width:27px;height:27px;padding:6px;border-radius:9px;background:#fff0f5;color:#bd4b72; }
@@ -548,6 +548,11 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .animator-large-preview .animator-side-panel,.animator-large-preview .animator-timeline-panel { display:none; }
 .animator-large-preview .animator-preview-column { grid-column:1; }
 .animator-saving .animator-editor-body,.animator-saving .animator-timeline-panel { pointer-events:none;opacity:.72; }
+.animator-dialog-backdrop { position:absolute;inset:0;z-index:1000;display:grid;place-items:center;padding:16px;background:#24192366; }
+.animator-name-dialog { width:min(360px,100%);display:grid;gap:12px;padding:18px;border:1px solid #eee3eb;border-radius:12px;background:#fff;box-shadow:0 18px 60px #26162033; }
+.animator-name-dialog>strong { color:#514852;font-size:14px; }
+.animator-name-dialog>input { min-width:0;height:38px;padding:0 10px;border:1px solid #e6d7e1;border-radius:7px;color:#514852;font:inherit; }
+.animator-name-dialog>div { display:flex;justify-content:flex-end;gap:8px; }
 .animator-large-preview .animator-toolbar> :not(.animator-title):not(.animator-model):not(.animator-character) { display:none; }
 @media(max-width:1000px) {
   .animator-toolbar { flex-wrap:wrap; }
