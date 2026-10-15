@@ -27,6 +27,12 @@ function loadCachedImage(source: string): Promise<HTMLImageElement> {
 type ClothingGroupCategory = CustomizerWardrobeCategory
 type WardrobeEditHistory = { characterId: string; undo: CustomizerWardrobeGroup[][]; redo: CustomizerWardrobeGroup[][] }
 type SelectedWardrobeComponent = { setId: string; category: ClothingGroupCategory; componentId: string }
+type HairCatalogSide = 'front' | 'back'
+const hairAppearanceStyleId = (appearance: NonNullable<CustomizerCharacter['customization']['hairAppearance']> | undefined, side: HairCatalogSide): string | null => {
+  if (!appearance) return null
+  const key = side === 'front' ? 'frontStyleId' : 'backStyleId'
+  return key in appearance ? appearance[key] ?? null : appearance.styleId ?? null
+}
 const clothingCategories: Record<'Superior' | 'Inferior', Array<{ id: ClothingGroupCategory; label: string; source: WardrobeCategory[] }>> = {
   Superior: [
     { id: 'camisa', label: 'Camisas', source: ['camisa'] },
@@ -201,8 +207,8 @@ async function renderArtwork(artwork: CatalogArtwork, maxSize: number): Promise<
   return canvas.toDataURL('image/png')
 }
 
-async function renderArtworkWithHair(artwork: CatalogArtwork, source: FabricatorProject, style: HairStyle | null, maxSize: number): Promise<string | null> {
-  if (!style || style.modelSlot !== source.slot) return renderArtwork(artwork, maxSize)
+async function renderArtworkWithHair(artwork: CatalogArtwork, source: FabricatorProject, frontStyle: HairStyle | null, backStyle: HairStyle | null, maxSize: number): Promise<string | null> {
+  if ((!frontStyle || frontStyle.modelSlot !== source.slot) && (!backStyle || backStyle.modelSlot !== source.slot)) return renderArtwork(artwork, maxSize)
   const sourceHead = source.parts.find((part) => /cabe[çc]a|head/i.test(part.name))
   const targetHead = artwork.parts.find((part) => /cabe[çc]a|head/i.test(part.name))
   if (!sourceHead || !targetHead || !sourceHead.width || !sourceHead.height) return renderArtwork(artwork, maxSize)
@@ -215,6 +221,8 @@ async function renderArtworkWithHair(artwork: CatalogArtwork, source: Fabricator
   const order = (artwork.layerOrder ?? []).filter((id, index, ids) => ids.indexOf(id) === index && artwork.parts.some((part) => part.id === id))
   for (const part of artwork.parts) if (!order.includes(part.id)) order.push(part.id)
   const drawHair = async (side: 'back' | 'front') => {
+    const style = side === 'back' ? backStyle : frontStyle
+    if (!style || style.modelSlot !== source.slot) return
     const asset = style[side]
     if (!asset) return
     try {
@@ -336,6 +344,7 @@ export function CustomizerPage() {
   const [faceLoading, setFaceLoading] = useState(false)
   const [hairStyles, setHairStyles] = useState<HairStyleSummary[]>([])
   const [hairDetails, setHairDetails] = useState<Record<string, HairStyle>>({})
+  const [hairCatalogSide, setHairCatalogSide] = useState<HairCatalogSide>('front')
   const [hairLoading, setHairLoading] = useState(false)
   const [faceCategory, setFaceCategory] = useState<'eyes' | 'eyebrows' | 'nose' | 'mouth'>('eyes')
   const [selectedClothing, setSelectedClothing] = useState<SelectedWardrobeComponent | null>(null)
@@ -614,14 +623,28 @@ export function CustomizerPage() {
     const appearance = selectedCharacter?.customization.hairAppearance
     if (!artwork || !source) return
     void (async () => {
-      const key = appearance ? `${appearance.modelSlot}:${appearance.styleId}` : ''
-      const cachedStyle = appearance ? hairDetails[key] : undefined
-      const style = appearance?.modelSlot === source.slot
-        ? cachedStyle ?? await window.desktop.loadHairStyle(appearance.modelSlot, appearance.styleId)
-        : null
+      const styleIds = {
+        front: hairAppearanceStyleId(appearance, 'front'),
+        back: hairAppearanceStyleId(appearance, 'back')
+      }
+      const resolved = await Promise.all((['front', 'back'] as const).map(async (side) => {
+        const id = styleIds[side]
+        if (!id || appearance?.modelSlot !== source.slot) return null
+        const key = `${appearance.modelSlot}:${id}`
+        const cached = hairDetails[key]
+        return { key, style: cached ?? await window.desktop.loadHairStyle(appearance.modelSlot, id) }
+      }))
       if (cancelled) return
-      if (style && appearance && !cachedStyle) setHairDetails((current) => ({ ...current, [key]: style }))
-      const url = await renderArtworkWithHair(artwork, source, style, 720)
+      const styles: Partial<Record<HairCatalogSide, HairStyle>> = {}
+      const newlyLoaded: Record<string, HairStyle> = {}
+      resolved.forEach((item, index) => {
+        const side = index === 0 ? 'front' : 'back'
+        if (!item?.style) return
+        styles[side] = item.style
+        if (!hairDetails[item.key]) newlyLoaded[item.key] = item.style
+      })
+      if (Object.keys(newlyLoaded).length) setHairDetails((current) => ({ ...current, ...newlyLoaded }))
+      const url = await renderArtworkWithHair(artwork, source, styles.front ?? null, styles.back ?? null, 720)
       if (!cancelled) setSelectedArtworkUrl(url)
     })().catch((reason: unknown) => {
       if (!cancelled) setCatalogError(reason instanceof Error ? reason.message : 'Não foi possível montar o cabelo do personagem.')
@@ -767,10 +790,16 @@ export function CustomizerPage() {
     await saveCharacterCustomization({ faceAppearance: appearance })
   }
 
-  async function chooseHairStyle(summary: HairStyleSummary | null) {
+  async function chooseHairStyle(summary: HairStyleSummary | null, side: HairCatalogSide) {
     if (!selectedCharacter) return
-    if (summary) await saveCharacterCustomization({ hairAppearance: { modelSlot: summary.modelSlot, styleId: summary.id } })
-    else await saveCharacterCustomization({ hairAppearance: undefined })
+    const modelSlot = summary?.modelSlot ?? selectedCatalogModelSlot
+    if (modelSlot === null || modelSlot === undefined) return
+    const current = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
+    const previous = current.customization.hairAppearance
+    const sameModel = previous?.modelSlot === modelSlot
+    const frontStyleId = side === 'front' ? summary?.id ?? null : sameModel ? hairAppearanceStyleId(previous, 'front') : null
+    const backStyleId = side === 'back' ? summary?.id ?? null : sameModel ? hairAppearanceStyleId(previous, 'back') : null
+    await saveCharacterCustomization({ hairAppearance: frontStyleId || backStyleId ? { modelSlot, frontStyleId, backStyleId } : undefined })
   }
 
   async function updateFaceAppearance(patch: Partial<CustomizerFaceAppearance>) {
@@ -1167,16 +1196,20 @@ export function CustomizerPage() {
                     : hairStyles.length === 0 ? <div className="customizer-catalog-empty">Este modelo ainda não tem cabelos no catálogo. Importe e salve um cabelo em Cabelos Dev.</div>
                       : <>
                         <div className="customizer-hair-heading"><span><strong>Cabelos do Modelo {String(selectedCatalogModelSlot).padStart(2, '0')}</strong><small>Aplicação salva somente em {selectedCharacter?.name ?? 'este personagem'}.</small></span>
-                          {characterHairAppearance?.modelSlot === selectedCatalogModelSlot && <button onClick={() => void chooseHairStyle(null)} type="button"><Icon name="eyeOff" /> Remover do personagem</button>}
+                          {characterHairAppearance?.modelSlot === selectedCatalogModelSlot && hairAppearanceStyleId(characterHairAppearance, hairCatalogSide) && <button onClick={() => void chooseHairStyle(null, hairCatalogSide)} type="button"><Icon name="eyeOff" /> Remover {hairCatalogSide === 'front' ? 'frontal' : 'traseiro'}</button>}
                         </div>
-                        <div className="customizer-hair-grid">{hairStyles.map((summary) => {
+                        <nav className="customizer-hair-tabs" aria-label="Categoria de cabelo">
+                          {([{ id: 'front', label: 'Frontal' }, { id: 'back', label: 'Traseiro' }] as const).map((category) => <button key={category.id} className={hairCatalogSide === category.id ? 'active' : ''} onClick={() => setHairCatalogSide(category.id)} aria-pressed={hairCatalogSide === category.id} type="button">{category.label}</button>)}
+                        </nav>
+                        <div className="customizer-hair-grid">{hairStyles.filter((summary) => summary[hairCatalogSide] !== null).map((summary) => {
                           const detail = hairDetails[String(summary.modelSlot) + ':' + summary.id]
-                          const selected = characterHairAppearance?.modelSlot === summary.modelSlot && characterHairAppearance.styleId === summary.id
-                          return <button className={'customizer-hair-card' + (selected ? ' selected' : '')} key={summary.id} onClick={() => void chooseHairStyle(summary)} aria-pressed={selected} title={'Aplicar ' + summary.name + ' em ' + (selectedCharacter?.name ?? 'personagem')} type="button">
-                            <span className="customizer-hair-art">{detail?.back && <img className="back" src={detail.back.dataUrl} alt="" />}{detail?.front && <img className="front" src={detail.front.dataUrl} alt="" />}{!detail && <span><Icon name="bow" /></span>}</span>
-                            <b>{summary.name}</b><small>{selected ? 'Aplicado' : 'Usar cabelo'}</small>
+                          const selected = characterHairAppearance?.modelSlot === summary.modelSlot && hairAppearanceStyleId(characterHairAppearance, hairCatalogSide) === summary.id
+                          const asset = detail?.[hairCatalogSide]
+                          return <button className={'customizer-hair-card' + (selected ? ' selected' : '')} key={summary.id} onClick={() => void chooseHairStyle(summary, hairCatalogSide)} aria-pressed={selected} title={'Aplicar cabelo ' + (hairCatalogSide === 'front' ? 'frontal' : 'traseiro') + ' em ' + (selectedCharacter?.name ?? 'personagem')} type="button">
+                            <span className="customizer-hair-art">{asset && <img src={asset.dataUrl} alt="" />}{!asset && <span><Icon name="bow" /></span>}</span>
+                            <b>{summary.name}</b><small>{selected ? 'Aplicado' : `Usar ${hairCatalogSide === 'front' ? 'frontal' : 'traseiro'}`}</small>
                           </button>
-                        })}</div>
+                        })}{hairStyles.every((summary) => summary[hairCatalogSide] === null) && <p className="customizer-face-empty">Nenhum cabelo {hairCatalogSide === 'front' ? 'frontal' : 'traseiro'} salvo para este modelo.</p>}</div>
                       </>}
               </div>}
               {activeModule === 'Roupas' && <div className="customizer-wardrobe-catalog">

@@ -83,7 +83,10 @@ function isCustomizerCharacter(value: unknown): value is CustomizerCharacter {
     && (character.customization.hairAppearance === undefined || (
       !!character.customization.hairAppearance
       && isValidModelSlot(character.customization.hairAppearance.modelSlot)
-      && isValidWardrobeId(character.customization.hairAppearance.styleId)
+      && (character.customization.hairAppearance.styleId === undefined || isValidWardrobeId(character.customization.hairAppearance.styleId))
+      && (character.customization.hairAppearance.frontStyleId === undefined || character.customization.hairAppearance.frontStyleId === null || isValidWardrobeId(character.customization.hairAppearance.frontStyleId))
+      && (character.customization.hairAppearance.backStyleId === undefined || character.customization.hairAppearance.backStyleId === null || isValidWardrobeId(character.customization.hairAppearance.backStyleId))
+      && Boolean(character.customization.hairAppearance.styleId || character.customization.hairAppearance.frontStyleId || character.customization.hairAppearance.backStyleId)
     ))
     && typeof character.createdAt === 'string' && typeof character.updatedAt === 'string'
 }

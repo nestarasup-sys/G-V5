@@ -9,8 +9,8 @@ export type CharacterCustomization = {
   wardrobeGroups?: CustomizerWardrobeGroup[]
   /** Facial features chosen from the read-only face library, isolated per character. */
   faceAppearance?: CustomizerFaceAppearance
-  /** Hair styles are selected per character and stored in the model's read-only hair library. */
-  hairAppearance?: { modelSlot: number; styleId: string }
+  /** Front and back hair styles are selected independently per character. styleId reads legacy whole-style selections. */
+  hairAppearance?: { modelSlot: number; styleId?: string; frontStyleId?: string | null; backStyleId?: string | null }
 }
 
 export type CustomizerFaceAppearance = {
