@@ -538,7 +538,7 @@ export function StudioPage() {
   })
 
   const control = (label: string, value: number, onChange: (value: number) => void, min: number, max: number, suffix = '%') => (
-    <label className="studio-control" key={label}><span>{label}</span><input type="number" value={Number(value.toFixed(1))} min={min} max={max} step="1" onChange={(event) => onChange(Math.min(max, Math.max(min, Number(event.target.value) || 0)))} /><small>{suffix}</small></label>
+    <StudioNumericControl key={label} label={label} value={value} onChange={onChange} min={min} max={max} suffix={suffix} />
   )
 
   const propertyPanel = (): ReactNode => {
@@ -684,6 +684,47 @@ export function StudioPage() {
       ) : <section className="studio-empty-state"><span><Icon name="camera" /></span><strong>Nenhum Studio criado</strong><small>Crie um Studio para começar sua coleção.</small></section>}
     </main>
   )
+}
+
+function StudioNumericControl({ label, value, onChange, min, max, suffix }: {
+  label: string
+  value: number
+  onChange: (value: number) => void
+  min: number
+  max: number
+  suffix: string
+}) {
+  const format = (number: number) => String(Number(number.toFixed(1)))
+  const [draft, setDraft] = useState(() => format(value))
+
+  useEffect(() => { setDraft(format(value)) }, [value])
+
+  const commit = () => {
+    const parsed = Number(draft)
+    if (!draft.trim() || !Number.isFinite(parsed)) {
+      setDraft(format(value))
+      return
+    }
+    const next = Math.min(max, Math.max(min, parsed))
+    setDraft(format(next))
+    if (next !== value) onChange(next)
+  }
+
+  return <label className="studio-control"><span>{label}</span><input
+    type="number"
+    inputMode="decimal"
+    value={draft}
+    min={min}
+    max={max}
+    step="0.1"
+    onChange={(event) => setDraft(event.target.value)}
+    onBlur={commit}
+    onKeyDown={(event) => {
+      if (event.key === 'Enter') { event.preventDefault(); commit() }
+      if (event.key === 'Escape') { setDraft(format(value)) }
+    }}
+    aria-label={label}
+  /><small>{suffix}</small></label>
 }
 
 function ElementControls({ element, update, remove, control }: {
