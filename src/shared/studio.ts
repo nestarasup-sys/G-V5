@@ -24,6 +24,8 @@ export type StudioElement = {
   faceAppearance?: CustomizerFaceAppearance
   /** Face-piece transforms are stored per selected catalog sheet on this Studio actor. */
   faceTransforms?: StudioFaceTransforms
+  /** Pose selected for this actor inside this Studio only. */
+  poseSlot?: number | null
   text: string
   x: number
   y: number

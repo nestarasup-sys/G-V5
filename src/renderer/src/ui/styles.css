@@ -181,6 +181,9 @@ button:focus-visible, input:focus-visible { outline: 3px solid #ed8caf; outline-
 .studio-inspector-tabs { height:40px;flex:0 0 40px;display:grid;grid-template-columns:1fr 1fr;padding:4px;border-bottom:1px solid #eee4eb;background:#fff; }
 .studio-inspector-tabs button { border:0;border-radius:6px;background:transparent;color:#8b7d8b;font-size:10px;font-weight:700;cursor:pointer; }
 .studio-inspector-tabs button.active { background:#fff0f6;color:#b34570; }
+.studio-inspector-presets { min-height:32px;flex:0 0 32px;display:flex;align-items:center;justify-content:center;gap:6px;margin:7px 10px 0;border:1px solid #ead8e2;border-radius:7px;background:#fff;color:#8b6477;font-size:10px;font-weight:700;cursor:pointer; }
+.studio-inspector-presets svg { width:13px;height:13px; }
+.studio-inspector-presets:hover,.studio-inspector-presets.active { border-color:#e879a3;background:#fff0f6;color:#ae4168; }
 .studio-inspector-close { min-height:30px;flex:0 0 30px;margin:8px 10px 0;border:1px solid #ead8e2;border-radius:7px;background:#fff;color:#8b6477;font-size:10px;font-weight:700;cursor:pointer; }
 .studio-inspector-close:hover { border-color:#e76391;background:#fff3f7;color:#a7446b; }
 .studio-inspector-content { min-height:0;overflow:auto;padding:10px; }
@@ -218,6 +221,26 @@ button:focus-visible, input:focus-visible { outline: 3px solid #ed8caf; outline-
 .studio-custom-face-preview-art.pair img { width:43%; }
 .studio-custom-face-preview-art>span { color:#9a8d9b;font-size:9px; }
 .studio-custom-empty { display:flex;flex-direction:column;gap:6px;padding:10px;border:1px solid #eee3eb;border-radius:8px;background:#fff;color:#6c606e;font-size:10px; }
+.studio-presets-panel { display:flex;flex-direction:column;gap:11px; }
+.studio-preset-buttons { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));grid-template-rows:repeat(3,66px);gap:6px; }
+.studio-preset-button { min-width:0;display:flex;flex-direction:column;align-items:flex-start;justify-content:space-between;padding:8px;border:1px solid #eee3eb;border-radius:9px;background:#fff;color:#514451;text-align:left;font-size:9px;cursor:pointer; }
+.studio-preset-button svg { width:17px;height:17px;padding:4px;box-sizing:content-box;border-radius:6px;background:#fbf3f7;color:#c04f7a; }
+.studio-preset-button.active { border-color:#ee79a2;background:#fff5f8;color:#a83e67; }
+.studio-preset-button.reserved { color:#b9aeb8;background:#fcfafb;cursor:default; }
+.studio-preset-button.reserved svg { color:#c9bec7;background:#f7f3f6; }
+.studio-preset-catalog { display:flex;flex-direction:column;gap:7px;padding-top:9px;border-top:1px solid #eee4eb; }
+.studio-preset-catalog h3 { margin:0;color:#514451;font-size:11px; }
+.studio-preset-list { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;max-height:270px;overflow:auto; }
+.studio-pose-option { min-width:0;display:flex;flex-direction:column;align-items:center;gap:4px;padding:6px;border:1px solid #eee3eb;border-radius:8px;background:#fff;color:#5d515f;cursor:pointer; }
+.studio-pose-option.selected,.studio-expression-grid button.selected { border-color:#e76391;background:#fff0f6;color:#ae4168; }
+.studio-pose-thumb { width:100%;height:72px;display:grid;place-items:center;overflow:hidden;border-radius:5px;background:#fbf8fa; }
+.studio-pose-thumb .character-portrait { width:46px;height:62px; }
+.studio-pose-thumb>img { width:100%;height:100%;object-fit:contain; }
+.studio-pose-option b { max-width:100%;overflow:hidden;font-size:8px;text-overflow:ellipsis;white-space:nowrap; }
+.studio-expression-grid { display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:5px;max-height:280px;overflow:auto; }
+.studio-expression-grid button { min-width:0;display:flex;flex-direction:column;align-items:center;gap:3px;padding:4px;border:1px solid #eee3eb;border-radius:6px;background:#fff;color:#756a76;cursor:pointer; }
+.studio-expression-grid img { width:100%;height:38px;object-fit:contain;border-radius:3px;background:#fbf8fa; }
+.studio-expression-grid span { font-size:8px; }
 .studio-custom-empty span,.studio-custom-hint { margin:0;color:#998d9b;font-size:9px;line-height:1.4; }
 .studio-editor.full-view .studio-scene-canvas { width:min(100%,calc(100vh * 16 / 9));height:auto;max-height:100%;aspect-ratio:16/9;border:0;border-radius:0;box-shadow:none; }
 .studio-scene-title { position:absolute;top:10px;left:12px;color:#342e36b0;font-size:10px;font-weight:700; }
