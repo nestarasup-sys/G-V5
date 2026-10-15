@@ -538,12 +538,14 @@ export function StudioPage() {
         customization: { ...selectedStudioCharacter.customization, faceAppearance: appearance }
       }
       const rendered = await renderSavedCharacter(characterCopy)
+      const trimmed = await trimTransparentImage(rendered.dataUrl)
+      const studioDataUrl = trimmed?.dataUrl ?? rendered.dataUrl
       const elementId = selectedElement.id
       const assetId = selectedElement.assetId
       changeScene((studio) => ({
         ...studio,
         elements: studio.elements.map((element) => element.id === elementId ? { ...element, faceAppearance: appearance } : element),
-        assets: studio.assets.map((asset) => asset.id === assetId ? { ...asset, dataUrl: rendered.dataUrl, mimeType: 'image/png' } : asset),
+        assets: studio.assets.map((asset) => asset.id === assetId ? { ...asset, dataUrl: studioDataUrl, mimeType: 'image/png' } : asset),
         updatedAt: new Date().toISOString()
       }))
       setError(null)
