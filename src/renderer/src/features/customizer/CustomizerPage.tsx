@@ -383,15 +383,10 @@ async function renderFaceOverlay(artwork: CatalogArtwork, source: FabricatorProj
   return canvas.toDataURL('image/png')
 }
 
-async function renderFaceCatalogOverlay(artwork: CatalogArtwork, source: FabricatorProject, items: Partial<Record<FaceSheetKind, FaceCatalogItem>>, appearance: CustomizerFaceAppearance, studioFaceTransforms?: StudioFaceTransforms): Promise<string | null> {
+async function drawFaceCatalogOverlay(context: CanvasRenderingContext2D, artwork: CatalogArtwork, source: FabricatorProject, items: Partial<Record<FaceSheetKind, FaceCatalogItem>>, appearance: CustomizerFaceAppearance, studioFaceTransforms?: StudioFaceTransforms): Promise<void> {
   const sourceHead = source.parts.find((part) => /cabe[çc]a|head/i.test(part.name))
   const targetHead = artwork.parts.find((part) => /cabe[çc]a|head/i.test(part.name))
-  if (!sourceHead || !targetHead || sourceHead.width <= 0 || sourceHead.height <= 0) return null
-  const canvas = document.createElement('canvas')
-  canvas.width = Math.max(1, artwork.width)
-  canvas.height = Math.max(1, artwork.height)
-  const context = canvas.getContext('2d')
-  if (!context) return null
+  if (!sourceHead || !targetHead || sourceHead.width <= 0 || sourceHead.height <= 0) return
   const categoryIds: Partial<Record<FaceSheetKind, string | undefined>> = {
     eyes: appearance.eyeCatalogId,
     eyebrows: appearance.eyebrowCatalogId,
@@ -427,11 +422,20 @@ async function renderFaceCatalogOverlay(artwork: CatalogArtwork, source: Fabrica
       context.restore()
     } catch { /* Keep the rest of the face visible if one catalog asset is missing. */ }
   }
+}
+
+async function renderFaceCatalogOverlay(artwork: CatalogArtwork, source: FabricatorProject, items: Partial<Record<FaceSheetKind, FaceCatalogItem>>, appearance: CustomizerFaceAppearance, studioFaceTransforms?: StudioFaceTransforms): Promise<string | null> {
+  const canvas = document.createElement('canvas')
+  canvas.width = Math.max(1, artwork.width)
+  canvas.height = Math.max(1, artwork.height)
+  const context = canvas.getContext('2d')
+  if (!context) return null
+  await drawFaceCatalogOverlay(context, artwork, source, items, appearance, studioFaceTransforms)
   return canvas.toDataURL('image/png')
 }
 
 /** Render the selected Customizer character as one self-contained Studio actor image. */
-export async function renderSavedCharacter(character: CustomizerCharacter, studioFaceTransforms?: StudioFaceTransforms): Promise<{ dataUrl: string; width: number; height: number }> {
+export async function prepareSavedCharacterRenderer(character: CustomizerCharacter): Promise<{ width: number; height: number; render: (appearance?: CustomizerFaceAppearance, studioFaceTransforms?: StudioFaceTransforms) => Promise<{ dataUrl: string; width: number; height: number }> }> {
   const modelSlot = character.customization.modelSlot ?? 1
   const source = await window.desktop.loadFabricatorSlot(modelSlot)
   if (!source) throw new Error(`O modelo de ${character.name} não está disponível.`)
@@ -457,8 +461,10 @@ export async function renderSavedCharacter(character: CustomizerCharacter, studi
   }))
   const wardrobe = await renderWardrobeOverlay(groups, details, artwork, modelSlot, source, null, character.customization.modelSkinTone)
 
-  let faceUrl: string | null = null
   const appearance = character.customization.faceAppearance
+  let faceItems: Partial<Record<FaceSheetKind, FaceCatalogItem>> = {}
+  const faceItemPromises = new Map<string, Promise<FaceCatalogItem | null>>()
+  let legacyFaceUrl: string | null = null
   if (appearance?.modelSlot === modelSlot) {
     if (appearance.eyeCatalogId || appearance.eyebrowCatalogId || appearance.noseCatalogId || appearance.mouthClosedCatalogId || appearance.mouthOpenCatalogId) {
       const selections: Array<[FaceSheetKind, string | undefined]> = [
@@ -466,28 +472,59 @@ export async function renderSavedCharacter(character: CustomizerCharacter, studi
         ['mouth-closed', appearance.mouthClosedCatalogId], ['mouth-open', appearance.mouthOpenCatalogId]
       ]
       const entries = await Promise.all(selections.filter((entry): entry is [FaceSheetKind, string] => Boolean(entry[1])).map(async ([category, id]) => [category, await window.desktop.loadFaceCatalogItem(modelSlot, id)] as const))
-      const items: Partial<Record<FaceSheetKind, FaceCatalogItem>> = {}
-      for (const [category, item] of entries) if (item) items[category] = item
-      faceUrl = await renderFaceCatalogOverlay(artwork, source, items, appearance, studioFaceTransforms)
+      for (const [category, item] of entries) if (item) faceItems[category] = item
     } else if (appearance.setId) {
       const face = await window.desktop.loadFaceSet(modelSlot, appearance.setId)
-      if (face) faceUrl = await renderFaceOverlay(artwork, source, face, appearance)
+      if (face) legacyFaceUrl = await renderFaceOverlay(artwork, source, face, appearance)
     }
   }
   const frontHairUrl = frontStyle ? await renderFrontHairOverlay(artwork, source, frontStyle, 960) : null
   const baseImage = await loadCachedImage(baseUrl)
+  const wardrobeImage = wardrobe.imageUrl ? await loadCachedImage(wardrobe.imageUrl) : null
+  const legacyFaceImage = legacyFaceUrl ? await loadCachedImage(legacyFaceUrl) : null
+  const frontHairImage = frontHairUrl ? await loadCachedImage(frontHairUrl) : null
   const canvas = document.createElement('canvas')
   canvas.width = Math.max(1, artwork.width)
   canvas.height = Math.max(1, artwork.height)
   const context = canvas.getContext('2d')
   if (!context) throw new Error('Não foi possível preparar a imagem do personagem.')
-  context.drawImage(baseImage, 0, 0, canvas.width, canvas.height)
-  for (const overlayUrl of [wardrobe.imageUrl, faceUrl, frontHairUrl]) {
-    if (!overlayUrl) continue
-    const overlay = await loadCachedImage(overlayUrl)
-    context.drawImage(overlay, 0, 0, canvas.width, canvas.height)
+  const render = async (currentAppearance: CustomizerFaceAppearance | undefined = appearance, studioFaceTransforms?: StudioFaceTransforms) => {
+    context.clearRect(0, 0, canvas.width, canvas.height)
+    context.drawImage(baseImage, 0, 0, canvas.width, canvas.height)
+    if (wardrobeImage) context.drawImage(wardrobeImage, 0, 0, canvas.width, canvas.height)
+    if (currentAppearance?.modelSlot === modelSlot) {
+      const selections: Array<[FaceSheetKind, string | undefined]> = [
+        ['eyes', currentAppearance.eyeCatalogId], ['eyebrows', currentAppearance.eyebrowCatalogId], ['nose', currentAppearance.noseCatalogId],
+        ['mouth-closed', currentAppearance.mouthClosedCatalogId], ['mouth-open', currentAppearance.mouthOpenCatalogId]
+      ]
+      const hasCatalogSelection = selections.some(([, id]) => Boolean(id))
+      const activeItems: Partial<Record<FaceSheetKind, FaceCatalogItem>> = {}
+      await Promise.all(selections.filter((entry): entry is [FaceSheetKind, string] => Boolean(entry[1])).map(async ([category, id]) => {
+        let item = faceItems[category]?.id === id ? faceItems[category] : null
+        if (!item) {
+          const key = `${category}:${id}`
+          let pending = faceItemPromises.get(key)
+          if (!pending) {
+            pending = window.desktop.loadFaceCatalogItem(modelSlot, id)
+            faceItemPromises.set(key, pending)
+          }
+          item = await pending ?? null
+          if (item) faceItems[category] = item
+        }
+        if (item) activeItems[category] = item
+      }))
+      if (Object.keys(activeItems).length) await drawFaceCatalogOverlay(context, artwork, source, activeItems, currentAppearance, studioFaceTransforms)
+      else if (!hasCatalogSelection && legacyFaceImage && currentAppearance.setId === appearance?.setId) context.drawImage(legacyFaceImage, 0, 0, canvas.width, canvas.height)
+    } else if (legacyFaceImage) context.drawImage(legacyFaceImage, 0, 0, canvas.width, canvas.height)
+    if (frontHairImage) context.drawImage(frontHairImage, 0, 0, canvas.width, canvas.height)
+    return { dataUrl: canvas.toDataURL('image/png'), width: canvas.width, height: canvas.height }
   }
-  return { dataUrl: canvas.toDataURL('image/png'), width: canvas.width, height: canvas.height }
+  return { width: canvas.width, height: canvas.height, render }
+}
+
+export async function renderSavedCharacter(character: CustomizerCharacter, studioFaceTransforms?: StudioFaceTransforms): Promise<{ dataUrl: string; width: number; height: number }> {
+  const renderer = await prepareSavedCharacterRenderer(character)
+  return renderer.render(character.customization.faceAppearance, studioFaceTransforms)
 }
 
 const modules: { name: string; icon: IconName; detail: string }[] = [

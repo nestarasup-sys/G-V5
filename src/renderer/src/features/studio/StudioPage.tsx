@@ -99,6 +99,11 @@ function withSnapshot(studio: StudioDocument, next: StudioSnapshot): StudioDocum
   return { ...studio, ...next, updatedAt: new Date().toISOString() }
 }
 
+function studioCharacterRenderKey(character: CustomizerCharacter): string {
+  const { faceAppearance: _ignored, ...customization } = character.customization
+  return JSON.stringify({ id: character.id, customization })
+}
+
 function studioElementSize(element: StudioElement) {
   if (element.kind !== 'character') return { width: element.width, height: element.height }
   const scale = (element.characterScale ?? 100) / 100
@@ -227,7 +232,9 @@ export function StudioPage() {
   const studioFaceTransformsRef = useRef<Record<string, StudioFaceTransforms>>({})
   const studioFaceRenderTimerRef = useRef<number | null>(null)
   const studioFaceRenderVersionRef = useRef(0)
-  const studioFaceRenderPendingRef = useRef<{ studioId: string; elementId: string; assetId: string; character: CustomizerCharacter; appearance: CustomizerFaceAppearance; transforms: StudioFaceTransforms } | null>(null)
+  const studioFaceRenderPendingRef = useRef<{ studioId: string; elementId: string; assetId: string; character: CustomizerCharacter; transforms: StudioFaceTransforms } | null>(null)
+  const studioFaceRenderRunningRef = useRef(false)
+  const studioFaceRendererRef = useRef<{ key: string; render: (appearance?: CustomizerFaceAppearance, transforms?: StudioFaceTransforms) => Promise<{ dataUrl: string; width: number; height: number }> } | null>(null)
   const saveGenerationRef = useRef(0)
   const normalizedStudioIdsRef = useRef(new Set<string>())
   const nextStudioNumber = useRef(1)
@@ -595,12 +602,26 @@ export function StudioPage() {
     if (!activeStudio || selectedElement?.kind !== 'character' || !selectedStudioCharacter || !selectedElement.assetId || studioFaceBusy) return
     setStudioFaceBusy(true)
     try {
-      const { renderSavedCharacter } = await import('../customizer/CustomizerPage')
+      // Cancel queued slider renders and let any in-flight composition finish before
+      // reusing its canvas for a new catalog selection.
+      studioFaceRenderVersionRef.current += 1
+      studioFaceRenderPendingRef.current = null
+      if (studioFaceRenderTimerRef.current !== null) {
+        window.clearTimeout(studioFaceRenderTimerRef.current)
+        studioFaceRenderTimerRef.current = null
+      }
+      while (studioFaceRenderRunningRef.current) await new Promise((resolve) => window.setTimeout(resolve, 16))
       const characterCopy: CustomizerCharacter = {
         ...selectedStudioCharacter,
-        customization: { ...selectedStudioCharacter.customization, faceAppearance: appearance }
+        customization: { ...selectedStudioCharacter.customization, poseSlot: selectedElement.poseSlot ?? selectedStudioCharacter.customization.poseSlot, faceAppearance: appearance }
       }
-      const rendered = await renderSavedCharacter(characterCopy, faceTransforms)
+      const key = studioCharacterRenderKey(characterCopy)
+      if (!studioFaceRendererRef.current || studioFaceRendererRef.current.key !== key) {
+        const { prepareSavedCharacterRenderer } = await import('../customizer/CustomizerPage')
+        const renderer = await prepareSavedCharacterRenderer(characterCopy)
+        studioFaceRendererRef.current = { key, render: renderer.render }
+      }
+      const rendered = await studioFaceRendererRef.current.render(appearance, faceTransforms)
       const trimmed = await trimTransparentImage(rendered.dataUrl)
       const studioDataUrl = trimmed?.dataUrl ?? rendered.dataUrl
       const elementId = selectedElement.id
@@ -694,7 +715,8 @@ export function StudioPage() {
     studioFaceTransformsRef.current[selectedElement.id] = next
     updateElement(selectedElement.id, { faceTransforms: next }, record)
     if (selectedStudioCharacter && selectedStudioFaceAppearance && selectedElement.assetId && activeStudioId) {
-      scheduleStudioFacePreview({ studioId: activeStudioId, elementId: selectedElement.id, assetId: selectedElement.assetId, character: selectedStudioCharacter, appearance: selectedStudioFaceAppearance, transforms: next })
+      const character: CustomizerCharacter = { ...selectedStudioCharacter, customization: { ...selectedStudioCharacter.customization, poseSlot: selectedElement.poseSlot ?? selectedStudioCharacter.customization.poseSlot, faceAppearance: selectedStudioFaceAppearance } }
+      scheduleStudioFacePreview({ studioId: activeStudioId, elementId: selectedElement.id, assetId: selectedElement.assetId, character, transforms: next })
     }
   }
 
@@ -722,26 +744,39 @@ export function StudioPage() {
   }
 
   const renderPendingStudioFacePreview = async () => {
-    const job = studioFaceRenderPendingRef.current
-    if (!job) return
-    const version = studioFaceRenderVersionRef.current
+    if (studioFaceRenderRunningRef.current) return
+    studioFaceRenderRunningRef.current = true
     try {
-      const { renderSavedCharacter } = await import('../customizer/CustomizerPage')
-      const characterCopy: CustomizerCharacter = { ...job.character, customization: { ...job.character.customization, faceAppearance: job.appearance } }
-      const rendered = await renderSavedCharacter(characterCopy, job.transforms)
-      const trimmed = await trimTransparentImage(rendered.dataUrl)
-      const studioDataUrl = trimmed?.dataUrl ?? rendered.dataUrl
-      if (version === studioFaceRenderVersionRef.current && job.studioId === activeStudioId) {
-        patchStudio((studio) => ({
-          ...studio,
-          assets: studio.assets.map((asset) => asset.id === job.assetId ? { ...asset, dataUrl: studioDataUrl, mimeType: 'image/png' } : asset),
-          updatedAt: new Date().toISOString()
-        }))
+      while (studioFaceRenderPendingRef.current) {
+        const job = studioFaceRenderPendingRef.current
+        studioFaceRenderPendingRef.current = null
+        const version = studioFaceRenderVersionRef.current
+        const key = studioCharacterRenderKey(job.character)
+        try {
+          if (!studioFaceRendererRef.current || studioFaceRendererRef.current.key !== key) {
+            const { prepareSavedCharacterRenderer } = await import('../customizer/CustomizerPage')
+            const renderer = await prepareSavedCharacterRenderer(job.character)
+            if (version !== studioFaceRenderVersionRef.current) continue
+            studioFaceRendererRef.current = { key, render: renderer.render }
+          }
+          const rendered = await studioFaceRendererRef.current.render(job.character.customization.faceAppearance, studioFaceTransformsRef.current[job.elementId] ?? job.transforms)
+          const trimmed = await trimTransparentImage(rendered.dataUrl)
+          const studioDataUrl = trimmed?.dataUrl ?? rendered.dataUrl
+          if (version === studioFaceRenderVersionRef.current && job.studioId === activeStudioId) {
+            patchStudio((studio) => ({
+              ...studio,
+              assets: studio.assets.map((asset) => asset.id === job.assetId ? { ...asset, dataUrl: studioDataUrl, mimeType: 'image/png' } : asset),
+              updatedAt: new Date().toISOString()
+            }))
+          }
+        } catch (reason) {
+          if (version === studioFaceRenderVersionRef.current && job.studioId === activeStudioId) setError(reason instanceof Error ? reason.message : 'Não foi possível atualizar a prévia facial.')
+        }
       }
-    } catch (reason) {
-      if (version === studioFaceRenderVersionRef.current && job.studioId === activeStudioId) setError(reason instanceof Error ? reason.message : 'Não foi possível atualizar a prévia facial.')
+    } finally {
+      studioFaceRenderRunningRef.current = false
     }
-    if (version !== studioFaceRenderVersionRef.current && studioFaceRenderTimerRef.current === null && studioFaceRenderPendingRef.current) {
+    if (studioFaceRenderPendingRef.current && studioFaceRenderTimerRef.current === null) {
       studioFaceRenderTimerRef.current = window.setTimeout(() => {
         studioFaceRenderTimerRef.current = null
         void renderPendingStudioFacePreview()
