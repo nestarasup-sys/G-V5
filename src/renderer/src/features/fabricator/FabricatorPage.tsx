@@ -10,7 +10,7 @@ import { WardrobeWorkspace } from './wardrobe/WardrobeWorkspace'
 import { FaceWorkspace } from './face/FaceWorkspace'
 
 const sections: { label: string; icon: IconName }[] = [
-  { label: 'Modelos', icon: 'sparkles' }, { label: 'Poses', icon: 'expand' }, { label: 'Roupas', icon: 'shirt' }, { label: 'Rosto', icon: 'face' }
+  { label: 'Modelos', icon: 'sparkles' }, { label: 'Poses', icon: 'expand' }, { label: 'Roupas', icon: 'shirt' }, { label: 'Rosto', icon: 'face' }, { label: 'Cabelos Dev', icon: 'bow' }
 ]
 
 type ProcessedPart = Omit<ModelPart, 'dataUrl' | 'chromaBaseDataUrl'> & { png: ArrayBuffer; basePng: ArrayBuffer }
@@ -991,7 +991,11 @@ export function FabricatorPage() {
         </nav>
       </aside>
 
-      {activeSection === 'Poses' ? <PoseWorkspace /> : activeSection === 'Roupas' ? <WardrobeWorkspace /> : activeSection === 'Rosto' ? <FaceWorkspace /> : (
+      {activeSection === 'Poses' ? <PoseWorkspace /> : activeSection === 'Roupas' ? <WardrobeWorkspace /> : activeSection === 'Rosto' ? <FaceWorkspace /> : activeSection === 'Cabelos Dev' ? (
+        <section className="fabricator-workspace hair-dev-workspace" aria-label="Cabelos Dev">
+          <header><span className="model-slot-logo"><Icon name="bow" /></span><span><strong>Cabelos Dev</strong><small>Área de produção de cabelos</small></span></header>
+        </section>
+      ) : (
         <section className="fabricator-model-editor" aria-label="Editor de modelos">
           <header className="model-slotbar">
             <div className="model-slot-title"><span className="model-slot-logo"><Icon name="sparkles" /></span><span><strong>Modelos</strong><small>10 espaços de trabalho</small></span></div>
