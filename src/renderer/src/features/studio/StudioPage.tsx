@@ -567,12 +567,13 @@ export function StudioPage() {
       <h3>Na cena</h3>
       {stageCharacters.length ? stageCharacters.map((element) => {
         const character = availableCharacters.find((item) => item.id === element.characterId)
+        const firstName = (character?.name ?? element.text).trim().split(/\s+/)[0] || element.text
         return <article className={`studio-cast-item${selectedElementId === element.id ? ' selected' : ''}`} key={element.id}>
           <button className="studio-cast-select" onClick={() => { setSelectedElementId(element.id); setActiveTool(null); setInspectorTab('editor') }} type="button">
             {character ? <CharacterPortrait character={character} /> : <span className="studio-cast-fallback">{element.text.slice(0, 1)}</span>}
-            <span>{element.text}</span>
+            <span>{firstName}</span>
           </button>
-          <button className="studio-cast-remove" onClick={() => removeStageCharacter(element)} aria-label={`Remover ${element.text} do elenco`} title="Remover da cena" type="button">×</button>
+          <button className="studio-cast-remove" onClick={() => removeStageCharacter(element)} aria-label={`Remover ${firstName} do elenco`} title="Remover da cena" type="button">×</button>
         </article>
       }) : <p className="studio-cast-empty">Adicione personagens para montar a cena.</p>}
     </section>
