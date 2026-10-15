@@ -144,8 +144,8 @@ button:focus-visible, input:focus-visible { outline: 3px solid #ed8caf; outline-
 .studio-text-control textarea { width:100%;resize:vertical;padding:7px;border:1px solid #eadce5;border-radius:6px;background:#fff;color:#514651;font:11px/1.4 inherit; }
 .studio-canvas-background,.studio-canvas-element { position:absolute;touch-action:none;user-select:none; }
 .studio-canvas-background { z-index:0;object-fit:fill;cursor:move; }
-.studio-canvas-element { display:grid;place-items:center;overflow:visible;cursor:move; }
-.studio-canvas-element>img { width:100%;height:100%;object-fit:contain;pointer-events:none; }
+.studio-canvas-element { min-width:0;min-height:0;display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr);place-items:center;overflow:visible;cursor:move; }
+.studio-canvas-element>img { min-width:0;min-height:0;width:100%;height:100%;object-fit:contain;pointer-events:none; }
 .studio-element-character { overflow:hidden; }
 .studio-element-character>img { object-fit:fill; }
 .studio-canvas-element>span { width:100%;height:100%;position:relative;display:flex;align-items:center;justify-content:center;overflow:hidden;padding:5px 8px;border:1px solid #624d5b;border-radius:9px;background:#fffffff0;color:#352d35;font-size:clamp(9px,1.4vw,18px);line-height:1.2;text-align:center;white-space:pre-wrap;overflow-wrap:anywhere; }
