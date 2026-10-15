@@ -69,11 +69,12 @@ function makeCanvasPrint(studio: StudioDocument): Promise<string> {
       image.onerror = () => fail(new Error('Uma imagem da cena não pôde ser carregada para o print.'))
       image.src = src
     })
-    const drawImage = async (src: string, x: number, y: number, width: number, height: number, rotation: number) => {
+    const drawImage = async (src: string, x: number, y: number, width: number, height: number, rotation: number, flipX = false) => {
       const image = await load(src)
       context.save()
       context.translate((50 + x) * 19.2, (50 + y) * 10.8)
       context.rotate(rotation * Math.PI / 180)
+      if (flipX) context.scale(-1, 1)
       context.drawImage(image, -width * 9.6, -height * 5.4, width * 19.2, height * 10.8)
       context.restore()
     }
@@ -114,7 +115,7 @@ function makeCanvasPrint(studio: StudioDocument): Promise<string> {
         for (const element of [...studio.elements].sort((a, b) => a.zIndex - b.zIndex)) {
           if (element.kind === 'image' || element.kind === 'character') {
             const asset = studio.assets.find((item) => item.id === element.assetId)
-            if (asset) await drawImage(asset.dataUrl, element.x, element.y, element.width, element.height, element.rotation)
+            if (asset) await drawImage(asset.dataUrl, element.x, element.y, element.width, element.height, element.rotation, element.kind === 'character' && element.flipX === true)
           } else drawText(element)
         }
         resolve(canvas.toDataURL('image/png'))
@@ -620,9 +621,9 @@ export function StudioPage() {
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [castPickerOpen, savingCast, fullView, activeStudio, historyVersion])
 
-  const imageStyle = (x: number, y: number, width: number, height: number, rotation: number) => ({
+  const imageStyle = (x: number, y: number, width: number, height: number, rotation: number, flipX = false) => ({
     left: `calc(50% + ${x}%)`, top: `calc(50% + ${y}%)`, width: `${width}%`, height: `${height}%`,
-    transform: `translate(-50%, -50%) rotate(${rotation}deg)`
+    transform: `translate(-50%, -50%) rotate(${rotation}deg) scaleX(${flipX ? -1 : 1})`
   })
 
   const control = (label: string, value: number, onChange: (value: number) => void, min: number, max: number, suffix = '%') => (
@@ -781,7 +782,7 @@ export function StudioPage() {
             {backgroundAsset && <img className={`studio-canvas-background${selectedElementId === 'background' && !fullView ? ' selected' : ''}`} src={backgroundAsset.dataUrl} alt="" style={imageStyle(activeStudio.backgroundX, activeStudio.backgroundY, activeStudio.backgroundWidth, activeStudio.backgroundHeight, activeStudio.backgroundRotation)} onPointerDown={(event) => startDrag(event, 'background')} onPointerMove={moveDrag} onPointerUp={endDrag} onPointerCancel={endDrag} />}
             {[...activeStudio.elements].sort((a, b) => a.zIndex - b.zIndex).map((element) => {
               const asset = element.assetId ? activeStudio.assets.find((item) => item.id === element.assetId) : undefined
-              return <div key={element.id} className={`studio-canvas-element studio-element-${element.kind}${selectedElementId === element.id && !fullView ? ' selected' : ''}`} style={{ ...imageStyle(element.x, element.y, element.width, element.height, element.rotation), zIndex: element.zIndex + 1 }} onPointerDown={(event) => startDrag(event, element.id)} onPointerMove={moveDrag} onPointerUp={endDrag} onPointerCancel={endDrag}>
+              return <div key={element.id} className={`studio-canvas-element studio-element-${element.kind}${selectedElementId === element.id && !fullView ? ' selected' : ''}`} style={{ ...imageStyle(element.x, element.y, element.width, element.height, element.rotation, element.kind === 'character' && element.flipX === true), zIndex: element.zIndex + 1 }} onPointerDown={(event) => startDrag(event, element.id)} onPointerMove={moveDrag} onPointerUp={endDrag} onPointerCancel={endDrag}>
                 {(element.kind === 'image' || element.kind === 'character') && asset ? <img src={asset.dataUrl} alt={asset.name} draggable={false} /> : <span>{element.text}</span>}
               </div>
             })}
@@ -888,7 +889,8 @@ function ElementControls({ element, update, remove, control }: {
       {control('Altura', element.height, (value) => update({ height: value }), 1, 200)}
       {control('Rotação', element.rotation, (value) => update({ rotation: value }), -180, 180, '°')}
     </div>
-    {(element.kind === 'image' || element.kind === 'character') && <div className="studio-layer-actions"><button type="button" onClick={() => update({ zIndex: element.zIndex + 1 })}>Trazer para frente</button><button type="button" onClick={() => update({ zIndex: Math.max(0, element.zIndex - 1) })}>Enviar para trás</button></div>}
+    {element.kind === 'character' && <div className="studio-layer-actions studio-character-actions"><button type="button" onClick={() => update({ flipX: !element.flipX })}><Icon name="flipHorizontal" />Espelhar personagem</button><button type="button" onClick={() => update({ zIndex: Math.max(0, element.zIndex - 1) })}>Para trás</button><button type="button" onClick={() => update({ zIndex: element.zIndex + 1 })}>Para frente</button></div>}
+    {element.kind === 'image' && <div className="studio-layer-actions"><button type="button" onClick={() => update({ zIndex: element.zIndex + 1 })}>Para frente</button><button type="button" onClick={() => update({ zIndex: Math.max(0, element.zIndex - 1) })}>Para trás</button></div>}
     <button className="studio-side-danger" type="button" onClick={remove}><Icon name="trash" />Excluir da cena</button>
   </>
 }
