@@ -401,6 +401,8 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .animator-title small,.animator-readonly { color:#9b909b;font-size:10px; }
 .animator-model { display:grid;gap:3px;color:#8b7c89;font-size:10px;font-weight:700; }
 .animator-model select { min-width:190px;min-height:31px;padding:0 8px;border:1px solid #e9dfe6;border-radius:8px;background:#fff;color:#534651;font:inherit; }
+.animator-character { display:grid;gap:3px;color:#8b7c89;font-size:10px;font-weight:700; }
+.animator-character select { min-width:150px;min-height:31px;padding:0 8px;border:1px solid #e9dfe6;border-radius:8px;background:#fff;color:#534651;font:inherit; }
 .animator-readonly { padding:7px 9px;border:1px solid #eee8ed;border-radius:7px;background:#faf8fa; }
 .animator-content { min-width:0;min-height:0;flex:1;display:grid;grid-template-columns:minmax(190px,230px) minmax(300px,1fr) minmax(190px,230px);gap:10px;padding:10px; }
 .animator-motion-list,.animator-info,.animator-preview-column { min-width:0;min-height:0;display:flex;flex-direction:column;overflow:hidden;border:1px solid #eee9ed;border-radius:10px;background:#fff; }
@@ -430,6 +432,9 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .animator-stage { --animator-checker:color-mix(in srgb,var(--preview-background,#fdfcfd) 92%,#666 8%);min-height:180px;flex:1;position:relative;overflow:hidden;background-color:var(--preview-background,#fdfcfd);background-image:linear-gradient(45deg,var(--animator-checker) 25%,transparent 25%),linear-gradient(-45deg,var(--animator-checker) 25%,transparent 25%),linear-gradient(45deg,transparent 75%,var(--animator-checker) 75%),linear-gradient(-45deg,transparent 75%,var(--animator-checker) 75%);background-position:0 0,0 6px,6px -6px,-6px 0;background-size:12px 12px; }
 .animator-artboard { position:absolute;top:50%;left:50%;overflow:visible;transform:translate(-50%,-50%);filter:drop-shadow(0 3px 10px #44303a1a); }
 .animator-part { position:absolute;z-index:1;object-fit:fill;transform-origin:center center;pointer-events:none;user-select:none;-webkit-user-drag:none; }
+.animator-garment-root,.animator-garment-bone { position:absolute;width:0;height:0;transform-origin:0 0;pointer-events:none; }
+.animator-garment-image { position:absolute;object-fit:fill;transform-origin:center center;pointer-events:none;user-select:none;-webkit-user-drag:none; }
+.animator-accessory { position:absolute;object-fit:fill;transform-origin:center center;pointer-events:none;user-select:none;-webkit-user-drag:none; }
 .animator-empty { position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;color:#988e99;text-align:center; }
 .animator-empty>svg { width:36px;height:36px;color:#bf4c75; }
 .animator-empty strong { color:#514651;font-size:13px; }
@@ -1136,6 +1141,8 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 @media(max-width:720px) {
   .animator-toolbar { align-items:flex-start;flex-wrap:wrap; }
   .animator-readonly { display:none; }
+  .animator-character { min-width:100%; }
+  .animator-character select { width:100%; }
   .animator-model { min-width:100%; }
   .animator-model select { width:100%; }
   .animator-content { grid-template-columns:minmax(0,1fr);grid-template-rows:auto minmax(300px,1fr) auto; }
