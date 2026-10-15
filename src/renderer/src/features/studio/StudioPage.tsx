@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import { Icon } from '../../ui/components/Icon'
 import { CharacterPortrait } from '../../ui/components/CharacterPortrait'
-import type { StudioAsset, StudioDocument, StudioElement, StudioFaceTransform, StudioFaceTransforms } from '../../../../shared/studio'
+import { createStudioTimeline, type StudioAsset, type StudioDocument, type StudioElement, type StudioFaceTransform, type StudioFaceTransforms, type StudioTimeline, type StudioTimelineClip, type StudioTimelineTrack } from '../../../../shared/studio'
+import { StudioTimelinePanel } from './StudioTimeline'
 import type { CustomizerCharacter } from '../../../../shared/customizer'
 import type { CustomizerFaceAppearance } from '../../../../shared/customizer'
 import type { FaceCatalogItem, FaceCatalogItemSummary, FaceSheetKind, FabricatorPoseSummary } from '../../../../shared/fabricator'
 
 type StudioCard = StudioDocument
-type StudioSnapshot = Pick<StudioDocument, 'backgroundColor' | 'backgroundAssetId' | 'backgroundX' | 'backgroundY' | 'backgroundWidth' | 'backgroundHeight' | 'backgroundRotation' | 'assets' | 'elements'>
+type StudioSnapshot = Pick<StudioDocument, 'backgroundColor' | 'backgroundAssetId' | 'backgroundX' | 'backgroundY' | 'backgroundWidth' | 'backgroundHeight' | 'backgroundRotation' | 'assets' | 'elements' | 'timeline'>
 type Tool = 'background' | 'objects' | null
 type DragState = { id: string; pointerId: number; startX: number; startY: number; originalX: number; originalY: number; width: number; height: number }
 
@@ -91,12 +92,112 @@ function snapshot(studio: StudioDocument): StudioSnapshot {
     backgroundHeight: studio.backgroundHeight,
     backgroundRotation: studio.backgroundRotation,
     assets: studio.assets,
-    elements: studio.elements
+    elements: studio.elements,
+    timeline: studio.timeline
   }
 }
 
 function withSnapshot(studio: StudioDocument, next: StudioSnapshot): StudioDocument {
   return { ...studio, ...next, updatedAt: new Date().toISOString() }
+}
+
+function elementTrackKind(element: StudioElement): StudioTimelineTrack['kind'] {
+  if (element.kind === 'character') return 'character'
+  if (element.kind === 'image') return 'objects'
+  return element.kind
+}
+
+function ensureElementTrack(timeline: StudioTimeline, element: StudioElement): StudioTimeline {
+  const kind = elementTrackKind(element)
+  const id = kind === 'character' ? `character:${element.id}` : `lane:${kind}`
+  if (timeline.tracks.some((track) => track.id === id)) return timeline
+  const name = kind === 'character' ? element.text || 'Personagem' : ({ background: 'Fundo', objects: 'Objetos', narrator: 'Narrador', speech: 'Falas', thought: 'Pensamentos' } as const)[kind]
+  return { ...timeline, tracks: [...timeline.tracks, { id, kind, name, elementId: kind === 'character' ? element.id : undefined, order: timeline.tracks.length, visible: true, locked: false, collapsed: false }] }
+}
+
+function ensureElementClip(studio: StudioDocument, element: StudioElement, startFrame = 0, endFrame = studio.timeline.durationFrames): StudioDocument {
+  if (studio.timeline.clips.some((clip) => clip.elementId === element.id && startFrame >= clip.startFrame && startFrame < clip.endFrame)) return studio
+  const timeline = ensureElementTrack(studio.timeline, element)
+  const trackId = elementTrackKind(element) === 'character' ? `character:${element.id}` : `lane:${elementTrackKind(element)}`
+  const end = Math.max(endFrame, startFrame + 1)
+  return {
+    ...studio,
+    timeline: { ...timeline, durationFrames: Math.max(timeline.durationFrames, end), clips: [...timeline.clips, { id: crypto.randomUUID(), trackId, elementId: element.id, startFrame, endFrame: end, state: { type: 'element', element: { ...element } } }] }
+  }
+}
+
+function updateBackgroundTimeline(studio: StudioDocument, backgroundValues: Partial<Pick<StudioDocument, 'backgroundColor' | 'backgroundAssetId' | 'backgroundX' | 'backgroundY' | 'backgroundWidth' | 'backgroundHeight' | 'backgroundRotation'>>, frame: number): StudioDocument {
+  let timeline = studio.timeline
+  const active = timeline.clips.find((clip) => clip.elementId === null && frame >= clip.startFrame && frame < clip.endFrame)
+  if (active && frame > active.startFrame) {
+    timeline = splitTimelineClipAtFrame(timeline, active, frame)
+    const current = timeline.clips.find((clip) => clip.elementId === null && clip.startFrame === frame)
+    if (!current || current.state.type !== 'background') return studio
+    timeline = { ...timeline, clips: timeline.clips.map((clip) => clip.id === current.id && clip.state.type === 'background' ? { ...clip, state: { type: 'background', background: { ...clip.state.background, ...backgroundValues } } } : clip) }
+  } else if (active) {
+    timeline = { ...timeline, clips: timeline.clips.map((clip) => clip.id === active.id && clip.state.type === 'background' ? { ...clip, state: { type: 'background', background: { ...clip.state.background, ...backgroundValues } } } : clip) }
+  } else {
+    let track = timeline.tracks.find((item) => item.kind === 'background')
+    if (!track) {
+      track = { id: 'lane:background', kind: 'background', name: 'Fundo', order: 0, visible: true, locked: false, collapsed: false }
+      timeline = { ...timeline, tracks: [track, ...timeline.tracks.map((item) => ({ ...item, order: item.order + 1 }))] }
+    }
+    const nextStart = timeline.clips.filter((clip) => clip.trackId === track?.id && clip.startFrame > frame).reduce((minimum, clip) => Math.min(minimum, clip.startFrame), timeline.durationFrames)
+    const endFrame = Math.max(frame + 1, nextStart)
+    const background = {
+      backgroundColor: studio.backgroundColor, backgroundAssetId: studio.backgroundAssetId,
+      backgroundX: studio.backgroundX, backgroundY: studio.backgroundY, backgroundWidth: studio.backgroundWidth,
+      backgroundHeight: studio.backgroundHeight, backgroundRotation: studio.backgroundRotation
+    }
+    timeline = { ...timeline, durationFrames: Math.max(timeline.durationFrames, endFrame), clips: [...timeline.clips, { id: crypto.randomUUID(), trackId: track.id, elementId: null, startFrame: frame, endFrame, state: { type: 'background', background: { ...background, ...backgroundValues } } }] }
+  }
+  return { ...studio, ...backgroundValues, timeline }
+}
+
+function resolveStudioAtFrame(studio: StudioDocument, frame: number): StudioDocument {
+  const tracks = new Map(studio.timeline.tracks.map((track) => [track.id, track]))
+  const visible = new Map<string, StudioElement>()
+  let background = studio
+  for (const clip of studio.timeline.clips) {
+    if (frame < clip.startFrame || frame >= clip.endFrame) continue
+    const track = tracks.get(clip.trackId)
+    if (!track?.visible) continue
+    if (clip.state.type === 'background') background = { ...background, ...clip.state.background }
+    else visible.set(clip.state.element.id, clip.state.element)
+  }
+  return {
+    ...studio,
+    backgroundColor: background.backgroundColor,
+    backgroundAssetId: background.backgroundAssetId,
+    backgroundX: background.backgroundX,
+    backgroundY: background.backgroundY,
+    backgroundWidth: background.backgroundWidth,
+    backgroundHeight: background.backgroundHeight,
+    backgroundRotation: background.backgroundRotation,
+    elements: studio.elements.flatMap((element) => {
+      const state = visible.get(element.id)
+      const track = tracks.get(element.kind === 'character' ? `character:${element.id}` : `lane:${elementTrackKind(element)}`)
+      return state && track?.visible ? [state] : []
+    })
+  }
+}
+
+function addOrUpdateTimelineElement(studio: StudioDocument, element: StudioElement, frame: number): StudioDocument {
+  const next = ensureElementTrack(studio.timeline, element)
+  const clip = next.clips.find((item) => item.elementId === element.id && frame >= item.startFrame && frame < item.endFrame)
+  if (!clip) return ensureElementClip({ ...studio, timeline: next }, element, frame, Math.max(next.durationFrames, frame + 1))
+  return {
+    ...studio,
+    timeline: { ...next, clips: next.clips.map((item) => item.id === clip.id ? { ...item, state: { type: 'element', element: { ...(clip.state.type === 'element' ? clip.state.element : element), ...element } } } : item) }
+  }
+}
+
+function splitTimelineClipAtFrame(timeline: StudioTimeline, clip: StudioTimelineClip, frame: number): StudioTimeline {
+  if (frame <= clip.startFrame || frame >= clip.endFrame) return timeline
+  const second = { ...clip, id: crypto.randomUUID(), startFrame: frame, state: clip.state.type === 'element'
+    ? { type: 'element' as const, element: { ...clip.state.element } }
+    : { type: 'background' as const, background: { ...clip.state.background } } }
+  return { ...timeline, clips: timeline.clips.flatMap((item) => item.id === clip.id ? [{ ...item, endFrame: frame }, second] : [item]) }
 }
 
 function studioCharacterRenderKey(character: CustomizerCharacter): string {
@@ -223,6 +324,9 @@ export function StudioPage() {
   const [fullView, setFullView] = useState(false)
   const [saved, setSaved] = useState(true)
   const [selectedElementId, setSelectedElementId] = useState<string | null>(null)
+  const [playheadFrame, setPlayheadFrame] = useState(0)
+  const [playing, setPlaying] = useState(false)
+  const [selectedTimelineClipId, setSelectedTimelineClipId] = useState<string | null>(null)
   const [historyVersion, setHistoryVersion] = useState(0)
   const [canUndo, setCanUndo] = useState(false)
   const [canRedo, setCanRedo] = useState(false)
@@ -231,24 +335,28 @@ export function StudioPage() {
   const undoRef = useRef<StudioSnapshot[]>([])
   const redoRef = useRef<StudioSnapshot[]>([])
   const studioFaceTransformsRef = useRef<Record<string, StudioFaceTransforms>>({})
+  const studioTimelineAssetIdsRef = useRef<Record<string, string>>({})
   const studioFaceRenderTimerRef = useRef<number | null>(null)
   const studioFaceRenderVersionRef = useRef(0)
   const studioFaceRenderPendingRef = useRef<{ studioId: string; elementId: string; assetId: string; character: CustomizerCharacter; transforms: StudioFaceTransforms } | null>(null)
   const studioFaceRenderRunningRef = useRef(false)
   const studioFaceRendererRef = useRef<{ key: string; render: (appearance?: CustomizerFaceAppearance, transforms?: StudioFaceTransforms) => Promise<{ dataUrl: string; width: number; height: number }> } | null>(null)
   const saveGenerationRef = useRef(0)
+  const playbackClockRef = useRef<{ lastTime: number; frameRemainder: number }>({ lastTime: 0, frameRemainder: 0 })
+  const playheadFrameRef = useRef(0)
   const normalizedStudioIdsRef = useRef(new Set<string>())
   const nextStudioNumber = useRef(1)
   const selectedStudio = studios.find((studio) => studio.id === selectedId) ?? null
   const activeStudio = studios.find((studio) => studio.id === activeStudioId) ?? null
-  const selectedElement = activeStudio?.elements.find((element) => element.id === selectedElementId) ?? null
+  const sceneStudio = activeStudio ? resolveStudioAtFrame(activeStudio, playheadFrame) : null
+  const selectedElement = sceneStudio?.elements.find((element) => element.id === selectedElementId) ?? null
   const selectedStudioCharacter = selectedElement?.kind === 'character' ? availableCharacters.find((character) => character.id === selectedElement.characterId) ?? null : null
   const selectedStudioCharacterModelSlot = selectedStudioCharacter ? selectedStudioCharacter.customization.modelSlot ?? 1 : null
   const selectedStudioPoseSlot = selectedElement?.kind === 'character' ? selectedElement.poseSlot ?? selectedStudioCharacter?.customization.poseSlot ?? null : null
   const selectedStudioFaceAppearance = selectedElement?.kind === 'character'
     ? selectedElement.faceAppearance ?? selectedStudioCharacter?.customization.faceAppearance
     : undefined
-  const selectedBackgroundAsset = activeStudio?.assets.find((asset) => asset.id === activeStudio.backgroundAssetId) ?? null
+  const selectedBackgroundAsset = sceneStudio?.assets.find((asset) => asset.id === sceneStudio.backgroundAssetId) ?? null
   const stageCharacters = activeStudio?.elements.filter((element) => element.kind === 'character') ?? []
   const allStageCharactersLocked = stageCharacters.length > 0 && stageCharacters.every((element) => element.positionLocked === true)
   const toggleStageCharacterPositionLock = () => {
@@ -257,6 +365,7 @@ export function StudioPage() {
     changeScene((studio) => ({
       ...studio,
       elements: studio.elements.map((element) => element.kind === 'character' ? { ...element, positionLocked: nextLocked } : element),
+      timeline: { ...studio.timeline, clips: studio.timeline.clips.map((clip) => clip.state.type === 'element' && clip.state.element.kind === 'character' ? { ...clip, state: { type: 'element', element: { ...clip.state.element, positionLocked: nextLocked } } } : clip) },
       updatedAt: new Date().toISOString()
     }))
   }
@@ -285,7 +394,10 @@ export function StudioPage() {
           await window.desktop.saveStudio({
             schemaVersion: 1, ...old, createdAt: now, updatedAt: now, backgroundColor: '#d7b5cd',
             backgroundAssetId: null, backgroundX: 0, backgroundY: 0, backgroundWidth: 100, backgroundHeight: 100,
-            backgroundRotation: 0, assets: [], elements: []
+            backgroundRotation: 0, assets: [], elements: [], timeline: createStudioTimeline([], {
+              backgroundColor: '#d7b5cd', backgroundAssetId: null, backgroundX: 0, backgroundY: 0,
+              backgroundWidth: 100, backgroundHeight: 100, backgroundRotation: 0
+            })
           })
         }
         const loaded = await window.desktop.listStudios()
@@ -379,6 +491,47 @@ export function StudioPage() {
   }, [activeStudioId])
 
   useEffect(() => {
+    setPlaying(false)
+    setSelectedTimelineClipId(null)
+    const frame = activeStudio?.timeline.currentFrame ?? 0
+    playheadFrameRef.current = frame
+    setPlayheadFrame(frame)
+  }, [activeStudioId])
+
+  useEffect(() => {
+    if (!playing || !activeStudio) return
+    let animationFrame = 0
+    const duration = activeStudio.timeline.durationFrames
+    const fps = activeStudio.timeline.fps
+    const speed = activeStudio.timeline.speed
+    const loop = activeStudio.timeline.loop
+    playbackClockRef.current = { lastTime: 0, frameRemainder: 0 }
+    const tick = (now: number) => {
+      const clock = playbackClockRef.current
+      if (!clock.lastTime) clock.lastTime = now
+      const elapsed = Math.min(100, now - clock.lastTime)
+      clock.lastTime = now
+      clock.frameRemainder += elapsed * fps * speed / 1000
+      const advance = Math.floor(clock.frameRemainder)
+      if (advance > 0) {
+        clock.frameRemainder -= advance
+        const next = playheadFrameRef.current + advance
+        const resolved = next < duration ? next : loop ? next % duration : duration - 1
+        playheadFrameRef.current = resolved
+        setPlayheadFrame(resolved)
+        if (next >= duration && !loop) {
+          setPlaying(false)
+          patchStudio((studio) => ({ ...studio, timeline: { ...studio.timeline, currentFrame: resolved } }))
+          return
+        }
+      }
+      if (playing) animationFrame = window.requestAnimationFrame(tick)
+    }
+    animationFrame = window.requestAnimationFrame(tick)
+    return () => window.cancelAnimationFrame(animationFrame)
+  }, [playing, activeStudioId, activeStudio?.timeline.durationFrames, activeStudio?.timeline.fps, activeStudio?.timeline.speed, activeStudio?.timeline.loop])
+
+  useEffect(() => {
     if (!activeStudio || normalizedStudioIdsRef.current.has(activeStudio.id)) return
     let cancelled = false
     const studioId = activeStudio.id
@@ -420,7 +573,10 @@ export function StudioPage() {
       schemaVersion: 1, id: crypto.randomUUID(), title: `Studio ${String(number).padStart(2, '0')}`,
       color: studioColor(number), createdAt: now, updatedAt: now, backgroundColor: '#d7b5cd',
       backgroundAssetId: null, backgroundX: 0, backgroundY: 0, backgroundWidth: 100, backgroundHeight: 100,
-      backgroundRotation: 0, assets: [], elements: []
+      backgroundRotation: 0, assets: [], elements: [], timeline: createStudioTimeline([], {
+        backgroundColor: '#d7b5cd', backgroundAssetId: null, backgroundX: 0, backgroundY: 0,
+        backgroundWidth: 100, backgroundHeight: 100, backgroundRotation: 0
+      })
     }
     try {
       setError(null)
@@ -450,6 +606,23 @@ export function StudioPage() {
       ...duplicate.elements[index], assetId: element.assetId ? oldToNew.get(element.assetId) : undefined
     }))
     duplicate.backgroundAssetId = source.backgroundAssetId ? oldToNew.get(source.backgroundAssetId) ?? null : null
+    const elementIds = new Map(source.elements.map((element, index) => [element.id, duplicate.elements[index].id]))
+    const trackIds = new Map(source.timeline.tracks.map((track) => [track.id,
+      track.kind === 'character' && track.elementId ? `character:${elementIds.get(track.elementId) ?? track.elementId}` : track.id
+    ]))
+    duplicate.timeline = {
+      ...source.timeline,
+      tracks: source.timeline.tracks.map((track) => ({ ...track, id: trackIds.get(track.id) ?? track.id, elementId: track.elementId ? elementIds.get(track.elementId) : undefined })),
+      clips: source.timeline.clips.map((clip) => ({
+        ...clip, id: crypto.randomUUID(), trackId: trackIds.get(clip.trackId) ?? clip.trackId,
+        elementId: clip.elementId ? elementIds.get(clip.elementId) ?? null : null,
+        state: clip.state.type === 'element' ? { type: 'element', element: {
+          ...clip.state.element,
+          id: elementIds.get(clip.state.element.id) ?? clip.state.element.id,
+          assetId: clip.state.element.assetId ? oldToNew.get(clip.state.element.assetId) ?? clip.state.element.assetId : undefined
+        } } : { type: 'background', background: { ...clip.state.background, backgroundAssetId: clip.state.background.backgroundAssetId ? oldToNew.get(clip.state.background.backgroundAssetId) ?? null : null } }
+      }))
+    }
     try {
       setError(null)
       await window.desktop.saveStudio(duplicate)
@@ -488,6 +661,145 @@ export function StudioPage() {
     setSaved(false)
   }
 
+  const seekTimeline = (requestedFrame: number) => {
+    if (!activeStudio) return
+    const frame = Math.max(0, Math.min(activeStudio.timeline.durationFrames - 1, Math.round(requestedFrame)))
+    playheadFrameRef.current = frame
+    setPlayheadFrame(frame)
+    patchStudio((studio) => ({ ...studio, timeline: { ...studio.timeline, currentFrame: frame } }))
+  }
+
+  const toggleTimelinePlayback = () => {
+    if (!activeStudio) return
+    if (playing) {
+      setPlaying(false)
+      patchStudio((studio) => ({ ...studio, timeline: { ...studio.timeline, currentFrame: playheadFrameRef.current } }))
+      return
+    }
+    if (playheadFrameRef.current >= activeStudio.timeline.durationFrames - 1) seekTimeline(0)
+    setPlaying(true)
+  }
+
+  const moveTimelineClip = (id: string, startFrame: number) => patchStudio((studio) => {
+    const clip = studio.timeline.clips.find((item) => item.id === id)
+    if (!clip) return studio
+    const length = clip.endFrame - clip.startFrame
+    const sameSequence = (item: StudioTimelineClip) => item.id !== id && item.trackId === clip.trackId && (clip.elementId === null || item.elementId === clip.elementId)
+    const siblings = studio.timeline.clips.filter(sameSequence)
+    const previousEnd = Math.max(0, ...siblings.filter((item) => item.endFrame <= clip.startFrame).map((item) => item.endFrame))
+    const nextStart = siblings.filter((item) => item.startFrame >= clip.endFrame).reduce((minimum, item) => Math.min(minimum, item.startFrame), Number.POSITIVE_INFINITY)
+    const boundedStart = Math.max(previousEnd, Number.isFinite(nextStart) ? Math.min(startFrame, Math.max(previousEnd, nextStart - length)) : startFrame)
+    const endFrame = boundedStart + length
+    return { ...studio, timeline: { ...studio.timeline, durationFrames: Math.max(studio.timeline.durationFrames, endFrame), clips: studio.timeline.clips.map((item) => item.id === id ? { ...item, startFrame: boundedStart, endFrame } : item) } }
+  })
+
+  const resizeTimelineClip = (id: string, startFrame: number, endFrame: number) => patchStudio((studio) => {
+    const clip = studio.timeline.clips.find((item) => item.id === id)
+    if (!clip || endFrame <= startFrame) return studio
+    const sameSequence = (item: StudioTimelineClip) => item.id !== id && item.trackId === clip.trackId && (clip.elementId === null || item.elementId === clip.elementId)
+    const siblings = studio.timeline.clips.filter(sameSequence)
+    const previousEnd = Math.max(0, ...siblings.filter((item) => item.endFrame <= clip.startFrame).map((item) => item.endFrame))
+    const nextStart = siblings.filter((item) => item.startFrame >= clip.endFrame).reduce((minimum, item) => Math.min(minimum, item.startFrame), Number.POSITIVE_INFINITY)
+    const resizingLeft = startFrame !== clip.startFrame
+    const boundedStart = resizingLeft ? Math.max(previousEnd, Math.min(clip.endFrame - 1, startFrame)) : clip.startFrame
+    const boundedEnd = resizingLeft ? clip.endFrame : Math.max(boundedStart + 1, Number.isFinite(nextStart) ? Math.min(endFrame, nextStart) : endFrame)
+    return { ...studio, timeline: { ...studio.timeline, durationFrames: Math.max(studio.timeline.durationFrames, boundedEnd), clips: studio.timeline.clips.map((item) => item.id === id ? { ...item, startFrame: boundedStart, endFrame: boundedEnd } : item) } }
+  })
+
+  const splitSelectedTimelineClip = () => {
+    if (!activeStudio || !selectedTimelineClipId) return
+    const clip = activeStudio.timeline.clips.find((item) => item.id === selectedTimelineClipId)
+    if (!clip || playheadFrame <= clip.startFrame || playheadFrame >= clip.endFrame) return
+    changeScene((studio) => ({ ...studio, timeline: splitTimelineClipAtFrame(studio.timeline, clip, playheadFrame) }))
+  }
+
+  const deleteSelectedTimelineClip = () => {
+    if (!selectedTimelineClipId) return
+    changeScene((studio) => ({ ...studio, timeline: { ...studio.timeline, clips: studio.timeline.clips.filter((clip) => clip.id !== selectedTimelineClipId) } }))
+    setSelectedTimelineClipId(null)
+  }
+
+  const addTimelineBlock = (track: StudioTimelineTrack) => {
+    if (!activeStudio) return
+    if (track.kind === 'character' && track.elementId) {
+      const element = activeStudio.elements.find((item) => item.id === track.elementId)
+      if (!element) return
+      changeScene((studio) => {
+        const active = studio.timeline.clips.find((clip) => clip.trackId === track.id && playheadFrame >= clip.startFrame && playheadFrame < clip.endFrame)
+        const previous = active ?? studio.timeline.clips.filter((clip) => clip.trackId === track.id && clip.endFrame <= playheadFrame).sort((a, b) => b.endFrame - a.endFrame)[0]
+        const state = previous?.state.type === 'element' ? previous.state.element : element
+        const nextStart = studio.timeline.clips.filter((clip) => clip.trackId === track.id && clip.startFrame > playheadFrame).reduce((minimum, clip) => Math.min(minimum, clip.startFrame), studio.timeline.durationFrames)
+        const endFrame = Math.max(playheadFrame + 1, active?.endFrame ?? nextStart)
+        let clips = studio.timeline.clips.flatMap((clip) => {
+          if (clip.trackId !== track.id || clip.endFrame <= playheadFrame || clip.startFrame >= endFrame) return [clip]
+          return clip.startFrame < playheadFrame ? [{ ...clip, endFrame: playheadFrame }] : []
+        })
+        clips = [...clips, { id: crypto.randomUUID(), trackId: track.id, elementId: element.id, startFrame: playheadFrame, endFrame, state: { type: 'element' as const, element: { ...state } } }]
+        return { ...studio, timeline: { ...studio.timeline, durationFrames: Math.max(studio.timeline.durationFrames, endFrame), clips } }
+      })
+      setSelectedElementId(element.id)
+      return
+    }
+    if (track.kind === 'background') {
+      changeScene((studio) => {
+        const source = studio.timeline.clips.find((clip) => clip.trackId === track.id && playheadFrame >= clip.startFrame && playheadFrame < clip.endFrame)
+        const background = source?.state.type === 'background' ? source.state.background : {
+          backgroundColor: studio.backgroundColor, backgroundAssetId: studio.backgroundAssetId,
+          backgroundX: studio.backgroundX, backgroundY: studio.backgroundY, backgroundWidth: studio.backgroundWidth,
+          backgroundHeight: studio.backgroundHeight, backgroundRotation: studio.backgroundRotation
+        }
+        const nextStart = studio.timeline.clips.filter((clip) => clip.trackId === track.id && clip.startFrame > playheadFrame).reduce((minimum, clip) => Math.min(minimum, clip.startFrame), studio.timeline.durationFrames)
+        const endFrame = Math.max(playheadFrame + 1, source?.endFrame ?? nextStart)
+        const clips = studio.timeline.clips.flatMap((clip) => {
+          if (clip.trackId !== track.id || clip.endFrame <= playheadFrame || clip.startFrame >= endFrame) return [clip]
+          return clip.startFrame < playheadFrame ? [{ ...clip, endFrame: playheadFrame }] : []
+        })
+        return { ...studio, timeline: { ...studio.timeline, durationFrames: Math.max(studio.timeline.durationFrames, endFrame), clips: [...clips, { id: crypto.randomUUID(), trackId: track.id, elementId: null, startFrame: playheadFrame, endFrame, state: { type: 'background' as const, background: { ...background } } }] } }
+      })
+      setSelectedElementId('background')
+      return
+    }
+    if (track.kind === 'speech' || track.kind === 'thought' || track.kind === 'narrator') {
+      addTextElement(track.kind)
+      return
+    }
+    const source = activeStudio.elements.find((element) => element.kind === 'image')
+    if (source) {
+      const element: StudioElement = { ...source, id: crypto.randomUUID(), text: '', x: source.x + 3, y: source.y + 3, zIndex: Math.max(0, ...activeStudio.elements.map((item) => item.zIndex)) + 1 }
+      changeScene((studio) => ensureElementClip({ ...studio, elements: [...studio.elements, element] }, element, playheadFrame, studio.timeline.durationFrames))
+      setSelectedElementId(element.id)
+    }
+  }
+
+  const updateTimelinePreference = (values: Partial<Pick<StudioTimeline, 'loop' | 'speed'>>) => patchStudio((studio) => ({ ...studio, timeline: { ...studio.timeline, ...values } }))
+
+  const isolateTimelineCharacterAsset = (element: StudioElement) => {
+    if (!activeStudio || element.kind !== 'character' || !element.assetId) return null
+    const clip = activeStudio.timeline.clips.find((item) => item.elementId === element.id && playheadFrame >= item.startFrame && playheadFrame < item.endFrame)
+    if (!clip || clip.state.type !== 'element') return null
+    const originalAssetId = activeStudio.elements.find((item) => item.id === element.id)?.assetId ?? element.assetId
+    const currentAssetId = clip.state.element.assetId ?? originalAssetId
+    const rememberedAssetId = studioTimelineAssetIdsRef.current[clip.id]
+    let targetAssetId = rememberedAssetId ?? currentAssetId
+    const sharedWithAnotherClip = activeStudio.timeline.clips.some((item) => item.id !== clip.id && item.elementId === element.id
+      && item.state.type === 'element' && item.state.element.assetId === currentAssetId)
+    if (!rememberedAssetId && (targetAssetId === originalAssetId || sharedWithAnotherClip)) targetAssetId = crypto.randomUUID()
+    studioTimelineAssetIdsRef.current[clip.id] = targetAssetId
+    const sourceAsset = activeStudio.assets.find((asset) => asset.id === currentAssetId)
+      ?? activeStudio.assets.find((asset) => asset.id === originalAssetId)
+    return sourceAsset ? { clipId: clip.id, assetId: targetAssetId, sourceAsset } : null
+  }
+
+  const saveTimelineCharacterAsset = (studio: StudioDocument, element: StudioElement, assetId: string, dataUrl: string, fallback?: StudioAsset) => {
+    const current = studio.assets.find((asset) => asset.id === assetId)
+    const source = current ?? fallback ?? studio.assets.find((asset) => asset.id === element.assetId)
+    if (!source) return studio
+    const asset: StudioAsset = { ...source, id: assetId, mimeType: 'image/png', dataUrl }
+    const assets = current ? studio.assets.map((item) => item.id === assetId ? asset : item) : [...studio.assets, asset]
+    const updatedElement = { ...element, assetId }
+    return { ...addOrUpdateTimelineElement(studio, updatedElement, playheadFrame), assets }
+  }
+
   const recordHistory = () => {
     if (!activeStudio) return
     undoRef.current = [...undoRef.current.slice(-29), snapshot(activeStudio)]
@@ -508,6 +820,8 @@ export function StudioPage() {
     const previous = undoRef.current[undoRef.current.length - 1]
     undoRef.current = undoRef.current.slice(0, -1)
     redoRef.current = [...redoRef.current.slice(-29), snapshot(activeStudio)]
+    playheadFrameRef.current = previous.timeline.currentFrame
+    setPlayheadFrame(previous.timeline.currentFrame)
     patchStudio((studio) => withSnapshot(studio, previous))
     setCanUndo(undoRef.current.length > 0)
     setCanRedo(true)
@@ -519,6 +833,8 @@ export function StudioPage() {
     const next = redoRef.current[redoRef.current.length - 1]
     redoRef.current = redoRef.current.slice(0, -1)
     undoRef.current = [...undoRef.current.slice(-29), snapshot(activeStudio)]
+    playheadFrameRef.current = next.timeline.currentFrame
+    setPlayheadFrame(next.timeline.currentFrame)
     patchStudio((studio) => withSnapshot(studio, next))
     setCanUndo(true)
     setCanRedo(redoRef.current.length > 0)
@@ -533,11 +849,15 @@ export function StudioPage() {
       const nextAssets = [...activeStudio.assets, asset]
       recordHistory()
       if (category === 'background') {
-        patchStudio((studio) => ({ ...studio, assets: nextAssets, backgroundAssetId: asset.id, backgroundX: 0, backgroundY: 0, backgroundWidth: 100, backgroundHeight: 100, backgroundRotation: 0, updatedAt: new Date().toISOString() }))
+        patchStudio((studio) => ({ ...updateBackgroundTimeline(studio, { backgroundAssetId: asset.id, backgroundX: 0, backgroundY: 0, backgroundWidth: 100, backgroundHeight: 100, backgroundRotation: 0 }, playheadFrame), assets: nextAssets, updatedAt: new Date().toISOString() }))
         setSelectedElementId('background')
       } else {
         const element: StudioElement = { id: crypto.randomUUID(), kind: 'image', assetId: asset.id, text: '', x: 0, y: 0, width: 25, height: 25, rotation: 0, zIndex: Math.max(0, ...activeStudio.elements.map((item) => item.zIndex)) + 1 }
-        patchStudio((studio) => ({ ...studio, assets: nextAssets, elements: [...studio.elements, element], updatedAt: new Date().toISOString() }))
+        patchStudio((studio) => {
+          let next = { ...studio, assets: nextAssets, elements: [...studio.elements, element], updatedAt: new Date().toISOString() }
+          next = ensureElementClip(next, element, playheadFrame, next.timeline.durationFrames)
+          return next
+        })
         setSelectedElementId(element.id)
       }
       setActiveTool(category === 'background' ? 'background' : 'objects')
@@ -548,7 +868,7 @@ export function StudioPage() {
   }
 
   const selectBackground = (asset: StudioAsset) => {
-    changeScene((studio) => ({ ...studio, backgroundAssetId: asset.id, backgroundX: 0, backgroundY: 0, backgroundWidth: 100, backgroundHeight: 100, backgroundRotation: 0, updatedAt: new Date().toISOString() }))
+    changeScene((studio) => ({ ...updateBackgroundTimeline(studio, { backgroundAssetId: asset.id, backgroundX: 0, backgroundY: 0, backgroundWidth: 100, backgroundHeight: 100, backgroundRotation: 0 }, playheadFrame), updatedAt: new Date().toISOString() }))
     setSelectedElementId('background')
     setInspectorOpen(true)
     setInspectorTab('editor')
@@ -557,7 +877,7 @@ export function StudioPage() {
   const addTextElement = (kind: 'narrator' | 'speech' | 'thought') => {
     if (!activeStudio) return
     const element = makeElement(kind, Math.max(0, ...activeStudio.elements.map((item) => item.zIndex)) + 1)
-    changeScene((studio) => ({ ...studio, elements: [...studio.elements, element], updatedAt: new Date().toISOString() }))
+    changeScene((studio) => ensureElementClip({ ...studio, elements: [...studio.elements, element], updatedAt: new Date().toISOString() }, element, playheadFrame, playheadFrame + 120))
     setSelectedElementId(element.id)
     setInspectorOpen(true)
     setInspectorTab('editor')
@@ -599,12 +919,18 @@ export function StudioPage() {
       }
       const nextElements = [...retained, ...elements]
       const retainedAssetIds = new Set(retained.map((element) => element.assetId).filter((id): id is string => Boolean(id)))
-      changeScene((studio) => ({
-        ...studio,
-        elements: nextElements,
-        assets: [...studio.assets.filter((asset) => !removedCharacterAssetIds.has(asset.id) || retainedAssetIds.has(asset.id)), ...assets],
-        updatedAt: new Date().toISOString()
-      }))
+      changeScene((studio) => {
+        const removedIds = new Set(studio.elements.filter((element) => element.kind === 'character' && !selectedIds.has(element.characterId ?? '')).map((element) => element.id))
+        let next: StudioDocument = {
+          ...studio,
+          elements: nextElements,
+          assets: [...studio.assets.filter((asset) => !removedCharacterAssetIds.has(asset.id) || retainedAssetIds.has(asset.id)), ...assets],
+          timeline: { ...studio.timeline, tracks: studio.timeline.tracks.filter((track) => !track.elementId || !removedIds.has(track.elementId)), clips: studio.timeline.clips.filter((clip) => !clip.elementId || !removedIds.has(clip.elementId)) },
+          updatedAt: new Date().toISOString()
+        }
+        for (const element of elements) next = ensureElementClip(next, element, playheadFrame, next.timeline.durationFrames)
+        return next
+      })
       setCastPickerOpen(false)
       setActiveTool(null)
       restoreCharacterInspectorView()
@@ -642,12 +968,12 @@ export function StudioPage() {
       const rendered = await studioFaceRendererRef.current.render(appearance, faceTransforms)
       const trimmed = await trimTransparentImage(rendered.dataUrl)
       const studioDataUrl = trimmed?.dataUrl ?? rendered.dataUrl
-      const elementId = selectedElement.id
-      const assetId = selectedElement.assetId
+      const element = selectedElement
+      const isolated = isolateTimelineCharacterAsset(element)
+      if (!isolated) return
+      const nextElement = { ...element, faceAppearance: appearance, faceTransforms, assetId: isolated.assetId }
       const update = (studio: StudioDocument): StudioDocument => ({
-        ...studio,
-        elements: studio.elements.map((element) => element.id === elementId ? { ...element, faceAppearance: appearance, faceTransforms } : element),
-        assets: studio.assets.map((asset) => asset.id === assetId ? { ...asset, dataUrl: studioDataUrl, mimeType: 'image/png' } : asset),
+        ...saveTimelineCharacterAsset(studio, nextElement, isolated.assetId, studioDataUrl, isolated.sourceAsset),
         updatedAt: new Date().toISOString()
       })
       if (record) changeScene(update)
@@ -681,14 +1007,10 @@ export function StudioPage() {
       const fullCanvasHeight = characterCanvasWidth * stageWidth / stageHeight * rendered.height / rendered.width
       const width = characterCanvasWidth * cropWidth / rendered.width
       const height = fullCanvasHeight * cropHeight / rendered.height
-      const elementId = selectedElement.id
-      const assetId = selectedElement.assetId
-      changeScene((studio) => ({
-        ...studio,
-        elements: studio.elements.map((element) => element.id === elementId ? { ...element, poseSlot, characterCanvasWidth, width, height } : element),
-        assets: studio.assets.map((asset) => asset.id === assetId ? { ...asset, dataUrl, mimeType: 'image/png' } : asset),
-        updatedAt: new Date().toISOString()
-      }))
+      const isolated = isolateTimelineCharacterAsset(selectedElement)
+      if (!isolated) return
+      const nextElement = { ...selectedElement, poseSlot, characterCanvasWidth, width, height, assetId: isolated.assetId }
+      changeScene((studio) => ({ ...saveTimelineCharacterAsset(studio, nextElement, isolated.assetId, dataUrl, isolated.sourceAsset), updatedAt: new Date().toISOString() }))
       setError(null)
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível aplicar a pose neste Studio.') }
     finally { setStudioFaceBusy(false) }
@@ -731,10 +1053,14 @@ export function StudioPage() {
     const transform = { ...(saved[transformKey] ?? baseTransform), ...patch }
     const next = { ...saved, [transformKey]: transform }
     studioFaceTransformsRef.current[selectedElement.id] = next
-    updateElement(selectedElement.id, { faceTransforms: next }, record)
-    if (selectedStudioCharacter && selectedStudioFaceAppearance && selectedElement.assetId && activeStudioId) {
+    const isolated = isolateTimelineCharacterAsset(selectedElement)
+    if (!isolated) return
+    const asset = activeStudio?.assets.find((item) => item.id === isolated.assetId) ?? isolated.sourceAsset
+    patchStudio((studio) => saveTimelineCharacterAsset(studio, { ...selectedElement, faceTransforms: next, assetId: isolated.assetId }, isolated.assetId, asset.dataUrl, isolated.sourceAsset))
+    if (record) recordHistory()
+    if (selectedStudioCharacter && selectedStudioFaceAppearance && isolated.assetId && activeStudioId) {
       const character: CustomizerCharacter = { ...selectedStudioCharacter, customization: { ...selectedStudioCharacter.customization, poseSlot: selectedElement.poseSlot ?? selectedStudioCharacter.customization.poseSlot, faceAppearance: selectedStudioFaceAppearance } }
-      scheduleStudioFacePreview({ studioId: activeStudioId, elementId: selectedElement.id, assetId: selectedElement.assetId, character, transforms: next })
+      scheduleStudioFacePreview({ studioId: activeStudioId, elementId: selectedElement.id, assetId: isolated.assetId, character, transforms: next })
     }
   }
 
@@ -777,7 +1103,7 @@ export function StudioPage() {
             if (version !== studioFaceRenderVersionRef.current) continue
             studioFaceRendererRef.current = { key, render: renderer.render }
           }
-          const rendered = await studioFaceRendererRef.current.render(job.character.customization.faceAppearance, studioFaceTransformsRef.current[job.elementId] ?? job.transforms)
+          const rendered = await studioFaceRendererRef.current.render(job.character.customization.faceAppearance, job.transforms)
           const trimmed = await trimTransparentImage(rendered.dataUrl)
           const studioDataUrl = trimmed?.dataUrl ?? rendered.dataUrl
           if (version === studioFaceRenderVersionRef.current && job.studioId === activeStudioId) {
@@ -809,6 +1135,7 @@ export function StudioPage() {
       return {
         ...studio, elements,
         assets: studio.assets.filter((asset) => asset.id !== element.assetId || stillUsed.has(asset.id)),
+        timeline: { ...studio.timeline, tracks: studio.timeline.tracks.filter((track) => track.elementId !== element.id), clips: studio.timeline.clips.filter((clip) => clip.elementId !== element.id) },
         updatedAt: new Date().toISOString()
       }
     })
@@ -816,13 +1143,20 @@ export function StudioPage() {
   }
 
   const updateElement = (id: string, values: Partial<StudioElement>, record = true) => {
-    const update = (studio: StudioDocument) => ({ ...studio, elements: studio.elements.map((element) => element.id === id ? { ...element, ...values } : element), updatedAt: new Date().toISOString() })
+    const update = (studio: StudioDocument) => {
+      const element = studio.timeline.clips.find((clip) => clip.elementId === id && playheadFrame >= clip.startFrame && playheadFrame < clip.endFrame)?.state
+      const source = element?.type === 'element' ? element.element : studio.elements.find((item) => item.id === id)
+      if (!source) return studio
+      const nextElement = { ...source, ...values }
+      const nextStudio = addOrUpdateTimelineElement(studio, nextElement, playheadFrame)
+      return { ...nextStudio, updatedAt: new Date().toISOString() }
+    }
     if (record) changeScene(update)
     else patchStudio(update)
   }
 
   const updateBackground = (values: Partial<Pick<StudioDocument, 'backgroundColor' | 'backgroundX' | 'backgroundY' | 'backgroundWidth' | 'backgroundHeight' | 'backgroundRotation'>>, record = true) => {
-    const update = (studio: StudioDocument) => ({ ...studio, ...values, updatedAt: new Date().toISOString() })
+    const update = (studio: StudioDocument) => ({ ...updateBackgroundTimeline(studio, values, playheadFrame), updatedAt: new Date().toISOString() })
     if (record) changeScene(update)
     else patchStudio(update)
   }
@@ -838,11 +1172,11 @@ export function StudioPage() {
       setActiveTool('background')
       setInspectorOpen(true)
       setInspectorTab('editor')
-      dragRef.current = { id, pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, originalX: activeStudio.backgroundX, originalY: activeStudio.backgroundY, width: rect.width, height: rect.height }
+      dragRef.current = { id, pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, originalX: sceneStudio?.backgroundX ?? activeStudio.backgroundX, originalY: sceneStudio?.backgroundY ?? activeStudio.backgroundY, width: rect.width, height: rect.height }
       event.currentTarget.setPointerCapture(event.pointerId)
       return
     }
-    const element = activeStudio.elements.find((item) => item.id === id)
+    const element = sceneStudio?.elements.find((item) => item.id === id)
     if (!element) return
     if (element.kind === 'character' && element.positionLocked) {
       setSelectedElementId(id)
@@ -867,7 +1201,7 @@ export function StudioPage() {
     if (!drag || drag.pointerId !== event.pointerId) return
     const x = drag.originalX + (event.clientX - drag.startX) / drag.width * 100
     const y = drag.originalY + (event.clientY - drag.startY) / drag.height * 100
-    if (drag.id === 'background') patchStudio((studio) => ({ ...studio, backgroundX: x, backgroundY: y, updatedAt: new Date().toISOString() }))
+    if (drag.id === 'background') patchStudio((studio) => ({ ...updateBackgroundTimeline(studio, { backgroundX: x, backgroundY: y }, playheadFrame), updatedAt: new Date().toISOString() }))
     else updateElement(drag.id, { x, y }, false)
   }
 
@@ -879,12 +1213,12 @@ export function StudioPage() {
   const deleteSelected = () => {
     if (!activeStudio) return
     if (selectedElementId === 'background') {
-      changeScene((studio) => ({ ...studio, backgroundAssetId: null, updatedAt: new Date().toISOString() }))
+      changeScene((studio) => updateBackgroundTimeline(studio, { backgroundAssetId: null }, playheadFrame))
       setSelectedElementId(null)
     } else if (selectedElementId) {
       const current = activeStudio.elements.find((element) => element.id === selectedElementId)
       if (current?.kind === 'character') removeStageCharacter(current)
-      else changeScene((studio) => ({ ...studio, elements: studio.elements.filter((element) => element.id !== selectedElementId), updatedAt: new Date().toISOString() }))
+      else changeScene((studio) => ({ ...studio, elements: studio.elements.filter((element) => element.id !== selectedElementId), timeline: { ...studio.timeline, clips: studio.timeline.clips.filter((clip) => clip.elementId !== selectedElementId) }, updatedAt: new Date().toISOString() }))
       setSelectedElementId(null)
     }
   }
@@ -901,7 +1235,11 @@ export function StudioPage() {
   }
 
   const leaveStudio = async () => {
-    if (!await saveStudio(activeStudio)) return
+    if (!activeStudio) return
+    setPlaying(false)
+    const current = { ...activeStudio, timeline: { ...activeStudio.timeline, currentFrame: playheadFrameRef.current } }
+    setStudios((items) => items.map((studio) => studio.id === current.id ? current : studio))
+    if (!await saveStudio(current)) return
     setActiveStudioId(null)
     setActiveTool(null)
     setSelectedElementId(null)
@@ -912,7 +1250,7 @@ export function StudioPage() {
     if (!activeStudio) return
     try {
       if (!await saveStudio(activeStudio)) return
-      const image = await makeCanvasPrint(activeStudio)
+      const image = await makeCanvasPrint(sceneStudio ?? activeStudio)
       const path = await window.desktop.saveStudioPrint(activeStudio.id, image)
       if (path) { setError(null); setNotice(`Print salvo em ${path}`) }
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível gerar o print.') }
@@ -948,17 +1286,17 @@ export function StudioPage() {
     if (!activeStudio) return null
     if (activeTool === 'background') return <div className="studio-side-content">
       <h2>Fundos</h2><p>Escolha um fundo salvo ou adicione uma imagem.</p>
-      <label className="studio-color-control">Cor sólida<input type="color" value={activeStudio.backgroundColor} onChange={(event) => updateBackground({ backgroundColor: event.target.value })} /></label>
+      <label className="studio-color-control">Cor sólida<input type="color" value={sceneStudio?.backgroundColor ?? activeStudio.backgroundColor} onChange={(event) => updateBackground({ backgroundColor: event.target.value })} /></label>
       <button className="studio-side-primary" type="button" onClick={() => void importImage('background')}><Icon name="plus" />Adicionar imagem</button>
-      <div className="studio-asset-grid">{activeStudio.assets.filter((asset) => asset.category === 'background').map((asset) => <button key={asset.id} className={`studio-asset-card${activeStudio.backgroundAssetId === asset.id ? ' active' : ''}`} type="button" onClick={() => selectBackground(asset)}><img src={asset.dataUrl} alt="" /><span>{asset.name}</span></button>)}</div>
-      {selectedBackgroundAsset && selectedElementId === 'background' && <><div className="studio-controls-grid">{control('X', activeStudio.backgroundX, (value, record) => updateBackground({ backgroundX: value }, record), -100, 100)}{control('Y', activeStudio.backgroundY, (value, record) => updateBackground({ backgroundY: value }, record), -100, 100)}{control('Largura', activeStudio.backgroundWidth, (value, record) => updateBackground({ backgroundWidth: value }, record), 1, 300)}{control('Altura', activeStudio.backgroundHeight, (value, record) => updateBackground({ backgroundHeight: value }, record), 1, 300)}{control('Rotação', activeStudio.backgroundRotation, (value, record) => updateBackground({ backgroundRotation: value }, record), -180, 180, '°')}</div><button className="studio-side-danger" type="button" onClick={deleteSelected}><Icon name="trash" />Remover fundo da cena</button></>}
+      <div className="studio-asset-grid">{activeStudio.assets.filter((asset) => asset.category === 'background').map((asset) => <button key={asset.id} className={`studio-asset-card${sceneStudio?.backgroundAssetId === asset.id ? ' active' : ''}`} type="button" onClick={() => selectBackground(asset)}><img src={asset.dataUrl} alt="" /><span>{asset.name}</span></button>)}</div>
+      {selectedBackgroundAsset && selectedElementId === 'background' && <><div className="studio-controls-grid">{control('X', sceneStudio?.backgroundX ?? activeStudio.backgroundX, (value, record) => updateBackground({ backgroundX: value }, record), -100, 100)}{control('Y', sceneStudio?.backgroundY ?? activeStudio.backgroundY, (value, record) => updateBackground({ backgroundY: value }, record), -100, 100)}{control('Largura', sceneStudio?.backgroundWidth ?? activeStudio.backgroundWidth, (value, record) => updateBackground({ backgroundWidth: value }, record), 1, 300)}{control('Altura', sceneStudio?.backgroundHeight ?? activeStudio.backgroundHeight, (value, record) => updateBackground({ backgroundHeight: value }, record), 1, 300)}{control('Rotação', sceneStudio?.backgroundRotation ?? activeStudio.backgroundRotation, (value, record) => updateBackground({ backgroundRotation: value }, record), -180, 180, '°')}</div><button className="studio-side-danger" type="button" onClick={deleteSelected}><Icon name="trash" />Remover fundo da cena</button></>}
     </div>
     if (activeTool === 'objects') return <div className="studio-side-content">
       <h2>Objetos</h2><p>Imagens importadas ficam disponíveis neste Studio.</p>
       <button className="studio-side-primary" type="button" onClick={() => void importImage('object')}><Icon name="plus" />Importar imagem</button>
       <div className="studio-asset-grid">{activeStudio.assets.filter((asset) => asset.category === 'object').map((asset) => <button key={asset.id} className="studio-asset-card" type="button" onClick={() => {
         const element: StudioElement = { id: crypto.randomUUID(), kind: 'image', assetId: asset.id, text: '', x: 0, y: 0, width: 25, height: 25, rotation: 0, zIndex: Math.max(0, ...activeStudio.elements.map((item) => item.zIndex)) + 1 }
-        changeScene((studio) => ({ ...studio, elements: [...studio.elements, element], updatedAt: new Date().toISOString() }))
+        changeScene((studio) => ensureElementClip({ ...studio, elements: [...studio.elements, element], updatedAt: new Date().toISOString() }, element, playheadFrame, studio.timeline.durationFrames))
         setSelectedElementId(element.id)
         setInspectorOpen(true)
         setInspectorTab('editor')
@@ -972,7 +1310,7 @@ export function StudioPage() {
     </div>
     if (selectedElementId === 'background' && selectedBackgroundAsset) return <div className="studio-side-content">
       <h2>Imagem de fundo</h2><p>{selectedBackgroundAsset.name}</p>
-      <div className="studio-controls-grid">{control('X', activeStudio.backgroundX, (value, record) => updateBackground({ backgroundX: value }, record), -100, 100)}{control('Y', activeStudio.backgroundY, (value, record) => updateBackground({ backgroundY: value }, record), -100, 100)}{control('Largura', activeStudio.backgroundWidth, (value, record) => updateBackground({ backgroundWidth: value }, record), 1, 300)}{control('Altura', activeStudio.backgroundHeight, (value, record) => updateBackground({ backgroundHeight: value }, record), 1, 300)}{control('Rotação', activeStudio.backgroundRotation, (value, record) => updateBackground({ backgroundRotation: value }, record), -180, 180, '°')}</div>
+      <div className="studio-controls-grid">{control('X', sceneStudio?.backgroundX ?? activeStudio.backgroundX, (value, record) => updateBackground({ backgroundX: value }, record), -100, 100)}{control('Y', sceneStudio?.backgroundY ?? activeStudio.backgroundY, (value, record) => updateBackground({ backgroundY: value }, record), -100, 100)}{control('Largura', sceneStudio?.backgroundWidth ?? activeStudio.backgroundWidth, (value, record) => updateBackground({ backgroundWidth: value }, record), 1, 300)}{control('Altura', sceneStudio?.backgroundHeight ?? activeStudio.backgroundHeight, (value, record) => updateBackground({ backgroundHeight: value }, record), 1, 300)}{control('Rotação', sceneStudio?.backgroundRotation ?? activeStudio.backgroundRotation, (value, record) => updateBackground({ backgroundRotation: value }, record), -180, 180, '°')}</div>
       <button className="studio-side-danger" type="button" onClick={deleteSelected}><Icon name="trash" />Remover fundo</button>
     </div>
     return <div className="studio-side-content"><h2>Cena</h2><p>Escolha uma ferramenta à esquerda ou selecione um elemento na cena.</p><small>{activeStudio.elements.length} elemento(s)</small></div>
@@ -1077,12 +1415,12 @@ export function StudioPage() {
   </div>
 
   if (activeStudio) {
-    const backgroundAsset = activeStudio.assets.find((asset) => asset.id === activeStudio.backgroundAssetId)
+    const backgroundAsset = sceneStudio?.assets.find((asset) => asset.id === sceneStudio.backgroundAssetId)
     const inspectorWidth = sceneRef.current ? Math.min(38, 276 / sceneRef.current.clientWidth * 100) : 28
     const selectedBounds = selectedElement
       ? { left: 50 + selectedElement.x - studioElementSize(selectedElement).width / 2, right: 50 + selectedElement.x + studioElementSize(selectedElement).width / 2 }
       : selectedElementId === 'background'
-        ? { left: 50 + activeStudio.backgroundX - activeStudio.backgroundWidth / 2, right: 50 + activeStudio.backgroundX + activeStudio.backgroundWidth / 2 }
+        ? { left: 50 + (sceneStudio?.backgroundX ?? activeStudio.backgroundX) - (sceneStudio?.backgroundWidth ?? activeStudio.backgroundWidth) / 2, right: 50 + (sceneStudio?.backgroundX ?? activeStudio.backgroundX) + (sceneStudio?.backgroundWidth ?? activeStudio.backgroundWidth) / 2 }
         : null
     const inspectorSide = selectedBounds?.right !== undefined && selectedBounds.right > 100 - inspectorWidth
       ? 'left'
@@ -1113,10 +1451,10 @@ export function StudioPage() {
           {notice && <small className="studio-save-notice" role="status">{notice}</small>}
         </aside>}
         <section className="studio-scene-area" aria-label="Prévia da cena">
-          <div className="studio-scene-canvas" ref={sceneRef} style={{ backgroundColor: activeStudio.backgroundColor }} onPointerDown={() => setSelectedElementId(null)}>
-            {backgroundAsset && <img className={`studio-canvas-background${selectedElementId === 'background' && !fullView ? ' selected' : ''}`} src={backgroundAsset.dataUrl} alt="" style={imageStyle(activeStudio.backgroundX, activeStudio.backgroundY, activeStudio.backgroundWidth, activeStudio.backgroundHeight, activeStudio.backgroundRotation)} onPointerDown={(event) => startDrag(event, 'background')} onPointerMove={moveDrag} onPointerUp={endDrag} onPointerCancel={endDrag} />}
-            {[...activeStudio.elements].sort((a, b) => a.zIndex - b.zIndex).map((element) => {
-              const asset = element.assetId ? activeStudio.assets.find((item) => item.id === element.assetId) : undefined
+          <div className="studio-scene-canvas" ref={sceneRef} style={{ backgroundColor: sceneStudio?.backgroundColor ?? activeStudio.backgroundColor }} onPointerDown={() => setSelectedElementId(null)}>
+            {backgroundAsset && <img className={`studio-canvas-background${selectedElementId === 'background' && !fullView ? ' selected' : ''}`} src={backgroundAsset.dataUrl} alt="" style={imageStyle(sceneStudio?.backgroundX ?? activeStudio.backgroundX, sceneStudio?.backgroundY ?? activeStudio.backgroundY, sceneStudio?.backgroundWidth ?? activeStudio.backgroundWidth, sceneStudio?.backgroundHeight ?? activeStudio.backgroundHeight, sceneStudio?.backgroundRotation ?? activeStudio.backgroundRotation)} onPointerDown={(event) => startDrag(event, 'background')} onPointerMove={moveDrag} onPointerUp={endDrag} onPointerCancel={endDrag} />}
+            {[...(sceneStudio?.elements ?? [])].sort((a, b) => a.zIndex - b.zIndex).map((element) => {
+              const asset = element.assetId ? sceneStudio?.assets.find((item) => item.id === element.assetId) : undefined
               const size = studioElementSize(element)
               return <div key={element.id} className={`studio-canvas-element studio-element-${element.kind}${selectedElementId === element.id && !fullView ? ' selected' : ''}`} style={{ ...imageStyle(element.x, element.y, size.width, size.height, element.rotation, element.kind === 'character' && element.flipX === true), zIndex: element.zIndex + 1 }} onPointerDown={(event) => startDrag(event, element.id)} onPointerMove={moveDrag} onPointerUp={endDrag} onPointerCancel={endDrag}>
                 {(element.kind === 'image' || element.kind === 'character') && asset ? <img src={asset.dataUrl} alt={asset.name} draggable={false} /> : <span>{element.text}</span>}
@@ -1132,6 +1470,30 @@ export function StudioPage() {
           </div>
         </section>
         {!fullView && <aside className="studio-editor-rail studio-editor-right" aria-label="Elenco do Studio">{castPanel()}</aside>}
+        {!fullView && <StudioTimelinePanel
+          timeline={activeStudio.timeline}
+          currentFrame={playheadFrame}
+          playing={playing}
+          selectedClipId={selectedTimelineClipId}
+          onPlayPause={toggleTimelinePlayback}
+          onSeek={seekTimeline}
+          onSelectClip={(clip) => {
+            setSelectedTimelineClipId(clip.id)
+            seekTimeline(clip.startFrame)
+            setSelectedElementId(clip.elementId ?? 'background')
+            setActiveTool(clip.elementId === null ? 'background' : null)
+            setInspectorTab('editor')
+            setInspectorOpen(true)
+          }}
+          onMoveClip={moveTimelineClip}
+          onResizeClip={resizeTimelineClip}
+          onSplitClip={splitSelectedTimelineClip}
+          onDeleteClip={deleteSelectedTimelineClip}
+          onToggleLoop={() => updateTimelinePreference({ loop: !activeStudio.timeline.loop })}
+          onSetSpeed={(speed) => updateTimelinePreference({ speed })}
+          onAddBlock={addTimelineBlock}
+          onEditStart={recordHistory}
+        />}
         {castPickerOpen && <div className="studio-cast-modal-backdrop" onPointerDown={(event) => { if (event.target === event.currentTarget && !savingCast) setCastPickerOpen(false) }}>
           <section className="studio-cast-modal" role="dialog" aria-modal="true" aria-labelledby="studio-cast-modal-title">
             <header><span><small>EDITAR ELENCO</small><h2 id="studio-cast-modal-title">Personagens do Studio</h2></span><button className="studio-cast-modal-close" onClick={() => setCastPickerOpen(false)} aria-label="Fechar" disabled={savingCast} type="button">×</button></header>

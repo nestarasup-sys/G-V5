@@ -5,7 +5,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import type { AnimatorAnimation, AnimatorAnimationAsset, AnimatorAnimationDraft, AnimatorAnimationSave, AnimatorAnimationSummary, FaceAssetSave, FaceCatalogItem, FaceCatalogItemSave, FaceCatalogItemSummary, FaceElementKind, FaceSet, FaceSetSave, FaceSetSummary, FaceSheetKind, FabricatorAssetSave, FabricatorHistoryEntry, FabricatorHistorySaveEntry, FabricatorHistorySaveState, FabricatorHistoryState, FabricatorPose, FabricatorPoseDraft, FabricatorPoseDraftSave, FabricatorPoseSave, FabricatorPoseSummary, FabricatorProject, FabricatorProjectSave, FabricatorSlotSummary, HairStyle, HairStyleAsset, HairStyleSave, HairStyleSummary, HairWorkspace, HairWorkspaceAsset, HairWorkspaceSave, ModelPart, PosePart, WardrobeAssetSave, WardrobeCategory, WardrobeSet, WardrobeSetSave, WardrobeSetSummary } from '../src/shared/fabricator'
 import type { CustomizerCharacter } from '../src/shared/customizer'
-import type { StudioAsset, StudioDocument, StudioFaceTransform, StudioFaceTransforms } from '../src/shared/studio'
+import { createStudioTimeline, type StudioAsset, type StudioDocument, type StudioFaceTransform, type StudioFaceTransforms, type StudioTimeline } from '../src/shared/studio'
 import { applyModelHeadShape } from '../src/shared/headShape'
 
 const slotCount = 10
@@ -564,6 +564,41 @@ function isStudioDocument(value: unknown): value is StudioDocument {
       && (element.kind !== 'image' || assets.some((asset) => asset.id === element.assetId && asset.category === 'object'))
       && (element.kind !== 'character' || (typeof element.characterId === 'string' && assets.some((asset) => asset.id === element.assetId && asset.category === 'character')))
       && [element.x, element.y, element.width, element.height, element.rotation, element.zIndex].every(Number.isFinite)))
+    && isStudioTimeline(studio.timeline, elements, assets)
+}
+
+function isStudioTimeline(value: unknown, elements: StudioDocument['elements'], assets: StudioAsset[]): value is StudioTimeline {
+  if (!value || typeof value !== 'object') return false
+  const timeline = value as Partial<StudioTimeline>
+  if (timeline.version !== 1 || timeline.fps !== 30 || !Number.isInteger(timeline.durationFrames) || (timeline.durationFrames ?? 0) < 1
+    || !Number.isInteger(timeline.currentFrame) || (timeline.currentFrame ?? -1) < 0 || (timeline.currentFrame ?? Infinity) > (timeline.durationFrames ?? 0)
+    || typeof timeline.loop !== 'boolean' || typeof timeline.speed !== 'number' || !Number.isFinite(timeline.speed) || timeline.speed < 0.1 || timeline.speed > 4
+    || !Array.isArray(timeline.tracks) || timeline.tracks.length > 1000 || !Array.isArray(timeline.clips) || timeline.clips.length > 10_000) return false
+  const kinds = ['character', 'objects', 'narrator', 'speech', 'thought', 'background']
+  const trackIds = new Set<string>()
+  if (!timeline.tracks.every((track) => Boolean(track && typeof track.id === 'string' && track.id.length <= 150
+    && !trackIds.has(track.id) && trackIds.add(track.id) && kinds.includes(track.kind) && typeof track.name === 'string' && track.name.length <= 255
+    && Number.isInteger(track.order) && typeof track.visible === 'boolean' && typeof track.locked === 'boolean' && typeof track.collapsed === 'boolean'
+    && (track.elementId === undefined || elements.some((element) => element.id === track.elementId && element.kind === 'character'))))) return false
+  return timeline.clips.every((clip) => {
+    if (!clip || typeof clip.id !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(clip.id)
+      || typeof clip.trackId !== 'string' || !trackIds.has(clip.trackId)
+      || !Number.isInteger(clip.startFrame) || !Number.isInteger(clip.endFrame) || clip.startFrame < 0 || clip.endFrame <= clip.startFrame || clip.endFrame > (timeline.durationFrames ?? 0)) return false
+    if (clip.elementId === null) {
+      if (clip.state.type !== 'background') return false
+      const background = clip.state.background
+      return typeof background.backgroundColor === 'string' && /^#[0-9a-f]{6}$/i.test(background.backgroundColor)
+        && (background.backgroundAssetId === null || assets.some((asset) => asset.id === background.backgroundAssetId && asset.category === 'background'))
+        && [background.backgroundX, background.backgroundY, background.backgroundWidth, background.backgroundHeight, background.backgroundRotation].every(Number.isFinite)
+    }
+    if (clip.state.type !== 'element') return false
+    const state = clip.state.element
+    return elements.some((element) => element.id === clip.elementId && element.kind === state.kind)
+      && state.id === clip.elementId && typeof state.text === 'string'
+      && isStudioFaceTransforms(state.faceTransforms)
+      && (state.assetId === undefined || assets.some((asset) => asset.id === state.assetId && asset.category === (state.kind === 'character' ? 'character' : 'object')))
+      && [state.x, state.y, state.width, state.height, state.rotation, state.zIndex].every(Number.isFinite)
+  })
 }
 
 function isStudioAsset(value: unknown): value is StudioAsset {
@@ -577,6 +612,16 @@ function isStudioAsset(value: unknown): value is StudioAsset {
 }
 
 function normalizeStudio(value: Record<string, unknown>, id: string): StudioDocument {
+  const elements = Array.isArray(value.elements) ? value.elements as StudioDocument['elements'] : []
+  const background = {
+    backgroundColor: typeof value.backgroundColor === 'string' && /^#[0-9a-f]{6}$/i.test(value.backgroundColor) ? value.backgroundColor : '#d7b5cd',
+    backgroundAssetId: typeof value.backgroundAssetId === 'string' ? value.backgroundAssetId : null,
+    backgroundX: typeof value.backgroundX === 'number' && Number.isFinite(value.backgroundX) ? value.backgroundX : 0,
+    backgroundY: typeof value.backgroundY === 'number' && Number.isFinite(value.backgroundY) ? value.backgroundY : 0,
+    backgroundWidth: typeof value.backgroundWidth === 'number' && Number.isFinite(value.backgroundWidth) ? value.backgroundWidth : 100,
+    backgroundHeight: typeof value.backgroundHeight === 'number' && Number.isFinite(value.backgroundHeight) ? value.backgroundHeight : 100,
+    backgroundRotation: typeof value.backgroundRotation === 'number' && Number.isFinite(value.backgroundRotation) ? value.backgroundRotation : 0
+  }
   return {
     schemaVersion: 1,
     id,
@@ -584,15 +629,12 @@ function normalizeStudio(value: Record<string, unknown>, id: string): StudioDocu
     color: String(value.color ?? '#d7b5cd'),
     createdAt: String(value.createdAt ?? new Date().toISOString()),
     updatedAt: String(value.updatedAt ?? new Date().toISOString()),
-    backgroundColor: typeof value.backgroundColor === 'string' && /^#[0-9a-f]{6}$/i.test(value.backgroundColor) ? value.backgroundColor : '#d7b5cd',
-    backgroundAssetId: typeof value.backgroundAssetId === 'string' ? value.backgroundAssetId : null,
-    backgroundX: typeof value.backgroundX === 'number' && Number.isFinite(value.backgroundX) ? value.backgroundX : 0,
-    backgroundY: typeof value.backgroundY === 'number' && Number.isFinite(value.backgroundY) ? value.backgroundY : 0,
-    backgroundWidth: typeof value.backgroundWidth === 'number' && Number.isFinite(value.backgroundWidth) ? value.backgroundWidth : 100,
-    backgroundHeight: typeof value.backgroundHeight === 'number' && Number.isFinite(value.backgroundHeight) ? value.backgroundHeight : 100,
-    backgroundRotation: typeof value.backgroundRotation === 'number' && Number.isFinite(value.backgroundRotation) ? value.backgroundRotation : 0,
+    ...background,
     assets: Array.isArray(value.assets) ? value.assets as StudioAsset[] : [],
-    elements: Array.isArray(value.elements) ? value.elements as StudioDocument['elements'] : []
+    elements,
+    timeline: value.timeline && typeof value.timeline === 'object'
+      ? value.timeline as StudioTimeline
+      : createStudioTimeline(elements, background)
   }
 }
 
