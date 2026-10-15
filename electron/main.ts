@@ -3,7 +3,7 @@ import { mkdir, readFile, writeFile, readdir, unlink, rename, stat, access, rm, 
 import { basename, dirname, extname, join, resolve } from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
-import type { FaceAssetSave, FaceElementKind, FaceSet, FaceSetSave, FaceSetSummary, FaceSheetKind, FabricatorAssetSave, FabricatorHistoryEntry, FabricatorHistorySaveEntry, FabricatorHistorySaveState, FabricatorHistoryState, FabricatorPose, FabricatorPoseDraft, FabricatorPoseDraftSave, FabricatorPoseSave, FabricatorPoseSummary, FabricatorProject, FabricatorProjectSave, FabricatorSlotSummary, HairStyle, HairStyleAsset, HairStyleSave, HairStyleSummary, HairWorkspace, HairWorkspaceAsset, HairWorkspaceSave, ModelPart, PosePart, WardrobeAssetSave, WardrobeCategory, WardrobeSet, WardrobeSetSave, WardrobeSetSummary } from '../src/shared/fabricator'
+import type { FaceAssetSave, FaceCatalogItem, FaceCatalogItemSave, FaceCatalogItemSummary, FaceElementKind, FaceSet, FaceSetSave, FaceSetSummary, FaceSheetKind, FabricatorAssetSave, FabricatorHistoryEntry, FabricatorHistorySaveEntry, FabricatorHistorySaveState, FabricatorHistoryState, FabricatorPose, FabricatorPoseDraft, FabricatorPoseDraftSave, FabricatorPoseSave, FabricatorPoseSummary, FabricatorProject, FabricatorProjectSave, FabricatorSlotSummary, HairStyle, HairStyleAsset, HairStyleSave, HairStyleSummary, HairWorkspace, HairWorkspaceAsset, HairWorkspaceSave, ModelPart, PosePart, WardrobeAssetSave, WardrobeCategory, WardrobeSet, WardrobeSetSave, WardrobeSetSummary } from '../src/shared/fabricator'
 import type { CustomizerCharacter } from '../src/shared/customizer'
 import { applyModelHeadShape } from '../src/shared/headShape'
 
@@ -20,6 +20,8 @@ const wardrobeModelPath = (modelSlot: number) => join(wardrobeLibraryPath(), `mo
 const wardrobeSetPath = (modelSlot: number, id: string) => join(wardrobeModelPath(modelSlot), `set-${id}`)
 const faceModelPath = (modelSlot: number) => join(app.getPath('userData'), 'fabricator', 'faces', `model-${modelSlot}`)
 const faceSetPath = (modelSlot: number, id: string) => join(faceModelPath(modelSlot), `set-${id}`)
+const faceCatalogPath = (modelSlot: number) => join(faceModelPath(modelSlot), 'catalog')
+const faceCatalogItemPath = (modelSlot: number, id: string) => join(faceCatalogPath(modelSlot), `item-${id}`)
 const hairModelPath = (modelSlot: number) => join(app.getPath('userData'), 'fabricator', 'hair', `model-${modelSlot}`)
 const hairStylePath = (modelSlot: number, id: string) => join(hairModelPath(modelSlot), 'styles', `style-${id}`)
 const characterLibraryPath = () => join(app.getPath('userData'), 'customizer', 'characters')
@@ -73,7 +75,9 @@ function isCustomizerCharacter(value: unknown): value is CustomizerCharacter {
     && (character.customization.faceAppearance === undefined || (
       !!character.customization.faceAppearance
       && isValidModelSlot(character.customization.faceAppearance.modelSlot)
-      && isValidWardrobeId(character.customization.faceAppearance.setId)
+      && (character.customization.faceAppearance.setId === undefined || isValidWardrobeId(character.customization.faceAppearance.setId))
+      && [character.customization.faceAppearance.eyeCatalogId, character.customization.faceAppearance.eyebrowCatalogId, character.customization.faceAppearance.noseCatalogId, character.customization.faceAppearance.mouthClosedCatalogId, character.customization.faceAppearance.mouthOpenCatalogId].every((id) => id === undefined || isValidFaceCatalogId(id))
+      && Boolean(character.customization.faceAppearance.setId || character.customization.faceAppearance.eyeCatalogId || character.customization.faceAppearance.eyebrowCatalogId || character.customization.faceAppearance.noseCatalogId || character.customization.faceAppearance.mouthClosedCatalogId || character.customization.faceAppearance.mouthOpenCatalogId)
       && [0, 1, 2].includes(character.customization.faceAppearance.eyeState)
       && typeof character.customization.faceAppearance.eyebrows === 'boolean'
       && Number.isInteger(character.customization.faceAppearance.noseIndex) && character.customization.faceAppearance.noseIndex >= 0 && character.customization.faceAppearance.noseIndex <= 5
@@ -122,6 +126,7 @@ async function writeCustomizerCharacters(characters: CustomizerCharacter[]): Pro
 
 const wardrobeCategories: WardrobeCategory[] = ['camisa', 'manga-superior', 'manga-inferior', 'calca-coxa', 'calca-canela', 'shorts']
 const isValidWardrobeId = (id: string) => /^[a-zA-Z0-9_-]{1,80}$/.test(id)
+const isValidFaceCatalogId = (id: string) => /^[a-zA-Z0-9_-]{1,120}$/.test(id)
 const faceSheetKinds: FaceSheetKind[] = ['eyes', 'eyebrows', 'nose', 'mouth-closed', 'mouth-open']
 const faceElementKinds: FaceElementKind[] = ['eye-left', 'eye-right', 'brow-left', 'brow-right', 'nose', 'mouth']
 
@@ -183,6 +188,123 @@ async function readFaceSet(modelSlot: number, id: string): Promise<FaceSet | nul
     if ((reason as NodeJS.ErrnoException).code === 'ENOENT') return null
     throw reason
   }
+}
+
+function validFaceCatalogItem(modelSlot: number, item: FaceCatalogItemSave): boolean {
+  const requiredElements: Record<FaceSheetKind, FaceElementKind[]> = {
+    eyes: ['eye-left', 'eye-right'], eyebrows: ['brow-left', 'brow-right'], nose: ['nose'],
+    'mouth-closed': ['mouth'], 'mouth-open': ['mouth']
+  }
+  if (!isValidModelSlot(modelSlot) || item?.schemaVersion !== 1 || item.modelSlot !== modelSlot || !isValidFaceCatalogId(item.id)
+    || !faceSheetKinds.includes(item.category) || item.sheet?.kind !== item.category
+    || typeof item.name !== 'string' || !item.name.trim() || item.name.length > 120
+    || !Array.isArray(item.pieces) || item.pieces.length > 60 || !item.transforms || typeof item.transforms !== 'object'
+    || !Number.isFinite(item.sheet.width) || !Number.isFinite(item.sheet.height) || item.sheet.width <= 0 || item.sheet.height <= 0
+    || item.sheet.width * item.sheet.height > 32_000_000 || !Number.isFinite(item.sheet.tolerance) || item.sheet.tolerance < 0 || item.sheet.tolerance > 280) return false
+  const ids = new Set<string>()
+  for (const piece of item.pieces) {
+    if (!isValidWardrobeId(piece.id) || ids.has(piece.id) || piece.sheet !== item.category
+      || !Number.isInteger(piece.index) || piece.index < 0 || piece.index > 20
+      || (piece.side !== undefined && piece.side !== 'left' && piece.side !== 'right')
+      || !piece.crop || ![piece.crop.x, piece.crop.y, piece.crop.width, piece.crop.height, piece.width, piece.height].every(Number.isFinite)
+      || piece.crop.width <= 0 || piece.crop.height <= 0 || piece.width <= 0 || piece.height <= 0) return false
+    ids.add(piece.id)
+  }
+  for (const element of requiredElements[item.category]) {
+    const transform = item.transforms[element]
+    if (!transform || ![transform.x, transform.y, transform.scaleX, transform.scaleY, transform.rotation].every(Number.isFinite)
+      || transform.scaleX <= 0 || transform.scaleY <= 0) return false
+  }
+  return typeof item.eyeLinked === 'boolean' && typeof item.browLinked === 'boolean'
+    && Number.isInteger(item.selectedNose) && item.selectedNose >= 0 && item.selectedNose <= 5
+    && Number.isInteger(item.selectedExpression) && item.selectedExpression >= 0 && item.selectedExpression <= 20
+    && typeof item.updatedAt === 'string'
+}
+
+async function writeFaceCatalogItem(modelSlot: number, item: FaceCatalogItemSave, assets: FaceAssetSave[]): Promise<void> {
+  if (!validFaceCatalogItem(modelSlot, item)) throw new Error('Peça facial inválida.')
+  const folder = faceCatalogItemPath(modelSlot, item.id)
+  const images = join(folder, 'images')
+  const expected = new Set([`sheet-${item.category}`, ...item.pieces.map((piece) => piece.id)])
+  if (assets.some((asset) => !expected.has(asset.id)) || new Set(assets.map((asset) => asset.id)).size !== assets.length) throw new Error('Imagens da peça facial inválidas.')
+  await mkdir(images, { recursive: true })
+  for (const asset of assets) await writeFile(join(images, `${asset.id}.png`), dataUrlBuffer(asset.dataUrl))
+  for (const id of expected) await access(join(images, `${id}.png`))
+  await writeFile(join(folder, 'item.json.tmp'), JSON.stringify(item), 'utf8')
+  await rename(join(folder, 'item.json.tmp'), join(folder, 'item.json'))
+  for (const filename of await readdir(images)) if (filename.endsWith('.png') && !expected.has(filename.slice(0, -4))) await unlink(join(images, filename))
+}
+
+function legacyFaceCatalogId(id: string): { setId: string; category: FaceSheetKind } | null {
+  if (!id.startsWith('legacy_')) return null
+  for (const category of faceSheetKinds) {
+    const suffix = `_${category}`
+    if (id.endsWith(suffix)) {
+      const setId = id.slice('legacy_'.length, -suffix.length)
+      if (isValidWardrobeId(setId)) return { setId, category }
+    }
+  }
+  return null
+}
+
+async function readFaceCatalogItem(modelSlot: number, id: string): Promise<FaceCatalogItem | null> {
+  if (!isValidModelSlot(modelSlot) || !isValidFaceCatalogId(id)) throw new Error('Peça facial inválida.')
+  try {
+    const folder = faceCatalogItemPath(modelSlot, id)
+    const item = JSON.parse(await readFile(join(folder, 'item.json'), 'utf8')) as FaceCatalogItemSave
+    if (!validFaceCatalogItem(modelSlot, item) || item.id !== id) return null
+    const sheet = { ...item.sheet, dataUrl: `data:image/png;base64,${(await readFile(join(folder, 'images', `sheet-${item.category}.png`))).toString('base64')}` }
+    const pieces = await Promise.all(item.pieces.map(async (piece) => ({ ...piece, dataUrl: `data:image/png;base64,${(await readFile(join(folder, 'images', `${piece.id}.png`))).toString('base64')}` })))
+    return { ...item, sheet, pieces }
+  } catch (reason) {
+    if ((reason as NodeJS.ErrnoException).code !== 'ENOENT') throw reason
+    const legacy = legacyFaceCatalogId(id)
+    if (!legacy) return null
+    const set = await readFaceSet(modelSlot, legacy.setId)
+    const sheet = set?.sheets[legacy.category]
+    if (!set || !sheet) return null
+    const elements: FaceElementKind[] = legacy.category === 'eyes' ? ['eye-left', 'eye-right'] : legacy.category === 'eyebrows' ? ['brow-left', 'brow-right'] : legacy.category === 'nose' ? ['nose'] : ['mouth']
+    return {
+      schemaVersion: 1, id, modelSlot, category: legacy.category, name: sheet.name.replace(/\.[^.]+$/, ''), sheet,
+      pieces: set.pieces.filter((piece) => piece.sheet === legacy.category),
+      transforms: Object.fromEntries(elements.map((element) => [element, set.transforms[element]])),
+      eyeLinked: set.eyeLinked, browLinked: set.browLinked, selectedNose: set.selectedNose,
+      selectedExpression: set.selectedExpression, updatedAt: set.updatedAt
+    }
+  }
+}
+
+async function listFaceCatalogItems(modelSlot: number): Promise<FaceCatalogItemSummary[]> {
+  if (!isValidModelSlot(modelSlot)) throw new Error('Modelo inválido.')
+  const items = new Map<string, FaceCatalogItemSummary>()
+  try {
+    for (const entry of await readdir(faceCatalogPath(modelSlot), { withFileTypes: true })) {
+      if (!entry.isDirectory() || !/^item-[a-zA-Z0-9_-]{1,120}$/.test(entry.name)) continue
+      try {
+        const item = JSON.parse(await readFile(join(faceCatalogPath(modelSlot), entry.name, 'item.json'), 'utf8')) as FaceCatalogItemSave
+        if (validFaceCatalogItem(modelSlot, item) && item.id === entry.name.slice(5)) items.set(item.id, { id: item.id, modelSlot, category: item.category, name: item.name, updatedAt: item.updatedAt, pieceCount: item.pieces.length })
+      } catch { /* Incomplete catalog items are hidden. */ }
+    }
+  } catch (reason) { if ((reason as NodeJS.ErrnoException).code !== 'ENOENT') throw reason }
+  // Surface old complete face saves as category items until the user edits or saves them individually.
+  try {
+    for (const entry of await readdir(faceModelPath(modelSlot), { withFileTypes: true })) {
+      if (!entry.isDirectory() || !/^set-[a-zA-Z0-9_-]{1,80}$/.test(entry.name)) continue
+      const setId = entry.name.slice(4)
+      try {
+        const set = JSON.parse(await readFile(join(faceModelPath(modelSlot), entry.name, 'face.json'), 'utf8')) as FaceSetSave
+        if (!validFaceSet(modelSlot, set) || set.id !== setId) continue
+        for (const category of faceSheetKinds) {
+          const sheet = set.sheets[category]
+          if (!sheet) continue
+          const id = `legacy_${setId}_${category}`
+          if (items.has(id)) continue
+          items.set(id, { id, modelSlot, category, name: sheet.name.replace(/\.[^.]+$/, ''), updatedAt: set.updatedAt, pieceCount: set.pieces.filter((piece) => piece.sheet === category).length })
+        }
+      } catch { /* Invalid legacy sets do not enter the new catalog. */ }
+    }
+  } catch (reason) { if ((reason as NodeJS.ErrnoException).code !== 'ENOENT') throw reason }
+  return [...items.values()].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
 }
 
 function validHairWorkspace(modelSlot: number, workspace: HairWorkspaceSave): boolean {
@@ -989,6 +1111,34 @@ async function registerFabricatorHandlers(): Promise<void> {
     const base = resolve(faceModelPath(modelSlot))
     const target = resolve(faceSetPath(modelSlot, id))
     if (dirname(target) !== base || basename(target) !== `set-${id}`) throw new Error('Caminho de exclusão inválido.')
+    const next = faceSaveQueue.catch(() => undefined).then(() => rm(target, { recursive: true, force: true }))
+    faceSaveQueue = next
+    await next
+  })
+
+  ipcMain.handle('fabricator:face-catalog:list', async (event, modelSlot: number): Promise<FaceCatalogItemSummary[]> => {
+    assertTrustedSender(event)
+    return listFaceCatalogItems(modelSlot)
+  })
+
+  ipcMain.handle('fabricator:face-catalog:load', async (event, modelSlot: number, id: string): Promise<FaceCatalogItem | null> => {
+    assertTrustedSender(event)
+    return readFaceCatalogItem(modelSlot, id)
+  })
+
+  ipcMain.handle('fabricator:face-catalog:save', async (event, modelSlot: number, item: FaceCatalogItemSave, assets: FaceAssetSave[]): Promise<void> => {
+    assertTrustedSender(event)
+    const next = faceSaveQueue.catch(() => undefined).then(() => writeFaceCatalogItem(modelSlot, item, assets))
+    faceSaveQueue = next
+    await next
+  })
+
+  ipcMain.handle('fabricator:face-catalog:delete', async (event, modelSlot: number, id: string): Promise<void> => {
+    assertTrustedSender(event)
+    if (!isValidModelSlot(modelSlot) || !isValidFaceCatalogId(id)) throw new Error('Peça facial inválida.')
+    const base = resolve(faceCatalogPath(modelSlot))
+    const target = resolve(faceCatalogItemPath(modelSlot, id))
+    if (dirname(target) !== base || basename(target) !== `item-${id}`) throw new Error('Caminho de exclusão inválido.')
     const next = faceSaveQueue.catch(() => undefined).then(() => rm(target, { recursive: true, force: true }))
     faceSaveQueue = next
     await next

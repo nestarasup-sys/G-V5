@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { CharacterPortrait } from '../../ui/components/CharacterPortrait'
 import { Icon, type IconName } from '../../ui/components/Icon'
-import type { FaceElementKind, FaceSet, FaceSetSummary, FabricatorPose, FabricatorPoseSummary, FabricatorProject, FabricatorSlotSummary, HairStyle, HairStyleSummary, WardrobeCategory, WardrobeSet, WardrobeSetSummary } from '../../../../shared/fabricator'
+import type { FaceCatalogItem, FaceCatalogItemSummary, FaceElementKind, FaceSet, FaceSheetKind, FabricatorPose, FabricatorPoseSummary, FabricatorProject, FabricatorSlotSummary, HairStyle, HairStyleSummary, WardrobeCategory, WardrobeSet, WardrobeSetSummary } from '../../../../shared/fabricator'
 import type { CustomizerCharacter, CustomizerFaceAppearance, CustomizerWardrobeCategory, CustomizerWardrobeGroup } from '../../../../shared/customizer'
 import { usePreviewBackground } from '../fabricator/usePreviewBackground'
 import { mapWardrobeComponentToPose } from '../fabricator/wardrobe/poseTransform'
@@ -329,6 +329,51 @@ async function renderFaceOverlay(artwork: CatalogArtwork, source: FabricatorProj
   return canvas.toDataURL('image/png')
 }
 
+async function renderFaceCatalogOverlay(artwork: CatalogArtwork, source: FabricatorProject, items: Partial<Record<FaceSheetKind, FaceCatalogItem>>, appearance: CustomizerFaceAppearance): Promise<string | null> {
+  const sourceHead = source.parts.find((part) => /cabe[çc]a|head/i.test(part.name))
+  const targetHead = artwork.parts.find((part) => /cabe[çc]a|head/i.test(part.name))
+  if (!sourceHead || !targetHead || sourceHead.width <= 0 || sourceHead.height <= 0) return null
+  const canvas = document.createElement('canvas')
+  canvas.width = Math.max(1, artwork.width)
+  canvas.height = Math.max(1, artwork.height)
+  const context = canvas.getContext('2d')
+  if (!context) return null
+  const categoryIds: Partial<Record<FaceSheetKind, string | undefined>> = {
+    eyes: appearance.eyeCatalogId,
+    eyebrows: appearance.eyebrowCatalogId,
+    nose: appearance.noseCatalogId,
+    'mouth-closed': appearance.mouthOpen ? undefined : appearance.mouthClosedCatalogId,
+    'mouth-open': appearance.mouthOpen ? appearance.mouthOpenCatalogId : undefined
+  }
+  for (const element of faceElementOrder) {
+    if (element.startsWith('brow') && !appearance.eyebrows) continue
+    const sheet: FaceSheetKind = element.startsWith('eye') ? 'eyes' : element.startsWith('brow') ? 'eyebrows' : element === 'nose' ? 'nose' : appearance.mouthOpen ? 'mouth-open' : 'mouth-closed'
+    const item = items[sheet]
+    if (!item || item.id !== categoryIds[sheet]) continue
+    const index = sheet === 'eyes' ? appearance.eyeState : sheet === 'nose' ? appearance.noseIndex : sheet.startsWith('mouth') ? appearance.expressionIndex : 0
+    const side = element.endsWith('left') ? 'left' : element.endsWith('right') ? 'right' : undefined
+    const piece = item.pieces.find((candidate) => candidate.sheet === sheet && candidate.index === index && candidate.side === side)
+    const transform = item.transforms[element]
+    if (!piece || !transform) continue
+    try {
+      const image = await loadCachedImage(piece.dataUrl)
+      const localX = transform.x / sourceHead.width * targetHead.width
+      const localY = transform.y / sourceHead.height * targetHead.height
+      const radians = targetHead.rotation * Math.PI / 180
+      const x = targetHead.x + targetHead.width / 2 + (localX - targetHead.width / 2) * Math.cos(radians) - (localY - targetHead.height / 2) * Math.sin(radians)
+      const y = targetHead.y + targetHead.height / 2 + (localX - targetHead.width / 2) * Math.sin(radians) + (localY - targetHead.height / 2) * Math.cos(radians)
+      const width = piece.width * transform.scaleX / sourceHead.width * targetHead.width
+      const height = piece.height * transform.scaleY / sourceHead.height * targetHead.height
+      context.save()
+      context.translate(x, y)
+      context.rotate((targetHead.rotation + transform.rotation) * Math.PI / 180)
+      context.drawImage(image, -width / 2, -height / 2, width, height)
+      context.restore()
+    } catch { /* Keep the rest of the face visible if one catalog asset is missing. */ }
+  }
+  return canvas.toDataURL('image/png')
+}
+
 const modules: { name: string; icon: IconName; detail: string }[] = [
   { name: 'Modelos', icon: 'sparkles', detail: 'Looks prontos para começar' },
   { name: 'Poses', icon: 'body', detail: 'Pose, proporções e detalhes' },
@@ -369,7 +414,8 @@ export function CustomizerPage() {
   const [wardrobeLoading, setWardrobeLoading] = useState(false)
   const [wardrobeDetails, setWardrobeDetails] = useState<Record<string, WardrobeSet>>({})
   const [wardrobeThumbnails, setWardrobeThumbnails] = useState<Record<string, string>>({})
-  const [faceSets, setFaceSets] = useState<FaceSetSummary[]>([])
+  const [faceCatalogItems, setFaceCatalogItems] = useState<FaceCatalogItemSummary[]>([])
+  const [faceCatalogDetails, setFaceCatalogDetails] = useState<Record<string, FaceCatalogItem>>({})
   const [faceDetails, setFaceDetails] = useState<Record<string, FaceSet>>({})
   const [faceLoading, setFaceLoading] = useState(false)
   const [hairStyles, setHairStyles] = useState<HairStyleSummary[]>([])
@@ -597,17 +643,17 @@ export function CustomizerPage() {
   }, [activeModule, selectedCatalogModelSlot])
 
   useEffect(() => {
-    if (selectedCatalogModelSlot === null) { setFaceSets([]); return }
+    if (selectedCatalogModelSlot === null) { setFaceCatalogItems([]); return }
     let cancelled = false
     setFaceLoading(true)
-    void window.desktop.listFaceSets(selectedCatalogModelSlot).then(async (summaries) => {
+    void window.desktop.listFaceCatalog(selectedCatalogModelSlot).then(async (summaries) => {
       if (cancelled) return
-      setFaceSets(summaries)
-      const loaded = await Promise.all(summaries.map(async (summary) => ({ key: `${summary.modelSlot}:${summary.id}`, face: await window.desktop.loadFaceSet(summary.modelSlot, summary.id) })))
+      setFaceCatalogItems(summaries)
+      const loaded = await Promise.all(summaries.map(async (summary) => ({ key: `${summary.modelSlot}:${summary.id}`, item: await window.desktop.loadFaceCatalogItem(summary.modelSlot, summary.id) })))
       if (cancelled) return
-      setFaceDetails((current) => {
+      setFaceCatalogDetails((current) => {
         const next = { ...current }
-        for (const item of loaded) if (item.face) next[item.key] = item.face
+        for (const entry of loaded) if (entry.item) next[entry.key] = entry.item
         return next
       })
     }).catch((reason: unknown) => {
@@ -615,6 +661,20 @@ export function CustomizerPage() {
     }).finally(() => { if (!cancelled) setFaceLoading(false) })
     return () => { cancelled = true }
   }, [selectedCatalogModelSlot, activeModule])
+
+  useEffect(() => {
+    const appearance = characterFaceAppearance
+    if (!appearance?.setId || appearance.modelSlot !== selectedCatalogModelSlot) return
+    let cancelled = false
+    const key = `${appearance.modelSlot}:${appearance.setId}`
+    if (faceDetails[key]) return
+    void window.desktop.loadFaceSet(appearance.modelSlot, appearance.setId).then((face) => {
+      if (!cancelled && face) setFaceDetails((current) => ({ ...current, [key]: face }))
+    }).catch((reason: unknown) => {
+      if (!cancelled) setCatalogError(reason instanceof Error ? reason.message : 'Não foi possível carregar o rosto legado.')
+    })
+    return () => { cancelled = true }
+  }, [characterFaceAppearance, faceDetails, selectedCatalogModelSlot])
 
   useEffect(() => {
     if (selectedCatalogModelSlot === null || activeModule !== 'Cabelos') { setHairStyles([]); return }
@@ -637,15 +697,29 @@ export function CustomizerPage() {
 
   useEffect(() => {
     let cancelled = false
-    const face = characterFaceAppearance ? faceDetails[`${characterFaceAppearance.modelSlot}:${characterFaceAppearance.setId}`] : null
-    if (!selectedArtworkProject || !selectedSourceModelProject || !face) { setSelectedFaceUrl(null); return }
-    void renderFaceOverlay(selectedArtworkProject, selectedSourceModelProject, face, characterFaceAppearance).then((url) => {
+    const appearance = characterFaceAppearance
+    const hasCatalogSelection = Boolean(appearance?.eyeCatalogId || appearance?.eyebrowCatalogId || appearance?.noseCatalogId || appearance?.mouthClosedCatalogId || appearance?.mouthOpenCatalogId)
+    const face = appearance?.setId ? faceDetails[`${appearance.modelSlot}:${appearance.setId}`] : null
+    const catalogItems: Partial<Record<FaceSheetKind, FaceCatalogItem>> = {}
+    if (appearance && hasCatalogSelection) {
+      const ids: Partial<Record<FaceSheetKind, string | undefined>> = { eyes: appearance.eyeCatalogId, eyebrows: appearance.eyebrowCatalogId, nose: appearance.noseCatalogId, 'mouth-closed': appearance.mouthClosedCatalogId, 'mouth-open': appearance.mouthOpenCatalogId }
+      for (const [category, id] of Object.entries(ids) as Array<[FaceSheetKind, string | undefined]>) {
+        if (!id) continue
+        const item = faceCatalogDetails[`${appearance.modelSlot}:${id}`]
+        if (item) catalogItems[category] = item
+      }
+    }
+    if (!selectedArtworkProject || !selectedSourceModelProject || !appearance || (!hasCatalogSelection && !face)) { setSelectedFaceUrl(null); return }
+    const render = hasCatalogSelection
+      ? renderFaceCatalogOverlay(selectedArtworkProject, selectedSourceModelProject, catalogItems, appearance)
+      : renderFaceOverlay(selectedArtworkProject, selectedSourceModelProject, face, appearance)
+    void render.then((url) => {
       if (!cancelled) setSelectedFaceUrl(url)
     }).catch((reason: unknown) => {
       if (!cancelled) setCatalogError(reason instanceof Error ? reason.message : 'Não foi possível montar o rosto do personagem.')
     })
     return () => { cancelled = true }
-  }, [characterFaceAppearance, faceDetails, selectedArtworkProject, selectedSourceModelProject])
+  }, [characterFaceAppearance, faceCatalogDetails, faceDetails, selectedArtworkProject, selectedSourceModelProject])
 
   useEffect(() => {
     let cancelled = false
@@ -811,15 +885,43 @@ export function CustomizerPage() {
     await saveCharacter({ ...current, customization: { ...current.customization, ...changes }, updatedAt: new Date().toISOString() })
   }
 
-  async function chooseFaceSet(summary: FaceSetSummary) {
-    const face = faceDetails[`${summary.modelSlot}:${summary.id}`] ?? await window.desktop.loadFaceSet(summary.modelSlot, summary.id)
-    if (!face || !selectedCharacter) return
-    setFaceDetails((current) => ({ ...current, [`${summary.modelSlot}:${summary.id}`]: face }))
+  async function chooseFaceCatalogItem(summary: FaceCatalogItemSummary) {
+    const item = faceCatalogDetails[`${summary.modelSlot}:${summary.id}`] ?? await window.desktop.loadFaceCatalogItem(summary.modelSlot, summary.id)
+    if (!item || !selectedCharacter) return
+    setFaceCatalogDetails((current) => ({ ...current, [`${summary.modelSlot}:${summary.id}`]: item }))
     const current = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
     const previous = current.customization.faceAppearance
-    const appearance: CustomizerFaceAppearance = previous?.setId === face.id && previous.modelSlot === face.modelSlot
-      ? previous
-      : { modelSlot: face.modelSlot, setId: face.id, eyeState: 0, eyebrows: true, noseIndex: face.selectedNose, expressionIndex: face.selectedExpression, mouthOpen: false }
+    const field: Record<FaceSheetKind, keyof CustomizerFaceAppearance> = {
+      eyes: 'eyeCatalogId', eyebrows: 'eyebrowCatalogId', nose: 'noseCatalogId',
+      'mouth-closed': 'mouthClosedCatalogId', 'mouth-open': 'mouthOpenCatalogId'
+    }
+    const sameModel = previous?.modelSlot === item.modelSlot
+    const migrated: Partial<Pick<CustomizerFaceAppearance, 'eyeCatalogId' | 'eyebrowCatalogId' | 'noseCatalogId' | 'mouthClosedCatalogId' | 'mouthOpenCatalogId'>> = {}
+    if (sameModel && previous?.setId) {
+      const legacySet = await window.desktop.loadFaceSet(previous.modelSlot, previous.setId)
+      for (const kind of Object.keys(field) as FaceSheetKind[]) {
+        if (!legacySet?.sheets[kind]) continue
+        const legacyItemId = `legacy_${legacySet.id}_${kind}`
+        if (!faceCatalogItems.some((entry) => entry.id === legacyItemId)) continue
+        if (kind === 'eyes') migrated.eyeCatalogId = legacyItemId
+        else if (kind === 'eyebrows') migrated.eyebrowCatalogId = legacyItemId
+        else if (kind === 'nose') migrated.noseCatalogId = legacyItemId
+        else if (kind === 'mouth-closed') migrated.mouthClosedCatalogId = legacyItemId
+        else migrated.mouthOpenCatalogId = legacyItemId
+      }
+    }
+    const appearance: CustomizerFaceAppearance = {
+      ...(sameModel ? previous : undefined),
+      ...migrated,
+      modelSlot: item.modelSlot,
+      setId: undefined,
+      [field[item.category]]: item.id,
+      eyeState: sameModel ? previous.eyeState : 0,
+      eyebrows: sameModel ? previous.eyebrows : true,
+      noseIndex: item.category === 'nose' ? item.selectedNose : sameModel ? previous.noseIndex : item.selectedNose,
+      expressionIndex: item.category.startsWith('mouth') ? item.selectedExpression : sameModel ? previous.expressionIndex : item.selectedExpression,
+      mouthOpen: item.category === 'mouth-open' ? true : item.category === 'mouth-closed' ? false : sameModel ? previous.mouthOpen : false
+    }
     setFaceCategory('eyes')
     await saveCharacterCustomization({ faceAppearance: appearance })
   }
@@ -836,14 +938,12 @@ export function CustomizerPage() {
     await saveCharacterCustomization({ hairAppearance: frontStyleId || backStyleId ? { modelSlot, frontStyleId, backStyleId } : undefined })
   }
 
-  async function updateFaceAppearance(patch: Partial<CustomizerFaceAppearance>) {
-    if (!selectedCharacter || !activeFaceSet) return
+  async function setFaceCatalogVariant(patch: Partial<CustomizerFaceAppearance>) {
+    if (!selectedCharacter) return
     const current = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
     const old = current.customization.faceAppearance
-    const base: CustomizerFaceAppearance = old?.setId === activeFaceSet.id && old.modelSlot === activeFaceSet.modelSlot
-      ? old
-      : { modelSlot: activeFaceSet.modelSlot, setId: activeFaceSet.id, eyeState: 0, eyebrows: true, noseIndex: activeFaceSet.selectedNose, expressionIndex: activeFaceSet.selectedExpression, mouthOpen: false }
-    await saveCharacterCustomization({ faceAppearance: { ...base, ...patch } })
+    if (!old || old.modelSlot !== selectedCatalogModelSlot) return
+    await saveCharacterCustomization({ faceAppearance: { ...old, ...patch } })
   }
 
   function wardrobeGroupKey(group: Pick<CustomizerWardrobeGroup, 'modelSlot' | 'setId' | 'category' | 'componentId'>) {
@@ -1083,7 +1183,6 @@ export function CustomizerPage() {
   const availablePoses = catalogPoses.filter((pose): pose is NonNullable<typeof pose> => pose?.sourceModelSlot === selectedCatalogModelSlot)
   const selectedModelName = availableModels.find((model) => model.slot === selectedCatalogModelSlot)?.name
   const activeFaceAppearance = characterFaceAppearance?.modelSlot === selectedCatalogModelSlot ? characterFaceAppearance : undefined
-  const activeFaceSet = activeFaceAppearance ? faceDetails[`${activeFaceAppearance.modelSlot}:${activeFaceAppearance.setId}`] ?? null : null
   const wardrobeGroupDefinitions = clothingSection === 'Customizar' ? [] : clothingCategories[clothingSection]
   const wardrobeCategoryLabels: Record<ClothingGroupCategory, string> = { calca: 'Calças', shorts: 'Shorts', 'manga-inferior': 'Mangas inferiores', 'manga-superior': 'Mangas superiores', camisa: 'Camisas' }
   const activeWardrobeGroup = selectedClothing ? (selectedCharacter?.customization.wardrobeGroups ?? []).find((group) => group.setId === selectedClothing.setId && group.category === selectedClothing.category && (group.componentId === selectedClothing.componentId || !group.componentId)) : undefined
@@ -1191,41 +1290,43 @@ export function CustomizerPage() {
                       </div>
               )}
               {activeModule === 'Cabeça' && <div className="customizer-face-catalog">
-                {selectedCatalogModelSlot === null ? <div className="customizer-catalog-empty">Escolha um modelo para ver os rostos salvos.</div>
-                  : faceLoading ? <div className="customizer-catalog-empty">Carregando rostos…</div>
-                    : faceSets.length === 0 ? <div className="customizer-catalog-empty">Este modelo ainda não tem rostos salvos no Fabricador Dev.</div>
-                      : <>
-                        <section className="customizer-face-sets" aria-label="Rostos salvos">
-                          <header><h3>Rostos prontos</h3><small>Salvos para este modelo</small></header>
-                          <div className="customizer-face-set-list">{faceSets.map((summary) => {
-                            const detail = faceDetails[`${summary.modelSlot}:${summary.id}`]
-                            const selected = activeFaceAppearance?.setId === summary.id
-                            const cover = detail?.pieces.find((piece) => piece.sheet === 'eyes' && piece.index === 0 && piece.side === 'left') ?? detail?.pieces[0]
-                            return <button className={'customizer-face-set' + (selected ? ' selected' : '')} key={summary.id} onClick={() => void chooseFaceSet(summary)} aria-pressed={selected} title={summary.name} type="button">
-                              {cover ? <img src={cover.dataUrl} alt="" /> : <span><Icon name="face" /></span>}
-                              <b>{summary.name}</b>
-                            </button>
-                          })}</div>
-                        </section>
-                        {activeFaceSet && activeFaceAppearance && <>
-                          <nav className="customizer-face-tabs" aria-label="Categorias do rosto">
-                            {([{ id: 'eyes', label: 'Olhos' }, { id: 'eyebrows', label: 'Sobrancelhas' }, { id: 'nose', label: 'Narizes' }, { id: 'mouth', label: 'Bocas' }] as const).map((category) => <button key={category.id} className={faceCategory === category.id ? 'active' : ''} onClick={() => setFaceCategory(category.id)} type="button">{category.label}</button>)}
-                          </nav>
-                          <section className="customizer-face-options" aria-label={`Opções de ${faceCategory}`}>
-                            {faceCategory === 'eyes' && <div className="customizer-face-grid">{[0, 1, 2].map((index) => {
-                              const pieces = activeFaceSet.pieces.filter((piece) => piece.sheet === 'eyes' && piece.index === index)
-                              const labels = ['Olhando para direita', 'Olhando para esquerda', 'Olhos fechados']
-                              return <button className={'customizer-face-option' + (activeFaceAppearance.eyeState === index ? ' selected' : '')} key={index} onClick={() => void updateFaceAppearance({ eyeState: index as 0 | 1 | 2 })} aria-pressed={activeFaceAppearance.eyeState === index} type="button"><span>{pieces.map((piece) => <img key={piece.id} src={piece.dataUrl} alt="" />)}</span><b>{labels[index]}</b></button>
+                {selectedCatalogModelSlot === null ? <div className="customizer-catalog-empty">Escolha um modelo para ver as peças faciais.</div>
+                  : faceLoading ? <div className="customizer-catalog-empty">Carregando catálogo facial…</div>
+                    : <>
+                      <nav className="customizer-face-tabs" aria-label="Categorias do rosto">
+                        {([{ id: 'eyes', label: 'Olhos' }, { id: 'eyebrows', label: 'Sobrancelhas' }, { id: 'nose', label: 'Narizes' }, { id: 'mouth', label: 'Bocas' }] as const).map((category) => <button key={category.id} className={faceCategory === category.id ? 'active' : ''} onClick={() => setFaceCategory(category.id)} type="button">{category.label}</button>)}
+                      </nav>
+                      {faceCategory === 'mouth' && <div className="customizer-face-mouth-tabs"><button className={!activeFaceAppearance?.mouthOpen ? 'active' : ''} onClick={() => void setFaceCatalogVariant({ mouthOpen: false })} type="button">Fechadas</button><button className={activeFaceAppearance?.mouthOpen ? 'active' : ''} onClick={() => void setFaceCatalogVariant({ mouthOpen: true })} type="button">Abertas</button></div>}
+                      {(() => {
+                        const category: FaceSheetKind = faceCategory === 'mouth' ? activeFaceAppearance?.mouthOpen ? 'mouth-open' : 'mouth-closed' : faceCategory
+                        const selectedId = category === 'eyes' ? activeFaceAppearance?.eyeCatalogId : category === 'eyebrows' ? activeFaceAppearance?.eyebrowCatalogId : category === 'nose' ? activeFaceAppearance?.noseCatalogId : category === 'mouth-open' ? activeFaceAppearance?.mouthOpenCatalogId : activeFaceAppearance?.mouthClosedCatalogId
+                        const items = faceCatalogItems.filter((item) => item.category === category)
+                        const activeItem = selectedId ? faceCatalogDetails[`${selectedCatalogModelSlot}:${selectedId}`] : null
+                        return <>
+                          <section className="customizer-face-sets" aria-label={`Catálogo de ${category}`}>
+                            <header><h3>{category === 'eyes' ? 'Folhas de olhos' : category === 'eyebrows' ? 'Folhas de sobrancelhas' : category === 'nose' ? 'Folhas de nariz' : category === 'mouth-open' ? 'Folhas de bocas abertas' : 'Folhas de bocas fechadas'}</h3><small>Variantes e encaixe salvos em cada folha</small></header>
+                            {items.length === 0 ? <p className="customizer-face-empty">Nenhuma folha salva nesta categoria no Fabricador Dev.</p> : <div className="customizer-face-set-list">{items.map((summary) => {
+                              const detail = faceCatalogDetails[`${summary.modelSlot}:${summary.id}`]
+                              const selected = selectedId === summary.id
+                              const samples = detail?.pieces.filter((piece) => piece.index === 0 && (category !== 'eyes' && category !== 'eyebrows' || piece.side === 'left' || piece.side === 'right')) ?? []
+                              return <button className={'customizer-face-set' + (selected ? ' selected' : '')} key={summary.id} onClick={() => void chooseFaceCatalogItem(summary)} aria-pressed={selected} title={summary.name} type="button"><span>{samples.slice(0, 2).map((piece) => <img key={piece.id} src={piece.dataUrl} alt="" />)}{samples.length === 0 && <Icon name="face" />}</span><b>{summary.name}</b></button>
                             })}</div>}
-                            {faceCategory === 'eyebrows' && <>{activeFaceSet.pieces.some((piece) => piece.sheet === 'eyebrows') ? <button className={'customizer-face-option customizer-face-toggle' + (activeFaceAppearance.eyebrows ? ' selected' : '')} onClick={() => void updateFaceAppearance({ eyebrows: !activeFaceAppearance.eyebrows })} aria-pressed={activeFaceAppearance.eyebrows} type="button"><span>{activeFaceSet.pieces.filter((piece) => piece.sheet === 'eyebrows').map((piece) => <img key={piece.id} src={piece.dataUrl} alt="" />)}</span><b>{activeFaceAppearance.eyebrows ? 'Sobrancelhas visíveis' : 'Sobrancelhas ocultas'}</b></button> : <p className="customizer-face-empty">Este rosto não tem sobrancelhas importadas.</p>}</>}
-                            {faceCategory === 'nose' && <div className="customizer-face-grid">{activeFaceSet.pieces.filter((piece) => piece.sheet === 'nose').map((piece) => <button className={'customizer-face-option' + (activeFaceAppearance.noseIndex === piece.index ? ' selected' : '')} key={piece.id} onClick={() => void updateFaceAppearance({ noseIndex: piece.index })} aria-pressed={activeFaceAppearance.noseIndex === piece.index} type="button"><span><img src={piece.dataUrl} alt="" /></span><b>Nariz {piece.index + 1}</b></button>)}</div>}
-                            {faceCategory === 'mouth' && <><div className="customizer-face-mouth-tabs"><button className={!activeFaceAppearance.mouthOpen ? 'active' : ''} onClick={() => void updateFaceAppearance({ mouthOpen: false })} type="button">Fechadas</button><button className={activeFaceAppearance.mouthOpen ? 'active' : ''} onClick={() => void updateFaceAppearance({ mouthOpen: true })} type="button">Abertas</button></div><div className="customizer-face-grid">{activeFaceSet.pieces.filter((piece) => piece.sheet === (activeFaceAppearance.mouthOpen ? 'mouth-open' : 'mouth-closed')).map((piece) => <button className={'customizer-face-option' + (activeFaceAppearance.expressionIndex === piece.index ? ' selected' : '')} key={piece.id} onClick={() => void updateFaceAppearance({ expressionIndex: piece.index })} aria-pressed={activeFaceAppearance.expressionIndex === piece.index} type="button"><span><img src={piece.dataUrl} alt="" /></span><b>Boca {String(piece.index + 1).padStart(2, '0')}</b></button>)}</div></>}
                           </section>
-                        </>}
-                        {!activeFaceSet && <p className="customizer-face-empty">Selecione um rosto para escolher os elementos. A seleção fica salva somente neste personagem.</p>}
-                      </>}
-              </div>}
-              {activeModule === 'Cabelos' && <div className="customizer-hair-catalog">
+                          {activeItem && activeFaceAppearance && <section className="customizer-face-options" aria-label="Variantes da folha selecionada">
+                            {category === 'eyes' && <div className="customizer-face-grid">{[0, 1, 2].map((index) => {
+                              const pieces = activeItem.pieces.filter((piece) => piece.index === index)
+                              const labels = ['Olhando para direita', 'Olhando para esquerda', 'Olhos fechados']
+                              return <button className={'customizer-face-option' + (activeFaceAppearance.eyeState === index ? ' selected' : '')} key={index} onClick={() => void setFaceCatalogVariant({ eyeState: index as 0 | 1 | 2 })} aria-pressed={activeFaceAppearance.eyeState === index} type="button"><span>{pieces.map((piece) => <img key={piece.id} src={piece.dataUrl} alt="" />)}</span><b>{labels[index]}</b></button>
+                            })}</div>}
+                            {category === 'eyebrows' && <button className={'customizer-face-option customizer-face-toggle' + (activeFaceAppearance.eyebrows ? ' selected' : '')} onClick={() => void setFaceCatalogVariant({ eyebrows: !activeFaceAppearance.eyebrows })} aria-pressed={activeFaceAppearance.eyebrows} type="button"><span>{activeItem.pieces.filter((piece) => piece.index === 0).map((piece) => <img key={piece.id} src={piece.dataUrl} alt="" />)}</span><b>{activeFaceAppearance.eyebrows ? 'Sobrancelhas visíveis' : 'Sobrancelhas ocultas'}</b></button>}
+                            {category === 'nose' && <div className="customizer-face-grid">{activeItem.pieces.map((piece) => <button className={'customizer-face-option' + (activeFaceAppearance.noseIndex === piece.index ? ' selected' : '')} key={piece.id} onClick={() => void setFaceCatalogVariant({ noseIndex: piece.index })} aria-pressed={activeFaceAppearance.noseIndex === piece.index} type="button"><span><img src={piece.dataUrl} alt="" /></span><b>Nariz {piece.index + 1}</b></button>)}</div>}
+                            {category.startsWith('mouth') && <div className="customizer-face-grid">{activeItem.pieces.map((piece) => <button className={'customizer-face-option' + (activeFaceAppearance.expressionIndex === piece.index ? ' selected' : '')} key={piece.id} onClick={() => void setFaceCatalogVariant({ expressionIndex: piece.index })} aria-pressed={activeFaceAppearance.expressionIndex === piece.index} type="button"><span><img src={piece.dataUrl} alt="" /></span><b>Boca {String(piece.index + 1).padStart(2, '0')}</b></button>)}</div>}
+                          </section>}
+                          {activeFaceAppearance && <p className="customizer-face-empty">As escolhas e os encaixes são salvos somente para {selectedCharacter?.name ?? 'este personagem'}.</p>}
+                        </>
+                      })()}
+                    </>}
+              </div>}              {activeModule === 'Cabelos' && <div className="customizer-hair-catalog">
                 {selectedCatalogModelSlot === null ? <div className="customizer-catalog-empty">Escolha um modelo para ver os cabelos salvos.</div>
                   : hairLoading ? <div className="customizer-catalog-empty">Carregando cabelos…</div>
                     : hairStyles.length === 0 ? <div className="customizer-catalog-empty">Este modelo ainda não tem cabelos no catálogo. Importe e salve um cabelo em Cabelos Dev.</div>

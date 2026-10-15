@@ -19,6 +19,9 @@
 .face-library>header,.face-controls>header { display:flex;align-items:center;justify-content:space-between;gap:6px; }
 .face-library>header strong,.face-controls>header strong { font-size:13px;color:#3c333c; }
 .face-library>header small { color:#a397a1;font-size:10px; }
+.face-catalog-groups { display:grid;align-content:start;gap:12px; }
+.face-catalog-group { display:grid;gap:6px; }
+.face-catalog-group>strong { color:#8a737f;font-size:10px; }
 .face-library-list { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));align-content:start;gap:6px;max-height:250px;overflow:auto;padding:1px;scrollbar-width:thin; }
 .face-library-list>button { min-width:0;display:flex;flex-direction:column;align-items:stretch;gap:4px;border:1px solid #eee6eb;border-radius:8px;background:#fff;text-align:left;color:#6d5865;padding:5px;font-size:10px; }
 .face-library-list>button.active { border-color:#e990ad;background:#fff2f7;color:#9d4168; }
@@ -30,6 +33,7 @@
 .face-catalog-categories { display:flex;flex-wrap:wrap;gap:3px; }
 .face-catalog-categories i { padding:2px 4px;border-radius:4px;background:#f8f1f5;color:#8b6a7b;font-size:8px;font-style:normal; }
 .face-library-list>p,.face-controls-empty { grid-column:1/-1;color:#a49aa3;font-size:11px;line-height:1.5; }
+.face-catalog-empty { grid-column:1/-1;color:#aa9ba5;font-size:9px; }
 .face-sheet-list { display:grid;gap:7px;border-top:1px solid #f0e8ed;padding-top:13px; }
 .face-sheet-list>strong,.face-control-group>strong { font-size:11px;color:#68545f; }
 .face-sheet-card { min-width:0;min-height:52px;display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:stretch;gap:5px;padding:5px;border:1px dashed #d9c7d1;border-radius:8px;background:#fffcfd; }

@@ -149,6 +149,27 @@ export type FaceSetSave = Omit<FaceSet, 'sheets' | 'pieces'> & {
 }
 export type FaceSetSummary = Pick<FaceSet, 'id' | 'modelSlot' | 'name' | 'updatedAt'> & { pieceCount: number }
 export type FaceAssetSave = { id: string; dataUrl: string }
+/** One imported facial sheet and its cropped variants, stored independently for the Customizer catalog. */
+export type FaceCatalogItem = {
+  schemaVersion: 1
+  id: string
+  modelSlot: number
+  category: FaceSheetKind
+  name: string
+  sheet: FaceSheet
+  pieces: FacePiece[]
+  transforms: Partial<Record<FaceElementKind, FaceTransform>>
+  eyeLinked: boolean
+  browLinked: boolean
+  selectedNose: number
+  selectedExpression: number
+  updatedAt: string
+}
+export type FaceCatalogItemSave = Omit<FaceCatalogItem, 'sheet' | 'pieces'> & {
+  sheet: Omit<FaceSheet, 'dataUrl'>
+  pieces: Array<Omit<FacePiece, 'dataUrl'>>
+}
+export type FaceCatalogItemSummary = Pick<FaceCatalogItem, 'id' | 'modelSlot' | 'category' | 'name' | 'updatedAt'> & { pieceCount: number }
 export type HairTransform = { x: number; y: number; scaleX: number; scaleY: number; rotation: number; flipX?: boolean }
 export type HairWorkspace = {
   schemaVersion: 1
@@ -232,6 +253,10 @@ export type FabricatorDesktopApi = {
   loadFaceSet: (modelSlot: number, id: string) => Promise<FaceSet | null>
   saveFaceSet: (modelSlot: number, set: FaceSetSave, assets: FaceAssetSave[]) => Promise<void>
   deleteFaceSet: (modelSlot: number, id: string) => Promise<void>
+  listFaceCatalog: (modelSlot: number) => Promise<FaceCatalogItemSummary[]>
+  loadFaceCatalogItem: (modelSlot: number, id: string) => Promise<FaceCatalogItem | null>
+  saveFaceCatalogItem: (modelSlot: number, item: FaceCatalogItemSave, assets: FaceAssetSave[]) => Promise<void>
+  deleteFaceCatalogItem: (modelSlot: number, id: string) => Promise<void>
   loadHairWorkspace: (modelSlot: number) => Promise<HairWorkspace | null>
   saveHairWorkspace: (modelSlot: number, workspace: HairWorkspaceSave, assets: HairWorkspaceAsset[]) => Promise<void>
   listHairStyles: (modelSlot: number) => Promise<HairStyleSummary[]>

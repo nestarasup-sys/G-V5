@@ -15,7 +15,14 @@ export type CharacterCustomization = {
 
 export type CustomizerFaceAppearance = {
   modelSlot: number
-  setId: string
+  /** Legacy complete-face selection, kept readable for existing characters. */
+  setId?: string
+  /** Each prepared sheet is selected independently from the Fabricator face catalog. */
+  eyeCatalogId?: string
+  eyebrowCatalogId?: string
+  noseCatalogId?: string
+  mouthClosedCatalogId?: string
+  mouthOpenCatalogId?: string
   eyeState: 0 | 1 | 2
   eyebrows: boolean
   noseIndex: number
