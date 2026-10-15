@@ -1498,7 +1498,6 @@ export function CustomizerPage() {
             {selectedCustomizerTopTab === 'modelos' && <section className="customizer-pose-carousel" aria-label="Pose do modelo">
               <header className="customizer-pose-carousel-heading" aria-live="polite">
                 <strong>{currentPose ? `Pose ${String(currentPose.slot).padStart(2, '0')}` : 'Modelo base'}</strong>
-                <span>{currentPose ? `${currentPoseIndex + 1} de ${availablePoses.length}` : `${availablePoses.length} poses`}</span>
               </header>
               <div className="customizer-pose-carousel-body">
                 <button className="customizer-pose-carousel-arrow" aria-label="Pose anterior" title="Pose anterior" disabled={!selectedCharacter || !availablePoses.length || previewLoading || (availablePoses.length === 1 && Boolean(currentPose))} onClick={() => showAdjacentPose(-1)} type="button"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M21 5 10 16l11 11" /></svg></button>
@@ -1507,7 +1506,6 @@ export function CustomizerPage() {
                 </div>
                 <button className="customizer-pose-carousel-arrow" aria-label="Próxima pose" title="Próxima pose" disabled={!selectedCharacter || !availablePoses.length || previewLoading || (availablePoses.length === 1 && Boolean(currentPose))} onClick={() => showAdjacentPose(1)} type="button"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="m11 5 11 11-11 11" /></svg></button>
               </div>
-              <footer>{currentPose?.name ?? (availablePoses.length ? 'Use as setas para escolher uma pose' : 'Nenhuma pose salva para este modelo')}</footer>
             </section>}
             <div className="customizer-models-content" hidden>
             <div className="customizer-models-options-grid">
