@@ -201,9 +201,8 @@ export function HairWorkspace() {
   }
 
   function startDrag(event: PointerEvent<HTMLImageElement>, side: HairSide) {
-    if (!head || !hairWorkspace) return
+    if (!head || !hairWorkspace || side !== selectedSide) return
     event.preventDefault(); event.stopPropagation()
-    setSelectedSide(side)
     const stage = event.currentTarget.parentElement
     if (!stage) return
     stage.setPointerCapture(event.pointerId)
@@ -272,10 +271,10 @@ export function HairWorkspace() {
     finally { setSaving(false) }
   }
 
-  function openStyle(style: HairStyle) {
+  function openStyle(style: HairStyle, side: HairSide) {
     if (dirty && !window.confirm('Há alterações não salvas. Abrir este cabelo e descartar as alterações?')) return
     setHairWorkspace((current) => current ? { ...current, front: style.front ? { ...style.front } : null, back: style.back ? { ...style.back } : null, transforms: structuredClone(style.transforms), updatedAt: new Date().toISOString() } : current)
-    setSelectedSide(style.front ? 'front' : 'back')
+    setSelectedSide(side)
     setActiveStyleId(style.id); setDirty(false); setError(''); setNotice(`Editando ${style.name}. Salve para atualizar ou use Salvar como novo cabelo após importar outra folha.`)
   }
 
@@ -346,10 +345,16 @@ export function HairWorkspace() {
         </> : <p className="hair-dev-empty">Envie a folha para selecionar e ajustar cada parte do cabelo separadamente.</p>}
         <section className="hair-dev-catalog" aria-label="Catálogo de cabelos">
           <header><span><strong>Catálogo deste modelo</strong><small>{hairStyles.length} cabelos salvos</small></span><button className="hair-dev-catalog-save" onClick={() => void saveStyle()} disabled={!hairWorkspace || (!hairWorkspace.front && !hairWorkspace.back) || saving || loadingHair} type="button"><Icon name="check" />{activeStyleId ? 'Salvar cabelo' : 'Salvar no catálogo'}</button></header>
-          {hairStyles.length ? <div className="hair-dev-catalog-grid">{hairStyles.map((style) => <article className={'hair-dev-catalog-card' + (style.id === activeStyleId ? ' active' : '')} key={style.id}>
-            <button className="hair-dev-catalog-open" onClick={() => openStyle(style)} title={`Editar ${style.name}`} type="button"><span>{style.back && <img src={style.back.dataUrl} alt="" />}{style.front && <img src={style.front.dataUrl} alt="" />}</span><b>{style.name}</b></button>
+          {hairStyles.length ? <>
+            <nav className="hair-dev-catalog-tabs" aria-label="Categoria do catálogo de cabelos">
+              {([{ id: 'front', label: 'Frontal' }, { id: 'back', label: 'Traseiro' }] as const).map((side) => <button className={selectedSide === side.id ? 'active' : ''} key={side.id} onClick={() => setSelectedSide(side.id)} aria-pressed={selectedSide === side.id} type="button">{side.label}</button>)}
+            </nav>
+            <div className="hair-dev-catalog-grid">{hairStyles.filter((style) => Boolean(style[selectedSide])).map((style) => <article className={'hair-dev-catalog-card' + (style.id === activeStyleId ? ' active' : '')} key={style.id}>
+            <button className="hair-dev-catalog-open" onClick={() => openStyle(style, selectedSide)} title={`Editar cabelo ${selectedSide === 'front' ? 'frontal' : 'traseiro'} de ${style.name}`} type="button"><span>{style[selectedSide] && <img src={style[selectedSide]!.dataUrl} alt="" />}</span><b>{style.name} · {selectedSide === 'front' ? 'Frontal' : 'Traseiro'}</b></button>
             <button className="hair-dev-catalog-delete" onClick={() => void deleteStyle(style)} aria-label={`Excluir ${style.name}`} title="Excluir cabelo" type="button"><Icon name="trash" /></button>
-          </article>)}</div> : <p className="hair-dev-catalog-empty">Ajuste o cabelo na prévia e clique em “Salvar no catálogo”.</p>}
+          </article>)}</div>
+            {hairStyles.every((style) => !style[selectedSide]) && <p className="hair-dev-catalog-empty">Nenhum cabelo {selectedSide === 'front' ? 'frontal' : 'traseiro'} salvo para este modelo.</p>}
+          </> : <p className="hair-dev-catalog-empty">Ajuste o cabelo na prévia e clique em “Salvar no catálogo”.</p>}
         </section>
       </section>
     </div>
