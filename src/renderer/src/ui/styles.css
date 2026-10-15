@@ -398,6 +398,9 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .animator-motion-list>header,.animator-info>header { display:grid;gap:3px;margin-bottom:9px; }
 .animator-motion-list>header strong,.animator-info>header strong { color:#514651;font-size:12px; }
 .animator-motion-list>header small,.animator-info>header small { color:#a196a1;font-size:9px; }
+.animator-categories { display:flex;flex-wrap:wrap;gap:4px;margin:0 0 8px; }
+.animator-categories button { min-height:24px;padding:0 7px;border:1px solid #eee8ed;border-radius:999px;background:#fff;color:#887b87;font-size:9px;cursor:pointer; }
+.animator-categories button.active,.animator-categories button:hover { border-color:#e89ab4;background:#fff3f7;color:#b4426d; }
 .animator-motion-card { width:100%;display:flex;align-items:center;gap:9px;margin-bottom:6px;padding:8px;border:1px solid #eee8ed;border-radius:9px;background:#fff;text-align:left;cursor:pointer; }
 .animator-motion-card.active,.animator-motion-card:hover { border-color:#ed9db7;background:#fff5f8; }
 .animator-motion-icon { width:30px;height:30px;flex:none;display:grid;place-items:center;border-radius:8px;background:#fff0f5;color:#ba4c74;font-size:19px;font-weight:800; }
