@@ -287,11 +287,12 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .customizer-models-sidebar { min-width:0;min-height:0;display:flex;flex-direction:column;gap:12px;overflow:hidden; }
 .customizer-models-content[hidden] { display:none; }
 .customizer-top-tabs { min-width:0;width:100%;display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:5px;padding:5px;border:3px solid #54236f;border-radius:12px;background:#772e9a;box-shadow:0 4px 0 #431b5a; }
-.customizer-top-tabs button { min-width:0;min-height:96px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;padding:7px 3px 6px;border:2px solid #54236f;border-radius:5px;background:linear-gradient(180deg,#bd61c7 0%,#8f45b4 100%);color:#fff;font-size:clamp(11px,1.05vw,16px);font-weight:750;text-shadow:0 1px 2px #54236f;cursor:pointer;transition:filter .12s,transform .12s,background .12s; }
+.customizer-top-tabs button { min-width:0;min-height:96px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;padding:7px 3px 6px;border:2px solid #76245a;border-radius:5px;background:linear-gradient(180deg,#d653a2 0%,#ad347f 100%);color:#fff;font-size:clamp(11px,1.05vw,16px);font-weight:750;text-shadow:0 1px 2px #76245a;cursor:pointer;transition:filter .12s,transform .12s,background .12s; }
 .customizer-top-tabs button:hover { filter:brightness(1.12); }
 .customizer-top-tabs button:focus-visible { outline:3px solid #fff;outline-offset:-5px; }
-.customizer-top-tabs button.active { border-color:#267d38;background:linear-gradient(180deg,#78e18c 0%,#2ab956 100%);box-shadow:inset 0 0 0 2px #a6f3b3;color:#fff; }
+.customizer-top-tabs button.active { border-color:#d653a2;background:#fff;box-shadow:inset 0 0 0 2px #f4c2df;color:#96336e;text-shadow:none; }
 .customizer-top-tabs button svg { width:clamp(24px,3.1vw,48px);height:clamp(24px,3.1vw,48px);flex:0 0 auto;stroke-width:2.3; }
+.customizer-top-tabs button.active svg { color:#d13f91; }
 .customizer-top-tabs button span { max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
 .customizer-catalog-panel { min-width:0;min-height:0;flex:1;display:flex;flex-direction:column;overflow:auto;padding:13px;border:1px solid #ede8ec;border-radius:12px;background:#fff; }
 .customizer-head-workspace { min-width:0;min-height:0;flex:1;display:flex;flex-direction:column;gap:10px;overflow:hidden; }
