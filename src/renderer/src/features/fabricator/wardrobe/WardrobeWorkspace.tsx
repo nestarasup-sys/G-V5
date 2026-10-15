@@ -3,6 +3,8 @@ import type { FabricatorHistoryState, FabricatorPose, FabricatorPoseSummary, Fab
 import { Icon } from '../../../ui/components/Icon'
 import { usePreviewBackground } from '../usePreviewBackground'
 import { orderedParts, partJointAnchor, sourcePointFromCanvas } from '../models/rig'
+import { isHeadPart } from '../models/resize'
+import { resizeAroundAnchor } from '../../../../../shared/headShape'
 import { bindWardrobeComponent, mapWardrobeComponentToPose, poseDeltaToSource } from './poseTransform'
 
 type WorkerPiece = Omit<WardrobeComponent, 'category' | 'attachedPartId' | 'rotation' | 'dataUrl'> & { png: ArrayBuffer }
@@ -19,6 +21,21 @@ const zeroOffset: Point = { x: 0, y: 0 }
 function withSourceFrame(part: ModelPart, reference?: SourceReferencePart): ModelPart {
   if (!reference) return part
   return { ...part, sourceTransform: { ...part.sourceTransform, x: reference.x, y: reference.y, width: reference.width, height: reference.height, rotation: 0 } }
+}
+
+function sourcePreviewFrame(part: ModelPart, source: SourceReferencePart): SourceReferencePart {
+  const original = part.sourceTransform
+  if (!isHeadPart(part) || !part.resizeBase || !original) return source
+  const sourceWidth = original.width ?? source.width
+  const sourceHeight = original.height ?? source.height
+  const anchor = original.jointAnchor ?? { x: source.x + source.width / 2, y: source.y + source.height / 2 }
+  const resized = resizeAroundAnchor(
+    { ...source, rotation: original.rotation },
+    source.width * part.width / sourceWidth,
+    source.height * part.height / sourceHeight,
+    anchor
+  )
+  return { ...source, x: resized.x, y: resized.y, width: resized.width, height: resized.height }
 }
 
 function bindingMarker(component: WardrobeComponent, bone: ModelPart): Point {
@@ -470,7 +487,7 @@ export function WardrobeWorkspace() {
         {!testPose && <div className="wardrobe-preview-controls"><button className={`pose-button ${moveBodyMode ? 'primary' : 'secondary'}`} disabled={!sourceParts || Boolean(calibratingPartId)} onClick={() => setMoveBodyMode((value) => !value)} type="button">{moveBodyMode ? 'Mover corpo: ligado' : 'Mover corpo'}</button><button className="pose-button secondary" disabled={!Object.keys(bodyOffsets).length} onClick={() => setBodyOffsets({})} type="button">Repor corpo</button><label className="preview-background-picker" title="Mudar a cor do fundo em Modelos, Poses e Roupas"><span>Fundo da prévia</span><input type="color" aria-label="Cor do fundo das prévias" value={previewBackground} onChange={(event) => setPreviewBackground(event.target.value)} /><code>{previewBackground.toUpperCase()}</code></label></div>}
         <div ref={previewRef} className={`wardrobe-preview-stage${testPose ? ' testing-pose' : ''}`} style={{ '--preview-background': previewBackground } as import('react').CSSProperties}>{previewProject && <div className={`wardrobe-artboard${calibratingPartId ? ' calibrating-origin' : ''}`} onPointerDown={handleArtboardPointerDown} style={{ width: previewProject.width * scale, height: previewProject.height * scale }}>
         {!testPose && model && !sourceParts && referencePreview?.sourceDataUrl === model.sourceDataUrl && <img className="wardrobe-base-image" src={referencePreview.imageDataUrl} alt={`Folha original desmontada do modelo ${model.name}`} style={{ left: 0, top: 0, width: previewProject.width * scale, height: previewProject.height * scale, zIndex: 1 }} />}
-        {!testPose && model && sourceParts && model.parts.map((part, index) => { const source = sourceParts[part.id]; if (!source) return null; const offset = bodyOffsets[part.id] ?? zeroOffset; return <img key={part.id} className={`wardrobe-reference-body-part${moveBodyMode ? ' movable' : ''}`} src={source.imageDataUrl} alt={part.name} title={moveBodyMode ? `Arraste ${part.name} para conferir o vínculo` : part.name} draggable={false} onPointerDown={(event) => beginBodyDrag(event, part.id)} onPointerMove={moveBodyDrag} onPointerUp={finishBodyDrag} onPointerCancel={finishBodyDrag} style={{ left: (source.x + offset.x) * scale, top: (source.y + offset.y) * scale, width: source.width * scale, height: source.height * scale, zIndex: moveBodyMode ? 1000 + index : 1 }} /> })}
+        {!testPose && model && sourceParts && model.parts.map((part, index) => { const source = sourceParts[part.id]; if (!source) return null; const offset = bodyOffsets[part.id] ?? zeroOffset; const frame = sourcePreviewFrame(part, source); return <img key={part.id} className={`wardrobe-reference-body-part${moveBodyMode ? ' movable' : ''}`} src={source.imageDataUrl} alt={part.name} title={moveBodyMode ? `Arraste ${part.name} para conferir o vínculo` : part.name} draggable={false} onPointerDown={(event) => beginBodyDrag(event, part.id)} onPointerMove={moveBodyDrag} onPointerUp={finishBodyDrag} onPointerCancel={finishBodyDrag} style={{ left: (frame.x + offset.x) * scale, top: (frame.y + offset.y) * scale, width: frame.width * scale, height: frame.height * scale, zIndex: moveBodyMode ? 1000 + index : 1 }} /> })}
         {testPose && previewPoseParts.map((part, index) => <img key={part.id} className="wardrobe-pose-body-part" src={part.dataUrl} alt={part.name} draggable={false} style={{ left: part.x * scale, top: part.y * scale, width: part.width * scale, height: part.height * scale, zIndex: 2 + index * previewLayerStride, transform: `rotate(${part.rotation}deg)` }} />)}
         {draft?.components.map((component, index) => {
           const layer = getBodyLayer(model, component.attachedPartId)

@@ -5,6 +5,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import type { FaceAssetSave, FaceElementKind, FaceSet, FaceSetSave, FaceSetSummary, FaceSheetKind, FabricatorAssetSave, FabricatorHistoryEntry, FabricatorHistorySaveEntry, FabricatorHistorySaveState, FabricatorHistoryState, FabricatorPose, FabricatorPoseDraft, FabricatorPoseDraftSave, FabricatorPoseSave, FabricatorPoseSummary, FabricatorProject, FabricatorProjectSave, FabricatorSlotSummary, ModelPart, PosePart, WardrobeAssetSave, WardrobeCategory, WardrobeSet, WardrobeSetSave, WardrobeSetSummary } from '../src/shared/fabricator'
 import type { CustomizerCharacter } from '../src/shared/customizer'
+import { applyModelHeadShape } from '../src/shared/headShape'
 
 const slotCount = 10
 const poseSlotCount = 12
@@ -462,6 +463,27 @@ async function readPoseAssets(folder: string, parts: Array<Omit<PosePart, 'dataU
   })))
 }
 
+async function modelHeadParts(modelSlot: number): Promise<Array<Pick<ModelPart, 'id' | 'name' | 'width' | 'height' | 'resizeBase'>>> {
+  try {
+    const model = JSON.parse(await readFile(join(slotPath(modelSlot), 'project.json'), 'utf8')) as FabricatorProjectSave
+    return model.parts.filter((part) => part.resizeBase).map(({ id, name, width, height, resizeBase }) => ({ id, name, width, height, resizeBase }))
+  } catch (reason) {
+    if ((reason as NodeJS.ErrnoException).code === 'ENOENT') return []
+    throw reason
+  }
+}
+
+async function preserveAndWritePoseManifest(path: string, document: FabricatorPoseSave | FabricatorPoseDraftSave): Promise<void> {
+  const backup = `${path}.before-head-shape`
+  try { await access(backup) } catch (reason) {
+    if ((reason as NodeJS.ErrnoException).code !== 'ENOENT') throw reason
+    await copyFile(path, backup)
+  }
+  const temporary = `${path}.tmp`
+  await writeFile(temporary, JSON.stringify(document), 'utf8')
+  await rename(temporary, path)
+}
+
 async function writePoseProject(modelSlot: number, slot: number, project: FabricatorPoseSave, assets: FabricatorAssetSave[]): Promise<void> {
   if (!isValidModelSlot(modelSlot) || project.sourceModelSlot !== modelSlot || !isValidPoseSlot(slot) || project.slot !== slot || project.schemaVersion !== 1 || project.parts.length === 0 || project.parts.length > 500) throw new Error('Pose inválida.')
   const folder = poseSlotPath(modelSlot, slot)
@@ -481,7 +503,13 @@ async function readPoseProject(modelSlot: number, slot: number): Promise<Fabrica
     const folder = poseSlotPath(modelSlot, slot)
     const manifest = JSON.parse(await readFile(join(folder, 'pose.json'), 'utf8')) as FabricatorPoseSave
     if (manifest.slot !== slot || manifest.sourceModelSlot !== modelSlot || manifest.schemaVersion !== 1 || manifest.parts.length === 0 || manifest.parts.length > 500) return null
-    return { ...manifest, parts: await readPoseAssets(folder, manifest.parts) }
+    const pose = { ...manifest, parts: await readPoseAssets(folder, manifest.parts) }
+    const shaped = applyModelHeadShape(pose, await modelHeadParts(modelSlot))
+    if (shaped !== pose) {
+      const { parts, ...metadata } = shaped
+      await preserveAndWritePoseManifest(join(folder, 'pose.json'), { ...metadata, parts: parts.map(({ dataUrl: _dataUrl, ...part }) => part) })
+    }
+    return shaped
   } catch (reason) {
     if ((reason as NodeJS.ErrnoException).code === 'ENOENT') return null
     throw reason
@@ -506,7 +534,13 @@ async function readPoseDraft(modelSlot: number): Promise<FabricatorPoseDraft | n
     const draft = JSON.parse(await readFile(join(folder, 'draft.json'), 'utf8')) as FabricatorPoseDraftSave
     if (draft.editingSlot !== null && !isValidPoseSlot(draft.editingSlot)) return null
     if (draft.project.sourceModelSlot !== modelSlot || draft.project.schemaVersion !== 1 || draft.project.parts.length === 0 || draft.project.parts.length > 500) return null
-    return { ...draft, project: { ...draft.project, parts: await readPoseAssets(folder, draft.project.parts) } }
+    const project = { ...draft.project, parts: await readPoseAssets(folder, draft.project.parts) }
+    const shaped = applyModelHeadShape(project, await modelHeadParts(modelSlot))
+    if (shaped !== project) {
+      const { parts, ...metadata } = shaped
+      await preserveAndWritePoseManifest(join(folder, 'draft.json'), { ...draft, project: { ...metadata, parts: parts.map(({ dataUrl: _dataUrl, ...part }) => part) } })
+    }
+    return { ...draft, project: shaped }
   } catch (reason) {
     if ((reason as NodeJS.ErrnoException).code === 'ENOENT') return null
     throw reason
@@ -698,7 +732,9 @@ async function registerFabricatorHandlers(): Promise<void> {
 
   ipcMain.handle('fabricator:poses:load', async (event, modelSlot: number, slot: number): Promise<FabricatorPose | null> => {
     assertTrustedSender(event)
-    return readPoseProject(modelSlot, slot)
+    let loaded: FabricatorPose | null = null
+    await queuePoseWrite(async () => { loaded = await readPoseProject(modelSlot, slot) })
+    return loaded
   })
 
   ipcMain.handle('fabricator:poses:save', async (event, modelSlot: number, slot: number, project: FabricatorPoseSave, assets: FabricatorAssetSave[]): Promise<void> => {
@@ -720,7 +756,9 @@ async function registerFabricatorHandlers(): Promise<void> {
   ipcMain.handle('fabricator:poses:draft:load', async (event, modelSlot: number): Promise<FabricatorPoseDraft | null> => {
     assertTrustedSender(event)
     await ensureLegacyPoseMigration()
-    return readPoseDraft(modelSlot)
+    let loaded: FabricatorPoseDraft | null = null
+    await queuePoseWrite(async () => { loaded = await readPoseDraft(modelSlot) })
+    return loaded
   })
 
   ipcMain.handle('fabricator:poses:draft:save', async (event, modelSlot: number, draft: FabricatorPoseDraftSave, assets: FabricatorAssetSave[]): Promise<void> => {

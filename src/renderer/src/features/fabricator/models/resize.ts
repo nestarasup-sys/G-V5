@@ -1,4 +1,5 @@
 import type { FabricatorProject, ModelPart } from '../../../../../shared/fabricator'
+import { resizeAroundAnchor } from '../../../../../shared/headShape'
 import { partJointAnchor } from './rig'
 
 export function isHeadPart(part: ModelPart): boolean {
@@ -24,21 +25,10 @@ export function resizeHeadPart(project: FabricatorProject, id: string, axis: 'wi
   const width = axis === 'width' ? requested : part.width
   const height = axis === 'height' ? requested : part.height
   const anchor = partJointAnchor(part, project.joints) ?? { x: part.x + part.width / 2, y: part.y + part.height / 2 }
-  const oldCenter = { x: part.x + part.width / 2, y: part.y + part.height / 2 }
-  const radians = part.rotation * Math.PI / 180
-  const cosine = Math.cos(radians), sine = Math.sin(radians)
-  const dx = anchor.x - oldCenter.x, dy = anchor.y - oldCenter.y
-  const localX = dx * cosine + dy * sine
-  const localY = -dx * sine + dy * cosine
-  const scaledX = localX * width / part.width
-  const scaledY = localY * height / part.height
-  const centerX = anchor.x - (scaledX * cosine - scaledY * sine)
-  const centerY = anchor.y - (scaledX * sine + scaledY * cosine)
-
   return {
     ...project,
     parts: project.parts.map((item) => item.id === id
-      ? { ...item, x: centerX - width / 2, y: centerY - height / 2, width, height, resizeBase }
+      ? { ...resizeAroundAnchor(item, width, height, anchor), resizeBase }
       : item)
   }
 }
