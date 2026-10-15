@@ -534,10 +534,7 @@ const modules: { name: string; icon: IconName; detail: string }[] = [
   { name: 'Cabelos', icon: 'bow', detail: 'Biblioteca de cabelos do personagem' },
   { name: 'Roupas', icon: 'shirt', detail: 'Monte um visual único' },
   { name: 'Acessórios', icon: 'flower', detail: 'Peças e objetos de cena' },
-  { name: 'Diálogos', icon: 'message', detail: 'Balões e falas' },
-  { name: 'Mascotes', icon: 'paw', detail: 'Seus companheiros' },
-  { name: 'Objetos', icon: 'box', detail: 'Itens para compor a cena' },
-  { name: 'Perfil', icon: 'user', detail: 'Identidade do personagem' }
+  { name: 'Objetos', icon: 'box', detail: 'Itens para compor a cena' }
 ]
 
 export function CustomizerPage() {
@@ -575,6 +572,7 @@ export function CustomizerPage() {
   const [hairDetails, setHairDetails] = useState<Record<string, HairStyle>>({})
   const [hairCatalogSide, setHairCatalogSide] = useState<HairCatalogSide>('front')
   const [hairLoading, setHairLoading] = useState(false)
+  const [headPanelTab, setHeadPanelTab] = useState<'hair' | 'eyes' | 'face' | 'extra' | 'adjust'>('hair')
   const [faceCategory, setFaceCategory] = useState<'eyes' | 'eyebrows' | 'nose' | 'mouth'>('eyes')
   const [selectedClothing, setSelectedClothing] = useState<SelectedWardrobeComponent | null>(null)
   const [wardrobeTransformDraft, setWardrobeTransformDraft] = useState<Pick<CustomizerWardrobeGroup, 'offsetX' | 'offsetY' | 'scaleX' | 'scaleY' | 'rotation'> | null>(null)
@@ -1075,7 +1073,13 @@ export function CustomizerPage() {
       expressionIndex: item.category.startsWith('mouth') ? item.selectedExpression : sameModel ? previous.expressionIndex : item.selectedExpression,
       mouthOpen: item.category === 'mouth-open' ? true : item.category === 'mouth-closed' ? false : sameModel ? previous.mouthOpen : false
     }
-    setFaceCategory('eyes')
+    if (item.category === 'eyes' || item.category === 'eyebrows') {
+      setHeadPanelTab('eyes')
+      setFaceCategory(item.category)
+    } else {
+      setHeadPanelTab('face')
+      setFaceCategory(item.category.startsWith('mouth') ? 'mouth' : 'nose')
+    }
     await saveCharacterCustomization({ faceAppearance: appearance })
   }
 
@@ -1358,6 +1362,31 @@ export function CustomizerPage() {
     })
     .sort((a, b) => ['calca', 'shorts', 'manga-inferior', 'manga-superior', 'camisa'].indexOf(a.group.category) - ['calca', 'shorts', 'manga-inferior', 'manga-superior', 'camisa'].indexOf(b.group.category))
 
+  const renderHairCatalog = () => (
+    <div className="customizer-hair-catalog">
+      {selectedCatalogModelSlot === null ? <div className="customizer-catalog-empty">Escolha um modelo para ver os cabelos salvos.</div>
+        : hairLoading ? <div className="customizer-catalog-empty">Carregando cabelos…</div>
+          : hairStyles.length === 0 ? <div className="customizer-catalog-empty">Este modelo ainda não tem cabelos no catálogo. Importe e salve um cabelo em Cabelos Dev.</div>
+            : <>
+              <div className="customizer-hair-heading"><span><strong>Cabelos do Modelo {String(selectedCatalogModelSlot).padStart(2, '0')}</strong><small>Aplicação salva somente em {selectedCharacter?.name ?? 'este personagem'}.</small></span>
+                {characterHairAppearance?.modelSlot === selectedCatalogModelSlot && hairAppearanceStyleId(characterHairAppearance, hairCatalogSide) && <button onClick={() => void chooseHairStyle(null, hairCatalogSide)} type="button"><Icon name="eyeOff" /> Remover {hairCatalogSide === 'front' ? 'frontal' : 'traseiro'}</button>}
+              </div>
+              <nav className="customizer-hair-tabs" aria-label="Categoria de cabelo">
+                {([{ id: 'front', label: 'Frontal' }, { id: 'back', label: 'Traseiro' }] as const).map((category) => <button key={category.id} className={hairCatalogSide === category.id ? 'active' : ''} onClick={() => setHairCatalogSide(category.id)} aria-pressed={hairCatalogSide === category.id} type="button">{category.label}</button>)}
+              </nav>
+              <div className="customizer-hair-grid">{hairStyles.filter((summary) => summary[hairCatalogSide] !== null).map((summary) => {
+                const detail = hairDetails[String(summary.modelSlot) + ':' + summary.id]
+                const selected = characterHairAppearance?.modelSlot === summary.modelSlot && hairAppearanceStyleId(characterHairAppearance, hairCatalogSide) === summary.id
+                const asset = detail?.[hairCatalogSide]
+                return <button className={'customizer-hair-card' + (selected ? ' selected' : '')} key={summary.id} onClick={() => void chooseHairStyle(summary, hairCatalogSide)} aria-pressed={selected} title={'Aplicar cabelo ' + (hairCatalogSide === 'front' ? 'frontal' : 'traseiro') + ' em ' + (selectedCharacter?.name ?? 'personagem')} type="button">
+                  <span className="customizer-hair-art">{asset && <img src={asset.dataUrl} alt="" />}{!asset && <span><Icon name="bow" /></span>}</span>
+                  <b>{summary.name}</b><small>{selected ? 'Aplicado' : `Usar ${hairCatalogSide === 'front' ? 'frontal' : 'traseiro'}`}</small>
+                </button>
+              })}{hairStyles.every((summary) => summary[hairCatalogSide] === null) && <p className="customizer-face-empty">Nenhum cabelo {hairCatalogSide === 'front' ? 'frontal' : 'traseiro'} salvo para este modelo.</p>}</div>
+            </>}
+    </div>
+  )
+
   if (activeModule !== null && modules.some((module) => module.name === activeModule)) {
     return (
       <div className="customizer-models-view">
@@ -1451,12 +1480,27 @@ export function CustomizerPage() {
                         })}
                       </div>
               )}
-              {activeModule === 'Cabeça' && <div className="customizer-face-catalog">
+              {activeModule === 'Cabeça' && <div className="customizer-head-workspace">
+                <nav className="customizer-head-tabs" aria-label="Categorias da cabeça" role="tablist">
+                  {([
+                    { id: 'hair', label: 'Cabelo', icon: 'bow' },
+                    { id: 'eyes', label: 'Olhos', icon: 'face' },
+                    { id: 'face', label: 'Rosto', icon: 'face' },
+                    { id: 'extra', label: 'Extras', icon: 'sparkles' },
+                    { id: 'adjust', label: 'Ajustar', icon: 'sliders' }
+                  ] as const).map((tab) => <button key={tab.id} className={headPanelTab === tab.id ? 'active' : ''} onClick={() => {
+                    setHeadPanelTab(tab.id)
+                    if (tab.id === 'eyes') setFaceCategory('eyes')
+                    else if (tab.id === 'face') setFaceCategory('nose')
+                  }} aria-selected={headPanelTab === tab.id} role="tab" type="button"><Icon name={tab.icon} /><span>{tab.label}</span></button>)}
+                </nav>
+                {headPanelTab === 'hair' && renderHairCatalog()}
+                {(headPanelTab === 'eyes' || headPanelTab === 'face') && <div className="customizer-face-catalog">
                 {selectedCatalogModelSlot === null ? <div className="customizer-catalog-empty">Escolha um modelo para ver as peças faciais.</div>
                   : faceLoading ? <div className="customizer-catalog-empty">Carregando catálogo facial…</div>
                     : <>
                       <nav className="customizer-face-tabs" aria-label="Categorias do rosto">
-                        {([{ id: 'eyes', label: 'Olhos' }, { id: 'eyebrows', label: 'Sobrancelhas' }, { id: 'nose', label: 'Narizes' }, { id: 'mouth', label: 'Bocas' }] as const).map((category) => <button key={category.id} className={faceCategory === category.id ? 'active' : ''} onClick={() => setFaceCategory(category.id)} type="button">{category.label}</button>)}
+                        {(headPanelTab === 'eyes' ? [{ id: 'eyes', label: 'Olhos' }, { id: 'eyebrows', label: 'Sobrancelhas' }] : [{ id: 'nose', label: 'Nariz' }, { id: 'mouth', label: 'Boca' }]).map((category) => <button key={category.id} className={faceCategory === category.id ? 'active' : ''} onClick={() => setFaceCategory(category.id as typeof faceCategory)} type="button">{category.label}</button>)}
                       </nav>
                       {faceCategory === 'mouth' && <div className="customizer-face-mouth-tabs"><button className={!activeFaceAppearance?.mouthOpen ? 'active' : ''} onClick={() => void setFaceCatalogVariant({ mouthOpen: false })} type="button">Fechadas</button><button className={activeFaceAppearance?.mouthOpen ? 'active' : ''} onClick={() => void setFaceCatalogVariant({ mouthOpen: true })} type="button">Abertas</button></div>}
                       {(() => {
@@ -1488,28 +1532,11 @@ export function CustomizerPage() {
                         </>
                       })()}
                     </>}
-              </div>}              {activeModule === 'Cabelos' && <div className="customizer-hair-catalog">
-                {selectedCatalogModelSlot === null ? <div className="customizer-catalog-empty">Escolha um modelo para ver os cabelos salvos.</div>
-                  : hairLoading ? <div className="customizer-catalog-empty">Carregando cabelos…</div>
-                    : hairStyles.length === 0 ? <div className="customizer-catalog-empty">Este modelo ainda não tem cabelos no catálogo. Importe e salve um cabelo em Cabelos Dev.</div>
-                      : <>
-                        <div className="customizer-hair-heading"><span><strong>Cabelos do Modelo {String(selectedCatalogModelSlot).padStart(2, '0')}</strong><small>Aplicação salva somente em {selectedCharacter?.name ?? 'este personagem'}.</small></span>
-                          {characterHairAppearance?.modelSlot === selectedCatalogModelSlot && hairAppearanceStyleId(characterHairAppearance, hairCatalogSide) && <button onClick={() => void chooseHairStyle(null, hairCatalogSide)} type="button"><Icon name="eyeOff" /> Remover {hairCatalogSide === 'front' ? 'frontal' : 'traseiro'}</button>}
-                        </div>
-                        <nav className="customizer-hair-tabs" aria-label="Categoria de cabelo">
-                          {([{ id: 'front', label: 'Frontal' }, { id: 'back', label: 'Traseiro' }] as const).map((category) => <button key={category.id} className={hairCatalogSide === category.id ? 'active' : ''} onClick={() => setHairCatalogSide(category.id)} aria-pressed={hairCatalogSide === category.id} type="button">{category.label}</button>)}
-                        </nav>
-                        <div className="customizer-hair-grid">{hairStyles.filter((summary) => summary[hairCatalogSide] !== null).map((summary) => {
-                          const detail = hairDetails[String(summary.modelSlot) + ':' + summary.id]
-                          const selected = characterHairAppearance?.modelSlot === summary.modelSlot && hairAppearanceStyleId(characterHairAppearance, hairCatalogSide) === summary.id
-                          const asset = detail?.[hairCatalogSide]
-                          return <button className={'customizer-hair-card' + (selected ? ' selected' : '')} key={summary.id} onClick={() => void chooseHairStyle(summary, hairCatalogSide)} aria-pressed={selected} title={'Aplicar cabelo ' + (hairCatalogSide === 'front' ? 'frontal' : 'traseiro') + ' em ' + (selectedCharacter?.name ?? 'personagem')} type="button">
-                            <span className="customizer-hair-art">{asset && <img src={asset.dataUrl} alt="" />}{!asset && <span><Icon name="bow" /></span>}</span>
-                            <b>{summary.name}</b><small>{selected ? 'Aplicado' : `Usar ${hairCatalogSide === 'front' ? 'frontal' : 'traseiro'}`}</small>
-                          </button>
-                        })}{hairStyles.every((summary) => summary[hairCatalogSide] === null) && <p className="customizer-face-empty">Nenhum cabelo {hairCatalogSide === 'front' ? 'frontal' : 'traseiro'} salvo para este modelo.</p>}</div>
-                      </>}
+                </div>}
+                {headPanelTab === 'extra' && <div className="customizer-head-placeholder"><Icon name="sparkles" /><strong>Extras da cabeça</strong><span>Esta área ficará pronta quando o catálogo de extras estiver integrado.</span></div>}
+                {headPanelTab === 'adjust' && <div className="customizer-head-placeholder"><Icon name="sliders" /><strong>Ajustes da cabeça</strong><span>Os controles de ajuste por peça serão organizados aqui.</span></div>}
               </div>}
+              {activeModule === 'Cabelos' && renderHairCatalog()}
               {activeModule === 'Roupas' && <div className="customizer-wardrobe-catalog">
                 {selectedCatalogModelSlot === null ? <div className="customizer-catalog-empty">Escolha um modelo para ver as roupas salvas dele.</div>
                   : wardrobeLoading ? <div className="customizer-catalog-empty">Carregando roupas…</div>
@@ -1676,7 +1703,7 @@ export function CustomizerPage() {
           </div>
           <div className="module-intro">
             <div><p className="eyebrow">COMECE POR AQUI</p><h2>Seu espaço criativo</h2></div>
-            <span className="module-count">09</span>
+            <span className="module-count">{String(modules.length).padStart(2, '0')}</span>
           </div>
           <div className="module-grid">
             {modules.map((module, index) => (
