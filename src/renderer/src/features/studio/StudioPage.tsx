@@ -945,27 +945,19 @@ export function StudioPage() {
       { id: 'reserved-3', label: 'Em breve', icon: 'sparkles' },
       { id: 'reserved-4', label: 'Em breve', icon: 'sparkles' }
     ] as const
-    const expressionSheets = studioFaceItems.filter((item) => item.category === 'mouth-closed')
     if (!selectedStudioCharacter || selectedElement?.kind !== 'character') return <div className="studio-custom-empty"><strong>Presets</strong><span>Selecione um personagem na cena para ver poses e expressões.</span></div>
     return <div className="studio-presets-panel">
       <div className="studio-preset-buttons" aria-label="Categorias de presets">
         {presetOptions.map((option) => <button key={option.id} className={`studio-preset-button${option.id === studioPresetCategory ? ' active' : ''}${option.id.startsWith('reserved') ? ' reserved' : ''}`} disabled={option.id.startsWith('reserved')} onClick={() => { if (option.id === 'pose' || option.id === 'expression') setStudioPresetCategory(option.id) }} type="button"><Icon name={option.icon} /><span>{option.label}</span></button>)}
       </div>
-      <section className="studio-preset-catalog" aria-label={`Catálogo de ${studioPresetCategory === 'pose' ? 'poses' : 'expressões'}`}>
-        <h3>{studioPresetCategory === 'pose' ? 'Poses do modelo' : 'Expressões'}</h3>
-        {studioPresetCategory === 'pose' ? <div className="studio-preset-list">
+      {studioPresetCategory === 'pose' && <section className="studio-preset-catalog" aria-label="Catálogo de poses">
+        <h3>Poses do modelo</h3>
+        <div className="studio-preset-list">
           <button className={`studio-pose-option${selectedStudioPoseSlot === null ? ' selected' : ''}`} onClick={() => void applyStudioPose(null)} disabled={studioFaceBusy} type="button"><span className="studio-pose-thumb"><CharacterPortrait character={selectedStudioCharacter} /></span><b>Modelo base</b></button>
           {studioPoseSlots.filter((pose): pose is NonNullable<FabricatorPoseSummary> => pose !== null).map((pose) => <button className={`studio-pose-option${selectedStudioPoseSlot === pose.slot ? ' selected' : ''}`} key={pose.slot} onClick={() => void applyStudioPose(pose.slot)} disabled={studioFaceBusy} type="button"><span className="studio-pose-thumb">{studioPoseThumbnails[pose.slot] ? <img src={studioPoseThumbnails[pose.slot]} alt="" /> : <CharacterPortrait character={selectedStudioCharacter} />}</span><b>{pose.name}</b></button>)}
           {!studioPoseSlots.length && <p className="studio-custom-hint">Este modelo ainda não tem poses salvas.</p>}
-        </div> : <>
-          <label className="studio-custom-eye-sheet-select"><span>Folha</span><select value={selectedStudioFaceAppearance?.mouthClosedCatalogId ?? ''} onChange={(event) => { const summary = expressionSheets.find((item) => item.id === event.target.value); if (summary) void chooseStudioFaceSheet(summary) }} disabled={studioFaceBusy || studioFaceLoading}><option value="">Selecione uma folha</option>{expressionSheets.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
-          {(() => {
-            const itemId = selectedStudioFaceAppearance?.mouthClosedCatalogId
-            const item = itemId ? studioFaceDetails[`${selectedStudioCharacterModelSlot}:${itemId}`] : null
-            return item ? <div className="studio-expression-grid">{item.pieces.map((piece) => <button key={piece.id} className={selectedStudioFaceAppearance?.expressionIndex === piece.index ? 'selected' : ''} onClick={() => { void applyStudioFaceAppearance({ ...selectedStudioFaceAppearance!, mouthOpen: false, expressionIndex: piece.index }) }} disabled={studioFaceBusy} type="button"><img src={piece.dataUrl} alt={`Expressão ${piece.index + 1}`} /><span>{String(piece.index + 1).padStart(2, '0')}</span></button>)}</div> : <p className="studio-custom-hint">Escolha uma folha de bocas fechadas para ver as expressões.</p>
-          })()}
-        </>}
-      </section>
+        </div>
+      </section>}
     </div>
   }
 

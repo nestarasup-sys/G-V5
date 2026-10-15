@@ -237,10 +237,6 @@ button:focus-visible, input:focus-visible { outline: 3px solid #ed8caf; outline-
 .studio-pose-thumb .character-portrait { width:46px;height:62px; }
 .studio-pose-thumb>img { width:100%;height:100%;object-fit:contain; }
 .studio-pose-option b { max-width:100%;overflow:hidden;font-size:8px;text-overflow:ellipsis;white-space:nowrap; }
-.studio-expression-grid { display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:5px;max-height:280px;overflow:auto; }
-.studio-expression-grid button { min-width:0;display:flex;flex-direction:column;align-items:center;gap:3px;padding:4px;border:1px solid #eee3eb;border-radius:6px;background:#fff;color:#756a76;cursor:pointer; }
-.studio-expression-grid img { width:100%;height:38px;object-fit:contain;border-radius:3px;background:#fbf8fa; }
-.studio-expression-grid span { font-size:8px; }
 .studio-custom-empty span,.studio-custom-hint { margin:0;color:#998d9b;font-size:9px;line-height:1.4; }
 .studio-editor.full-view .studio-scene-canvas { width:min(100%,calc(100vh * 16 / 9));height:auto;max-height:100%;aspect-ratio:16/9;border:0;border-radius:0;box-shadow:none; }
 .studio-scene-title { position:absolute;top:10px;left:12px;color:#342e36b0;font-size:10px;font-weight:700; }
