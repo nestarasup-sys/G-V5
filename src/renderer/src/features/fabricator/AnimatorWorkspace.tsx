@@ -558,7 +558,7 @@ export function AnimatorWorkspace() {
       draftAssetsPersisted.current = false
       savedAnimationRef.current = null
       setAnimation(created); setActiveSlot(slot); setSelectedFrameId(created.frames[0].id); setSelectedPartId(created.parts[0]?.id ?? '')
-      setCurrentTransforms(created.frames[0].transforms); setCurrentJoints(created.frames[0].joints); setUndoStack([]); setRedoStack([]); setPlayhead(0); setError(''); setSaveMessage('Rascunho novo')
+      setCurrentTransforms(created.frames[0].transforms); setCurrentJoints(created.frames[0].joints); setUndoStack([]); setRedoStack([]); playheadRef.current = 0; setPlayhead(0); setError(''); setSaveMessage('Rascunho novo')
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível criar a animação.') }
   }
 
@@ -589,7 +589,7 @@ export function AnimatorWorkspace() {
       pendingAssets.current = new Map(loaded.parts.map((part) => [part.id, part.dataUrl])); draftAssetsPersisted.current = false
       setAnimation(loaded); setSelectedFrameId(first.id); setCurrentTransforms(first.transforms); setCurrentJoints(first.joints); setSelectedPartId(loaded.parts[0]?.id ?? '')
       setCharacterId(characters.find((character) => character.id === loaded.characterId && character.customization.modelSlot === loaded.sourceModelSlot)?.id ?? '')
-      setModelSlot(loaded.sourceModelSlot); setUndoStack([]); setRedoStack([]); setPlayhead(0)
+      setModelSlot(loaded.sourceModelSlot); setUndoStack([]); setRedoStack([]); playheadRef.current = 0; setPlayhead(0)
       const currentModel = await window.desktop.loadFabricatorSlot(loaded.sourceModelSlot)
       if (loadId !== animationLoadId.current) return
       if (currentModel && (currentModel.updatedAt !== loaded.sourceModelUpdatedAt || currentModel.name !== loaded.sourceModelName || currentModel.parts.length !== loaded.sourceModelPartCount)) setError('A origem deste modelo mudou desde a criação. A animação continua usando a cópia original salva.')
@@ -704,7 +704,9 @@ export function AnimatorWorkspace() {
 
   const selectFrame = (frame: AnimatorFrame) => {
     if (dirtyFrame && !window.confirm('As alterações deste frame ainda não foram gravadas. Descartar essas alterações e abrir o outro frame?')) return
-    setSelectedFrameId(frame.id); setCurrentTransforms(structuredClone(frame.transforms)); setCurrentJoints(structuredClone(frame.joints)); setPlayhead(animation?.frames.slice(0, animation.frames.indexOf(frame)).reduce((sum, item) => sum + item.durationMs, 0) ?? 0)
+    const startTime = animation?.frames.slice(0, animation.frames.indexOf(frame)).reduce((sum, item) => sum + item.durationMs, 0) ?? 0
+    playheadRef.current = startTime
+    setPlaying(false); setSelectedFrameId(frame.id); setCurrentTransforms(structuredClone(frame.transforms)); setCurrentJoints(structuredClone(frame.joints)); setPlayhead(startTime)
   }
 
   const duplicateFrame = () => {
@@ -724,7 +726,8 @@ export function AnimatorWorkspace() {
     if (!animation || selectedFrameIndex < 0) return
     const target = selectedFrameIndex + offset; if (target < 0 || target >= animation.frames.length) return
     pushHistory(); const frames = [...animation.frames]; [frames[selectedFrameIndex], frames[target]] = [frames[target], frames[selectedFrameIndex]]
-    setAnimation({ ...animation, frames }); setPlayhead(frames.slice(0, target).reduce((sum, frame) => sum + frame.durationMs, 0))
+    const startTime = frames.slice(0, target).reduce((sum, frame) => sum + frame.durationMs, 0)
+    setAnimation({ ...animation, frames }); playheadRef.current = startTime; setPlayhead(startTime)
   }
 
   const changeFrameDuration = (value: number) => {
@@ -839,7 +842,15 @@ export function AnimatorWorkspace() {
   }
 
   const seek = (time: number) => { const value = Math.max(0, Math.min(totalDuration, time)); playheadRef.current = value; setPlayhead(value); setPlaying(false) }
-  const play = () => { if (!animation || !animation.frames.length) return; if (playhead >= totalDuration) seek(0); directionRef.current = 1; setPlayDirection(1); setPlaying(true) }
+  const play = () => {
+    if (!animation || !animation.frames.length) return
+    if (playheadRef.current >= totalDuration) {
+      const firstFrame = animation.frames[0]
+      playheadRef.current = 0; setPlayhead(0)
+      setEditorState({ animation, transforms: structuredClone(firstFrame.transforms), joints: structuredClone(firstFrame.joints), frameId: firstFrame.id })
+    }
+    directionRef.current = 1; setPlayDirection(1); setPlaying(true)
+  }
 
   useEffect(() => {
     if (!playing || !animation) return
