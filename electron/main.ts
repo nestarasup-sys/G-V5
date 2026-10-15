@@ -3,7 +3,7 @@ import { mkdir, readFile, writeFile, readdir, unlink, rename, stat, access, rm, 
 import { basename, dirname, extname, join, resolve } from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
-import type { FaceAssetSave, FaceCatalogItem, FaceCatalogItemSave, FaceCatalogItemSummary, FaceElementKind, FaceSet, FaceSetSave, FaceSetSummary, FaceSheetKind, FabricatorAssetSave, FabricatorHistoryEntry, FabricatorHistorySaveEntry, FabricatorHistorySaveState, FabricatorHistoryState, FabricatorPose, FabricatorPoseDraft, FabricatorPoseDraftSave, FabricatorPoseSave, FabricatorPoseSummary, FabricatorProject, FabricatorProjectSave, FabricatorSlotSummary, HairStyle, HairStyleAsset, HairStyleSave, HairStyleSummary, HairWorkspace, HairWorkspaceAsset, HairWorkspaceSave, ModelPart, PosePart, WardrobeAssetSave, WardrobeCategory, WardrobeSet, WardrobeSetSave, WardrobeSetSummary } from '../src/shared/fabricator'
+import type { AnimatorAnimation, AnimatorAnimationAsset, AnimatorAnimationDraft, AnimatorAnimationSave, AnimatorAnimationSummary, FaceAssetSave, FaceCatalogItem, FaceCatalogItemSave, FaceCatalogItemSummary, FaceElementKind, FaceSet, FaceSetSave, FaceSetSummary, FaceSheetKind, FabricatorAssetSave, FabricatorHistoryEntry, FabricatorHistorySaveEntry, FabricatorHistorySaveState, FabricatorHistoryState, FabricatorPose, FabricatorPoseDraft, FabricatorPoseDraftSave, FabricatorPoseSave, FabricatorPoseSummary, FabricatorProject, FabricatorProjectSave, FabricatorSlotSummary, HairStyle, HairStyleAsset, HairStyleSave, HairStyleSummary, HairWorkspace, HairWorkspaceAsset, HairWorkspaceSave, ModelPart, PosePart, WardrobeAssetSave, WardrobeCategory, WardrobeSet, WardrobeSetSave, WardrobeSetSummary } from '../src/shared/fabricator'
 import type { CustomizerCharacter } from '../src/shared/customizer'
 import { applyModelHeadShape } from '../src/shared/headShape'
 
@@ -15,6 +15,10 @@ const poseLibraryPath = () => join(app.getPath('userData'), 'fabricator', 'poses
 const poseModelPath = (modelSlot: number) => join(poseLibraryPath(), `model-${modelSlot}`)
 const poseSlotPath = (modelSlot: number, slot: number) => join(poseModelPath(modelSlot), `slot-${slot}`)
 const poseDraftPath = (modelSlot: number) => join(poseModelPath(modelSlot), 'draft')
+const animatorLibraryPath = () => join(app.getPath('userData'), 'fabricator', 'animations')
+const animatorModelPath = (modelSlot: number) => join(animatorLibraryPath(), `model-${modelSlot}`)
+const animatorSlotPath = (modelSlot: number, slot: number) => join(animatorModelPath(modelSlot), `slot-${slot}`)
+const animatorDraftPath = (modelSlot: number) => join(animatorModelPath(modelSlot), 'draft')
 const wardrobeLibraryPath = () => join(app.getPath('userData'), 'fabricator', 'wardrobe')
 const wardrobeModelPath = (modelSlot: number) => join(wardrobeLibraryPath(), `model-${modelSlot}`)
 const wardrobeSetPath = (modelSlot: number, id: string) => join(wardrobeModelPath(modelSlot), `set-${id}`)
@@ -30,6 +34,7 @@ const fabricatorSaveQueues = new Map<number, Promise<void>>()
 let poseSaveQueue: Promise<void> = Promise.resolve()
 const poseSaveWrites = new Set<Promise<void>>()
 let poseMigration: Promise<void> | null = null
+let animatorSaveQueue: Promise<void> = Promise.resolve()
 let wardrobeSaveQueue: Promise<void> = Promise.resolve()
 let faceSaveQueue: Promise<void> = Promise.resolve()
 const hairSaveQueues = new Map<number, Promise<void>>()
@@ -799,6 +804,93 @@ async function readPoseDraft(modelSlot: number): Promise<FabricatorPoseDraft | n
   }
 }
 
+function isValidAnimatorSlot(slot: number): boolean { return isValidPoseSlot(slot) }
+
+function validateAnimatorDocument(modelSlot: number, document: Pick<AnimatorAnimation, 'schemaVersion' | 'sourceModelSlot' | 'parts' | 'frames' | 'interpolation' | 'loopMode' | 'speed' | 'thumbnailDataUrl'>): void {
+  if (!isValidModelSlot(modelSlot) || document.schemaVersion !== 1 || document.sourceModelSlot !== modelSlot || !Array.isArray(document.parts) || document.parts.length === 0 || document.parts.length > 500 || !Array.isArray(document.frames) || document.frames.length === 0 || document.frames.length > 300) throw new Error('Animação inválida.')
+  if (!['smooth', 'stepped'].includes(document.interpolation) || !['once', 'loop', 'pingpong'].includes(document.loopMode) || !Number.isFinite(document.speed) || document.speed < 0.1 || document.speed > 4) throw new Error('Configurações da animação inválidas.')
+  const partIds = new Set(document.parts.map((part) => part.id))
+  if (partIds.size !== document.parts.length || [...partIds].some((id) => !/^[a-zA-Z0-9_-]{1,80}$/.test(id))) throw new Error('Identificadores de peças da animação inválidos.')
+  for (const frame of document.frames) {
+    if (!frame.id || !Number.isFinite(frame.durationMs) || frame.durationMs < 40 || frame.durationMs > 10000 || !frame.thumbnailDataUrl.startsWith('data:image/png;base64,') || frame.thumbnailDataUrl.length > 3_000_000) throw new Error('Frame de animação inválido.')
+    for (const id of partIds) {
+      const transform = frame.transforms[id]
+      if (!transform || !Number.isFinite(transform.x) || !Number.isFinite(transform.y) || !Number.isFinite(transform.rotation)) throw new Error('Transformação de frame inválida.')
+    }
+  }
+  if (!document.thumbnailDataUrl.startsWith('data:image/png;base64,') || document.thumbnailDataUrl.length > 3_000_000) throw new Error('Miniatura da animação inválida.')
+}
+
+async function writeAnimatorParts(folder: string, parts: Array<Omit<PosePart, 'dataUrl'>>, assets: AnimatorAnimationAsset[]): Promise<void> {
+  const partsFolder = join(folder, 'parts')
+  await mkdir(partsFolder, { recursive: true })
+  const validIds = new Set(parts.map((part) => part.id))
+  for (const asset of assets) if (validIds.has(asset.id)) await writeFile(join(partsFolder, `${asset.id}.png`), dataUrlBuffer(asset.dataUrl))
+  for (const part of parts) {
+    const target = join(partsFolder, `${part.id}.png`)
+    try { await access(target) } catch (reason) {
+      if ((reason as NodeJS.ErrnoException).code !== 'ENOENT') throw reason
+      throw new Error(`Imagem-base ausente na animação: ${part.name} (${part.id}).`)
+    }
+  }
+  const keep = new Set(parts.map((part) => `${part.id}.png`))
+  for (const filename of await readdir(partsFolder)) if (filename.endsWith('.png') && !keep.has(filename)) await unlink(join(partsFolder, filename))
+}
+
+async function readAnimatorParts(folder: string, parts: Array<Omit<PosePart, 'dataUrl'>>): Promise<PosePart[]> {
+  return Promise.all(parts.map(async (part) => ({ ...part, dataUrl: `data:image/png;base64,${(await readFile(join(folder, 'parts', `${part.id}.png`))).toString('base64')}` })))
+}
+
+async function writeAnimatorAnimation(modelSlot: number, slot: number, animation: AnimatorAnimationSave, assets: AnimatorAnimationAsset[]): Promise<void> {
+  if (!isValidAnimatorSlot(slot) || animation.slot !== slot) throw new Error('Slot de animação inválido.')
+  validateAnimatorDocument(modelSlot, animation as AnimatorAnimation)
+  const folder = animatorSlotPath(modelSlot, slot)
+  await writeAnimatorParts(folder, animation.parts, assets)
+  await mkdir(folder, { recursive: true })
+  const temporary = join(folder, 'animation.json.tmp')
+  await writeFile(temporary, JSON.stringify(animation), 'utf8')
+  await rename(temporary, join(folder, 'animation.json'))
+}
+
+async function readAnimatorAnimation(modelSlot: number, slot: number): Promise<AnimatorAnimation | null> {
+  if (!isValidModelSlot(modelSlot) || !isValidAnimatorSlot(slot)) throw new Error('Slot de animação inválido.')
+  try {
+    const folder = animatorSlotPath(modelSlot, slot)
+    const saved = JSON.parse(await readFile(join(folder, 'animation.json'), 'utf8')) as AnimatorAnimationSave
+    if (saved.slot !== slot) return null
+    validateAnimatorDocument(modelSlot, saved as AnimatorAnimation)
+    return { ...saved, parts: await readAnimatorParts(folder, saved.parts) }
+  } catch (reason) {
+    if ((reason as NodeJS.ErrnoException).code === 'ENOENT') return null
+    throw reason
+  }
+}
+
+async function writeAnimatorDraft(modelSlot: number, draft: AnimatorAnimationDraft, assets: AnimatorAnimationAsset[]): Promise<void> {
+  if (!isValidModelSlot(modelSlot) || draft.animation.sourceModelSlot !== modelSlot || (draft.editingSlot !== null && !isValidAnimatorSlot(draft.editingSlot))) throw new Error('Rascunho de animação inválido.')
+  validateAnimatorDocument(modelSlot, { ...draft.animation, slot: draft.editingSlot ?? 1 } as AnimatorAnimation)
+  const folder = animatorDraftPath(modelSlot)
+  await writeAnimatorParts(folder, draft.animation.parts, assets)
+  await mkdir(folder, { recursive: true })
+  const temporary = join(folder, 'draft.json.tmp')
+  await writeFile(temporary, JSON.stringify(draft), 'utf8')
+  await rename(temporary, join(folder, 'draft.json'))
+}
+
+async function readAnimatorDraft(modelSlot: number): Promise<AnimatorAnimationDraft | null> {
+  if (!isValidModelSlot(modelSlot)) throw new Error('Modelo de rascunho inválido.')
+  try {
+    const folder = animatorDraftPath(modelSlot)
+    const draft = JSON.parse(await readFile(join(folder, 'draft.json'), 'utf8')) as AnimatorAnimationDraft
+    if (draft.editingSlot !== null && !isValidAnimatorSlot(draft.editingSlot)) return null
+    validateAnimatorDocument(modelSlot, { ...draft.animation, slot: draft.editingSlot ?? 1 } as AnimatorAnimation)
+    return { ...draft, animation: { ...draft.animation, parts: await readAnimatorParts(folder, draft.animation.parts) } }
+  } catch (reason) {
+    if ((reason as NodeJS.ErrnoException).code === 'ENOENT') return null
+    throw reason
+  }
+}
+
 async function registerFabricatorHandlers(): Promise<void> {
   ipcMain.handle('customizer:characters:list', async (event): Promise<CustomizerCharacter[]> => {
     assertTrustedSender(event)
@@ -1027,6 +1119,78 @@ async function registerFabricatorHandlers(): Promise<void> {
       if (dirname(target) !== base || basename(target) !== 'draft') throw new Error('Caminho de rascunho inválido.')
       await rm(target, { recursive: true, force: true })
     })
+  })
+
+  ipcMain.handle('fabricator:animator:list', async (event, modelSlot: number): Promise<AnimatorAnimationSummary[]> => {
+    assertTrustedSender(event)
+    if (!isValidModelSlot(modelSlot)) throw new Error('Modelo inválido.')
+    const entries: AnimatorAnimationSummary[] = []
+    for (let slot = 1; slot <= poseSlotCount; slot += 1) {
+      try {
+        const animation = JSON.parse(await readFile(join(animatorSlotPath(modelSlot, slot), 'animation.json'), 'utf8')) as AnimatorAnimationSave
+        if (animation.schemaVersion !== 1 || animation.sourceModelSlot !== modelSlot || animation.slot !== slot) continue
+        entries.push({ slot, sourceModelSlot: modelSlot, name: animation.name, sourceModelName: animation.sourceModelName, sourceModelUpdatedAt: animation.sourceModelUpdatedAt, sourceModelPartCount: animation.sourceModelPartCount, thumbnailDataUrl: animation.thumbnailDataUrl, updatedAt: animation.updatedAt })
+      } catch { /* Slots inválidos ou ainda vazios são ignorados. */ }
+    }
+    return entries
+  })
+
+  ipcMain.handle('fabricator:animator:load', async (event, modelSlot: number, slot: number): Promise<AnimatorAnimation | null> => {
+    assertTrustedSender(event)
+    let loaded: AnimatorAnimation | null = null
+    const next = animatorSaveQueue.catch(() => undefined).then(async () => { loaded = await readAnimatorAnimation(modelSlot, slot) })
+    animatorSaveQueue = next
+    await next
+    return loaded
+  })
+
+  ipcMain.handle('fabricator:animator:save', async (event, modelSlot: number, slot: number, animation: AnimatorAnimationSave, assets: AnimatorAnimationAsset[]): Promise<void> => {
+    assertTrustedSender(event)
+    const next = animatorSaveQueue.catch(() => undefined).then(() => writeAnimatorAnimation(modelSlot, slot, animation, assets))
+    animatorSaveQueue = next
+    await next
+  })
+
+  ipcMain.handle('fabricator:animator:delete', async (event, modelSlot: number, slot: number): Promise<void> => {
+    assertTrustedSender(event)
+    if (!isValidModelSlot(modelSlot) || !isValidAnimatorSlot(slot)) throw new Error('Slot de animação inválido.')
+    const next = animatorSaveQueue.catch(() => undefined).then(async () => {
+      const base = resolve(animatorModelPath(modelSlot))
+      const target = resolve(animatorSlotPath(modelSlot, slot))
+      if (dirname(target) !== base || basename(target) !== `slot-${slot}`) throw new Error('Caminho de exclusão de animação inválido.')
+      await rm(target, { recursive: true, force: true })
+    })
+    animatorSaveQueue = next
+    await next
+  })
+
+  ipcMain.handle('fabricator:animator:draft:load', async (event, modelSlot: number): Promise<AnimatorAnimationDraft | null> => {
+    assertTrustedSender(event)
+    let loaded: AnimatorAnimationDraft | null = null
+    const next = animatorSaveQueue.catch(() => undefined).then(async () => { loaded = await readAnimatorDraft(modelSlot) })
+    animatorSaveQueue = next
+    await next
+    return loaded
+  })
+
+  ipcMain.handle('fabricator:animator:draft:save', async (event, modelSlot: number, draft: AnimatorAnimationDraft, assets: AnimatorAnimationAsset[]): Promise<void> => {
+    assertTrustedSender(event)
+    const next = animatorSaveQueue.catch(() => undefined).then(() => writeAnimatorDraft(modelSlot, draft, assets))
+    animatorSaveQueue = next
+    await next
+  })
+
+  ipcMain.handle('fabricator:animator:draft:delete', async (event, modelSlot: number): Promise<void> => {
+    assertTrustedSender(event)
+    if (!isValidModelSlot(modelSlot)) throw new Error('Modelo de rascunho inválido.')
+    const next = animatorSaveQueue.catch(() => undefined).then(async () => {
+      const base = resolve(animatorModelPath(modelSlot))
+      const target = resolve(animatorDraftPath(modelSlot))
+      if (dirname(target) !== base || basename(target) !== 'draft') throw new Error('Caminho de rascunho inválido.')
+      await rm(target, { recursive: true, force: true })
+    })
+    animatorSaveQueue = next
+    await next
   })
 
   ipcMain.handle('fabricator:wardrobe:list', async (event, modelSlot: number): Promise<WardrobeSetSummary[]> => {

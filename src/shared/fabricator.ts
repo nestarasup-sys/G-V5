@@ -230,6 +230,50 @@ export type FabricatorPoseSummary = { slot: number; sourceModelSlot: number; nam
 export type FabricatorPoseDraft = { editingSlot: number | null; project: Omit<FabricatorPose, 'slot'>; updatedAt: string }
 export type FabricatorPoseDraftSave = { editingSlot: number | null; project: Omit<FabricatorPoseSave, 'slot'>; updatedAt: string }
 
+export type AnimatorFrameTransform = { x: number; y: number; rotation: number; jointAnchor?: { x: number; y: number } }
+export type AnimatorFrame = {
+  id: string
+  durationMs: number
+  transforms: Record<string, AnimatorFrameTransform>
+  joints: JointLink[]
+  thumbnailDataUrl: string
+}
+export type AnimatorAnimation = {
+  schemaVersion: 1
+  slot: number
+  name: string
+  sourceModelSlot: number
+  sourceModelName: string
+  sourceModelUpdatedAt: string
+  sourceModelPartCount: number
+  basePoseSlot: number | null
+  characterId: string | null
+  width: number
+  height: number
+  parts: PosePart[]
+  joints: JointLink[]
+  layerOrder: string[]
+  hiddenPartIds: string[]
+  frames: AnimatorFrame[]
+  interpolation: 'smooth' | 'stepped'
+  loopMode: 'once' | 'loop' | 'pingpong'
+  speed: number
+  thumbnailDataUrl: string
+  updatedAt: string
+}
+export type AnimatorAnimationSave = Omit<AnimatorAnimation, 'parts'> & { parts: Array<Omit<PosePart, 'dataUrl'>> }
+export type AnimatorAnimationSummary = Pick<AnimatorAnimation, 'slot' | 'sourceModelSlot' | 'name' | 'sourceModelName' | 'sourceModelUpdatedAt' | 'sourceModelPartCount' | 'thumbnailDataUrl' | 'updatedAt'>
+export type AnimatorAnimationDraft = {
+  editingSlot: number | null
+  animation: Omit<AnimatorAnimation, 'slot' | 'parts'> & { parts: Array<Omit<PosePart, 'dataUrl'>> }
+  currentTransforms: Record<string, AnimatorFrameTransform>
+  currentJoints: JointLink[]
+  selectedFrameId: string
+  dirtyFrame: boolean
+  updatedAt: string
+}
+export type AnimatorAnimationAsset = { id: string; dataUrl: string }
+
 export type FabricatorDesktopApi = {
   listFabricatorSlots: () => Promise<FabricatorSlotSummary[]>
   importFabricatorModel: (slot: number) => Promise<{ sourceName: string; sourceAssetName: string; sourceDataUrl: string } | null>
@@ -245,6 +289,13 @@ export type FabricatorDesktopApi = {
   loadFabricatorPoseDraft: (modelSlot: number) => Promise<FabricatorPoseDraft | null>
   saveFabricatorPoseDraft: (modelSlot: number, draft: FabricatorPoseDraftSave, assets: FabricatorAssetSave[]) => Promise<void>
   deleteFabricatorPoseDraft: (modelSlot: number) => Promise<void>
+  listAnimatorAnimations: (modelSlot: number) => Promise<AnimatorAnimationSummary[]>
+  loadAnimatorAnimation: (modelSlot: number, slot: number) => Promise<AnimatorAnimation | null>
+  saveAnimatorAnimation: (modelSlot: number, slot: number, animation: AnimatorAnimationSave, assets: AnimatorAnimationAsset[]) => Promise<void>
+  deleteAnimatorAnimation: (modelSlot: number, slot: number) => Promise<void>
+  loadAnimatorDraft: (modelSlot: number) => Promise<AnimatorAnimationDraft | null>
+  saveAnimatorDraft: (modelSlot: number, draft: AnimatorAnimationDraft, assets: AnimatorAnimationAsset[]) => Promise<void>
+  deleteAnimatorDraft: (modelSlot: number) => Promise<void>
   listWardrobeSets: (modelSlot: number) => Promise<WardrobeSetSummary[]>
   loadWardrobeSet: (modelSlot: number, id: string) => Promise<WardrobeSet | null>
   saveWardrobeSet: (modelSlot: number, set: WardrobeSetSave, assets: WardrobeAssetSave[]) => Promise<void>
