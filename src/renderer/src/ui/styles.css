@@ -1014,10 +1014,25 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .pose-slot-grid { max-height: 112px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); grid-auto-rows: 49px; gap: 6px; overflow-y: auto; margin-top: 7px; padding: 1px 3px 2px 1px; scrollbar-color: #e7d3dc transparent; scrollbar-width: thin; }
 .pose-slot { min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; border: 1px solid transparent; border-radius: 8px; color: #fff; cursor: pointer; }
 .pose-slot b { color: #fff; font: 750 12px Manrope, sans-serif; }
-.pose-slot small { color: #fff; font-size: 9px; font-weight: 700; }
+.pose-slot small { max-width:100%;overflow:hidden;padding:0 3px;color:#fff;font-size:9px;font-weight:700;text-overflow:ellipsis;white-space:nowrap; }
 .pose-slot.empty { border-color: rgb(197 47 70 / 80%); background: rgb(216 64 86 / 80%); }
 .pose-slot.filled { border-color: rgb(22 134 93 / 80%); background: rgb(34 153 107 / 80%); }
 .pose-slot.active { box-shadow: inset 0 0 0 2px #ffffffbd, 0 0 0 1px #55434e; }
+.pose-category-panel { flex:0 0 auto;display:grid;gap:7px;padding:10px;border-bottom:1px solid #f0ebef;background:#fffafd; }
+.pose-category-panel>span { display:flex;align-items:baseline;justify-content:space-between;gap:6px; }
+.pose-category-panel strong { color:#514852;font-size:12px; }
+.pose-category-panel small { color:#a49aa5;font-size:10px; }
+.pose-category-trigger { min-height:32px;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:5px 9px;border:1px solid #e8c8d5;border-radius:7px;background:#fff;color:#893d62;font-size:12px;font-weight:750;cursor:pointer; }
+.pose-category-trigger:disabled { color:#aaa0aa;cursor:default; }
+.pose-category-trigger svg { width:13px;height:13px;transform:rotate(90deg); }
+.pose-category-picker { display:grid;gap:8px;padding:8px;border:1px solid #eed7e1;border-radius:8px;background:#fff; }
+.pose-category-options { display:flex;flex-wrap:wrap;gap:5px; }
+.pose-category-options button { min-height:26px;padding:3px 9px;border:1px solid #e7c7d4;border-radius:999px;background:#fff;color:#82415e;font-size:11px;font-weight:700;cursor:pointer; }
+.pose-category-options button.active { border-color:#c44881;background:#fce8f1;color:#a52d68; }
+.pose-category-picker form { display:grid;grid-template-columns:minmax(0,1fr) auto;gap:5px; }
+.pose-category-picker input { min-width:0;min-height:29px;padding:4px 7px;border:1px solid #e7c7d4;border-radius:6px;background:#fff;color:#514852;font-size:11px; }
+.pose-category-picker form button { padding:4px 8px;border:0;border-radius:6px;background:#bc477d;color:#fff;font-size:11px;font-weight:700;cursor:pointer; }
+.pose-category-picker form button:disabled { opacity:.45;cursor:default; }
 .pose-tools-panel { min-height: 0; flex: 1; display: flex; flex-direction: column; overflow: hidden; }
 .pose-tools-heading { flex: 0 0 auto; padding: 8px 10px; }
 .pose-heading-actions { display: flex; align-items: center; gap: 5px; }

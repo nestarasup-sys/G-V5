@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FabricatorPose, FabricatorPoseDraft, FabricatorPoseDraftSave, FabricatorPoseSave, FabricatorPoseSummary, FabricatorProject, FabricatorSlotSummary, PosePart } from '../../../../shared/fabricator'
+import { resolvePoseCategory } from '../../../../shared/fabricator'
 import { Icon } from '../../ui/components/Icon'
 import { usePreviewBackground } from './usePreviewBackground'
 import { normalizeLayerOrder, orderedParts, partJointAnchor } from './models/rig'
@@ -84,6 +85,7 @@ function poseFromModel(model: FabricatorProject): DraftProject {
   return {
     schemaVersion: 1,
     name: `Pose de ${model.name}`,
+    category: 'Parado',
     sourceModelSlot: model.slot,
     sourceModelName: model.name,
     sourceModelUpdatedAt: model.updatedAt,
@@ -127,6 +129,8 @@ export function PoseWorkspace() {
   const [recoveredDraft, setRecoveredDraft] = useState<FabricatorPoseDraft | null>(null)
   const [showJoints, setShowJoints] = useState(true)
   const [partFilter, setPartFilter] = useState('')
+  const [categoryPickerOpen, setCategoryPickerOpen] = useState(false)
+  const [newCategoryName, setNewCategoryName] = useState('')
   const stageRef = useRef<HTMLDivElement>(null)
   const projectRef = useRef<DraftProject | null>(null)
   const editingSlotRef = useRef<number | null>(null)
@@ -138,6 +142,7 @@ export function PoseWorkspace() {
   const draftTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const slots = useMemo(() => Array.from({ length: SLOT_COUNT }, (_, index) => allPoseSlots.find((slot) => slot?.sourceModelSlot === selectedModelSlot && slot.slot === index + 1) ?? null), [allPoseSlots, selectedModelSlot])
   const selectedModelName = models[selectedModelSlot - 1]?.name ?? allPoseSlots.find((slot) => slot?.sourceModelSlot === selectedModelSlot)?.sourceModelName ?? 'Escolher modelo'
+  const categoryOptions = Array.from(new Set(['Parado', 'Sentado', ...allPoseSlots.filter((pose): pose is NonNullable<FabricatorPoseSummary> => pose?.sourceModelSlot === selectedModelSlot).map(resolvePoseCategory), ...(project ? [resolvePoseCategory({ ...project, slot: editingSlot ?? undefined })] : [])]))
 
   const publishProject = useCallback((next: DraftProject | null, isDirty = true) => {
     projectRef.current = next
@@ -226,6 +231,15 @@ export function PoseWorkspace() {
     publishProject(next)
   }
 
+  const assignCategory = (category: string) => {
+    const normalized = category.trim().replace(/\s+/g, ' ')
+    if (!normalized || normalized.length > 32) return
+    const existing = categoryOptions.find((option) => option.toLocaleLowerCase('pt-BR') === normalized.toLocaleLowerCase('pt-BR'))
+    changeProject((current) => current.category === (existing ?? normalized) ? current : { ...current, category: existing ?? normalized })
+    setCategoryPickerOpen(false)
+    setNewCategoryName('')
+  }
+
   const restoreHistory = (direction: 'undo' | 'redo') => {
     const current = projectRef.current
     const stack = history[direction]
@@ -273,7 +287,9 @@ export function PoseWorkspace() {
     setSelectedModelSlot(modelSlot)
     setSourcePreview(null)
     const modelPoseSlots = Array.from({ length: SLOT_COUNT }, (_, index) => allPoseSlots.find((slot) => slot?.sourceModelSlot === modelSlot && slot.slot === index + 1) ?? null)
-    setActiveSlot(modelPoseSlots.findIndex((slot) => !slot) + 1 || SLOT_COUNT)
+    const nextSlot = modelPoseSlots.findIndex((slot) => !slot) + 1 || SLOT_COUNT
+    next.category = nextSlot === 2 ? 'Sentado' : 'Parado'
+    setActiveSlot(nextSlot)
     setEditingSlot(null)
     editingSlotRef.current = null
     setHistory(emptyHistory())
@@ -347,7 +363,7 @@ export function PoseWorkspace() {
         const dataUrl = pendingAssets.current.get(part.id)
         return dataUrl ? [{ id: part.id, dataUrl }] : []
       })
-      const saved: FabricatorPose = { ...snapshot, slot, updatedAt: new Date().toISOString() }
+      const saved: FabricatorPose = { ...snapshot, slot, category: resolvePoseCategory({ ...snapshot, slot }), updatedAt: new Date().toISOString() }
       await window.desktop.saveFabricatorPose(snapshot.sourceModelSlot, slot, toSavedPose(saved, slot), assets)
       for (const asset of assets) if (pendingAssets.current.get(asset.id) === asset.dataUrl) pendingAssets.current.delete(asset.id)
       await window.desktop.deleteFabricatorPoseDraft(snapshot.sourceModelSlot)
@@ -355,8 +371,8 @@ export function PoseWorkspace() {
       setEditingSlot(slot)
       editingSlotRef.current = slot
       setActiveSlot(slot)
-      publishProject({ ...snapshot, updatedAt: saved.updatedAt }, false)
-      setAllPoseSlots((current) => [...current.filter((item) => !(item?.sourceModelSlot === snapshot.sourceModelSlot && item.slot === slot)), { slot, sourceModelSlot: snapshot.sourceModelSlot, name: saved.name, sourceModelName: saved.sourceModelName, partCount: saved.parts.length, updatedAt: saved.updatedAt }])
+      publishProject({ ...snapshot, category: saved.category, updatedAt: saved.updatedAt }, false)
+      setAllPoseSlots((current) => [...current.filter((item) => !(item?.sourceModelSlot === snapshot.sourceModelSlot && item.slot === slot)), { slot, sourceModelSlot: snapshot.sourceModelSlot, name: saved.name, category: saved.category, sourceModelName: saved.sourceModelName, partCount: saved.parts.length, updatedAt: saved.updatedAt }])
       setSaveMessage('Pose salva')
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Não foi possível salvar a pose.')
@@ -598,9 +614,18 @@ export function PoseWorkspace() {
             <div className="pose-slot-grid" role="tablist" aria-label="Slots de poses">
               {slots.map((slot, index) => {
                 const number = index + 1
-                return <button key={number} role="tab" aria-selected={activeSlot === number} className={`pose-slot${activeSlot === number ? ' active' : ''}${slot ? ' filled' : ' empty'}`} onClick={() => void selectPoseSlot(number)} title={slot ? `${slot.name} · baseada em ${slot.sourceModelName}` : `Slot ${number}: vazio`} type="button"><b>{String(number).padStart(2, '0')}</b><small>{slot ? 'Preenchido' : 'Vazio'}</small></button>
+                return <button key={number} role="tab" aria-selected={activeSlot === number} className={`pose-slot${activeSlot === number ? ' active' : ''}${slot ? ' filled' : ' empty'}`} onClick={() => { setCategoryPickerOpen(false); void selectPoseSlot(number) }} title={slot ? `${slot.name} · ${resolvePoseCategory(slot)}` : `Slot ${number}: vazio`} type="button"><b>{String(number).padStart(2, '0')}</b><small>{slot ? resolvePoseCategory(slot) : 'Vazio'}</small></button>
               })}
             </div>
+          </section>
+
+          <section className="pose-category-panel" aria-label="Categoria da pose">
+            <span><strong>Categoria da pose</strong><small>Organiza as poses no Customizar</small></span>
+            <button className="pose-category-trigger" disabled={!project} aria-expanded={categoryPickerOpen} onClick={() => setCategoryPickerOpen((open) => !open)} type="button">{project ? resolvePoseCategory({ ...project, slot: editingSlot ?? undefined }) : 'Crie ou abra uma pose'} <Icon name="chevronRight" /></button>
+            {categoryPickerOpen && project && <div className="pose-category-picker">
+              <div className="pose-category-options">{categoryOptions.map((category) => <button className={resolvePoseCategory({ ...project, slot: editingSlot ?? undefined }) === category ? 'active' : ''} key={category} onClick={() => assignCategory(category)} type="button">{category}</button>)}</div>
+              <form onSubmit={(event) => { event.preventDefault(); assignCategory(newCategoryName) }}><input aria-label="Nome da nova categoria" maxLength={32} onChange={(event) => setNewCategoryName(event.target.value)} placeholder="Nova categoria" value={newCategoryName} /><button disabled={!newCategoryName.trim()} type="submit">Adicionar</button></form>
+            </div>}
           </section>
 
           <section className="pose-tools-panel">

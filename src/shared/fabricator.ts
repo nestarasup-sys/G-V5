@@ -214,6 +214,7 @@ export type FabricatorPose = {
   schemaVersion: 1
   slot: number
   name: string
+  category?: string
   sourceModelSlot: number
   sourceModelName: string
   sourceModelUpdatedAt: string
@@ -226,7 +227,11 @@ export type FabricatorPose = {
   updatedAt: string
 }
 export type FabricatorPoseSave = Omit<FabricatorPose, 'parts'> & { parts: Array<Omit<WardrobePosePart, 'dataUrl'>> }
-export type FabricatorPoseSummary = { slot: number; sourceModelSlot: number; name: string; sourceModelName: string; partCount: number; updatedAt: string } | null
+export type FabricatorPoseSummary = { slot: number; sourceModelSlot: number; name: string; category?: string; sourceModelName: string; partCount: number; updatedAt: string } | null
+export function resolvePoseCategory(pose: { category?: string; slot?: number; name: string }): string {
+  const category = typeof pose.category === 'string' ? pose.category.trim() : ''
+  return category || (pose.slot === 2 || /sentad/i.test(pose.name) ? 'Sentado' : 'Parado')
+}
 export type FabricatorPoseDraft = { editingSlot: number | null; project: Omit<FabricatorPose, 'slot'>; updatedAt: string }
 export type FabricatorPoseDraftSave = { editingSlot: number | null; project: Omit<FabricatorPoseSave, 'slot'>; updatedAt: string }
 

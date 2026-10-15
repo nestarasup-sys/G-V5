@@ -4,6 +4,7 @@ import { basename, dirname, extname, join, resolve } from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import type { AnimatorAnimation, AnimatorAnimationAsset, AnimatorAnimationDraft, AnimatorAnimationSave, AnimatorAnimationSummary, FaceAssetSave, FaceCatalogItem, FaceCatalogItemSave, FaceCatalogItemSummary, FaceElementKind, FaceSet, FaceSetSave, FaceSetSummary, FaceSheetKind, FabricatorAssetSave, FabricatorHistoryEntry, FabricatorHistorySaveEntry, FabricatorHistorySaveState, FabricatorHistoryState, FabricatorPose, FabricatorPoseDraft, FabricatorPoseDraftSave, FabricatorPoseSave, FabricatorPoseSummary, FabricatorProject, FabricatorProjectSave, FabricatorSlotSummary, HairStyle, HairStyleAsset, HairStyleSave, HairStyleSummary, HairWorkspace, HairWorkspaceAsset, HairWorkspaceSave, ModelPart, PosePart, WardrobeAssetSave, WardrobeCategory, WardrobeSet, WardrobeSetSave, WardrobeSetSummary } from '../src/shared/fabricator'
+import { resolvePoseCategory } from '../src/shared/fabricator'
 import type { CustomizerCharacter } from '../src/shared/customizer'
 import type { StudioAsset, StudioDocument, StudioFaceTransform, StudioFaceTransforms } from '../src/shared/studio'
 import { applyModelHeadShape } from '../src/shared/headShape'
@@ -872,13 +873,14 @@ async function preserveAndWritePoseManifest(path: string, document: FabricatorPo
 
 async function writePoseProject(modelSlot: number, slot: number, project: FabricatorPoseSave, assets: FabricatorAssetSave[]): Promise<void> {
   if (!isValidModelSlot(modelSlot) || project.sourceModelSlot !== modelSlot || !isValidPoseSlot(slot) || project.slot !== slot || project.schemaVersion !== 1 || project.parts.length === 0 || project.parts.length > 500) throw new Error('Pose inválida.')
+  if (project.category !== undefined && (typeof project.category !== 'string' || !project.category.trim() || project.category.trim().length > 32 || /[\r\n\t]/.test(project.category))) throw new Error('Categoria de pose inválida.')
   const folder = poseSlotPath(modelSlot, slot)
   // A edição automática salva primeiro no diretório de rascunho e consome as
   // imagens pendentes no renderer. Ao salvar no slot, copie as partes já
   // persistidas no rascunho para que o slot independente tenha sua biblioteca.
   await writePoseAssets(folder, project.parts, assets, poseDraftPath(modelSlot))
   const temporary = join(folder, 'pose.json.tmp')
-  await writeFile(temporary, JSON.stringify(project), 'utf8')
+  await writeFile(temporary, JSON.stringify({ ...project, category: resolvePoseCategory(project) }), 'utf8')
   await rename(temporary, join(folder, 'pose.json'))
 }
 
@@ -906,10 +908,11 @@ async function writePoseDraft(modelSlot: number, draft: FabricatorPoseDraftSave,
   if (!isValidModelSlot(modelSlot) || draft.project.sourceModelSlot !== modelSlot) throw new Error('Modelo do rascunho inválido.')
   if (draft.editingSlot !== null && !isValidPoseSlot(draft.editingSlot)) throw new Error('Rascunho de pose inválido.')
   if (draft.project.schemaVersion !== 1 || draft.project.parts.length === 0 || draft.project.parts.length > 500) throw new Error('Rascunho de pose inválido.')
+  if (draft.project.category !== undefined && (typeof draft.project.category !== 'string' || !draft.project.category.trim() || draft.project.category.trim().length > 32 || /[\r\n\t]/.test(draft.project.category))) throw new Error('Categoria de pose inválida.')
   const folder = poseDraftPath(modelSlot)
   await writePoseAssets(folder, draft.project.parts, assets)
   const temporary = join(folder, 'draft.json.tmp')
-  await writeFile(temporary, JSON.stringify(draft), 'utf8')
+  await writeFile(temporary, JSON.stringify({ ...draft, project: { ...draft.project, category: resolvePoseCategory({ ...draft.project, slot: draft.editingSlot ?? undefined }) } }), 'utf8')
   await rename(temporary, join(folder, 'draft.json'))
 }
 
@@ -1265,7 +1268,7 @@ async function registerFabricatorHandlers(): Promise<void> {
         try {
           const manifest = JSON.parse(await readFile(join(poseSlotPath(modelSlot, slot), 'pose.json'), 'utf8')) as FabricatorPoseSave
           if (manifest.sourceModelSlot !== modelSlot || manifest.slot !== slot) continue
-          allSlots.push({ slot, sourceModelSlot: modelSlot, name: manifest.name, sourceModelName: manifest.sourceModelName, partCount: manifest.parts.length, updatedAt: manifest.updatedAt })
+          allSlots.push({ slot, sourceModelSlot: modelSlot, name: manifest.name, category: resolvePoseCategory(manifest), sourceModelName: manifest.sourceModelName, partCount: manifest.parts.length, updatedAt: manifest.updatedAt })
         } catch { /* Slots sem manifest válido aparecem vazios. */ }
       }
     }
