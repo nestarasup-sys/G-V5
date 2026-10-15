@@ -207,8 +207,8 @@ async function renderArtwork(artwork: CatalogArtwork, maxSize: number): Promise<
   return canvas.toDataURL('image/png')
 }
 
-async function renderArtworkWithHair(artwork: CatalogArtwork, source: FabricatorProject, frontStyle: HairStyle | null, backStyle: HairStyle | null, maxSize: number): Promise<string | null> {
-  if ((!frontStyle || frontStyle.modelSlot !== source.slot) && (!backStyle || backStyle.modelSlot !== source.slot)) return renderArtwork(artwork, maxSize)
+async function renderArtworkWithHair(artwork: CatalogArtwork, source: FabricatorProject, backStyle: HairStyle | null, maxSize: number): Promise<string | null> {
+  if (!backStyle || backStyle.modelSlot !== source.slot) return renderArtwork(artwork, maxSize)
   const sourceHead = source.parts.find((part) => /cabe[çc]a|head/i.test(part.name))
   const targetHead = artwork.parts.find((part) => /cabe[çc]a|head/i.test(part.name))
   if (!sourceHead || !targetHead || !sourceHead.width || !sourceHead.height) return renderArtwork(artwork, maxSize)
@@ -220,13 +220,13 @@ async function renderArtworkWithHair(artwork: CatalogArtwork, source: Fabricator
   const hidden = new Set(artwork.hiddenPartIds ?? [])
   const order = (artwork.layerOrder ?? []).filter((id, index, ids) => ids.indexOf(id) === index && artwork.parts.some((part) => part.id === id))
   for (const part of artwork.parts) if (!order.includes(part.id)) order.push(part.id)
-  const drawHair = async (side: 'back' | 'front') => {
-    const style = side === 'back' ? backStyle : frontStyle
+  const drawBackHair = async () => {
+    const style = backStyle
     if (!style || style.modelSlot !== source.slot) return
-    const asset = style[side]
+    const asset = style.back
     if (!asset) return
     try {
-      const transform = style.transforms[side]
+      const transform = style.transforms.back
       const localX = transform.x / sourceHead.width * targetHead.width
       const localY = transform.y / sourceHead.height * targetHead.height
       const radians = targetHead.rotation * Math.PI / 180
@@ -247,7 +247,7 @@ async function renderArtworkWithHair(artwork: CatalogArtwork, source: Fabricator
     const part = artwork.parts.find((item) => item.id === id)
     if (!part) continue
     const isHead = part.id === targetHead.id
-    if (isHead) await drawHair('back')
+    if (isHead) await drawBackHair()
     if (!hidden.has(part.id)) {
       try {
         const image = await loadCachedImage(part.dataUrl)
@@ -258,8 +258,38 @@ async function renderArtworkWithHair(artwork: CatalogArtwork, source: Fabricator
         context.restore()
       } catch { /* Continue rendering the remaining model layers. */ }
     }
-    if (isHead) await drawHair('front')
   }
+  return canvas.toDataURL('image/png')
+}
+
+async function renderFrontHairOverlay(artwork: CatalogArtwork, source: FabricatorProject, style: HairStyle | null, maxSize: number): Promise<string | null> {
+  if (!style?.front || style.modelSlot !== source.slot) return null
+  const sourceHead = source.parts.find((part) => /cabe[çc]a|head/i.test(part.name))
+  const targetHead = artwork.parts.find((part) => /cabe[çc]a|head/i.test(part.name))
+  if (!sourceHead || !targetHead || sourceHead.width <= 0 || sourceHead.height <= 0) return null
+  const scale = Math.min(maxSize / artwork.width, maxSize / artwork.height)
+  const canvas = document.createElement('canvas')
+  canvas.width = Math.max(1, Math.round(artwork.width * scale))
+  canvas.height = Math.max(1, Math.round(artwork.height * scale))
+  const context = canvas.getContext('2d')
+  if (!context) return null
+  const transform = style.transforms.front
+  const localX = transform.x / sourceHead.width * targetHead.width
+  const localY = transform.y / sourceHead.height * targetHead.height
+  const radians = targetHead.rotation * Math.PI / 180
+  const x = targetHead.x + targetHead.width / 2 + (localX - targetHead.width / 2) * Math.cos(radians) - (localY - targetHead.height / 2) * Math.sin(radians)
+  const y = targetHead.y + targetHead.height / 2 + (localX - targetHead.width / 2) * Math.sin(radians) + (localY - targetHead.height / 2) * Math.cos(radians)
+  const width = style.front.width * transform.scaleX / sourceHead.width * targetHead.width
+  const height = style.front.height * transform.scaleY / sourceHead.height * targetHead.height
+  try {
+    const image = await loadCachedImage(style.front.dataUrl)
+    context.save()
+    context.translate(x * scale, y * scale)
+    context.rotate((targetHead.rotation + transform.rotation) * Math.PI / 180)
+    context.scale(transform.flipX ? -1 : 1, 1)
+    context.drawImage(image, -width * scale / 2, -height * scale / 2, width * scale, height * scale)
+    context.restore()
+  } catch { return null }
   return canvas.toDataURL('image/png')
 }
 
@@ -357,6 +387,7 @@ export function CustomizerPage() {
   const [selectedSourceModelProject, setSelectedSourceModelProject] = useState<FabricatorProject | null>(null)
   const [selectedArtworkUrl, setSelectedArtworkUrl] = useState<string | null>(null)
   const [selectedFaceUrl, setSelectedFaceUrl] = useState<string | null>(null)
+  const [selectedFrontHairUrl, setSelectedFrontHairUrl] = useState<string | null>(null)
   const [selectedArtworkLabel, setSelectedArtworkLabel] = useState('')
   const [previewLoading, setPreviewLoading] = useState(true)
   const thumbnailCache = useRef(new Set<string>())
@@ -644,8 +675,11 @@ export function CustomizerPage() {
         if (!hairDetails[item.key]) newlyLoaded[item.key] = item.style
       })
       if (Object.keys(newlyLoaded).length) setHairDetails((current) => ({ ...current, ...newlyLoaded }))
-      const url = await renderArtworkWithHair(artwork, source, styles.front ?? null, styles.back ?? null, 720)
-      if (!cancelled) setSelectedArtworkUrl(url)
+      const [url, frontUrl] = await Promise.all([
+        renderArtworkWithHair(artwork, source, styles.back ?? null, 720),
+        renderFrontHairOverlay(artwork, source, styles.front ?? null, 720)
+      ])
+      if (!cancelled) { setSelectedArtworkUrl(url); setSelectedFrontHairUrl(frontUrl) }
     })().catch((reason: unknown) => {
       if (!cancelled) setCatalogError(reason instanceof Error ? reason.message : 'Não foi possível montar o cabelo do personagem.')
     })
@@ -1095,6 +1129,7 @@ export function CustomizerPage() {
               {selectedWardrobeUrl && selectedArtworkUrl && <img className={'customizer-wardrobe-overlay' + (wardrobePreviewDraggable ? ' draggable' : '')} src={selectedWardrobeUrl} alt="Roupas do personagem" draggable={false} onPointerDown={wardrobePreviewDraggable ? beginWardrobeDrag : undefined} onPointerMove={wardrobePreviewDraggable ? moveWardrobeDrag : undefined} onPointerUp={wardrobePreviewDraggable ? finishWardrobeDrag : undefined} onPointerCancel={wardrobePreviewDraggable ? finishWardrobeDrag : undefined} />}
               {selectedFaceUrl && selectedArtworkUrl && <img className="customizer-face-overlay" src={selectedFaceUrl} alt="Rosto do personagem" draggable={false} />}
               {activeModule === 'Roupas' && clothingSection === 'Customizar' && wardrobeHighlightVisible && selectedWardrobeHighlightUrl && <img className="customizer-wardrobe-selection-halo" src={selectedWardrobeHighlightUrl} alt="Peça de roupa selecionada" draggable={false} />}
+              {selectedFrontHairUrl && selectedArtworkUrl && <img className="customizer-front-hair-overlay" src={selectedFrontHairUrl} alt="Cabelo frontal" draggable={false} />}
                 {previewLoading && <div className="customizer-preview-loading">Carregando prévia…</div>}
                 <div className="stage-caption"><span>{String(selectedCatalogModelSlot ?? 1).padStart(2, '0')}</span><i />{selectedArtworkLabel || selectedCharacter?.name || 'Personagem'}<small>{selectedArtworkUrl ? 'DO CATÁLOGO' : 'PERSONAGEM ATIVO'}</small></div>
               </div>
@@ -1355,6 +1390,7 @@ export function CustomizerPage() {
                 {selectedWardrobeUrl && selectedArtworkUrl && <img className={'customizer-wardrobe-overlay' + (wardrobePreviewDraggable ? ' draggable' : '')} src={selectedWardrobeUrl} alt="Roupas do personagem" draggable={false} onPointerDown={wardrobePreviewDraggable ? beginWardrobeDrag : undefined} onPointerMove={wardrobePreviewDraggable ? moveWardrobeDrag : undefined} onPointerUp={wardrobePreviewDraggable ? finishWardrobeDrag : undefined} onPointerCancel={wardrobePreviewDraggable ? finishWardrobeDrag : undefined} />}
                 {selectedFaceUrl && selectedArtworkUrl && <img className="customizer-face-overlay" src={selectedFaceUrl} alt="Rosto do personagem" draggable={false} />}
                 {activeModule === 'Roupas' && clothingSection === 'Customizar' && wardrobeHighlightVisible && selectedWardrobeHighlightUrl && <img className="customizer-wardrobe-selection-halo" src={selectedWardrobeHighlightUrl} alt="Peça de roupa selecionada" draggable={false} />}
+                {selectedFrontHairUrl && selectedArtworkUrl && <img className="customizer-front-hair-overlay" src={selectedFrontHairUrl} alt="Cabelo frontal" draggable={false} />}
               {previewLoading && <div className="customizer-preview-loading">Carregando prévia…</div>}
               <div className="stage-caption"><span>{String(selectedCatalogModelSlot ?? 1).padStart(2, '0')}</span><i />{selectedArtworkLabel || selectedCharacter?.name || 'Personagem'}<small>{selectedArtworkUrl ? 'MODELO DE REFERÊNCIA' : 'SEM MODELO'}</small></div>
             </div>

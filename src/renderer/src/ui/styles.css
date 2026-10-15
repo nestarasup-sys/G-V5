@@ -96,6 +96,7 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .customizer-wardrobe-overlay.draggable:active { cursor:grabbing; }
 .customizer-wardrobe-selection-halo { position:absolute;inset:72px 68px 58px;z-index:3;width:calc(100% - 136px);height:calc(100% - 130px);object-fit:contain;pointer-events:none;user-select:none;-webkit-user-drag:none;filter:drop-shadow(0 0 2px #fff) drop-shadow(0 0 5px #ed6c9f) drop-shadow(0 0 9px #eb5d98); }
 .customizer-face-overlay { position:absolute;inset:72px 68px 58px;z-index:3;width:calc(100% - 136px);height:calc(100% - 130px);object-fit:contain;pointer-events:none;user-select:none;-webkit-user-drag:none; }
+.customizer-front-hair-overlay { position:absolute;inset:72px 68px 58px;z-index:4;width:calc(100% - 136px);height:calc(100% - 130px);object-fit:contain;pointer-events:none;user-select:none;-webkit-user-drag:none; }
 .customizer-face-catalog { min-height:0;flex:1;display:flex;flex-direction:column;gap:10px;overflow:auto; }
 .customizer-face-sets { display:grid;gap:7px; }
 .customizer-face-sets>header { display:flex;align-items:center;justify-content:space-between;gap:8px;padding-bottom:5px;border-bottom:1px solid #f0ebef; }
