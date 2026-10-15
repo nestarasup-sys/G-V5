@@ -468,6 +468,8 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .animator-part.selected { filter:drop-shadow(0 0 2px #e15683) drop-shadow(0 0 4px #e156835e); }
 .animator-part.can-transform { cursor:grab; }
 .animator-part.can-transform:active { cursor:grabbing; }
+.animator-stage.move-tool-active .animator-part { cursor:grab; }
+.animator-stage.move-tool-active .animator-part:active { cursor:grabbing; }
 .animator-preview-footer { flex:0 0 27px;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:0 9px;border-top:1px solid #eee9ed;color:#9b929c;font-size:10px; }
 .animator-side-panel { overflow:hidden; }
 .animator-library-panel { flex:0 0 auto;padding:8px;border-bottom:1px solid #f0ebef; }
