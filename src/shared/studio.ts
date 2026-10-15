@@ -8,8 +8,10 @@ export type StudioAsset = {
   dataUrl: string
 }
 
-/** Studio-local adjustment shared by both eyes and all their expression frames. */
+/** Studio-local adjustment shared by a facial category and its variant frames. */
 export type StudioFaceTransform = { x: number; y: number; width: number; height: number; rotation: number }
+export type StudioFaceTransformCategory = 'eyes' | 'eyebrows' | 'nose' | 'mouth'
+export type StudioFaceTransforms = Partial<Record<StudioFaceTransformCategory, StudioFaceTransform>>
 
 export type StudioElement = {
   id: string
@@ -20,7 +22,7 @@ export type StudioElement = {
   /** Face choices made to this actor inside this Studio only. */
   faceAppearance?: CustomizerFaceAppearance
   /** Face-piece transforms are stored on the Studio actor, never on its source character. */
-  faceTransforms?: Partial<Record<'eyes', StudioFaceTransform>>
+  faceTransforms?: StudioFaceTransforms
   text: string
   x: number
   y: number

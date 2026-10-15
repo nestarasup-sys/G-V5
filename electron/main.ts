@@ -5,7 +5,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import type { AnimatorAnimation, AnimatorAnimationAsset, AnimatorAnimationDraft, AnimatorAnimationSave, AnimatorAnimationSummary, FaceAssetSave, FaceCatalogItem, FaceCatalogItemSave, FaceCatalogItemSummary, FaceElementKind, FaceSet, FaceSetSave, FaceSetSummary, FaceSheetKind, FabricatorAssetSave, FabricatorHistoryEntry, FabricatorHistorySaveEntry, FabricatorHistorySaveState, FabricatorHistoryState, FabricatorPose, FabricatorPoseDraft, FabricatorPoseDraftSave, FabricatorPoseSave, FabricatorPoseSummary, FabricatorProject, FabricatorProjectSave, FabricatorSlotSummary, HairStyle, HairStyleAsset, HairStyleSave, HairStyleSummary, HairWorkspace, HairWorkspaceAsset, HairWorkspaceSave, ModelPart, PosePart, WardrobeAssetSave, WardrobeCategory, WardrobeSet, WardrobeSetSave, WardrobeSetSummary } from '../src/shared/fabricator'
 import type { CustomizerCharacter } from '../src/shared/customizer'
-import type { StudioAsset, StudioDocument, StudioFaceTransform } from '../src/shared/studio'
+import type { StudioAsset, StudioDocument, StudioFaceTransform, StudioFaceTransforms } from '../src/shared/studio'
 import { applyModelHeadShape } from '../src/shared/headShape'
 
 const slotCount = 10
@@ -529,14 +529,17 @@ function assertTrustedSender(event: IpcMainInvokeEvent): void {
   }
 }
 
-function isStudioFaceTransforms(value: unknown): value is Partial<Record<'eyes', StudioFaceTransform>> {
+function isStudioFaceTransforms(value: unknown): value is StudioFaceTransforms {
   if (value === undefined) return true
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false
-  const eyes = (value as { eyes?: unknown }).eyes
-  if (eyes === undefined) return true
-  if (!eyes || typeof eyes !== 'object') return false
-  const transform = eyes as Partial<StudioFaceTransform>
-  return [transform.x, transform.y, transform.width, transform.height, transform.rotation].every((number) => typeof number === 'number' && Number.isFinite(number))
+  const transforms = value as Partial<Record<keyof StudioFaceTransforms, unknown>>
+  return (['eyes', 'eyebrows', 'nose', 'mouth'] as const).every((category) => {
+    const entry = transforms[category]
+    if (entry === undefined) return true
+    if (!entry || typeof entry !== 'object') return false
+    const transform = entry as Partial<StudioFaceTransform>
+    return [transform.x, transform.y, transform.width, transform.height, transform.rotation].every((number) => typeof number === 'number' && Number.isFinite(number))
+  })
 }
 
 function isStudioDocument(value: unknown): value is StudioDocument {

@@ -3,7 +3,7 @@ import { CharacterPortrait } from '../../ui/components/CharacterPortrait'
 import { Icon, type IconName } from '../../ui/components/Icon'
 import type { FaceCatalogItem, FaceCatalogItemSummary, FaceElementKind, FaceSet, FaceSheetKind, FabricatorPose, FabricatorPoseSummary, FabricatorProject, FabricatorSlotSummary, HairStyle, HairStyleSummary, WardrobeCategory, WardrobeSet, WardrobeSetSummary } from '../../../../shared/fabricator'
 import type { CustomizerCharacter, CustomizerFaceAppearance, CustomizerWardrobeCategory, CustomizerWardrobeGroup } from '../../../../shared/customizer'
-import type { StudioFaceTransform } from '../../../../shared/studio'
+import type { StudioFaceTransforms } from '../../../../shared/studio'
 import { usePreviewBackground } from '../fabricator/usePreviewBackground'
 import { mapWardrobeComponentToPose } from '../fabricator/wardrobe/poseTransform'
 
@@ -383,7 +383,7 @@ async function renderFaceOverlay(artwork: CatalogArtwork, source: FabricatorProj
   return canvas.toDataURL('image/png')
 }
 
-async function renderFaceCatalogOverlay(artwork: CatalogArtwork, source: FabricatorProject, items: Partial<Record<FaceSheetKind, FaceCatalogItem>>, appearance: CustomizerFaceAppearance, studioEyeTransform?: StudioFaceTransform): Promise<string | null> {
+async function renderFaceCatalogOverlay(artwork: CatalogArtwork, source: FabricatorProject, items: Partial<Record<FaceSheetKind, FaceCatalogItem>>, appearance: CustomizerFaceAppearance, studioFaceTransforms?: StudioFaceTransforms): Promise<string | null> {
   const sourceHead = source.parts.find((part) => /cabe[çc]a|head/i.test(part.name))
   const targetHead = artwork.parts.find((part) => /cabe[çc]a|head/i.test(part.name))
   if (!sourceHead || !targetHead || sourceHead.width <= 0 || sourceHead.height <= 0) return null
@@ -408,19 +408,21 @@ async function renderFaceCatalogOverlay(artwork: CatalogArtwork, source: Fabrica
     const side = element.endsWith('left') ? 'left' : element.endsWith('right') ? 'right' : undefined
     const piece = item.pieces.find((candidate) => candidate.sheet === sheet && candidate.index === index && candidate.side === side)
     const transform = item.transforms[element]
+    const studioCategory = sheet === 'eyes' ? 'eyes' : sheet === 'eyebrows' ? 'eyebrows' : sheet === 'nose' ? 'nose' : 'mouth'
+    const studioTransform = studioFaceTransforms?.[studioCategory]
     if (!piece || !transform) continue
     try {
       const image = await loadCachedImage(piece.dataUrl)
-      const localX = transform.x / sourceHead.width * targetHead.width + (sheet === 'eyes' ? (studioEyeTransform?.x ?? 0) / 100 * targetHead.width : 0)
-      const localY = transform.y / sourceHead.height * targetHead.height + (sheet === 'eyes' ? (studioEyeTransform?.y ?? 0) / 100 * targetHead.height : 0)
+      const localX = transform.x / sourceHead.width * targetHead.width + (studioTransform?.x ?? 0) / 100 * targetHead.width
+      const localY = transform.y / sourceHead.height * targetHead.height + (studioTransform?.y ?? 0) / 100 * targetHead.height
       const radians = targetHead.rotation * Math.PI / 180
       const x = targetHead.x + targetHead.width / 2 + (localX - targetHead.width / 2) * Math.cos(radians) - (localY - targetHead.height / 2) * Math.sin(radians)
       const y = targetHead.y + targetHead.height / 2 + (localX - targetHead.width / 2) * Math.sin(radians) + (localY - targetHead.height / 2) * Math.cos(radians)
-      const width = piece.width * transform.scaleX / sourceHead.width * targetHead.width * (sheet === 'eyes' ? (studioEyeTransform?.width ?? 100) / 100 : 1)
-      const height = piece.height * transform.scaleY / sourceHead.height * targetHead.height * (sheet === 'eyes' ? (studioEyeTransform?.height ?? 100) / 100 : 1)
+      const width = piece.width * transform.scaleX / sourceHead.width * targetHead.width * (studioTransform?.width ?? 100) / 100
+      const height = piece.height * transform.scaleY / sourceHead.height * targetHead.height * (studioTransform?.height ?? 100) / 100
       context.save()
       context.translate(x, y)
-      context.rotate((targetHead.rotation + transform.rotation + (sheet === 'eyes' ? studioEyeTransform?.rotation ?? 0 : 0)) * Math.PI / 180)
+      context.rotate((targetHead.rotation + transform.rotation + (studioTransform?.rotation ?? 0)) * Math.PI / 180)
       context.drawImage(image, -width / 2, -height / 2, width, height)
       context.restore()
     } catch { /* Keep the rest of the face visible if one catalog asset is missing. */ }
@@ -429,7 +431,7 @@ async function renderFaceCatalogOverlay(artwork: CatalogArtwork, source: Fabrica
 }
 
 /** Render the selected Customizer character as one self-contained Studio actor image. */
-export async function renderSavedCharacter(character: CustomizerCharacter, studioEyeTransform?: StudioFaceTransform): Promise<{ dataUrl: string; width: number; height: number }> {
+export async function renderSavedCharacter(character: CustomizerCharacter, studioFaceTransforms?: StudioFaceTransforms): Promise<{ dataUrl: string; width: number; height: number }> {
   const modelSlot = character.customization.modelSlot ?? 1
   const source = await window.desktop.loadFabricatorSlot(modelSlot)
   if (!source) throw new Error(`O modelo de ${character.name} não está disponível.`)
@@ -466,7 +468,7 @@ export async function renderSavedCharacter(character: CustomizerCharacter, studi
       const entries = await Promise.all(selections.filter((entry): entry is [FaceSheetKind, string] => Boolean(entry[1])).map(async ([category, id]) => [category, await window.desktop.loadFaceCatalogItem(modelSlot, id)] as const))
       const items: Partial<Record<FaceSheetKind, FaceCatalogItem>> = {}
       for (const [category, item] of entries) if (item) items[category] = item
-      faceUrl = await renderFaceCatalogOverlay(artwork, source, items, appearance, studioEyeTransform)
+      faceUrl = await renderFaceCatalogOverlay(artwork, source, items, appearance, studioFaceTransforms)
     } else if (appearance.setId) {
       const face = await window.desktop.loadFaceSet(modelSlot, appearance.setId)
       if (face) faceUrl = await renderFaceOverlay(artwork, source, face, appearance)

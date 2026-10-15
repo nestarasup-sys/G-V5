@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import { Icon } from '../../ui/components/Icon'
 import { CharacterPortrait } from '../../ui/components/CharacterPortrait'
-import type { StudioAsset, StudioDocument, StudioElement, StudioFaceTransform } from '../../../../shared/studio'
+import type { StudioAsset, StudioDocument, StudioElement, StudioFaceTransform, StudioFaceTransformCategory, StudioFaceTransforms } from '../../../../shared/studio'
 import type { CustomizerCharacter } from '../../../../shared/customizer'
 import type { CustomizerFaceAppearance } from '../../../../shared/customizer'
 import type { FaceCatalogItem, FaceCatalogItemSummary, FaceSheetKind } from '../../../../shared/fabricator'
@@ -207,7 +207,7 @@ export function StudioPage() {
   const dragRef = useRef<DragState | null>(null)
   const undoRef = useRef<StudioSnapshot[]>([])
   const redoRef = useRef<StudioSnapshot[]>([])
-  const studioEyeTransformsRef = useRef<Record<string, StudioFaceTransform>>({})
+  const studioFaceTransformsRef = useRef<Record<string, StudioFaceTransforms>>({})
   const saveGenerationRef = useRef(0)
   const normalizedStudioIdsRef = useRef(new Set<string>())
   const nextStudioNumber = useRef(1)
@@ -219,9 +219,13 @@ export function StudioPage() {
   const selectedStudioFaceAppearance = selectedElement?.kind === 'character'
     ? selectedElement.faceAppearance ?? selectedStudioCharacter?.customization.faceAppearance
     : undefined
-  const selectedStudioEyeTransform = selectedElement?.faceTransforms?.eyes ?? defaultStudioEyeTransform
+  const selectedStudioFaceTransform = selectedElement?.faceTransforms?.[studioFaceCategory] ?? defaultStudioEyeTransform
   const selectedBackgroundAsset = activeStudio?.assets.find((asset) => asset.id === activeStudio.backgroundAssetId) ?? null
   const stageCharacters = activeStudio?.elements.filter((element) => element.kind === 'character') ?? []
+
+  useEffect(() => {
+    if (selectedElement?.kind === 'character') studioFaceTransformsRef.current[selectedElement.id] = selectedElement.faceTransforms ?? {}
+  }, [activeStudioId, selectedElementId, selectedElement?.faceTransforms])
 
   useEffect(() => {
     let cancelled = false
@@ -531,7 +535,7 @@ export function StudioPage() {
     } finally { setSavingCast(false) }
   }
 
-  const applyStudioFaceAppearance = async (appearance: CustomizerFaceAppearance, eyeTransform = selectedStudioEyeTransform, record = true) => {
+  const applyStudioFaceAppearance = async (appearance: CustomizerFaceAppearance, faceTransforms: StudioFaceTransforms = selectedElement?.faceTransforms ?? {}, record = true) => {
     if (!activeStudio || selectedElement?.kind !== 'character' || !selectedStudioCharacter || !selectedElement.assetId || studioFaceBusy) return
     setStudioFaceBusy(true)
     try {
@@ -540,14 +544,14 @@ export function StudioPage() {
         ...selectedStudioCharacter,
         customization: { ...selectedStudioCharacter.customization, faceAppearance: appearance }
       }
-      const rendered = await renderSavedCharacter(characterCopy, eyeTransform)
+      const rendered = await renderSavedCharacter(characterCopy, faceTransforms)
       const trimmed = await trimTransparentImage(rendered.dataUrl)
       const studioDataUrl = trimmed?.dataUrl ?? rendered.dataUrl
       const elementId = selectedElement.id
       const assetId = selectedElement.assetId
       const update = (studio: StudioDocument): StudioDocument => ({
         ...studio,
-        elements: studio.elements.map((element) => element.id === elementId ? { ...element, faceAppearance: appearance, faceTransforms: { ...element.faceTransforms, eyes: eyeTransform } } : element),
+        elements: studio.elements.map((element) => element.id === elementId ? { ...element, faceAppearance: appearance, faceTransforms } : element),
         assets: studio.assets.map((asset) => asset.id === assetId ? { ...asset, dataUrl: studioDataUrl, mimeType: 'image/png' } : asset),
         updatedAt: new Date().toISOString()
       })
@@ -590,17 +594,23 @@ export function StudioPage() {
     void applyStudioFaceAppearance({ ...selectedStudioFaceAppearance, ...patch })
   }
 
-  const updateStudioEyeTransform = (patch: Partial<StudioFaceTransform>, record = false) => {
+  const updateStudioFaceTransform = (category: StudioFaceTransformCategory, patch: Partial<StudioFaceTransform>, record = false) => {
     if (!selectedElement || selectedElement.kind !== 'character') return
-    const eyes = { ...(studioEyeTransformsRef.current[selectedElement.id] ?? selectedStudioEyeTransform), ...patch }
-    studioEyeTransformsRef.current[selectedElement.id] = eyes
-    updateElement(selectedElement.id, { faceTransforms: { ...selectedElement.faceTransforms, eyes } }, record)
+    const saved = studioFaceTransformsRef.current[selectedElement.id] ?? selectedElement.faceTransforms ?? {}
+    const transform = { ...(saved[category] ?? defaultStudioEyeTransform), ...patch }
+    const next = { ...saved, [category]: transform }
+    studioFaceTransformsRef.current[selectedElement.id] = next
+    updateElement(selectedElement.id, { faceTransforms: next }, record)
   }
 
-  const finishStudioEyeTransform = () => {
+  const finishStudioFaceTransform = (category: StudioFaceTransformCategory) => {
     if (!selectedElement || selectedElement.kind !== 'character' || !selectedStudioFaceAppearance) return
-    const eyeTransform = studioEyeTransformsRef.current[selectedElement.id] ?? selectedStudioEyeTransform
-    void applyStudioFaceAppearance(selectedStudioFaceAppearance, eyeTransform, false)
+    const faceTransforms = {
+      ...(studioFaceTransformsRef.current[selectedElement.id] ?? selectedElement.faceTransforms ?? {}),
+      [category]: (studioFaceTransformsRef.current[selectedElement.id] ?? selectedElement.faceTransforms ?? {})[category] ?? defaultStudioEyeTransform
+    }
+    studioFaceTransformsRef.current[selectedElement.id] = faceTransforms
+    void applyStudioFaceAppearance(selectedStudioFaceAppearance, faceTransforms, false)
   }
 
   const removeStageCharacter = (element: StudioElement) => {
@@ -733,8 +743,8 @@ export function StudioPage() {
     transform: `translate(-50%, -50%) rotate(${rotation}deg) scaleX(${flipX ? -1 : 1})`
   })
 
-  const control = (label: string, value: number, onChange: (value: number, record?: boolean) => void, min: number, max: number, suffix = '%', onFinish?: () => void) => (
-    <StudioNumericControl key={label} label={label} value={value} onChange={onChange} onStart={recordHistory} onFinish={onFinish} min={min} max={max} suffix={suffix} />
+  const control = (label: string, value: number, onChange: (value: number, record?: boolean) => void, min: number, max: number, suffix = '%', onFinish?: () => void, disabled = false) => (
+    <StudioNumericControl key={label} label={label} value={value} onChange={onChange} onStart={recordHistory} onFinish={onFinish} disabled={disabled} min={min} max={max} suffix={suffix} />
   )
 
   const propertyPanel = (): ReactNode => {
@@ -785,12 +795,7 @@ export function StudioPage() {
             : selectedStudioFaceAppearance?.mouthClosedCatalogId
     const activeItem = selectedItemId ? studioFaceDetails[`${selectedStudioCharacterModelSlot}:${selectedItemId}`] : null
     const catalogItems = studioFaceItems.filter((item) => item.category === sheetKind)
-    const samplePieces = (item: FaceCatalogItem, index = 0) => item.pieces.filter((piece) => piece.index === index && (sheetKind !== 'eyes' && sheetKind !== 'eyebrows' || piece.side === 'left' || piece.side === 'right'))
     const renderPair = (pieces: FaceCatalogItem['pieces']) => pieces.slice(0, 2).map((piece) => <img key={piece.id} src={piece.dataUrl} alt="" />)
-    const previewIndex = sheetKind === 'eyes' ? selectedStudioFaceAppearance?.eyeState ?? 0
-      : sheetKind === 'nose' ? selectedStudioFaceAppearance?.noseIndex ?? activeItem?.selectedNose ?? 0
-        : sheetKind.startsWith('mouth') ? selectedStudioFaceAppearance?.expressionIndex ?? activeItem?.selectedExpression ?? 0 : 0
-    const previewPieces = activeItem ? activeItem.pieces.filter((piece) => piece.index === previewIndex && (sheetKind !== 'eyes' && sheetKind !== 'eyebrows' || piece.side === 'left' || piece.side === 'right')) : []
     const categoryButtons = [
       { id: 'eyes', label: 'Olhos' }, { id: 'eyebrows', label: 'Sobrancelhas' },
       { id: 'nose', label: 'Nariz' }, { id: 'mouth', label: 'Boca' }
@@ -800,17 +805,8 @@ export function StudioPage() {
         {categoryButtons.map((category) => <button key={category.id} className={studioFaceCategory === category.id ? 'active' : ''} onClick={() => setStudioFaceCategory(category.id)} type="button">{category.label}</button>)}
       </div>
       {studioFaceCategory === 'mouth' && <div className="studio-custom-mouth-tabs"><button className={!selectedStudioFaceAppearance?.mouthOpen ? 'active' : ''} onClick={() => updateStudioFaceVariant({ mouthOpen: false })} disabled={!selectedStudioFaceAppearance || studioFaceBusy} type="button">Fechada</button><button className={selectedStudioFaceAppearance?.mouthOpen ? 'active' : ''} onClick={() => updateStudioFaceVariant({ mouthOpen: true })} disabled={!selectedStudioFaceAppearance || studioFaceBusy} type="button">Aberta</button></div>}
-      {studioFaceCategory === 'eyes' && <label className="studio-custom-eye-sheet-select"><span>Folha de olhos</span><select value={selectedItemId ?? ''} onChange={(event) => { const summary = catalogItems.find((item) => item.id === event.target.value); if (summary) void chooseStudioFaceSheet(summary) }} disabled={studioFaceBusy || studioFaceLoading}><option value="">Selecione uma folha</option>{catalogItems.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>}
-      {studioFaceLoading ? <p className="studio-custom-hint">Carregando catálogo facial…</p> : studioFaceCategory !== 'eyes' && <div className="studio-custom-face-sheets">
-        {catalogItems.map((summary) => {
-          const item = studioFaceDetails[`${summary.modelSlot}:${summary.id}`]
-          const selected = selectedItemId === summary.id
-          return <button className={`studio-custom-face-sheet${selected ? ' selected' : ''}`} key={summary.id} onClick={() => void chooseStudioFaceSheet(summary)} disabled={studioFaceBusy} aria-pressed={selected} title={summary.name} type="button">
-            <span>{item ? renderPair(samplePieces(item)) : <Icon name="face" />}</span><b>{summary.name}</b>
-          </button>
-        })}
-        {!catalogItems.length && <p className="studio-custom-hint">Nenhuma peça salva nesta categoria para o Modelo {String(selectedStudioCharacterModelSlot).padStart(2, '0')}.</p>}
-      </div>}
+      <label className="studio-custom-eye-sheet-select"><span>{studioFaceCategory === 'eyes' ? 'Folha de olhos' : studioFaceCategory === 'eyebrows' ? 'Folha de sobrancelhas' : studioFaceCategory === 'nose' ? 'Folha de nariz' : 'Folha de boca'}</span><select value={selectedItemId ?? ''} onChange={(event) => { const summary = catalogItems.find((item) => item.id === event.target.value); if (summary) void chooseStudioFaceSheet(summary) }} disabled={studioFaceBusy || studioFaceLoading}><option value="">Selecione uma folha</option>{catalogItems.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+      {studioFaceLoading && <p className="studio-custom-hint">Carregando catálogo facial…</p>}
       {studioFaceCategory === 'eyebrows' && selectedStudioFaceAppearance?.eyebrowCatalogId && <button className={`studio-custom-toggle${selectedStudioFaceAppearance.eyebrows ? ' active' : ''}`} onClick={() => updateStudioFaceVariant({ eyebrows: !selectedStudioFaceAppearance.eyebrows })} disabled={studioFaceBusy} type="button">{selectedStudioFaceAppearance.eyebrows ? 'Ocultar sobrancelhas' : 'Mostrar sobrancelhas'}</button>}
       {sheetKind === 'eyes' && <>
         {activeItem ? <div className="studio-custom-face-variants">{[0, 1, 2].map((index) => {
@@ -818,24 +814,18 @@ export function StudioPage() {
           const labels = ['Direita', 'Esquerda', 'Fechados']
           return <button className={(selectedStudioFaceAppearance?.eyeState === index ? 'selected' : '')} key={index} onClick={() => updateStudioFaceVariant({ eyeState: index as 0 | 1 | 2 })} disabled={studioFaceBusy} type="button"><span>{renderPair(pieces)}</span><b>{labels[index]}</b></button>
         })}</div> : <p className="studio-custom-hint">Escolha uma folha de olhos para ver as três variantes.</p>}
-        <div className="studio-controls-grid studio-custom-eye-controls">
-          {control('X', selectedStudioEyeTransform.x, (value, record) => updateStudioEyeTransform({ x: value }, record), -100, 100, '%', finishStudioEyeTransform)}
-          {control('Y', selectedStudioEyeTransform.y, (value, record) => updateStudioEyeTransform({ y: value }, record), -100, 100, '%', finishStudioEyeTransform)}
-          {control('Largura', selectedStudioEyeTransform.width, (value, record) => updateStudioEyeTransform({ width: value }, record), 1, 300, '%', finishStudioEyeTransform)}
-          {control('Altura', selectedStudioEyeTransform.height, (value, record) => updateStudioEyeTransform({ height: value }, record), 1, 300, '%', finishStudioEyeTransform)}
-          {control('Rotação', selectedStudioEyeTransform.rotation, (value, record) => updateStudioEyeTransform({ rotation: value }, record), -180, 180, '°', finishStudioEyeTransform)}
-        </div>
       </>}
       {activeItem && <>
         {sheetKind === 'nose' && <div className="studio-custom-face-variants studio-custom-face-grid">{activeItem.pieces.map((piece) => <button className={(selectedStudioFaceAppearance?.noseIndex === piece.index ? 'selected' : '')} key={piece.id} onClick={() => updateStudioFaceVariant({ noseIndex: piece.index })} disabled={studioFaceBusy} type="button"><span><img src={piece.dataUrl} alt="" /></span><b>{piece.index + 1}</b></button>)}</div>}
         {sheetKind.startsWith('mouth') && <div className="studio-custom-face-variants studio-custom-face-grid">{activeItem.pieces.map((piece) => <button className={(selectedStudioFaceAppearance?.expressionIndex === piece.index ? 'selected' : '')} key={piece.id} onClick={() => updateStudioFaceVariant({ expressionIndex: piece.index })} disabled={studioFaceBusy} type="button"><span><img src={piece.dataUrl} alt="" /></span><b>{String(piece.index + 1).padStart(2, '0')}</b></button>)}</div>}
-        {sheetKind !== 'eyes' && <section className="studio-custom-face-preview" aria-label="Prévia ampliada da peça selecionada">
-          <strong>Prévia ampliada</strong>
-          <div className={`studio-custom-face-preview-art${sheetKind === 'eyebrows' ? ' pair' : ''}`}>
-            {previewPieces.length ? renderPair(previewPieces) : <span>Selecione uma variante</span>}
-          </div>
-        </section>}
       </>}
+      <div className="studio-controls-grid studio-custom-eye-controls">
+        {control('X', selectedStudioFaceTransform.x, (value, record) => updateStudioFaceTransform(studioFaceCategory, { x: value }, record), -100, 100, '%', () => finishStudioFaceTransform(studioFaceCategory), studioFaceBusy)}
+        {control('Y', selectedStudioFaceTransform.y, (value, record) => updateStudioFaceTransform(studioFaceCategory, { y: value }, record), -100, 100, '%', () => finishStudioFaceTransform(studioFaceCategory), studioFaceBusy)}
+        {control('Largura', selectedStudioFaceTransform.width, (value, record) => updateStudioFaceTransform(studioFaceCategory, { width: value }, record), 1, 300, '%', () => finishStudioFaceTransform(studioFaceCategory), studioFaceBusy)}
+        {control('Altura', selectedStudioFaceTransform.height, (value, record) => updateStudioFaceTransform(studioFaceCategory, { height: value }, record), 1, 300, '%', () => finishStudioFaceTransform(studioFaceCategory), studioFaceBusy)}
+        {control('Rotação', selectedStudioFaceTransform.rotation, (value, record) => updateStudioFaceTransform(studioFaceCategory, { rotation: value }, record), -180, 180, '°', () => finishStudioFaceTransform(studioFaceCategory), studioFaceBusy)}
+      </div>
       {studioFaceBusy && <p className="studio-custom-hint" role="status">Atualizando personagem…</p>}
     </div>
   }
@@ -951,12 +941,13 @@ export function StudioPage() {
   )
 }
 
-function StudioNumericControl({ label, value, onChange, onStart, onFinish, min, max, suffix }: {
+function StudioNumericControl({ label, value, onChange, onStart, onFinish, disabled, min, max, suffix }: {
   label: string
   value: number
   onChange: (value: number, record?: boolean) => void
   onStart: () => void
   onFinish?: () => void
+  disabled: boolean
   min: number
   max: number
   suffix: string
@@ -986,6 +977,7 @@ function StudioNumericControl({ label, value, onChange, onStart, onFinish, min, 
       min={min}
       max={max}
       step="0.1"
+      disabled={disabled}
       onChange={(event) => setDraft(event.target.value)}
       onBlur={commit}
       onKeyDown={(event) => {
@@ -1002,6 +994,7 @@ function StudioNumericControl({ label, value, onChange, onStart, onFinish, min, 
       max={max}
       step="0.1"
       value={Math.min(max, Math.max(min, value))}
+      disabled={disabled}
       onPointerDown={onStart}
       onPointerUp={() => onFinish?.()}
       onPointerCancel={() => onFinish?.()}
