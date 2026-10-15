@@ -2,7 +2,7 @@ import { NavLink } from 'react-router'
 import { Icon } from './Icon'
 
 const sections = [
-  { label: 'Estúdio', path: '/estudio', icon: 'camera' },
+  { label: 'Studio', path: '/estudio', icon: 'camera' },
   { label: 'Customizar', path: '/customizar', icon: 'bow' },
   { label: 'Opções', path: '/opcoes', icon: 'settings' },
   { label: 'Fabricador Dev', path: '/fabricador-dev', icon: 'box' }
