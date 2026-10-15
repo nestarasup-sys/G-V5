@@ -259,7 +259,7 @@ export async function renderArtwork(artwork: CatalogArtwork, maxSize: number, sk
     }
   }
   if (right < left || bottom < top) return canvas.toDataURL('image/png')
-  const margin = Math.max(2, Math.ceil(Math.max(right - left + 1, bottom - top + 1) * 0.03))
+  const margin = 0
   const trimmed = document.createElement('canvas')
   trimmed.width = right - left + 1 + margin * 2
   trimmed.height = bottom - top + 1 + margin * 2
@@ -817,14 +817,15 @@ export function CustomizerPage() {
     void (async () => {
       for (const pose of modelPoses) {
         const key = `${pose.sourceModelSlot}:${pose.slot}`
-        if (thumbnailCache.current.has(`pose:${key}`)) continue
+        const cacheKey = `pose-tight-v2:${key}:${pose.updatedAt}`
+        if (thumbnailCache.current.has(cacheKey)) continue
         try {
           const artwork: FabricatorPose | null = await window.desktop.loadFabricatorPose(pose.sourceModelSlot, pose.slot)
           if (!artwork) continue
           const thumbnail = await renderArtwork(artwork, 420, undefined, true)
           if (cancelled) return
           if (thumbnail) {
-            thumbnailCache.current.add(`pose:${key}`)
+            thumbnailCache.current.add(cacheKey)
             setPoseThumbnails((current) => ({ ...current, [key]: thumbnail }))
           }
         } catch (reason) {
