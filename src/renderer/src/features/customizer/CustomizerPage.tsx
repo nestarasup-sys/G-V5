@@ -1416,7 +1416,7 @@ export function CustomizerPage() {
               </div>
             </div>
           </section>
-          <section className="customizer-models-sidebar" aria-label="Opções e catálogo de personalização">
+          <section className="customizer-models-sidebar" aria-label="Opções e catálogo de personalização" hidden>
             <div className="customizer-models-options-grid">
               {modules.map((module, index) => (
                 <button
