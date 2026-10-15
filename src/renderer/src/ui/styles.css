@@ -181,12 +181,12 @@ button:focus-visible, input:focus-visible { outline: 3px solid #ed8caf; outline-
 .studio-inspector-right { right:0;border-radius:0 5px 5px 0; }
 .studio-inspector-left { left:0;border-radius:5px 0 0 5px; }
 .studio-inspector-tabs { height:40px;flex:0 0 40px;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) 22px;align-items:center;gap:4px;padding:4px;border-bottom:1px solid #eee4eb;background:#fff; }
-.studio-inspector-tabs>button:not(.studio-inspector-close) { border:0;border-radius:6px;background:#111;color:#fff;font-size:10px;font-weight:700;cursor:pointer; }
+.studio-inspector-tabs>button:not(.studio-inspector-close) { width:100%;height:100%;min-height:0;border:0;border-radius:6px;background:#111;color:#fff;font-size:10px;font-weight:700;cursor:pointer; }
 .studio-inspector-tabs>button:not(.studio-inspector-close).active { background:#000;color:#fff; }
 .studio-inspector-presets { min-height:32px;flex:0 0 32px;display:flex;align-items:center;justify-content:center;gap:6px;margin:7px 10px 0;border:1px solid #ead8e2;border-radius:7px;background:#fff;color:#8b6477;font-size:10px;font-weight:700;cursor:pointer; }
 .studio-inspector-presets svg { width:13px;height:13px; }
 .studio-inspector-presets:hover,.studio-inspector-presets.active { border-color:#e879a3;background:#fff0f6;color:#ae4168; }
-.studio-inspector-tabs .studio-inspector-close { width:22px;height:26px;min-height:26px;display:grid;place-items:center;margin:0;padding:0;border:1px solid #d83d50;border-radius:5px;background:#d83d50;color:#fff;font-size:16px;font-weight:800;line-height:1;cursor:pointer; }
+.studio-inspector-tabs .studio-inspector-close { width:100%;height:100%;min-height:0;display:grid;place-items:center;margin:0;padding:0;border:1px solid #d83d50;border-radius:5px;background:#d83d50;color:#fff;font-size:16px;font-weight:800;line-height:1;cursor:pointer; }
 .studio-inspector-tabs .studio-inspector-close:hover { border-color:#bd263b;background:#bd263b;color:#fff; }
 .studio-inspector-content { min-height:0;overflow:auto;padding:10px; }
 .studio-inspector-content .studio-side-content { gap:8px; }
