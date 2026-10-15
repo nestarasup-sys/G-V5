@@ -1,6 +1,6 @@
 export {}
 
-type Request = { dataUrl: string }
+type Request = { dataUrl: string; tolerance: number; mode: 'auto' | 'green' | 'checker' }
 type HairCut = { png: ArrayBuffer; width: number; height: number }
 type Response = { type: 'complete'; front: HairCut; back: HairCut } | { type: 'error'; message: string }
 const scope = self as unknown as { onmessage: ((event: MessageEvent<Request>) => void) | null; postMessage: (message: Response, transfer?: Transferable[]) => void }
@@ -16,7 +16,7 @@ function nearColor(data: Uint8ClampedArray, offset: number, color: Color, tolera
   return Math.hypot(data[offset] - color[0], data[offset + 1] - color[1], data[offset + 2] - color[2]) <= tolerance
 }
 
-function processHalf(source: ImageData, top: number, height: number): ImageData {
+function processHalf(source: ImageData, top: number, height: number, tolerance: number, mode: Request['mode']): ImageData {
   const { width } = source
   const image = new ImageData(width, height)
   for (let y = 0; y < height; y++) image.data.set(source.data.subarray(((top + y) * width) * 4, ((top + y) * width + width) * 4), y * width * 4)
@@ -36,13 +36,13 @@ function processHalf(source: ImageData, top: number, height: number): ImageData 
   for (let y = 0; y < height; y += stride) { sample(0, y); sample(width - 1, y) }
 
   let green: Color | null = null
-  if (greenSamples.length >= 4) green = [0, 1, 2].map((channel) => median(greenSamples.map((color) => color[channel]))) as Color
+  if (mode !== 'checker' && greenSamples.length >= 4) green = [0, 1, 2].map((channel) => median(greenSamples.map((color) => color[channel]))) as Color
 
   // A common “transparent” checkerboard is actually baked into exported images.
   // Cluster neutral edge colors into its light and dark tiles, instead of keying
   // only the most frequent one; only boundary-connected pixels are removed.
   let checker: Color[] = []
-  if (!green && neutralSamples.length >= 6) {
+  if (!green && mode !== 'green' && neutralSamples.length >= 6) {
     const luminance = neutralSamples.map(([r, g, b]) => (r + g + b) / 3)
     const low = median(luminance.filter((value) => value <= median([...luminance])))
     const high = median(luminance.filter((value) => value > median([...luminance])))
@@ -62,9 +62,9 @@ function processHalf(source: ImageData, top: number, height: number): ImageData 
     if (data[offset + 3] < 12) { eligible[index] = 1; continue }
     const red = data[offset], g = data[offset + 1], blue = data[offset + 2]
     const greenDistance = green ? Math.hypot(red - green[0], g - green[1], blue - green[2]) : Infinity
-    const greenKey = Boolean(green && g > red * 1.08 && g > blue * 1.04 && g - Math.max(red, blue) > 8 && greenDistance < 150)
+    const greenKey = tolerance > 0 && Boolean(green && g > red * 1.08 && g > blue * 1.04 && g - Math.max(red, blue) > 8 && greenDistance < 12 + tolerance * 1.65)
     const gray = Math.max(red, g, blue) - Math.min(red, g, blue) < 32
-    const checkerKey = checker.length === 2 && gray && checker.some((color) => nearColor(data, offset, color, 36))
+    const checkerKey = tolerance > 0 && checker.length === 2 && gray && checker.some((color) => nearColor(data, offset, color, 5 + tolerance * .48))
     eligible[index] = greenKey || checkerKey ? 1 : 0
   }
   let read = 0, write = 0
@@ -82,7 +82,7 @@ function processHalf(source: ImageData, top: number, height: number): ImageData 
 
   // Soften only the one-pixel fringe around keyed green. This removes the green
   // outline while preserving opaque dark strokes and hair details.
-  if (green) for (let i = 0; i < data.length; i += 4) {
+  if (green && tolerance > 0) for (let i = 0; i < data.length; i += 4) {
     if (data[i + 3] === 0) continue
     const red = data[i], g = data[i + 1], blue = data[i + 2]
     if (g > red * 1.08 && g > blue * 1.04 && g - Math.max(red, blue) > 5) {
@@ -121,8 +121,10 @@ scope.onmessage = async ({ data }: MessageEvent<Request>) => {
     context.drawImage(bitmap, 0, 0)
     const source = context.getImageData(0, 0, bitmap.width, bitmap.height)
     const upperHeight = Math.floor(bitmap.height / 2)
-    const front = await crop(processHalf(source, 0, upperHeight))
-    const back = await crop(processHalf(source, upperHeight, bitmap.height - upperHeight))
+    const tolerance = Math.max(0, Math.min(100, data.tolerance))
+    const mode = ['auto', 'green', 'checker'].includes(data.mode) ? data.mode : 'auto'
+    const front = await crop(processHalf(source, 0, upperHeight, tolerance, mode))
+    const back = await crop(processHalf(source, upperHeight, bitmap.height - upperHeight, tolerance, mode))
     scope.postMessage({ type: 'complete', front, back }, [front.png, back.png])
   } catch (error) {
     scope.postMessage({ type: 'error', message: error instanceof Error ? error.message : 'Falha ao remover o fundo e separar a folha de cabelo.' })

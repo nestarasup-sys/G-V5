@@ -192,6 +192,9 @@ function validHairWorkspace(modelSlot: number, workspace: HairWorkspaceSave): bo
       || Math.abs(transform.x) > 100_000 || Math.abs(transform.y) > 100_000 || transform.scaleX <= 0 || transform.scaleY <= 0 || transform.scaleX > 20 || transform.scaleY > 20
       || (transform.flipX !== undefined && typeof transform.flipX !== 'boolean')) return false
   }
+  if (workspace.chromaTolerance !== undefined && (!Number.isFinite(workspace.chromaTolerance) || workspace.chromaTolerance < 0 || workspace.chromaTolerance > 100)) return false
+  if (workspace.chromaMode !== undefined && !['auto', 'green', 'checker'].includes(workspace.chromaMode)) return false
+  if (workspace.sourceImageSaved !== undefined && typeof workspace.sourceImageSaved !== 'boolean') return false
   return typeof workspace.updatedAt === 'string'
 }
 
@@ -200,7 +203,8 @@ async function writeHairWorkspace(modelSlot: number, workspace: HairWorkspaceSav
   const folder = hairModelPath(modelSlot)
   const images = join(folder, 'images')
   await mkdir(images, { recursive: true })
-  const expected = new Set((['front', 'back'] as const).filter((side) => workspace[side] !== null))
+  const expected = new Set<string>((['front', 'back'] as const).filter((side) => workspace[side] !== null))
+  if (workspace.sourceImageSaved) expected.add('source')
   if (assets.some((asset) => !expected.has(asset.id)) || new Set(assets.map((asset) => asset.id)).size !== assets.length) throw new Error('Imagens de cabelo inválidas.')
   for (const asset of assets) await writeFile(join(images, `${asset.id}.png`), dataUrlBuffer(asset.dataUrl))
   for (const side of expected) {
@@ -209,7 +213,7 @@ async function writeHairWorkspace(modelSlot: number, workspace: HairWorkspaceSav
       throw new Error(`Imagem de cabelo ausente: ${side}.`)
     }
   }
-  for (const side of ['front', 'back'] as const) if (!expected.has(side)) await unlink(join(images, `${side}.png`)).catch((reason: NodeJS.ErrnoException) => { if (reason.code !== 'ENOENT') throw reason })
+  for (const side of ['front', 'back', 'source'] as const) if (!expected.has(side)) await unlink(join(images, `${side}.png`)).catch((reason: NodeJS.ErrnoException) => { if (reason.code !== 'ENOENT') throw reason })
   const temporary = join(folder, 'hair.json.tmp')
   await writeFile(temporary, JSON.stringify(workspace), 'utf8')
   await rename(temporary, join(folder, 'hair.json'))
@@ -224,7 +228,12 @@ async function readHairWorkspace(modelSlot: number): Promise<HairWorkspace | nul
     const loadPart = async (side: 'front' | 'back') => saved[side]
       ? { ...saved[side]!, dataUrl: `data:image/png;base64,${(await readFile(join(folder, 'images', `${side}.png`))).toString('base64')}` }
       : null
-    return { ...saved, front: await loadPart('front'), back: await loadPart('back') }
+    let sourceImageDataUrl: string | undefined
+    if (saved.sourceImageSaved) {
+      try { sourceImageDataUrl = `data:image/png;base64,${(await readFile(join(folder, 'images', 'source.png'))).toString('base64')}` }
+      catch (reason) { if ((reason as NodeJS.ErrnoException).code !== 'ENOENT') throw reason }
+    }
+    return { ...saved, front: await loadPart('front'), back: await loadPart('back'), ...(sourceImageDataUrl ? { sourceImageDataUrl } : {}) }
   } catch (reason) {
     if ((reason as NodeJS.ErrnoException).code === 'ENOENT') return null
     throw reason

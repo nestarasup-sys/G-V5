@@ -156,13 +156,17 @@ export type HairWorkspace = {
   front: { dataUrl: string; width: number; height: number } | null
   back: { dataUrl: string; width: number; height: number } | null
   transforms: { front: HairTransform; back: HairTransform }
+  sourceImageDataUrl?: string
+  sourceImageSaved?: boolean
+  chromaTolerance?: number
+  chromaMode?: 'auto' | 'green' | 'checker'
   updatedAt: string
 }
-export type HairWorkspaceSave = Omit<HairWorkspace, 'front' | 'back'> & {
+export type HairWorkspaceSave = Omit<HairWorkspace, 'front' | 'back' | 'sourceImageDataUrl'> & {
   front: Omit<NonNullable<HairWorkspace['front']>, 'dataUrl'> | null
   back: Omit<NonNullable<HairWorkspace['back']>, 'dataUrl'> | null
 }
-export type HairWorkspaceAsset = { id: 'front' | 'back'; dataUrl: string }
+export type HairWorkspaceAsset = { id: 'front' | 'back' | 'source'; dataUrl: string }
 export type HairStyle = {
   schemaVersion: 1
   id: string
