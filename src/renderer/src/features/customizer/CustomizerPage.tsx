@@ -585,6 +585,8 @@ export function CustomizerPage() {
   const [catalogError, setCatalogError] = useState('')
   const [selectedCatalogModelSlot, setSelectedCatalogModelSlot] = useState<number | null>(null)
   const [selectedCatalogPoseSlot, setSelectedCatalogPoseSlot] = useState<number | null>(null)
+  const [selectedPosePreviewUrl, setSelectedPosePreviewUrl] = useState<string | null>(null)
+  const [posePreviewStatus, setPosePreviewStatus] = useState<'loading' | 'ready' | 'unavailable'>('unavailable')
   const [modelThumbnails, setModelThumbnails] = useState<Record<number, string>>({})
   const [poseThumbnails, setPoseThumbnails] = useState<Record<string, string>>({})
   const [clothingSection, setClothingSection] = useState<'Customizar' | 'Superior' | 'Inferior'>('Superior')
@@ -808,6 +810,22 @@ export function CustomizerPage() {
     })()
     return () => { cancelled = true }
   }, [activeModule, catalogLoading, catalogPoses, selectedCatalogModelSlot])
+
+  useEffect(() => {
+    if (selectedCustomizerTopTab !== 'modelos' || previewLoading || !selectedArtworkProject) {
+      setSelectedPosePreviewUrl(null)
+      setPosePreviewStatus(previewLoading ? 'loading' : 'unavailable')
+      return
+    }
+    let cancelled = false
+    setPosePreviewStatus('loading')
+    void renderArtwork(selectedArtworkProject, 420).then((url) => {
+      if (!cancelled) { setSelectedPosePreviewUrl(url); setPosePreviewStatus(url ? 'ready' : 'unavailable') }
+    }).catch(() => {
+      if (!cancelled) { setSelectedPosePreviewUrl(null); setPosePreviewStatus('unavailable') }
+    })
+    return () => { cancelled = true }
+  }, [selectedCustomizerTopTab, previewLoading, selectedArtworkProject])
 
   useEffect(() => {
     if (activeModule !== 'Roupas' || selectedCatalogModelSlot === null) return
@@ -1365,7 +1383,16 @@ export function CustomizerPage() {
   }
 
   const availableModels = catalogModels.filter((model): model is NonNullable<typeof model> => model !== null)
-  const availablePoses = catalogPoses.filter((pose): pose is NonNullable<typeof pose> => pose?.sourceModelSlot === selectedCatalogModelSlot)
+  const availablePoses = catalogPoses.filter((pose): pose is NonNullable<typeof pose> => pose?.sourceModelSlot === selectedCatalogModelSlot).sort((a, b) => a.slot - b.slot)
+  const currentPose = availablePoses.find((pose) => pose.slot === selectedCatalogPoseSlot)
+  const currentPoseIndex = currentPose ? availablePoses.indexOf(currentPose) : -1
+  const showAdjacentPose = (direction: -1 | 1) => {
+    if (!selectedCharacter || !availablePoses.length || previewLoading) return
+    const nextIndex = currentPoseIndex < 0
+      ? direction > 0 ? 0 : availablePoses.length - 1
+      : (currentPoseIndex + direction + availablePoses.length) % availablePoses.length
+    void selectCatalogPose(availablePoses[nextIndex])
+  }
   const selectedModelName = availableModels.find((model) => model.slot === selectedCatalogModelSlot)?.name
   const activeFaceAppearance = characterFaceAppearance?.modelSlot === selectedCatalogModelSlot ? characterFaceAppearance : undefined
   const wardrobeGroupDefinitions = clothingSection === 'Customizar' ? [] : clothingCategories[clothingSection]
@@ -1467,6 +1494,20 @@ export function CustomizerPage() {
                   <span className="customizer-model-skin-picker-swatch" style={{ '--skin-tone': selectedCharacter?.customization.modelSkinTone ?? skinTonePresets[0].id } as React.CSSProperties}><Icon name="brush" /></span>
                 </label>
               </div>
+            </section>}
+            {selectedCustomizerTopTab === 'modelos' && <section className="customizer-pose-carousel" aria-label="Pose do modelo">
+              <header className="customizer-pose-carousel-heading" aria-live="polite">
+                <strong>{currentPose ? `Pose ${String(currentPose.slot).padStart(2, '0')}` : 'Modelo base'}</strong>
+                <span>{currentPose ? `${currentPoseIndex + 1} de ${availablePoses.length}` : `${availablePoses.length} poses`}</span>
+              </header>
+              <div className="customizer-pose-carousel-body">
+                <button className="customizer-pose-carousel-arrow" aria-label="Pose anterior" title="Pose anterior" disabled={!selectedCharacter || !availablePoses.length || previewLoading || (availablePoses.length === 1 && Boolean(currentPose))} onClick={() => showAdjacentPose(-1)} type="button"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M21 5 10 16l11 11" /></svg></button>
+                <div className="customizer-pose-carousel-image">
+                  {selectedPosePreviewUrl ? <img src={selectedPosePreviewUrl} alt={currentPose ? `Modelo original na pose ${String(currentPose.slot).padStart(2, '0')}` : 'Modelo original na pose base'} /> : <span>{posePreviewStatus === 'loading' ? 'Carregando pose…' : selectedCatalogModelSlot === null ? 'Escolha um modelo' : 'Prévia indisponível'}</span>}
+                </div>
+                <button className="customizer-pose-carousel-arrow" aria-label="Próxima pose" title="Próxima pose" disabled={!selectedCharacter || !availablePoses.length || previewLoading || (availablePoses.length === 1 && Boolean(currentPose))} onClick={() => showAdjacentPose(1)} type="button"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="m11 5 11 11-11 11" /></svg></button>
+              </div>
+              <footer>{currentPose?.name ?? (availablePoses.length ? 'Use as setas para escolher uma pose' : 'Nenhuma pose salva para este modelo')}</footer>
             </section>}
             <div className="customizer-models-content" hidden>
             <div className="customizer-models-options-grid">
@@ -1763,7 +1804,10 @@ export function CustomizerPage() {
               <button
                 className="module-card"
                 key={module.name}
-                onClick={() => setActiveModule(module.name)}
+                onClick={() => {
+                  setActiveModule(module.name)
+                  if (module.name === 'Modelos') setSelectedCustomizerTopTab('modelos')
+                }}
                 title={module.detail}
               >
                 <span className="module-icon"><Icon name={module.icon} /></span>
