@@ -156,10 +156,6 @@ button:focus-visible, input:focus-visible { outline: 3px solid #ed8caf; outline-
 .studio-exit-view { position:absolute;z-index:1;top:16px;right:16px;display:flex;align-items:center;gap:9px;padding:7px 10px;border:1px solid #ffffff80;border-radius:8px;background:#ffffffd9;color:#514651;font-size:11px;cursor:pointer; }
 .studio-exit-view kbd { color:#736878; }
 .topbar-spacer { flex: 1; }
-.global-search { width: min(220px, 22vw); height: 36px; display: flex; align-items: center; gap: 8px; padding: 0 9px; border: 1px solid #eee9ed; border-radius: 9px; background: #faf9fa; color: #a29ba2; }
-.global-search svg { width: 15px; height: 15px; }
-.global-search input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparent; color: var(--ink); font-size: 12px; }
-.global-search input::placeholder { color: #a9a2a9; }
 kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-radius: 4px; background: #fff; color: #a69da5; font: 12px 'DM Sans', sans-serif; }
 .save-status { height: 34px; display: flex; align-items: center; gap: 7px; padding: 0; border: 0; background: none; color: #8c858d; font-size: 12px; white-space: nowrap; cursor: pointer; }
 .save-dot, .online-dot { width: 7px; height: 7px; display: inline-block; flex: 0 0 auto; border-radius: 50%; background: #6eb990; box-shadow: 0 0 0 3px #eaf5ee; }
@@ -493,7 +489,7 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
   .top-brand-name span { display: none; }
   .top-navigation { flex: 1 1 auto; justify-content: center; }
   .top-nav-link { gap: 5px; padding: 0 7px; font-size: 12px; }
-  .global-search, .save-status { display: none; }
+  .save-status { display: none; }
 }
 
 .fabricator-layout { min-width: 0; min-height: 0; flex: 1; display: grid; grid-template-columns: 238px minmax(0, 1fr); gap: 15px; padding: 16px 18px 17px; background: #f5f3f4; }
