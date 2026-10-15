@@ -11,19 +11,20 @@ import { mapWardrobeComponentToPose } from '../fabricator/wardrobe/poseTransform
 import { tintSkinPixels } from './skinTint'
 
 type CatalogArtwork = Pick<FabricatorProject, 'width' | 'height' | 'parts' | 'layerOrder' | 'hiddenPartIds'>
-function withCharacterHeadSize(artwork: CatalogArtwork, percent: number): CatalogArtwork {
-  if (percent === 100) return artwork
+function withCharacterHeadSize(artwork: CatalogArtwork, proportions: CharacterProportions): CatalogArtwork {
+  const scaleX = proportions.head * proportions.headWidth / 10000
+  const scaleY = proportions.head * proportions.headHeight / 10000
+  if (scaleX === 1 && scaleY === 1) return artwork
   const head = artwork.parts.find((part) => /cabe[çc]a|head/i.test(part.name))
   if (!head) return artwork
-  const factor = percent / 100
   return {
     ...artwork,
     parts: artwork.parts.map((part) => part.id === head.id ? {
       ...part,
-      x: part.x - (part.width * factor - part.width) / 2,
-      y: part.y - (part.height * factor - part.height),
-      width: part.width * factor,
-      height: part.height * factor
+      x: part.x - (part.width * scaleX - part.width) / 2,
+      y: part.y - (part.height * scaleY - part.height),
+      width: part.width * scaleX,
+      height: part.height * scaleY
     } : part)
   }
 }
@@ -47,6 +48,8 @@ const customizerSkinTonePresets = [skinTonePresets[0], skinTonePresets[1], skinT
 const proportionControls: Array<{ key: keyof CharacterProportions; label: string; description: string }> = [
   { key: 'scale', label: 'Escala geral', description: 'Aumenta ou diminui o personagem inteiro' },
   { key: 'head', label: 'Tamanho da cabeça', description: 'Altera apenas a cabeça, rosto e cabelo' },
+  { key: 'headWidth', label: 'Largura da cabeça', description: 'Alarga ou estreita apenas a cabeça, rosto e cabelo' },
+  { key: 'headHeight', label: 'Altura da cabeça', description: 'Alonga ou achata apenas a cabeça, rosto e cabelo' },
   { key: 'width', label: 'Largura', description: 'Estica ou comprime o personagem na horizontal' },
   { key: 'height', label: 'Altura', description: 'Estica ou comprime o personagem na vertical' }
 ]
@@ -474,7 +477,7 @@ export async function prepareSavedCharacterRenderer(character: CustomizerCharact
   if (!source) throw new Error(`O modelo de ${character.name} não está disponível.`)
   const pose = character.customization.poseSlot === null ? null : await window.desktop.loadFabricatorPose(modelSlot, character.customization.poseSlot)
   const proportions = getCharacterProportions(character.customization)
-  const artwork = withCharacterHeadSize(pose ?? source, proportions.head)
+  const artwork = withCharacterHeadSize(pose ?? source, proportions)
   const hairAppearance = character.customization.hairAppearance
   const hairStyle = async (side: HairCatalogSide): Promise<HairStyle | null> => {
     const id = hairAppearanceStyleId(hairAppearance, side)
@@ -689,7 +692,7 @@ export function CustomizerPage() {
     ? proportionEdit.values
     : getCharacterProportions(selectedCharacter?.customization)
   const activeShapeScale = characterShapeScale(activeProportions)
-  const displayArtworkProject = useMemo(() => selectedArtworkProject ? withCharacterHeadSize(selectedArtworkProject, activeProportions.head) : null, [selectedArtworkProject, activeProportions.head])
+  const displayArtworkProject = useMemo(() => selectedArtworkProject ? withCharacterHeadSize(selectedArtworkProject, activeProportions) : null, [selectedArtworkProject, activeProportions.head, activeProportions.headWidth, activeProportions.headHeight])
   const previewStyle = { '--preview-background': previewBackground, '--character-scale-x': activeShapeScale.x, '--character-scale-y': activeShapeScale.y } as import('react').CSSProperties
   const characterWardrobeGroups = selectedCharacter?.customization.wardrobeGroups ?? []
   const characterFaceAppearance = selectedCharacter?.customization.faceAppearance
@@ -787,7 +790,7 @@ export function CustomizerPage() {
         const artwork = pose ? await window.desktop.loadFabricatorPose(model.slot, pose.slot) : sourceProject
         if (!artwork) throw new Error('Não foi possível carregar a prévia deste personagem.')
         if (!cancelled && previewLoadRequest.current === requestId) { setSelectedArtworkProject(artwork); setSelectedSourceModelProject(sourceProject) }
-        const artworkUrl = await renderArtwork(withCharacterHeadSize(artwork, activeProportions.head), 720, selectedCharacter.customization.modelSkinTone)
+        const artworkUrl = await renderArtwork(withCharacterHeadSize(artwork, activeProportions), 720, selectedCharacter.customization.modelSkinTone)
         if (!cancelled && previewLoadRequest.current === requestId) setSelectedArtworkUrl(artworkUrl)
       } catch (reason) {
         if (!cancelled && previewLoadRequest.current === requestId) setCatalogError(reason instanceof Error ? reason.message : 'Não foi possível carregar a prévia.')
@@ -1429,7 +1432,7 @@ export function CustomizerPage() {
       let artwork: CatalogArtwork | null = firstPose ? await window.desktop.loadFabricatorPose(model.slot, 1) : null
       if (!artwork) artwork = sourceProject
       if (!artwork) throw new Error('Não foi possível abrir este modelo.')
-      const artworkUrl = await renderArtwork(withCharacterHeadSize(artwork, activeProportions.head), 720, selectedCharacter?.customization.modelSkinTone)
+      const artworkUrl = await renderArtwork(withCharacterHeadSize(artwork, activeProportions), 720, selectedCharacter?.customization.modelSkinTone)
       if (previewLoadRequest.current === requestId) { setSelectedArtworkProject(artwork); setSelectedSourceModelProject(sourceProject); setSelectedArtworkUrl(artworkUrl) }
     } catch (reason) {
       if (previewLoadRequest.current === requestId) setCatalogError(reason instanceof Error ? reason.message : 'Não foi possível abrir este modelo.')
@@ -1452,7 +1455,7 @@ export function CustomizerPage() {
       if (!sourceProject) throw new Error('O modelo de referência desta pose não está disponível.')
       const artwork = await window.desktop.loadFabricatorPose(pose.sourceModelSlot, pose.slot)
       if (!artwork) throw new Error('Não foi possível abrir esta pose.')
-      const artworkUrl = await renderArtwork(withCharacterHeadSize(artwork, activeProportions.head), 720, selectedCharacter?.customization.modelSkinTone)
+      const artworkUrl = await renderArtwork(withCharacterHeadSize(artwork, activeProportions), 720, selectedCharacter?.customization.modelSkinTone)
       if (previewLoadRequest.current === requestId) { setSelectedArtworkProject(artwork); setSelectedSourceModelProject(sourceProject); setSelectedArtworkUrl(artworkUrl) }
     } catch (reason) {
       if (previewLoadRequest.current === requestId) setCatalogError(reason instanceof Error ? reason.message : 'Não foi possível abrir esta pose.')

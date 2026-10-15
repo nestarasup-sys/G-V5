@@ -17,11 +17,13 @@ export type CharacterCustomization = {
   hairAppearance?: { modelSlot: number; styleId?: string; frontStyleId?: string | null; backStyleId?: string | null }
 }
 
-export type CharacterProportions = { scale: number; head: number; width: number; height: number }
-export const defaultCharacterProportions: CharacterProportions = { scale: 100, head: 100, width: 100, height: 100 }
+export type CharacterProportions = { scale: number; head: number; headWidth: number; headHeight: number; width: number; height: number }
+export const defaultCharacterProportions: CharacterProportions = { scale: 100, head: 100, headWidth: 100, headHeight: 100, width: 100, height: 100 }
 export const characterProportionLimits: Record<keyof CharacterProportions, { min: number; max: number }> = {
   scale: { min: 50, max: 150 },
   head: { min: 60, max: 150 },
+  headWidth: { min: 60, max: 140 },
+  headHeight: { min: 60, max: 140 },
   width: { min: 60, max: 140 },
   height: { min: 60, max: 140 }
 }

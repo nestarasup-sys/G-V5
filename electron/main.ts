@@ -75,7 +75,8 @@ function isCustomizerCharacter(value: unknown): value is CustomizerCharacter {
       && (Object.keys(characterProportionLimits) as Array<keyof typeof characterProportionLimits>).every((key) => {
         const value = character.customization!.proportions?.[key]
         const { min, max } = characterProportionLimits[key]
-        return typeof value === 'number' && Number.isFinite(value) && value >= min && value <= max
+        return (value === undefined && (key === 'headWidth' || key === 'headHeight'))
+          || (typeof value === 'number' && Number.isFinite(value) && value >= min && value <= max)
       })
     ))
     && !!character.customization.partOverrides && typeof character.customization.partOverrides === 'object'
