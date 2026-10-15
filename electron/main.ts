@@ -1121,6 +1121,21 @@ async function registerFabricatorHandlers(): Promise<void> {
     })
   })
 
+  ipcMain.handle('fabricator:animator:model-slots', async (event): Promise<number[]> => {
+    assertTrustedSender(event)
+    try {
+      const entries = await readdir(animatorLibraryPath(), { withFileTypes: true })
+      return entries.flatMap((entry) => {
+        const match = entry.isDirectory() ? /^model-(\d{1,3})$/.exec(entry.name) : null
+        const slot = match ? Number(match[1]) : 0
+        return slot && isValidModelSlot(slot) ? [slot] : []
+      }).sort((a, b) => a - b)
+    } catch (reason) {
+      if ((reason as NodeJS.ErrnoException).code === 'ENOENT') return []
+      throw reason
+    }
+  })
+
   ipcMain.handle('fabricator:animator:list', async (event, modelSlot: number): Promise<AnimatorAnimationSummary[]> => {
     assertTrustedSender(event)
     if (!isValidModelSlot(modelSlot)) throw new Error('Modelo inválido.')

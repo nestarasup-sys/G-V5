@@ -289,6 +289,7 @@ export type FabricatorDesktopApi = {
   loadFabricatorPoseDraft: (modelSlot: number) => Promise<FabricatorPoseDraft | null>
   saveFabricatorPoseDraft: (modelSlot: number, draft: FabricatorPoseDraftSave, assets: FabricatorAssetSave[]) => Promise<void>
   deleteFabricatorPoseDraft: (modelSlot: number) => Promise<void>
+  listAnimatorModelSlots: () => Promise<number[]>
   listAnimatorAnimations: (modelSlot: number) => Promise<AnimatorAnimationSummary[]>
   loadAnimatorAnimation: (modelSlot: number, slot: number) => Promise<AnimatorAnimation | null>
   saveAnimatorAnimation: (modelSlot: number, slot: number, animation: AnimatorAnimationSave, assets: AnimatorAnimationAsset[]) => Promise<void>

@@ -125,13 +125,13 @@ function moveFramePart(base: FabricatorProject, state: FrameHistoryState, partId
 
 function shortestAngle(from: number, to: number): number { return ((to - from + 540) % 360) - 180 }
 
-function interpolateFrames(frames: AnimatorFrame[], elapsed: number, mode: AnimatorAnimation['interpolation'], direction: 1 | -1 = 1) {
+function interpolateFrames(frames: AnimatorFrame[], elapsed: number, mode: AnimatorAnimation['interpolation'], loopMode: AnimatorAnimation['loopMode'], direction: 1 | -1 = 1) {
   const total = frames.reduce((sum, frame) => sum + frame.durationMs, 0)
   let time = Math.max(0, Math.min(total, elapsed))
   let index = 0
   while (index < frames.length - 1 && time >= frames[index].durationMs) { time -= frames[index].durationMs; index++ }
   const from = frames[index]
-  const nextIndex = direction > 0 ? Math.min(frames.length - 1, index + 1) : Math.max(0, index - 1)
+  const nextIndex = direction > 0 ? (index === frames.length - 1 && loopMode === 'loop' ? 0 : Math.min(frames.length - 1, index + 1)) : Math.max(0, index - 1)
   const to = frames[nextIndex]
   const tRaw = mode === 'stepped' || !to || to === from ? 0 : Math.max(0, Math.min(1, time / Math.max(1, from.durationMs)))
   const t = tRaw * tRaw * (3 - 2 * tRaw)
@@ -147,7 +147,20 @@ function interpolateFrames(frames: AnimatorFrame[], elapsed: number, mode: Anima
       ...(a.jointAnchor && b.jointAnchor ? { jointAnchor: { x: a.jointAnchor.x + (b.jointAnchor.x - a.jointAnchor.x) * t, y: a.jointAnchor.y + (b.jointAnchor.y - a.jointAnchor.y) * t } } : {})
     }
   }
-  return { transforms, joints: t < .5 ? from.joints : to.joints, frameIndex: index, total }
+  const fromJoints = new Map(from.joints.map((joint) => [joint.id, joint]))
+  const toJoints = new Map(to.joints.map((joint) => [joint.id, joint]))
+  const joints = [...new Set([...fromJoints.keys(), ...toJoints.keys()])].flatMap((id) => {
+    const a = fromJoints.get(id), b = toJoints.get(id) ?? a
+    if (!a) return b ? [b] : []
+    if (!b) return [a]
+    const aPivot = a.pivot ?? { x: (a.parentAnchor.x + a.childAnchor.x) / 2, y: (a.parentAnchor.y + a.childAnchor.y) / 2 }
+    const bPivot = b.pivot ?? { x: (b.parentAnchor.x + b.childAnchor.x) / 2, y: (b.parentAnchor.y + b.childAnchor.y) / 2 }
+    return [{ ...a, fixed: t < .5 ? a.fixed : b.fixed,
+      parentAnchor: { x: a.parentAnchor.x + (b.parentAnchor.x - a.parentAnchor.x) * t, y: a.parentAnchor.y + (b.parentAnchor.y - a.parentAnchor.y) * t },
+      childAnchor: { x: a.childAnchor.x + (b.childAnchor.x - a.childAnchor.x) * t, y: a.childAnchor.y + (b.childAnchor.y - a.childAnchor.y) * t },
+      pivot: { x: aPivot.x + (bPivot.x - aPivot.x) * t, y: aPivot.y + (bPivot.y - aPivot.y) * t } }]
+  })
+  return { transforms, joints, frameIndex: index, total }
 }
 
 async function renderThumbnail(project: FabricatorProject, transforms = transformsFromProject(project)): Promise<string> {
@@ -209,6 +222,7 @@ function serializeDraft(animation: AnimatorAnimation, editingSlot: number | null
 
 export function AnimatorWorkspace() {
   const [models, setModels] = useState<FabricatorSlotSummary[]>([])
+  const [animationSourceSlots, setAnimationSourceSlots] = useState<number[]>([])
   const [characters, setCharacters] = useState<CustomizerCharacter[]>([])
   const [modelSlot, setModelSlot] = useState<number | null>(null)
   const [characterId, setCharacterId] = useState('')
@@ -228,7 +242,7 @@ export function AnimatorWorkspace() {
   const [dragMode, setDragMode] = useState<'rotate' | 'move'>('rotate')
   const [includeChildren, setIncludeChildren] = useState(true)
   const [applyToAllFrames, setApplyToAllFrames] = useState(false)
-  const [allowCore, setAllowCore] = useState(false)
+  const [allowCorePartId, setAllowCorePartId] = useState('')
   const [playing, setPlaying] = useState(false)
   const [playhead, setPlayhead] = useState(0)
   const [playDirection, setPlayDirection] = useState<1 | -1>(1)
@@ -250,6 +264,9 @@ export function AnimatorWorkspace() {
   const pendingAssets = useRef<Map<string, string>>(new Map())
   const draftAssetsPersisted = useRef(false)
   const draftTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const savedAnimationRef = useRef<string | null>(null)
+  const dirtyFrameRef = useRef(false)
+  const animationLoadId = useRef(0)
   const playheadRef = useRef(0)
   const directionRef = useRef<1 | -1>(1)
   const selectedCharacter = characters.find((character) => character.id === characterId) ?? null
@@ -270,15 +287,17 @@ export function AnimatorWorkspace() {
   const currentSnapshot = useMemo<FrameHistoryState>(() => ({ animation, transforms: currentTransforms, joints: currentJoints, frameId: selectedFrameId }), [animation, currentTransforms, currentJoints, selectedFrameId])
   useEffect(() => { stateRef.current = currentSnapshot }, [currentSnapshot])
   const dirtyFrame = Boolean(selectedFrame && (JSON.stringify(selectedFrame.transforms) !== JSON.stringify(currentTransforms) || JSON.stringify(selectedFrame.joints) !== JSON.stringify(currentJoints)))
+  dirtyFrameRef.current = dirtyFrame
   const totalDuration = animation?.frames.reduce((sum, frame) => sum + frame.durationMs, 0) ?? 0
-  const playbackState = useMemo(() => animation ? interpolateFrames(animation.frames, playhead, animation.interpolation, playDirection) : null, [animation, playhead, playDirection])
+  const playbackState = useMemo(() => animation ? interpolateFrames(animation.frames, playhead, animation.interpolation, animation.loopMode, playDirection) : null, [animation, playhead, playDirection])
   const displayTransforms = playing && playbackState ? playbackState.transforms : currentTransforms
   const displayJoints = playing && playbackState ? playbackState.joints : currentJoints
   const displayBase = animation ? projectFromAnimation(animation) : baseProject
+  const tintParts = displayBase?.parts
   const displayProject = displayBase ? applyFrameState(displayBase, displayTransforms, displayJoints.length ? displayJoints : displayBase.joints) : null
   const parts = useMemo(() => displayProject ? orderedParts(displayProject.parts, displayProject.layerOrder).filter((part) => !displayProject.hiddenPartIds?.includes(part.id)) : [], [displayProject])
   const selectedPart = displayProject?.parts.find((part) => part.id === selectedPartId) ?? null
-  const selectedCanTransform = Boolean(selectedPart && (!isCorePart(selectedPart) || allowCore) && !playing)
+  const selectedCanTransform = Boolean(selectedPart && (!isCorePart(selectedPart) || allowCorePartId === selectedPart.id) && !playing && !saving)
   const scale = displayProject && stageSize.width > 1 && stageSize.height > 1 ? Math.max(.05, Math.min((stageSize.width - 64) / displayProject.width, (stageSize.height - 64) / displayProject.height)) * zoom : 1
   const layerStride = Math.max(16, (selectedCharacter?.customization.wardrobeGroups?.length ?? 0) * 12 + 16)
   const layerIndex = useMemo(() => new Map(displayProject ? orderedParts(displayProject.parts, displayProject.layerOrder).map((part, index) => [part.id, index]) : []), [displayProject])
@@ -379,10 +398,10 @@ export function AnimatorWorkspace() {
 
   useEffect(() => {
     let live = true
-    void Promise.all([window.desktop.listFabricatorSlots(), window.desktop.listCustomizerCharacters()]).then(([slots, savedCharacters]) => {
+    void Promise.all([window.desktop.listFabricatorSlots(), window.desktop.listCustomizerCharacters(), window.desktop.listAnimatorModelSlots()]).then(([slots, savedCharacters, savedAnimationSlots]) => {
       if (!live) return
-      setModels(slots); setCharacters(savedCharacters)
-      setModelSlot(slots.find((slot) => slot)?.slot ?? 1)
+      setModels(slots); setCharacters(savedCharacters); setAnimationSourceSlots(savedAnimationSlots)
+      setModelSlot(slots.find((slot) => slot)?.slot ?? savedAnimationSlots[0] ?? 1)
     }).catch((reason: unknown) => { if (live) setError(reason instanceof Error ? reason.message : 'Não foi possível carregar modelos e personagens.') }).finally(() => { if (live) setLoading(false) })
     return () => { live = false }
   }, [])
@@ -408,7 +427,7 @@ export function AnimatorWorkspace() {
   useEffect(() => {
     let live = true
     if (modelSlot === null) return
-    setLoading(true)
+    setLoading(true); setAnimation(null); setCurrentTransforms({}); setCurrentJoints([]); savedAnimationRef.current = null
     void Promise.all([window.desktop.listAnimatorAnimations(modelSlot), window.desktop.loadAnimatorDraft(modelSlot)]).then(([items, savedDraft]) => {
       if (!live) return
       setSummaries(items); setDraft(savedDraft)
@@ -452,8 +471,8 @@ export function AnimatorWorkspace() {
   useEffect(() => {
     let live = true
     const tone = selectedCharacter?.customization.modelSkinTone
-    if (!tone || !displayProject) { setTintedParts({}); return }
-    void Promise.all(displayProject.parts.map(async (part) => {
+    if (!tone || !tintParts) { setTintedParts({}); return }
+    void Promise.all(tintParts.map(async (part) => {
       const image = await loadImage(part.dataUrl)
       const canvas = document.createElement('canvas'); canvas.width = image.naturalWidth || image.width; canvas.height = image.naturalHeight || image.height
       const context = canvas.getContext('2d', { willReadFrequently: true }); if (!context) return [part.id, part.dataUrl] as const
@@ -468,7 +487,7 @@ export function AnimatorWorkspace() {
       context.putImageData(pixels, 0, 0); return [part.id, canvas.toDataURL('image/png')] as const
     })).then((entries) => { if (live) setTintedParts(Object.fromEntries(entries)) }).catch((reason: unknown) => { if (live) setError(reason instanceof Error ? reason.message : 'Não foi possível colorir a pele da prévia.') })
     return () => { live = false }
-  }, [displayProject, selectedCharacter?.customization.modelSkinTone])
+  }, [tintParts, selectedCharacter?.customization.modelSkinTone])
 
   useEffect(() => {
     const element = stageRef.current
@@ -494,7 +513,16 @@ export function AnimatorWorkspace() {
   const persistDraftNow = async (snapshot = animation, targetSlot = activeSlot, editorState = stateRef.current) => {
     if (!snapshot || !editorState) return
     if (draftTimer.current) clearTimeout(draftTimer.current)
-    const serialized = serializeDraft(snapshot, targetSlot, editorState, dirtyFrame)
+    const frame = snapshot.frames.find((item) => item.id === editorState.frameId)
+    const stateIsDirty = Boolean(frame && (JSON.stringify(frame.transforms) !== JSON.stringify(editorState.transforms) || JSON.stringify(frame.joints) !== JSON.stringify(editorState.joints)))
+    const documentIsDirty = savedAnimationRef.current === null || JSON.stringify(serializeAnimation(snapshot)) !== savedAnimationRef.current || stateIsDirty
+    if (!documentIsDirty) {
+      const existing = await window.desktop.loadAnimatorDraft(snapshot.sourceModelSlot)
+      if (existing?.editingSlot === targetSlot) await window.desktop.deleteAnimatorDraft(snapshot.sourceModelSlot)
+      setDraft(null)
+      return
+    }
+    const serialized = serializeDraft(snapshot, targetSlot, editorState, stateIsDirty)
     const assets: AnimatorAnimationAsset[] = draftAssetsPersisted.current ? [] : snapshot.parts.flatMap((part) => pendingAssets.current.has(part.id) ? [{ id: part.id, dataUrl: pendingAssets.current.get(part.id)! }] : [])
     const next = writeQueue.current.catch(() => undefined).then(() => window.desktop.saveAnimatorDraft(snapshot.sourceModelSlot, serialized, assets))
     writeQueue.current = next
@@ -504,13 +532,23 @@ export function AnimatorWorkspace() {
   }
 
   const createAnimation = async () => {
+    if (saving) return
     if (!baseProject) { setError('Escolha um modelo salvo antes de criar uma animação.'); return }
+    if (animation) {
+      const changed = savedAnimationRef.current === null || JSON.stringify(serializeAnimation(animation)) !== savedAnimationRef.current || dirtyFrame
+      if (changed) {
+        if (!window.confirm('A animação atual tem alterações. Salvar no slot antes de criar outra?')) return
+        if (!await saveAnimation()) return
+      }
+    }
     if (draft && !animation) {
       if (!window.confirm('Existe um rascunho recuperável. Descartar e começar uma animação nova?')) return
       await window.desktop.deleteAnimatorDraft(modelSlot!)
       setDraft(null)
     }
-    const slot = slots.findIndex((item) => !item) + 1
+    const occupied = new Set(summaries.map((item) => item.slot))
+    if (animation && savedAnimationRef.current !== null) occupied.add(animation.slot)
+    const slot = Array.from({ length: SLOT_COUNT }, (_, index) => index + 1).find((candidate) => !occupied.has(candidate)) ?? 0
     if (!slot) { setError('Os 12 slots deste modelo estão ocupados. Exclua uma animação para liberar espaço.'); return }
     const name = window.prompt('Nome da animação', `Animação ${String(slot).padStart(2, '0')}`)?.trim()
     if (!name) return
@@ -518,38 +556,51 @@ export function AnimatorWorkspace() {
       const created = await makeInitialAnimation(slot, baseProject, name)
       pendingAssets.current = new Map(created.parts.map((part) => [part.id, part.dataUrl]))
       draftAssetsPersisted.current = false
+      savedAnimationRef.current = null
       setAnimation(created); setActiveSlot(slot); setSelectedFrameId(created.frames[0].id); setSelectedPartId(created.parts[0]?.id ?? '')
       setCurrentTransforms(created.frames[0].transforms); setCurrentJoints(created.frames[0].joints); setUndoStack([]); setRedoStack([]); setPlayhead(0); setError(''); setSaveMessage('Rascunho novo')
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível criar a animação.') }
   }
 
   const selectAnimationSlot = async (slot: number) => {
-    if (animation) await persistDraftNow()
+    if (saving) return
+    if (animation) {
+      const changed = savedAnimationRef.current === null || JSON.stringify(serializeAnimation(animation)) !== savedAnimationRef.current || dirtyFrame
+      if (changed) {
+        if (!window.confirm('A animação atual tem alterações. Salvar no slot antes de trocar?')) return
+        if (!await saveAnimation()) return
+      } else await persistDraftNow()
+    }
     else if (draft && draft.editingSlot !== slot && !window.confirm('Há um rascunho recuperável. Descartar esse rascunho para abrir outro slot?')) return
     else if (draft && draft.editingSlot !== slot) { await window.desktop.deleteAnimatorDraft(modelSlot!); setDraft(null) }
     else if (draft && draft.editingSlot === slot && !window.confirm('Este slot tem um rascunho recuperável. Abrir a versão salva e descartar o rascunho?')) return
     else if (draft && draft.editingSlot === slot) { await window.desktop.deleteAnimatorDraft(modelSlot!); setDraft(null) }
     setPlaying(false); setActiveSlot(slot); setError('')
+    const loadId = ++animationLoadId.current
     const summary = summaries.find((item) => item.slot === slot)
-    if (!summary) { setAnimation(null); setSelectedFrameId(''); setCurrentTransforms({}); setCurrentJoints([]); setSelectedPartId(''); return }
-    setLoading(true)
+    if (!summary) { setLoading(false); setAnimation(null); setSelectedFrameId(''); setCurrentTransforms({}); setCurrentJoints([]); setSelectedPartId(''); return }
+    setLoading(true); setAnimation(null); setCurrentTransforms({}); setCurrentJoints([]); savedAnimationRef.current = null
     try {
       const loaded = await window.desktop.loadAnimatorAnimation(summary.sourceModelSlot, slot)
+      if (loadId !== animationLoadId.current) return
       if (!loaded) throw new Error('A animação não pôde ser carregada.')
       const first = loaded.frames[0]
+      savedAnimationRef.current = JSON.stringify(serializeAnimation(loaded))
       pendingAssets.current = new Map(loaded.parts.map((part) => [part.id, part.dataUrl])); draftAssetsPersisted.current = false
       setAnimation(loaded); setSelectedFrameId(first.id); setCurrentTransforms(first.transforms); setCurrentJoints(first.joints); setSelectedPartId(loaded.parts[0]?.id ?? '')
       setCharacterId(characters.find((character) => character.id === loaded.characterId && character.customization.modelSlot === loaded.sourceModelSlot)?.id ?? '')
       setModelSlot(loaded.sourceModelSlot); setUndoStack([]); setRedoStack([]); setPlayhead(0)
       const currentModel = await window.desktop.loadFabricatorSlot(loaded.sourceModelSlot)
-      if (currentModel && currentModel.updatedAt !== loaded.sourceModelUpdatedAt) setError('A origem deste modelo mudou desde a criação. A animação continua usando a cópia original salva.')
+      if (loadId !== animationLoadId.current) return
+      if (currentModel && (currentModel.updatedAt !== loaded.sourceModelUpdatedAt || currentModel.name !== loaded.sourceModelName || currentModel.parts.length !== loaded.sourceModelPartCount)) setError('A origem deste modelo mudou desde a criação. A animação continua usando a cópia original salva.')
       if (!currentModel) setError('O modelo de origem foi removido. A cópia guardada na animação continua disponível para edição.')
-    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível abrir a animação.') }
-    finally { setLoading(false) }
+    } catch (reason) { if (loadId === animationLoadId.current) setError(reason instanceof Error ? reason.message : 'Não foi possível abrir a animação.') }
+    finally { if (loadId === animationLoadId.current) setLoading(false) }
   }
 
-  const saveAnimation = async () => {
-    if (!animation || saving) return
+  const saveAnimation = async (): Promise<boolean> => {
+    if (!animation || saving) return false
+    if (draftTimer.current) clearTimeout(draftTimer.current)
     setSaving(true); setError('')
     try {
       let snapshot = animation
@@ -565,19 +616,20 @@ export function AnimatorWorkspace() {
       await window.desktop.saveAnimatorAnimation(updated.sourceModelSlot, updated.slot, serializeAnimation(updated), assets)
       const savedDraft = await window.desktop.loadAnimatorDraft(updated.sourceModelSlot)
       if (savedDraft?.editingSlot === updated.slot) await window.desktop.deleteAnimatorDraft(updated.sourceModelSlot)
-      for (const asset of assets) pendingAssets.current.delete(asset.id)
+      pendingAssets.current = new Map(updated.parts.map((part) => [part.id, part.dataUrl]))
       draftAssetsPersisted.current = false
+      savedAnimationRef.current = JSON.stringify(serializeAnimation(updated))
       setAnimation(updated); setDraft(null); setSummaries((current) => [...current.filter((item) => item.slot !== updated.slot), {
         slot: updated.slot, sourceModelSlot: updated.sourceModelSlot, name: updated.name, sourceModelName: updated.sourceModelName,
         sourceModelUpdatedAt: updated.sourceModelUpdatedAt, sourceModelPartCount: updated.sourceModelPartCount,
         thumbnailDataUrl: updated.thumbnailDataUrl, updatedAt: updated.updatedAt
-      }].sort((a, b) => a.slot - b.slot)); setSaveMessage('Animação salva')
-    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível salvar a animação.') }
+      }].sort((a, b) => a.slot - b.slot)); setSaveMessage('Animação salva'); return true
+    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível salvar a animação.'); return false }
     finally { setSaving(false) }
   }
 
   const renameAnimation = () => {
-    if (!animation) return
+    if (saving || !animation) return
     const name = window.prompt('Novo nome da animação', animation.name)?.trim()
     if (!name || name === animation.name) return
     pushHistory(); setAnimation((current) => current ? { ...current, name, updatedAt: new Date().toISOString() } : current)
@@ -592,28 +644,34 @@ export function AnimatorWorkspace() {
   }
 
   const duplicateAnimation = async () => {
-    if (!animation) return
-    const slot = slots.findIndex((item) => !item) + 1
+    if (saving || !animation) return
+    if (savedAnimationRef.current === null || JSON.stringify(serializeAnimation(animation)) !== savedAnimationRef.current || dirtyFrame) {
+      if (!window.confirm('A animação atual tem alterações. Salvar antes de duplicar?')) return
+      if (!await saveAnimation()) return
+    }
+    const slot = Array.from({ length: SLOT_COUNT }, (_, index) => index + 1).find((candidate) => !summaries.some((item) => item.slot === candidate)) ?? 0
     if (!slot) { setError('Os 12 slots deste modelo estão ocupados.'); return }
     const name = window.prompt('Nome da cópia', `${animation.name} — cópia`)?.trim()
     if (!name) return
     const copy = { ...structuredClone(animation), slot, name, frames: animation.frames.map((frame) => ({ ...structuredClone(frame), id: crypto.randomUUID() })), updatedAt: new Date().toISOString() }
     pendingAssets.current = new Map(copy.parts.map((part) => [part.id, part.dataUrl])); draftAssetsPersisted.current = false
+    savedAnimationRef.current = null
     setAnimation(copy); setActiveSlot(slot); setSelectedFrameId(copy.frames[0].id); setCurrentTransforms(copy.frames[0].transforms); setCurrentJoints(copy.frames[0].joints); setUndoStack([]); setRedoStack([]); setSaveMessage('Cópia não salva')
   }
 
   const deleteAnimation = async () => {
-    if (!animation || !window.confirm(`Excluir a animação “${animation.name}” do slot ${animation.slot}?`)) return
+    if (saving || !animation || !window.confirm(`Excluir a animação “${animation.name}” do slot ${animation.slot}?`)) return
+    if (draftTimer.current) clearTimeout(draftTimer.current)
     try {
       await window.desktop.deleteAnimatorAnimation(animation.sourceModelSlot, animation.slot)
       const savedDraft = await window.desktop.loadAnimatorDraft(animation.sourceModelSlot)
       if (savedDraft?.editingSlot === animation.slot) await window.desktop.deleteAnimatorDraft(animation.sourceModelSlot)
-      setSummaries((current) => current.filter((item) => item.slot !== animation.slot)); setAnimation(null); setCurrentTransforms({}); setCurrentJoints([]); setSelectedFrameId(''); setSelectedPartId(''); setSaveMessage('')
+      setSummaries((current) => current.filter((item) => item.slot !== animation.slot)); setAnimation(null); setCurrentTransforms({}); setCurrentJoints([]); setSelectedFrameId(''); setSelectedPartId(''); setSaveMessage(''); setDraft(null); savedAnimationRef.current = null
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível excluir a animação.') }
   }
 
   const saveFrame = async () => {
-    if (!animation || !displayBase || !dirtyFrame) return
+    if (saving || !animation || !displayBase || !dirtyFrame) return
     const thumbnail = await renderThumbnail(displayBase, currentTransforms)
     const frame: AnimatorFrame = { id: crypto.randomUUID(), durationMs: selectedFrame?.durationMs ?? 250, transforms: structuredClone(currentTransforms), joints: structuredClone(currentJoints), thumbnailDataUrl: thumbnail }
     pushHistory()
@@ -655,11 +713,13 @@ export function AnimatorWorkspace() {
   }
 
   const undo = () => {
+    if (saving) return
     const previous = undoStack.at(-1); const current = stateRef.current
     if (!previous || !current) return
     setRedoStack((stack) => [...stack, structuredClone(current)].slice(-HISTORY_LIMIT)); setUndoStack((stack) => stack.slice(0, -1)); setEditorState(previous)
   }
   const redo = () => {
+    if (saving) return
     const next = redoStack.at(-1); const current = stateRef.current
     if (!next || !current) return
     setUndoStack((stack) => [...stack, structuredClone(current)].slice(-HISTORY_LIMIT)); setRedoStack((stack) => stack.slice(0, -1)); setEditorState(next)
@@ -695,7 +755,7 @@ export function AnimatorWorkspace() {
   const beginDrag = (event: ReactPointerEvent<HTMLImageElement>, part: PosePart) => {
     if (!animation || playing || !displayProject) return
     event.preventDefault(); event.stopPropagation(); setSelectedPartId(part.id)
-    if (isCorePart(part) && !allowCore) return
+    if (isCorePart(part) && allowCorePartId !== part.id) return
     const rect = event.currentTarget.closest('.animator-artboard')?.getBoundingClientRect()
     const pivot = partJointAnchor(part, displayProject.joints) ?? { x: part.x + part.width / 2, y: part.y + part.height / 2 }
     const pivotX = (rect?.left ?? 0) + pivot.x * scale, pivotY = (rect?.top ?? 0) + pivot.y * scale
@@ -776,10 +836,14 @@ export function AnimatorWorkspace() {
   }, [playing, animation, totalDuration])
 
   useEffect(() => {
-    if (!animation || modelSlot === null) return
+    if (!animation || modelSlot === null || saving) return
     if (draftTimer.current) clearTimeout(draftTimer.current)
     const snapshot = animation
     const editorState = stateRef.current ?? { animation, transforms: currentTransforms, joints: currentJoints, frameId: selectedFrameId }
+    const frame = snapshot.frames.find((item) => item.id === editorState.frameId)
+    const frameIsDirty = Boolean(frame && (JSON.stringify(frame.transforms) !== JSON.stringify(editorState.transforms) || JSON.stringify(frame.joints) !== JSON.stringify(editorState.joints)))
+    const documentIsDirty = savedAnimationRef.current === null || JSON.stringify(serializeAnimation(snapshot)) !== savedAnimationRef.current || frameIsDirty
+    if (!documentIsDirty) { setSaveMessage('Animação salva'); return }
     const serialized = serializeDraft(snapshot, activeSlot, editorState, dirtyFrame)
     const assets: AnimatorAnimationAsset[] = draftAssetsPersisted.current ? [] : snapshot.parts.flatMap((part) => pendingAssets.current.has(part.id) ? [{ id: part.id, dataUrl: pendingAssets.current.get(part.id)! }] : [])
     setSaveMessage(dirtyFrame ? 'Frame alterado · rascunho automático' : 'Rascunho automático')
@@ -789,24 +853,28 @@ export function AnimatorWorkspace() {
       void next.then(() => { draftAssetsPersisted.current = true; setDraft(serialized) }).catch((reason: unknown) => setError(reason instanceof Error ? `Não foi possível salvar o rascunho: ${reason.message}` : 'Não foi possível salvar o rascunho.'))
     }, 350)
     return () => { if (draftTimer.current) clearTimeout(draftTimer.current) }
-  }, [animation, activeSlot, currentTransforms, currentJoints, selectedFrameId, dirtyFrame, modelSlot])
+  }, [animation, activeSlot, currentTransforms, currentJoints, selectedFrameId, dirtyFrame, modelSlot, saving])
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLSelectElement) return
+      if (saving || event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLSelectElement) return
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z') { event.preventDefault(); event.shiftKey ? redo() : undo() }
       else if (event.code === 'Space' && animation) { event.preventDefault(); setPlaying((value) => !value) }
       else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') { event.preventDefault(); if (dirtyFrame) void saveFrame(); else void saveAnimation() }
     }
     window.addEventListener('keydown', onKeyDown); return () => window.removeEventListener('keydown', onKeyDown)
-  }, [animation, dirtyFrame, undoStack, redoStack, currentTransforms, currentJoints])
+  }, [animation, dirtyFrame, undoStack, redoStack, currentTransforms, currentJoints, saving])
 
   useEffect(() => () => {
     if (draftTimer.current) clearTimeout(draftTimer.current)
     const current = stateRef.current
     const active = current?.animation
     if (active) {
-      const serialized = serializeDraft(active, active.slot, current!, dirtyFrame)
+      const frame = active.frames.find((item) => item.id === current!.frameId)
+      const frameIsDirty = Boolean(frame && (JSON.stringify(frame.transforms) !== JSON.stringify(current!.transforms) || JSON.stringify(frame.joints) !== JSON.stringify(current!.joints)))
+      const documentIsDirty = savedAnimationRef.current === null || JSON.stringify(serializeAnimation(active)) !== savedAnimationRef.current || frameIsDirty || dirtyFrameRef.current
+      if (!documentIsDirty) return
+      const serialized = serializeDraft(active, active.slot, current!, dirtyFrameRef.current)
       const assets = active.parts.flatMap((part) => pendingAssets.current.has(part.id) ? [{ id: part.id, dataUrl: pendingAssets.current.get(part.id)! }] : [])
       void window.desktop.saveAnimatorDraft(active.sourceModelSlot, serialized, assets).catch(() => undefined)
     }
@@ -814,24 +882,34 @@ export function AnimatorWorkspace() {
 
   const stageScale = scale
   const frameSeconds = (milliseconds: number) => `${(milliseconds / 1000).toFixed(2)}s`
+  const modelOptions = [
+    ...models.filter((model): model is NonNullable<FabricatorSlotSummary> => Boolean(model)).map((model) => ({ slot: model.slot, label: `Modelo ${String(model.slot).padStart(2, '0')} · ${model.name}` })),
+    ...animationSourceSlots.filter((slot) => !models.some((model) => model?.slot === slot)).map((slot) => ({ slot, label: `Origem indisponível · Modelo ${String(slot).padStart(2, '0')}` }))
+  ]
   const changeModel = async (nextSlot: number) => {
+    if (saving) return
+    if (nextSlot === modelSlot) { setCharacterId(''); return }
     if (animation) await persistDraftNow()
-    setCharacterId(''); setModelSlot(nextSlot); setAnimation(null); setCurrentTransforms({}); setCurrentJoints([]); setSummaries([]); setDraft(null); setActiveSlot(1)
+    animationLoadId.current++
+    setCharacterId(''); setModelSlot(nextSlot); setAnimation(null); setCurrentTransforms({}); setCurrentJoints([]); setSummaries([]); setDraft(null); setActiveSlot(1); setAllowCorePartId(''); savedAnimationRef.current = null
   }
   const changeCharacter = async (id: string) => {
+    if (saving) return
     if (animation) await persistDraftNow()
     const character = characters.find((item) => item.id === id)
     setCharacterId(id)
     if (character?.customization.modelSlot) {
-      setModelSlot(character.customization.modelSlot); setAnimation(null); setCurrentTransforms({}); setCurrentJoints([]); setSummaries([]); setDraft(null); setActiveSlot(1)
+      const modelChanged = character.customization.modelSlot !== modelSlot
+      animationLoadId.current++
+      setModelSlot(character.customization.modelSlot); setAnimation(null); setCurrentTransforms({}); setCurrentJoints([]); if (modelChanged) { setSummaries([]); setDraft(null); savedAnimationRef.current = null }; setActiveSlot(modelChanged ? 1 : animation?.slot ?? draft?.editingSlot ?? activeSlot); setAllowCorePartId('')
     }
   }
 
-  return <section className={`fabricator-workspace animator-workspace${largePreview ? ' animator-large-preview' : ''}`} aria-label="Animador Dev">
+  return <section className={`fabricator-workspace animator-workspace${largePreview ? ' animator-large-preview' : ''}${saving ? ' animator-saving' : ''}`} aria-label="Animador Dev">
     <header className="animator-toolbar">
       <span className="animator-title"><Icon name="sparkles" /><span><strong>Animador Dev</strong><small>Editor manual por frames</small></span></span>
       <label className="animator-character">Personagem<select value={characterId} onChange={(event) => { void changeCharacter(event.target.value) }}><option value="">Sem personagem</option>{characters.filter((character) => character.customization.modelSlot !== null).map((character) => <option key={character.id} value={character.id}>{character.name}</option>)}</select></label>
-      <label className="animator-model">Modelo<select value={modelSlot ?? ''} onChange={(event) => { void changeModel(Number(event.target.value)) }}><option value="" disabled>Escolher modelo</option>{models.map((model, index) => model && <option key={model.slot ?? index} value={model.slot ?? index + 1}>Modelo {String(model.slot ?? index + 1).padStart(2, '0')} · {model.name}</option>)}</select></label>
+      <label className="animator-model">Modelo<select value={modelSlot ?? ''} onChange={(event) => { void changeModel(Number(event.target.value)) }}><option value="" disabled>Escolher modelo</option>{modelOptions.map((model) => <option key={model.slot} value={model.slot}>{model.label}</option>)}</select></label>
       <span className="animator-toolbar-spacer" />
       <button className="pose-button secondary" onClick={() => void createAnimation()} disabled={!baseProject || loading} type="button"><Icon name="plus" /> Nova animação</button>
       <button className="pose-icon-button" title="Desfazer (Ctrl+Z)" disabled={!undoStack.length} onClick={undo} type="button"><Icon name="undo" /></button>
@@ -864,7 +942,7 @@ export function AnimatorWorkspace() {
         <section className="animator-library-panel"><header><span><strong>Slots de animações</strong><small>12 espaços · separados por modelo</small></span><span>{summaries.length}/12</span></header><div className="animator-slot-grid">{slots.map((summary, index) => <button key={index} className={`animator-slot${activeSlot === index + 1 ? ' active' : ''}${summary ? ' filled' : ''}`} onClick={() => void selectAnimationSlot(index + 1)} type="button" title={summary?.name ?? `Slot ${index + 1} vazio`}><span>{summary?.thumbnailDataUrl ? <img src={summary.thumbnailDataUrl} alt="" /> : <b>{String(index + 1).padStart(2, '0')}</b>}</span><small>{summary?.name ?? 'Vazio'}</small></button>)}</div></section>
         <section className="animator-edit-panel"><header><span><small>EDIÇÃO</small><strong>{animation ? selectedPart?.name ?? 'Selecione uma peça' : 'Controles'}</strong></span></header><nav>{([['parts', 'Peças'], ['rig', 'Rig'], ['settings', 'Animação']] as const).map(([tab, label]) => <button key={tab} className={panelTab === tab ? 'active' : ''} onClick={() => setPanelTab(tab)} type="button">{label}</button>)}</nav>
           {animation && panelTab === 'parts' && <div className="animator-panel-content"><div className="animator-piece-list">{orderedParts(animation.parts, animation.layerOrder).map((part) => <button key={part.id} className={`animator-piece-row${part.id === selectedPartId ? ' selected' : ''}`} onClick={() => setSelectedPartId(part.id)} type="button"><span>{part.name}</span><small>{Math.round(displayProject?.parts.find((item) => item.id === part.id)?.rotation ?? 0)}°</small></button>)}</div>
-          {selectedPart && <div className="animator-transform-card"><strong>Transformação do frame atual</strong>{isCorePart(selectedPart) && <label className="animator-check"><input type="checkbox" checked={allowCore} onChange={(event) => setAllowCore(event.target.checked)} /> Permitir manipular cabeça/tronco</label>}<div className="animator-number-row"><label>X<input type="number" disabled={!selectedCanTransform} value={Number(selectedPart.x.toFixed(1))} onChange={(event) => transformSelected('x', Number(event.target.value))} /></label><label>Y<input type="number" disabled={!selectedCanTransform} value={Number(selectedPart.y.toFixed(1))} onChange={(event) => transformSelected('y', Number(event.target.value))} /></label></div><label className="animator-angle">Rotação <output>{selectedPart.rotation.toFixed(1)}°</output><input type="range" min={selectedPart.rotation - 180} max={selectedPart.rotation + 180} step="1" disabled={!selectedCanTransform} value={selectedPart.rotation} onChange={(event) => transformSelected('rotation', Number(event.target.value))} /></label><div className="animator-number-row"><label>Graus<input type="number" disabled={!selectedCanTransform} value={Number(selectedPart.rotation.toFixed(1))} onChange={(event) => transformSelected('rotation', Number(event.target.value))} /></label><button onClick={() => transformSelected('rotation', 0)} disabled={!selectedCanTransform} type="button">Zerar</button></div><div className="animator-mode-toggle"><button className={dragMode === 'rotate' ? 'active' : ''} onClick={() => setDragMode('rotate')} type="button">Arrastar para girar</button><button className={dragMode === 'move' ? 'active' : ''} onClick={() => setDragMode('move')} type="button">Arrastar para mover</button></div><label className="animator-check"><input type="checkbox" checked={includeChildren} onChange={(event) => setIncludeChildren(event.target.checked)} /> Aplicar às descendentes conectadas</label><label className="animator-check"><input type="checkbox" checked={applyToAllFrames} onChange={(event) => setApplyToAllFrames(event.target.checked)} /> Aplicar a todos os frames</label><small>{selectedCanTransform ? 'A bolinha de junta define o pivô da rotação.' : 'Cabeça e tronco ficam bloqueados por segurança.'}</small></div>}
+          {selectedPart && <div className="animator-transform-card"><strong>Transformação do frame atual</strong>{isCorePart(selectedPart) && <label className="animator-check"><input type="checkbox" checked={allowCorePartId === selectedPart.id} onChange={(event) => setAllowCorePartId(event.target.checked ? selectedPart.id : '')} /> Permitir manipular esta peça central</label>}<div className="animator-number-row"><label>X<input type="number" disabled={!selectedCanTransform} value={Number(selectedPart.x.toFixed(1))} onChange={(event) => transformSelected('x', Number(event.target.value))} /></label><label>Y<input type="number" disabled={!selectedCanTransform} value={Number(selectedPart.y.toFixed(1))} onChange={(event) => transformSelected('y', Number(event.target.value))} /></label></div><label className="animator-angle">Rotação <output>{selectedPart.rotation.toFixed(1)}°</output><input type="range" min={selectedPart.rotation - 180} max={selectedPart.rotation + 180} step="1" disabled={!selectedCanTransform} value={selectedPart.rotation} onChange={(event) => transformSelected('rotation', Number(event.target.value))} /></label><div className="animator-number-row"><label>Graus<input type="number" disabled={!selectedCanTransform} value={Number(selectedPart.rotation.toFixed(1))} onChange={(event) => transformSelected('rotation', Number(event.target.value))} /></label><button onClick={() => transformSelected('rotation', 0)} disabled={!selectedCanTransform} type="button">Zerar</button></div><div className="animator-mode-toggle"><button className={dragMode === 'rotate' ? 'active' : ''} onClick={() => setDragMode('rotate')} type="button">Arrastar para girar</button><button className={dragMode === 'move' ? 'active' : ''} onClick={() => setDragMode('move')} type="button">Arrastar para mover</button></div><label className="animator-check"><input type="checkbox" checked={includeChildren} onChange={(event) => setIncludeChildren(event.target.checked)} /> Aplicar às descendentes conectadas</label><label className="animator-check"><input type="checkbox" checked={applyToAllFrames} onChange={(event) => setApplyToAllFrames(event.target.checked)} /> Aplicar a todos os frames</label><small>{selectedCanTransform ? 'A bolinha de junta define o pivô da rotação.' : 'Cabeça e tronco ficam bloqueados por segurança.'}</small></div>}
           </div>}
           {animation && panelTab === 'rig' && <div className="animator-panel-content animator-rig-list">{diagnostics.map((joint) => <article key={joint.id}><strong>{joint.parent} → {joint.child}</strong><small>{joint.exists ? joint.fixed ? 'Conectada · acompanha quando o ramo está ativo' : 'Conexão solta' : 'Peça ausente na cópia'}</small></article>)}{!diagnostics.length && <p>Este modelo não possui juntas. Configure o rig em Modelos Dev para animar os membros conectados.</p>}</div>}
           {animation && panelTab === 'settings' && <div className="animator-panel-content animator-settings"><label>Interpolação<select value={animation.interpolation} onChange={(event) => updatePlaybackSettings({ interpolation: event.target.value as AnimatorAnimation['interpolation'] })}><option value="smooth">Suave · menor caminho angular</option><option value="stepped">Quadro a quadro</option></select></label><label>Repetição<select value={animation.loopMode} onChange={(event) => updatePlaybackSettings({ loopMode: event.target.value as AnimatorAnimation['loopMode'] })}><option value="loop">Loop contínuo</option><option value="once">Uma vez</option><option value="pingpong">Ida e volta</option></select></label><label>Velocidade <output>{animation.speed.toFixed(2)}×</output><input type="range" min="0.25" max="2.5" step="0.05" value={animation.speed} onChange={(event) => updatePlaybackSettings({ speed: Number(event.target.value) })} /></label><label>Duração do frame <output>{frameSeconds(selectedFrame?.durationMs ?? 250)}</output><input type="range" min="80" max="1600" step="20" value={selectedFrame?.durationMs ?? 250} onChange={(event) => changeFrameDuration(Number(event.target.value))} /></label><small>A duração é individual por frame. A animação usa uma cópia independente da origem.</small></div>}

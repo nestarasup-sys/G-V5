@@ -17,6 +17,7 @@ const fabricatorApi: FabricatorDesktopApi = {
   loadFabricatorPoseDraft: (modelSlot) => ipcRenderer.invoke('fabricator:poses:draft:load', modelSlot),
   saveFabricatorPoseDraft: (modelSlot, draft, assets) => ipcRenderer.invoke('fabricator:poses:draft:save', modelSlot, draft, assets),
   deleteFabricatorPoseDraft: (modelSlot) => ipcRenderer.invoke('fabricator:poses:draft:delete', modelSlot),
+  listAnimatorModelSlots: () => ipcRenderer.invoke('fabricator:animator:model-slots'),
   listAnimatorAnimations: (modelSlot) => ipcRenderer.invoke('fabricator:animator:list', modelSlot),
   loadAnimatorAnimation: (modelSlot, slot) => ipcRenderer.invoke('fabricator:animator:load', modelSlot, slot),
   saveAnimatorAnimation: (modelSlot, slot, animation, assets) => ipcRenderer.invoke('fabricator:animator:save', modelSlot, slot, animation, assets),

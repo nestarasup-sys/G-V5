@@ -547,6 +547,7 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .animator-large-preview .animator-editor-body { grid-template-columns:minmax(0,1fr); }
 .animator-large-preview .animator-side-panel,.animator-large-preview .animator-timeline-panel { display:none; }
 .animator-large-preview .animator-preview-column { grid-column:1; }
+.animator-saving .animator-editor-body,.animator-saving .animator-timeline-panel { pointer-events:none;opacity:.72; }
 .animator-large-preview .animator-toolbar> :not(.animator-title):not(.animator-model):not(.animator-character) { display:none; }
 @media(max-width:1000px) {
   .animator-toolbar { flex-wrap:wrap; }
