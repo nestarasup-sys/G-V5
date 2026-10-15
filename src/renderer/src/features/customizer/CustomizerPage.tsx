@@ -36,6 +36,14 @@ function loadCachedImage(source: string): Promise<HTMLImageElement> {
   return promise
 }
 
+function isWarmSkinPixel(data: Uint8ClampedArray, offset: number) {
+  const red = data[offset]
+  const green = data[offset + 1]
+  const blue = data[offset + 2]
+  return data[offset + 3] > 0 && red > 108 && red > green && green > blue
+    && red - green >= 2 && green - blue >= 2 && red - blue < 105
+}
+
 function loadSkinTintedImage(source: string, tone: string): Promise<HTMLImageElement> {
   const key = `${tone}:${source}`
   const cached = skinTintImageCache.get(key)
@@ -52,15 +60,41 @@ function loadSkinTintedImage(source: string, tone: string): Promise<HTMLImageEle
     // The imported Modelo 01 sheet uses a warm ivory skin around #fcf1e7
     // (luminance ~244); normalizing against a darker beige washed presets out.
     const baseLuminance = 244
-    for (let index = 0; index < pixels.data.length; index += 4) {
+    const skinMask = new Uint8Array(canvas.width * canvas.height)
+    for (let pixel = 0; pixel < skinMask.length; pixel++) {
+      if (isWarmSkinPixel(pixels.data, pixel * 4)) skinMask[pixel] = 1
+    }
+    const originalSkinMask = skinMask.slice()
+
+    // Chroma cleanup and antialiasing can blend the original skin into a pink or
+    // transparent edge color. Include only the immediate bright edge around skin
+    // pixels; the dark contour keeps this from spreading into hair or clothing.
+    for (let y = 0; y < canvas.height; y++) {
+      for (let x = 0; x < canvas.width; x++) {
+        const pixel = y * canvas.width + x
+        if (skinMask[pixel]) continue
+        const offset = pixel * 4
+        const red = pixels.data[offset]
+        const green = pixels.data[offset + 1]
+        const blue = pixels.data[offset + 2]
+        const luminance = red * 0.299 + green * 0.587 + blue * 0.114
+        if (pixels.data[offset + 3] === 0 || red <= green || red - blue >= 150 || green < 45 || luminance < 88) continue
+        let touchesSkin = false
+        for (let neighborY = Math.max(0, y - 1); neighborY <= Math.min(canvas.height - 1, y + 1) && !touchesSkin; neighborY++) {
+          for (let neighborX = Math.max(0, x - 1); neighborX <= Math.min(canvas.width - 1, x + 1); neighborX++) {
+            if (originalSkinMask[neighborY * canvas.width + neighborX]) { touchesSkin = true; break }
+          }
+        }
+        if (touchesSkin) skinMask[pixel] = 1
+      }
+    }
+
+    for (let pixel = 0; pixel < skinMask.length; pixel++) {
+      if (!skinMask[pixel]) continue
+      const index = pixel * 4
       const red = pixels.data[index]
       const green = pixels.data[index + 1]
       const blue = pixels.data[index + 2]
-      // Recolor only warm, opaque skin-like pixels. Neutral clothes, dark outlines,
-      // transparent pixels, and the green chroma background stay untouched.
-      const warmSkin = pixels.data[index + 3] > 16 && red > 108 && red > green && green > blue
-        && red - green >= 2 && green - blue >= 2 && red - blue < 105
-      if (!warmSkin) continue
       const luminance = red * 0.299 + green * 0.587 + blue * 0.114
       const shade = Math.min(1.08, Math.max(0.42, luminance / baseLuminance))
       pixels.data[index] = Math.min(255, Math.round(target[0] * shade))
