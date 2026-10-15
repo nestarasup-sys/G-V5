@@ -10,8 +10,8 @@ import { WardrobeWorkspace } from './wardrobe/WardrobeWorkspace'
 import { FaceWorkspace } from './face/FaceWorkspace'
 import { HairWorkspace } from './HairWorkspace'
 
-const sections: { label: string; icon: IconName }[] = [
-  { label: 'Modelos', icon: 'sparkles' }, { label: 'Poses', icon: 'expand' }, { label: 'Roupas', icon: 'shirt' }, { label: 'Rosto', icon: 'face' }, { label: 'Cabelos Dev', icon: 'bow' }
+const sections: { id: string; label: string; icon: IconName }[] = [
+  { id: 'Modelos', label: 'Modelos Dev', icon: 'sparkles' }, { id: 'Poses', label: 'Poses Dev', icon: 'expand' }, { id: 'Roupas', label: 'Roupas Dev', icon: 'shirt' }, { id: 'Rosto', label: 'Rosto Dev', icon: 'face' }, { id: 'Cabelos Dev', label: 'Cabelos Dev', icon: 'bow' }
 ]
 
 type ProcessedPart = Omit<ModelPart, 'dataUrl' | 'chromaBaseDataUrl'> & { png: ArrayBuffer; basePng: ArrayBuffer }
@@ -985,7 +985,7 @@ export function FabricatorPage() {
         </div>
         <nav className="fabricator-section-list" aria-label="Seções do Fabricador Dev">
           {sections.map((section) => (
-            <button aria-pressed={activeSection === section.label} className={`fabricator-section-button${activeSection === section.label ? ' active' : ''}`} key={section.label} onClick={() => setActiveSection(section.label)} type="button">
+            <button aria-pressed={activeSection === section.id} className={`fabricator-section-button${activeSection === section.id ? ' active' : ''}`} key={section.id} onClick={() => setActiveSection(section.id)} type="button">
               <Icon name={section.icon} /><span>{section.label}</span>
             </button>
           ))}
