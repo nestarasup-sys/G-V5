@@ -2,6 +2,8 @@ export type CharacterCustomization = {
   /** Reference to the read-only Fabricator source selected for this character. */
   modelSlot: number | null
   poseSlot: number | null
+  /** Optional per-character skin tint applied to the read-only model preview. */
+  modelSkinTone?: string
   /** Character-only edits are stored here, never written to the Fabricator library. */
   partOverrides: Record<string, { x?: number; y?: number; scaleX?: number; scaleY?: number; rotation?: number; hidden?: boolean }>
   layerOrder: string[]

@@ -8,7 +8,17 @@ import { mapWardrobeComponentToPose } from '../fabricator/wardrobe/poseTransform
 
 type CatalogArtwork = Pick<FabricatorProject, 'width' | 'height' | 'parts' | 'layerOrder' | 'hiddenPartIds'>
 const wardrobeImageCache = new Map<string, Promise<HTMLImageElement>>()
+const skinTintImageCache = new Map<string, Promise<HTMLImageElement>>()
 const faceElementOrder: FaceElementKind[] = ['brow-left', 'brow-right', 'eye-left', 'eye-right', 'nose', 'mouth']
+const skinTonePresets = [
+  { id: '#f5ddcb', name: 'Porcelana' },
+  { id: '#edc5a5', name: 'Clara' },
+  { id: '#dba47d', name: 'Pêssego' },
+  { id: '#c88961', name: 'Dourada' },
+  { id: '#a96d4c', name: 'Média' },
+  { id: '#754a36', name: 'Escura' },
+  { id: '#493027', name: 'Retinta' }
+] as const
 
 function loadCachedImage(source: string): Promise<HTMLImageElement> {
   const cached = wardrobeImageCache.get(source)
@@ -22,6 +32,51 @@ function loadCachedImage(source: string): Promise<HTMLImageElement> {
   wardrobeImageCache.set(source, promise)
   void promise.catch(() => wardrobeImageCache.delete(source))
   return promise
+}
+
+function loadSkinTintedImage(source: string, tone: string): Promise<HTMLImageElement> {
+  const key = `${tone}:${source}`
+  const cached = skinTintImageCache.get(key)
+  if (cached) return cached
+  const tinted = loadCachedImage(source).then((sourceImage) => {
+    const canvas = document.createElement('canvas')
+    canvas.width = sourceImage.naturalWidth || sourceImage.width
+    canvas.height = sourceImage.naturalHeight || sourceImage.height
+    const context = canvas.getContext('2d', { willReadFrequently: true })
+    if (!context || !canvas.width || !canvas.height) return sourceImage
+    context.drawImage(sourceImage, 0, 0)
+    const pixels = context.getImageData(0, 0, canvas.width, canvas.height)
+    const target = [1, 3, 5].map((index) => Number.parseInt(tone.slice(index, index + 2), 16))
+    // The imported Modelo 01 sheet uses a warm ivory skin around #fcf1e7
+    // (luminance ~244); normalizing against a darker beige washed presets out.
+    const baseLuminance = 244
+    for (let index = 0; index < pixels.data.length; index += 4) {
+      const red = pixels.data[index]
+      const green = pixels.data[index + 1]
+      const blue = pixels.data[index + 2]
+      // Recolor only warm, opaque skin-like pixels. Neutral clothes, dark outlines,
+      // transparent pixels, and the green chroma background stay untouched.
+      const warmSkin = pixels.data[index + 3] > 16 && red > 108 && red > green && green > blue
+        && red - green >= 2 && green - blue >= 2 && red - blue < 105
+      if (!warmSkin) continue
+      const luminance = red * 0.299 + green * 0.587 + blue * 0.114
+      const shade = Math.min(1.08, Math.max(0.42, luminance / baseLuminance))
+      pixels.data[index] = Math.min(255, Math.round(target[0] * shade))
+      pixels.data[index + 1] = Math.min(255, Math.round(target[1] * shade))
+      pixels.data[index + 2] = Math.min(255, Math.round(target[2] * shade))
+    }
+    context.putImageData(pixels, 0, 0)
+    const output = new Image()
+    output.src = canvas.toDataURL('image/png')
+    if (output.decode) return output.decode().then(() => output)
+    return new Promise<HTMLImageElement>((resolve, reject) => {
+      output.onload = () => resolve(output)
+      output.onerror = () => reject(new Error('Não foi possível aplicar a cor de pele.'))
+    })
+  })
+  skinTintImageCache.set(key, tinted)
+  void tinted.catch(() => skinTintImageCache.delete(key))
+  return tinted
 }
 
 type ClothingGroupCategory = CustomizerWardrobeCategory
@@ -77,7 +132,8 @@ async function renderWardrobeOverlay(
   artwork: CatalogArtwork,
   modelSlot: number | null,
   source: FabricatorProject | null,
-  selected: SelectedWardrobeComponent | null
+  selected: SelectedWardrobeComponent | null,
+  skinTone?: string
 ): Promise<{ imageUrl: string | null; selectedUrl: string | null }> {
   if (!groups.length || modelSlot === null || !source) return { imageUrl: null, selectedUrl: null }
   const output = document.createElement('canvas')
@@ -132,7 +188,10 @@ async function renderWardrobeOverlay(
     if (!part) continue
     if (!hidden.has(part.id)) {
       try {
-        const image = await loadCachedImage(part.dataUrl)
+        // The wardrobe composite redraws the body to interleave garments with
+        // model layers. Keep that duplicate body in sync with the tinted base
+        // preview, otherwise the original skin pixels cover the selected tone.
+        const image = skinTone ? await loadSkinTintedImage(part.dataUrl, skinTone) : await loadCachedImage(part.dataUrl)
         outputContext.save()
         outputContext.translate(part.x + part.width / 2, part.y + part.height / 2)
         outputContext.rotate(part.rotation * Math.PI / 180)
@@ -166,7 +225,7 @@ async function renderWardrobeOverlay(
   return { imageUrl: output.toDataURL('image/png'), selectedUrl: selectionContext && selected ? selectionCanvas.toDataURL('image/png') : null }
 }
 
-async function renderArtwork(artwork: CatalogArtwork, maxSize: number): Promise<string | null> {
+async function renderArtwork(artwork: CatalogArtwork, maxSize: number, skinTone?: string): Promise<string | null> {
   if (artwork.width <= 0 || artwork.height <= 0) return null
   const scale = Math.min(maxSize / artwork.width, maxSize / artwork.height)
   const canvas = document.createElement('canvas')
@@ -184,13 +243,7 @@ async function renderArtwork(artwork: CatalogArtwork, maxSize: number): Promise<
 
   for (const { part } of parts) {
     try {
-      const image = new Image()
-      image.src = part.dataUrl
-      if (image.decode) await image.decode()
-      else await new Promise<void>((resolve, reject) => {
-        image.onload = () => resolve()
-        image.onerror = () => reject(new Error('Não foi possível carregar uma parte da prévia.'))
-      })
+      const image = skinTone ? await loadSkinTintedImage(part.dataUrl, skinTone) : await loadCachedImage(part.dataUrl)
       context.save()
       try {
         context.translate((part.x + part.width / 2) * scale, (part.y + part.height / 2) * scale)
@@ -207,11 +260,11 @@ async function renderArtwork(artwork: CatalogArtwork, maxSize: number): Promise<
   return canvas.toDataURL('image/png')
 }
 
-async function renderArtworkWithHair(artwork: CatalogArtwork, source: FabricatorProject, backStyle: HairStyle | null, maxSize: number): Promise<string | null> {
-  if (!backStyle || backStyle.modelSlot !== source.slot) return renderArtwork(artwork, maxSize)
+async function renderArtworkWithHair(artwork: CatalogArtwork, source: FabricatorProject, backStyle: HairStyle | null, maxSize: number, skinTone?: string): Promise<string | null> {
+  if (!backStyle || backStyle.modelSlot !== source.slot) return renderArtwork(artwork, maxSize, skinTone)
   const sourceHead = source.parts.find((part) => /cabe[çc]a|head/i.test(part.name))
   const targetHead = artwork.parts.find((part) => /cabe[çc]a|head/i.test(part.name))
-  if (!sourceHead || !targetHead || !sourceHead.width || !sourceHead.height) return renderArtwork(artwork, maxSize)
+  if (!sourceHead || !targetHead || !sourceHead.width || !sourceHead.height) return renderArtwork(artwork, maxSize, skinTone)
   const scale = Math.min(maxSize / artwork.width, maxSize / artwork.height)
   const canvas = document.createElement('canvas')
   canvas.width = Math.max(1, Math.round(artwork.width * scale)); canvas.height = Math.max(1, Math.round(artwork.height * scale))
@@ -250,7 +303,7 @@ async function renderArtworkWithHair(artwork: CatalogArtwork, source: Fabricator
     if (isHead) await drawBackHair()
     if (!hidden.has(part.id)) {
       try {
-        const image = await loadCachedImage(part.dataUrl)
+        const image = skinTone ? await loadSkinTintedImage(part.dataUrl, skinTone) : await loadCachedImage(part.dataUrl)
         context.save()
         context.translate((part.x + part.width / 2) * scale, (part.y + part.height / 2) * scale)
         context.rotate(part.rotation * Math.PI / 180)
@@ -535,7 +588,7 @@ export function CustomizerPage() {
         const artwork = pose ? await window.desktop.loadFabricatorPose(model.slot, pose.slot) : sourceProject
         if (!artwork) throw new Error('Não foi possível carregar a prévia deste personagem.')
         if (!cancelled && previewLoadRequest.current === requestId) { setSelectedArtworkProject(artwork); setSelectedSourceModelProject(sourceProject) }
-        const artworkUrl = await renderArtwork(artwork, 720)
+        const artworkUrl = await renderArtwork(artwork, 720, selectedCharacter.customization.modelSkinTone)
         if (!cancelled && previewLoadRequest.current === requestId) setSelectedArtworkUrl(artworkUrl)
       } catch (reason) {
         if (!cancelled && previewLoadRequest.current === requestId) setCatalogError(reason instanceof Error ? reason.message : 'Não foi possível carregar a prévia.')
@@ -544,7 +597,7 @@ export function CustomizerPage() {
       }
     })()
     return () => { cancelled = true }
-  }, [catalogLoading, catalogModels, catalogPoses, selectedCharacter?.id])
+  }, [catalogLoading, catalogModels, catalogPoses, selectedCharacter?.id, selectedCharacter?.customization.modelSkinTone])
 
   useEffect(() => {
     setSelectedClothing(null)
@@ -750,7 +803,7 @@ export function CustomizerPage() {
       })
       if (Object.keys(newlyLoaded).length) setHairDetails((current) => ({ ...current, ...newlyLoaded }))
       const [url, frontUrl] = await Promise.all([
-        renderArtworkWithHair(artwork, source, styles.back ?? null, 720),
+        renderArtworkWithHair(artwork, source, styles.back ?? null, 720, selectedCharacter?.customization.modelSkinTone),
         renderFrontHairOverlay(artwork, source, styles.front ?? null, 720)
       ])
       if (!cancelled) { setSelectedArtworkUrl(url); setSelectedFrontHairUrl(frontUrl) }
@@ -758,7 +811,7 @@ export function CustomizerPage() {
       if (!cancelled) setCatalogError(reason instanceof Error ? reason.message : 'Não foi possível montar o cabelo do personagem.')
     })
     return () => { cancelled = true }
-  }, [selectedArtworkProject, selectedSourceModelProject, selectedCharacter?.id, selectedCharacter?.customization.hairAppearance, hairDetails])
+  }, [selectedArtworkProject, selectedSourceModelProject, selectedCharacter?.id, selectedCharacter?.customization.hairAppearance, selectedCharacter?.customization.modelSkinTone, hairDetails])
 
   useEffect(() => {
     if (activeModule !== 'Roupas' || !wardrobeSets.length) return
@@ -838,13 +891,13 @@ export function CustomizerPage() {
     const previewGroups = wardrobeTransformDraft && selectedClothing
       ? groups.map((group) => group.setId === selectedClothing.setId && group.category === selectedClothing.category && (group.componentId === selectedClothing.componentId || !group.componentId) ? { ...group, componentId: selectedClothing.componentId, ...wardrobeTransformDraft } : group)
       : groups
-    void renderWardrobeOverlay(previewGroups, wardrobeDetails, selectedArtworkProject, selectedCatalogModelSlot, selectedSourceModelProject, wardrobeHighlightVisible ? selectedClothing : null).then((result) => {
+    void renderWardrobeOverlay(previewGroups, wardrobeDetails, selectedArtworkProject, selectedCatalogModelSlot, selectedSourceModelProject, wardrobeHighlightVisible ? selectedClothing : null, selectedCharacter?.customization.modelSkinTone).then((result) => {
       if (!cancelled) { setSelectedWardrobeUrl(result.imageUrl); setSelectedWardrobeHighlightUrl(result.selectedUrl) }
     }).catch((reason: unknown) => {
       if (!cancelled) setCatalogError(reason instanceof Error ? reason.message : 'Não foi possível compor as roupas do personagem.')
     })
     return () => { cancelled = true }
-  }, [selectedCharacter?.id, selectedCharacter?.customization.wardrobeGroups, wardrobeDetails, selectedArtworkProject, selectedCatalogModelSlot, selectedSourceModelProject, selectedClothing?.setId, selectedClothing?.category, selectedClothing?.componentId, wardrobeTransformDraft, wardrobeHighlightVisible])
+  }, [selectedCharacter?.id, selectedCharacter?.customization.modelSkinTone, selectedCharacter?.customization.wardrobeGroups, wardrobeDetails, selectedArtworkProject, selectedCatalogModelSlot, selectedSourceModelProject, selectedClothing?.setId, selectedClothing?.category, selectedClothing?.componentId, wardrobeTransformDraft, wardrobeHighlightVisible])
 
   function selectCharacter(id: string) {
     setSelectedCharacterId(id)
@@ -1148,7 +1201,7 @@ export function CustomizerPage() {
       let artwork: CatalogArtwork | null = firstPose ? await window.desktop.loadFabricatorPose(model.slot, 1) : null
       if (!artwork) artwork = sourceProject
       if (!artwork) throw new Error('Não foi possível abrir este modelo.')
-      const artworkUrl = await renderArtwork(artwork, 720)
+      const artworkUrl = await renderArtwork(artwork, 720, selectedCharacter?.customization.modelSkinTone)
       if (previewLoadRequest.current === requestId) { setSelectedArtworkProject(artwork); setSelectedSourceModelProject(sourceProject); setSelectedArtworkUrl(artworkUrl) }
     } catch (reason) {
       if (previewLoadRequest.current === requestId) setCatalogError(reason instanceof Error ? reason.message : 'Não foi possível abrir este modelo.')
@@ -1170,7 +1223,7 @@ export function CustomizerPage() {
       if (!sourceProject) throw new Error('O modelo de referência desta pose não está disponível.')
       const artwork = await window.desktop.loadFabricatorPose(pose.sourceModelSlot, pose.slot)
       if (!artwork) throw new Error('Não foi possível abrir esta pose.')
-      const artworkUrl = await renderArtwork(artwork, 720)
+      const artworkUrl = await renderArtwork(artwork, 720, selectedCharacter?.customization.modelSkinTone)
       if (previewLoadRequest.current === requestId) { setSelectedArtworkProject(artwork); setSelectedSourceModelProject(sourceProject); setSelectedArtworkUrl(artworkUrl) }
     } catch (reason) {
       if (previewLoadRequest.current === requestId) setCatalogError(reason instanceof Error ? reason.message : 'Não foi possível abrir esta pose.')
@@ -1275,6 +1328,15 @@ export function CustomizerPage() {
                       ))}
                     </div>
               )}
+              {activeModule === 'Modelos' && selectedCharacter && selectedCatalogModelSlot !== null && <section className="customizer-skin-tones" aria-label="Cor de pele do personagem">
+                <header><strong>Cor da pele</strong><small>Salva somente em {selectedCharacter.name}</small></header>
+                <div className="customizer-skin-tone-options" role="group" aria-label="Escolher tom de pele">
+                  {skinTonePresets.map((preset) => {
+                    const selected = selectedCharacter.customization.modelSkinTone === preset.id
+                    return <button key={preset.id} className={'customizer-skin-tone' + (selected ? ' selected' : '')} style={{ '--skin-tone': preset.id } as React.CSSProperties} onClick={() => void saveCharacterCustomization({ modelSkinTone: preset.id })} aria-label={`Tom de pele ${preset.name}`} aria-pressed={selected} title={preset.name} type="button"><span />{selected && <Icon name="check" />}</button>
+                  })}
+                </div>
+              </section>}
               {activeModule === 'Poses' && (
                 selectedCatalogModelSlot === null ? <div className="customizer-catalog-empty"><span>Selecione um modelo para ver as poses dele.</span><button onClick={() => setActiveModule('Modelos')} type="button">Ver modelos</button></div>
                   : catalogLoading ? <div className="customizer-catalog-empty">Carregando poses…</div>
