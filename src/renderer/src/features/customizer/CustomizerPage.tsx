@@ -20,6 +20,7 @@ const skinTonePresets = [
   { id: '#754a36', name: 'Escura' },
   { id: '#493027', name: 'Retinta' }
 ] as const
+const customizerSkinTonePresets = [skinTonePresets[0], skinTonePresets[1], skinTonePresets[2], skinTonePresets[4], skinTonePresets[6]]
 
 function loadCachedImage(source: string): Promise<HTMLImageElement> {
   const cached = wardrobeImageCache.get(source)
@@ -1471,6 +1472,19 @@ export function CustomizerPage() {
                 type="button"
               ><CustomizerCategoryIcon category={tab.id} /><span>{tab.label}</span></button>)}
             </nav>
+            {selectedCustomizerTopTab === 'modelos' && <section className="customizer-model-skin-tones" aria-label="Cor de pele do modelo">
+              <strong>Cor de pele</strong>
+              <div className="customizer-model-skin-tone-row" role="group" aria-label="Escolher cor de pele">
+                {customizerSkinTonePresets.map((preset) => {
+                  const selected = (selectedCharacter?.customization.modelSkinTone ?? skinTonePresets[0].id) === preset.id
+                  return <button key={preset.id} className={'customizer-model-skin-tone' + (selected ? ' selected' : '')} style={{ '--skin-tone': preset.id } as React.CSSProperties} onClick={() => void saveCharacterCustomization({ modelSkinTone: preset.id })} aria-label={`Tom de pele ${preset.name}`} aria-pressed={selected} title={preset.name} type="button" disabled={!selectedCharacter}><span />{selected && <Icon name="check" />}</button>
+                })}
+                <label className={'customizer-model-skin-picker' + (selectedCharacter && !customizerSkinTonePresets.some((preset) => preset.id === (selectedCharacter.customization.modelSkinTone ?? skinTonePresets[0].id)) ? ' selected' : '')} title="Escolher uma cor personalizada">
+                  <input type="color" aria-label="Escolher cor de pele personalizada" value={selectedCharacter?.customization.modelSkinTone ?? skinTonePresets[0].id} onChange={(event) => void saveCharacterCustomization({ modelSkinTone: event.target.value })} disabled={!selectedCharacter} />
+                  <span className="customizer-model-skin-picker-swatch" style={{ '--skin-tone': selectedCharacter?.customization.modelSkinTone ?? skinTonePresets[0].id } as React.CSSProperties}><Icon name="brush" /></span>
+                </label>
+              </div>
+            </section>}
             <div className="customizer-models-content" hidden>
             <div className="customizer-models-options-grid">
               {modules.map((module, index) => (
