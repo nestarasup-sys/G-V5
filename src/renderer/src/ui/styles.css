@@ -243,6 +243,12 @@ button:focus-visible, input:focus-visible { outline: 3px solid #ed8caf; outline-
 .studio-tool-hint { position:absolute;bottom:9px;left:10px;padding:4px 7px;border-radius:5px;background:#ffffffa8;color:#514651;font-size:9px; }
 .studio-exit-view { position:absolute;z-index:1;top:16px;right:16px;display:flex;align-items:center;gap:9px;padding:7px 10px;border:1px solid #ffffff80;border-radius:8px;background:#ffffffd9;color:#514651;font-size:11px;cursor:pointer; }
 .studio-exit-view kbd { color:#736878; }
+
+/* Keep Studio labels readable across its compact cards, rails, and inspector. */
+.studio-page :is(button,small,span,p,label,strong,i,kbd),
+.studio-editor-rail :is(button,small,span,p,label,strong,i,kbd),
+.studio-inspector :is(button,small,span,p,label,strong,i,kbd),
+.studio-cast-modal :is(button,small,span,p,label,strong,i,kbd) { font-size:max(12px,.8em);line-height:1.25; }
 .topbar-spacer { flex: 1; }
 kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-radius: 4px; background: #fff; color: #a69da5; font: 12px 'DM Sans', sans-serif; }
 .save-status { height: 34px; display: flex; align-items: center; gap: 7px; padding: 0; border: 0; background: none; color: #8c858d; font-size: 12px; white-space: nowrap; cursor: pointer; }
