@@ -167,6 +167,8 @@ export type FaceCatalogItem = {
   transforms: Partial<Record<FaceElementKind, FaceTransform>>
   eyeLinked: boolean
   browLinked: boolean
+  /** Default opacity for this catalog nose, from 0 (transparent) to 1 (opaque). */
+  opacity?: number
   selectedNose: number
   selectedExpression: number
   updatedAt: string

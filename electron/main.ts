@@ -305,6 +305,7 @@ function validFaceCatalogItem(modelSlot: number, item: FaceCatalogItemSave): boo
       || transform.scaleX <= 0 || transform.scaleY <= 0) return false
   }
   return typeof item.eyeLinked === 'boolean' && typeof item.browLinked === 'boolean'
+    && (item.opacity === undefined || item.category === 'nose' && Number.isFinite(item.opacity) && item.opacity >= 0 && item.opacity <= 1)
     && Number.isInteger(item.selectedNose) && item.selectedNose >= 0 && item.selectedNose <= 5
     && Number.isInteger(item.selectedExpression) && item.selectedExpression >= 0 && item.selectedExpression <= 20
     && typeof item.updatedAt === 'string'

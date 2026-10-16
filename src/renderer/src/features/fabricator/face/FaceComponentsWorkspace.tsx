@@ -150,10 +150,10 @@ function FaceGuideOverlay({ head, guide }: { head: ModelPart; guide: FaceGuide }
   </svg>
 }
 
-function FaceTransformControls({ head, transform, sourceWidth, sourceHeight, pupil, moveTogether, followEyes, onChange, onReset }: {
+function FaceTransformControls({ head, transform, sourceWidth, sourceHeight, pupil, moveTogether, followEyes, opacity, onChange, onOpacityChange, onReset }: {
   head: ModelPart; transform: FaceTransform; sourceWidth: number; sourceHeight: number; pupil: boolean
   moveTogether?: boolean; followEyes?: boolean
-  onChange: (patch: Partial<FaceTransform>) => void; onReset: () => void
+  opacity?: number; onChange: (patch: Partial<FaceTransform>) => void; onOpacityChange?: (value: number) => void; onReset: () => void
 }) {
   const xRange = pupil ? head.width * .25 : head.width
   const yRange = pupil ? head.height * .25 : head.height
@@ -175,6 +175,7 @@ function FaceTransformControls({ head, transform, sourceWidth, sourceHeight, pup
     {!moveTogether && !followEyes && sizeControl('Largura horizontal', widthPercent, sourceWidth, head.width, 'scaleX')}
     {!moveTogether && sizeControl('Altura vertical', heightPercent, sourceHeight, head.height, 'scaleY')}
     <label className="face-component-slider"><span>Rotação<output>{Math.round(transform.rotation)}°</output></span><input type="range" min="-180" max="180" step="1" value={transform.rotation} onChange={(event) => onChange({ rotation: Number(event.target.value) })} /></label>
+    {opacity !== undefined && onOpacityChange && <label className="face-component-slider"><span>Transparência<output>{Math.round((1 - opacity) * 100)}%</output></span><input type="range" min="0" max="100" step="1" value={Math.round((1 - opacity) * 100)} onChange={(event) => onOpacityChange(1 - Number(event.target.value) / 100)} aria-label="Transparência do nariz" /></label>}
     <button className="face-component-reset-transform" type="button" onClick={onReset}>{moveTogether ? 'Restaurar rotação' : followEyes ? 'Restaurar altura e rotação' : 'Restaurar encaixe da peça'}</button>
   </div>
 }
@@ -314,7 +315,7 @@ export function FaceComponentsWorkspace({ mode }: { mode: FaceWorkspaceMode }) {
     left: `${noseTransform.x / head.width * 100}%`, top: `${noseTransform.y / head.height * 100}%`,
     width: `${nosePiece.width * noseTransform.scaleX / head.width * 100}%`,
     height: `${nosePiece.height * noseTransform.scaleY / head.height * 100}%`,
-    transform: `translate(-50%,-50%) rotate(${noseTransform.rotation}deg)`
+    transform: `translate(-50%,-50%) rotate(${noseTransform.rotation}deg)`, opacity: selectedNose?.opacity ?? 1
   } : undefined
   const previewFaceDetailLayers = mode === 'face' ? faceDetailCategories.flatMap(({ kind }) => {
     const asset = details[selectedFaceDetails[kind] ?? '']
@@ -846,6 +847,15 @@ export function FaceComponentsWorkspace({ mode }: { mode: FaceWorkspaceMode }) {
     queueSave(`catalog:${next.modelSlot}:${next.id}`, () => window.desktop.saveFaceCatalogItem(next.modelSlot, catalogSaveData(next), catalogImagesForSave(next)))
   }
 
+  function updateCatalogOpacity(value: number) {
+    if (selectedCatalogItem?.category !== 'nose') return
+    const original = catalogDetailsRef.current[selectedCatalogItem.id] ?? selectedCatalogItem
+    const next = { ...original, opacity: clamp(value, 0, 1), updatedAt: new Date().toISOString() }
+    catalogDetailsRef.current = { ...catalogDetailsRef.current, [next.id]: next }
+    setNoseDetails((items) => ({ ...items, [next.id]: next }))
+    queueSave(`catalog:${next.modelSlot}:${next.id}`, () => window.desktop.saveFaceCatalogItem(next.modelSlot, catalogSaveData(next), catalogImagesForSave(next)))
+  }
+
   function beginPreviewDrag(event: ReactPointerEvent<HTMLImageElement>, key: string, invertX = false, pupil = false) {
     if (event.button !== 0 || !event.isPrimary || !head || !selectedTransform || key !== activePreviewKey) return
     const canvas = event.currentTarget.closest('.face-components-preview-canvas')
@@ -1089,7 +1099,7 @@ export function FaceComponentsWorkspace({ mode }: { mode: FaceWorkspaceMode }) {
           {!componentPair && <div className="face-component-current"><img src={activeComponent?.dataUrl ?? activeFaceDetail?.dataUrl ?? selectedCatalogPiece?.dataUrl} alt="" /><span><strong>{activeComponent?.name ?? activeFaceDetail?.name ?? selectedCatalogItem?.name}</strong></span></div>}
           {selectedCatalogItem && <label className="face-component-variant">Variante<select value={selectedCatalogItem.category === 'nose' ? selectedCatalogItem.selectedNose : selectedCatalogItem.selectedExpression} onChange={(event) => updateCatalogVariant(Number(event.target.value))}>{selectedCatalogItem.pieces.map((piece) => <option key={piece.id} value={piece.index}>{selectedCatalogItem.category === 'nose' ? 'Nariz' : 'Expressão'} {String(piece.index + 1).padStart(2, '0')}</option>)}</select></label>}
           {componentPair && <strong className="face-component-individual-title">{moveTogether[componentPair.kind] ? 'Rotação individual' : followsOpenEye ? 'Altura e rotação' : 'Ajuste individual'} · {selectedPart.endsWith('right') ? 'direita' : 'esquerda'}</strong>}
-          <FaceTransformControls head={head} transform={selectedTransform} sourceWidth={selectedSourceWidth} sourceHeight={selectedSourceHeight} pupil={activeComponent?.kind === 'pupil'} moveTogether={componentPair ? moveTogether[componentPair.kind] : false} followEyes={followsOpenEye} onChange={updateTransform} onReset={resetSelectedTransform} />
+          <FaceTransformControls head={head} transform={selectedTransform} sourceWidth={selectedSourceWidth} sourceHeight={selectedSourceHeight} pupil={activeComponent?.kind === 'pupil'} moveTogether={componentPair ? moveTogether[componentPair.kind] : false} followEyes={followsOpenEye} opacity={selectedCatalogItem?.category === 'nose' ? selectedCatalogItem.opacity ?? 1 : undefined} onChange={updateTransform} onOpacityChange={updateCatalogOpacity} onReset={resetSelectedTransform} />
         </> : <div className="face-component-empty">Nenhuma peça selecionada</div>}
         <section className="face-components-guide-controls" aria-label="Guias de alinhamento do rosto">
           <header><strong>Guias de desenho</strong><label><input type="checkbox" checked={guide.visible} onChange={(event) => updateGuide({ visible: event.target.checked })} /> Mostrar</label></header>
