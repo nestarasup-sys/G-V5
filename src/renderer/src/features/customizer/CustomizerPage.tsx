@@ -652,6 +652,7 @@ export function CustomizerPage() {
   const [selectedCatalogModelSlot, setSelectedCatalogModelSlot] = useState<number | null>(null)
   const [selectedCatalogPoseSlot, setSelectedCatalogPoseSlot] = useState<number | null>(null)
   const [selectedPoseCategory, setSelectedPoseCategory] = useState('Parado')
+  const [selectedPosePage, setSelectedPosePage] = useState(0)
   const [modelThumbnails, setModelThumbnails] = useState<Record<number, string>>({})
   const [poseThumbnails, setPoseThumbnails] = useState<Record<string, string>>({})
   const [clothingSection, setClothingSection] = useState<'Customizar' | 'Superior' | 'Inferior'>('Superior')
@@ -755,6 +756,7 @@ export function CustomizerPage() {
       setSelectedCatalogModelSlot(null)
       setSelectedCatalogPoseSlot(null)
       setSelectedPoseCategory('Parado')
+      setSelectedPosePage(0)
       setSelectedArtworkUrl(null)
       setSelectedArtworkLabel('')
       setSelectedArtworkProject(null)
@@ -770,6 +772,7 @@ export function CustomizerPage() {
       setSelectedCatalogModelSlot(null)
       setSelectedCatalogPoseSlot(null)
       setSelectedPoseCategory('Parado')
+      setSelectedPosePage(0)
       setSelectedArtworkUrl(null)
       setSelectedArtworkLabel('')
       setSelectedArtworkProject(null)
@@ -783,6 +786,7 @@ export function CustomizerPage() {
     const requestId = ++previewLoadRequest.current
     let cancelled = false
     setSelectedCatalogModelSlot(model.slot)
+    setSelectedPosePage(0)
     setSelectedCatalogPoseSlot(pose?.slot ?? null)
     setSelectedPoseCategory(pose ? resolvePoseCategory(pose) : 'Parado')
     setSelectedArtworkLabel(pose?.name ?? model.name)
@@ -1455,6 +1459,7 @@ export function CustomizerPage() {
   async function selectCatalogModel(model: NonNullable<FabricatorSlotSummary>) {
     const requestId = ++previewLoadRequest.current
     setSelectedCatalogModelSlot(model.slot)
+    setSelectedPosePage(0)
     setSelectedArtworkLabel(model.name)
     setSelectedArtworkUrl(null)
     setPreviewLoading(true)
@@ -1480,8 +1485,10 @@ export function CustomizerPage() {
 
   async function selectCatalogPose(pose: NonNullable<FabricatorPoseSummary>) {
     const requestId = ++previewLoadRequest.current
+    const nextCategory = resolvePoseCategory(pose)
+    if (nextCategory !== selectedPoseCategory) setSelectedPosePage(0)
     setSelectedCatalogPoseSlot(pose.slot)
-    setSelectedPoseCategory(resolvePoseCategory(pose))
+    setSelectedPoseCategory(nextCategory)
     setSelectedArtworkLabel(pose.name)
     setSelectedArtworkUrl(null)
     setPreviewLoading(true)
@@ -1505,10 +1512,17 @@ export function CustomizerPage() {
   const availablePoses = catalogPoses.filter((pose): pose is NonNullable<typeof pose> => pose?.sourceModelSlot === selectedCatalogModelSlot).sort((a, b) => a.slot - b.slot)
   const poseCategories = ['Parado', 'Sentado', ...new Set(availablePoses.map(resolvePoseCategory).filter((category) => category !== 'Parado' && category !== 'Sentado'))]
   const categoryPoses = availablePoses.filter((pose) => resolvePoseCategory(pose) === selectedPoseCategory)
+  const posePageCount = Math.max(1, Math.ceil(categoryPoses.length / 5))
+  const activePosePage = Math.min(selectedPosePage, posePageCount - 1)
+  const visibleCategoryPoses = categoryPoses.slice(activePosePage * 5, activePosePage * 5 + 5)
   const showAdjacentPoseCategory = (direction: -1 | 1) => {
     const categoryIndex = poseCategories.indexOf(selectedPoseCategory)
     const nextCategory = poseCategories[(categoryIndex + direction + poseCategories.length) % poseCategories.length]
     setSelectedPoseCategory(nextCategory)
+    setSelectedPosePage(0)
+  }
+  const showAdjacentPosePage = (direction: -1 | 1) => {
+    setSelectedPosePage((current) => Math.max(0, Math.min(posePageCount - 1, current + direction)))
   }
   const selectedModelName = availableModels.find((model) => model.slot === selectedCatalogModelSlot)?.name
   const activeFaceAppearance = characterFaceAppearance?.modelSlot === selectedCatalogModelSlot ? characterFaceAppearance : undefined
@@ -1615,14 +1629,21 @@ export function CustomizerPage() {
             {selectedCustomizerTopTab === 'modelos' && <section className="customizer-pose-carousel" aria-label="Pose do modelo">
               <header className="customizer-pose-carousel-heading" aria-live="polite">
                 <strong>{selectedPoseCategory}</strong>
+                {posePageCount > 1 && <span>Página {activePosePage + 1} de {posePageCount}</span>}
               </header>
               <div className="customizer-pose-carousel-body">
-                <button className="customizer-pose-carousel-arrow" aria-label="Categoria anterior de poses" title="Categoria anterior" onClick={() => showAdjacentPoseCategory(-1)} type="button"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M13 2 0 16l13 14v-8h19V10H13z" /></svg></button>
-                <div className="customizer-pose-carousel-poses">
-                  {categoryPoses.map((pose) => <button className={`customizer-pose-carousel-image${selectedCatalogPoseSlot === pose.slot ? ' selected' : ''}`} key={`${pose.sourceModelSlot}:${pose.slot}`} onClick={() => void selectCatalogPose(pose)} disabled={!selectedCharacter || previewLoading} title={`Pose ${String(pose.slot).padStart(2, '0')}: ${pose.name}`} aria-label={`Selecionar pose ${String(pose.slot).padStart(2, '0')}`} aria-pressed={selectedCatalogPoseSlot === pose.slot} type="button">{poseThumbnails[`${pose.sourceModelSlot}:${pose.slot}`] ? <img src={poseThumbnails[`${pose.sourceModelSlot}:${pose.slot}`]} alt="" /> : <span>Pose {String(pose.slot).padStart(2, '0')}</span>}</button>)}
-                  {Array.from({ length: Math.max(0, 5 - categoryPoses.length) }, (_, index) => <span className="customizer-pose-carousel-empty" key={`empty-${index}`} />)}
+                <div className="customizer-pose-carousel-nav" role="group" aria-label="Navegação à esquerda">
+                  <button className="customizer-pose-carousel-arrow category" aria-label="Categoria anterior" title="Categoria anterior" onClick={() => showAdjacentPoseCategory(-1)} type="button"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M13 2 0 16l13 14v-8h19V10H13z" /></svg></button>
+                  <button className="customizer-pose-carousel-arrow page" aria-label="Página anterior de poses" title="Página anterior" onClick={() => showAdjacentPosePage(-1)} disabled={activePosePage === 0} type="button"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M13 2 0 16l13 14v-8h19V10H13z" /></svg></button>
                 </div>
-                <button className="customizer-pose-carousel-arrow" aria-label="Próxima categoria de poses" title="Próxima categoria" onClick={() => showAdjacentPoseCategory(1)} type="button"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M19 2 32 16 19 30v-8H0V10h19z" /></svg></button>
+                <div className="customizer-pose-carousel-poses">
+                  {visibleCategoryPoses.map((pose) => <button className={`customizer-pose-carousel-image${selectedCatalogPoseSlot === pose.slot ? ' selected' : ''}`} key={`${pose.sourceModelSlot}:${pose.slot}`} onClick={() => void selectCatalogPose(pose)} disabled={!selectedCharacter || previewLoading} title={`Pose ${String(pose.slot).padStart(2, '0')}: ${pose.name}`} aria-label={`Selecionar pose ${String(pose.slot).padStart(2, '0')}`} aria-pressed={selectedCatalogPoseSlot === pose.slot} type="button">{poseThumbnails[`${pose.sourceModelSlot}:${pose.slot}`] ? <img src={poseThumbnails[`${pose.sourceModelSlot}:${pose.slot}`]} alt="" /> : <span>Pose {String(pose.slot).padStart(2, '0')}</span>}</button>)}
+                  {Array.from({ length: Math.max(0, 5 - visibleCategoryPoses.length) }, (_, index) => <span className="customizer-pose-carousel-empty" key={`empty-${index}`} />)}
+                </div>
+                <div className="customizer-pose-carousel-nav" role="group" aria-label="Navegação à direita">
+                  <button className="customizer-pose-carousel-arrow category" aria-label="Próxima categoria" title="Próxima categoria" onClick={() => showAdjacentPoseCategory(1)} type="button"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M19 2 32 16 19 30v-8H0V10h19z" /></svg></button>
+                  <button className="customizer-pose-carousel-arrow page" aria-label="Próxima página de poses" title="Próxima página" onClick={() => showAdjacentPosePage(1)} disabled={activePosePage >= posePageCount - 1} type="button"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M19 2 32 16 19 30v-8H0V10h19z" /></svg></button>
+                </div>
               </div>
             </section>}
             {selectedCustomizerTopTab === 'modelos' && <section className="customizer-proportions" aria-label="Proporções do personagem">

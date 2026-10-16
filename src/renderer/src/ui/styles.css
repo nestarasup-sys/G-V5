@@ -317,13 +317,17 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .customizer-model-skin-picker-swatch>svg { width:17px;height:17px;color:#fff;filter:drop-shadow(0 1px 2px #442434); }
 .customizer-model-skin-tone:disabled,.customizer-model-skin-picker:has(input:disabled) { opacity:.5;cursor:not-allowed; }
 .customizer-pose-carousel { width:100%;height:183px;flex:0 0 auto;display:flex;flex-direction:column;overflow:hidden;border:2px solid #76245a;border-radius:5px;background:#fff; }
-.customizer-pose-carousel-heading { height:27px;flex:0 0 27px;display:flex;align-items:center;justify-content:center;background:#69277d;color:#fff; }
-.customizer-pose-carousel-heading strong { font-size:20px;font-weight:700;line-height:1;white-space:nowrap; }
+.customizer-pose-carousel-heading { position:relative;height:27px;flex:0 0 27px;display:flex;align-items:center;justify-content:center;background:#69277d;color:#fff; }
+.customizer-pose-carousel-heading strong { max-width:calc(100% - 120px);overflow:hidden;font-size:20px;font-weight:700;line-height:1;text-overflow:ellipsis;white-space:nowrap; }
+.customizer-pose-carousel-heading>span { position:absolute;right:8px;color:#f7eafa;font-size:10px;font-weight:650;white-space:nowrap; }
 .customizer-pose-carousel-body { min-height:0;flex:1;display:grid;grid-template-columns:9% minmax(0,1fr) 9%;background:#bb408e; }
-.customizer-pose-carousel-arrow { min-width:0;display:grid;place-items:center;border:0;background:transparent;color:#fff;cursor:pointer;transition:transform .15s,opacity .15s; }
+.customizer-pose-carousel-nav { min-width:0;min-height:0;display:grid;grid-template-rows:1fr 1fr; }
+.customizer-pose-carousel-arrow { min-width:0;min-height:0;display:grid;place-items:center;border:0;background:transparent;color:#fff;cursor:pointer;transition:transform .15s,opacity .15s; }
+.customizer-pose-carousel-arrow.category { background:#69277d; }
+.customizer-pose-carousel-arrow.page { border-top:1px solid #ffffff40;background:#bb408e; }
 .customizer-pose-carousel-arrow:not(:disabled):hover { transform:scale(1.12); }
 .customizer-pose-carousel-arrow:disabled { opacity:.35;cursor:default; }
-.customizer-pose-carousel-arrow svg { width:32px;height:32px;fill:currentColor; }
+.customizer-pose-carousel-arrow svg { width:26px;height:26px;fill:currentColor; }
 .customizer-pose-carousel-poses { min-width:0;min-height:0;display:grid;grid-template-rows:minmax(0,1fr);grid-auto-flow:column;grid-auto-columns:calc((100% - 32px)/5);gap:8px;overflow-x:auto;scrollbar-width:thin;scrollbar-color:#a83d83 #f6e6f0; }
 .customizer-pose-carousel-image,.customizer-pose-carousel-empty { min-width:0;min-height:0;display:grid;place-items:center;overflow:hidden;border:0;background:#fff; }
 .customizer-pose-carousel-image { position:relative;padding:0;cursor:pointer; }
