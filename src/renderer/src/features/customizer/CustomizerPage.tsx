@@ -940,6 +940,8 @@ export function CustomizerPage() {
   const [hairDetails, setHairDetails] = useState<Record<string, HairStyle>>({})
   const [hairCatalogSide, setHairCatalogSide] = useState<HairCatalogSide>('front')
   const [hairLoading, setHairLoading] = useState(false)
+  const [hairLibraryPart, setHairLibraryPart] = useState<HairPartId | null>(null)
+  const [hairLibraryPage, setHairLibraryPage] = useState(0)
   const [headPanelTab, setHeadPanelTab] = useState<'hair' | 'eyes' | 'face' | 'extra' | 'adjust'>('hair')
   const [activeHairColorRole, setActiveHairColorRole] = useState<HairColorRole>('base')
   const [faceCategory, setFaceCategory] = useState<'eyes' | 'eyebrows' | 'nose' | 'mouth'>('eyes')
@@ -1924,9 +1926,9 @@ export function CustomizerPage() {
         <header><strong>{part.label} {selectedIndex >= 0 ? `${selectedIndex + 1}/${options.length}` : `0/${options.length}`}</strong>{hasLocalColors && <button className="customizer-hair-reset" onClick={() => void resetHairPartColors(part.id)} title={`Voltar ${part.label} à paleta geral`} type="button">Usar paleta geral</button>}</header>
         <div className="customizer-hair-piece-selector">
           <button aria-label={`Peça anterior: ${part.label}`} onClick={() => chooseAt(selectedIndex < 0 ? options.length - 1 : selectedIndex - 1)} disabled={!options.length || selectedIndex <= 0} type="button"><Icon name="chevronRight" /></button>
-          <div className="customizer-hair-piece-preview" aria-live="polite">
+          <button className="customizer-hair-piece-preview" aria-label={`Abrir biblioteca de ${part.label}`} title={`Abrir biblioteca de ${part.label}`} onClick={() => { setHairLibraryPage(0); setHairLibraryPart(part.id) }} type="button">
             {asset ? <HairAssetPreview source={asset.dataUrl} colors={pieceColors} alt={selected?.name ?? ''} /> : <span>{options.length ? 'Escolha uma peça' : 'Sem peças salvas'}</span>}
-          </div>
+          </button>
           <button aria-label={`Próxima peça: ${part.label}`} onClick={() => chooseAt(selectedIndex < 0 ? 0 : selectedIndex + 1)} disabled={!options.length || selectedIndex >= options.length - 1} type="button"><Icon name="chevronRight" /></button>
           <div className="customizer-hair-piece-colors" aria-label={`Cores de ${part.label}`}>
             {hairColorControls.map((color) => <label key={color.id} className={appearance?.partColors?.[part.id]?.[color.id] ? 'local' : ''} style={{ '--hair-color-swatch': pieceColors[color.id] ?? color.fallback } as React.CSSProperties} title={`${color.label} de ${part.label} · ${appearance?.partColors?.[part.id]?.[color.id] ? 'ajuste individual' : 'paleta geral'}`}>
@@ -1959,6 +1961,46 @@ export function CustomizerPage() {
             </div>
           </>}
     </section>
+  }
+
+  const renderHairLibrary = () => {
+    if (!hairLibraryPart) return null
+    const part = customizerHairParts.find((item) => item.id === hairLibraryPart)
+    if (!part) return null
+    const options = hairStyles.filter((summary) => summary[part.side] !== null)
+    const pageSize = 20
+    const pageCount = Math.max(1, Math.ceil(options.length / pageSize))
+    const page = Math.min(hairLibraryPage, pageCount - 1)
+    const visible = options.slice(page * pageSize, (page + 1) * pageSize)
+    const appearance = characterHairAppearance?.modelSlot === selectedCatalogModelSlot ? characterHairAppearance : undefined
+    const selectedId = hairAppearancePartStyleId(appearance, part.id)
+    const choose = (summary: HairStyleSummary | null) => {
+      void chooseHairPartStyle(part.id, summary).then(() => setHairLibraryPart(null))
+    }
+    return <div className="customizer-hair-library-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setHairLibraryPart(null) }}>
+      <section className="customizer-hair-library" role="dialog" aria-modal="true" aria-labelledby="customizer-hair-library-title">
+        <header className="customizer-hair-library-heading">
+          <button className="customizer-hair-library-remove" type="button" onClick={() => choose(null)} disabled={!selectedId} aria-label={`Remover ${part.label} do personagem`} title={`Remover ${part.label} do personagem`}><Icon name="trash" /></button>
+          <h2 id="customizer-hair-library-title">{part.label}</h2>
+          <button className="customizer-hair-library-close" type="button" onClick={() => setHairLibraryPart(null)} aria-label="Fechar biblioteca">×</button>
+        </header>
+        <div className="customizer-hair-library-grid" aria-label={`Peças disponíveis para ${part.label}`}>
+          {visible.map((summary) => {
+            const asset = hairDetails[`${summary.modelSlot}:${summary.id}`]?.[part.side]
+            const isSelected = summary.id === selectedId
+            return <button className={`customizer-hair-library-item${isSelected ? ' selected' : ''}`} key={summary.id} title={summary.name} aria-label={`Selecionar ${summary.name}`} aria-pressed={isSelected} type="button" onClick={() => choose(summary)}>
+              {asset ? <HairAssetPreview source={asset.dataUrl} colors={resolvedHairColors(appearance, part.id)} alt="" /> : <span className="customizer-hair-library-placeholder"><Icon name="bow" /></span>}
+            </button>
+          })}
+          {!options.length && <p className="customizer-hair-library-empty">Nenhuma peça salva nesta categoria.</p>}
+        </div>
+        <footer className="customizer-hair-library-pagination">
+          <button className="customizer-hair-library-page-arrow" type="button" aria-label="Página anterior" disabled={page === 0} onClick={() => setHairLibraryPage((current) => Math.max(0, current - 1))}><Icon name="chevronRight" /></button>
+          <span>Página <strong>{page + 1}/{pageCount}</strong></span>
+          <button className="customizer-hair-library-page-arrow next" type="button" aria-label="Próxima página" disabled={page >= pageCount - 1} onClick={() => setHairLibraryPage((current) => Math.min(pageCount - 1, current + 1))}><Icon name="chevronRight" /></button>
+        </footer>
+      </section>
+    </div>
   }
 
   if (activeModule !== null && modules.some((module) => module.name === activeModule)) {
@@ -2278,6 +2320,7 @@ export function CustomizerPage() {
             </div>
           </section>
         </div>
+        {renderHairLibrary()}
       </div>
     )
   }

@@ -433,8 +433,43 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .customizer-hair-piece-selector>button svg { width:clamp(18px,2.2vw,28px);height:clamp(18px,2.2vw,28px);stroke-width:3; }
 .customizer-hair-piece-selector>button:disabled { opacity:.4;cursor:default; }
 .customizer-hair-piece-preview { min-width:0;min-height:0;display:grid;place-items:center;overflow:hidden;background:#fff; }
+.customizer-hair-piece-preview { width:100%;height:100%;padding:0;border:0;color:inherit;cursor:pointer; }
+.customizer-hair-piece-preview:hover { box-shadow:inset 0 0 0 3px #e875b0; }
 .customizer-hair-piece-preview img { display:block;width:100%;height:100%;min-width:0;min-height:0;object-fit:contain;object-position:center; }
 .customizer-hair-piece-preview>span { padding:8px;color:#8b7891;font-size:10px;text-align:center; }
+.customizer-hair-library-backdrop { position:fixed;z-index:1400;inset:0;display:grid;place-items:center;padding:14px;background:#211332c9;backdrop-filter:blur(3px); }
+.customizer-hair-library { width:min(1120px,96vw);height:min(900px,94vh);min-height:360px;display:grid;grid-template-rows:86px minmax(0,1fr) 112px;overflow:hidden;border:5px solid #442067;border-radius:12px;background:#512477;box-shadow:0 20px 80px #16092499; }
+.customizer-hair-library-heading { min-width:0;display:grid;grid-template-columns:145px minmax(0,1fr) 145px;align-items:center;gap:12px;padding:8px;border-bottom:4px solid #341455;background:#522478;color:#fff; }
+.customizer-hair-library-heading h2 { overflow:hidden;margin:0;font-size:clamp(20px,4vw,48px);font-weight:500;text-align:center;text-overflow:ellipsis;white-space:nowrap; }
+.customizer-hair-library-remove,.customizer-hair-library-close { width:100%;height:100%;max-height:76px;display:grid;place-items:center;border:5px solid #861044;border-radius:9px;background:linear-gradient(180deg,#ff0b64,#e90052);color:#fff;cursor:pointer;box-shadow:inset 0 5px 0 #ff5b95; }
+.customizer-hair-library-remove svg { width:52px;height:52px;stroke-width:2.6; }
+.customizer-hair-library-remove:disabled { opacity:.4;cursor:default; }
+.customizer-hair-library-close { width:100%;font-size:66px;line-height:1;text-shadow:0 2px 2px #81204e; }
+.customizer-hair-library-grid { min-width:0;min-height:0;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));grid-template-rows:repeat(4,minmax(0,1fr));gap:7px;overflow:auto;padding:7px;background:#512477; }
+.customizer-hair-library-item { min-width:0;min-height:0;display:grid;place-items:center;overflow:hidden;padding:4px;border:5px solid #311553;border-radius:4px;background:linear-gradient(145deg,#584396,#47339a);cursor:pointer; }
+.customizer-hair-library-item:hover { border-color:#e986bc; }
+.customizer-hair-library-item.selected { border-color:#ff70b3;background:linear-gradient(145deg,#8b5fc1,#6846ad);box-shadow:inset 0 0 0 3px #f5b3d4; }
+.customizer-hair-library-item img { width:100%;height:100%;min-width:0;min-height:0;object-fit:contain; }
+.customizer-hair-library-placeholder { width:100%;height:100%;display:grid;place-items:center;color:#d8c9f1; }
+.customizer-hair-library-placeholder svg { width:45%;height:45%; }
+.customizer-hair-library-empty { grid-column:1/-1;align-self:center;margin:0;color:#f3e9fc;font-size:16px;text-align:center; }
+.customizer-hair-library-pagination { display:grid;grid-template-columns:minmax(120px,1fr) auto minmax(120px,1fr);align-items:center;gap:14px;padding:8px 12%;border-top:4px solid #341455;background:#522478;color:#fff;font-size:clamp(18px,3vw,38px);text-align:center; }
+.customizer-hair-library-page-arrow { width:100%;height:100%;max-height:100px;display:grid;place-items:center;border:5px solid #32134d;background:linear-gradient(180deg,#aa6dd0,#8144b6);color:#ffa4db;cursor:pointer;box-shadow:inset 0 5px 0 #d9a1ee; }
+.customizer-hair-library-page-arrow svg { width:clamp(36px,6vw,76px);height:clamp(36px,6vw,76px);stroke-width:3.5;filter:drop-shadow(0 2px 1px #9a2878); }
+.customizer-hair-library-page-arrow:first-child svg { transform:rotate(180deg); }
+.customizer-hair-library-page-arrow:disabled { opacity:.38;cursor:default; }
+.customizer-hair-library-pagination span { min-width:110px; }
+@media (max-width:720px) {
+  .customizer-hair-library { grid-template-rows:64px minmax(0,1fr) 76px; }
+  .customizer-hair-library-heading { grid-template-columns:64px minmax(0,1fr) 64px;gap:6px; }
+  .customizer-hair-library-remove,.customizer-hair-library-close { max-height:54px;border-width:3px; }
+  .customizer-hair-library-remove svg { width:34px;height:34px; }
+  .customizer-hair-library-close { font-size:44px; }
+  .customizer-hair-library-grid { grid-template-columns:repeat(3,minmax(0,1fr));grid-template-rows:repeat(7,minmax(70px,1fr));gap:4px;padding:4px; }
+  .customizer-hair-library-item { border-width:3px; }
+  .customizer-hair-library-pagination { grid-template-columns:minmax(50px,1fr) auto minmax(50px,1fr);gap:6px;padding:5px 5%; }
+  .customizer-hair-library-page-arrow { border-width:3px; }
+}
 .customizer-hair-piece-colors { min-width:0;min-height:0;display:grid;grid-template-rows:repeat(5,minmax(0,1fr));gap:2px; }
 .customizer-hair-piece-colors label { position:relative;min-width:0;min-height:0;display:grid;place-items:center;border:2px solid #7864a7;border-radius:4px;background:var(--hair-color-swatch);color:#fff;cursor:pointer; }
 .customizer-hair-piece-colors label.local { border-color:#ffe5f3;box-shadow:inset 0 0 0 2px #ea73b2; }
