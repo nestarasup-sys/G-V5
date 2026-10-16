@@ -2458,7 +2458,7 @@ export function CustomizerPage() {
     }
     const isMouth = part.id === 'mouth'
     const clearPart = part.id
-    return <article className={`customizer-hair-piece customizer-face-piece customizer-face-layout-piece${isMouth ? ' customizer-face-layout-mouth' : ''}`} key={part.id}>
+    return <article className={`customizer-hair-piece customizer-face-piece customizer-face-layout-piece customizer-face-layout-piece-${part.id}${isMouth ? ' customizer-face-layout-mouth' : ''}`} key={part.id}>
       <header><strong>{part.label} {selectedSlot + 1}/{slotCount}</strong><button className="customizer-hair-reset" type="button" disabled={!selectedId} onClick={() => void clearFaceCatalogPart(clearPart)}>Remover</button></header>
       {isMouth && <nav className="customizer-face-layout-mode" aria-label="Tipo de boca">
         <button className={!activeFaceAppearance?.mouthOpen ? 'active' : ''} type="button" aria-pressed={!activeFaceAppearance?.mouthOpen} onClick={() => void setFaceCatalogVariant({ mouthOpen: false })}>Fechada</button>
@@ -2552,7 +2552,7 @@ export function CustomizerPage() {
         if (slot === 0) void clearFacePartSelection(part.id)
         else void chooseFacePartCatalogItem(part.id, options[slot - 1])
       }
-      return <article className="customizer-hair-piece customizer-face-piece" key={part.id}>
+      return <article className={`customizer-hair-piece customizer-face-piece customizer-face-piece-${part.id}`} key={part.id}>
         <header><strong>{part.label} {selectedSlot + 1}/{slotCount}</strong>{hasLocalColors && <button className="customizer-hair-reset" onClick={() => void resetFacePartColors(colorPartId)} title={'Restaurar cores de ' + part.label} type="button">Restaurar</button>}</header>
         <div className="customizer-hair-piece-selector">
           <button aria-label={'Peça anterior: ' + part.label} onClick={() => chooseAt(selectedSlot - 1)} disabled={!options.length || !selectedCharacter} type="button"><Icon name="chevronRight" /></button>

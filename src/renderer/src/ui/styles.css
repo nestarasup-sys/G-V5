@@ -495,12 +495,24 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .customizer-piece-palette .customizer-hair-palette-preset-list button span { width:15px;height:15px; }
 .customizer-face-workspace { gap:5px; }
 .customizer-face-layout { grid-template-columns:repeat(3,minmax(0,1fr));grid-template-rows:repeat(2,minmax(0,1fr));gap:5px; }
+.customizer-face-layout:not(.customizer-face-layout-catalog)>.customizer-face-piece-eye-right { grid-row:1;grid-column:1; }
+.customizer-face-layout:not(.customizer-face-layout-catalog)>.customizer-face-piece-eye-left { grid-row:2;grid-column:1; }
+.customizer-face-layout:not(.customizer-face-layout-catalog)>.customizer-face-piece-pupil-right { grid-row:1;grid-column:2; }
+.customizer-face-layout:not(.customizer-face-layout-catalog)>.customizer-face-piece-pupil-left { grid-row:2;grid-column:2; }
+.customizer-face-layout:not(.customizer-face-layout-catalog)>.customizer-face-piece-brow-right { grid-row:1;grid-column:3; }
+.customizer-face-layout:not(.customizer-face-layout-catalog)>.customizer-face-piece-brow-left { grid-row:2;grid-column:3; }
 .customizer-face-piece { grid-template-rows:28px minmax(0,1fr) 47px; }
 .customizer-face-piece>header { padding:0 6px; }
 .customizer-face-piece>header strong { font-size:clamp(10px,.95vw,14px); }
 .customizer-face-piece .customizer-hair-reset { font-size:8px; }
 .customizer-face-catalog-workspace { gap:5px; }
 .customizer-face-layout-catalog { grid-template-columns:repeat(3,minmax(0,1fr));grid-template-rows:repeat(2,minmax(0,1fr));gap:5px; }
+.customizer-face-layout-catalog>.customizer-face-layout-piece-eye-highlight-right { grid-row:1;grid-column:1; }
+.customizer-face-layout-catalog>.customizer-face-layout-piece-eye-highlight-left { grid-row:2;grid-column:1; }
+.customizer-face-layout-catalog>.customizer-face-layout-piece-nose { grid-row:1;grid-column:2; }
+.customizer-face-layout-catalog>.customizer-face-layout-piece-mouth { grid-row:2;grid-column:2; }
+.customizer-face-layout-catalog>.customizer-face-layout-piece-blush { grid-row:1;grid-column:3; }
+.customizer-face-layout-catalog>.customizer-face-layout-piece-facial-shadow { grid-row:2;grid-column:3; }
 .customizer-face-layout-piece { grid-template-rows:28px minmax(0,1fr) 47px; }
 .customizer-face-layout-piece>header { padding:0 6px; }
 .customizer-face-layout-piece>header strong { font-size:clamp(10px,.95vw,14px); }
