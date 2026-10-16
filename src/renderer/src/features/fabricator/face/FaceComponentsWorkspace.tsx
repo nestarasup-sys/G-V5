@@ -12,6 +12,7 @@ type LibraryCategory = FaceComponentKind | 'nose' | 'mouth'
 type FaceGuide = { visible: boolean; verticalX: number; horizontalY: number; lowerHorizontalY: number; angle: number }
 type PreviewDrag = { pointerId: number; key: string; clientX: number; clientY: number; startX: number; startY: number; modelPerPixelX: number; modelPerPixelY: number; invertX: boolean; pupil: boolean }
 const GUIDE_STORAGE_KEY = 'gacha-nymi:face-dev-guides'
+const PUPIL_SELECTION_STORAGE_KEY = 'gacha-nymi:face-dev-pupil-selections'
 const defaultGuide: FaceGuide = { visible: true, verticalX: 50, horizontalY: 45, lowerHorizontalY: 65, angle: 12 }
 const categories: Array<{ kind: FaceComponentKind; label: string; parts: [PartId, PartId]; names: [string, string] }> = [
   { kind: 'eye', label: 'Olhos', parts: ['eye-left', 'eye-right'], names: ['Olho esquerdo', 'Olho direito'] },
@@ -43,6 +44,13 @@ function readFaceGuides(): Record<number, FaceGuide> {
         angle: guideValue(value.angle, defaultGuide.angle, -30, 30)
       }]
     }))
+  } catch { return {} }
+}
+type PupilSelection = { left?: string; right?: string; linked: boolean }
+function readPupilSelections(): Record<number, PupilSelection> {
+  try {
+    const stored = JSON.parse(window.localStorage.getItem(PUPIL_SELECTION_STORAGE_KEY) ?? '{}') as Record<string, PupilSelection>
+    return stored && typeof stored === 'object' && !Array.isArray(stored) ? stored : {}
   } catch { return {} }
 }
 const readImage = async (file: File): Promise<{ dataUrl: string; width: number; height: number }> => {
@@ -141,6 +149,7 @@ export function FaceComponentsWorkspace() {
   const [openModal, setOpenModal] = useState<'import' | 'delete' | null>(null)
   const [markedForDeletion, setMarkedForDeletion] = useState<string[]>([])
   const componentDetailsRef = useRef(details)
+  const hydratedPupilSlot = useRef<number | null>(null)
   const catalogDetailsRef = useRef<Record<string, FaceCatalogItem>>({})
   const pendingSaves = useRef(new Map<string, { timer: number; run: () => Promise<void> }>())
   const saveChains = useRef(new Map<string, Promise<void>>())
@@ -158,6 +167,8 @@ export function FaceComponentsWorkspace() {
     ? selectedAssets[selectedCategory.parts[0]]
     : selectedAssets[selectedPart]
   const selectedAsset = selectedId ? details[selectedId] : undefined
+  const leftPupil = selectedAssets['pupil-left'] ? details[selectedAssets['pupil-left']] : undefined
+  const rightPupil = selectedAssets['pupil-right'] ? details[selectedAssets['pupil-right']] : undefined
   const selectedMouth = selectedMouthId && mouthDetails[selectedMouthId]?.category === mouthKind ? mouthDetails[selectedMouthId] : undefined
   const selectedNose = selectedNoseId ? noseDetails[selectedNoseId] : undefined
   const selectedCatalogItem = libraryCategory === 'nose' ? selectedNose : libraryCategory === 'mouth' ? selectedMouth : undefined
@@ -213,6 +224,14 @@ export function FaceComponentsWorkspace() {
 
   useEffect(() => { void window.desktop.listFabricatorSlots().then((slots) => { setModels(slots); const first = slots.findIndex(Boolean); if (first >= 0) setModelSlot(first + 1) }).catch((reason) => setError(String(reason))) }, [])
   useEffect(() => { try { window.localStorage.setItem(GUIDE_STORAGE_KEY, JSON.stringify(guidesByModel)) } catch { /* Keep guides available during this session. */ } }, [guidesByModel])
+  useEffect(() => {
+    if (hydratedPupilSlot.current !== modelSlot) return
+    try {
+      const stored = readPupilSelections()
+      stored[modelSlot] = { left: selectedAssets['pupil-left'], right: selectedAssets['pupil-right'], linked: linked.pupil }
+      window.localStorage.setItem(PUPIL_SELECTION_STORAGE_KEY, JSON.stringify(stored))
+    } catch { /* The saved assets remain available in the library. */ }
+  }, [modelSlot, selectedAssets, linked.pupil])
   function updateGuide(patch: Partial<FaceGuide>) {
     setGuidesByModel((current) => ({ ...current, [modelSlot]: { ...(current[modelSlot] ?? defaultGuide), ...patch } }))
   }
@@ -236,11 +255,18 @@ export function FaceComponentsWorkspace() {
   }, [openModal, busy])
   useEffect(() => {
     let active = true
+    hydratedPupilSlot.current = null
     setModel(null); setAssets([]); setDetails({}); setSelectedAssets({})
     void Promise.all([window.desktop.loadFabricatorSlot(modelSlot), window.desktop.listFaceComponentAssets(modelSlot)]).then(async ([project, list]) => {
       const loaded = await Promise.all(list.map((entry) => window.desktop.loadFaceComponentAsset(modelSlot, entry.id)))
       if (!active) return
-      setModel(project); setAssets(list); setDetails(Object.fromEntries(loaded.filter((item): item is FaceComponentAsset => Boolean(item)).map((item) => [item.id, item])))
+      const loadedAssets = loaded.filter((item): item is FaceComponentAsset => Boolean(item))
+      const pupilIds = new Set(loadedAssets.filter((item) => item.kind === 'pupil').map((item) => item.id))
+      const savedPupils = readPupilSelections()[modelSlot]
+      setModel(project); setAssets(list); setDetails(Object.fromEntries(loadedAssets.map((item) => [item.id, item])))
+      setSelectedAssets({ 'pupil-left': savedPupils?.left && pupilIds.has(savedPupils.left) ? savedPupils.left : undefined, 'pupil-right': savedPupils?.right && pupilIds.has(savedPupils.right) ? savedPupils.right : undefined })
+      setLinked((current) => ({ ...current, pupil: savedPupils?.linked !== false }))
+      hydratedPupilSlot.current = modelSlot
     }).catch((reason) => { if (active) setError(String(reason)) })
     return () => { active = false }
   }, [modelSlot])
@@ -292,29 +318,77 @@ export function FaceComponentsWorkspace() {
       const baseName = file.name.replace(/\.[^.]+$/, '').slice(0, 90) || 'Olhos'
       const labels: Record<(typeof pieces)[number]['kind'], string> = { eye: 'Olho aberto', pupil: 'Pupila', 'eye-closed': 'Olho fechado' }
       const imported: FaceComponentAsset[] = []
+      const assigned: Partial<Record<PartId, string>> = {}
       for (const piece of pieces) {
-        const asset: FaceComponentAssetSave = {
-          schemaVersion: 1, id: crypto.randomUUID(), modelSlot, kind: piece.kind,
-          name: `${baseName} · ${labels[piece.kind]}`.slice(0, 120), width: piece.width, height: piece.height,
-          defaultTransform: initialTransform(piece.kind, head, piece.width, piece.height), updatedAt: new Date().toISOString()
+        const destinations: Array<{ part: PartId; label: string }> = piece.kind === 'pupil'
+          ? [{ part: 'pupil-left', label: 'Pupila esquerda' }, { part: 'pupil-right', label: 'Pupila direita' }]
+          : [{ part: piece.kind === 'eye' ? 'eye-left' : 'eye-closed-left', label: labels[piece.kind] }]
+        for (const destination of destinations) {
+          const asset: FaceComponentAssetSave = {
+            schemaVersion: 1, id: crypto.randomUUID(), modelSlot, kind: piece.kind,
+            name: `${baseName} · ${destination.label}`.slice(0, 120), width: piece.width, height: piece.height,
+            defaultTransform: initialTransform(piece.kind, head, piece.width, piece.height), updatedAt: new Date().toISOString()
+          }
+          await window.desktop.saveFaceComponentAsset(modelSlot, asset, piece.dataUrl)
+          savedIds.push(asset.id)
+          assigned[destination.part] = asset.id
+          imported.push({ ...asset, dataUrl: piece.dataUrl })
         }
-        await window.desktop.saveFaceComponentAsset(modelSlot, asset, piece.dataUrl)
-        savedIds.push(asset.id)
-        imported.push({ ...asset, dataUrl: piece.dataUrl })
       }
       setDetails((current) => ({ ...current, ...Object.fromEntries(imported.map((asset) => [asset.id, asset])) }))
       setAssets((current) => [...imported, ...current])
-      setSelectedAssets((current) => ({ ...current,
-        'eye-left': imported.find((asset) => asset.kind === 'eye')?.id,
-        'pupil-left': imported.find((asset) => asset.kind === 'pupil')?.id,
-        'eye-closed-left': imported.find((asset) => asset.kind === 'eye-closed')?.id
-      }))
+      setSelectedAssets((current) => ({ ...current, ...assigned }))
       setSelectedPart('eye-left'); setLibraryCategory('eye'); setOpenModal(null)
       setNotice('Olho aberto, pupila e olho fechado importados. Ajuste cada peça na Biblioteca.')
     } catch (reason) {
       await Promise.allSettled(savedIds.map((id) => window.desktop.deleteFaceComponentAsset(modelSlot, id)))
       setError(reason instanceof Error ? reason.message : String(reason))
     } finally { setBusy(false) }
+  }
+
+  async function clonePupilForSide(source: FaceComponentAsset, side: 'pupil-left' | 'pupil-right') {
+    const copy: FaceComponentAssetSave = {
+      schemaVersion: 1, id: crypto.randomUUID(), modelSlot, kind: 'pupil',
+      name: `${source.name.replace(/ · (Pupila esquerda|Pupila direita)$/, '')} · Pupila ${side === 'pupil-left' ? 'esquerda' : 'direita'}`.slice(0, 120),
+      width: source.width, height: source.height, defaultTransform: { ...source.defaultTransform }, updatedAt: new Date().toISOString()
+    }
+    await window.desktop.saveFaceComponentAsset(modelSlot, copy, source.dataUrl)
+    const loaded: FaceComponentAsset = { ...copy, dataUrl: source.dataUrl }
+    setDetails((current) => ({ ...current, [copy.id]: loaded }))
+    setAssets((current) => [copy, ...current])
+    setSelectedAssets((current) => ({ ...current, [side]: copy.id }))
+  }
+
+  async function choosePupilSide(side: 'pupil-left' | 'pupil-right') {
+    if (busy) return
+    const sourceId = selectedAssets[side === 'pupil-right' ? 'pupil-left' : 'pupil-right']
+    const selectedSideId = selectedAssets[side]
+    if (side === 'pupil-right' && sourceId && (!selectedSideId || selectedSideId === sourceId)) {
+      const source = details[sourceId]
+      if (source) {
+        setBusy(true); setError('')
+        try { await clonePupilForSide(source, side) }
+        catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); setBusy(false); return }
+        setBusy(false)
+      }
+    }
+    setLinked((current) => ({ ...current, pupil: false }))
+    setSelectedPart(side); setLibraryCategory('pupil')
+  }
+
+  async function chooseLibraryAsset(asset: FaceComponentAssetSummary) {
+    if (libraryCategory !== 'pupil' || selectedPart !== 'pupil-left' && selectedPart !== 'pupil-right') {
+      setSelectedAssets((current) => ({ ...current, [selectedPart]: asset.id }))
+      return
+    }
+    const otherSide = selectedPart === 'pupil-left' ? 'pupil-right' : 'pupil-left'
+    if (selectedAssets[otherSide] === asset.id && details[asset.id]) {
+      setBusy(true); setError('')
+      try { await clonePupilForSide(details[asset.id], selectedPart) }
+      catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); return }
+      finally { setBusy(false) }
+    } else setSelectedAssets((current) => ({ ...current, [selectedPart]: asset.id }))
+    if (selectedPart === 'pupil-right') setLinked((current) => ({ ...current, pupil: false }))
   }
 
   async function importCatalogSheet(kind: CatalogKind, event: ChangeEvent<HTMLInputElement>, noseMode: 'one' | 'six' = 'one') {
@@ -502,13 +576,13 @@ export function FaceComponentsWorkspace() {
           <h3>{libraryCategory === 'mouth' ? 'Boca' : libraryCategory === 'nose' ? 'Nariz' : selectedCategory.label} <small>{libraryCategory === 'mouth' ? mouthCatalog.filter((item) => item.category === mouthKind).length : libraryCategory === 'nose' ? noseCatalog.length : assets.filter((asset) => asset.kind === libraryCategory).length}</small></h3>
           {libraryCategory === 'mouth' && <div className="face-components-mouth-variants"><button type="button" className={mouthKind === 'mouth-closed' ? 'active' : ''} onClick={() => { setMouthKind('mouth-closed'); setSelectedMouthId(mouthCatalog.find((item) => item.category === 'mouth-closed')?.id ?? null) }}>Fechadas</button><button type="button" className={mouthKind === 'mouth-open' ? 'active' : ''} onClick={() => { setMouthKind('mouth-open'); setSelectedMouthId(mouthCatalog.find((item) => item.category === 'mouth-open')?.id ?? null) }}>Abertas</button></div>}
           <div className="face-components-assets">
-            {libraryCategory === 'mouth' ? mouthCatalog.filter((item) => item.category === mouthKind).map((item) => <button key={item.id} className={selectedMouthId === item.id ? 'active' : ''} onClick={() => setSelectedMouthId(item.id)} type="button"><img src={mouthDetails[item.id]?.pieces[0]?.dataUrl} alt="" /><span>{item.name}</span></button>) : libraryCategory === 'nose' ? noseCatalog.map((item) => <button key={item.id} className={selectedNoseId === item.id ? 'active' : ''} onClick={() => setSelectedNoseId(item.id)} type="button"><img src={noseDetails[item.id]?.pieces[0]?.dataUrl} alt="" /><span>{item.name}</span></button>) : assets.filter((asset) => asset.kind === libraryCategory).map((asset) => <button key={asset.id} className={selectedId === asset.id ? 'active' : ''} onClick={() => setSelectedAssets((current) => ({ ...current, [selectedPart]: asset.id }))} type="button"><img src={details[asset.id]?.dataUrl} alt="" /><span>{asset.name}</span></button>)}
+            {libraryCategory === 'mouth' ? mouthCatalog.filter((item) => item.category === mouthKind).map((item) => <button key={item.id} className={selectedMouthId === item.id ? 'active' : ''} onClick={() => setSelectedMouthId(item.id)} type="button"><img src={mouthDetails[item.id]?.pieces[0]?.dataUrl} alt="" /><span>{item.name}</span></button>) : libraryCategory === 'nose' ? noseCatalog.map((item) => <button key={item.id} className={selectedNoseId === item.id ? 'active' : ''} onClick={() => setSelectedNoseId(item.id)} type="button"><img src={noseDetails[item.id]?.pieces[0]?.dataUrl} alt="" /><span>{item.name}</span></button>) : assets.filter((asset) => asset.kind === libraryCategory).map((asset) => <button key={asset.id} className={selectedId === asset.id ? 'active' : ''} onClick={() => void chooseLibraryAsset(asset)} disabled={busy} type="button"><img src={details[asset.id]?.dataUrl} alt="" /><span>{asset.name}</span></button>)}
             {(libraryCategory === 'mouth' ? !mouthCatalog.some((item) => item.category === mouthKind) : libraryCategory === 'nose' ? noseCatalog.length === 0 : !assets.some((asset) => asset.kind === libraryCategory)) && <small>Nenhum asset salvo nesta categoria</small>}
           </div>
         </section>
       </aside>
       <main className="face-components-stage-column">
-        <nav className="face-components-part-tabs">{categories.flatMap((category) => category.parts.map((id, side) => <button key={id} className={libraryCategory === category.kind && selectedPart === id ? 'active' : ''} onClick={() => { setSelectedPart(id); setLibraryCategory(category.kind) }} type="button">{category.names[side]}</button>))}</nav>
+        <nav className="face-components-part-tabs">{categories.flatMap((category) => category.parts.map((id, side) => <button key={id} className={libraryCategory === category.kind && selectedPart === id ? 'active' : ''} onClick={() => { if (category.kind === 'pupil') void choosePupilSide(id as 'pupil-left' | 'pupil-right'); else { setSelectedPart(id); setLibraryCategory(category.kind) } }} type="button">{category.names[side]}</button>))}</nav>
         <div className="face-components-stage" ref={stageRef} style={{ '--preview-background': previewBackground } as CSSProperties}>
           {head && previewScale > 0 && <div className="face-components-preview-canvas" style={{ width: head.width * previewScale, height: head.height * previewScale }}>
             <img className="face-components-head" src={head.dataUrl} alt="Cabeça do modelo" />
@@ -525,9 +599,18 @@ export function FaceComponentsWorkspace() {
       </main>
       <aside className="face-components-controls">
         <header><strong>Ajuste da peça</strong></header>
-        {activeComponent && <label className="face-component-link"><input type="checkbox" checked={linked[activeComponent.kind]} onChange={(event) => setLinked((current) => ({ ...current, [activeComponent.kind]: event.target.checked }))} /> Espelhar lado direito</label>}
+        {libraryCategory === 'pupil' && <div className="face-component-pupil-sides" role="group" aria-label="Selecionar pupila para ajustar">
+          <button className={selectedPart === 'pupil-left' ? 'active' : ''} type="button" aria-pressed={selectedPart === 'pupil-left'} disabled={busy} onClick={() => void choosePupilSide('pupil-left')}><img src={leftPupil?.dataUrl} alt="" /><span><strong>Esquerda</strong><small>{leftPupil ? 'Ajustar esta pupila' : 'Escolha uma peça'}</small></span></button>
+          <button className={selectedPart === 'pupil-right' ? 'active' : ''} type="button" aria-pressed={selectedPart === 'pupil-right'} disabled={busy} onClick={() => void choosePupilSide('pupil-right')}><img src={rightPupil?.dataUrl ?? leftPupil?.dataUrl} alt="" /><span><strong>Direita</strong><small>{linked.pupil ? 'Espelhada' : rightPupil ? 'Ajustar esta pupila' : 'Escolha uma peça'}</small></span></button>
+        </div>}
+        {activeComponent && <label className="face-component-link"><input type="checkbox" checked={linked[activeComponent.kind]} onChange={(event) => {
+          if (activeComponent.kind === 'pupil') {
+            if (event.target.checked) { setLinked((current) => ({ ...current, pupil: true })); setSelectedPart('pupil-left') }
+            else void choosePupilSide('pupil-right')
+          } else setLinked((current) => ({ ...current, [activeComponent.kind]: event.target.checked }))
+        }} /> Espelhar lado direito</label>}
         {head && selectedTransform && (activeComponent || selectedCatalogItem) ? <>
-          <div className="face-component-current"><img src={activeComponent?.dataUrl ?? selectedCatalogPiece?.dataUrl} alt="" /><span><strong>{activeComponent?.name ?? selectedCatalogItem?.name}</strong><small>{selectedCatalogItem ? selectedCatalogItem.category === 'nose' ? 'Nariz' : selectedCatalogItem.category === 'mouth-open' ? 'Boca aberta' : 'Boca fechada' : selectedCategory.names[selectedPart.endsWith('right') ? 1 : 0]}</small></span></div>
+          {libraryCategory !== 'pupil' && <div className="face-component-current"><img src={activeComponent?.dataUrl ?? selectedCatalogPiece?.dataUrl} alt="" /><span><strong>{activeComponent?.name ?? selectedCatalogItem?.name}</strong><small>{selectedCatalogItem ? selectedCatalogItem.category === 'nose' ? 'Nariz' : selectedCatalogItem.category === 'mouth-open' ? 'Boca aberta' : 'Boca fechada' : selectedCategory.names[selectedPart.endsWith('right') ? 1 : 0]}</small></span></div>}
           {selectedCatalogItem && <label className="face-component-variant">Variante<select value={selectedCatalogItem.category === 'nose' ? selectedCatalogItem.selectedNose : selectedCatalogItem.selectedExpression} onChange={(event) => updateCatalogVariant(Number(event.target.value))}>{selectedCatalogItem.pieces.map((piece) => <option key={piece.id} value={piece.index}>{selectedCatalogItem.category === 'nose' ? 'Nariz' : 'Expressão'} {String(piece.index + 1).padStart(2, '0')}</option>)}</select></label>}
           <FaceTransformControls head={head} transform={selectedTransform} sourceWidth={selectedSourceWidth} sourceHeight={selectedSourceHeight} pupil={activeComponent?.kind === 'pupil'} onChange={updateTransform} onReset={() => updateTransform(selectedCatalogItem ? initialCatalogTransform(head, selectedCatalogItem) : initialTransform(activeComponent!.kind, head, activeComponent!.width, activeComponent!.height))} />
         </> : <p>Selecione uma peça na Biblioteca para ajustar posição, tamanho e rotação.</p>}
