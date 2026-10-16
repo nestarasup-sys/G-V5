@@ -478,9 +478,6 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .customizer-hair-piece-colors input:disabled { cursor:default; }
 .customizer-hair-piece-colors label span { pointer-events:none;font-size:clamp(9px,1vw,13px);font-weight:900;text-shadow:0 1px 3px #000,0 0 3px #000; }
 .customizer-face-workspace { gap:5px; }
-.customizer-face-links { min-width:0;display:flex;align-items:center;justify-content:space-between;gap:4px;padding:3px 5px;border:1px solid #e7dce8;border-radius:5px;background:#fff;color:#68576e; }
-.customizer-face-links label { display:flex;align-items:center;gap:3px;min-width:0;color:#68576e;font-size:clamp(8px,.68vw,10px);font-weight:700;white-space:nowrap; }
-.customizer-face-links input { width:12px;height:12px;margin:0;accent-color:#ce5b98; }
 .customizer-face-layout { grid-template-columns:repeat(2,minmax(0,1fr));grid-template-rows:repeat(3,minmax(0,1fr));gap:5px; }
 .customizer-face-piece { grid-template-rows:24px minmax(0,1fr); }
 .customizer-face-piece>header { padding:0 4px; }

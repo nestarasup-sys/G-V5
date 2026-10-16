@@ -1693,27 +1693,6 @@ export function CustomizerPage() {
     await saveCharacterCustomization({ faceAppearance: { ...previous, components } })
   }
 
-  async function setFaceComponentLink(kind: FaceComponentKind, linked: boolean) {
-    if (!selectedCharacter || selectedCatalogModelSlot === null) return
-    const current = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
-    const previous = current.customization.faceAppearance?.modelSlot === selectedCatalogModelSlot ? current.customization.faceAppearance : undefined
-    const components = { ...(previous?.components ?? {}) }
-    if (!linked) {
-      const leftId = kind === 'eye' ? 'eye-left' : kind === 'pupil' ? 'pupil-left' : 'brow-left'
-      const rightId = kind === 'eye' ? 'eye-right' : kind === 'pupil' ? 'pupil-right' : 'brow-right'
-      const left = components[leftId]
-      if (left && !components[rightId]) {
-      const asset = left.assetId ? faceComponentDetails[left.assetId] : undefined
-        components[rightId] = { ...left, transform: left.transform ? { ...left.transform, flipX: true } : asset ? { ...asset.defaultTransform, flipX: true } : undefined }
-      }
-    }
-    await saveCharacterCustomization({ faceAppearance: {
-      ...(previous ?? { modelSlot: selectedCatalogModelSlot, eyeState: 0 as const, eyebrows: true, noseIndex: 0, expressionIndex: 0, mouthOpen: false }),
-      components,
-      linkedSides: { eye: true, pupil: true, eyebrow: true, ...previous?.linkedSides, [kind]: linked }
-    } })
-  }
-
   async function chooseHairStyle(summary: HairStyleSummary | null, side: HairCatalogSide) {
     if (!selectedCharacter) return
     const modelSlot = summary?.modelSlot ?? selectedCatalogModelSlot
@@ -2236,7 +2215,7 @@ export function CustomizerPage() {
     return <section className="customizer-hair-workspace customizer-face-workspace" aria-label="Personalização dos olhos e sobrancelhas">
       {selectedCatalogModelSlot === null ? <div className="customizer-catalog-empty">Escolha um modelo para carregar olhos e sobrancelhas do Fabricador Dev.</div>
         : faceLoading ? <div className="customizer-catalog-empty">Carregando catálogo facial…</div>
-          : <><div className="customizer-face-links">{(['eye','pupil','eyebrow'] as FaceComponentKind[]).map((kind) => <label key={kind}><input type="checkbox" checked={appearance?.linkedSides?.[kind] !== false} disabled={!selectedCharacter} onChange={(event) => void setFaceComponentLink(kind, event.target.checked)} /> Espelhar {kind === 'eye' ? 'olho' : kind === 'pupil' ? 'pupila' : 'sobrancelha'}</label>)}</div><div className="customizer-hair-layout customizer-face-layout">{customizerFaceParts.map(renderPart)}</div></>}
+          : <div className="customizer-hair-layout customizer-face-layout">{customizerFaceParts.map(renderPart)}</div>}
     </section>
   }
 
