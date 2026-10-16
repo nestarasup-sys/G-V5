@@ -273,7 +273,7 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .top-icon-button i { width: 5px; height: 5px; position: absolute; top: 7px; right: 7px; border: 1px solid #fff; border-radius: 50%; background: var(--rose); }
 .account-button { width: 32px; height: 32px; border: 0; border-radius: 50%; background: #f4d9e4; color: #a2456b; font-weight: 700; cursor: pointer; }
 
-.home-layout { min-height: 0; flex: 1; display: grid; grid-template-columns: 218px minmax(330px, 1fr) 350px; gap: 15px; padding: 16px 18px 17px; }
+.home-layout { min-height: 0; flex: 1; display: grid; grid-template-columns: 218px minmax(330px, 1fr) 352px; gap: 15px; padding: 16px 18px 17px; }
 .customizer-models-view { min-width:0;min-height:0;flex:1;display:flex;flex-direction:column;padding:16px 18px 17px; }
 .customizer-back-button { min-height:32px;display:flex;align-items:center;gap:7px;padding:0 10px;border:1px solid #eee9ed;border-radius:8px;background:#fff;color:#716975;font-size:12px;font-weight:600;cursor:pointer; }
 .customizer-back-button:hover { border-color:#edc2d2;background:#fff8fb;color:#a43d64; }
@@ -626,7 +626,7 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .home-customizer-top-tabs { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; padding: 7px; }
 .home-customizer-top-tabs button { min-height: 84px; gap: 6px; padding: 7px 3px; font-size: clamp(11px, .9vw, 14px); }
 .home-customizer-top-tabs button svg { width: clamp(25px, 2vw, 32px); height: clamp(25px, 2vw, 32px); }
-.design-banner { flex:0 0 auto;overflow:hidden;margin-bottom:12px;border:2px solid #54236f;border-radius:11px;background:#772e9a;box-shadow:0 3px 0 #431b5a; }
+.design-banner { width:320px;flex:0 0 320px;overflow:hidden;margin-bottom:12px;border:2px solid #54236f;border-radius:11px;background:#772e9a;box-shadow:0 3px 0 #431b5a; }
 .design-banner-brand { height:30px;display:flex;align-items:center;justify-content:space-between;padding:0 10px;background:linear-gradient(90deg,#a64091,#d653a2);color:#fff; }
 .design-banner-brand strong { font:900 16px/1 Manrope,sans-serif;letter-spacing:.3px;text-shadow:0 1px 2px #69245266; }
 .design-banner-brand>span { font-size:19px;line-height:1; }
@@ -644,8 +644,8 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .design-banner-arrow.next { right:0; }
 .design-banner-counter { position:absolute;right:43px;bottom:5px;z-index:1;padding:2px 5px;border-radius:99px;background:#39234199;color:#fff;font-size:9px; }
 .design-banner.compact { width:100%;margin:0; }
-.design-banner.compact .design-banner-brand { height:29px; }
-.design-banner.compact .design-banner-stage { height:142px; }
+.design-banner.compact .design-banner-brand { height:30px; }
+.design-banner.compact .design-banner-stage { height:108px; }
 .design-dev-workspace { display:flex;flex-direction:column;overflow:hidden; }
 .design-dev-toolbar { min-height:64px;display:flex;align-items:center;gap:11px;padding:10px 14px;border-bottom:1px solid #eee8ed; }
 .design-dev-heading-icon { width:34px;height:34px;flex:0 0 34px;display:grid;place-items:center;border-radius:10px;background:#fff0f6;color:#bd4b80; }
@@ -656,7 +656,7 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .design-dev-toolbar>span:nth-child(2)>em { color:#968a95;font-size:10px;font-style:normal; }
 .design-dev-autosave { display:flex;align-items:center;gap:5px;margin-left:auto;padding:6px 8px;border:1px solid #e8f0e6;border-radius:7px;background:#f7fcf5;color:#5c8b55;font-size:9px;font-weight:700;white-space:nowrap; }
 .design-dev-autosave svg { width:13px;height:13px; }
-.design-dev-content { min-width:0;min-height:0;flex:1;display:grid;grid-template-columns:minmax(0,1fr) minmax(230px,290px);gap:12px;padding:12px;overflow:auto; }
+.design-dev-content { min-width:0;min-height:0;flex:1;display:grid;grid-template-columns:minmax(0,1fr) 346px;gap:12px;padding:12px;overflow:auto; }
 .design-dev-banner-editor,.design-dev-preview-panel { min-width:0;padding:12px;border:1px solid #eee8ed;border-radius:10px;background:#fff; }
 .design-dev-banner-editor { display:flex;flex-direction:column;gap:10px; }
 .design-dev-section-heading { display:flex;align-items:center;justify-content:space-between;gap:10px; }
@@ -687,8 +687,10 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .design-dev-upload input { width:1px;height:1px;position:absolute;opacity:0; }
 .design-dev-limit-note,.design-dev-error { margin:0;color:#9b8d99;font-size:9px;line-height:1.45; }
 .design-dev-error { color:#b5364e; }
-.design-dev-preview-panel { align-self:start;display:grid;gap:10px; }
+.design-dev-preview-panel { width:346px;align-self:start;display:grid;gap:10px; }
 .design-dev-preview-panel>header { display:grid;gap:3px; }
+.design-dev-banner-dimensions { margin:0;padding:8px;border:1px solid #f0e4eb;border-radius:7px;background:#fdf9fb;color:#837481;font-size:10px;line-height:1.65; }
+.design-dev-banner-dimensions b { color:#a44166; }
 @media (max-width: 1120px) { .design-dev-content { grid-template-columns:minmax(0,1fr); }.design-dev-preview-panel { grid-row:1;max-width:440px; } }
 @media (max-width: 700px) { .design-dev-toolbar { align-items:flex-start;flex-wrap:wrap; }.design-dev-autosave { margin-left:45px; }.design-dev-slide-card { grid-template-columns:minmax(0,1fr); }.design-dev-slide-preview { min-height:150px; }.design-dev-section-heading { align-items:flex-start;flex-direction:column; } }
 .modules-topline { height: 32px; min-height: 32px; display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
@@ -729,7 +731,7 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .help-link > svg { width: 13px; height: 13px; color: #aaa1aa; }
 
 @media (max-width: 1180px) {
-  .home-layout { grid-template-columns: 195px minmax(300px, 1fr) 320px; gap: 11px; padding-right: 12px; padding-left: 12px; }
+  .home-layout { grid-template-columns: 195px minmax(300px, 1fr) 344px; gap: 11px; padding-right: 12px; padding-left: 12px; }
   .modules-panel { padding-right: 11px; padding-left: 11px; }
   .module-grid { gap: 6px; }
   .module-card { height: 77px; padding: 7px; }

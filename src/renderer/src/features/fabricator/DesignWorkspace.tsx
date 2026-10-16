@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Icon } from '../../ui/components/Icon'
-import { defaultDesignSettings, designLimits, saveDesignSettings, useDesignSettings, type DesignBannerSlide } from './designSettings'
+import { defaultDesignSettings, DESIGN_BANNER_HEIGHT_PX, DESIGN_BANNER_IMAGE_HEIGHT_PX, DESIGN_BANNER_IMAGE_WIDTH_PX, DESIGN_BANNER_WIDTH_PX, designLimits, saveDesignSettings, useDesignSettings, type DesignBannerSlide } from './designSettings'
 
 function createSlide(): DesignBannerSlide {
   return { id: crypto.randomUUID(), title: 'Nova novidade', subtitle: 'Escreva uma descrição curta.', imageDataUrl: null }
@@ -21,7 +21,7 @@ export function DesignBanner({ compact = false }: { compact?: boolean }) {
 
   const showAdjacent = (direction: number) => setActiveIndex((index) => (index + direction + slides.length) % slides.length)
 
-  return <section className={`design-banner${compact ? ' compact' : ''}`} aria-label="Banner Gacha Nymi">
+  return <section className={`design-banner${compact ? ' compact' : ''}`} style={{ width: DESIGN_BANNER_WIDTH_PX }} aria-label="Banner Gacha Nymi">
     <header className="design-banner-brand"><strong>GACHA NYMI</strong><span aria-label="Flor de cerejeira">🌸</span></header>
     <div className="design-banner-stage" aria-live="polite">
       {slide.imageDataUrl ? <img src={slide.imageDataUrl} alt="" /> : <div className="design-banner-placeholder"><span>{slide.title}</span><small>{slide.subtitle}</small><i aria-hidden="true">✿</i></div>}
@@ -110,6 +110,7 @@ export function DesignWorkspace() {
       <aside className="design-dev-preview-panel" aria-label="Prévia ao vivo do banner">
         <header><strong>Prévia ao vivo</strong><small>Como aparece no Customizar</small></header>
         <DesignBanner compact />
+        <p className="design-dev-banner-dimensions">Banner completo: <b>{DESIGN_BANNER_WIDTH_PX} × {DESIGN_BANNER_HEIGHT_PX} px</b><br />Área da imagem: <b>{DESIGN_BANNER_IMAGE_WIDTH_PX} × {DESIGN_BANNER_IMAGE_HEIGHT_PX} px</b></p>
       </aside>
     </div>
   </section>

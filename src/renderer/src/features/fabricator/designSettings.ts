@@ -14,6 +14,11 @@ const CHANGE_EVENT = 'nymi-design-settings-changed'
 const MAX_SLIDES = 8
 const MAX_IMAGE_BYTES = 1_500_000
 
+export const DESIGN_BANNER_WIDTH_PX = 320
+export const DESIGN_BANNER_HEIGHT_PX = 142
+export const DESIGN_BANNER_IMAGE_WIDTH_PX = 316
+export const DESIGN_BANNER_IMAGE_HEIGHT_PX = 108
+
 export const defaultDesignSettings: DesignSettings = {
   bannerSlides: [
     { id: 'welcome', title: 'Seu universo, do seu jeito.', subtitle: 'Crie. Imagine. Compartilhe.', imageDataUrl: null },
