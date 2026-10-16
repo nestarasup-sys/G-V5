@@ -1980,7 +1980,7 @@ export function CustomizerPage() {
     return <div className="customizer-hair-library-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setHairLibraryPart(null) }}>
       <section className="customizer-hair-library" role="dialog" aria-modal="true" aria-labelledby="customizer-hair-library-title">
         <header className="customizer-hair-library-heading">
-          <button className="customizer-hair-library-remove" type="button" onClick={() => choose(null)} disabled={!selectedId} aria-label={`Remover ${part.label} do personagem`} title={`Remover ${part.label} do personagem`}><Icon name="trash" /></button>
+          <button className="customizer-hair-library-remove" type="button" onClick={() => void chooseHairPartStyle(part.id, null)} disabled={!selectedId} aria-label={`Remover ${part.label} do personagem`} title={`Remover ${part.label} do personagem`}><Icon name="trash" /></button>
           <h2 id="customizer-hair-library-title">{part.label}</h2>
           <button className="customizer-hair-library-close" type="button" onClick={() => setHairLibraryPart(null)} aria-label="Fechar biblioteca">×</button>
         </header>
