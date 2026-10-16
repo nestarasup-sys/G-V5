@@ -2216,7 +2216,7 @@ export function CustomizerPage() {
   const activeWardrobeTransform = wardrobeTransformDraft ?? activeWardrobeGroup
   const activeWardrobeComponent = selectedClothing ? wardrobeDetails[`${activeWardrobeGroup?.modelSlot ?? selectedCatalogModelSlot}:${selectedClothing.setId}`]?.components.find((component) => component.id === selectedClothing.componentId) : undefined
   const activeWardrobePartName = selectedSourceModelProject?.parts.find((part) => part.id === activeWardrobeComponent?.attachedPartId)?.name ?? activeWardrobeComponent?.name ?? 'Peça'
-  const wardrobePreviewDraggable = activeModule === 'Roupas' && clothingSection === 'Customizar' && Boolean(activeWardrobeGroup)
+  const wardrobePreviewDraggable = false
   const appliedWardrobeEntries = [...(selectedCharacter?.customization.wardrobeGroups ?? [])]
     .filter((group) => group.modelSlot === selectedCatalogModelSlot)
     .flatMap((group) => {
@@ -2723,7 +2723,7 @@ export function CustomizerPage() {
                 setClothesPanelTab(tab.id)
                 if (tab.id === 'upper') setClothingSection('Superior')
                 else if (tab.id === 'lower') setClothingSection('Inferior')
-                else if (tab.id === 'adjust') setClothingSection('Customizar')
+                else if (tab.id === 'adjust') setClothingSection('Superior')
               }} aria-selected={clothesPanelTab === tab.id} role="tab" type="button"><Icon name={tab.icon} /><span>{tab.label}</span></button>)}
             </nav>}
             {selectedCustomizerTopTab === 'outros' && <nav className="customizer-other-category-tabs" aria-label="Categorias de outros itens" role="tablist">
@@ -2734,6 +2734,7 @@ export function CustomizerPage() {
             {selectedCustomizerTopTab === 'cabeca' && headPanelTab === 'eyes' && (faceLibraryPart ? renderFaceLibrary() : renderFaceCustomizer())}
             {selectedCustomizerTopTab === 'cabeca' && headPanelTab === 'face' && renderFaceCatalogCustomizer()}
             {selectedCustomizerTopTab === 'roupas' && clothesPanelTab === 'upper' && renderWardrobeCatalog()}
+            {selectedCustomizerTopTab === 'roupas' && clothesPanelTab === 'adjust' && <div className="customizer-catalog-empty">Os ajustes de roupas ainda não estão disponíveis.</div>}
             {selectedCustomizerTopTab === 'modelos' && <section className="customizer-model-skin-tones" aria-label="Cor de pele do modelo">
               <strong>Cor de pele</strong>
               <div className="customizer-model-skin-tone-row" role="group" aria-label="Escolher cor de pele">
