@@ -1666,19 +1666,35 @@ export function CustomizerPage() {
   async function chooseFacePartCatalogItem(partId: FaceLibraryPartId, summary: FaceComponentAssetSummary) {
     const part = customizerFaceParts.find((entry) => entry.id === partId)
     if (!part || !selectedCharacter) return
-    const chosenSummary = part.side === 'right'
-      ? faceComponentAssets.find((candidate) => sameFaceAssetPair(summary, candidate, faceComponentDetails)) ?? summary
+    const categoryParts = customizerFaceParts.filter((candidate) => candidate.category === part.category)
+    const leftPart = categoryParts.find((candidate) => candidate.side === 'left')
+    const rightPart = categoryParts.find((candidate) => candidate.side === 'right')
+    const leftSummary = isRightFaceAsset(summary)
+      ? faceComponentAssets.find((candidate) => !isRightFaceAsset(candidate) && sameFaceAssetPair(candidate, summary, faceComponentDetails)) ?? summary
       : summary
-    const item = faceComponentDetails[chosenSummary.id] ?? await window.desktop.loadFaceComponentAsset(chosenSummary.modelSlot, chosenSummary.id)
-    if (!item) return
-    setFaceComponentDetails((current) => ({ ...current, [chosenSummary.id]: item }))
+    const rightSummary = isRightFaceAsset(leftSummary)
+      ? leftSummary
+      : faceComponentAssets.find((candidate) => sameFaceAssetPair(leftSummary, candidate, faceComponentDetails)) ?? leftSummary
+    const selectedAssets = new Map<string, FaceComponentAsset>()
+    for (const candidate of new Set([leftSummary, rightSummary])) {
+      const asset = faceComponentDetails[candidate.id] ?? await window.desktop.loadFaceComponentAsset(candidate.modelSlot, candidate.id)
+      if (asset) selectedAssets.set(candidate.id, asset)
+    }
+    const item = selectedAssets.get((part.side === 'right' ? rightSummary : leftSummary).id)
+    if (!item || !leftPart || !rightPart) return
+    setFaceComponentDetails((current) => ({ ...current, ...Object.fromEntries(selectedAssets) }))
     const current = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
     const previous = current.customization.faceAppearance
     const sameModel = previous?.modelSlot === item.modelSlot
     const linkedSides = { ...(sameModel ? previous?.linkedSides : undefined), [part.category]: false }
+    const previousComponents = sameModel ? previous?.components : undefined
     const appearance: CustomizerFaceAppearance = {
       ...(sameModel ? previous : undefined), modelSlot: item.modelSlot, setId: undefined, linkedSides,
-      components: { ...(sameModel ? previous?.components : undefined), [part.id]: { ...(sameModel ? previous?.components?.[part.id] : undefined), assetId: item.id, transform: undefined } },
+      components: {
+        ...(previousComponents ?? {}),
+        [leftPart.id]: { ...previousComponents?.[leftPart.id], assetId: leftSummary.id, transform: undefined },
+        [rightPart.id]: { ...previousComponents?.[rightPart.id], assetId: rightSummary.id, transform: undefined }
+      },
       eyeState: sameModel ? previous.eyeState : 0,
       eyebrows: sameModel ? previous.eyebrows : true,
       noseIndex: sameModel ? previous.noseIndex : 0,
@@ -1721,8 +1737,11 @@ export function CustomizerPage() {
     const current = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
     const previous = current.customization.faceAppearance
     if (!previous || previous.modelSlot !== selectedCatalogModelSlot) return
-    const targetPart = facePartSourceId(part)
-    const components = { ...previous.components, [targetPart]: { ...(previous.components?.[targetPart] ?? { assetId: null }), assetId: null } }
+    const pair = customizerFaceParts.filter((candidate) => candidate.category === part.category)
+    const components = { ...previous.components }
+    for (const targetPart of pair) {
+      components[targetPart.id] = { ...(previous.components?.[targetPart.id] ?? { assetId: null }), assetId: null }
+    }
     await saveCharacterCustomization({ faceAppearance: { ...previous, components } })
   }
 
