@@ -12,7 +12,7 @@ const HISTORY_LIMIT = 40
 const faceOrder: FaceElementKind[] = ['brow-left', 'brow-right', 'eye-left', 'eye-right', 'nose', 'mouth']
 const wardrobeCategories: Record<CustomizerWardrobeGroup['category'], string[]> = {
   camisa: ['camisa'], jaqueta: ['jaqueta'], 'manga-superior': ['manga-superior'], 'manga-inferior': ['manga-inferior'],
-  luvas: ['luvas'], capa: ['capa'], cinto: ['cinto'], saia: ['saia'],
+  luvas: ['luvas'], capa: ['capa'], cinto: ['cinto'], saia: ['saia'], 'saia-superior': ['saia'], 'saia-inferior': ['saia'],
   calca: ['calca-coxa', 'calca-canela', 'shorts'], shorts: ['shorts'], meia: ['meia'], sapato: ['sapato']
 }
 const imageCache = new Map<string, Promise<HTMLImageElement>>()

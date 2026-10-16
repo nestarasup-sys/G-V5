@@ -105,7 +105,7 @@ function isCustomizerCharacter(value: unknown): value is CustomizerCharacter {
       Array.isArray(character.customization.wardrobeGroups) && character.customization.wardrobeGroups.length <= 100
       && character.customization.wardrobeGroups.every((group) => group && isValidModelSlot(group.modelSlot)
         && isValidWardrobeId(group.setId)
-        && ['camisa', 'jaqueta', 'manga-superior', 'manga-inferior', 'luvas', 'capa', 'cinto', 'saia', 'cinto-saia-1', 'cinto-saia-2', 'calca', 'shorts', 'meia', 'sapato'].includes(group.category)
+        && ['camisa', 'jaqueta', 'manga-superior', 'manga-inferior', 'luvas', 'capa', 'cinto', 'saia', 'saia-superior', 'saia-inferior', 'cinto-saia-1', 'cinto-saia-2', 'calca', 'shorts', 'meia', 'sapato'].includes(group.category)
         && [group.offsetX, group.offsetY, group.scaleX, group.scaleY, group.rotation].every(Number.isFinite)
         && group.scaleX > 0 && group.scaleY > 0)
     ))
@@ -139,7 +139,7 @@ async function readCustomizerCharacters(): Promise<CustomizerCharacter[]> {
         ...character.customization,
         wardrobeGroups: character.customization.wardrobeGroups?.map((group) => ({
           ...group,
-          category: group.category === ('cinto-saia-1' as typeof group.category) ? 'cinto' : group.category === ('cinto-saia-2' as typeof group.category) ? 'saia' : group.category
+          category: group.category === ('cinto-saia-1' as typeof group.category) ? 'cinto' : group.category === ('cinto-saia-2' as typeof group.category) ? 'saia-superior' : group.category === 'saia' ? 'saia-superior' : group.category
         }))
       }
     }))

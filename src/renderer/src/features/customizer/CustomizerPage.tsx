@@ -390,12 +390,13 @@ const clothingCategories: Record<'Superior' | 'Inferior', Array<{ id: ClothingGr
     { id: 'luvas', label: 'Luvas', source: ['luvas'] },
     { id: 'capa', label: 'Capa', source: ['capa'] },
     { id: 'cinto', label: 'Cinto', source: ['cinto'] },
-    { id: 'saia', label: 'Saia', source: ['saia'] }
+    { id: 'saia-superior', label: 'Saia superior', source: ['saia'] }
   ],
   Inferior: [
     { id: 'calca', label: 'Calça/Bermuda', source: ['calca-coxa', 'calca-canela', 'shorts'] },
     { id: 'meia', label: 'Meias', source: ['meia'] },
-    { id: 'sapato', label: 'Sapatos', source: ['sapato'] }
+    { id: 'sapato', label: 'Sapatos', source: ['sapato'] },
+    { id: 'saia-inferior', label: 'Saia inferior', source: ['saia'] }
   ]
 }
 
@@ -413,7 +414,7 @@ const upperWardrobePageTwoPanels: WardrobePanel[] = [
   { id: 'gloves-right', label: 'Luvas direita', category: 'luvas', side: 'right' },
   { id: 'cape', label: 'Capa', category: 'capa', side: null },
   { id: 'belt', label: 'Cinto', category: 'cinto', side: null },
-  { id: 'skirt', label: 'Saia superior', category: 'saia', side: null }
+  { id: 'skirt', label: 'Saia superior', category: 'saia-superior', side: null, source: ['saia'] }
 ]
 const lowerWardrobePanels: WardrobePanel[] = [
   { id: 'pants-left', label: 'Calça/Bermuda', category: 'calca', side: 'left', source: ['calca-coxa', 'calca-canela', 'shorts'] },
@@ -422,6 +423,9 @@ const lowerWardrobePanels: WardrobePanel[] = [
   { id: 'sock-right', label: 'Direita Meia', category: 'meia', side: 'right' },
   { id: 'shoe-left', label: 'Sapato', category: 'sapato', side: 'left' },
   { id: 'shoe-right', label: 'Direita Sapato', category: 'sapato', side: 'right' }
+]
+const lowerWardrobePageTwoPanels: WardrobePanel[] = [
+  { id: 'lower-skirt', label: 'Saia inferior', category: 'saia-inferior', side: null, source: ['saia'] }
 ]
 function wardrobeComponentMatchesPanel(component: WardrobeSet['components'][number], panel: WardrobePanel): boolean {
   if (panel.source ? !panel.source.includes(component.category) : component.category !== panel.category) return false
@@ -488,7 +492,7 @@ async function renderWardrobeOverlay(
   for (const group of groups) {
     const set = details[`${group.modelSlot}:${group.setId}`]
     if (!set || group.modelSlot !== modelSlot) continue
-    const accepted = clothingCategories[group.category === 'calca' || group.category === 'shorts' ? 'Inferior' : 'Superior']
+    const accepted = clothingCategories[clothingCategories.Inferior.some((item) => item.id === group.category) ? 'Inferior' : 'Superior']
       .find((category) => category.id === group.category)?.source
     if (!accepted) continue
     const components = set.components.filter((component) => accepted.includes(component.category) && (!group.componentId || group.componentId === component.id))
@@ -1133,6 +1137,7 @@ export function CustomizerPage() {
   const [clothingSection, setClothingSection] = useState<'Customizar' | 'Superior' | 'Inferior'>('Superior')
   const [clothesPanelTab, setClothesPanelTab] = useState<(typeof customizerClothesTabs)[number]['id']>('upper')
   const [upperWardrobePage, setUpperWardrobePage] = useState<1 | 2>(1)
+  const [lowerWardrobePage, setLowerWardrobePage] = useState<1 | 2>(1)
   const [otherPanelTab, setOtherPanelTab] = useState<(typeof customizerOtherTabs)[number]['id']>('extra')
   const [wardrobeSets, setWardrobeSets] = useState<WardrobeSetSummary[]>([])
   const [wardrobeLoading, setWardrobeLoading] = useState(false)
@@ -2546,9 +2551,12 @@ export function CustomizerPage() {
   }
 
   const renderUpperWardrobePanels = () => {
-    const panels = clothingSection === 'Inferior' ? lowerWardrobePanels : upperWardrobePage === 1 ? upperWardrobePanels : upperWardrobePageTwoPanels
-    const pageTwo = clothingSection === 'Superior' && upperWardrobePage === 2
-    return <div className={`customizer-hair-layout customizer-upper-wardrobe-layout${pageTwo ? ' page-two' : ''}`} aria-label={`Peças de roupa ${clothingSection.toLowerCase()}${pageTwo ? ' · página 2' : ''}`}>
+    const page = clothingSection === 'Inferior' ? lowerWardrobePage : upperWardrobePage
+    const pageTwo = page === 2
+    const panels = clothingSection === 'Inferior'
+      ? pageTwo ? lowerWardrobePageTwoPanels : lowerWardrobePanels
+      : pageTwo ? upperWardrobePageTwoPanels : upperWardrobePanels
+    return <div className={`customizer-hair-layout customizer-upper-wardrobe-layout${clothingSection === 'Superior' && pageTwo ? ' page-two' : ''}`} aria-label={`Peças de roupa ${clothingSection.toLowerCase()} · página ${page}`}>
     {panels.map((panel) => {
       const candidates = upperWardrobeCandidates(panel)
       const appliedGroups = selectedCharacter?.customization.wardrobeGroups ?? []
@@ -2656,15 +2664,16 @@ export function CustomizerPage() {
             </nav>}
             {selectedCustomizerTopTab === 'roupas' && <nav className="customizer-clothes-category-tabs" aria-label="Categorias de roupas" role="tablist">
               {customizerClothesTabs.map((tab) => <button key={tab.id} className={clothesPanelTab === tab.id ? 'active' : ''} onClick={() => {
-                if (tab.id === 'upper' && clothesPanelTab === 'upper') {
-                  setUpperWardrobePage((page) => page === 1 ? 2 : 1)
+                if (tab.id === clothesPanelTab && (tab.id === 'upper' || tab.id === 'lower')) {
+                  if (tab.id === 'upper') setUpperWardrobePage((page) => page === 1 ? 2 : 1)
+                  else setLowerWardrobePage((page) => page === 1 ? 2 : 1)
                   setWardrobeLibraryPanel(null)
                 }
                 setClothesPanelTab(tab.id)
                 if (tab.id === 'upper') setClothingSection('Superior')
                 else if (tab.id === 'lower') setClothingSection('Inferior')
                 else if (tab.id === 'adjust') setClothingSection('Superior')
-              }} aria-selected={clothesPanelTab === tab.id} role="tab" type="button"><Icon name={tab.icon} />{tab.id === 'upper' ? <span className="customizer-upper-tab-label"><span>{tab.label}</span><small>{upperWardrobePage}/2</small></span> : <span>{tab.label}</span>}</button>)}
+              }} aria-selected={clothesPanelTab === tab.id} role="tab" type="button"><Icon name={tab.icon} />{tab.id === 'upper' || tab.id === 'lower' ? <span className="customizer-upper-tab-label"><span>{tab.label}</span><small>{tab.id === 'upper' ? upperWardrobePage : lowerWardrobePage}/2</small></span> : <span>{tab.label}</span>}</button>)}
             </nav>}
             {selectedCustomizerTopTab === 'outros' && <nav className="customizer-other-category-tabs" aria-label="Categorias de outros itens" role="tablist">
               {customizerOtherTabs.map((tab) => <button key={tab.id} className={otherPanelTab === tab.id ? 'active' : ''} onClick={() => setOtherPanelTab(tab.id)} aria-selected={otherPanelTab === tab.id} role="tab" type="button"><Icon name={tab.icon} /><span>{tab.label}</span></button>)}
