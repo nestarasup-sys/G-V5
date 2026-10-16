@@ -490,9 +490,13 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .customizer-piece-palette-strip { min-width:0;min-height:0;display:grid;grid-template-columns:18px minmax(0,1fr) 18px;gap:2px; }
 .customizer-piece-palette .customizer-hair-palette-scroll { width:18px;height:23px;min-height:0; }
 .customizer-piece-palette .customizer-hair-palette-scroll svg { width:15px;height:15px; }
-.customizer-piece-palette .customizer-hair-palette-preset-list { gap:2px; }
-.customizer-piece-palette .customizer-hair-palette-preset-list button { min-height:21px;gap:5px;padding:2px 4px;font-size:clamp(7px,.6vw,9px); }
-.customizer-piece-palette .customizer-hair-palette-preset-list button span { width:17px;height:15px; }
+.customizer-piece-palette .customizer-hair-palette-preset-list { gap:2px;scrollbar-color:#b28ee0 #26203a;scrollbar-width:thin; }
+.customizer-piece-palette .customizer-hair-palette-preset-list button { flex:0 0 auto;min-width:0;min-height:21px;display:flex;align-items:center;justify-content:flex-start;gap:5px;overflow:hidden;padding:2px 4px;border:1px solid #7668a4;border-radius:4px;background:#26203a;color:#fff;font-size:clamp(7px,.6vw,9px);font-weight:700;text-align:left;text-overflow:ellipsis;white-space:nowrap;cursor:pointer; }
+.customizer-piece-palette .customizer-hair-palette-preset-list button[aria-pressed="true"] { border-color:#f2a4d2;background:#653871;box-shadow:inset 0 0 0 1px #f2a4d2; }
+.customizer-piece-palette .customizer-hair-palette-preset-list button:focus-visible { outline:2px solid #fff;outline-offset:-3px; }
+.customizer-piece-palette .customizer-hair-palette-preset-list button:disabled { opacity:.45;cursor:default; }
+.customizer-piece-palette .customizer-hair-palette-preset-list button span { flex:none;width:17px;height:15px;border:1px solid #fff9;border-radius:3px; }
+.customizer-piece-palette-strip>.customizer-hair-palette-scroll { display:grid;place-items:center;padding:1px;border:1px solid #7668a4;border-radius:4px;background:#624486;color:#fff;cursor:pointer; }
 .customizer-face-workspace { gap:5px; }
 .customizer-face-layout { grid-template-columns:repeat(3,minmax(0,1fr));grid-template-rows:repeat(2,minmax(0,1fr));gap:5px; }
 .customizer-face-layout:not(.customizer-face-layout-catalog)>.customizer-face-piece-eye-right { grid-row:1;grid-column:1; }
