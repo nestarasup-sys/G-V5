@@ -616,6 +616,15 @@ const customizerClothesTabs = [
   { id: 'adjust', label: 'Ajustar', icon: 'sliders' }
 ] as const
 
+const customizerOtherTabs = [
+  { id: 'extra', label: 'Extra', icon: 'brush' },
+  { id: 'extra2', label: 'Extra 2', icon: 'flower' },
+  { id: 'hide', label: 'Ocultar', icon: 'eyeOff' },
+  { id: 'text', label: 'Texto', icon: 'message' },
+  { id: 'pets', label: 'Pets', icon: 'paw' },
+  { id: 'objects', label: 'Objetos', icon: 'box' }
+] as const
+
 function CustomizerCategoryIcon({ category }: { category: string }) {
   const common = { fill: 'none', stroke: 'currentColor', strokeWidth: 1.7, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const }
   return <svg viewBox="0 0 48 48" aria-hidden="true" {...common}>
@@ -677,6 +686,7 @@ export function CustomizerPage() {
   const [poseThumbnails, setPoseThumbnails] = useState<Record<string, string>>({})
   const [clothingSection, setClothingSection] = useState<'Customizar' | 'Superior' | 'Inferior'>('Superior')
   const [clothesPanelTab, setClothesPanelTab] = useState<(typeof customizerClothesTabs)[number]['id']>('upper')
+  const [otherPanelTab, setOtherPanelTab] = useState<(typeof customizerOtherTabs)[number]['id']>('extra')
   const [wardrobeSets, setWardrobeSets] = useState<WardrobeSetSummary[]>([])
   const [wardrobeLoading, setWardrobeLoading] = useState(false)
   const [wardrobeDetails, setWardrobeDetails] = useState<Record<string, WardrobeSet>>({})
@@ -1652,6 +1662,9 @@ export function CustomizerPage() {
                 else if (tab.id === 'lower') setClothingSection('Inferior')
                 else if (tab.id === 'adjust') setClothingSection('Customizar')
               }} aria-selected={clothesPanelTab === tab.id} role="tab" type="button"><Icon name={tab.icon} /><span>{tab.label}</span></button>)}
+            </nav>}
+            {selectedCustomizerTopTab === 'outros' && <nav className="customizer-other-category-tabs" aria-label="Categorias de outros itens" role="tablist">
+              {customizerOtherTabs.map((tab) => <button key={tab.id} className={otherPanelTab === tab.id ? 'active' : ''} onClick={() => setOtherPanelTab(tab.id)} aria-selected={otherPanelTab === tab.id} role="tab" type="button"><Icon name={tab.icon} /><span>{tab.label}</span></button>)}
             </nav>}
             <div className="customizer-sidebar-scroll-content" aria-label={`Conteúdo de ${customizerTopTabs.find((tab) => tab.id === selectedCustomizerTopTab)?.label ?? 'personalização'}`}>
             {selectedCustomizerTopTab === 'modelos' && <section className="customizer-model-skin-tones" aria-label="Cor de pele do modelo">
