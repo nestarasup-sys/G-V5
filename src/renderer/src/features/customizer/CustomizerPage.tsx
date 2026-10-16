@@ -760,7 +760,7 @@ async function drawFaceCatalogOverlay(context: CanvasRenderingContext2D, artwork
     const selectedPart = appearance.components?.[sourcePart] ?? appearance.components?.[part]
     if (!asset || !selectedPart) continue
     const transform = selectedPart.transform ?? asset.defaultTransform
-    const mirroredTransform = isRight && category !== 'pupil' ? { ...transform, x: sourceHead.width - transform.x, rotation: -transform.rotation } : transform
+    const mirroredTransform = isRight && category !== 'pupil' && !asset.rightSidePositioned ? { ...transform, x: sourceHead.width - transform.x, rotation: -transform.rotation } : transform
     let localX = mirroredTransform.x
     let localY = mirroredTransform.y
     let drawRotation = mirroredTransform.rotation
@@ -775,8 +775,8 @@ async function drawFaceCatalogOverlay(context: CanvasRenderingContext2D, artwork
       const eyeSelection = appearance.components?.[isRight && eyeLinked ? 'eye-left' : eyePart]
       const eyeTransformBase = eyeSelection?.transform ?? eyeAsset?.defaultTransform
       if (eyeTransformBase) {
-        const eyeTransform = isRight ? { ...eyeTransformBase, x: sourceHead.width - eyeTransformBase.x, rotation: -eyeTransformBase.rotation } : eyeTransformBase
-        const pupilOffsetX = isRight ? -transform.x : transform.x
+        const eyeTransform = isRight && !eyeAsset?.rightSidePositioned ? { ...eyeTransformBase, x: sourceHead.width - eyeTransformBase.x, rotation: -eyeTransformBase.rotation } : eyeTransformBase
+        const pupilOffsetX = isRight && !asset.rightSidePositioned ? -transform.x : transform.x
         const pupilAngle = eyeTransform.rotation * Math.PI / 180
         localX = eyeTransform.x + pupilOffsetX * Math.cos(pupilAngle) - transform.y * Math.sin(pupilAngle)
         localY = eyeTransform.y + pupilOffsetX * Math.sin(pupilAngle) + transform.y * Math.cos(pupilAngle)
@@ -784,7 +784,7 @@ async function drawFaceCatalogOverlay(context: CanvasRenderingContext2D, artwork
         scaleY = eyeTransform.scaleY * scaleY
         sourceWidth = (eyeAsset?.width ?? sourceHead.width * .19) * eyeTransform.scaleX * transform.scaleX
         sourceHeight = (eyeAsset?.height ?? sourceHead.height * .17) * eyeTransform.scaleY * transform.scaleY
-        drawRotation = eyeTransform.rotation + transform.rotation * (isRight ? -1 : 1)
+        drawRotation = eyeTransform.rotation + transform.rotation * (isRight && !asset.rightSidePositioned ? -1 : 1)
       }
     }
     const localTargetX = localX / sourceHead.width * targetHead.width

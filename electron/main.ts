@@ -358,6 +358,7 @@ function validFaceComponentAsset(modelSlot: number, asset: FaceComponentAssetSav
     && isValidWardrobeId(asset.id) && ['eye', 'pupil', 'eye-closed', 'eyebrow'].includes(asset.kind)
     && typeof asset.name === 'string' && asset.name.trim().length > 0 && asset.name.length <= 120
     && Number.isFinite(asset.width) && Number.isFinite(asset.height) && asset.width > 0 && asset.height > 0 && asset.width * asset.height <= 32_000_000
+    && (asset.rightSidePositioned === undefined || typeof asset.rightSidePositioned === 'boolean')
     && Boolean(transform) && [transform.x, transform.y, transform.scaleX, transform.scaleY, transform.rotation].every(Number.isFinite)
     && (transform.flipX === undefined || typeof transform.flipX === 'boolean')
     && transform.scaleX > 0 && transform.scaleY > 0 && transform.scaleX <= 20 && transform.scaleY <= 20
