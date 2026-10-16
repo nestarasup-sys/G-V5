@@ -386,7 +386,11 @@ const clothingCategories: Record<'Superior' | 'Inferior', Array<{ id: ClothingGr
     { id: 'camisa', label: 'Camisas', source: ['camisa'] },
     { id: 'jaqueta', label: 'Jaquetas', source: ['jaqueta'] },
     { id: 'manga-superior', label: 'Mangas superiores', source: ['manga-superior'] },
-    { id: 'manga-inferior', label: 'Mangas inferiores', source: ['manga-inferior'] }
+    { id: 'manga-inferior', label: 'Mangas inferiores', source: ['manga-inferior'] },
+    { id: 'luvas', label: 'Luvas', source: ['luvas'] },
+    { id: 'capa', label: 'Capa', source: ['capa'] },
+    { id: 'cinto-saia-1', label: 'Cinto/Saia 1', source: ['cinto-saia-1'] },
+    { id: 'cinto-saia-2', label: 'Cinto/Saia 2', source: ['cinto-saia-2'] }
   ],
   Inferior: [
     { id: 'calca', label: 'Calças', source: ['calca-coxa', 'calca-canela'] },
@@ -402,6 +406,13 @@ const upperWardrobePanels: UpperWardrobePanel[] = [
   { id: 'upper-right', label: 'Manga superior direita', category: 'manga-superior', side: 'right' },
   { id: 'lower-left', label: 'Manga inferior esquerda', category: 'manga-inferior', side: 'left' },
   { id: 'lower-right', label: 'Manga inferior direita', category: 'manga-inferior', side: 'right' }
+]
+const upperWardrobePageTwoPanels: UpperWardrobePanel[] = [
+  { id: 'gloves-left', label: 'Luvas esquerda', category: 'luvas', side: 'left' },
+  { id: 'gloves-right', label: 'Luvas direita', category: 'luvas', side: 'right' },
+  { id: 'cape', label: 'Capa', category: 'capa', side: null },
+  { id: 'belt-skirt-1', label: 'Cinto/Saia 1', category: 'cinto-saia-1', side: null },
+  { id: 'belt-skirt-2', label: 'Cinto/Saia 2', category: 'cinto-saia-2', side: null }
 ]
 function wardrobeComponentMatchesPanel(component: WardrobeSet['components'][number], panel: UpperWardrobePanel): boolean {
   if (component.category !== panel.category) return false
@@ -2525,8 +2536,8 @@ export function CustomizerPage() {
     </section>
   }
 
-  const renderUpperWardrobePanels = () => <div className="customizer-hair-layout customizer-upper-wardrobe-layout" aria-label="Peças de roupa superior">
-    {upperWardrobePanels.map((panel) => {
+  const renderUpperWardrobePanels = () => <div className={`customizer-hair-layout customizer-upper-wardrobe-layout${upperWardrobePage === 2 ? ' page-two' : ''}`} aria-label={`Peças de roupa superior · página ${upperWardrobePage}`}>
+    {(upperWardrobePage === 1 ? upperWardrobePanels : upperWardrobePageTwoPanels).map((panel) => {
       const candidates = upperWardrobeCandidates(panel)
       const appliedGroups = selectedCharacter?.customization.wardrobeGroups ?? []
       const selectedIndex = candidates.findIndex(({ summary, component }) => appliedGroups.some((group) =>
@@ -2575,9 +2586,7 @@ export function CustomizerPage() {
     <div className="customizer-wardrobe-catalog">
       {wardrobeLoading ? <div className="customizer-catalog-empty">Carregando roupas…</div> : <>
         {catalogError && <p className="customizer-catalog-error" role="alert">{catalogError}</p>}
-        {upperWardrobePage === 2
-          ? <section className="customizer-upper-wardrobe-page-placeholder" aria-label="Página 2 de roupas superiores"><strong>Página 2 de Superior</strong><span>Espaço reservado para as próximas peças.</span></section>
-          : wardrobeLibraryPanel ? renderUpperWardrobeLibrary() : renderUpperWardrobePanels()}
+        {wardrobeLibraryPanel ? renderUpperWardrobeLibrary() : renderUpperWardrobePanels()}
       </>}
     </div>
   )

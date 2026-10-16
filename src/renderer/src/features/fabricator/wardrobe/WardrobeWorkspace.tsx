@@ -62,7 +62,7 @@ function rebindComponents(components: WardrobeComponent[], reference: Fabricator
   return { components: changed ? rebound : components, changed }
 }
 const categoryNames: Record<WardrobeCategory, string> = {
-  camisa: 'Camisas', jaqueta: 'Jaquetas', 'manga-superior': 'Mangas superiores', 'manga-inferior': 'Mangas inferiores', 'calca-coxa': 'Calças · coxas', 'calca-canela': 'Calças · canelas', shorts: 'Shorts'
+  camisa: 'Camisas', jaqueta: 'Jaquetas', 'manga-superior': 'Mangas superiores', 'manga-inferior': 'Mangas inferiores', luvas: 'Luvas', capa: 'Capa', 'cinto-saia-1': 'Cinto/Saia 1', 'cinto-saia-2': 'Cinto/Saia 2', 'calca-coxa': 'Calças · coxas', 'calca-canela': 'Calças · canelas', shorts: 'Shorts'
 }
 const categories = Object.keys(categoryNames) as WardrobeCategory[]
 function dataUrl(buffer: ArrayBuffer): string {
@@ -84,8 +84,12 @@ function guessCategory(piece: WorkerPiece, width: number, height: number): Wardr
 function guessName(category: WardrobeCategory, x: number, width: number): string {
   if (category === 'camisa') return 'Camisa'
   if (category === 'jaqueta') return 'Jaqueta'
+  if (category === 'capa') return 'Capa'
+  if (category === 'cinto-saia-1') return 'Cinto/Saia 1'
+  if (category === 'cinto-saia-2') return 'Cinto/Saia 2'
   if (category === 'shorts') return 'Shorts'
   const side = x < width / 2 ? 'esquerda' : 'direita'
+  if (category === 'luvas') return `Luvas ${side}`
   if (category === 'manga-superior') return `Manga superior ${side}`
   if (category === 'manga-inferior') return `Manga inferior ${side}`
   if (category === 'calca-coxa') return `Calça · coxa ${side}`
@@ -103,16 +107,20 @@ function serializeModel(model: FabricatorProject): FabricatorProjectSave {
 }
 function guessBone(category: WardrobeCategory, x: number, width: number, model: FabricatorProject): FabricatorProject['parts'][number] | undefined {
   const side = x < width / 2 ? 'left' : 'right'
-  const target = category === 'camisa' || category === 'jaqueta' ? { x: .5, y: .36 }
+  const centerCategory = category === 'camisa' || category === 'jaqueta' || category === 'capa' || category === 'cinto-saia-1' || category === 'cinto-saia-2' || category === 'shorts'
+  const target = category === 'capa' ? { x: .5, y: .31 }
+    : category === 'cinto-saia-1' || category === 'cinto-saia-2' ? { x: .5, y: .49 }
+      : category === 'camisa' || category === 'jaqueta' ? { x: .5, y: .36 }
     : category === 'shorts' ? { x: .5, y: .42 }
-      : category === 'manga-superior' ? { x: side === 'left' ? .27 : .73, y: .27 }
-        : category === 'manga-inferior' ? { x: side === 'left' ? .22 : .78, y: .45 }
-          : category === 'calca-coxa' ? { x: side === 'left' ? .42 : .58, y: .58 }
-            : { x: side === 'left' ? .38 : .62, y: .82 }
+        : category === 'manga-superior' ? { x: side === 'left' ? .27 : .73, y: .27 }
+          : category === 'manga-inferior' ? { x: side === 'left' ? .22 : .78, y: .45 }
+            : category === 'luvas' ? { x: side === 'left' ? .21 : .79, y: .49 }
+              : category === 'calca-coxa' ? { x: side === 'left' ? .42 : .58, y: .58 }
+                : { x: side === 'left' ? .38 : .62, y: .82 }
   const candidates = model.parts.filter((part) => {
     const partX = part.sourceTransform?.x ?? part.x
     const centerX = (partX + part.width / 2) / model.width
-    return category === 'camisa' || category === 'jaqueta' || category === 'shorts' ? centerX > .3 && centerX < .7 : side === 'left' ? centerX < .5 : centerX >= .5
+    return centerCategory ? centerX > .3 && centerX < .7 : side === 'left' ? centerX < .5 : centerX >= .5
   })
   const distance = (part: FabricatorProject['parts'][number]) => {
     const partX = part.sourceTransform?.x ?? part.x

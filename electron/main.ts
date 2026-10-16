@@ -105,7 +105,7 @@ function isCustomizerCharacter(value: unknown): value is CustomizerCharacter {
       Array.isArray(character.customization.wardrobeGroups) && character.customization.wardrobeGroups.length <= 100
       && character.customization.wardrobeGroups.every((group) => group && isValidModelSlot(group.modelSlot)
         && isValidWardrobeId(group.setId)
-        && ['camisa', 'manga-superior', 'manga-inferior', 'calca', 'shorts'].includes(group.category)
+        && ['camisa', 'jaqueta', 'manga-superior', 'manga-inferior', 'luvas', 'capa', 'cinto-saia-1', 'cinto-saia-2', 'calca', 'shorts'].includes(group.category)
         && [group.offsetX, group.offsetY, group.scaleX, group.scaleY, group.rotation].every(Number.isFinite)
         && group.scaleX > 0 && group.scaleY > 0)
     ))
@@ -158,7 +158,7 @@ async function writeCustomizerCharacters(characters: CustomizerCharacter[]): Pro
   await rename(temporary, characterManifestPath())
 }
 
-const wardrobeCategories: WardrobeCategory[] = ['camisa', 'manga-superior', 'manga-inferior', 'calca-coxa', 'calca-canela', 'shorts']
+const wardrobeCategories: WardrobeCategory[] = ['camisa', 'jaqueta', 'manga-superior', 'manga-inferior', 'luvas', 'capa', 'cinto-saia-1', 'cinto-saia-2', 'calca-coxa', 'calca-canela', 'shorts']
 const isValidWardrobeId = (id: string) => /^[a-zA-Z0-9_-]{1,80}$/.test(id)
 const isValidFaceCatalogId = (id: string) => /^[a-zA-Z0-9_-]{1,120}$/.test(id)
 const faceSheetKinds: FaceSheetKind[] = ['eyes', 'eyebrows', 'nose', 'mouth-closed', 'mouth-open']
