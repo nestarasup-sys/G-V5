@@ -106,6 +106,8 @@ export type CustomizerFaceAppearance = {
   /** Right side mirrors the left asset by default; each feature can be unlinked. */
   linkedSides?: Partial<Record<FaceComponentKind, boolean>>
   noseCatalogId?: string
+  /** Opacity of the selected nose asset, from 0 (transparent) to 1 (opaque). */
+  noseOpacity?: number
   mouthClosedCatalogId?: string
   mouthOpenCatalogId?: string
   eyeState: 0 | 1 | 2

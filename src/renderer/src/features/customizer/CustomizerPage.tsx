@@ -191,18 +191,44 @@ function loadHairPreviewImage(source: string): Promise<string> {
 
 type HairTintOptions = { preserveNearWhite?: boolean; allowNearWhiteRoles?: readonly HairColorRole[] }
 
-function HairAssetPreview({ source, alt, colors, tintOptions }: { source: string; alt: string; colors?: HairColorOverrides; tintOptions?: HairTintOptions }) {
+function HairAssetPreview({ source, alt, colors, tintOptions, skinTone, opacity = 1 }: { source: string; alt: string; colors?: HairColorOverrides; tintOptions?: HairTintOptions; skinTone?: string; opacity?: number }) {
   const [previewSource, setPreviewSource] = useState(source)
   const colorKey = JSON.stringify([colors, tintOptions])
   useEffect(() => {
     let cancelled = false
     setPreviewSource(source)
-    void loadHairTintedImage(source, colors, tintOptions).then((image) => loadHairPreviewImage(image.src)).then((trimmed) => {
+    const tintedImage = skinTone ? loadSkinTintedImage(source, skinTone) : loadHairTintedImage(source, colors, tintOptions)
+    void tintedImage.then((image) => loadHairPreviewImage(image.src)).then((trimmed) => {
       if (!cancelled) setPreviewSource(trimmed)
     }).catch(() => undefined)
     return () => { cancelled = true }
-  }, [source, colorKey])
-  return <img src={previewSource} alt={alt} />
+  }, [source, colorKey, skinTone])
+  return <img src={previewSource} alt={alt} style={{ opacity: Math.min(1, Math.max(0, opacity)) }} />
+}
+
+function NoseOpacityControl({ value, disabled, onChange }: { value: number; disabled: boolean; onChange: (value: number) => void }) {
+  const [open, setOpen] = useState(false)
+  const percentage = Math.round(Math.min(1, Math.max(0, value)) * 100)
+  return <>
+    <button className="customizer-nose-opacity-button" type="button" aria-label={`Transparência do nariz: ${100 - percentage}%`} aria-expanded={open} title={`Transparência ${100 - percentage}%`} disabled={disabled} onClick={() => setOpen((current) => !current)}><Icon name="sliders" /><small>α</small></button>
+    {open && <div className="customizer-nose-opacity-popover" role="group" aria-label="Transparência do nariz">
+      <label><span>Transparência</span><strong>{100 - percentage}%</strong></label>
+      <input type="range" min="0" max="100" step="1" value={100 - percentage} disabled={disabled} onChange={(event) => onChange(1 - Number(event.target.value) / 100)} aria-label="Transparência do nariz" />
+    </div>}
+  </>
+}
+
+function NoseSkinTonePalette({ value, disabled, onSelect }: { value: string; disabled: boolean; onSelect: (tone: string) => void }) {
+  return <div className="customizer-nose-skin-palette" aria-label="Paleta de cor de pele">
+    <strong>Cor da pele</strong>
+    <div className="customizer-nose-skin-options" role="group" aria-label="Escolher cor de pele para o nariz">
+      {customizerSkinTonePresets.map((preset) => <button key={preset.id} className={'customizer-nose-skin-tone' + (value.toLowerCase() === preset.id ? ' selected' : '')} style={{ '--skin-tone': preset.id } as React.CSSProperties} type="button" disabled={disabled} aria-label={`Tom de pele ${preset.name}`} aria-pressed={value.toLowerCase() === preset.id} title={preset.name} onClick={() => onSelect(preset.id)}><span /></button>)}
+      <label className={'customizer-nose-skin-picker' + (customizerSkinTonePresets.some((preset) => preset.id === value.toLowerCase()) ? '' : ' selected')} title="Escolher uma cor de pele personalizada">
+        <input type="color" aria-label="Escolher uma cor de pele personalizada" value={value} disabled={disabled} onChange={(event) => onSelect(event.target.value)} />
+        <span style={{ '--skin-tone': value } as React.CSSProperties}><Icon name="brush" /></span>
+      </label>
+    </div>
+  </div>
 }
 
 function PiecePaletteStrip({ label = 'Paleta da peça', colors, disabled, onSelect }: { label?: string; colors?: HairColorOverrides; disabled: boolean; onSelect: (colors: HairColorOverrides) => void }) {
@@ -785,7 +811,7 @@ async function renderFaceOverlay(artwork: CatalogArtwork, source: FabricatorProj
   return canvas.toDataURL('image/png')
 }
 
-async function drawFaceCatalogOverlay(context: CanvasRenderingContext2D, artwork: CatalogArtwork, source: FabricatorProject, items: Partial<Record<FaceSheetKind | FaceElementKind, FaceCatalogItem>>, appearance: CustomizerFaceAppearance, studioFaceTransforms?: StudioFaceTransforms): Promise<void> {
+async function drawFaceCatalogOverlay(context: CanvasRenderingContext2D, artwork: CatalogArtwork, source: FabricatorProject, items: Partial<Record<FaceSheetKind | FaceElementKind, FaceCatalogItem>>, appearance: CustomizerFaceAppearance, skinTone: string, studioFaceTransforms?: StudioFaceTransforms): Promise<void> {
   const sourceHead = source.parts.find((part) => /cabe[çc]a|head/i.test(part.name))
   const targetHead = artwork.parts.find((part) => /cabe[çc]a|head/i.test(part.name))
   if (!sourceHead || !targetHead || sourceHead.width <= 0 || sourceHead.height <= 0) return
@@ -820,7 +846,9 @@ async function drawFaceCatalogOverlay(context: CanvasRenderingContext2D, artwork
     try {
       const catalogPalettePart: FacePalettePartId | undefined = sheet === 'nose' ? 'nose' : sheet.startsWith('mouth') ? 'mouth' : undefined
       const catalogPalette = catalogPalettePart ? appearance.facePalettes?.[catalogPalettePart] : undefined
-      const image = await loadHairTintedImage(piece.dataUrl, appearance.partColors?.[element as 'eye-left' | 'eye-right' | 'brow-left' | 'brow-right'] ?? catalogPalette, catalogPalette ? { preserveNearWhite: true, allowNearWhiteRoles: appearance.facePaletteManualRoles?.[catalogPalettePart!] } : undefined)
+      const image = sheet === 'nose'
+        ? await loadSkinTintedImage(piece.dataUrl, skinTone)
+        : await loadHairTintedImage(piece.dataUrl, appearance.partColors?.[element as 'eye-left' | 'eye-right' | 'brow-left' | 'brow-right'] ?? catalogPalette, catalogPalette ? { preserveNearWhite: true, allowNearWhiteRoles: appearance.facePaletteManualRoles?.[catalogPalettePart!] } : undefined)
       const localX = transform.x / sourceHead.width * targetHead.width + (studioTransform?.x ?? 0) / 100 * targetHead.width
       const localY = transform.y / sourceHead.height * targetHead.height + (studioTransform?.y ?? 0) / 100 * targetHead.height
       const radians = targetHead.rotation * Math.PI / 180
@@ -829,6 +857,7 @@ async function drawFaceCatalogOverlay(context: CanvasRenderingContext2D, artwork
       const width = piece.width * transform.scaleX / sourceHead.width * targetHead.width * (studioTransform?.width ?? 100) / 100
       const height = piece.height * transform.scaleY / sourceHead.height * targetHead.height * (studioTransform?.height ?? 100) / 100
       context.save()
+      if (sheet === 'nose') context.globalAlpha = Math.min(1, Math.max(0, appearance.noseOpacity ?? 1))
       context.translate(x, y)
       context.rotate((targetHead.rotation + transform.rotation + (studioTransform?.rotation ?? 0)) * Math.PI / 180)
       context.drawImage(image, -width / 2, -height / 2, width, height)
@@ -949,13 +978,13 @@ async function drawFaceCatalogOverlay(context: CanvasRenderingContext2D, artwork
   }
 }
 
-async function renderFaceCatalogOverlay(artwork: CatalogArtwork, source: FabricatorProject, items: Partial<Record<FaceSheetKind | FaceElementKind, FaceCatalogItem>>, appearance: CustomizerFaceAppearance, studioFaceTransforms?: StudioFaceTransforms): Promise<string | null> {
+async function renderFaceCatalogOverlay(artwork: CatalogArtwork, source: FabricatorProject, items: Partial<Record<FaceSheetKind | FaceElementKind, FaceCatalogItem>>, appearance: CustomizerFaceAppearance, skinTone: string, studioFaceTransforms?: StudioFaceTransforms): Promise<string | null> {
   const canvas = document.createElement('canvas')
   canvas.width = Math.max(1, artwork.width)
   canvas.height = Math.max(1, artwork.height)
   const context = canvas.getContext('2d')
   if (!context) return null
-  await drawFaceCatalogOverlay(context, artwork, source, items, appearance, studioFaceTransforms)
+  await drawFaceCatalogOverlay(context, artwork, source, items, appearance, skinTone, studioFaceTransforms)
   return canvas.toDataURL('image/png')
 }
 
@@ -1044,7 +1073,7 @@ export async function prepareSavedCharacterRenderer(character: CustomizerCharact
         }
         if (item) activeItems[category] = item
       }))
-      if (hasCatalogSelection) await drawFaceCatalogOverlay(context, artwork, source, activeItems, currentAppearance, studioFaceTransforms)
+      if (hasCatalogSelection) await drawFaceCatalogOverlay(context, artwork, source, activeItems, currentAppearance, character.customization.modelSkinTone ?? skinTonePresets[0].id, studioFaceTransforms)
       else if (legacyFaceImage && currentAppearance.setId === appearance?.setId) context.drawImage(legacyFaceImage, 0, 0, canvas.width, canvas.height)
     } else if (legacyFaceImage) context.drawImage(legacyFaceImage, 0, 0, canvas.width, canvas.height)
     if (frontHairImage) context.drawImage(frontHairImage, 0, 0, canvas.width, canvas.height)
@@ -1532,7 +1561,7 @@ export function CustomizerPage() {
     }
     if (!displayArtworkProject || !selectedSourceModelProject || !appearance || (!hasCatalogSelection && !face)) { setSelectedFaceUrl(null); return }
     const render = hasCatalogSelection
-      ? renderFaceCatalogOverlay(displayArtworkProject, selectedSourceModelProject, catalogItems, appearance)
+      ? renderFaceCatalogOverlay(displayArtworkProject, selectedSourceModelProject, catalogItems, appearance, selectedCharacter?.customization.modelSkinTone ?? skinTonePresets[0].id)
       : renderFaceOverlay(displayArtworkProject, selectedSourceModelProject, face, appearance)
     void render.then((url) => {
       if (!cancelled) setSelectedFaceUrl(url)
@@ -1540,7 +1569,7 @@ export function CustomizerPage() {
       if (!cancelled) setCatalogError(reason instanceof Error ? reason.message : 'Não foi possível montar o rosto do personagem.')
     })
     return () => { cancelled = true }
-  }, [characterFaceAppearance, faceCatalogDetails, faceDetails, displayArtworkProject, selectedSourceModelProject])
+  }, [characterFaceAppearance, faceCatalogDetails, faceDetails, displayArtworkProject, selectedSourceModelProject, selectedCharacter?.customization.modelSkinTone])
 
   useEffect(() => {
     let cancelled = false
@@ -2450,6 +2479,7 @@ export function CustomizerPage() {
     const selectedSlot = selectedIndex >= 0 ? selectedIndex + 1 : 0
     const slotCount = choices.length + 1
     const colors = activeFaceAppearance?.facePalettes?.[part.id] ?? {}
+    const skinTone = selectedCharacter?.customization.modelSkinTone ?? skinTonePresets[0].id
     const chooseAt = (index: number) => {
       if (!selectedCharacter) return
       const slot = wrapSlotIndex(index, slotCount)
@@ -2467,17 +2497,24 @@ export function CustomizerPage() {
       <div className="customizer-hair-piece-selector customizer-face-layout-selector">
         <button aria-label={`Peça anterior: ${part.label}`} onClick={() => chooseAt(selectedSlot - 1)} disabled={!choices.length || !selectedCharacter} type="button"><Icon name="chevronRight" /></button>
         <button className="customizer-hair-piece-preview" aria-label={`Abrir biblioteca de ${part.label}`} title={`Abrir biblioteca de ${part.label}`} type="button" onClick={() => { setFaceCatalogLibraryPage(0); setFaceCatalogLibraryPart(part.id) }}>
-          {selected && <HairAssetPreview source={selected.type === 'catalog' ? selected.piece.dataUrl : selected.asset.dataUrl} colors={colors} tintOptions={{ preserveNearWhite: true, allowNearWhiteRoles: activeFaceAppearance?.facePaletteManualRoles?.[part.id] }} alt={selected.summary.name} />}
+          {selected && <HairAssetPreview source={selected.type === 'catalog' ? selected.piece.dataUrl : selected.asset.dataUrl} colors={colors} tintOptions={{ preserveNearWhite: true, allowNearWhiteRoles: activeFaceAppearance?.facePaletteManualRoles?.[part.id] }} skinTone={part.id === 'nose' ? skinTone : undefined} opacity={part.id === 'nose' ? activeFaceAppearance?.noseOpacity ?? 1 : 1} alt={selected.summary.name} />}
         </button>
         <button aria-label={`Próxima peça: ${part.label}`} onClick={() => chooseAt(selectedSlot + 1)} disabled={!choices.length || !selectedCharacter} type="button"><Icon name="chevronRight" /></button>
-        <div className="customizer-hair-piece-colors" aria-label={`Cores de ${part.label}`}>
-          {facePartColorControls.map((color) => <label key={color.id} className={colors[color.id] ? 'local' : ''} style={{ '--hair-color-swatch': colors[color.id] ?? color.fallback } as React.CSSProperties} title={`${color.label} de ${part.label}`}>
+        <div className={`customizer-hair-piece-colors${part.id === 'nose' ? ' customizer-nose-piece-colors' : ''}`} aria-label={`Cores de ${part.label}`}>
+          {facePartColorControls.slice(0, 3).map((color) => <label key={color.id} className={colors[color.id] ? 'local' : ''} style={{ '--hair-color-swatch': colors[color.id] ?? color.fallback } as React.CSSProperties} title={`${color.label} de ${part.label}`}>
+            <input type="color" aria-label={`${color.label} de ${part.label}`} value={colors[color.id] ?? color.fallback} disabled={!selectedCharacter || !selected} onChange={(event) => void setFaceCatalogPartColor(part.id, color.id, event.target.value)} />
+            <span aria-hidden="true">{color.id === 'highlight' ? 'L' : color.id === 'accent' ? 'A' : color.id === 'outline' ? 'C' : color.id === 'fade' ? 'D' : 'B'}</span>
+          </label>)}
+          {part.id === 'nose' && <NoseOpacityControl value={activeFaceAppearance?.noseOpacity ?? 1} disabled={!selectedCharacter || !selected} onChange={(value) => void saveCharacterCustomization((current) => current.faceAppearance ? { faceAppearance: { ...current.faceAppearance, noseOpacity: value } } : {})} />}
+          {facePartColorControls.slice(3).map((color) => <label key={color.id} className={colors[color.id] ? 'local' : ''} style={{ '--hair-color-swatch': colors[color.id] ?? color.fallback } as React.CSSProperties} title={`${color.label} de ${part.label}`}>
             <input type="color" aria-label={`${color.label} de ${part.label}`} value={colors[color.id] ?? color.fallback} disabled={!selectedCharacter || !selected} onChange={(event) => void setFaceCatalogPartColor(part.id, color.id, event.target.value)} />
             <span aria-hidden="true">{color.id === 'highlight' ? 'L' : color.id === 'accent' ? 'A' : color.id === 'outline' ? 'C' : color.id === 'fade' ? 'D' : 'B'}</span>
           </label>)}
         </div>
       </div>
-      <PiecePaletteStrip label={part.label} colors={colors} disabled={!selectedCharacter || !selected} onSelect={(palette) => void applyFaceCatalogPalette(part.id, palette)} />
+      {part.id === 'nose'
+        ? <NoseSkinTonePalette value={skinTone} disabled={!selectedCharacter || !selected} onSelect={(tone) => void saveCharacterCustomization({ modelSkinTone: tone })} />
+        : <PiecePaletteStrip label={part.label} colors={colors} disabled={!selectedCharacter || !selected} onSelect={(palette) => void applyFaceCatalogPalette(part.id, palette)} />}
     </article>
   }
 

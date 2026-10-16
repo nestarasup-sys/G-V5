@@ -485,6 +485,25 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .customizer-hair-piece-colors input { position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer; }
 .customizer-hair-piece-colors input:disabled { cursor:default; }
 .customizer-hair-piece-colors label span { pointer-events:none;font-size:clamp(9px,1vw,13px);font-weight:900;text-shadow:0 1px 3px #000,0 0 3px #000; }
+.customizer-face-layout-selector { position:relative; }
+.customizer-nose-piece-colors { grid-template-rows:repeat(6,minmax(0,1fr)); }
+.customizer-nose-opacity-button { position:relative;min-width:0;min-height:0;display:grid;place-items:center;overflow:hidden;padding:1px;border:2px solid #7864a7;border-radius:4px;background:linear-gradient(135deg,#745bc4,#a37bd9);color:#fff;cursor:pointer; }
+.customizer-nose-opacity-button svg { width:clamp(12px,1.25vw,18px);height:clamp(12px,1.25vw,18px); }
+.customizer-nose-opacity-button small { position:absolute;right:2px;bottom:0;font-size:9px;font-weight:900;text-shadow:0 1px 2px #35234f; }
+.customizer-nose-opacity-button:disabled { opacity:.45;cursor:default; }
+.customizer-nose-opacity-popover { position:absolute;z-index:5;top:8px;right:clamp(40px,4.5vw,56px);width:min(170px,48%);display:grid;gap:5px;padding:7px 9px;border:2px solid #514183;border-radius:5px;background:#fff;box-shadow:0 2px 8px #26134580;color:#42235e; }
+.customizer-nose-opacity-popover label { display:flex;align-items:center;justify-content:space-between;gap:6px;font-size:10px;font-weight:700; }
+.customizer-nose-opacity-popover input { width:100%;accent-color:#d65391; }
+.customizer-nose-skin-palette { min-width:0;min-height:0;display:grid;grid-template-rows:10px minmax(23px,1fr);gap:1px;overflow:hidden;padding:2px 4px 3px;border-top:1px solid #7668a4;background:#171a30; }
+.customizer-nose-skin-palette>strong { min-width:0;overflow:hidden;color:#d9cde8;font-size:8px;line-height:10px;text-overflow:ellipsis;white-space:nowrap; }
+.customizer-nose-skin-options { min-width:0;min-height:0;display:grid;grid-template-columns:repeat(5,minmax(0,1fr)) 30px;gap:3px; }
+.customizer-nose-skin-tone,.customizer-nose-skin-picker { position:relative;min-width:0;min-height:21px;display:grid;place-items:center;overflow:hidden;padding:2px;border:1px solid #7668a4;border-radius:4px;background:#26203a;cursor:pointer; }
+.customizer-nose-skin-tone>span,.customizer-nose-skin-picker>span { width:100%;height:100%;display:grid;place-items:center;border:1px solid #fff9;border-radius:3px;background:var(--skin-tone); }
+.customizer-nose-skin-tone.selected,.customizer-nose-skin-picker.selected { border:2px solid #f2a4d2;box-shadow:inset 0 0 0 1px #f2a4d2; }
+.customizer-nose-skin-tone:disabled,.customizer-nose-skin-picker:has(input:disabled) { opacity:.45;cursor:default; }
+.customizer-nose-skin-picker input { position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer; }
+.customizer-nose-skin-picker input:disabled { cursor:default; }
+.customizer-nose-skin-picker svg { width:15px;height:15px;color:#fff;filter:drop-shadow(0 1px 2px #442434); }
 .customizer-piece-palette { min-width:0;min-height:0;display:grid;grid-template-rows:10px minmax(23px,1fr);gap:1px;overflow:hidden;padding:2px 4px 3px;border-top:1px solid #7668a4;background:#171a30; }
 .customizer-piece-palette>strong { min-width:0;overflow:hidden;color:#d9cde8;font-size:8px;line-height:10px;text-overflow:ellipsis;white-space:nowrap; }
 .customizer-piece-palette-strip { min-width:0;min-height:0;display:grid;grid-template-columns:18px minmax(0,1fr) 18px;gap:2px; }
