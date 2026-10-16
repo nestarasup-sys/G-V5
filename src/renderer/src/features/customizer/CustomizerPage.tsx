@@ -2910,10 +2910,6 @@ export function CustomizerPage() {
 
         <section className="preview-column" aria-label="Preview do personagem">
           <div className="preview-heading">
-            <div className="preview-title">
-              <p className="eyebrow">CUSTOMIZAR <span>/</span> PERSONAGEM</p>
-              <h1>{selectedCharacter?.name ?? (charactersLoading ? 'Carregando personagens…' : 'Crie um personagem')}<button className="rename-button" aria-label="Editar nome do personagem" disabled={!selectedCharacter} onClick={() => { setNameDraft(selectedCharacter?.name ?? ''); setDialogMode('rename') }} type="button"><Icon name="edit" /></button></h1>
-            </div>
             <div className="preview-actions">
               <button className="quiet-button" aria-live="polite"><Icon name={characterSaveState === 'error' ? 'warning' : characterSaveState === 'saving' ? 'reset' : 'check'} /> {characterSaveState === 'saving' ? 'Salvando' : characterSaveState === 'error' ? 'Falha ao salvar' : 'Salvo'}</button>
             </div>
@@ -2921,6 +2917,10 @@ export function CustomizerPage() {
 
           <div className="stage-wrap customizer-preview-stage-wrap" ref={mainPreviewStageRef}>
             <div className="stage-scene" style={customizerPreviewStyle}>
+              <div className="preview-title customizer-preview-identity">
+                <p className="eyebrow">CUSTOMIZAR <span>/</span> PERSONAGEM</p>
+                <h1>{selectedCharacter?.name ?? (charactersLoading ? 'Carregando personagens…' : 'Crie um personagem')}<button className="rename-button" aria-label="Editar nome do personagem" disabled={!selectedCharacter} onClick={() => { setNameDraft(selectedCharacter?.name ?? ''); setDialogMode('rename') }} type="button"><Icon name="edit" /></button></h1>
+              </div>
               <div className="customizer-preview-controls" aria-label="Controles da prévia">
                 <label className="preview-scene-color" title="Mudar a cor do fundo da prévia">
                   <span className="preview-color-swatch" style={{ backgroundColor: previewBackground }} />
