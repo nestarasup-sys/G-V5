@@ -26,6 +26,9 @@ export const defaultDesignSettings: DesignSettings = {
   ]
 }
 
+let cachedSerializedSettings: string | null | undefined
+let cachedSettingsSnapshot = defaultDesignSettings
+
 function normalizeSettings(value: unknown): DesignSettings {
   if (!value || typeof value !== 'object' || !Array.isArray((value as DesignSettings).bannerSlides)) return defaultDesignSettings
   const bannerSlides = (value as DesignSettings).bannerSlides
@@ -41,17 +44,33 @@ function normalizeSettings(value: unknown): DesignSettings {
 }
 
 export function getDesignSettings(): DesignSettings {
+  let stored: string | null
   try {
-    const stored = window.localStorage.getItem(STORAGE_KEY)
-    return stored ? normalizeSettings(JSON.parse(stored) as unknown) : defaultDesignSettings
+    stored = window.localStorage.getItem(STORAGE_KEY)
   } catch {
-    return defaultDesignSettings
+    return cachedSettingsSnapshot
   }
+  if (stored === cachedSerializedSettings) return cachedSettingsSnapshot
+  cachedSerializedSettings = stored
+  if (!stored) {
+    cachedSettingsSnapshot = defaultDesignSettings
+    return cachedSettingsSnapshot
+  }
+  try { cachedSettingsSnapshot = normalizeSettings(JSON.parse(stored) as unknown) }
+  catch { cachedSettingsSnapshot = defaultDesignSettings }
+  return cachedSettingsSnapshot
 }
 
 export function saveDesignSettings(settings: DesignSettings): void {
   const normalized = normalizeSettings(settings)
-  try { window.localStorage.setItem(STORAGE_KEY, JSON.stringify(normalized)) } catch { /* The current screen can still use the updated settings. */ }
+  const serialized = JSON.stringify(normalized)
+  try {
+    window.localStorage.setItem(STORAGE_KEY, serialized)
+    cachedSerializedSettings = serialized
+  } catch {
+    cachedSerializedSettings = undefined
+  }
+  cachedSettingsSnapshot = normalized
   window.dispatchEvent(new Event(CHANGE_EVENT))
 }
 
