@@ -801,6 +801,7 @@ export function CustomizerPage() {
   const [hairCatalogSide, setHairCatalogSide] = useState<HairCatalogSide>('front')
   const [hairLoading, setHairLoading] = useState(false)
   const [headPanelTab, setHeadPanelTab] = useState<'hair' | 'eyes' | 'face' | 'extra' | 'adjust'>('hair')
+  const [activeHairColorRole, setActiveHairColorRole] = useState<HairColorRole>('base')
   const [faceCategory, setFaceCategory] = useState<'eyes' | 'eyebrows' | 'nose' | 'mouth'>('eyes')
   const [selectedClothing, setSelectedClothing] = useState<SelectedWardrobeComponent | null>(null)
   const [wardrobeTransformDraft, setWardrobeTransformDraft] = useState<Pick<CustomizerWardrobeGroup, 'offsetX' | 'offsetY' | 'scaleX' | 'scaleY' | 'rotation'> | null>(null)
@@ -1730,31 +1731,31 @@ export function CustomizerPage() {
         void chooseHairPartStyle(part.id, options[bounded])
       }
       return <article className="customizer-hair-piece" key={part.id}>
-        <header><strong>{part.label}</strong><span>{selectedIndex >= 0 ? `${selectedIndex + 1}/${options.length}` : `0/${options.length}`}</span></header>
+        <header><strong>{part.label} {selectedIndex >= 0 ? `${selectedIndex + 1}/${options.length}` : `0/${options.length}`}</strong></header>
         <div className="customizer-hair-piece-selector">
           <button aria-label={`Peça anterior: ${part.label}`} onClick={() => chooseAt(selectedIndex < 0 ? options.length - 1 : selectedIndex - 1)} disabled={!options.length || selectedIndex <= 0} type="button"><Icon name="chevronRight" /></button>
           <div className="customizer-hair-piece-preview" aria-live="polite">
             {asset ? <img src={asset.dataUrl} alt={selected?.name ?? ''} /> : <span>{options.length ? 'Escolha uma peça' : 'Sem peças salvas'}</span>}
           </div>
           <button aria-label={`Próxima peça: ${part.label}`} onClick={() => chooseAt(selectedIndex < 0 ? 0 : selectedIndex + 1)} disabled={!options.length || selectedIndex >= options.length - 1} type="button"><Icon name="chevronRight" /></button>
+          <div className="customizer-hair-piece-colors" aria-label={`Cores de ${part.label}`}>
+            {hairColorControls.slice(0, 3).map((color) => <button key={color.id} className={activeHairColorRole === color.id ? 'active' : ''} style={{ '--hair-color-swatch': colorOverrides[color.id] ?? color.fallback } as React.CSSProperties} aria-label={`Editar ${color.label} de ${part.label}`} title={`Editar ${color.label}`} onClick={() => setActiveHairColorRole(color.id)} type="button"><Icon name="star" /></button>)}
+          </div>
         </div>
-        <footer><span title={selected?.name ?? 'Nenhum cabelo selecionado'}>{selected?.name ?? 'Nenhum selecionado'}</span>
-          {selected && <button aria-label={`Remover ${part.label}`} title="Remover peça" onClick={() => void chooseHairPartStyle(part.id, null)} type="button"><Icon name="eyeOff" /></button>}
-        </footer>
       </article>
     }
     return <section className="customizer-hair-workspace" aria-label="Personalização do cabelo">
       {selectedCatalogModelSlot === null ? <div className="customizer-catalog-empty">Escolha um modelo para carregar os cabelos do Fabricador Dev.</div>
         : hairLoading ? <div className="customizer-catalog-empty">Carregando cabelos do Fabricador Dev…</div>
           : <>
-            <header className="customizer-hair-workspace-heading"><span><strong>Cabelos do Modelo {String(selectedCatalogModelSlot).padStart(2, '0')}</strong><small>As peças e encaixes vêm do Fabricador Dev; as escolhas ficam só neste personagem.</small></span></header>
+            <div className="customizer-hair-layout">
             <div className="customizer-hair-color-controls" aria-label="Cores do cabelo">
-              {hairColorControls.map((color) => <label className="customizer-hair-color-control" key={color.id} title={`${color.label} · recolore a faixa de tons correspondente da imagem`}>
-                <span>{color.label}</span><input type="color" aria-label={color.label} value={colorOverrides[color.id] ?? color.fallback} disabled={!selectedCharacter} onChange={(event) => void setHairColor(color.id, event.target.value)} />
+              {hairColorControls.map((color) => <label className="customizer-hair-color-control" data-role={color.id} key={color.id} title={`${color.label} · recolore a faixa de tons correspondente da imagem`}>
+                <span>{color.id === 'base' ? 'Todas base' : color.id === 'fade' ? 'Todas degradê' : color.id === 'outline' ? 'Contorno' : color.id === 'highlight' ? 'High. Color' : 'Acc. Color'}</span><input className={activeHairColorRole === color.id ? 'active' : ''} type="color" aria-label={color.label} value={colorOverrides[color.id] ?? color.fallback} disabled={!selectedCharacter} onFocus={() => setActiveHairColorRole(color.id)} onChange={(event) => void setHairColor(color.id, event.target.value)} />
               </label>)}
             </div>
-            <div className="customizer-hair-pieces">{customizerHairParts.map(renderPieceSelector)}</div>
-            {hairStyles.length === 0 && <p className="customizer-face-empty">Nenhum estilo salvo para este modelo. Crie as peças em Cabelos Dev para elas aparecerem aqui.</p>}
+            {customizerHairParts.map(renderPieceSelector)}
+            </div>
           </>}
     </section>
   }
