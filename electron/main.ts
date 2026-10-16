@@ -337,9 +337,10 @@ async function listFaceCatalogItems(modelSlot: number): Promise<FaceCatalogItemS
 
 function validHairWorkspace(modelSlot: number, workspace: HairWorkspaceSave): boolean {
   if (!isValidModelSlot(modelSlot) || workspace?.schemaVersion !== 1 || workspace.modelSlot !== modelSlot || !workspace.transforms) return false
-  for (const side of ['front', 'back'] as const) {
+  for (const side of ['front', 'back', 'fringe'] as const) {
     const asset = workspace[side]
     const transform = workspace.transforms[side]
+    if (side === 'fringe' && !asset && !transform) continue
     if (asset && (!Number.isFinite(asset.width) || !Number.isFinite(asset.height) || asset.width <= 0 || asset.height <= 0 || asset.width * asset.height > 32_000_000)) return false
     if (!transform || ![transform.x, transform.y, transform.scaleX, transform.scaleY, transform.rotation].every(Number.isFinite)
       || Math.abs(transform.x) > 100_000 || Math.abs(transform.y) > 100_000 || transform.scaleX <= 0 || transform.scaleY <= 0 || transform.scaleX > 20 || transform.scaleY > 20
@@ -356,7 +357,7 @@ async function writeHairWorkspace(modelSlot: number, workspace: HairWorkspaceSav
   const folder = hairModelPath(modelSlot)
   const images = join(folder, 'images')
   await mkdir(images, { recursive: true })
-  const expected = new Set<string>((['front', 'back'] as const).filter((side) => workspace[side] !== null))
+  const expected = new Set<string>((['front', 'back', 'fringe'] as const).filter((side) => workspace[side] != null))
   if (workspace.sourceImageSaved) expected.add('source')
   if (assets.some((asset) => !expected.has(asset.id)) || new Set(assets.map((asset) => asset.id)).size !== assets.length) throw new Error('Imagens de cabelo inválidas.')
   for (const asset of assets) await writeFile(join(images, `${asset.id}.png`), dataUrlBuffer(asset.dataUrl))
@@ -366,7 +367,7 @@ async function writeHairWorkspace(modelSlot: number, workspace: HairWorkspaceSav
       throw new Error(`Imagem de cabelo ausente: ${side}.`)
     }
   }
-  for (const side of ['front', 'back', 'source'] as const) if (!expected.has(side)) await unlink(join(images, `${side}.png`)).catch((reason: NodeJS.ErrnoException) => { if (reason.code !== 'ENOENT') throw reason })
+  for (const side of ['front', 'back', 'fringe', 'source'] as const) if (!expected.has(side)) await unlink(join(images, `${side}.png`)).catch((reason: NodeJS.ErrnoException) => { if (reason.code !== 'ENOENT') throw reason })
   const temporary = join(folder, 'hair.json.tmp')
   await writeFile(temporary, JSON.stringify(workspace), 'utf8')
   await rename(temporary, join(folder, 'hair.json'))
@@ -378,7 +379,7 @@ async function readHairWorkspace(modelSlot: number): Promise<HairWorkspace | nul
     const folder = hairModelPath(modelSlot)
     const saved = JSON.parse(await readFile(join(folder, 'hair.json'), 'utf8')) as HairWorkspaceSave
     if (!validHairWorkspace(modelSlot, saved)) return null
-    const loadPart = async (side: 'front' | 'back') => saved[side]
+    const loadPart = async (side: 'front' | 'back' | 'fringe') => saved[side]
       ? { ...saved[side]!, dataUrl: `data:image/png;base64,${(await readFile(join(folder, 'images', `${side}.png`))).toString('base64')}` }
       : null
     let sourceImageDataUrl: string | undefined
@@ -386,7 +387,7 @@ async function readHairWorkspace(modelSlot: number): Promise<HairWorkspace | nul
       try { sourceImageDataUrl = `data:image/png;base64,${(await readFile(join(folder, 'images', 'source.png'))).toString('base64')}` }
       catch (reason) { if ((reason as NodeJS.ErrnoException).code !== 'ENOENT') throw reason }
     }
-    return { ...saved, front: await loadPart('front'), back: await loadPart('back'), ...(sourceImageDataUrl ? { sourceImageDataUrl } : {}) }
+    return { ...saved, front: await loadPart('front'), back: await loadPart('back'), fringe: await loadPart('fringe'), ...(sourceImageDataUrl ? { sourceImageDataUrl } : {}) }
   } catch (reason) {
     if ((reason as NodeJS.ErrnoException).code === 'ENOENT') return null
     throw reason
@@ -396,10 +397,11 @@ async function readHairWorkspace(modelSlot: number): Promise<HairWorkspace | nul
 function validHairStyle(modelSlot: number, style: HairStyleSave): boolean {
   if (!isValidModelSlot(modelSlot) || style?.schemaVersion !== 1 || style.modelSlot !== modelSlot || !isValidWardrobeId(style.id)
     || typeof style.name !== 'string' || !style.name.trim() || style.name.length > 80 || !style.transforms) return false
-  if (!style.front && !style.back) return false
-  for (const side of ['front', 'back'] as const) {
+  if (!style.front && !style.back && !style.fringe) return false
+  for (const side of ['front', 'back', 'fringe'] as const) {
     const asset = style[side]
     const transform = style.transforms[side]
+    if (side === 'fringe' && !asset && !transform) continue
     if (asset && (!Number.isFinite(asset.width) || !Number.isFinite(asset.height) || asset.width <= 0 || asset.height <= 0 || asset.width * asset.height > 32_000_000)) return false
     if (!transform || ![transform.x, transform.y, transform.scaleX, transform.scaleY, transform.rotation].every(Number.isFinite)
       || Math.abs(transform.x) > 100_000 || Math.abs(transform.y) > 100_000 || transform.scaleX <= 0 || transform.scaleY <= 0 || transform.scaleX > 20 || transform.scaleY > 20
@@ -413,7 +415,7 @@ async function writeHairStyle(modelSlot: number, style: HairStyleSave, assets: H
   const folder = hairStylePath(modelSlot, style.id)
   const images = join(folder, 'images')
   await mkdir(images, { recursive: true })
-  const expected = new Set((['front', 'back'] as const).filter((side) => style[side] !== null))
+  const expected = new Set((['front', 'back', 'fringe'] as const).filter((side) => style[side] != null))
   if (assets.some((asset) => !expected.has(asset.id)) || new Set(assets.map((asset) => asset.id)).size !== assets.length) throw new Error('Imagens do cabelo inválidas.')
   for (const asset of assets) await writeFile(join(images, `${asset.id}.png`), dataUrlBuffer(asset.dataUrl))
   for (const side of expected) {
@@ -422,7 +424,7 @@ async function writeHairStyle(modelSlot: number, style: HairStyleSave, assets: H
       throw new Error(`Imagem de cabelo ausente: ${side}.`)
     }
   }
-  for (const side of ['front', 'back'] as const) if (!expected.has(side)) await unlink(join(images, `${side}.png`)).catch((reason: NodeJS.ErrnoException) => { if (reason.code !== 'ENOENT') throw reason })
+  for (const side of ['front', 'back', 'fringe'] as const) if (!expected.has(side)) await unlink(join(images, `${side}.png`)).catch((reason: NodeJS.ErrnoException) => { if (reason.code !== 'ENOENT') throw reason })
   const temporary = join(folder, 'hair-style.json.tmp')
   await writeFile(temporary, JSON.stringify(style), 'utf8')
   await rename(temporary, join(folder, 'hair-style.json'))
@@ -434,10 +436,10 @@ async function readHairStyle(modelSlot: number, id: string): Promise<HairStyle |
     const folder = hairStylePath(modelSlot, id)
     const saved = JSON.parse(await readFile(join(folder, 'hair-style.json'), 'utf8')) as HairStyleSave
     if (!validHairStyle(modelSlot, saved) || saved.id !== id) return null
-    const loadPart = async (side: 'front' | 'back') => saved[side]
+    const loadPart = async (side: 'front' | 'back' | 'fringe') => saved[side]
       ? { ...saved[side]!, dataUrl: `data:image/png;base64,${(await readFile(join(folder, 'images', `${side}.png`))).toString('base64')}` }
       : null
-    return { ...saved, front: await loadPart('front'), back: await loadPart('back') }
+    return { ...saved, front: await loadPart('front'), back: await loadPart('back'), fringe: await loadPart('fringe') }
   } catch (reason) {
     if ((reason as NodeJS.ErrnoException).code === 'ENOENT') return null
     throw reason
@@ -1575,15 +1577,16 @@ async function registerFabricatorHandlers(): Promise<void> {
       try { await access(migrationMarker) } catch (reason) {
         if ((reason as NodeJS.ErrnoException).code !== 'ENOENT') throw reason
         const legacy = await readHairWorkspace(modelSlot)
-        if (legacy && (legacy.front || legacy.back) && !styles.some((style) => style.id === 'legacy-workspace')) {
+        if (legacy && (legacy.front || legacy.back || legacy.fringe) && !styles.some((style) => style.id === 'legacy-workspace')) {
           const now = legacy.updatedAt || new Date().toISOString()
           const saved: HairStyleSave = {
             schemaVersion: 1, id: 'legacy-workspace', modelSlot, name: 'Cabelo 01',
             front: legacy.front ? { width: legacy.front.width, height: legacy.front.height } : null,
             back: legacy.back ? { width: legacy.back.width, height: legacy.back.height } : null,
+            fringe: legacy.fringe ? { width: legacy.fringe.width, height: legacy.fringe.height } : null,
             transforms: legacy.transforms, createdAt: now, updatedAt: now
           }
-          const assets = [legacy.front && { id: 'front' as const, dataUrl: legacy.front.dataUrl }, legacy.back && { id: 'back' as const, dataUrl: legacy.back.dataUrl }].filter((asset): asset is NonNullable<typeof asset> => asset !== null)
+          const assets = [legacy.front && { id: 'front' as const, dataUrl: legacy.front.dataUrl }, legacy.back && { id: 'back' as const, dataUrl: legacy.back.dataUrl }, legacy.fringe && { id: 'fringe' as const, dataUrl: legacy.fringe.dataUrl }].filter((asset): asset is NonNullable<typeof asset> => asset !== null)
           await writeHairStyle(modelSlot, saved, assets)
           styles.push(saved)
         }

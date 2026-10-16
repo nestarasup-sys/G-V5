@@ -99,7 +99,7 @@ async function crop(image: ImageData): Promise<HairCut> {
   for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) if (data[(y * width + x) * 4 + 3] > 10) {
     left = Math.min(left, x); right = Math.max(right, x); top = Math.min(top, y); bottom = Math.max(bottom, y)
   }
-  if (right < left || bottom < top) throw new Error('Não encontrei cabelo nessa metade. Confira se a folha tem frontal em cima e traseiro embaixo.')
+  if (right < left || bottom < top) throw new Error('Não encontrei cabelo nessa metade. Confira se a folha tem Posterior em cima e Traseiro embaixo.')
   const outWidth = right - left + 1, outHeight = bottom - top + 1
   const canvas = new OffscreenCanvas(outWidth, outHeight)
   const context = canvas.getContext('2d')!
@@ -113,7 +113,7 @@ scope.onmessage = async ({ data }: MessageEvent<Request>) => {
   let bitmap: ImageBitmap | null = null
   try {
     bitmap = await createImageBitmap(await (await fetch(data.dataUrl)).blob())
-    if (bitmap.height < 2) throw new Error('A folha precisa ter o cabelo frontal em cima e o traseiro em baixo.')
+    if (bitmap.height < 2) throw new Error('A folha precisa ter o cabelo Posterior em cima e o Traseiro em baixo.')
     if (bitmap.width * bitmap.height > 32_000_000) throw new Error('A folha tem mais de 32 milhões de pixels. Reduza as dimensões para continuar.')
     const canvas = new OffscreenCanvas(bitmap.width, bitmap.height)
     const context = canvas.getContext('2d', { willReadFrequently: true })

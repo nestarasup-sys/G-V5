@@ -226,34 +226,38 @@ type ClothingGroupCategory = CustomizerWardrobeCategory
 type WardrobeEditHistory = { characterId: string; undo: CustomizerWardrobeGroup[][]; redo: CustomizerWardrobeGroup[][] }
 type SelectedWardrobeComponent = { setId: string; category: ClothingGroupCategory; componentId: string }
 type HairCatalogSide = 'front' | 'back'
+type HairLayerSide = HairCatalogSide | 'fringe'
 type HairPartId = 'backHair' | 'rearHair' | 'ponytail' | 'frontHair' | 'ahoge'
-type HairLayerReference = { style: HairStyle; side: HairCatalogSide }
-const customizerHairParts: Array<{ id: HairPartId; label: string; side: HairCatalogSide }> = [
-  { id: 'backHair', label: 'Cabelo de trás', side: 'back' },
-  { id: 'rearHair', label: 'Cabelo posterior', side: 'back' },
+type HairLayerReference = { style: HairStyle; side: HairLayerSide }
+const customizerHairParts: Array<{ id: HairPartId; label: string; side: HairLayerSide }> = [
+  { id: 'backHair', label: 'Cabelo traseiro', side: 'back' },
+  { id: 'rearHair', label: 'Cabelo posterior', side: 'front' },
   { id: 'ponytail', label: 'Rabo de cavalo', side: 'back' },
-  { id: 'frontHair', label: 'Cabelo frontal', side: 'front' },
-  { id: 'ahoge', label: 'Ahoge', side: 'front' }
+  { id: 'frontHair', label: 'Franja frontal', side: 'fringe' },
+  { id: 'ahoge', label: 'Ahoge', side: 'fringe' }
 ]
 const hairAppearanceStyleId = (appearance: NonNullable<CustomizerCharacter['customization']['hairAppearance']> | undefined, side: HairCatalogSide): string | null => {
   if (!appearance) return null
   const key = side === 'front' ? 'frontStyleId' : 'backStyleId'
   return key in appearance ? appearance[key] ?? null : appearance.styleId ?? null
 }
-function hairAppearanceStyleIds(appearance: NonNullable<CustomizerCharacter['customization']['hairAppearance']> | undefined, side: HairCatalogSide): string[] {
+function hairAppearanceStyleIds(appearance: NonNullable<CustomizerCharacter['customization']['hairAppearance']> | undefined, side: HairLayerSide): string[] {
   return customizerHairParts.filter((part) => part.side === side).flatMap((part) => {
     const hasPartOverride = Boolean(appearance?.parts && Object.prototype.hasOwnProperty.call(appearance.parts, part.id))
-    const id = hasPartOverride ? appearance?.parts?.[part.id] ?? null : part.id === 'backHair' ? hairAppearanceStyleId(appearance, 'back') : part.id === 'frontHair' ? hairAppearanceStyleId(appearance, 'front') : null
+    const legacyFrontPart = part.id === 'rearHair' && appearance?.parts && Object.prototype.hasOwnProperty.call(appearance.parts, 'frontHair')
+      ? appearance.parts.frontHair
+      : null
+    const id = hasPartOverride ? appearance?.parts?.[part.id] ?? null : part.id === 'backHair' ? hairAppearanceStyleId(appearance, 'back') : part.id === 'rearHair' ? legacyFrontPart ?? hairAppearanceStyleId(appearance, 'front') : null
     return id ? [id] : []
   })
 }
 function hairAppearancePartStyleId(appearance: NonNullable<CustomizerCharacter['customization']['hairAppearance']> | undefined, part: HairPartId): string | null {
   if (appearance?.parts && Object.prototype.hasOwnProperty.call(appearance.parts, part)) return appearance.parts[part] ?? null
   if (part === 'backHair') return hairAppearanceStyleId(appearance, 'back')
-  if (part === 'frontHair') return hairAppearanceStyleId(appearance, 'front')
+  if (part === 'rearHair') return appearance?.parts?.frontHair ?? hairAppearanceStyleId(appearance, 'front')
   return null
 }
-async function loadHairAppearanceLayers(appearance: NonNullable<CustomizerCharacter['customization']['hairAppearance']> | undefined, modelSlot: number, side: HairCatalogSide, cached: Record<string, HairStyle> = {}): Promise<HairLayerReference[]> {
+async function loadHairAppearanceLayers(appearance: NonNullable<CustomizerCharacter['customization']['hairAppearance']> | undefined, modelSlot: number, side: HairLayerSide, cached: Record<string, HairStyle> = {}): Promise<HairLayerReference[]> {
   if (!appearance || appearance.modelSlot !== modelSlot) return []
   const ids = hairAppearanceStyleIds(appearance, side)
   const styles = await Promise.all(ids.map(async (id) => cached[`${modelSlot}:${id}`] ?? await window.desktop.loadHairStyle(modelSlot, id)))
@@ -455,7 +459,7 @@ export async function renderArtwork(artwork: CatalogArtwork, maxSize: number, sk
 
 async function renderArtworkWithHair(artwork: CatalogArtwork, source: FabricatorProject, backStyles: HairStyle | HairLayerReference[] | null, maxSize: number, skinTone?: string, hairColors?: HairColorOverrides): Promise<string | null> {
   const hairLayers: HairLayerReference[] = Array.isArray(backStyles) ? backStyles : backStyles ? [{ style: backStyles, side: 'back' }] : []
-  const validHairLayers = hairLayers.filter((layer) => layer.style.modelSlot === source.slot && Boolean(layer.style[layer.side]))
+  const validHairLayers = hairLayers.filter((layer) => layer.side === 'back' && layer.style.modelSlot === source.slot && Boolean(layer.style.back))
   if (!validHairLayers.length) return renderArtwork(artwork, maxSize, skinTone)
   const sourceHead = source.parts.find((part) => /cabe[çc]a|head/i.test(part.name))
   const targetHead = artwork.parts.find((part) => /cabe[çc]a|head/i.test(part.name))
@@ -472,8 +476,9 @@ async function renderArtworkWithHair(artwork: CatalogArtwork, source: Fabricator
     const { style, side } = layer
     const asset = style[side]
     if (!asset) return
-    try {
       const transform = style.transforms[side]
+      if (!transform) return
+    try {
       const localX = transform.x / sourceHead.width * targetHead.width
       const localY = transform.y / sourceHead.height * targetHead.height
       const radians = targetHead.rotation * Math.PI / 180
@@ -490,11 +495,10 @@ async function renderArtworkWithHair(artwork: CatalogArtwork, source: Fabricator
       context.restore()
     } catch { /* One missing hair layer must not hide the model preview. */ }
   }
+  for (const layer of validHairLayers) await drawBackHair(layer)
   for (const id of order) {
     const part = artwork.parts.find((item) => item.id === id)
     if (!part) continue
-    const isHead = part.id === targetHead.id
-    if (isHead) for (const layer of validHairLayers) await drawBackHair(layer)
     if (!hidden.has(part.id)) {
       try {
         const image = skinTone ? await loadSkinTintedImage(part.dataUrl, skinTone) : await loadCachedImage(part.dataUrl)
@@ -511,7 +515,7 @@ async function renderArtworkWithHair(artwork: CatalogArtwork, source: Fabricator
 
 async function renderFrontHairOverlay(artwork: CatalogArtwork, source: FabricatorProject, frontStyles: HairStyle | HairLayerReference[] | null, maxSize: number, hairColors?: HairColorOverrides): Promise<string | null> {
   const hairLayers: HairLayerReference[] = Array.isArray(frontStyles) ? frontStyles : frontStyles ? [{ style: frontStyles, side: 'front' }] : []
-  const validHairLayers = hairLayers.filter((layer) => layer.side === 'front' && layer.style.front && layer.style.modelSlot === source.slot)
+  const validHairLayers = hairLayers.filter((layer) => (layer.side === 'front' || layer.side === 'fringe') && layer.style[layer.side] && layer.style.modelSlot === source.slot)
   if (!validHairLayers.length) return null
   const sourceHead = source.parts.find((part) => /cabe[çc]a|head/i.test(part.name))
   const targetHead = artwork.parts.find((part) => /cabe[çc]a|head/i.test(part.name))
@@ -523,9 +527,10 @@ async function renderFrontHairOverlay(artwork: CatalogArtwork, source: Fabricato
   const context = canvas.getContext('2d')
   if (!context) return null
   for (const layer of validHairLayers) {
-    const asset = layer.style.front
+    const asset = layer.style[layer.side]
     if (!asset) continue
-    const transform = layer.style.transforms.front
+    const transform = layer.style.transforms[layer.side]
+    if (!transform) continue
     const localX = transform.x / sourceHead.width * targetHead.width
     const localY = transform.y / sourceHead.height * targetHead.height
     const radians = targetHead.rotation * Math.PI / 180
@@ -642,10 +647,12 @@ export async function prepareSavedCharacterRenderer(character: CustomizerCharact
   const proportions = getCharacterProportions(character.customization)
   const artwork = applyCharacterBodyShape(withCharacterHeadSize(pose ?? source, proportions), getCharacterBodyDimensions(character.customization))
   const hairAppearance = character.customization.hairAppearance
-  const [backStyles, frontStyles] = await Promise.all([
+  const [backStyles, posteriorStyles, fringeStyles] = await Promise.all([
     loadHairAppearanceLayers(hairAppearance, modelSlot, 'back'),
-    loadHairAppearanceLayers(hairAppearance, modelSlot, 'front')
+    loadHairAppearanceLayers(hairAppearance, modelSlot, 'front'),
+    loadHairAppearanceLayers(hairAppearance, modelSlot, 'fringe')
   ])
+  const frontStyles = [...posteriorStyles, ...fringeStyles]
   const baseUrl = await renderArtworkWithHair(artwork, source, backStyles, 960, character.customization.modelSkinTone, hairAppearance?.colors)
   if (!baseUrl) throw new Error(`Não foi possível montar a prévia de ${character.name}.`)
 
@@ -1195,10 +1202,12 @@ export function CustomizerPage() {
     const appearance = selectedCharacter?.customization.hairAppearance
     if (!artwork || !source) return
     void (async () => {
-      const [backStyles, frontStyles] = await Promise.all([
+      const [backStyles, posteriorStyles, fringeStyles] = await Promise.all([
         loadHairAppearanceLayers(appearance, source.slot, 'back', hairDetails),
-        loadHairAppearanceLayers(appearance, source.slot, 'front', hairDetails)
+        loadHairAppearanceLayers(appearance, source.slot, 'front', hairDetails),
+        loadHairAppearanceLayers(appearance, source.slot, 'fringe', hairDetails)
       ])
+      const frontStyles = [...posteriorStyles, ...fringeStyles]
       if (cancelled) return
       const newlyLoaded: Record<string, HairStyle> = {}
       for (const layer of [...backStyles, ...frontStyles]) if (!hairDetails[`${source.slot}:${layer.style.id}`]) newlyLoaded[`${source.slot}:${layer.style.id}`] = layer.style
@@ -1445,7 +1454,8 @@ export function CustomizerPage() {
     const current = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
     const previous = current.customization.hairAppearance
     const sameModel = previous?.modelSlot === selectedCatalogModelSlot
-    const parts = { ...(sameModel ? previous?.parts : undefined), [part]: summary?.id ?? null }
+    const previousParts = sameModel ? previous?.parts : undefined
+    const parts = { ...(previousParts ?? {}), ...(part === 'frontHair' && previousParts?.frontHair && !previousParts.rearHair ? { rearHair: previousParts.frontHair } : {}), [part]: summary?.id ?? null }
     await saveCharacterCustomization({ hairAppearance: { ...(sameModel ? previous : undefined), modelSlot: selectedCatalogModelSlot, parts } })
   }
 
@@ -1755,20 +1765,20 @@ export function CustomizerPage() {
           : hairStyles.length === 0 ? <div className="customizer-catalog-empty">Este modelo ainda não tem cabelos no catálogo. Importe e salve um cabelo em Cabelos Dev.</div>
             : <>
               <div className="customizer-hair-heading"><span><strong>Cabelos do Modelo {String(selectedCatalogModelSlot).padStart(2, '0')}</strong><small>Aplicação salva somente em {selectedCharacter?.name ?? 'este personagem'}.</small></span>
-                {characterHairAppearance?.modelSlot === selectedCatalogModelSlot && hairAppearanceStyleId(characterHairAppearance, hairCatalogSide) && <button onClick={() => void chooseHairStyle(null, hairCatalogSide)} type="button"><Icon name="eyeOff" /> Remover {hairCatalogSide === 'front' ? 'frontal' : 'traseiro'}</button>}
+                {characterHairAppearance?.modelSlot === selectedCatalogModelSlot && hairAppearanceStyleId(characterHairAppearance, hairCatalogSide) && <button onClick={() => void chooseHairStyle(null, hairCatalogSide)} type="button"><Icon name="eyeOff" /> Remover {hairCatalogSide === 'front' ? 'posterior' : 'traseiro'}</button>}
               </div>
               <nav className="customizer-hair-tabs" aria-label="Categoria de cabelo">
-                {([{ id: 'front', label: 'Frontal' }, { id: 'back', label: 'Traseiro' }] as const).map((category) => <button key={category.id} className={hairCatalogSide === category.id ? 'active' : ''} onClick={() => setHairCatalogSide(category.id)} aria-pressed={hairCatalogSide === category.id} type="button">{category.label}</button>)}
+                {([{ id: 'front', label: 'Posterior' }, { id: 'back', label: 'Traseiro' }] as const).map((category) => <button key={category.id} className={hairCatalogSide === category.id ? 'active' : ''} onClick={() => setHairCatalogSide(category.id)} aria-pressed={hairCatalogSide === category.id} type="button">{category.label}</button>)}
               </nav>
               <div className="customizer-hair-grid">{hairStyles.filter((summary) => summary[hairCatalogSide] !== null).map((summary) => {
                 const detail = hairDetails[String(summary.modelSlot) + ':' + summary.id]
                 const selected = characterHairAppearance?.modelSlot === summary.modelSlot && hairAppearanceStyleId(characterHairAppearance, hairCatalogSide) === summary.id
                 const asset = detail?.[hairCatalogSide]
-                return <button className={'customizer-hair-card' + (selected ? ' selected' : '')} key={summary.id} onClick={() => void chooseHairStyle(summary, hairCatalogSide)} aria-pressed={selected} title={'Aplicar cabelo ' + (hairCatalogSide === 'front' ? 'frontal' : 'traseiro') + ' em ' + (selectedCharacter?.name ?? 'personagem')} type="button">
+                return <button className={'customizer-hair-card' + (selected ? ' selected' : '')} key={summary.id} onClick={() => void chooseHairStyle(summary, hairCatalogSide)} aria-pressed={selected} title={'Aplicar cabelo ' + (hairCatalogSide === 'front' ? 'posterior' : 'traseiro') + ' em ' + (selectedCharacter?.name ?? 'personagem')} type="button">
                   <span className="customizer-hair-art">{asset && <img src={asset.dataUrl} alt="" />}{!asset && <span><Icon name="bow" /></span>}</span>
-                  <b>{summary.name}</b><small>{selected ? 'Aplicado' : `Usar ${hairCatalogSide === 'front' ? 'frontal' : 'traseiro'}`}</small>
+                  <b>{summary.name}</b><small>{selected ? 'Aplicado' : `Usar ${hairCatalogSide === 'front' ? 'posterior' : 'traseiro'}`}</small>
                 </button>
-              })}{hairStyles.every((summary) => summary[hairCatalogSide] === null) && <p className="customizer-face-empty">Nenhum cabelo {hairCatalogSide === 'front' ? 'frontal' : 'traseiro'} salvo para este modelo.</p>}</div>
+              })}{hairStyles.every((summary) => summary[hairCatalogSide] === null) && <p className="customizer-face-empty">Nenhum cabelo {hairCatalogSide === 'front' ? 'posterior' : 'traseiro'} salvo para este modelo.</p>}</div>
             </>}
     </div>
   )
@@ -1778,7 +1788,7 @@ export function CustomizerPage() {
     const colorOverrides = appearance?.colors ?? {}
     const renderPieceSelector = (part: typeof customizerHairParts[number]) => {
       const { side } = part
-      const options = hairStyles.filter((summary) => summary[side] !== null)
+      const options = hairStyles.filter((summary) => summary[side] != null)
       const selectedId = hairAppearancePartStyleId(appearance, part.id)
       const selectedIndex = options.findIndex((summary) => summary.id === selectedId)
       const selected = selectedIndex >= 0 ? options[selectedIndex] : null
@@ -1841,7 +1851,7 @@ export function CustomizerPage() {
               {selectedWardrobeUrl && selectedArtworkUrl && <img className={'customizer-wardrobe-overlay' + (wardrobePreviewDraggable ? ' draggable' : '')} src={selectedWardrobeUrl} alt="Roupas do personagem" draggable={false} onPointerDown={wardrobePreviewDraggable ? beginWardrobeDrag : undefined} onPointerMove={wardrobePreviewDraggable ? moveWardrobeDrag : undefined} onPointerUp={wardrobePreviewDraggable ? finishWardrobeDrag : undefined} onPointerCancel={wardrobePreviewDraggable ? finishWardrobeDrag : undefined} />}
               {selectedFaceUrl && selectedArtworkUrl && <img className="customizer-face-overlay" src={selectedFaceUrl} alt="Rosto do personagem" draggable={false} />}
               {activeModule === 'Roupas' && clothingSection === 'Customizar' && wardrobeHighlightVisible && selectedWardrobeHighlightUrl && <img className="customizer-wardrobe-selection-halo" src={selectedWardrobeHighlightUrl} alt="Peça de roupa selecionada" draggable={false} />}
-              {selectedFrontHairUrl && selectedArtworkUrl && <img className="customizer-front-hair-overlay" src={selectedFrontHairUrl} alt="Cabelo frontal" draggable={false} />}
+              {selectedFrontHairUrl && selectedArtworkUrl && <img className="customizer-front-hair-overlay" src={selectedFrontHairUrl} alt="Cabelo posterior e franja frontal" draggable={false} />}
                 {previewLoading && <div className="customizer-preview-loading">Carregando prévia…</div>}
                 <div className="stage-caption"><span>{String(selectedCatalogModelSlot ?? 1).padStart(2, '0')}</span><i />{selectedArtworkLabel || selectedCharacter?.name || 'Personagem'}<small>{selectedArtworkUrl ? 'DO CATÁLOGO' : 'PERSONAGEM ATIVO'}</small></div>
               </div>
@@ -2205,7 +2215,7 @@ export function CustomizerPage() {
                 {selectedWardrobeUrl && selectedArtworkUrl && <img className={'customizer-wardrobe-overlay' + (wardrobePreviewDraggable ? ' draggable' : '')} src={selectedWardrobeUrl} alt="Roupas do personagem" draggable={false} onPointerDown={wardrobePreviewDraggable ? beginWardrobeDrag : undefined} onPointerMove={wardrobePreviewDraggable ? moveWardrobeDrag : undefined} onPointerUp={wardrobePreviewDraggable ? finishWardrobeDrag : undefined} onPointerCancel={wardrobePreviewDraggable ? finishWardrobeDrag : undefined} />}
                 {selectedFaceUrl && selectedArtworkUrl && <img className="customizer-face-overlay" src={selectedFaceUrl} alt="Rosto do personagem" draggable={false} />}
                 {activeModule === 'Roupas' && clothingSection === 'Customizar' && wardrobeHighlightVisible && selectedWardrobeHighlightUrl && <img className="customizer-wardrobe-selection-halo" src={selectedWardrobeHighlightUrl} alt="Peça de roupa selecionada" draggable={false} />}
-                {selectedFrontHairUrl && selectedArtworkUrl && <img className="customizer-front-hair-overlay" src={selectedFrontHairUrl} alt="Cabelo frontal" draggable={false} />}
+                {selectedFrontHairUrl && selectedArtworkUrl && <img className="customizer-front-hair-overlay" src={selectedFrontHairUrl} alt="Cabelo posterior e franja frontal" draggable={false} />}
               {previewLoading && <div className="customizer-preview-loading">Carregando prévia…</div>}
               <div className="stage-caption"><span>{String(selectedCatalogModelSlot ?? 1).padStart(2, '0')}</span><i />{selectedArtworkLabel || selectedCharacter?.name || 'Personagem'}<small>{selectedArtworkUrl ? 'MODELO DE REFERÊNCIA' : 'SEM MODELO'}</small></div>
             </div>

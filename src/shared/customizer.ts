@@ -15,7 +15,7 @@ export type CharacterCustomization = {
   wardrobeGroups?: CustomizerWardrobeGroup[]
   /** Facial features chosen from the read-only face library, isolated per character. */
   faceAppearance?: CustomizerFaceAppearance
-  /** Front and back hair styles are selected independently per character. styleId reads legacy whole-style selections. */
+  /** Rear, posterior and fringe hair layers are selected independently per character. */
   hairAppearance?: {
     modelSlot: number
     styleId?: string
@@ -23,7 +23,7 @@ export type CharacterCustomization = {
     backStyleId?: string | null
     /** Character-only recoloring overrides for the selected raster hair assets. */
     colors?: Partial<Record<'base' | 'fade' | 'outline' | 'highlight' | 'accent', string>>
-    /** Independent hair parts selected from Fabricator Dev's front/back asset layers. */
+    /** Independent hair parts selected from Fabricator Dev's rear, posterior and fringe layers. */
     parts?: Partial<Record<'backHair' | 'rearHair' | 'ponytail' | 'frontHair' | 'ahoge', string | null>>
   }
 }

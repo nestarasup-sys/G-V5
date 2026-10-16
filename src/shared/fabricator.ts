@@ -176,18 +176,20 @@ export type HairWorkspace = {
   modelSlot: number
   front: { dataUrl: string; width: number; height: number } | null
   back: { dataUrl: string; width: number; height: number } | null
-  transforms: { front: HairTransform; back: HairTransform }
+  fringe?: { dataUrl: string; width: number; height: number } | null
+  transforms: { front: HairTransform; back: HairTransform; fringe?: HairTransform }
   sourceImageDataUrl?: string
   sourceImageSaved?: boolean
   chromaTolerance?: number
   chromaMode?: 'auto' | 'green' | 'checker'
   updatedAt: string
 }
-export type HairWorkspaceSave = Omit<HairWorkspace, 'front' | 'back' | 'sourceImageDataUrl'> & {
+export type HairWorkspaceSave = Omit<HairWorkspace, 'front' | 'back' | 'fringe' | 'sourceImageDataUrl'> & {
   front: Omit<NonNullable<HairWorkspace['front']>, 'dataUrl'> | null
   back: Omit<NonNullable<HairWorkspace['back']>, 'dataUrl'> | null
+  fringe?: Omit<NonNullable<HairWorkspace['fringe']>, 'dataUrl'> | null
 }
-export type HairWorkspaceAsset = { id: 'front' | 'back' | 'source'; dataUrl: string }
+export type HairWorkspaceAsset = { id: 'front' | 'back' | 'fringe' | 'source'; dataUrl: string }
 export type HairStyle = {
   schemaVersion: 1
   id: string
@@ -195,19 +197,22 @@ export type HairStyle = {
   name: string
   front: { dataUrl: string; width: number; height: number } | null
   back: { dataUrl: string; width: number; height: number } | null
-  transforms: { front: HairTransform; back: HairTransform }
+  fringe?: { dataUrl: string; width: number; height: number } | null
+  transforms: { front: HairTransform; back: HairTransform; fringe?: HairTransform }
   createdAt: string
   updatedAt: string
 }
-export type HairStyleSave = Omit<HairStyle, 'front' | 'back'> & {
+export type HairStyleSave = Omit<HairStyle, 'front' | 'back' | 'fringe'> & {
   front: Omit<NonNullable<HairStyle['front']>, 'dataUrl'> | null
   back: Omit<NonNullable<HairStyle['back']>, 'dataUrl'> | null
+  fringe?: Omit<NonNullable<HairStyle['fringe']>, 'dataUrl'> | null
 }
-export type HairStyleSummary = Omit<HairStyle, 'front' | 'back'> & {
+export type HairStyleSummary = Omit<HairStyle, 'front' | 'back' | 'fringe'> & {
   front: Omit<NonNullable<HairStyle['front']>, 'dataUrl'> | null
   back: Omit<NonNullable<HairStyle['back']>, 'dataUrl'> | null
+  fringe?: Omit<NonNullable<HairStyle['fringe']>, 'dataUrl'> | null
 }
-export type HairStyleAsset = { id: 'front' | 'back'; dataUrl: string }
+export type HairStyleAsset = { id: 'front' | 'back' | 'fringe'; dataUrl: string }
 export type PoseWardrobeAttachment = { setId: string; category: WardrobeCategory; attachedPartId: string; referenceAnchor: { x: number; y: number }; referenceRotation: number }
 export type WardrobePosePart = PosePart & { wardrobeAttachment?: PoseWardrobeAttachment }
 export type FabricatorPose = {
