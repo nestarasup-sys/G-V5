@@ -20,6 +20,8 @@ export type CharacterCustomization = {
   layerOrder: string[]
   /** Garments are character-owned placements; pants stay one group across thigh and calf pieces. */
   wardrobeGroups?: CustomizerWardrobeGroup[]
+  /** Shared clothing palette for every wardrobe piece; hair and face colors remain independent. */
+  wardrobeColors?: HairColorOverrides
   /** Facial features chosen from the read-only face library, isolated per character. */
   faceAppearance?: CustomizerFaceAppearance
   /** Rear, posterior and fringe hair layers are selected independently per character. */
