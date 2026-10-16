@@ -17,7 +17,6 @@
 .face-components-library-tabs button:hover { filter:brightness(1.12); }
 .face-components-library-tabs button:focus-visible { outline:2px solid #fff;outline-offset:-4px; }
 .face-components-library-tabs button.active { border-color:#b8aaff;background:linear-gradient(180deg,#8978df,#6b58c5);box-shadow:inset 0 2px 0 #ded5ff; }
-.face-components-library-tabs button:last-child { grid-column:1/-1; }
 .face-components-library-category { display:grid;gap:6px;margin:12px 0 0;padding-top:9px;border-top:1px solid #f0e8ee; }
 .face-components-mouth-variants { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px; }
 .face-components-mouth-variants button { min-height:27px;border:1px solid #e5d4e3;border-radius:5px;background:#f8f5fa;color:#846b88;font-size:9px;font-weight:700;cursor:pointer; }
