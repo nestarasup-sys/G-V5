@@ -1,4 +1,4 @@
-import type { FaceComponentKind, FaceTransform } from './fabricator'
+import type { FaceComponentKind, FaceDetailKind, FaceTransform } from './fabricator'
 
 export type HairColorRole = 'base' | 'fade' | 'outline' | 'highlight' | 'accent'
 export type FaceComponentPartId = 'eye-left' | 'eye-right' | 'pupil-left' | 'pupil-right' | 'brow-left' | 'brow-right'
@@ -94,6 +94,8 @@ export type CustomizerFaceAppearance = {
   partColors?: Partial<Record<'eye-left' | 'eye-right' | 'brow-left' | 'brow-right', HairColorOverrides>>
   /** New single-image face assets selected independently for this character. */
   components?: Partial<Record<FaceComponentPartId, { assetId: string | null; transform?: FaceTransform; colors?: HairColorOverrides }>>
+  /** Independently selected face details managed by Rosto Dev. */
+  faceDetails?: Partial<Record<FaceDetailKind, string | null>>
   /** Right side mirrors the left asset by default; each feature can be unlinked. */
   linkedSides?: Partial<Record<FaceComponentKind, boolean>>
   noseCatalogId?: string

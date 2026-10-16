@@ -3,7 +3,7 @@ import { mkdir, readFile, writeFile, readdir, unlink, rename, stat, access, rm, 
 import { basename, dirname, extname, join, resolve } from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
-import type { AnimatorAnimation, AnimatorAnimationAsset, AnimatorAnimationDraft, AnimatorAnimationSave, AnimatorAnimationSummary, FaceAssetSave, FaceCatalogItem, FaceCatalogItemSave, FaceCatalogItemSummary, FaceComponentAsset, FaceComponentAssetSave, FaceComponentAssetSummary, FaceComponentKind, FaceElementKind, FaceSet, FaceSetSave, FaceSetSummary, FaceSheetKind, FabricatorAssetSave, FabricatorHistoryEntry, FabricatorHistorySaveEntry, FabricatorHistorySaveState, FabricatorHistoryState, FabricatorPose, FabricatorPoseDraft, FabricatorPoseDraftSave, FabricatorPoseSave, FabricatorPoseSummary, FabricatorProject, FabricatorProjectSave, FabricatorSlotSummary, HairStyle, HairStyleAsset, HairStyleSave, HairStyleSummary, HairWorkspace, HairWorkspaceAsset, HairWorkspaceSave, ModelPart, PosePart, WardrobeAssetSave, WardrobeCategory, WardrobeSet, WardrobeSetSave, WardrobeSetSummary } from '../src/shared/fabricator'
+import type { AnimatorAnimation, AnimatorAnimationAsset, AnimatorAnimationDraft, AnimatorAnimationSave, AnimatorAnimationSummary, FaceAssetKind, FaceAssetSave, FaceCatalogItem, FaceCatalogItemSave, FaceCatalogItemSummary, FaceComponentAsset, FaceComponentAssetSave, FaceComponentAssetSummary, FaceElementKind, FaceSet, FaceSetSave, FaceSetSummary, FaceSheetKind, FabricatorAssetSave, FabricatorHistoryEntry, FabricatorHistorySaveEntry, FabricatorHistorySaveState, FabricatorHistoryState, FabricatorPose, FabricatorPoseDraft, FabricatorPoseDraftSave, FabricatorPoseSave, FabricatorPoseSummary, FabricatorProject, FabricatorProjectSave, FabricatorSlotSummary, HairStyle, HairStyleAsset, HairStyleSave, HairStyleSummary, HairWorkspace, HairWorkspaceAsset, HairWorkspaceSave, ModelPart, PosePart, WardrobeAssetSave, WardrobeCategory, WardrobeSet, WardrobeSetSave, WardrobeSetSummary } from '../src/shared/fabricator'
 import { resolvePoseCategory } from '../src/shared/fabricator'
 import type { CustomizerCharacter, CustomizerFaceAppearance } from '../src/shared/customizer'
 import { characterBodyDimensionLimits, characterProportionLimits } from '../src/shared/customizer'
@@ -167,6 +167,7 @@ const faceComponentPartIds = ['eye-left', 'eye-right', 'pupil-left', 'pupil-righ
 
 function isValidCustomizerFaceAppearance(appearance: CustomizerFaceAppearance): boolean {
   const componentEntries = Object.entries(appearance.components ?? {})
+  const faceDetailEntries = Object.entries(appearance.faceDetails ?? {})
   const componentParts = new Set<string>(faceComponentPartIds)
   const catalogIds = [appearance.eyeCatalogId, appearance.eyeLeftCatalogId, appearance.eyeRightCatalogId, appearance.eyebrowCatalogId, appearance.eyebrowLeftCatalogId, appearance.eyebrowRightCatalogId, appearance.noseCatalogId, appearance.mouthClosedCatalogId, appearance.mouthOpenCatalogId]
   const componentsValid = appearance.components === undefined || (!!appearance.components && typeof appearance.components === 'object' && !Array.isArray(appearance.components)
@@ -177,16 +178,20 @@ function isValidCustomizerFaceAppearance(appearance: CustomizerFaceAppearance): 
         && component.transform.scaleX > 0 && component.transform.scaleX <= 20 && component.transform.scaleY > 0 && component.transform.scaleY <= 20
         && (component.transform.flipX === undefined || typeof component.transform.flipX === 'boolean'))
       && (component.colors === undefined || isHairColorMap(component.colors))))
+  const faceDetailsValid = appearance.faceDetails === undefined || (!!appearance.faceDetails && typeof appearance.faceDetails === 'object' && !Array.isArray(appearance.faceDetails)
+    && faceDetailEntries.length <= 4
+    && faceDetailEntries.every(([kind, id]) => ['eye-highlight-left', 'eye-highlight-right', 'blush', 'facial-shadow'].includes(kind)
+      && (id === null || typeof id === 'string' && isValidWardrobeId(id))))
   const linksValid = appearance.linkedSides === undefined || (!!appearance.linkedSides && typeof appearance.linkedSides === 'object' && !Array.isArray(appearance.linkedSides)
     && Object.entries(appearance.linkedSides).every(([kind, linked]) => ['eye', 'pupil', 'eyebrow'].includes(kind) && typeof linked === 'boolean'))
   const partColorsValid = appearance.partColors === undefined || (!!appearance.partColors && typeof appearance.partColors === 'object' && !Array.isArray(appearance.partColors)
     && Object.entries(appearance.partColors).every(([part, colors]) => ['eye-left', 'eye-right', 'brow-left', 'brow-right'].includes(part) && isHairColorMap(colors)))
-  const hasSelection = Boolean(appearance.setId || catalogIds.some(Boolean) || componentEntries.some(([, component]) => component?.assetId))
+  const hasSelection = Boolean(appearance.setId || catalogIds.some(Boolean) || componentEntries.some(([, component]) => component?.assetId) || faceDetailEntries.some(([, id]) => id))
 
   return isValidModelSlot(appearance.modelSlot)
     && (appearance.setId === undefined || isValidWardrobeId(appearance.setId))
     && catalogIds.every((id) => id === undefined || id === null || isValidFaceCatalogId(id))
-    && componentsValid && linksValid && partColorsValid && hasSelection
+    && componentsValid && faceDetailsValid && linksValid && partColorsValid && hasSelection
     && [0, 1, 2].includes(appearance.eyeState)
     && typeof appearance.eyebrows === 'boolean'
     && Number.isInteger(appearance.noseIndex) && appearance.noseIndex >= 0 && appearance.noseIndex <= 5
@@ -374,7 +379,7 @@ async function listFaceCatalogItems(modelSlot: number): Promise<FaceCatalogItemS
 function validFaceComponentAsset(modelSlot: number, asset: FaceComponentAssetSave): boolean {
   const transform = asset?.defaultTransform
   return isValidModelSlot(modelSlot) && asset?.schemaVersion === 1 && asset.modelSlot === modelSlot
-    && isValidWardrobeId(asset.id) && ['eye', 'pupil', 'eye-closed', 'eyebrow'].includes(asset.kind)
+    && isValidWardrobeId(asset.id) && ['eye', 'pupil', 'eye-closed', 'eyebrow', 'eye-highlight-left', 'eye-highlight-right', 'blush', 'facial-shadow'].includes(asset.kind)
     && typeof asset.name === 'string' && asset.name.trim().length > 0 && asset.name.length <= 120
     && Number.isFinite(asset.width) && Number.isFinite(asset.height) && asset.width > 0 && asset.height > 0 && asset.width * asset.height <= 32_000_000
     && (asset.rightSidePositioned === undefined || typeof asset.rightSidePositioned === 'boolean')
@@ -385,7 +390,7 @@ function validFaceComponentAsset(modelSlot: number, asset: FaceComponentAssetSav
     && typeof asset.updatedAt === 'string'
 }
 
-async function listFaceComponentAssets(modelSlot: number, kind?: FaceComponentKind): Promise<FaceComponentAssetSummary[]> {
+async function listFaceComponentAssets(modelSlot: number, kind?: FaceAssetKind): Promise<FaceComponentAssetSummary[]> {
   if (!isValidModelSlot(modelSlot)) throw new Error('Modelo inválido.')
   const directory = faceComponentPath(modelSlot)
   const output: FaceComponentAssetSummary[] = []
@@ -1633,7 +1638,7 @@ async function registerFabricatorHandlers(): Promise<void> {
     await next
   })
 
-  ipcMain.handle('fabricator:face-components:list', async (event, modelSlot: number, kind?: FaceComponentKind): Promise<FaceComponentAssetSummary[]> => {
+  ipcMain.handle('fabricator:face-components:list', async (event, modelSlot: number, kind?: FaceAssetKind): Promise<FaceComponentAssetSummary[]> => {
     assertTrustedSender(event)
     return listFaceComponentAssets(modelSlot, kind)
   })

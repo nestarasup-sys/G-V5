@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { CharacterPortrait } from '../../ui/components/CharacterPortrait'
 import { Icon, type IconName } from '../../ui/components/Icon'
-import type { FaceCatalogItem, FaceCatalogItemSummary, FaceComponentAsset, FaceComponentAssetSummary, FaceComponentKind, FaceElementKind, FaceSet, FaceSheetKind, FabricatorPose, FabricatorPoseSummary, FabricatorProject, FabricatorSlotSummary, HairStyle, HairStyleSummary, WardrobeCategory, WardrobeSet, WardrobeSetSummary } from '../../../../shared/fabricator'
+import type { FaceCatalogItem, FaceCatalogItemSummary, FaceComponentAsset, FaceComponentAssetSummary, FaceComponentKind, FaceDetailKind, FaceElementKind, FaceSet, FaceSheetKind, FabricatorPose, FabricatorPoseSummary, FabricatorProject, FabricatorSlotSummary, HairStyle, HairStyleSummary, WardrobeCategory, WardrobeSet, WardrobeSetSummary } from '../../../../shared/fabricator'
 import { resolvePoseCategory } from '../../../../shared/fabricator'
 import type { CustomizerCharacter, CustomizerFaceAppearance, CustomizerWardrobeCategory, CustomizerWardrobeGroup, FaceComponentPartId, HairColorOverrides, HairColorRole, HairPartId } from '../../../../shared/customizer'
 import { characterBodyDimensionLimits, characterProportionLimits, defaultCharacterBodyDimensions, defaultCharacterProportions, getCharacterBodyDimensions, getCharacterProportions, type CharacterBodyDimensions, type CharacterProportions } from '../../../../shared/customizer'
@@ -831,6 +831,30 @@ async function drawFaceCatalogOverlay(context: CanvasRenderingContext2D, artwork
       }
     } catch { /* Keep the rest of the face visible if one component asset is unavailable. */ }
   }
+  const detailOrder: FaceDetailKind[] = ['facial-shadow', 'blush', 'eye-highlight-left', 'eye-highlight-right']
+  for (const kind of detailOrder) {
+    const id = appearance.faceDetails?.[kind]
+    if (!id) continue
+    const key = `${appearance.modelSlot}:${id}`
+    let pending = faceComponentAssetCache.get(key)
+    if (!pending) { pending = window.desktop.loadFaceComponentAsset(appearance.modelSlot, id); faceComponentAssetCache.set(key, pending) }
+    const asset = await pending
+    if (!asset || asset.kind !== kind) continue
+    const transform = asset.defaultTransform
+    const localX = transform.x / sourceHead.width * targetHead.width
+    const localY = transform.y / sourceHead.height * targetHead.height
+    const radians = targetHead.rotation * Math.PI / 180
+    const x = targetHead.x + targetHead.width / 2 + (localX - targetHead.width / 2) * Math.cos(radians) - (localY - targetHead.height / 2) * Math.sin(radians)
+    const y = targetHead.y + targetHead.height / 2 + (localX - targetHead.width / 2) * Math.sin(radians) + (localY - targetHead.height / 2) * Math.cos(radians)
+    const width = asset.width * transform.scaleX / sourceHead.width * targetHead.width
+    const height = asset.height * transform.scaleY / sourceHead.height * targetHead.height
+    try {
+      const image = await loadCachedImage(asset.dataUrl)
+      context.save(); context.translate(x, y); context.rotate((targetHead.rotation + transform.rotation) * Math.PI / 180)
+      if (transform.flipX) context.scale(-1, 1)
+      context.drawImage(image, -width / 2, -height / 2, width, height); context.restore()
+    } catch { /* Keep the rest of the face visible if one detail asset is unavailable. */ }
+  }
 }
 
 async function renderFaceCatalogOverlay(artwork: CatalogArtwork, source: FabricatorProject, items: Partial<Record<FaceSheetKind | FaceElementKind, FaceCatalogItem>>, appearance: CustomizerFaceAppearance, studioFaceTransforms?: StudioFaceTransforms): Promise<string | null> {
@@ -1070,6 +1094,7 @@ export function CustomizerPage() {
   const [faceComponentDetails, setFaceComponentDetails] = useState<Record<string, FaceComponentAsset>>({})
   const [faceDetails, setFaceDetails] = useState<Record<string, FaceSet>>({})
   const [faceLoading, setFaceLoading] = useState(false)
+  const [faceComponentLoading, setFaceComponentLoading] = useState(false)
   const [hairStyles, setHairStyles] = useState<HairStyleSummary[]>([])
   const [hairDetails, setHairDetails] = useState<Record<string, HairStyle>>({})
   const [hairCatalogSide, setHairCatalogSide] = useState<HairCatalogSide>('front')
@@ -1352,15 +1377,16 @@ export function CustomizerPage() {
   }, [selectedCatalogModelSlot, activeModule])
 
   useEffect(() => {
-    if (selectedCatalogModelSlot === null) { setFaceComponentAssets([]); setFaceComponentDetails({}); return }
+    if (selectedCatalogModelSlot === null) { setFaceComponentAssets([]); setFaceComponentDetails({}); setFaceComponentLoading(false); return }
     let cancelled = false
+    setFaceComponentLoading(true)
     void window.desktop.listFaceComponentAssets(selectedCatalogModelSlot).then(async (summaries) => {
       const details = await Promise.all(summaries.map((summary) => window.desktop.loadFaceComponentAsset(selectedCatalogModelSlot, summary.id)))
       if (cancelled) return
       for (const item of details) if (item) faceComponentAssetCache.set(`${selectedCatalogModelSlot}:${item.id}`, Promise.resolve(item))
       setFaceComponentAssets(summaries)
       setFaceComponentDetails(Object.fromEntries(details.filter((item): item is FaceComponentAsset => Boolean(item)).map((item) => [item.id, item])))
-    }).catch((reason: unknown) => { if (!cancelled) setCatalogError(reason instanceof Error ? reason.message : 'Não foi possível carregar os assets faciais.') })
+    }).catch((reason: unknown) => { if (!cancelled) setCatalogError(reason instanceof Error ? reason.message : 'Não foi possível carregar os assets faciais.') }).finally(() => { if (!cancelled) setFaceComponentLoading(false) })
     return () => { cancelled = true }
   }, [selectedCatalogModelSlot])
 
@@ -1400,7 +1426,7 @@ export function CustomizerPage() {
   useEffect(() => {
     let cancelled = false
     const appearance = characterFaceAppearance
-    const hasCatalogSelection = Boolean(appearance?.eyeCatalogId || appearance?.eyeLeftCatalogId || appearance?.eyeRightCatalogId || appearance?.eyebrowCatalogId || appearance?.eyebrowLeftCatalogId || appearance?.eyebrowRightCatalogId || appearance?.noseCatalogId || appearance?.mouthClosedCatalogId || appearance?.mouthOpenCatalogId || Object.values(appearance?.components ?? {}).some((component) => component?.assetId))
+    const hasCatalogSelection = Boolean(appearance?.eyeCatalogId || appearance?.eyeLeftCatalogId || appearance?.eyeRightCatalogId || appearance?.eyebrowCatalogId || appearance?.eyebrowLeftCatalogId || appearance?.eyebrowRightCatalogId || appearance?.noseCatalogId || appearance?.mouthClosedCatalogId || appearance?.mouthOpenCatalogId || Object.values(appearance?.components ?? {}).some((component) => component?.assetId) || Object.values(appearance?.faceDetails ?? {}).some(Boolean))
     const face = appearance?.setId ? faceDetails[`${appearance.modelSlot}:${appearance.setId}`] : null
     const catalogItems: Partial<Record<FaceSheetKind | FaceElementKind, FaceCatalogItem>> = {}
     if (appearance && hasCatalogSelection) {
@@ -1836,8 +1862,19 @@ export function CustomizerPage() {
     } })
   }
 
-  async function clearFaceCatalogPart(part: 'nose' | 'mouth') {
+  async function chooseFaceDetailCatalogItem(kind: FaceDetailKind, summary: FaceComponentAssetSummary) {
+    if (!selectedCharacter || selectedCatalogModelSlot === null || summary.modelSlot !== selectedCatalogModelSlot) return
+    const details = { ...(activeFaceAppearance?.faceDetails ?? {}), [kind]: summary.id }
+    await setFaceCatalogVariant({ faceDetails: details })
+  }
+
+  async function clearFaceCatalogPart(part: 'nose' | 'mouth' | FaceDetailKind) {
     if (!selectedCharacter || selectedCatalogModelSlot === null) return
+    if (part !== 'nose' && part !== 'mouth') {
+      const details = { ...(activeFaceAppearance?.faceDetails ?? {}), [part]: null }
+      await setFaceCatalogVariant({ faceDetails: details })
+      return
+    }
     const current = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
     const previous = current.customization.faceAppearance
     const sameModel = previous?.modelSlot === selectedCatalogModelSlot
@@ -2258,49 +2295,60 @@ export function CustomizerPage() {
   }
 
   const faceCatalogLayoutParts = [
-    { id: 'nose', label: 'Nariz', help: 'Peças do catálogo facial' },
-    { id: 'eye-highlight-left', label: 'Destaque do olho esquerdo', help: 'Aguardando assets no Fabricador Dev' },
+    { id: 'nose', label: 'Nariz', help: 'Nenhuma peça salva' },
+    { id: 'eye-highlight-left', label: 'Destaque do olho esquerdo', help: 'Nenhuma peça salva' },
     { id: 'mouth', label: 'Boca', help: 'Fechada ou aberta' },
-    { id: 'eye-highlight-right', label: 'Destaque do olho direito', help: 'Aguardando assets no Fabricador Dev' },
-    { id: 'blush', label: 'Blush', help: 'Aguardando assets no Fabricador Dev' },
-    { id: 'facial-shadow', label: 'Sombra facial', help: 'Aguardando assets no Fabricador Dev' }
+    { id: 'eye-highlight-right', label: 'Destaque do olho direito', help: 'Nenhuma peça salva' },
+    { id: 'blush', label: 'Blush', help: 'Nenhuma peça salva' },
+    { id: 'facial-shadow', label: 'Sombra facial', help: 'Nenhuma peça salva' }
   ] as const
   type FaceCatalogLayoutPart = typeof faceCatalogLayoutParts[number]['id']
+  type FaceCatalogChoice =
+    | { type: 'catalog'; summary: FaceCatalogItemSummary; piece: FaceCatalogItem['pieces'][number] }
+    | { type: 'detail'; summary: FaceComponentAssetSummary; asset: FaceComponentAsset }
   const faceCatalogChoicesFor = (category: FaceSheetKind) => faceCatalogItems
     .filter((summary) => summary.category === category)
     .flatMap((summary) => faceCatalogDetails[`${summary.modelSlot}:${summary.id}`]?.pieces
       .filter((piece) => piece.sheet === category)
-      .map((piece) => ({ summary, piece })) ?? [])
+      .map((piece) => ({ type: 'catalog' as const, summary, piece })) ?? [])
   const faceCatalogChoicesForPart = (part: FaceCatalogLayoutPart) => part === 'nose'
     ? faceCatalogChoicesFor('nose')
     : part === 'mouth'
       ? faceCatalogChoicesFor(activeFaceAppearance?.mouthOpen ? 'mouth-open' : 'mouth-closed')
-      : []
+      : faceComponentAssets.filter((summary) => summary.kind === part).flatMap((summary): FaceCatalogChoice[] => {
+        const asset = faceComponentDetails[summary.id]
+        return asset && asset.kind === part ? [{ type: 'detail', summary, asset }] : []
+      })
   const faceCatalogSelectedId = (part: FaceCatalogLayoutPart) => part === 'nose'
     ? activeFaceAppearance?.noseCatalogId
     : part === 'mouth'
       ? activeFaceAppearance?.mouthOpen ? activeFaceAppearance.mouthOpenCatalogId : activeFaceAppearance?.mouthClosedCatalogId
-      : undefined
+      : activeFaceAppearance?.faceDetails?.[part]
   const faceCatalogSelectedVariant = (part: FaceCatalogLayoutPart) => part === 'nose'
     ? activeFaceAppearance?.noseIndex ?? 0
     : part === 'mouth' ? activeFaceAppearance?.expressionIndex ?? 0 : 0
-  const chooseFaceCatalogChoice = (choice: ReturnType<typeof faceCatalogChoicesFor>[number]) => {
-    void chooseFaceCatalogItem(choice.summary, choice.piece.index)
+  const faceCatalogChoiceSelected = (part: FaceCatalogLayoutPart, choice: FaceCatalogChoice) => {
+    if (choice.type === 'detail') return choice.summary.id === faceCatalogSelectedId(part)
+    return choice.summary.id === faceCatalogSelectedId(part) && choice.piece.index === faceCatalogSelectedVariant(part)
+  }
+  const chooseFaceCatalogChoice = (part: FaceCatalogLayoutPart, choice: FaceCatalogChoice) => {
+    if (choice.type === 'detail') void chooseFaceDetailCatalogItem(part as FaceDetailKind, choice.summary)
+    else void chooseFaceCatalogItem(choice.summary, choice.piece.index)
   }
 
   const renderFaceCatalogCard = (part: typeof faceCatalogLayoutParts[number]) => {
     const choices = faceCatalogChoicesForPart(part.id)
     const selectedId = faceCatalogSelectedId(part.id)
-    const selectedIndex = choices.findIndex((choice) => choice.summary.id === selectedId && choice.piece.index === faceCatalogSelectedVariant(part.id))
+    const selectedIndex = choices.findIndex((choice) => faceCatalogChoiceSelected(part.id, choice))
     const selected = selectedIndex >= 0 ? choices[selectedIndex] : null
     const chooseAt = (index: number) => {
       if (!choices.length) return
-      chooseFaceCatalogChoice(choices[Math.max(0, Math.min(choices.length - 1, index))])
+      chooseFaceCatalogChoice(part.id, choices[Math.max(0, Math.min(choices.length - 1, index))])
     }
     const isMouth = part.id === 'mouth'
-    const clearPart = part.id === 'nose' || isMouth ? part.id : null
+    const clearPart = part.id
     return <article className={`customizer-hair-piece customizer-face-piece customizer-face-layout-piece${isMouth ? ' customizer-face-layout-mouth' : ''}`} key={part.id}>
-      <header><strong>{part.label} {selectedIndex >= 0 ? `${selectedIndex + 1}/${choices.length}` : `0/${choices.length}`}</strong>{clearPart && <button className="customizer-hair-reset" type="button" disabled={!selectedId} onClick={() => void clearFaceCatalogPart(clearPart)}>Remover</button>}</header>
+      <header><strong>{part.label} {selectedIndex >= 0 ? `${selectedIndex + 1}/${choices.length}` : `0/${choices.length}`}</strong><button className="customizer-hair-reset" type="button" disabled={!selectedId} onClick={() => void clearFaceCatalogPart(clearPart)}>Remover</button></header>
       {isMouth && <nav className="customizer-face-layout-mode" aria-label="Tipo de boca">
         <button className={!activeFaceAppearance?.mouthOpen ? 'active' : ''} type="button" aria-pressed={!activeFaceAppearance?.mouthOpen} onClick={() => void setFaceCatalogVariant({ mouthOpen: false })}>Fechada</button>
         <button className={activeFaceAppearance?.mouthOpen ? 'active' : ''} type="button" aria-pressed={Boolean(activeFaceAppearance?.mouthOpen)} onClick={() => void setFaceCatalogVariant({ mouthOpen: true })}>Aberta</button>
@@ -2308,7 +2356,7 @@ export function CustomizerPage() {
       <div className="customizer-hair-piece-selector customizer-face-layout-selector">
         <button aria-label={`Peça anterior: ${part.label}`} onClick={() => chooseAt(selectedIndex < 0 ? 0 : selectedIndex - 1)} disabled={!choices.length || selectedIndex <= 0} type="button"><Icon name="chevronRight" /></button>
         <button className="customizer-hair-piece-preview" aria-label={`Abrir biblioteca de ${part.label}`} title={`Abrir biblioteca de ${part.label}`} type="button" onClick={() => { setFaceCatalogLibraryPage(0); setFaceCatalogLibraryPart(part.id) }}>
-          {selected ? <img src={selected.piece.dataUrl} alt={selected.summary.name} /> : <span>{choices.length ? 'Escolha uma peça' : part.help}</span>}
+          {selected ? <img src={selected.type === 'catalog' ? selected.piece.dataUrl : selected.asset.dataUrl} alt={selected.summary.name} /> : <span>{choices.length ? 'Escolha uma peça' : part.help}</span>}
         </button>
         <button aria-label={`Próxima peça: ${part.label}`} onClick={() => chooseAt(selectedIndex < 0 ? 0 : selectedIndex + 1)} disabled={!choices.length || selectedIndex >= choices.length - 1} type="button"><Icon name="chevronRight" /></button>
       </div>
@@ -2324,10 +2372,9 @@ export function CustomizerPage() {
     const page = Math.min(faceCatalogLibraryPage, pageCount - 1)
     const visible = choices.slice(page * pageSize, (page + 1) * pageSize)
     const selectedId = faceCatalogSelectedId(part.id)
-    const selectedVariant = faceCatalogSelectedVariant(part.id)
     return <section className={`customizer-hair-library customizer-face-layout-library${part.id === 'mouth' ? ' customizer-face-layout-library-mouth' : ''}`} aria-labelledby="customizer-face-layout-library-title">
       <header className="customizer-hair-library-heading">
-        <button className="customizer-hair-library-remove" type="button" onClick={() => { if (part.id === 'nose' || part.id === 'mouth') void clearFaceCatalogPart(part.id) }} disabled={!selectedId || part.id !== 'nose' && part.id !== 'mouth'} aria-label={`Remover ${part.label}`} title={`Remover ${part.label}`}><Icon name="trash" /></button>
+        <button className="customizer-hair-library-remove" type="button" onClick={() => void clearFaceCatalogPart(part.id)} disabled={!selectedId} aria-label={`Remover ${part.label}`} title={`Remover ${part.label}`}><Icon name="trash" /></button>
         <h2 id="customizer-face-layout-library-title">{part.label}</h2>
         <button className="customizer-hair-library-close" type="button" onClick={() => setFaceCatalogLibraryPart(null)} aria-label="Voltar às peças do rosto">×</button>
       </header>
@@ -2337,10 +2384,13 @@ export function CustomizerPage() {
       </nav>}
       <div className="customizer-hair-library-grid" aria-label={`Biblioteca de ${part.label}`}>
         {visible.map((choice) => {
-          const selected = choice.summary.id === selectedId && choice.piece.index === selectedVariant
-          return <button className={`customizer-hair-library-item${selected ? ' selected' : ''}`} key={`${choice.summary.id}:${choice.piece.id}`} title={`${choice.summary.name} · ${choice.piece.index + 1}`} aria-label={`Selecionar ${part.label} ${choice.piece.index + 1}`} aria-pressed={selected} type="button" onClick={() => { chooseFaceCatalogChoice(choice); setFaceCatalogLibraryPart(null) }}><img src={choice.piece.dataUrl} alt="" /></button>
+          const selected = faceCatalogChoiceSelected(part.id, choice)
+          const itemId = choice.type === 'catalog' ? `${choice.summary.id}:${choice.piece.id}` : choice.summary.id
+          const imageUrl = choice.type === 'catalog' ? choice.piece.dataUrl : choice.asset.dataUrl
+          const itemIndex = choice.type === 'catalog' ? ` · ${choice.piece.index + 1}` : ''
+          return <button className={`customizer-hair-library-item${selected ? ' selected' : ''}`} key={itemId} title={`${choice.summary.name}${itemIndex}`} aria-label={`Selecionar ${part.label}${itemIndex}`} aria-pressed={selected} type="button" onClick={() => { chooseFaceCatalogChoice(part.id, choice); setFaceCatalogLibraryPart(null) }}><img src={imageUrl} alt="" /></button>
         })}
-        {!choices.length && <p className="customizer-hair-library-empty">{part.id === 'nose' || part.id === 'mouth' ? `Nenhuma peça de ${part.label.toLowerCase()} salva no Fabricador Dev.` : 'Esta categoria ficará pronta quando os assets forem adicionados ao Fabricador Dev.'}</p>}
+        {!choices.length && <p className="customizer-hair-library-empty">Nenhuma peça de {part.label.toLowerCase()} salva no Fabricador Dev.</p>}
       </div>
       <footer className="customizer-hair-library-pagination">
         <button className="customizer-hair-library-page-arrow" type="button" aria-label="Página anterior" disabled={page === 0} onClick={() => setFaceCatalogLibraryPage((current) => Math.max(0, current - 1))}><Icon name="chevronRight" /></button>
@@ -2352,7 +2402,7 @@ export function CustomizerPage() {
 
   const renderFaceCatalogCustomizer = () => <section className="customizer-hair-workspace customizer-face-catalog-workspace" aria-label="Personalização do rosto">
     {selectedCatalogModelSlot === null ? <div className="customizer-catalog-empty">Escolha um modelo para ver as peças faciais.</div>
-      : faceLoading ? <div className="customizer-catalog-empty">Carregando catálogo facial…</div>
+      : faceLoading || faceComponentLoading ? <div className="customizer-catalog-empty">Carregando catálogo facial…</div>
         : faceCatalogLibraryPart ? renderFaceCatalogLibrary()
           : <div className="customizer-hair-layout customizer-face-layout customizer-face-layout-catalog">{faceCatalogLayoutParts.map(renderFaceCatalogCard)}</div>}
   </section>

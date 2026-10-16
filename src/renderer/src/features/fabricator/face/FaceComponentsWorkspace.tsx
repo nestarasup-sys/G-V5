@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
-import type { FaceCatalogItem, FaceCatalogItemSave, FaceCatalogItemSummary, FaceComponentAsset, FaceComponentAssetSave, FaceComponentAssetSummary, FaceComponentKind, FaceTransform, FabricatorProject, FabricatorSlotSummary, ModelPart } from '../../../../../shared/fabricator'
+import type { FaceCatalogItem, FaceCatalogItemSave, FaceCatalogItemSummary, FaceComponentAsset, FaceComponentAssetSave, FaceComponentAssetSummary, FaceComponentKind, FaceDetailKind, FaceTransform, FabricatorProject, FabricatorSlotSummary, ModelPart } from '../../../../../shared/fabricator'
 import { Icon } from '../../../ui/components/Icon'
 import { usePreviewBackground } from '../usePreviewBackground'
 import { processFaceSheet } from './processFaceSheet'
@@ -11,13 +11,15 @@ import './face-components.css'
 
 type PartId = 'eye-left' | 'eye-right' | 'pupil-left' | 'pupil-right' | 'eye-closed-left' | 'eye-closed-right' | 'brow-left' | 'brow-right'
 type CatalogKind = 'nose' | 'mouth-closed' | 'mouth-open'
-type LibraryCategory = FaceComponentKind | 'nose' | 'mouth'
+type LibraryCategory = FaceComponentKind | FaceDetailKind | 'nose' | 'mouth'
+type FaceWorkspaceMode = 'eyes' | 'face'
 type FaceGuide = { visible: boolean; verticalX: number; horizontalY: number; lowerHorizontalY: number; angle: number }
 type PreviewDrag = { pointerId: number; key: string; clientX: number; clientY: number; startX: number; startY: number; modelPerPixelX: number; modelPerPixelY: number; invertX: boolean; pupil: boolean }
 const GUIDE_STORAGE_KEY = 'gacha-nymi:face-dev-guides'
 const COMPONENT_SELECTION_STORAGE_KEY = 'gacha-nymi:face-dev-component-selections'
 const LEGACY_PUPIL_SELECTION_STORAGE_KEY = 'gacha-nymi:face-dev-pupil-selections'
 const FACE_IMPORT_ANCHORS_STORAGE_KEY = 'gacha-nymi:face-dev-import-anchors'
+const FACE_DETAIL_SELECTION_STORAGE_KEY = 'gacha-nymi:face-dev-detail-selections'
 const defaultGuide: FaceGuide = { visible: true, verticalX: 50, horizontalY: 45, lowerHorizontalY: 65, angle: 12 }
 const categories: Array<{ kind: FaceComponentKind; label: string; parts: [PartId, PartId]; names: [string, string] }> = [
   { kind: 'eye', label: 'Olhos', parts: ['eye-left', 'eye-right'], names: ['Olho esquerdo', 'Olho direito'] },
@@ -26,6 +28,14 @@ const categories: Array<{ kind: FaceComponentKind; label: string; parts: [PartId
   { kind: 'eyebrow', label: 'Sobrancelhas', parts: ['brow-left', 'brow-right'], names: ['Sobrancelha esquerda', 'Sobrancelha direita'] }
 ]
 const autoFixKinds: AlignableFaceKind[] = ['eye', 'pupil', 'eye-closed']
+const faceDetailCategories: Array<{ kind: FaceDetailKind; label: string }> = [
+  { kind: 'eye-highlight-left', label: 'Brilho olho esquerdo' },
+  { kind: 'eye-highlight-right', label: 'Brilho olho direito' },
+  { kind: 'blush', label: 'Blush' },
+  { kind: 'facial-shadow', label: 'Sombra facial' }
+]
+const isFaceDetailKind = (kind: LibraryCategory): kind is FaceDetailKind => faceDetailCategories.some((category) => category.kind === kind)
+const isFaceComponentKind = (kind: FaceComponentAsset['kind']): kind is FaceComponentKind => categories.some((category) => category.kind === kind)
 const initialTransform = (kind: FaceComponentKind, head: ModelPart, width: number, height: number): FaceTransform => ({
   x: kind === 'pupil' ? 0 : head.width * (kind === 'eyebrow' ? .38 : .37),
   y: kind === 'pupil' ? 0 : head.height * (kind === 'eyebrow' ? .32 : .46),
@@ -71,6 +81,14 @@ function readComponentSelections(): Record<number, ComponentSelection> {
   } catch { return {} }
 }
 type FaceImportAnchors = Record<number, Partial<Record<AlignableFaceKind, FaceImportAnchor>>>
+type FaceDetailSelections = Record<number, Partial<Record<FaceDetailKind, string>>>
+function readFaceDetailSelections(): FaceDetailSelections {
+  try {
+    const stored = JSON.parse(window.localStorage.getItem(FACE_DETAIL_SELECTION_STORAGE_KEY) ?? '{}') as Record<string, Partial<Record<FaceDetailKind, string>>>
+    if (!stored || typeof stored !== 'object' || Array.isArray(stored)) return {}
+    return Object.fromEntries(Object.entries(stored).filter(([slot, selections]) => /^\d+$/.test(slot) && selections && typeof selections === 'object').map(([slot, selections]) => [Number(slot), selections]))
+  } catch { return {} }
+}
 function readFaceImportAnchors(): FaceImportAnchors {
   try {
     const stored = JSON.parse(window.localStorage.getItem(FACE_IMPORT_ANCHORS_STORAGE_KEY) ?? '{}') as Record<string, Record<string, unknown>>
@@ -104,6 +122,13 @@ function initialCatalogTransform(head: ModelPart, item: Pick<FaceCatalogItem, 'c
   const targetWidth = item.category === 'nose' ? .075 : .2
   const scale = piece ? clamp(head.width * targetWidth / piece.width, .04, 4) : .25
   return { x: head.width * .5, y: head.height * (item.category === 'nose' ? .61 : .78), scaleX: scale, scaleY: scale, rotation: 0 }
+}
+function initialFaceDetailTransform(kind: FaceDetailKind, head: ModelPart, width: number, height: number): FaceTransform {
+  const targetWidth = kind.startsWith('eye-highlight') ? .075 : kind === 'blush' ? .24 : .3
+  const scale = width > 0 && height > 0 ? clamp(head.width * targetWidth / width, .01, 20) : .25
+  const x = kind.endsWith('left') ? head.width * .39 : kind.endsWith('right') ? head.width * .61 : head.width * .5
+  const y = kind.startsWith('eye-highlight') ? head.height * .48 : kind === 'blush' ? head.height * .68 : head.height * .62
+  return { x, y, scaleX: scale, scaleY: scale, rotation: 0 }
 }
 
 function FaceGuideOverlay({ head, guide }: { head: ModelPart; guide: FaceGuide }) {
@@ -152,7 +177,7 @@ function FaceTransformControls({ head, transform, sourceWidth, sourceHeight, pup
   </div>
 }
 
-export function FaceComponentsWorkspace() {
+export function FaceComponentsWorkspace({ mode }: { mode: FaceWorkspaceMode }) {
   const [previewBackground] = usePreviewBackground()
   const [models, setModels] = useState<FabricatorSlotSummary[]>([])
   const [modelSlot, setModelSlot] = useState(1)
@@ -163,8 +188,10 @@ export function FaceComponentsWorkspace() {
   const [details, setDetails] = useState<Record<string, FaceComponentAsset>>({})
   const [eyeMasks, setEyeMasks] = useState<Record<string, string>>({})
   const [selectedPart, setSelectedPart] = useState<PartId>('eye-left')
-  const [libraryCategory, setLibraryCategory] = useState<LibraryCategory>('eye')
+  const [libraryCategory, setLibraryCategory] = useState<LibraryCategory>(() => mode === 'eyes' ? 'eye' : 'nose')
   const [selectedAssets, setSelectedAssets] = useState<Partial<Record<PartId, string>>>({})
+  const [faceDetailSelectionsByModel, setFaceDetailSelectionsByModel] = useState<FaceDetailSelections>(readFaceDetailSelections)
+  const selectedFaceDetails = faceDetailSelectionsByModel[modelSlot] ?? {}
   const [mouthCatalog, setMouthCatalog] = useState<FaceCatalogItemSummary[]>([])
   const [mouthDetails, setMouthDetails] = useState<Record<string, FaceCatalogItem>>({})
   const [selectedMouthId, setSelectedMouthId] = useState<string | null>(null)
@@ -176,7 +203,7 @@ export function FaceComponentsWorkspace() {
   const [moveTogether, setMoveTogether] = useState<Record<FaceComponentKind, boolean>>({ eye: false, pupil: false, 'eye-closed': false, eyebrow: false })
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  const [notice, setNotice] = useState('Importe assets PNG transparentes; o formato de folha pode ser definido depois.')
+  const [notice, setNotice] = useState(() => mode === 'eyes' ? 'Importe a folha 3 em 1 de olhos.' : 'Adicione as peças faciais à biblioteca.')
   const [openModal, setOpenModal] = useState<'import' | 'delete' | null>(null)
   const [markedForDeletion, setMarkedForDeletion] = useState<string[]>([])
   const componentDetailsRef = useRef(details)
@@ -217,12 +244,17 @@ export function FaceComponentsWorkspace() {
     const right = details[asset.id]
     return left && right && !isRightLibraryAsset(candidate) && sameLibraryPair(left, right)
   }))
-  const markedGroupCount = libraryAssets.filter((asset) => markedForDeletion.includes(asset.id)).length
-    + noseCatalog.filter((item) => markedForDeletion.includes(item.id)).length
-    + mouthCatalog.filter((item) => markedForDeletion.includes(item.id)).length
-  const selectedId = selectedAssets[selectedPart] ?? (linked[selectedCategory.kind] && selectedPart.endsWith('right') ? selectedAssets[selectedCategory.parts[0]] : undefined)
-  const selectedAsset = selectedId ? details[selectedId] : undefined
+  const visibleDeletableAssets = libraryAssets.filter((asset) => mode === 'eyes'
+    ? categories.some((category) => category.kind === asset.kind)
+    : faceDetailCategories.some((category) => category.kind === asset.kind))
+  const markedGroupCount = visibleDeletableAssets.filter((asset) => markedForDeletion.includes(asset.id)).length
+    + (mode === 'face' ? noseCatalog.filter((item) => markedForDeletion.includes(item.id)).length
+      + mouthCatalog.filter((item) => markedForDeletion.includes(item.id)).length : 0)
   const componentPair = categories.find((category) => category.kind === libraryCategory)
+  const selectedId = componentPair ? selectedAssets[selectedPart] ?? (linked[selectedCategory.kind] && selectedPart.endsWith('right') ? selectedAssets[selectedCategory.parts[0]] : undefined) : undefined
+  const selectedAsset = selectedId ? details[selectedId] : undefined
+  const selectedFaceDetailId = isFaceDetailKind(libraryCategory) ? selectedFaceDetails[libraryCategory] : undefined
+  const selectedFaceDetail = selectedFaceDetailId ? details[selectedFaceDetailId] : undefined
   const currentImportAnchors = importAnchorsByModel[modelSlot] ?? {}
   const autoFixEnabled = autoFixKinds.every((kind) => Boolean(currentImportAnchors[kind]))
   const autoFixReferencesReady = autoFixKinds.every((kind) => {
@@ -252,7 +284,8 @@ export function FaceComponentsWorkspace() {
   const selectedNose = selectedNoseId ? noseDetails[selectedNoseId] : undefined
   const selectedCatalogItem = libraryCategory === 'nose' ? selectedNose : libraryCategory === 'mouth' ? selectedMouth : undefined
   const selectedCatalogPiece = selectedCatalogItem?.pieces.find((piece) => piece.index === (selectedCatalogItem.category === 'nose' ? selectedCatalogItem.selectedNose : selectedCatalogItem.selectedExpression)) ?? selectedCatalogItem?.pieces[0]
-  const activeComponent = libraryCategory === 'nose' || libraryCategory === 'mouth' ? undefined : selectedAsset
+  const activeComponent: (FaceComponentAsset & { kind: FaceComponentKind }) | undefined = mode === 'eyes' && componentPair && selectedAsset && isFaceComponentKind(selectedAsset.kind) ? selectedAsset as FaceComponentAsset & { kind: FaceComponentKind } : undefined
+  const activeFaceDetail: (FaceComponentAsset & { kind: FaceDetailKind }) | undefined = mode === 'face' && selectedFaceDetail && isFaceDetailKind(selectedFaceDetail.kind) ? selectedFaceDetail as FaceComponentAsset & { kind: FaceDetailKind } : undefined
   const eyeAssetId = selectedPart.endsWith('right') ? selectedAssets['eye-right'] ?? selectedAssets['eye-left'] : selectedAssets['eye-left']
   const eyeAsset = eyeAssetId ? details[eyeAssetId] : undefined
   const leftOpenEyeAsset = details[selectedAssets['eye-left'] ?? '']
@@ -260,10 +293,10 @@ export function FaceComponentsWorkspace() {
     ? { ...eyeAsset, width: leftOpenEyeAsset.width, height: leftOpenEyeAsset.height } : eyeAsset
   const followsOpenEye = selectedAsset?.kind === 'eye-closed' && Boolean(eyeAsset && head)
   const selectedTransform = selectedCatalogItem ? selectedCatalogItem.transforms[selectedCatalogItem.category === 'nose' ? 'nose' : 'mouth']
-    : selectedAsset && followsOpenEye && selectedOpenEye && head ? fitClosedEyeToOpen(selectedAsset, selectedOpenEye, head, selectedPart.endsWith('right')) : selectedAsset?.defaultTransform
-  const activePreviewKey = selectedCatalogItem ? `${selectedCatalogItem.category}:${selectedCatalogItem.id}` : activeComponent ? `${selectedPart}:${activeComponent.id}` : null
-  const selectedSourceWidth = selectedCatalogPiece?.width ?? (selectedAsset?.kind === 'pupil' ? selectedOpenEye ? selectedOpenEye.width * selectedOpenEye.defaultTransform.scaleX : head?.width ? head.width * .19 : 1 : selectedAsset?.width ?? 1)
-  const selectedSourceHeight = selectedCatalogPiece?.height ?? (selectedAsset?.kind === 'pupil' ? selectedOpenEye ? selectedOpenEye.height * selectedOpenEye.defaultTransform.scaleY : head?.height ? head.height * .17 : 1 : selectedAsset?.height ?? 1)
+    : activeFaceDetail?.defaultTransform ?? (selectedAsset && followsOpenEye && selectedOpenEye && head ? fitClosedEyeToOpen(selectedAsset, selectedOpenEye, head, selectedPart.endsWith('right')) : selectedAsset?.defaultTransform)
+  const activePreviewKey = selectedCatalogItem ? `${selectedCatalogItem.category}:${selectedCatalogItem.id}` : activeFaceDetail ? `${activeFaceDetail.kind}:${activeFaceDetail.id}` : activeComponent ? `${selectedPart}:${activeComponent.id}` : null
+  const selectedSourceWidth = selectedCatalogPiece?.width ?? activeFaceDetail?.width ?? (selectedAsset?.kind === 'pupil' ? selectedOpenEye ? selectedOpenEye.width * selectedOpenEye.defaultTransform.scaleX : head?.width ? head.width * .19 : 1 : selectedAsset?.width ?? 1)
+  const selectedSourceHeight = selectedCatalogPiece?.height ?? activeFaceDetail?.height ?? (selectedAsset?.kind === 'pupil' ? selectedOpenEye ? selectedOpenEye.height * selectedOpenEye.defaultTransform.scaleY : head?.height ? head.height * .17 : 1 : selectedAsset?.height ?? 1)
   const mouthPiece = selectedMouth?.pieces.find((piece) => piece.index === selectedMouth.selectedExpression) ?? selectedMouth?.pieces[0]
   const mouthTransform = selectedMouth?.transforms.mouth
   const mouthStyle: CSSProperties | undefined = head && mouthPiece && mouthTransform ? {
@@ -280,6 +313,17 @@ export function FaceComponentsWorkspace() {
     height: `${nosePiece.height * noseTransform.scaleY / head.height * 100}%`,
     transform: `translate(-50%,-50%) rotate(${noseTransform.rotation}deg)`
   } : undefined
+  const previewFaceDetailLayers = mode === 'face' ? faceDetailCategories.flatMap(({ kind }) => {
+    const asset = details[selectedFaceDetails[kind] ?? '']
+    if (!head || !asset) return []
+    const transform = asset.defaultTransform
+    const style: CSSProperties = {
+      left: `${transform.x / head.width * 100}%`, top: `${transform.y / head.height * 100}%`,
+      width: `${asset.width * transform.scaleX / head.width * 100}%`, height: `${asset.height * transform.scaleY / head.height * 100}%`,
+      transform: `translate(-50%,-50%) rotate(${transform.rotation}deg) scaleX(${transform.flipX ? -1 : 1})`
+    }
+    return [{ kind, asset, style }]
+  }) : []
   componentDetailsRef.current = details
   selectedAssetsRef.current = selectedAssets
   catalogDetailsRef.current = { ...noseDetails, ...mouthDetails }
@@ -310,6 +354,7 @@ export function FaceComponentsWorkspace() {
   useEffect(() => { void window.desktop.listFabricatorSlots().then((slots) => { setModels(slots); const first = slots.findIndex(Boolean); if (first >= 0) setModelSlot(first + 1) }).catch((reason) => setError(String(reason))) }, [])
   useEffect(() => { try { window.localStorage.setItem(GUIDE_STORAGE_KEY, JSON.stringify(guidesByModel)) } catch { /* Keep guides available during this session. */ } }, [guidesByModel])
   useEffect(() => { try { window.localStorage.setItem(FACE_IMPORT_ANCHORS_STORAGE_KEY, JSON.stringify(importAnchorsByModel)) } catch { setError('Não foi possível salvar a fixação de importação neste computador.') } }, [importAnchorsByModel])
+  useEffect(() => { try { window.localStorage.setItem(FACE_DETAIL_SELECTION_STORAGE_KEY, JSON.stringify(faceDetailSelectionsByModel)) } catch { /* Saved assets remain available in the library. */ } }, [faceDetailSelectionsByModel])
   useEffect(() => {
     if (hydratedComponentSlot.current !== modelSlot) return
     try {
@@ -405,39 +450,6 @@ export function FaceComponentsWorkspace() {
     return () => { active = false }
   }, [modelSlot])
 
-  async function importAsset(kind: FaceComponentKind, event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0]; event.target.value = ''
-    if (!file || !head) return
-    setBusy(true); setError('')
-    const savedIds: string[] = []
-    try {
-      const eyebrowImage = kind === 'eyebrow' ? await removeEyebrowGreen(file, true) : null
-      const image = eyebrowImage ?? await readImage(file)
-      const category = categories.find((item) => item.kind === kind)!
-      const baseName = file.name.replace(/\.[^.]+$/, '').slice(0, 90) || category.label
-      const baseTransform = initialTransform(kind, head, image.width, image.height)
-      const imported: FaceComponentAsset[] = []
-      const assigned: Partial<Record<PartId, string>> = {}
-      const pairId = crypto.randomUUID()
-      for (const [index, side] of category.parts.entries()) {
-        const defaultTransform: FaceTransform = index === 0 ? baseTransform : { ...baseTransform, x: kind === 'pupil' ? -baseTransform.x : head.width - baseTransform.x, rotation: -baseTransform.rotation, flipX: true }
-        const anchor = autoFixKinds.includes(kind as AlignableFaceKind) ? importAnchorsByModel[modelSlot]?.[kind as AlignableFaceKind] : undefined
-        const transform = anchor ? alignImportedFacePiece(kind as AlignableFaceKind, index === 0 ? 'left' : 'right', image.width, image.height, anchor) : defaultTransform
-        const asset: FaceComponentAssetSave = { schemaVersion: 1, id: crypto.randomUUID(), modelSlot, kind, name: `${baseName} · ${category.names[index]}`.slice(0, 120), width: image.width, height: image.height, defaultTransform: transform, rightSidePositioned: index === 1, pairId, updatedAt: new Date().toISOString() }
-        await window.desktop.saveFaceComponentAsset(modelSlot, asset, image.dataUrl)
-        savedIds.push(asset.id)
-        assigned[side] = asset.id
-        imported.push({ ...asset, dataUrl: image.dataUrl })
-      }
-      setDetails((current) => ({ ...current, ...Object.fromEntries(imported.map((asset) => [asset.id, asset])) }))
-      setAssets((current) => [...imported, ...current]); setSelectedPart(category.parts[0]); setLibraryCategory(kind); setSelectedAssets((current) => ({ ...current, ...assigned }))
-      setNotice(eyebrowImage && eyebrowImage.removedPixels > 0 ? `${baseName} salvo com o fundo verde removido.` : `${baseName} salvo para os dois lados. Ajuste cada lado ou use o controle conjunto.`)
-    } catch (reason) {
-      await Promise.allSettled(savedIds.map((id) => window.desktop.deleteFaceComponentAsset(modelSlot, id)))
-      setError(reason instanceof Error ? reason.message : String(reason))
-    } finally { setBusy(false) }
-  }
-
   async function cleanSelectedEyebrow() {
     if (!selectedAsset || selectedAsset.kind !== 'eyebrow' || busy) return
     setBusy(true); setError('')
@@ -508,6 +520,38 @@ export function FaceComponentsWorkspace() {
       await Promise.allSettled(savedIds.map((id) => window.desktop.deleteFaceComponentAsset(modelSlot, id)))
       setError(reason instanceof Error ? reason.message : String(reason))
     } finally { setBusy(false) }
+  }
+
+  function selectFaceDetail(kind: FaceDetailKind, id: string | undefined) {
+    setFaceDetailSelectionsByModel((current) => {
+      const selected = { ...(current[modelSlot] ?? {}) }
+      if (id) selected[kind] = id
+      else delete selected[kind]
+      return { ...current, [modelSlot]: selected }
+    })
+  }
+
+  async function importFaceDetail(kind: FaceDetailKind, event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0]; event.target.value = ''
+    if (!file || !head) return
+    setBusy(true); setError('')
+    try {
+      const image = await readImage(file)
+      const asset: FaceComponentAssetSave = {
+        schemaVersion: 1, id: crypto.randomUUID(), modelSlot, kind,
+        name: file.name.replace(/\.[^.]+$/, '').slice(0, 110) || faceDetailCategories.find((entry) => entry.kind === kind)!.label,
+        width: image.width, height: image.height,
+        defaultTransform: initialFaceDetailTransform(kind, head, image.width, image.height),
+        updatedAt: new Date().toISOString()
+      }
+      await window.desktop.saveFaceComponentAsset(modelSlot, asset, image.dataUrl)
+      const saved = { ...asset, dataUrl: image.dataUrl }
+      setAssets((current) => [asset, ...current])
+      setDetails((current) => ({ ...current, [asset.id]: saved }))
+      selectFaceDetail(kind, asset.id)
+      setLibraryCategory(kind); setNotice(`${asset.name} adicionado ao catálogo facial.`); setOpenModal(null)
+    } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) }
+    finally { setBusy(false) }
   }
 
   async function cloneComponentForSide(source: FaceComponentAsset, side: PartId): Promise<FaceComponentAsset> {
@@ -607,6 +651,10 @@ export function FaceComponentsWorkspace() {
   }
 
   function updateTransform(patch: Partial<FaceTransform>) {
+    if (activeFaceDetail) {
+      persistComponentAsset({ ...activeFaceDetail, defaultTransform: { ...activeFaceDetail.defaultTransform, ...patch }, updatedAt: new Date().toISOString() })
+      return
+    }
     if (libraryCategory === 'nose' || libraryCategory === 'mouth') {
       if (!selectedCatalogItem) return
       const original = catalogDetailsRef.current[selectedCatalogItem.id] ?? selectedCatalogItem
@@ -646,6 +694,7 @@ export function FaceComponentsWorkspace() {
   function resetSelectedTransform() {
     if (!head) return
     if (selectedCatalogItem) { updateTransform(initialCatalogTransform(head, selectedCatalogItem)); return }
+    if (activeFaceDetail) { updateTransform(initialFaceDetailTransform(activeFaceDetail.kind as FaceDetailKind, head, activeFaceDetail.width, activeFaceDetail.height)); return }
     if (!activeComponent) return
     if (moveTogether[activeComponent.kind]) { updateTransform({ rotation: 0 }); return }
     const base = initialTransform(activeComponent.kind, head, activeComponent.width, activeComponent.height)
@@ -848,6 +897,10 @@ export function FaceComponentsWorkspace() {
         setNoseCatalog((current) => current.filter((item) => !removedIds.has(item.id)))
         setNoseDetails((current) => Object.fromEntries(Object.entries(current).filter(([id]) => !removedIds.has(id))))
         setSelectedNoseId((current) => current && removedIds.has(current) ? null : current)
+        setFaceDetailSelectionsByModel((current) => ({
+          ...current,
+          [modelSlot]: Object.fromEntries(Object.entries(current[modelSlot] ?? {}).filter(([, id]) => !removedIds.has(id))) as Partial<Record<FaceDetailKind, string>>
+        }))
         setMarkedForDeletion((current) => current.filter((id) => !removedIds.has(id)))
       }
       setBusy(false)
@@ -934,25 +987,33 @@ export function FaceComponentsWorkspace() {
     return <img key={`${id}-${assetId}`} className={`face-component-layer${canDrag ? ` face-component-layer-draggable${draggingPreview ? ' is-dragging' : ''}` : ''}`} src={imageAsset.dataUrl} alt={category.names[rightSide ? 1 : 0]} style={style} draggable={false} title={canDrag ? 'Arraste para mover esta peça' : undefined} onPointerDown={canDrag ? (event) => beginPreviewDrag(event, dragKey, mirroredPosition || rightSide && !physicalRight && category.kind === 'pupil' && linked.pupil, category.kind === 'pupil') : undefined} onPointerMove={canDrag ? movePreviewDrag : undefined} onPointerUp={canDrag ? endPreviewDrag : undefined} onPointerCancel={canDrag ? endPreviewDrag : undefined} onLostPointerCapture={canDrag ? endPreviewDrag : undefined} />
   }
 
-  return <section className="fabricator-workspace face-components-workspace" aria-label="Biblioteca de olhos, pupilas, sobrancelhas, nariz e bocas">
+  const workspaceTitle = mode === 'eyes' ? 'Olhos Dev' : 'Rosto Dev'
+  const workspaceAssetsCount = mode === 'eyes'
+    ? assets.filter((asset) => categories.some((category) => category.kind === asset.kind)).length
+    : noseCatalog.length + mouthCatalog.length + assets.filter((asset) => isFaceDetailKind(asset.kind as LibraryCategory)).length
+  const libraryCategoryLabel = isFaceDetailKind(libraryCategory) ? faceDetailCategories.find((category) => category.kind === libraryCategory)?.label ?? ''
+    : libraryCategory === 'mouth' ? 'Boca' : libraryCategory === 'nose' ? 'Nariz' : selectedCategory.label
+  return <section className="fabricator-workspace face-components-workspace" aria-label={`Biblioteca de ${workspaceTitle}`}>
     <header className="face-components-toolbar"><label>Modelo<select value={modelSlot} disabled={busy} onChange={(event) => setModelSlot(Number(event.target.value))}>{models.map((entry, index) => entry && <option key={index + 1} value={index + 1}>Modelo {String(index + 1).padStart(2, '0')} · {entry.name}</option>)}</select></label><span>Selecione uma peça e arraste-a na prévia para mover</span></header>
     <div className="face-components-body">
       <aside className="face-components-library">
-        <header><strong>Biblioteca</strong><small>{libraryAssets.length + noseCatalog.length + mouthCatalog.length} assets</small></header>
+        <header><strong>Biblioteca</strong><small>{workspaceAssetsCount} assets</small></header>
         <div className="face-components-library-actions"><button type="button" onClick={() => setOpenModal('import')} disabled={!head || busy}><Icon name="plus" /> Importar</button><button type="button" onClick={() => { setMarkedForDeletion([]); setOpenModal('delete') }} disabled={busy}><Icon name="trash" /> Excluir</button></div>
         <nav className="face-components-library-tabs" aria-label="Categorias da biblioteca" role="tablist">
-          {categories.map((category) => <button key={category.kind} type="button" role="tab" aria-selected={libraryCategory === category.kind} className={libraryCategory === category.kind ? 'active' : ''} onClick={() => { setLibraryCategory(category.kind); setSelectedPart(category.parts[0]) }}>{category.label}</button>)}
-          <button type="button" role="tab" aria-selected={libraryCategory === 'nose'} className={libraryCategory === 'nose' ? 'active' : ''} onClick={() => setLibraryCategory('nose')}>Nariz</button>
-          <button type="button" role="tab" aria-selected={libraryCategory === 'mouth'} className={libraryCategory === 'mouth' ? 'active' : ''} onClick={() => setLibraryCategory('mouth')}>Boca</button>
+          {mode === 'eyes' ? categories.map((category) => <button key={category.kind} type="button" role="tab" aria-selected={libraryCategory === category.kind} className={libraryCategory === category.kind ? 'active' : ''} onClick={() => { setLibraryCategory(category.kind); setSelectedPart(category.parts[0]) }}>{category.label}</button>) : <>
+            <button type="button" role="tab" aria-selected={libraryCategory === 'nose'} className={libraryCategory === 'nose' ? 'active' : ''} onClick={() => setLibraryCategory('nose')}>Nariz</button>
+            <button type="button" role="tab" aria-selected={libraryCategory === 'mouth'} className={libraryCategory === 'mouth' ? 'active' : ''} onClick={() => setLibraryCategory('mouth')}>Boca</button>
+            {faceDetailCategories.map((category) => <button key={category.kind} type="button" role="tab" aria-selected={libraryCategory === category.kind} className={libraryCategory === category.kind ? 'active' : ''} onClick={() => setLibraryCategory(category.kind)}>{category.label}</button>)}
+          </>}
         </nav>
-        <section className="face-components-library-category" role="tabpanel" aria-label={`Assets de ${libraryCategory === 'mouth' ? 'Boca' : libraryCategory === 'nose' ? 'Nariz' : selectedCategory.label}`}>
-          <h3>{libraryCategory === 'mouth' ? 'Boca' : libraryCategory === 'nose' ? 'Nariz' : selectedCategory.label} <small>{libraryCategory === 'mouth' ? mouthCatalog.filter((item) => item.category === mouthKind).length : libraryCategory === 'nose' ? noseCatalog.length : libraryAssets.filter((asset) => asset.kind === libraryCategory).length}</small></h3>
+        <section className="face-components-library-category" role="tabpanel" aria-label={`Assets de ${libraryCategoryLabel}`}>
+          <h3>{libraryCategoryLabel} <small>{libraryCategory === 'mouth' ? mouthCatalog.filter((item) => item.category === mouthKind).length : libraryCategory === 'nose' ? noseCatalog.length : libraryAssets.filter((asset) => asset.kind === libraryCategory).length}</small></h3>
           {libraryCategory === 'mouth' && <div className="face-components-mouth-variants"><button type="button" className={mouthKind === 'mouth-closed' ? 'active' : ''} onClick={() => { setMouthKind('mouth-closed'); setSelectedMouthId(mouthCatalog.find((item) => item.category === 'mouth-closed')?.id ?? null) }}>Fechadas</button><button type="button" className={mouthKind === 'mouth-open' ? 'active' : ''} onClick={() => { setMouthKind('mouth-open'); setSelectedMouthId(mouthCatalog.find((item) => item.category === 'mouth-open')?.id ?? null) }}>Abertas</button></div>}
           <div className="face-components-assets">
             {libraryCategory === 'mouth' ? mouthCatalog.filter((item) => item.category === mouthKind).map((item) => <button key={item.id} className={selectedMouthId === item.id ? 'active' : ''} onClick={() => setSelectedMouthId(item.id)} type="button"><img src={mouthDetails[item.id]?.pieces[0]?.dataUrl} alt="" /><span>{item.name}</span></button>) : libraryCategory === 'nose' ? noseCatalog.map((item) => <button key={item.id} className={selectedNoseId === item.id ? 'active' : ''} onClick={() => setSelectedNoseId(item.id)} type="button"><img src={noseDetails[item.id]?.pieces[0]?.dataUrl} alt="" /><span>{item.name}</span></button>) : libraryAssets.filter((asset) => asset.kind === libraryCategory).map((asset) => {
               const displayed = details[asset.id]
-              const active = selectedId === asset.id || selectedPart.endsWith('right') && displayed && selectedAsset && sameLibraryPair(displayed, selectedAsset)
-              return <button key={asset.id} className={active ? 'active' : ''} onClick={() => void chooseLibraryAsset(asset)} disabled={busy} type="button"><img src={displayed?.dataUrl} alt="" /><span>{libraryBaseName(asset.name)}</span></button>
+              const active = isFaceDetailKind(libraryCategory) ? selectedFaceDetails[libraryCategory] === asset.id : selectedId === asset.id || selectedPart.endsWith('right') && displayed && selectedAsset && sameLibraryPair(displayed, selectedAsset)
+              return <button key={asset.id} className={active ? 'active' : ''} onClick={() => isFaceDetailKind(libraryCategory) ? selectFaceDetail(libraryCategory, asset.id) : void chooseLibraryAsset(asset)} disabled={busy} type="button"><img src={displayed?.dataUrl} alt="" /><span>{libraryBaseName(asset.name)}</span></button>
             })}
             {(libraryCategory === 'mouth' ? !mouthCatalog.some((item) => item.category === mouthKind) : libraryCategory === 'nose' ? noseCatalog.length === 0 : !libraryAssets.some((asset) => asset.kind === libraryCategory)) && <small>Nenhum asset salvo nesta categoria</small>}
           </div>
@@ -965,8 +1026,13 @@ export function FaceComponentsWorkspace() {
             {(libraryCategory === 'eye-closed'
               ? ['eye-closed-left','eye-closed-right','brow-left','brow-right']
               : ['eye-left','eye-right','pupil-left','pupil-right','brow-left','brow-right'] as PartId[]).map((id) => renderPart(id as PartId, true, selectedAssets))}
-            {nosePiece && noseStyle && <img className={`face-component-layer${libraryCategory === 'nose' ? ` face-component-layer-draggable${draggingPreview ? ' is-dragging' : ''}` : ''}`} src={nosePiece.dataUrl} alt="Nariz selecionado" style={noseStyle} draggable={false} title={libraryCategory === 'nose' ? 'Arraste para mover esta peça' : undefined} onPointerDown={libraryCategory === 'nose' && selectedNose ? (event) => beginPreviewDrag(event, `nose:${selectedNose.id}`) : undefined} onPointerMove={libraryCategory === 'nose' ? movePreviewDrag : undefined} onPointerUp={libraryCategory === 'nose' ? endPreviewDrag : undefined} onPointerCancel={libraryCategory === 'nose' ? endPreviewDrag : undefined} onLostPointerCapture={libraryCategory === 'nose' ? endPreviewDrag : undefined} />}
-            {mouthPiece && mouthStyle && <img className={`face-component-layer${libraryCategory === 'mouth' ? ` face-component-layer-draggable${draggingPreview ? ' is-dragging' : ''}` : ''}`} src={mouthPiece.dataUrl} alt="Boca selecionada" style={mouthStyle} draggable={false} title={libraryCategory === 'mouth' ? 'Arraste para mover esta peça' : undefined} onPointerDown={libraryCategory === 'mouth' && selectedMouth ? (event) => beginPreviewDrag(event, `${selectedMouth.category}:${selectedMouth.id}`) : undefined} onPointerMove={libraryCategory === 'mouth' ? movePreviewDrag : undefined} onPointerUp={libraryCategory === 'mouth' ? endPreviewDrag : undefined} onPointerCancel={libraryCategory === 'mouth' ? endPreviewDrag : undefined} onLostPointerCapture={libraryCategory === 'mouth' ? endPreviewDrag : undefined} />}
+            {mode === 'face' && nosePiece && noseStyle && <img className={`face-component-layer${libraryCategory === 'nose' ? ` face-component-layer-draggable${draggingPreview ? ' is-dragging' : ''}` : ''}`} src={nosePiece.dataUrl} alt="Nariz selecionado" style={noseStyle} draggable={false} title={libraryCategory === 'nose' ? 'Arraste para mover esta peça' : undefined} onPointerDown={libraryCategory === 'nose' && selectedNose ? (event) => beginPreviewDrag(event, `nose:${selectedNose.id}`) : undefined} onPointerMove={libraryCategory === 'nose' ? movePreviewDrag : undefined} onPointerUp={libraryCategory === 'nose' ? endPreviewDrag : undefined} onPointerCancel={libraryCategory === 'nose' ? endPreviewDrag : undefined} onLostPointerCapture={libraryCategory === 'nose' ? endPreviewDrag : undefined} />}
+            {mode === 'face' && mouthPiece && mouthStyle && <img className={`face-component-layer${libraryCategory === 'mouth' ? ` face-component-layer-draggable${draggingPreview ? ' is-dragging' : ''}` : ''}`} src={mouthPiece.dataUrl} alt="Boca selecionada" style={mouthStyle} draggable={false} title={libraryCategory === 'mouth' ? 'Arraste para mover esta peça' : undefined} onPointerDown={libraryCategory === 'mouth' && selectedMouth ? (event) => beginPreviewDrag(event, `${selectedMouth.category}:${selectedMouth.id}`) : undefined} onPointerMove={libraryCategory === 'mouth' ? movePreviewDrag : undefined} onPointerUp={libraryCategory === 'mouth' ? endPreviewDrag : undefined} onPointerCancel={libraryCategory === 'mouth' ? endPreviewDrag : undefined} onLostPointerCapture={libraryCategory === 'mouth' ? endPreviewDrag : undefined} />}
+            {previewFaceDetailLayers.map(({ kind, asset, style }) => {
+              const canDrag = libraryCategory === kind
+              const dragKey = `${kind}:${asset.id}`
+              return <img key={asset.id} className={`face-component-layer${canDrag ? ` face-component-layer-draggable${draggingPreview ? ' is-dragging' : ''}` : ''}`} src={asset.dataUrl} alt={faceDetailCategories.find((entry) => entry.kind === kind)?.label ?? kind} style={style} draggable={false} title={canDrag ? 'Arraste para mover esta peça' : undefined} onPointerDown={canDrag ? (event) => beginPreviewDrag(event, dragKey) : undefined} onPointerMove={canDrag ? movePreviewDrag : undefined} onPointerUp={canDrag ? endPreviewDrag : undefined} onPointerCancel={canDrag ? endPreviewDrag : undefined} onLostPointerCapture={canDrag ? endPreviewDrag : undefined} />
+            })}
             {guide.visible && <FaceGuideOverlay head={head} guide={guide} />}
           </div>}
           {!head && <span>Selecione um modelo com cabeça.</span>}
@@ -975,10 +1041,10 @@ export function FaceComponentsWorkspace() {
       </main>
       <aside className="face-components-controls">
         <header><strong>Ajuste da peça</strong></header>
-        <section className="face-component-import-anchor" aria-label="Auto fixar importações de olhos">
+        {mode === 'eyes' && <section className="face-component-import-anchor" aria-label="Auto fixar importações de olhos">
           <strong>Auto fixar</strong>
           <button type="button" aria-pressed={autoFixEnabled} disabled={!head || (!autoFixEnabled && !autoFixReferencesReady) || busy} onClick={() => autoFixEnabled ? releaseImportAnchors() : fixImportAnchors()}>{autoFixEnabled ? 'Desativar auto fixar' : 'Ativar auto fixar'}</button>
-        </section>
+        </section>}
         {componentPair && <div className="face-component-side-options" role="group" aria-label={`Selecionar lado de ${componentPair.label} para ajustar`}>
           {componentPair.parts.map((part, index) => {
             const asset = selectedAssets[part] ? details[selectedAssets[part]] : undefined
@@ -1008,8 +1074,8 @@ export function FaceComponentsWorkspace() {
           <label className="face-component-slider"><span>Largura horizontal dos dois lados <output>{Math.round(pairWidthPercent)}%</output></span><input type="range" min="1" max={Math.max(400, Math.ceil(pairWidthPercent / 100) * 100 + 100)} step="1" value={pairWidthPercent} onChange={(event) => void resizePair(componentPair.kind, 'scaleX', Number(event.target.value))} /></label>
           {pairHeightAsset && <label className="face-component-slider"><span>Altura vertical dos dois lados <output>{Math.round(pairHeightPercent)}%</output></span><input type="range" min="1" max={Math.max(400, Math.ceil(pairHeightPercent / 100) * 100 + 100)} step="1" value={pairHeightPercent} onChange={(event) => void resizePair(componentPair.kind, 'scaleY', Number(event.target.value))} /></label>}
         </section>}
-        {head && selectedTransform && (activeComponent || selectedCatalogItem) ? <>
-          {!componentPair && <div className="face-component-current"><img src={activeComponent?.dataUrl ?? selectedCatalogPiece?.dataUrl} alt="" /><span><strong>{activeComponent?.name ?? selectedCatalogItem?.name}</strong></span></div>}
+        {head && selectedTransform && (activeComponent || selectedCatalogItem || activeFaceDetail) ? <>
+          {!componentPair && <div className="face-component-current"><img src={activeComponent?.dataUrl ?? activeFaceDetail?.dataUrl ?? selectedCatalogPiece?.dataUrl} alt="" /><span><strong>{activeComponent?.name ?? activeFaceDetail?.name ?? selectedCatalogItem?.name}</strong></span></div>}
           {selectedCatalogItem && <label className="face-component-variant">Variante<select value={selectedCatalogItem.category === 'nose' ? selectedCatalogItem.selectedNose : selectedCatalogItem.selectedExpression} onChange={(event) => updateCatalogVariant(Number(event.target.value))}>{selectedCatalogItem.pieces.map((piece) => <option key={piece.id} value={piece.index}>{selectedCatalogItem.category === 'nose' ? 'Nariz' : 'Expressão'} {String(piece.index + 1).padStart(2, '0')}</option>)}</select></label>}
           {componentPair && <strong className="face-component-individual-title">{moveTogether[componentPair.kind] ? 'Rotação individual' : followsOpenEye ? 'Altura e rotação' : 'Ajuste individual'} · {selectedPart.endsWith('right') ? 'direita' : 'esquerda'}</strong>}
           <FaceTransformControls head={head} transform={selectedTransform} sourceWidth={selectedSourceWidth} sourceHeight={selectedSourceHeight} pupil={activeComponent?.kind === 'pupil'} moveTogether={componentPair ? moveTogether[componentPair.kind] : false} followEyes={followsOpenEye} onChange={updateTransform} onReset={resetSelectedTransform} />
@@ -1028,23 +1094,26 @@ export function FaceComponentsWorkspace() {
       <div className="face-components-modal" role="dialog" aria-modal="true" aria-labelledby="face-components-modal-title">
         <header><div><strong id="face-components-modal-title">{openModal === 'import' ? 'Importar peças do rosto' : 'Excluir peças do rosto'}</strong><small>{openModal === 'import' ? 'Escolha a categoria e o formato de importação.' : 'Escolha as peças já importadas que deseja remover.'}</small></div><button type="button" aria-label="Fechar" disabled={busy} onClick={() => setOpenModal(null)}>×</button></header>
         {openModal === 'import' ? <div className="face-components-import-options">
-          <label className="face-components-import-option"><span className="face-components-import-sheet"><span>3 peças</span></span><strong>Olho + pupila + olho fechado</strong><small>Uma imagem vertical: olho aberto em cima, pupila no meio e olho fechado embaixo. O app identifica os espaços entre as peças, mesmo com alturas diferentes.</small><span className="face-components-import-action"><Icon name="plus" /> Escolher imagem</span><input type="file" accept="image/png,image/jpeg,image/webp" disabled={busy || !head} onChange={(event) => void importEyeSheet(event)} /></label>
-          <label className="face-components-import-option"><span className="face-components-import-sheet"><span>1 peça</span></span><strong>Sobrancelha</strong><small>Uma sobrancelha por imagem; o fundo verde é removido automaticamente e o lado direito pode ser espelhado.</small><span className="face-components-import-action"><Icon name="plus" /> Escolher imagem</span><input type="file" accept="image/png,image/jpeg,image/webp" disabled={busy || !head} onChange={(event) => void importAsset('eyebrow', event)} /></label>
-          <label className="face-components-import-option"><span className="face-components-import-sheet"><span>1 peça</span></span><strong>Nariz único</strong><small>Uma imagem com um nariz.</small><span className="face-components-import-action"><Icon name="plus" /> Escolher folha</span><input type="file" accept="image/png,image/jpeg,image/webp" disabled={busy || !head} onChange={(event) => void importCatalogSheet('nose', event, 'one')} /></label>
-          <label className="face-components-import-option"><span className="face-components-import-sheet"><span>3 × 2</span></span><strong>Seis narizes</strong><small>Folha com seis variações de nariz.</small><span className="face-components-import-action"><Icon name="plus" /> Escolher folha</span><input type="file" accept="image/png,image/jpeg,image/webp" disabled={busy || !head} onChange={(event) => void importCatalogSheet('nose', event, 'six')} /></label>
-          <label className="face-components-import-option"><span className="face-components-import-sheet"><span>7 × 3</span></span><strong>Bocas fechadas</strong><small>Folha com 21 expressões fechadas.</small><span className="face-components-import-action"><Icon name="plus" /> Escolher folha</span><input type="file" accept="image/png,image/jpeg,image/webp" disabled={busy || !head} onChange={(event) => void importCatalogSheet('mouth-closed', event)} /></label>
-          <label className="face-components-import-option"><span className="face-components-import-sheet"><span>7 × 3</span></span><strong>Bocas abertas</strong><small>Folha com 21 expressões abertas.</small><span className="face-components-import-action"><Icon name="plus" /> Escolher folha</span><input type="file" accept="image/png,image/jpeg,image/webp" disabled={busy || !head} onChange={(event) => void importCatalogSheet('mouth-open', event)} /></label>
+          {mode === 'eyes' ? <label className="face-components-import-option"><span className="face-components-import-sheet"><span>3 peças</span></span><strong>Olho + pupila + olho fechado</strong><small>Folha vertical com as três peças, mesmo que as alturas variem.</small><span className="face-components-import-action"><Icon name="plus" /> Escolher imagem</span><input type="file" accept="image/png,image/jpeg,image/webp" disabled={busy || !head} onChange={(event) => void importEyeSheet(event)} /></label> : <>
+            <label className="face-components-import-option"><span className="face-components-import-sheet"><span>1 peça</span></span><strong>Nariz único</strong><small>Uma imagem com um nariz.</small><span className="face-components-import-action"><Icon name="plus" /> Escolher folha</span><input type="file" accept="image/png,image/jpeg,image/webp" disabled={busy || !head} onChange={(event) => void importCatalogSheet('nose', event, 'one')} /></label>
+            <label className="face-components-import-option"><span className="face-components-import-sheet"><span>3 × 2</span></span><strong>Seis narizes</strong><small>Folha com seis variações de nariz.</small><span className="face-components-import-action"><Icon name="plus" /> Escolher folha</span><input type="file" accept="image/png,image/jpeg,image/webp" disabled={busy || !head} onChange={(event) => void importCatalogSheet('nose', event, 'six')} /></label>
+            <label className="face-components-import-option"><span className="face-components-import-sheet"><span>7 × 3</span></span><strong>Bocas fechadas</strong><small>Folha com 21 expressões fechadas.</small><span className="face-components-import-action"><Icon name="plus" /> Escolher folha</span><input type="file" accept="image/png,image/jpeg,image/webp" disabled={busy || !head} onChange={(event) => void importCatalogSheet('mouth-closed', event)} /></label>
+            <label className="face-components-import-option"><span className="face-components-import-sheet"><span>7 × 3</span></span><strong>Bocas abertas</strong><small>Folha com 21 expressões abertas.</small><span className="face-components-import-action"><Icon name="plus" /> Escolher folha</span><input type="file" accept="image/png,image/jpeg,image/webp" disabled={busy || !head} onChange={(event) => void importCatalogSheet('mouth-open', event)} /></label>
+            {faceDetailCategories.map((category) => <label key={category.kind} className="face-components-import-option"><span className="face-components-import-sheet"><span>1 peça</span></span><strong>{category.label}</strong><small>Uma imagem PNG para este detalhe facial.</small><span className="face-components-import-action"><Icon name="plus" /> Escolher imagem</span><input type="file" accept="image/png,image/jpeg,image/webp" disabled={busy || !head} onChange={(event) => void importFaceDetail(category.kind, event)} /></label>)}
+          </>}
         </div> : <><div className="face-components-delete-list">
-          {categories.map((category) => <section key={category.kind}><h3>{category.label}</h3>{libraryAssets.filter((asset) => asset.kind === category.kind).map((asset) => {
+          {mode === 'eyes' ? categories.map((category) => <section key={category.kind}><h3>{category.label}</h3>{libraryAssets.filter((asset) => asset.kind === category.kind).map((asset) => {
             const left = details[asset.id]
             const groupIds = [asset.id, ...assets.filter((candidate) => {
               const right = details[candidate.id]
               return left && right && candidate.id !== asset.id && sameLibraryPair(left, right)
             }).map((candidate) => candidate.id)]
             return <label key={asset.id} className="face-components-delete-item"><input type="checkbox" checked={groupIds.every((id) => markedForDeletion.includes(id))} disabled={busy} onChange={(event) => setMarkedForDeletion((current) => event.target.checked ? [...new Set([...current, ...groupIds])] : current.filter((id) => !groupIds.includes(id)))} /><img src={left?.dataUrl} alt="" /><span>{libraryBaseName(asset.name)}</span></label>
-          })}{!libraryAssets.some((asset) => asset.kind === category.kind) && <small>Nenhuma peça importada</small>}</section>)}
+          })}{!libraryAssets.some((asset) => asset.kind === category.kind) && <small>Nenhuma peça importada</small>}</section>) : <>
+          {faceDetailCategories.map((category) => <section key={category.kind}><h3>{category.label}</h3>{libraryAssets.filter((asset) => asset.kind === category.kind).map((asset) => <label key={asset.id} className="face-components-delete-item"><input type="checkbox" checked={markedForDeletion.includes(asset.id)} disabled={busy} onChange={(event) => setMarkedForDeletion((current) => event.target.checked ? [...current, asset.id] : current.filter((id) => id !== asset.id))} /><img src={details[asset.id]?.dataUrl} alt="" /><span>{asset.name}</span></label>)}{!libraryAssets.some((asset) => asset.kind === category.kind) && <small>Nenhuma peça importada</small>}</section>)}
           <section><h3>Nariz</h3>{noseCatalog.map((item) => <label key={item.id} className="face-components-delete-item"><input type="checkbox" checked={markedForDeletion.includes(item.id)} disabled={busy || item.id.startsWith('legacy_')} onChange={(event) => setMarkedForDeletion((current) => event.target.checked ? [...current, item.id] : current.filter((id) => id !== item.id))} /><img src={noseDetails[item.id]?.pieces[0]?.dataUrl} alt="" /><span>{item.name}{item.id.startsWith('legacy_') ? ' · legado' : ''}</span></label>)}{noseCatalog.length === 0 && <small>Nenhuma peça importada</small>}</section>
           <section><h3>Boca</h3>{mouthCatalog.map((item) => <label key={item.id} className="face-components-delete-item"><input type="checkbox" checked={markedForDeletion.includes(item.id)} disabled={busy || item.id.startsWith('legacy_')} onChange={(event) => setMarkedForDeletion((current) => event.target.checked ? [...current, item.id] : current.filter((id) => id !== item.id))} /><img src={mouthDetails[item.id]?.pieces[0]?.dataUrl} alt="" /><span>{item.name}{item.id.startsWith('legacy_') ? ' · legado' : ''}</span></label>)}{mouthCatalog.length === 0 && <small>Nenhuma peça importada</small>}</section>
+          </>}
         </div><footer><span>{markedGroupCount} {markedGroupCount === 1 ? 'peça selecionada' : 'peças selecionadas'}</span><button type="button" className="face-components-delete-confirm" disabled={busy || markedForDeletion.length === 0} onClick={() => void removeSelectedAssets()}>Excluir selecionadas</button></footer></>}
       </div>
     </div>}
