@@ -436,8 +436,11 @@ function wardrobeComponentMatchesPanel(component: WardrobeSet['components'][numb
   return panel.side === 'left' ? left && !right : right && !left
 }
 
-async function renderWardrobeThumbnail(set: WardrobeSet, categories: WardrobeCategory[]): Promise<string | null> {
-  const pieces = set.components.filter((component) => categories.includes(component.category))
+type WardrobePanelCandidate = { summary: WardrobeSetSummary; set: WardrobeSet; component: WardrobeSet['components'][number]; components: WardrobeSet['components'] }
+
+async function renderWardrobeThumbnail(set: WardrobeSet, categories: WardrobeCategory[], componentIds?: string[]): Promise<string | null> {
+  const allowedIds = componentIds ? new Set(componentIds) : null
+  const pieces = set.components.filter((component) => categories.includes(component.category) && (!allowedIds || allowedIds.has(component.id)))
   if (!pieces.length) return null
   const left = Math.min(...pieces.map((piece) => piece.x))
   const top = Math.min(...pieces.map((piece) => piece.y))
@@ -460,6 +463,18 @@ async function renderWardrobeThumbnail(set: WardrobeSet, categories: WardrobeCat
     } catch { continue }
   }
   return canvas.toDataURL('image/png')
+}
+
+function WardrobePanelCandidatePreview({ candidate, colors }: { candidate: WardrobePanelCandidate; colors?: HairColorOverrides }) {
+  const [source, setSource] = useState<string | null>(null)
+  const componentIds = candidate.components.map((component) => component.id)
+  useEffect(() => {
+    let active = true
+    void renderWardrobeThumbnail(candidate.set, candidate.components.map((component) => component.category), componentIds)
+      .then((thumbnail) => { if (active) setSource(thumbnail) })
+    return () => { active = false }
+  }, [candidate.set, componentIds.join(':')])
+  return <HairAssetPreview source={source ?? candidate.component.dataUrl} colors={colors} alt={candidate.component.name} />
 }
 
 async function renderWardrobeOverlay(
@@ -1943,11 +1958,11 @@ export function CustomizerPage() {
     return `${group.modelSlot}:${group.setId}:${group.category}:${group.componentId ?? ''}`
   }
 
-  async function applyUpperWardrobePanel(panel: WardrobePanel, candidate: { summary: WardrobeSetSummary; component: WardrobeSet['components'][number] } | null) {
+  async function applyUpperWardrobePanel(panel: WardrobePanel, candidate: WardrobePanelCandidate | null) {
     if (!selectedCharacter || selectedCatalogModelSlot === null) return
     const current = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
     const before = current.customization.wardrobeGroups ?? []
-    const existingCandidate = candidate && before.find((group) => group.modelSlot === candidate.summary.modelSlot && group.setId === candidate.summary.id && group.category === panel.category && group.componentId === candidate.component.id)
+    const existingCandidate = candidate && candidate.components.every((component) => before.some((group) => group.modelSlot === candidate.summary.modelSlot && group.setId === candidate.summary.id && group.category === panel.category && group.componentId === component.id))
     if (existingCandidate) {
       setSelectedClothing({ setId: candidate.summary.id, category: panel.category, componentId: candidate.component.id })
       setWardrobeHighlightVisible(true)
@@ -1966,7 +1981,7 @@ export function CustomizerPage() {
       return !panelComponentKeys.has(`${group.modelSlot}:${group.setId}:${group.componentId}`)
     })
     if (candidate) {
-      after.push({ modelSlot: candidate.summary.modelSlot, setId: candidate.summary.id, category: panel.category, componentId: candidate.component.id, offsetX: 0, offsetY: 0, scaleX: 1, scaleY: 1, rotation: 0 })
+      after.push(...candidate.components.map((component) => ({ modelSlot: candidate.summary.modelSlot, setId: candidate.summary.id, category: panel.category, componentId: component.id, offsetX: 0, offsetY: 0, scaleX: 1, scaleY: 1, rotation: 0 })))
       setSelectedClothing({ setId: candidate.summary.id, category: panel.category, componentId: candidate.component.id })
       setWardrobeHighlightVisible(true)
     } else {
@@ -1976,32 +1991,35 @@ export function CustomizerPage() {
     await saveCharacterCustomization({ wardrobeGroups: after })
   }
 
-  async function applyWardrobePiecePalette(setId: string, category: ClothingGroupCategory, componentId: string, colors: HairColorOverrides) {
+  async function applyWardrobePiecePalette(setId: string, category: ClothingGroupCategory, componentIds: string[], colors: HairColorOverrides) {
     if (!selectedCharacter) return
     const current = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
     const before = current.customization.wardrobeGroups ?? []
-    const after = before.map((group) => group.setId === setId && group.modelSlot === selectedCatalogModelSlot && group.category === category && group.componentId === componentId
+    const componentIdSet = new Set(componentIds)
+    const after = before.map((group) => group.setId === setId && group.modelSlot === selectedCatalogModelSlot && group.category === category && !!group.componentId && componentIdSet.has(group.componentId)
       ? { ...group, colors }
       : group)
     await saveCharacterCustomization({ wardrobeGroups: after })
   }
 
-  async function setWardrobePieceColor(setId: string, category: ClothingGroupCategory, componentId: string, role: HairColorRole, value: string) {
+  async function setWardrobePieceColor(setId: string, category: ClothingGroupCategory, componentIds: string[], role: HairColorRole, value: string) {
     if (!selectedCharacter) return
     const current = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
     const groups = current.customization.wardrobeGroups ?? []
-    const wardrobeGroups = groups.map((group) => group.modelSlot === selectedCatalogModelSlot && group.setId === setId && group.category === category && group.componentId === componentId
+    const componentIdSet = new Set(componentIds)
+    const wardrobeGroups = groups.map((group) => group.modelSlot === selectedCatalogModelSlot && group.setId === setId && group.category === category && !!group.componentId && componentIdSet.has(group.componentId)
       ? { ...group, colors: { ...group.colors, [role]: value } }
       : group)
     await saveCharacterCustomization({ wardrobeGroups })
   }
 
-  async function resetWardrobePieceColors(setId: string, category: ClothingGroupCategory, componentId: string) {
+  async function resetWardrobePieceColors(setId: string, category: ClothingGroupCategory, componentIds: string[]) {
     if (!selectedCharacter) return
     const current = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
     const before = current.customization.wardrobeGroups ?? []
+    const componentIdSet = new Set(componentIds)
     const after = before.map((group) => {
-      if (group.setId !== setId || group.modelSlot !== selectedCatalogModelSlot || group.category !== category || group.componentId !== componentId) return group
+      if (group.setId !== setId || group.modelSlot !== selectedCatalogModelSlot || group.category !== category || !group.componentId || !componentIdSet.has(group.componentId)) return group
       const { colors: _colors, ...rest } = group
       return rest
     })
@@ -2505,11 +2523,18 @@ export function CustomizerPage() {
     </section>
   }
 
-  const upperWardrobeCandidates = (panel: WardrobePanel) => wardrobeSets
+  const upperWardrobeCandidates = (panel: WardrobePanel): WardrobePanelCandidate[] => wardrobeSets
     .filter((summary) => summary.modelSlot === selectedCatalogModelSlot)
     .flatMap((summary) => {
       const set = wardrobeDetails[`${summary.modelSlot}:${summary.id}`]
-      return set ? set.components.filter((component) => wardrobeComponentMatchesPanel(component, panel)).map((component) => ({ summary, component })) : []
+      if (!set) return []
+      const components = set.components.filter((component) => wardrobeComponentMatchesPanel(component, panel))
+      if (!components.length) return []
+      if (panel.id === 'pants-left') {
+        const representative = components.find((component) => component.category === 'calca-coxa') ?? components[0]
+        return [{ summary, set, component: representative, components }]
+      }
+      return components.map((component) => ({ summary, set, component, components: [component] }))
     })
 
   const renderUpperWardrobeLibrary = () => {
@@ -2522,9 +2547,9 @@ export function CustomizerPage() {
     const page = Math.min(wardrobeLibraryPage, pageCount - 1)
     const visible = slots.slice(page * pageSize, (page + 1) * pageSize)
     const appliedGroups = selectedCharacter?.customization.wardrobeGroups ?? []
-    const selectedIndex = candidates.findIndex(({ summary, component }) => appliedGroups.some((group) =>
+    const selectedIndex = candidates.findIndex(({ summary, components }) => components.every((component) => appliedGroups.some((group) =>
       group.modelSlot === summary.modelSlot && group.setId === summary.id && group.category === panel.category && group.componentId === component.id
-    ))
+    )))
     const clearPanel = () => void applyUpperWardrobePanel(panel, null)
     return <section className="customizer-hair-library" aria-labelledby="customizer-upper-wardrobe-library-title">
       <header className="customizer-hair-library-heading">
@@ -2537,7 +2562,7 @@ export function CustomizerPage() {
           if (!entry) return <button className={`customizer-hair-library-item${selectedIndex < 0 ? ' selected' : ''}`} key="empty-slot" title="Slot vazio" aria-label={`Slot vazio · remover ${panel.label} do personagem`} aria-pressed={selectedIndex < 0} type="button" onClick={clearPanel} />
           const selected = entry.summary.id === candidates[selectedIndex]?.summary.id && entry.component.id === candidates[selectedIndex]?.component.id
           return <button className={`customizer-hair-library-item${selected ? ' selected' : ''}`} key={`${entry.summary.modelSlot}:${entry.summary.id}:${entry.component.id}`} title={entry.component.name} aria-label={`Selecionar ${entry.component.name}`} aria-pressed={selected} type="button" onClick={() => { void applyUpperWardrobePanel(panel, entry); setWardrobeLibraryPanel(null) }}>
-            <img src={entry.component.dataUrl} alt={entry.component.name} />
+            <WardrobePanelCandidatePreview candidate={entry} />
           </button>
         })}
         {!candidates.length && <p className="customizer-hair-library-empty">Nenhuma peça salva para {panel.label}. Importe e classifique uma peça no Fabricador Dev.</p>}
@@ -2560,9 +2585,9 @@ export function CustomizerPage() {
     {panels.map((panel) => {
       const candidates = upperWardrobeCandidates(panel)
       const appliedGroups = selectedCharacter?.customization.wardrobeGroups ?? []
-      const selectedIndex = candidates.findIndex(({ summary, component }) => appliedGroups.some((group) =>
+      const selectedIndex = candidates.findIndex(({ summary, components }) => components.every((component) => appliedGroups.some((group) =>
         group.modelSlot === summary.modelSlot && group.setId === summary.id && group.category === panel.category && group.componentId === component.id
-      ))
+      )))
       const currentCandidate = selectedIndex >= 0 ? candidates[selectedIndex] : null
       const currentGroup = currentCandidate ? appliedGroups.find((group) => group.modelSlot === currentCandidate.summary.modelSlot && group.setId === currentCandidate.summary.id && group.category === panel.category && group.componentId === currentCandidate.component.id) : undefined
       const colors = currentGroup?.colors ?? {}
@@ -2574,16 +2599,16 @@ export function CustomizerPage() {
         void applyUpperWardrobePanel(panel, nextSlot === 0 ? null : candidates[nextSlot - 1])
       }
       return <article className="customizer-hair-piece customizer-upper-wardrobe-piece" key={panel.id} aria-label={panel.label}>
-        <header><strong>{panel.label} {selectedSlot + 1}/{candidates.length + 1}</strong>{hasLocalColors && currentCandidate && <button className="customizer-hair-reset" type="button" onClick={() => void resetWardrobePieceColors(currentCandidate.summary.id, panel.category, currentCandidate.component.id)}>Restaurar</button>}</header>
+        <header><strong>{panel.label} {selectedSlot + 1}/{candidates.length + 1}</strong>{hasLocalColors && currentCandidate && <button className="customizer-hair-reset" type="button" onClick={() => void resetWardrobePieceColors(currentCandidate.summary.id, panel.category, currentCandidate.components.map((component) => component.id))}>Restaurar</button>}</header>
         <div className="customizer-hair-piece-selector customizer-upper-wardrobe-selector">
           <button aria-label={`Peça anterior: ${panel.label}`} onClick={() => move(-1)} disabled={!candidates.length || !selectedCharacter || selectedCatalogModelSlot === null} type="button"><Icon name="chevronRight" /></button>
           <button className="customizer-hair-piece-preview" aria-label={`Abrir biblioteca de ${panel.label}`} title={`Abrir biblioteca de ${panel.label}`} onClick={() => { setWardrobeLibraryPage(0); setWardrobeLibraryPanel(panel) }} type="button">
-            {currentCandidate ? <HairAssetPreview source={currentCandidate.component.dataUrl} colors={colors} alt={currentCandidate.component.name} /> : <span>Escolha uma peça</span>}
+            {currentCandidate ? <WardrobePanelCandidatePreview candidate={currentCandidate} colors={colors} /> : <span>Escolha uma peça</span>}
           </button>
           <button aria-label={`Próxima peça: ${panel.label}`} onClick={() => move(1)} disabled={!candidates.length || !selectedCharacter || selectedCatalogModelSlot === null} type="button"><Icon name="chevronRight" /></button>
           <div className="customizer-hair-piece-colors" aria-label={`Cores de ${panel.label}`}>
             {hairColorControls.map((color) => <label key={color.id} className={colors[color.id] ? 'local' : ''} style={{ '--hair-color-swatch': colors[color.id] ?? color.fallback } as React.CSSProperties} title={`${color.label} de ${panel.label}`}>
-              <input type="color" aria-label={`${color.label} de ${panel.label}`} value={colors[color.id] ?? color.fallback} disabled={!selectedCharacter || !currentCandidate} onChange={(event) => void setWardrobePieceColor(currentCandidate!.summary.id, panel.category, currentCandidate!.component.id, color.id, event.target.value)} />
+              <input type="color" aria-label={`${color.label} de ${panel.label}`} value={colors[color.id] ?? color.fallback} disabled={!selectedCharacter || !currentCandidate} onChange={(event) => void setWardrobePieceColor(currentCandidate!.summary.id, panel.category, currentCandidate!.components.map((component) => component.id), color.id, event.target.value)} />
               <span aria-hidden="true">{color.id === 'highlight' ? 'L' : color.id === 'accent' ? 'A' : color.id === 'outline' ? 'C' : color.id === 'fade' ? 'D' : 'B'}</span>
             </label>)}
           </div>
@@ -2593,7 +2618,7 @@ export function CustomizerPage() {
           <div className="customizer-hair-palette-presets customizer-upper-piece-palette-presets">
             <button className="customizer-hair-palette-scroll previous" aria-label={`Ver paletas anteriores de ${panel.label}`} onClick={() => wardrobePaletteStripRefs.current[panel.id]?.scrollBy({ left: -180, behavior: 'smooth' })} type="button"><Icon name="chevronRight" /></button>
             <div className="customizer-hair-palette-preset-list" ref={(node) => { wardrobePaletteStripRefs.current[panel.id] = node }}>
-              {hairPalettePresets.map((preset) => <button key={preset.name} type="button" disabled={!selectedCharacter || !currentCandidate} aria-pressed={hairColorControls.every((color) => colors[color.id] === preset.colors[color.id])} onClick={() => currentCandidate && void applyWardrobePiecePalette(currentCandidate.summary.id, panel.category, currentCandidate.component.id, preset.colors)} title={`Aplicar paleta ${preset.name} somente a ${panel.label}`}><span style={{ background: `linear-gradient(115deg, ${preset.colors.highlight} 0 23%, ${preset.colors.base} 23% 65%, ${preset.colors.fade} 65% 84%, ${preset.colors.outline} 84%)` }} />{preset.name}</button>)}
+              {hairPalettePresets.map((preset) => <button key={preset.name} type="button" disabled={!selectedCharacter || !currentCandidate} aria-pressed={hairColorControls.every((color) => colors[color.id] === preset.colors[color.id])} onClick={() => currentCandidate && void applyWardrobePiecePalette(currentCandidate.summary.id, panel.category, currentCandidate.components.map((component) => component.id), preset.colors)} title={`Aplicar paleta ${preset.name} somente a ${panel.label}`}><span style={{ background: `linear-gradient(115deg, ${preset.colors.highlight} 0 23%, ${preset.colors.base} 23% 65%, ${preset.colors.fade} 65% 84%, ${preset.colors.outline} 84%)` }} />{preset.name}</button>)}
             </div>
             <button className="customizer-hair-palette-scroll" aria-label={`Ver próximas paletas de ${panel.label}`} onClick={() => wardrobePaletteStripRefs.current[panel.id]?.scrollBy({ left: 180, behavior: 'smooth' })} type="button"><Icon name="chevronRight" /></button>
           </div>
