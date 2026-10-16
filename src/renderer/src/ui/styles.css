@@ -558,6 +558,7 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .customizer-preview-controls>button svg { width:16px;height:16px; }
 .customizer-preview-controls .preview-color-swatch { width:17px;height:17px;border:1px solid #d9cbd3;border-radius:4px; }
 .customizer-preview-controls .preview-scene-color input { position:absolute;inset:0;width:100%;height:100%;padding:0;border:0;opacity:0;cursor:pointer; }
+.customizer-preview-underbar { justify-content:flex-end; }
 .customizer-face-catalog { min-height:0;flex:1;display:flex;flex-direction:column;gap:10px;overflow:auto; }
 .customizer-face-sets { display:grid;gap:7px; }
 .customizer-face-sets>header { display:flex;align-items:center;justify-content:space-between;gap:8px;padding-bottom:5px;border-bottom:1px solid #f0ebef; }

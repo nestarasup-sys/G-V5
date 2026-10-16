@@ -1199,6 +1199,7 @@ export function CustomizerPage() {
   const wardrobePaletteStripRefs = useRef<Record<string, HTMLDivElement | null>>({})
   const previewLoadRequest = useRef(0)
   const customizerPreviewStageRef = useRef<HTMLDivElement>(null)
+  const mainPreviewStageRef = useRef<HTMLDivElement>(null)
   const clothingDragRef = useRef<{ pointerId: number; clientX: number; clientY: number; scaleX: number; scaleY: number; startX: number; startY: number; groupKey: string; characterId: string; beforeGroups: CustomizerWardrobeGroup[]; latest: CustomizerCharacter | null } | null>(null)
   const wardrobeTransformDirty = useRef(false)
   const selectedCharacter = characters.find((character) => character.id === selectedCharacterId) ?? characters[0] ?? null
@@ -2915,22 +2916,24 @@ export function CustomizerPage() {
             </div>
             <div className="preview-actions">
               <button className="quiet-button" aria-live="polite"><Icon name={characterSaveState === 'error' ? 'warning' : characterSaveState === 'saving' ? 'reset' : 'check'} /> {characterSaveState === 'saving' ? 'Salvando' : characterSaveState === 'error' ? 'Falha ao salvar' : 'Salvo'}</button>
-              <button className="icon-button" aria-label="Tela cheia"><Icon name="expand" /></button>
             </div>
           </div>
 
-          <div className="stage-wrap">
-            <div className="stage-scene" style={previewStyle}>
-              <div className="stage-label"><span className="online-dot" /> PREVIEW DO PERSONAGEM</div>
-              <label className="scene-chip preview-scene-color" title="Mudar a cor do fundo de todas as prévias">
-                <span className="preview-color-swatch" style={{ backgroundColor: previewBackground }} />
-                <span className="preview-color-label">Fundo da prévia</span>
-                <input type="color" aria-label="Cor de fundo das prévias" value={previewBackground} onChange={(event) => setPreviewBackground(event.target.value)} />
-              </label>
-              <div className="stage-tools" aria-label="Controles do preview">
-                <button aria-label="Ajustar enquadramento"><Icon name="frame" /></button>
-                <button aria-label="Aproximar"><Icon name="zoomIn" /></button>
-                <button aria-label="Afastar"><Icon name="zoomOut" /></button>
+          <div className="stage-wrap customizer-preview-stage-wrap" ref={mainPreviewStageRef}>
+            <div className="stage-scene" style={customizerPreviewStyle}>
+              <div className="customizer-preview-controls" aria-label="Controles da prévia">
+                <label className="preview-scene-color" title="Mudar a cor do fundo da prévia">
+                  <span className="preview-color-swatch" style={{ backgroundColor: previewBackground }} />
+                  <input type="color" aria-label="Cor do fundo da prévia" value={previewBackground} onChange={(event) => setPreviewBackground(event.target.value)} />
+                </label>
+                <button aria-label="Tela cheia" title="Tela cheia" onClick={() => {
+                  const stage = mainPreviewStageRef.current
+                  if (!stage) return
+                  if (document.fullscreenElement === stage) void document.exitFullscreen()
+                  else void stage.requestFullscreen()
+                }} type="button"><Icon name="expand" /></button>
+                <button aria-label="Afastar" title="Afastar" onClick={() => setCustomizerPreviewZoom((zoom) => Math.max(.75, Number((zoom - .1).toFixed(2))))} type="button"><Icon name="zoomOut" /></button>
+                <button aria-label="Aproximar" title="Aproximar" onClick={() => setCustomizerPreviewZoom((zoom) => Math.min(2, Number((zoom + .1).toFixed(2))))} type="button"><Icon name="zoomIn" /></button>
               </div>
               {selectedArtworkUrl ? <img className="customizer-selected-artwork" src={selectedArtworkUrl} alt={selectedArtworkLabel} /> : !previewLoading && <div className="customizer-no-artwork"><Icon name="body" /><span>{selectedCharacter ? 'Importe um modelo no Fabricador Dev para começar.' : 'Crie um personagem para começar a personalizar.'}</span></div>}
                 {selectedWardrobeUrl && selectedArtworkUrl && <img className={'customizer-wardrobe-overlay' + (wardrobePreviewDraggable ? ' draggable' : '')} src={selectedWardrobeUrl} alt="Roupas do personagem" draggable={false} onPointerDown={wardrobePreviewDraggable ? beginWardrobeDrag : undefined} onPointerMove={wardrobePreviewDraggable ? moveWardrobeDrag : undefined} onPointerUp={wardrobePreviewDraggable ? finishWardrobeDrag : undefined} onPointerCancel={wardrobePreviewDraggable ? finishWardrobeDrag : undefined} />}
@@ -2938,10 +2941,8 @@ export function CustomizerPage() {
                 {activeModule === 'Roupas' && clothingSection === 'Customizar' && wardrobeHighlightVisible && selectedWardrobeHighlightUrl && <img className="customizer-wardrobe-selection-halo" src={selectedWardrobeHighlightUrl} alt="Peça de roupa selecionada" draggable={false} />}
                 {selectedFrontHairUrl && selectedArtworkUrl && <img className="customizer-front-hair-overlay" src={selectedFrontHairUrl} alt="Cabelo posterior e franja frontal" draggable={false} />}
               {previewLoading && <div className="customizer-preview-loading">Carregando prévia…</div>}
-              <div className="stage-caption"><span>{String(selectedCatalogModelSlot ?? 1).padStart(2, '0')}</span><i />{selectedArtworkLabel || selectedCharacter?.name || 'Personagem'}<small>{selectedArtworkUrl ? 'MODELO DE REFERÊNCIA' : 'SEM MODELO'}</small></div>
             </div>
-            <div className="stage-underbar">
-              <div className="background-picker"><span className="background-swatch" /><span>Fundo do preview</span><Icon name="chevronDown" /></div>
+            <div className="stage-underbar customizer-preview-underbar">
               <button className="text-action" onClick={() => setActiveModule('Personalização')}><Icon name="sliders" /> Personalizar</button>
             </div>
           </div>
