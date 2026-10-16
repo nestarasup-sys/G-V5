@@ -598,8 +598,8 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .customizer-wardrobe-tabs button { min-height:34px;border:1px solid transparent;border-radius:7px;background:#faf8fa;color:#7d727e;font-size:12px;font-weight:700;cursor:pointer; }
 .customizer-wardrobe-tabs button.active { border-color:#f0c5d4;background:#fff2f7;color:#ac426b; }
 .customizer-wardrobe-groups { min-height:0;flex:1;display:flex;flex-direction:column;gap:13px;overflow:auto;padding:1px 2px 8px;scrollbar-width:thin;scrollbar-color:#e7d3dc transparent; }
-.customizer-upper-wardrobe-grid { min-height:0;flex:1;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));grid-template-rows:repeat(3,minmax(142px,1fr));gap:8px;overflow:auto;padding:1px 2px 8px;scrollbar-width:thin;scrollbar-color:#e7d3dc transparent; }
-.customizer-upper-piece-card { min-width:0;min-height:0;display:grid;grid-template-rows:27px minmax(0,1fr) 19px;overflow:hidden;border:1px solid #d9c7da;border-radius:8px;background:#fff;box-shadow:0 2px 5px #3523380a; }
+.customizer-upper-wardrobe-grid { min-height:0;flex:1;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));grid-template-rows:repeat(3,minmax(210px,1fr));gap:8px;overflow:auto;padding:1px 2px 8px;scrollbar-width:thin;scrollbar-color:#e7d3dc transparent; }
+.customizer-upper-piece-card { min-width:0;min-height:0;display:grid;grid-template-rows:27px minmax(70px,1fr) 19px auto;overflow:hidden;border:1px solid #d9c7da;border-radius:8px;background:#fff;box-shadow:0 2px 5px #3523380a; }
 .customizer-upper-piece-card>header { min-width:0;display:flex;align-items:center;justify-content:space-between;gap:5px;padding:0 7px;background:linear-gradient(100deg,#d966a9,#c7569d);color:#fff; }
 .customizer-upper-piece-card>header h3 { min-width:0;margin:0;overflow:hidden;font:750 10px Manrope,sans-serif;text-overflow:ellipsis;white-space:nowrap; }
 .customizer-upper-piece-card>header span { flex:0 0 auto;padding:2px 5px;border-radius:6px;background:#793e82;color:#fff;font-size:8px;font-weight:800; }
@@ -611,6 +611,13 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .customizer-upper-piece-image.selected { border:2px solid #e78aa9; }
 .customizer-upper-piece-image>img { width:100%;height:100%;object-fit:contain; }
 .customizer-upper-piece-card>footer { min-width:0;overflow:hidden;padding:3px 6px;color:#796a7c;font-size:8px;text-overflow:ellipsis;white-space:nowrap; }
+.customizer-upper-piece-colors { min-width:0;display:grid;gap:3px;padding:3px 5px 5px;border-top:1px solid #eee6ef;background:#faf8fb; }
+.customizer-upper-piece-colors-heading { min-width:0;display:flex;align-items:center;justify-content:space-between;color:#725b75;font-size:8px; }
+.customizer-upper-piece-colors-heading button { padding:1px 5px;border:1px solid #e6c8dc;border-radius:4px;background:#fff;color:#a14f83;font-size:8px;font-weight:700;cursor:pointer; }
+.customizer-upper-piece-color-swatches { min-width:0;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:3px; }
+.customizer-upper-piece-color-swatches label { position:relative;min-width:0;height:22px;display:grid;place-items:center;border:1px solid #b9a6bd;border-radius:4px;background:var(--hair-color-swatch);color:#fff;cursor:pointer; }
+.customizer-upper-piece-color-swatches input { position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer; }
+.customizer-upper-piece-color-swatches span { pointer-events:none;font-size:9px;font-weight:900;text-shadow:0 1px 3px #000,0 0 3px #000; }
 .customizer-wardrobe-category { display:grid;gap:7px; }
 .customizer-wardrobe-category>header { display:flex;align-items:center;gap:7px;padding-bottom:5px;border-bottom:1px solid #f0ebef; }
 .customizer-wardrobe-category h3 { margin:0;color:#534a55;font:750 12px Manrope,sans-serif; }

@@ -120,6 +120,8 @@ export type CustomizerWardrobeGroup = {
   scaleX: number
   scaleY: number
   rotation: number
+  /** Color overrides belong to this individual garment component. */
+  colors?: HairColorOverrides
 }
 
 export type CustomizerCharacter = {
