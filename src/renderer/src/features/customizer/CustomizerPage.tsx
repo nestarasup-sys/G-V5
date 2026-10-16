@@ -1112,6 +1112,7 @@ export function CustomizerPage() {
   const [poseThumbnails, setPoseThumbnails] = useState<Record<string, string>>({})
   const [clothingSection, setClothingSection] = useState<'Customizar' | 'Superior' | 'Inferior'>('Superior')
   const [clothesPanelTab, setClothesPanelTab] = useState<(typeof customizerClothesTabs)[number]['id']>('upper')
+  const [upperWardrobePage, setUpperWardrobePage] = useState<1 | 2>(1)
   const [otherPanelTab, setOtherPanelTab] = useState<(typeof customizerOtherTabs)[number]['id']>('extra')
   const [wardrobeSets, setWardrobeSets] = useState<WardrobeSetSummary[]>([])
   const [wardrobeLoading, setWardrobeLoading] = useState(false)
@@ -2574,7 +2575,9 @@ export function CustomizerPage() {
     <div className="customizer-wardrobe-catalog">
       {wardrobeLoading ? <div className="customizer-catalog-empty">Carregando roupas…</div> : <>
         {catalogError && <p className="customizer-catalog-error" role="alert">{catalogError}</p>}
-        {wardrobeLibraryPanel ? renderUpperWardrobeLibrary() : renderUpperWardrobePanels()}
+        {upperWardrobePage === 2
+          ? <section className="customizer-upper-wardrobe-page-placeholder" aria-label="Página 2 de roupas superiores"><strong>Página 2 de Superior</strong><span>Espaço reservado para as próximas peças.</span></section>
+          : wardrobeLibraryPanel ? renderUpperWardrobeLibrary() : renderUpperWardrobePanels()}
       </>}
     </div>
   )
@@ -2630,6 +2633,10 @@ export function CustomizerPage() {
             </nav>}
             {selectedCustomizerTopTab === 'roupas' && <nav className="customizer-clothes-category-tabs" aria-label="Categorias de roupas" role="tablist">
               {customizerClothesTabs.map((tab) => <button key={tab.id} className={clothesPanelTab === tab.id ? 'active' : ''} onClick={() => {
+                if (tab.id === 'upper' && clothesPanelTab === 'upper') {
+                  setUpperWardrobePage((page) => page === 1 ? 2 : 1)
+                  setWardrobeLibraryPanel(null)
+                }
                 setClothesPanelTab(tab.id)
                 if (tab.id === 'upper') setClothingSection('Superior')
                 else if (tab.id === 'lower') setClothingSection('Inferior')
