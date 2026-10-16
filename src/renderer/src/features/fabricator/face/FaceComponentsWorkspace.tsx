@@ -3,9 +3,10 @@ import type { FaceCatalogItem, FaceCatalogItemSave, FaceCatalogItemSummary, Face
 import { Icon } from '../../../ui/components/Icon'
 import { usePreviewBackground } from '../usePreviewBackground'
 import { processFaceSheet } from './processFaceSheet'
+import { splitEyeSheet } from './splitEyeSheet'
 import './face-components.css'
 
-type PartId = 'eye-left' | 'eye-right' | 'pupil-left' | 'pupil-right' | 'brow-left' | 'brow-right'
+type PartId = 'eye-left' | 'eye-right' | 'pupil-left' | 'pupil-right' | 'eye-closed-left' | 'eye-closed-right' | 'brow-left' | 'brow-right'
 type CatalogKind = 'nose' | 'mouth-closed' | 'mouth-open'
 type LibraryCategory = FaceComponentKind | 'nose' | 'mouth'
 type FaceGuide = { visible: boolean; verticalX: number; horizontalY: number; lowerHorizontalY: number; angle: number }
@@ -15,6 +16,7 @@ const defaultGuide: FaceGuide = { visible: true, verticalX: 50, horizontalY: 45,
 const categories: Array<{ kind: FaceComponentKind; label: string; parts: [PartId, PartId]; names: [string, string] }> = [
   { kind: 'eye', label: 'Olhos', parts: ['eye-left', 'eye-right'], names: ['Olho esquerdo', 'Olho direito'] },
   { kind: 'pupil', label: 'Pupilas', parts: ['pupil-left', 'pupil-right'], names: ['Pupila esquerda', 'Pupila direita'] },
+  { kind: 'eye-closed', label: 'Olhos fechados', parts: ['eye-closed-left', 'eye-closed-right'], names: ['Olho fechado esquerdo', 'Olho fechado direito'] },
   { kind: 'eyebrow', label: 'Sobrancelhas', parts: ['brow-left', 'brow-right'], names: ['Sobrancelha esquerda', 'Sobrancelha direita'] }
 ]
 const initialTransform = (kind: FaceComponentKind, head: ModelPart, width: number, height: number): FaceTransform => ({
@@ -132,7 +134,7 @@ export function FaceComponentsWorkspace() {
   const [noseCatalog, setNoseCatalog] = useState<FaceCatalogItemSummary[]>([])
   const [noseDetails, setNoseDetails] = useState<Record<string, FaceCatalogItem>>({})
   const [selectedNoseId, setSelectedNoseId] = useState<string | null>(null)
-  const [linked, setLinked] = useState<Record<FaceComponentKind, boolean>>({ eye: true, pupil: true, eyebrow: true })
+  const [linked, setLinked] = useState<Record<FaceComponentKind, boolean>>({ eye: true, pupil: true, 'eye-closed': true, eyebrow: true })
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('Importe assets PNG transparentes; o formato de folha pode ser definido depois.')
@@ -278,6 +280,41 @@ export function FaceComponentsWorkspace() {
       setDetails((current) => ({ ...current, [id]: loaded })); setAssets((current) => [asset, ...current]); setSelectedPart(activePart); setLibraryCategory(kind); setSelectedAssets((current) => ({ ...current, [activePart]: id }))
       setNotice(`${asset.name} salvo. Ajuste o encaixe na prévia do modelo.`)
     } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) } finally { setBusy(false) }
+  }
+
+  async function importEyeSheet(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0]; event.target.value = ''
+    if (!file || !head) return
+    setBusy(true); setError('')
+    const savedIds: string[] = []
+    try {
+      const pieces = await splitEyeSheet(file)
+      const baseName = file.name.replace(/\.[^.]+$/, '').slice(0, 90) || 'Olhos'
+      const labels: Record<(typeof pieces)[number]['kind'], string> = { eye: 'Olho aberto', pupil: 'Pupila', 'eye-closed': 'Olho fechado' }
+      const imported: FaceComponentAsset[] = []
+      for (const piece of pieces) {
+        const asset: FaceComponentAssetSave = {
+          schemaVersion: 1, id: crypto.randomUUID(), modelSlot, kind: piece.kind,
+          name: `${baseName} · ${labels[piece.kind]}`.slice(0, 120), width: piece.width, height: piece.height,
+          defaultTransform: initialTransform(piece.kind, head, piece.width, piece.height), updatedAt: new Date().toISOString()
+        }
+        await window.desktop.saveFaceComponentAsset(modelSlot, asset, piece.dataUrl)
+        savedIds.push(asset.id)
+        imported.push({ ...asset, dataUrl: piece.dataUrl })
+      }
+      setDetails((current) => ({ ...current, ...Object.fromEntries(imported.map((asset) => [asset.id, asset])) }))
+      setAssets((current) => [...imported, ...current])
+      setSelectedAssets((current) => ({ ...current,
+        'eye-left': imported.find((asset) => asset.kind === 'eye')?.id,
+        'pupil-left': imported.find((asset) => asset.kind === 'pupil')?.id,
+        'eye-closed-left': imported.find((asset) => asset.kind === 'eye-closed')?.id
+      }))
+      setSelectedPart('eye-left'); setLibraryCategory('eye'); setOpenModal(null)
+      setNotice('Olho aberto, pupila e olho fechado importados. Ajuste cada peça na Biblioteca.')
+    } catch (reason) {
+      await Promise.allSettled(savedIds.map((id) => window.desktop.deleteFaceComponentAsset(modelSlot, id)))
+      setError(reason instanceof Error ? reason.message : String(reason))
+    } finally { setBusy(false) }
   }
 
   async function importCatalogSheet(kind: CatalogKind, event: ChangeEvent<HTMLInputElement>, noseMode: 'one' | 'six' = 'one') {
@@ -475,7 +512,9 @@ export function FaceComponentsWorkspace() {
         <div className="face-components-stage" ref={stageRef} style={{ '--preview-background': previewBackground } as CSSProperties}>
           {head && previewScale > 0 && <div className="face-components-preview-canvas" style={{ width: head.width * previewScale, height: head.height * previewScale }}>
             <img className="face-components-head" src={head.dataUrl} alt="Cabeça do modelo" />
-            {(['eye-left','eye-right','pupil-left','pupil-right','brow-left','brow-right'] as PartId[]).map((id) => renderPart(id, true, selectedAssets))}
+            {(libraryCategory === 'eye-closed'
+              ? ['eye-closed-left','eye-closed-right','brow-left','brow-right']
+              : ['eye-left','eye-right','pupil-left','pupil-right','brow-left','brow-right'] as PartId[]).map((id) => renderPart(id as PartId, true, selectedAssets))}
             {nosePiece && noseStyle && <img className={`face-component-layer${libraryCategory === 'nose' ? ` face-component-layer-draggable${draggingPreview ? ' is-dragging' : ''}` : ''}`} src={nosePiece.dataUrl} alt="Nariz selecionado" style={noseStyle} draggable={false} title={libraryCategory === 'nose' ? 'Arraste para mover esta peça' : undefined} onPointerDown={libraryCategory === 'nose' && selectedNose ? (event) => beginPreviewDrag(event, `nose:${selectedNose.id}`) : undefined} onPointerMove={libraryCategory === 'nose' ? movePreviewDrag : undefined} onPointerUp={libraryCategory === 'nose' ? endPreviewDrag : undefined} onPointerCancel={libraryCategory === 'nose' ? endPreviewDrag : undefined} onLostPointerCapture={libraryCategory === 'nose' ? endPreviewDrag : undefined} />}
             {mouthPiece && mouthStyle && <img className={`face-component-layer${libraryCategory === 'mouth' ? ` face-component-layer-draggable${draggingPreview ? ' is-dragging' : ''}` : ''}`} src={mouthPiece.dataUrl} alt="Boca selecionada" style={mouthStyle} draggable={false} title={libraryCategory === 'mouth' ? 'Arraste para mover esta peça' : undefined} onPointerDown={libraryCategory === 'mouth' && selectedMouth ? (event) => beginPreviewDrag(event, `${selectedMouth.category}:${selectedMouth.id}`) : undefined} onPointerMove={libraryCategory === 'mouth' ? movePreviewDrag : undefined} onPointerUp={libraryCategory === 'mouth' ? endPreviewDrag : undefined} onPointerCancel={libraryCategory === 'mouth' ? endPreviewDrag : undefined} onLostPointerCapture={libraryCategory === 'mouth' ? endPreviewDrag : undefined} />}
             {guide.visible && <FaceGuideOverlay head={head} guide={guide} />}
@@ -507,7 +546,8 @@ export function FaceComponentsWorkspace() {
       <div className="face-components-modal" role="dialog" aria-modal="true" aria-labelledby="face-components-modal-title">
         <header><div><strong id="face-components-modal-title">{openModal === 'import' ? 'Importar peças do rosto' : 'Excluir peças do rosto'}</strong><small>{openModal === 'import' ? 'Escolha a categoria e o formato de importação.' : 'Escolha as peças já importadas que deseja remover.'}</small></div><button type="button" aria-label="Fechar" disabled={busy} onClick={() => setOpenModal(null)}>×</button></header>
         {openModal === 'import' ? <div className="face-components-import-options">
-          {categories.map((category) => <label className="face-components-import-option" key={category.kind}><span className="face-components-import-sheet"><span>1 peça</span></span><strong>{category.label}</strong><small>{category.kind === 'eyebrow' ? 'Uma sobrancelha por imagem' : `Um${category.kind === 'eye' ? ' olho' : 'a pupila'} por imagem; o lado direito pode ser espelhado.`}</small><span className="face-components-import-action"><Icon name="plus" /> Escolher imagem</span><input type="file" accept="image/png,image/jpeg,image/webp" disabled={busy || !head} onChange={(event) => void importAsset(category.kind, event)} /></label>)}
+          <label className="face-components-import-option"><span className="face-components-import-sheet"><span>3 peças</span></span><strong>Olho + pupila + olho fechado</strong><small>Uma imagem vertical: olho aberto em cima, pupila no meio e olho fechado embaixo. O app identifica os espaços entre as peças, mesmo com alturas diferentes.</small><span className="face-components-import-action"><Icon name="plus" /> Escolher imagem</span><input type="file" accept="image/png,image/jpeg,image/webp" disabled={busy || !head} onChange={(event) => void importEyeSheet(event)} /></label>
+          <label className="face-components-import-option"><span className="face-components-import-sheet"><span>1 peça</span></span><strong>Sobrancelha</strong><small>Uma sobrancelha por imagem; o lado direito pode ser espelhado.</small><span className="face-components-import-action"><Icon name="plus" /> Escolher imagem</span><input type="file" accept="image/png,image/jpeg,image/webp" disabled={busy || !head} onChange={(event) => void importAsset('eyebrow', event)} /></label>
           <label className="face-components-import-option"><span className="face-components-import-sheet"><span>1 peça</span></span><strong>Nariz único</strong><small>Uma imagem com um nariz.</small><span className="face-components-import-action"><Icon name="plus" /> Escolher folha</span><input type="file" accept="image/png,image/jpeg,image/webp" disabled={busy || !head} onChange={(event) => void importCatalogSheet('nose', event, 'one')} /></label>
           <label className="face-components-import-option"><span className="face-components-import-sheet"><span>3 × 2</span></span><strong>Seis narizes</strong><small>Folha com seis variações de nariz.</small><span className="face-components-import-action"><Icon name="plus" /> Escolher folha</span><input type="file" accept="image/png,image/jpeg,image/webp" disabled={busy || !head} onChange={(event) => void importCatalogSheet('nose', event, 'six')} /></label>
           <label className="face-components-import-option"><span className="face-components-import-sheet"><span>7 × 3</span></span><strong>Bocas fechadas</strong><small>Folha com 21 expressões fechadas.</small><span className="face-components-import-action"><Icon name="plus" /> Escolher folha</span><input type="file" accept="image/png,image/jpeg,image/webp" disabled={busy || !head} onChange={(event) => void importCatalogSheet('mouth-closed', event)} /></label>

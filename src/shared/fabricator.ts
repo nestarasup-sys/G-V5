@@ -149,7 +149,7 @@ export type FaceSetSave = Omit<FaceSet, 'sheets' | 'pieces'> & {
 }
 export type FaceSetSummary = Pick<FaceSet, 'id' | 'modelSlot' | 'name' | 'updatedAt'> & { pieceCount: number }
 export type FaceAssetSave = { id: string; dataUrl: string }
-export type FaceComponentKind = 'eye' | 'pupil' | 'eyebrow'
+export type FaceComponentKind = 'eye' | 'pupil' | 'eye-closed' | 'eyebrow'
 export type FaceComponentAsset = { schemaVersion: 1; id: string; modelSlot: number; kind: FaceComponentKind; name: string; width: number; height: number; defaultTransform: FaceTransform; updatedAt: string; dataUrl: string }
 export type FaceComponentAssetSave = Omit<FaceComponentAsset, 'dataUrl'>
 export type FaceComponentAssetSummary = Omit<FaceComponentAsset, 'dataUrl' | 'defaultTransform'>

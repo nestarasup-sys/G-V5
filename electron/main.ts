@@ -355,7 +355,7 @@ async function listFaceCatalogItems(modelSlot: number): Promise<FaceCatalogItemS
 function validFaceComponentAsset(modelSlot: number, asset: FaceComponentAssetSave): boolean {
   const transform = asset?.defaultTransform
   return isValidModelSlot(modelSlot) && asset?.schemaVersion === 1 && asset.modelSlot === modelSlot
-    && isValidWardrobeId(asset.id) && ['eye', 'pupil', 'eyebrow'].includes(asset.kind)
+    && isValidWardrobeId(asset.id) && ['eye', 'pupil', 'eye-closed', 'eyebrow'].includes(asset.kind)
     && typeof asset.name === 'string' && asset.name.trim().length > 0 && asset.name.length <= 120
     && Number.isFinite(asset.width) && Number.isFinite(asset.height) && asset.width > 0 && asset.height > 0 && asset.width * asset.height <= 32_000_000
     && Boolean(transform) && [transform.x, transform.y, transform.scaleX, transform.scaleY, transform.rotation].every(Number.isFinite)
