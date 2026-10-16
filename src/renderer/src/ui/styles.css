@@ -483,6 +483,21 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .customizer-face-piece>header { padding:0 4px; }
 .customizer-face-piece>header strong { font-size:clamp(9px,.78vw,12px); }
 .customizer-face-piece .customizer-hair-reset { font-size:8px; }
+.customizer-face-catalog-workspace { gap:5px; }
+.customizer-face-layout-catalog { grid-template-columns:repeat(2,minmax(0,1fr));grid-template-rows:repeat(3,minmax(0,1fr));gap:5px; }
+.customizer-face-layout-piece { grid-template-rows:24px minmax(0,1fr); }
+.customizer-face-layout-piece>header { padding:0 5px; }
+.customizer-face-layout-piece>header strong { font-size:clamp(9px,.78vw,12px); }
+.customizer-face-layout-piece .customizer-hair-reset { font-size:8px; }
+.customizer-face-layout-mouth { grid-template-rows:24px 24px minmax(0,1fr); }
+.customizer-face-layout-mode { min-width:0;min-height:0;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:3px;padding:3px;background:#aa7ef1; }
+.customizer-face-layout-mode button { min-width:0;min-height:0;padding:1px 4px;border:1px solid #7049ac;border-radius:3px;background:#8562c9;color:#fff;font-size:clamp(8px,.72vw,10px);font-weight:750;cursor:pointer; }
+.customizer-face-layout-mode button.active { border-color:#fff;background:#d665a9;box-shadow:inset 0 0 0 1px #f5b1d6; }
+.customizer-face-layout-selector { grid-template-columns:clamp(24px,3vw,38px) minmax(0,1fr) clamp(24px,3vw,38px); }
+.customizer-face-layout-selector>button.customizer-hair-piece-preview { grid-column:auto; }
+.customizer-face-layout-library-mouth { grid-template-rows:clamp(48px,10%,76px) 32px minmax(0,1fr) clamp(56px,12%,88px); }
+.customizer-face-layout-library-mouth>.customizer-hair-library-grid { grid-row:3; }
+.customizer-face-layout-library-mode { padding:3px 8px;border-bottom:2px solid #341455;background:#522478; }
 .customizer-head-workspace>.customizer-hair-catalog,.customizer-head-workspace>.customizer-face-catalog { min-height:0;flex:1; }
 .customizer-head-workspace .customizer-face-tabs { grid-template-columns:repeat(2,minmax(0,1fr)); }
 .customizer-head-placeholder { min-height:180px;flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:9px;padding:20px;border:1px dashed #eadde5;border-radius:10px;background:#fcf9fb;color:#918491;text-align:center; }
