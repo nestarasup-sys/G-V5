@@ -1612,7 +1612,7 @@ export function CustomizerPage() {
               </div>
             </div>
           </section>
-          <section className={'customizer-models-sidebar' + (selectedCustomizerTopTab === 'modelos' ? ' models-active' : '') + (selectedCustomizerTopTab === 'cabeca' ? ' head-active' : '')} aria-label="Categorias de personalização">
+          <section className="customizer-models-sidebar" aria-label="Categorias de personalização">
             <nav className="customizer-top-tabs" aria-label="Áreas do Customizar" role="tablist">
               {customizerTopTabs.map((tab) => <button
                 key={tab.id}
@@ -1634,6 +1634,7 @@ export function CustomizerPage() {
                 else if (tab.id === 'face') setFaceCategory('nose')
               }} aria-selected={headPanelTab === tab.id} role="tab" type="button"><Icon name={tab.icon} /><span>{tab.label}</span></button>)}
             </nav>}
+            <div className="customizer-sidebar-scroll-content" aria-label={`Conteúdo de ${customizerTopTabs.find((tab) => tab.id === selectedCustomizerTopTab)?.label ?? 'personalização'}`}>
             {selectedCustomizerTopTab === 'modelos' && <section className="customizer-model-skin-tones" aria-label="Cor de pele do modelo">
               <strong>Cor de pele</strong>
               <div className="customizer-model-skin-tone-row" role="group" aria-label="Escolher cor de pele">
@@ -1697,6 +1698,7 @@ export function CustomizerPage() {
               </fieldset>)}</div>
               <label className="customizer-body-balance"><span><b>Harmonia corporal</b><output>{activeBodyDimensions.balance}%</output></span><small>Coxas maiores aumentam um pouco o tronco; tronco maior aumenta um pouco braços e pernas. Em 0%, só o controle escolhido muda de tamanho.</small><input aria-label="Harmonia corporal" type="range" min="0" max="100" step="1" value={activeBodyDimensions.balance} disabled={!selectedCharacter} onChange={(event) => changeBodyDimension('balance', Number(event.target.value))} onPointerUp={(event) => commitBodyDimension('balance', Number(event.currentTarget.value))} onPointerCancel={(event) => commitBodyDimension('balance', Number(event.currentTarget.value))} onKeyUp={(event) => commitBodyDimension('balance', Number(event.currentTarget.value))} onBlur={(event) => commitBodyDimension('balance', Number(event.currentTarget.value))} /></label>
             </section>}
+            </div>
             <div className="customizer-models-content" hidden>
             <div className="customizer-models-options-grid">
               {modules.map((module, index) => (
