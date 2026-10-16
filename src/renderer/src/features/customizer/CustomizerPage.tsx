@@ -1935,7 +1935,7 @@ export function CustomizerPage() {
 
         <aside className="modules-panel panel" aria-label="Áreas do aplicativo">
           <div className="modules-topline">
-            <div className="app-wordmark"><img className="wordmark-icon" src="/gacha-nymi.ico" alt="Logo Gacha Nymi" /><span>NYMI<small>ESTÚDIO CRIATIVO</small></span></div>
+            <div className="app-wordmark"><img className="wordmark-icon" src="./gacha-nymi.ico" alt="Logo Gacha Nymi" /><span>NYMI<small>ESTÚDIO CRIATIVO</small></span></div>
             <button className="icon-button favorite-button" aria-label="Favoritos"><Icon name="star" /></button>
           </div>
           <div className="feature-banner">

@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState } from 'react'
+import { lazy, Suspense } from 'react'
 import { Navigate, Route, Routes, useLocation } from 'react-router'
 import { TopBar } from './components/TopBar'
 import { AppErrorBoundary } from './components/AppErrorBoundary'
@@ -9,12 +9,11 @@ const LazyOptionsPage = lazy(async () => ({ default: (await import('../features/
 const LazyFabricatorPage = lazy(async () => ({ default: (await import('../features/fabricator/FabricatorPage')).FabricatorPage }))
 
 export function App() {
-  const [saved, setSaved] = useState(true)
   const location = useLocation()
 
   return (
     <main className="app-shell">
-      <TopBar saved={saved} onSave={() => setSaved(true)} />
+      <TopBar />
       <div className="route-content">
         <AppErrorBoundary key={location.pathname}>
           <Suspense fallback={<div className="blank-page" aria-busy="true">Carregando área…</div>}>

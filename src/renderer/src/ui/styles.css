@@ -266,7 +266,7 @@ button:focus-visible, input:focus-visible { outline: 3px solid #ed8caf; outline-
 .studio-cast-modal :is(button,small,span,p,label,strong,i,kbd) { font-size:max(12px,.8em);line-height:1.25; }
 .topbar-spacer { flex: 1; }
 kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-radius: 4px; background: #fff; color: #a69da5; font: 12px 'DM Sans', sans-serif; }
-.save-status { height: 34px; display: flex; align-items: center; gap: 7px; padding: 0; border: 0; background: none; color: #8c858d; font-size: 12px; white-space: nowrap; cursor: pointer; }
+.save-status { height: 34px; display: flex; align-items: center; gap: 7px; padding: 0; color: #8c858d; font-size: 12px; white-space: nowrap; }
 .save-dot, .online-dot { width: 7px; height: 7px; display: inline-block; flex: 0 0 auto; border-radius: 50%; background: #6eb990; box-shadow: 0 0 0 3px #eaf5ee; }
 .top-icon-button { width: 35px; height: 35px; position: relative; display: grid; place-items: center; border: 0; border-radius: 9px; background: transparent; color: #716b73; cursor: pointer; }
 .top-icon-button svg { width: 17px; height: 17px; }
