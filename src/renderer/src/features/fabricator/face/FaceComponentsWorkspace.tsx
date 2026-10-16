@@ -42,6 +42,8 @@ export function FaceComponentsWorkspace() {
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('Importe assets PNG transparentes; o formato de folha pode ser definido depois.')
   const [showNoseMouthEditor, setShowNoseMouthEditor] = useState(false)
+  const [openModal, setOpenModal] = useState<'import' | 'delete' | null>(null)
+  const [markedForDeletion, setMarkedForDeletion] = useState<string[]>([])
   const stageRef = useRef<HTMLDivElement>(null)
   const [stageSize, setStageSize] = useState({ width: 0, height: 0 })
   const head = useMemo(() => model?.parts.find((part) => /cabe[çc]a|head/i.test(part.name)) ?? null, [model])
@@ -63,6 +65,14 @@ export function FaceComponentsWorkspace() {
     observer.observe(stage)
     return () => observer.disconnect()
   }, [showNoseMouthEditor])
+  useEffect(() => {
+    if (!openModal) return
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !busy) setOpenModal(null)
+    }
+    window.addEventListener('keydown', closeOnEscape)
+    return () => window.removeEventListener('keydown', closeOnEscape)
+  }, [openModal, busy])
   useEffect(() => {
     let active = true
     setModel(null); setAssets([]); setDetails({}); setSelectedAssets({})
@@ -99,11 +109,29 @@ export function FaceComponentsWorkspace() {
     catch (reason) { setError(String(reason)) } finally { setBusy(false) }
   }
 
-  async function removeAsset(asset: FaceComponentAsset) {
-    if (!window.confirm(`Excluir “${asset.name}” da biblioteca facial?`)) return
+  async function removeSelectedAssets() {
+    if (markedForDeletion.length === 0) return
     setBusy(true)
-    try { await window.desktop.deleteFaceComponentAsset(modelSlot, asset.id); setAssets((current) => current.filter((item) => item.id !== asset.id)); setDetails((current) => { const next = { ...current }; delete next[asset.id]; return next }); setSelectedAssets((current) => Object.fromEntries(Object.entries(current).filter(([, id]) => id !== asset.id))); setNotice(`${asset.name} excluído da biblioteca.`) }
-    catch (reason) { setError(String(reason)) } finally { setBusy(false) }
+    setError('')
+    const removed: string[] = []
+    try {
+      for (const id of markedForDeletion) {
+        await window.desktop.deleteFaceComponentAsset(modelSlot, id)
+        removed.push(id)
+      }
+      setNotice(`${removed.length} ${removed.length === 1 ? 'peça excluída' : 'peças excluídas'} da biblioteca.`)
+      setOpenModal(null)
+    } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) }
+    finally {
+      if (removed.length > 0) {
+        const removedIds = new Set(removed)
+        setAssets((current) => current.filter((item) => !removedIds.has(item.id)))
+        setDetails((current) => Object.fromEntries(Object.entries(current).filter(([id]) => !removedIds.has(id))))
+        setSelectedAssets((current) => Object.fromEntries(Object.entries(current).filter(([, id]) => !removedIds.has(id))))
+        setMarkedForDeletion((current) => current.filter((id) => !removedIds.has(id)))
+      }
+      setBusy(false)
+    }
   }
 
   function renderPart(id: PartId, mirror: boolean, overrides: Partial<Record<PartId, string>>) {
@@ -140,11 +168,12 @@ export function FaceComponentsWorkspace() {
   if (showNoseMouthEditor) return <div className="face-components-legacy-mode"><button type="button" onClick={() => setShowNoseMouthEditor(false)}>← Voltar para olhos, pupilas e sobrancelhas</button><FaceWorkspace /></div>
 
   return <section className="fabricator-workspace face-components-workspace" aria-label="Biblioteca de olhos, pupilas e sobrancelhas">
-    <header className="face-components-toolbar"><div><Icon name="face" /><span><strong>Rosto Dev · Peças independentes</strong><small>Olhos, pupilas e sobrancelhas em camadas separadas</small></span></div><label>Modelo<select value={modelSlot} disabled={busy} onChange={(event) => setModelSlot(Number(event.target.value))}>{models.map((entry, index) => entry && <option key={index + 1} value={index + 1}>Modelo {String(index + 1).padStart(2, '0')} · {entry.name}</option>)}</select></label><button type="button" onClick={() => setShowNoseMouthEditor(true)}>Editar nariz e boca</button></header>
+    <header className="face-components-toolbar"><div className="face-components-toolbar-actions"><button type="button" onClick={() => setOpenModal('import')} disabled={!head || busy}><Icon name="plus" /> Importar</button><button type="button" onClick={() => { setMarkedForDeletion([]); setOpenModal('delete') }} disabled={busy}><Icon name="trash" /> Excluir</button></div><label>Modelo<select value={modelSlot} disabled={busy} onChange={(event) => setModelSlot(Number(event.target.value))}>{models.map((entry, index) => entry && <option key={index + 1} value={index + 1}>Modelo {String(index + 1).padStart(2, '0')} · {entry.name}</option>)}</select></label><button type="button" onClick={() => setShowNoseMouthEditor(true)}>Editar nariz e boca</button></header>
     <div className="face-components-body">
-      <aside className="face-components-library"><header><strong>Biblioteca</strong><small>{assets.length} assets</small></header>{categories.map((category) => <section key={category.kind}><h3>{category.label}</h3><div className="face-components-assets">{assets.filter((asset) => asset.kind === category.kind).map((asset) => <button key={asset.id} className={selectedId === asset.id ? 'active' : ''} onClick={() => setSelectedAssets((current) => ({ ...current, [selectedPart]: asset.id }))} type="button"><img src={details[asset.id]?.dataUrl} alt="" /><span>{asset.name}</span></button>)}{!assets.some((asset) => asset.kind === category.kind) && <small>Nenhum asset salvo</small>}</div><label className="face-component-import"><Icon name="plus" /> Importar {category.label.toLowerCase()}<input type="file" accept="image/png,image/jpeg,image/webp" disabled={busy || !head} onChange={(event) => void importAsset(category.kind, event)} /></label></section>)}</aside>
+      <aside className="face-components-library"><header><strong>Biblioteca</strong><small>{assets.length} assets</small></header>{categories.map((category) => <section key={category.kind}><h3>{category.label}</h3><div className="face-components-assets">{assets.filter((asset) => asset.kind === category.kind).map((asset) => <button key={asset.id} className={selectedId === asset.id ? 'active' : ''} onClick={() => setSelectedAssets((current) => ({ ...current, [selectedPart]: asset.id }))} type="button"><img src={details[asset.id]?.dataUrl} alt="" /><span>{asset.name}</span></button>)}{!assets.some((asset) => asset.kind === category.kind) && <small>Nenhum asset salvo</small>}</div></section>)}</aside>
       <main className="face-components-stage-column"><nav className="face-components-part-tabs">{categories.flatMap((category) => category.parts.map((id, side) => <button key={id} className={selectedPart === id ? 'active' : ''} onClick={() => setSelectedPart(id)} type="button">{category.names[side]}</button>))}</nav><div className="face-components-stage" ref={stageRef}>{head && previewScale > 0 && <div className="face-components-preview-canvas" style={{ width: head.width * previewScale, height: head.height * previewScale }}><img className="face-components-head" src={head.dataUrl} alt="Cabeça do modelo" />{(['eye-left','eye-right','pupil-left','pupil-right','brow-left','brow-right'] as PartId[]).map((id) => renderPart(id, true, selectedAssets))}</div>}{!head && <span>Selecione um modelo com cabeça.</span>}</div><div className="face-components-stage-footer">{notice}</div></main>
-      <aside className="face-components-controls"><header><strong>Ajuste da peça</strong>{selectedAsset && <button className="danger" onClick={() => void removeAsset(selectedAsset)} disabled={busy} aria-label="Excluir asset" type="button"><Icon name="trash" /></button>}</header>{categories.map((category) => <label className="face-component-link" key={category.kind}><input type="checkbox" checked={linked[category.kind]} onChange={(event) => setLinked((current) => ({ ...current, [category.kind]: event.target.checked }))} /> Espelhar lado direito · {category.label}</label>)}{selectedAsset ? <><strong className="face-component-selected-name">{selectedAsset.name}</strong>{(['x','y','scaleX','scaleY','rotation'] as const).map((field) => <label className="face-component-number" key={field}>{({ x:'Posição X', y:'Posição Y', scaleX:'Escala horizontal', scaleY:'Escala vertical', rotation:'Rotação' })[field]}<input type="number" step={field.startsWith('scale') ? .01 : 1} value={selectedAsset.defaultTransform[field]} onChange={(event) => { const value = Number(event.target.value); if (Number.isFinite(value)) void updateTransform({ [field]: field.startsWith('scale') ? clamp(value, .01, 20) : value }) }} /></label>)}</> : <p>Selecione uma peça ou importe um asset para ajustar.</p>}</aside>
-    </div>{error && <div className="face-components-error" role="alert">{error}</div>}
+      <aside className="face-components-controls"><header><strong>Ajuste da peça</strong></header>{categories.map((category) => <label className="face-component-link" key={category.kind}><input type="checkbox" checked={linked[category.kind]} onChange={(event) => setLinked((current) => ({ ...current, [category.kind]: event.target.checked }))} /> Espelhar lado direito · {category.label}</label>)}{selectedAsset ? <><strong className="face-component-selected-name">{selectedAsset.name}</strong>{(['x','y','scaleX','scaleY','rotation'] as const).map((field) => <label className="face-component-number" key={field}>{({ x:'Posição X', y:'Posição Y', scaleX:'Escala horizontal', scaleY:'Escala vertical', rotation:'Rotação' })[field]}<input type="number" step={field.startsWith('scale') ? .01 : 1} value={selectedAsset.defaultTransform[field]} onChange={(event) => { const value = Number(event.target.value); if (Number.isFinite(value)) void updateTransform({ [field]: field.startsWith('scale') ? clamp(value, .01, 20) : value }) }} /></label>)}</> : <p>Selecione uma peça ou importe um asset para ajustar.</p>}</aside>
+    </div>{error && <div className={`face-components-error${openModal ? ' face-components-error-modal' : ''}`} role="alert">{error}</div>}
+    {openModal && <div className="face-components-modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) setOpenModal(null) }}><div className="face-components-modal" role="dialog" aria-modal="true" aria-labelledby="face-components-modal-title"><header><div><strong id="face-components-modal-title">{openModal === 'import' ? 'Importar peças do rosto' : 'Excluir peças do rosto'}</strong><small>{openModal === 'import' ? 'Selecione o tipo e envie uma imagem para cada peça.' : 'Escolha as peças já importadas que deseja remover.'}</small></div><button type="button" aria-label="Fechar" disabled={busy} onClick={() => setOpenModal(null)}>×</button></header>{openModal === 'import' ? <div className="face-components-import-options">{categories.map((category) => <label className="face-components-import-option" key={category.kind}><span className="face-components-import-sheet"><span>1 peça</span></span><strong>{category.label}</strong><small>{category.kind === 'eyebrow' ? 'Uma sobrancelha por imagem' : `Um${category.kind === 'eye' ? ' olho' : 'a pupila'} por imagem; o lado direito pode ser espelhado.`}</small><span className="face-components-import-action"><Icon name="plus" /> Escolher imagem</span><input type="file" accept="image/png,image/jpeg,image/webp" disabled={busy || !head} onChange={(event) => void importAsset(category.kind, event)} /></label>)}</div> : <><div className="face-components-delete-list">{categories.map((category) => <section key={category.kind}><h3>{category.label}</h3>{assets.filter((asset) => asset.kind === category.kind).map((asset) => <label key={asset.id} className="face-components-delete-item"><input type="checkbox" checked={markedForDeletion.includes(asset.id)} disabled={busy} onChange={(event) => setMarkedForDeletion((current) => event.target.checked ? [...current, asset.id] : current.filter((id) => id !== asset.id))} /><img src={details[asset.id]?.dataUrl} alt="" /><span>{asset.name}</span></label>)}{!assets.some((asset) => asset.kind === category.kind) && <small>Nenhuma peça importada</small>}</section>)}</div><footer><span>{markedForDeletion.length} {markedForDeletion.length === 1 ? 'peça selecionada' : 'peças selecionadas'}</span><button type="button" className="face-components-delete-confirm" disabled={busy || markedForDeletion.length === 0} onClick={() => void removeSelectedAssets()}>Excluir selecionadas</button></footer></>}</div></div>}
   </section>
 }
