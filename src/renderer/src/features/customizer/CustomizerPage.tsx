@@ -598,6 +598,14 @@ const customizerTopTabs: { id: string; label: string }[] = [
   { id: 'perfil', label: 'Perfil' }
 ]
 
+const customizerHeadTabs = [
+  { id: 'hair', label: 'Cabelo', icon: 'bow' },
+  { id: 'eyes', label: 'Olhos', icon: 'face' },
+  { id: 'face', label: 'Rosto', icon: 'face' },
+  { id: 'extra', label: 'Extras', icon: 'sparkles' },
+  { id: 'adjust', label: 'Ajustar', icon: 'sliders' }
+] as const
+
 function CustomizerCategoryIcon({ category }: { category: string }) {
   const common = { fill: 'none', stroke: 'currentColor', strokeWidth: 1.7, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const }
   return <svg viewBox="0 0 48 48" aria-hidden="true" {...common}>
@@ -1604,17 +1612,28 @@ export function CustomizerPage() {
               </div>
             </div>
           </section>
-          <section className={'customizer-models-sidebar' + (selectedCustomizerTopTab === 'modelos' ? ' models-active' : '')} aria-label="Categorias de personalização">
+          <section className={'customizer-models-sidebar' + (selectedCustomizerTopTab === 'modelos' ? ' models-active' : '') + (selectedCustomizerTopTab === 'cabeca' ? ' head-active' : '')} aria-label="Categorias de personalização">
             <nav className="customizer-top-tabs" aria-label="Áreas do Customizar" role="tablist">
               {customizerTopTabs.map((tab) => <button
                 key={tab.id}
                 className={selectedCustomizerTopTab === tab.id ? 'active' : ''}
-                onClick={() => setSelectedCustomizerTopTab(tab.id)}
+                onClick={() => {
+                  setSelectedCustomizerTopTab(tab.id)
+                  const moduleByTab: Record<string, string> = { modelos: 'Modelos', corpo: 'Modelos', cabeca: 'Cabeça', roupas: 'Roupas', outros: 'Acessórios', perfil: 'Perfil' }
+                  setActiveModule(moduleByTab[tab.id])
+                }}
                 aria-selected={selectedCustomizerTopTab === tab.id}
                 role="tab"
                 type="button"
               ><CustomizerCategoryIcon category={tab.id} /><span>{tab.label}</span></button>)}
             </nav>
+            {selectedCustomizerTopTab === 'cabeca' && <nav className="customizer-head-category-tabs" aria-label="Categorias de cabeça" role="tablist">
+              {customizerHeadTabs.map((tab) => <button key={tab.id} className={headPanelTab === tab.id ? 'active' : ''} onClick={() => {
+                setHeadPanelTab(tab.id)
+                if (tab.id === 'eyes') setFaceCategory('eyes')
+                else if (tab.id === 'face') setFaceCategory('nose')
+              }} aria-selected={headPanelTab === tab.id} role="tab" type="button"><Icon name={tab.icon} /><span>{tab.label}</span></button>)}
+            </nav>}
             {selectedCustomizerTopTab === 'modelos' && <section className="customizer-model-skin-tones" aria-label="Cor de pele do modelo">
               <strong>Cor de pele</strong>
               <div className="customizer-model-skin-tone-row" role="group" aria-label="Escolher cor de pele">
@@ -1744,13 +1763,7 @@ export function CustomizerPage() {
               )}
               {activeModule === 'Cabeça' && <div className="customizer-head-workspace">
                 <nav className="customizer-head-tabs" aria-label="Categorias da cabeça" role="tablist">
-                  {([
-                    { id: 'hair', label: 'Cabelo', icon: 'bow' },
-                    { id: 'eyes', label: 'Olhos', icon: 'face' },
-                    { id: 'face', label: 'Rosto', icon: 'face' },
-                    { id: 'extra', label: 'Extras', icon: 'sparkles' },
-                    { id: 'adjust', label: 'Ajustar', icon: 'sliders' }
-                  ] as const).map((tab) => <button key={tab.id} className={headPanelTab === tab.id ? 'active' : ''} onClick={() => {
+                  {customizerHeadTabs.map((tab) => <button key={tab.id} className={headPanelTab === tab.id ? 'active' : ''} onClick={() => {
                     setHeadPanelTab(tab.id)
                     if (tab.id === 'eyes') setFaceCategory('eyes')
                     else if (tab.id === 'face') setFaceCategory('nose')

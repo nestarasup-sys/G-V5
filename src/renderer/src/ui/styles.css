@@ -294,6 +294,7 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .customizer-model-option-new { position:absolute;top:7px;right:6px;color:#cb6387;font-size:9px;font-weight:800;letter-spacing:.4px; }
 .customizer-models-sidebar { min-width:0;min-height:0;display:flex;flex-direction:column;gap:12px;overflow:hidden; }
 .customizer-models-sidebar.models-active { overflow-x:hidden;overflow-y:auto; }
+.customizer-models-sidebar.head-active { overflow-x:hidden;overflow-y:auto; }
 .customizer-models-content[hidden] { display:none; }
 .customizer-top-tabs { min-width:0;width:100%;display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:5px;padding:5px;border:3px solid #54236f;border-radius:12px;background:#772e9a;box-shadow:0 4px 0 #431b5a; }
 .customizer-top-tabs button { min-width:0;min-height:96px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;padding:7px 3px 6px;border:2px solid #76245a;border-radius:5px;background:linear-gradient(180deg,#d653a2 0%,#ad347f 100%);color:#fff;font-size:clamp(11px,1.05vw,16px);font-weight:750;text-shadow:0 1px 2px #76245a;cursor:pointer;transition:filter .12s,transform .12s,background .12s; }
@@ -373,6 +374,13 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .customizer-head-tabs button svg { width:16px;height:16px;flex:0 0 auto; }
 .customizer-head-tabs button:hover { background:#fff;color:#a9436d; }
 .customizer-head-tabs button.active { border-color:#edc3d2;background:#fff0f6;color:#ad416b;box-shadow:inset 0 0 0 1px #f8dfe8; }
+.customizer-head-category-tabs { min-width:0;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:4px;padding:4px;border:2px solid #49388f;border-radius:9px;background:linear-gradient(180deg,#6957c2,#5543a8);box-shadow:0 3px 0 #3f2c79; }
+.customizer-head-category-tabs button { min-width:0;min-height:76px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;padding:5px 3px;border:2px solid #49388f;border-radius:4px;background:linear-gradient(180deg,#7768ce,#5e4ab5);color:#fff;font-size:clamp(10px,.95vw,14px);font-weight:800;text-shadow:0 1px 2px #34266f;cursor:pointer; }
+.customizer-head-category-tabs button:hover { filter:brightness(1.12); }
+.customizer-head-category-tabs button:focus-visible { outline:2px solid #fff;outline-offset:-4px; }
+.customizer-head-category-tabs button.active { border-color:#b8aaff;background:linear-gradient(180deg,#8978df,#6b58c5);box-shadow:inset 0 2px 0 #ded5ff;color:#fff; }
+.customizer-head-category-tabs button svg { width:clamp(19px,2.2vw,30px);height:clamp(19px,2.2vw,30px);flex:0 0 auto;stroke-width:2.4; }
+.customizer-head-category-tabs button span { max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
 .customizer-head-workspace>.customizer-hair-catalog,.customizer-head-workspace>.customizer-face-catalog { min-height:0;flex:1; }
 .customizer-head-workspace .customizer-face-tabs { grid-template-columns:repeat(2,minmax(0,1fr)); }
 .customizer-head-placeholder { min-height:180px;flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:9px;padding:20px;border:1px dashed #eadde5;border-radius:10px;background:#fcf9fb;color:#918491;text-align:center; }
