@@ -33,6 +33,10 @@
 .face-components-preview-canvas { position:relative;flex:none; }
 .face-components-head { display:block;width:100%;height:100%;object-fit:fill; }
 .face-component-layer { position:absolute;object-fit:contain;pointer-events:none; }
+.face-components-guide-overlay { position:absolute;inset:0;z-index:10;width:100%;height:100%;overflow:hidden;pointer-events:none; }
+.face-components-guide-halo { fill:none;stroke:#fff;stroke-width:2.6;stroke-dasharray:5 3; }
+.face-components-guide-line { fill:none;stroke:#6043bd;stroke-width:1.15;stroke-dasharray:5 3; }
+.face-components-guide-center { fill:#fff;stroke:#6043bd;stroke-width:1.2; }
 .face-components-stage-footer { color:#806f82;font-size:9px;line-height:1.4; }
 .face-components-controls { display:flex;flex-direction:column;gap:9px; }
 .face-components-controls>header { flex:none; }
@@ -42,6 +46,16 @@
 .face-component-number { display:grid;gap:4px;color:#796b7f;font-size:9px; }
 .face-component-number input { width:100%; }
 .face-components-controls p { color:#9a899d;font-size:10px;line-height:1.5; }
+.face-components-guide-controls { display:grid;gap:9px;margin-top:auto;padding:10px;border:1px solid #d8c5e6;border-radius:9px;background:linear-gradient(145deg,#fcf9ff,#f6effa); }
+.face-components-guide-controls>header { display:flex;align-items:center;justify-content:space-between;gap:6px;color:#603d81;font-size:11px; }
+.face-components-guide-controls>header label { display:flex;align-items:center;gap:4px;color:#765c84;font-size:10px;cursor:pointer; }
+.face-components-guide-controls input[type="checkbox"] { accent-color:#7653b9; }
+.face-components-guide-controls p { margin:0;color:#8b7895;font-size:9px; }
+.face-components-guide-controls>label { display:grid;grid-template-columns:minmax(0,1fr) auto;gap:5px;color:#694e77;font-size:10px;font-weight:700; }
+.face-components-guide-controls output { color:#8f62ad;font-variant-numeric:tabular-nums; }
+.face-components-guide-controls input[type="range"] { grid-column:1/-1;width:100%;margin:0;accent-color:#7953bb;cursor:pointer; }
+.face-components-guide-controls input[type="range"]:disabled { opacity:.45;cursor:not-allowed; }
+.face-components-guide-controls>button { padding:6px;border:1px solid #d8c5e6;border-radius:6px;background:#fff;color:#704995;font-size:10px;font-weight:750;cursor:pointer; }
 .face-components-edit-mouth { padding:8px;border:1px solid #c782a0;border-radius:7px;background:#fff3f8;color:#98446d;font-size:10px;font-weight:750;cursor:pointer; }
 .face-components-error { padding:8px 12px;border:1px solid #edc9d2;border-radius:7px;background:#fff4f5;color:#9b3d52;font-size:11px; }
 .face-components-error-modal { position:fixed;top:14px;left:50%;z-index:1002;width:min(680px,calc(100vw - 28px));transform:translateX(-50%);box-shadow:0 6px 18px rgba(45,20,41,.2); }

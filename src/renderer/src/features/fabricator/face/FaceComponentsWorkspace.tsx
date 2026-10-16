@@ -6,6 +6,9 @@ import { FaceWorkspace } from './FaceWorkspace'
 import './face-components.css'
 
 type PartId = 'eye-left' | 'eye-right' | 'pupil-left' | 'pupil-right' | 'brow-left' | 'brow-right'
+type FaceGuide = { visible: boolean; verticalX: number; horizontalY: number; angle: number }
+const GUIDE_STORAGE_KEY = 'gacha-nymi:face-dev-guides'
+const defaultGuide: FaceGuide = { visible: true, verticalX: 50, horizontalY: 45, angle: 12 }
 const categories: Array<{ kind: FaceComponentKind; label: string; parts: [PartId, PartId]; names: [string, string] }> = [
   { kind: 'eye', label: 'Olhos', parts: ['eye-left', 'eye-right'], names: ['Olho esquerdo', 'Olho direito'] },
   { kind: 'pupil', label: 'Pupilas', parts: ['pupil-left', 'pupil-right'], names: ['Pupila esquerda', 'Pupila direita'] },
@@ -20,6 +23,19 @@ const initialTransform = (kind: FaceComponentKind, head: ModelPart, width: numbe
 })
 const partCategory = (id: PartId) => categories.find((category) => category.parts.includes(id))!
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value))
+const guideValue = (value: unknown, fallback: number, min: number, max: number) => typeof value === 'number' && Number.isFinite(value) ? clamp(value, min, max) : fallback
+function readFaceGuides(): Record<number, FaceGuide> {
+  try {
+    const stored = JSON.parse(window.localStorage.getItem(GUIDE_STORAGE_KEY) ?? '{}') as Record<string, Partial<FaceGuide>>
+    if (!stored || typeof stored !== 'object' || Array.isArray(stored)) return {}
+    return Object.fromEntries(Object.entries(stored).filter(([slot, value]) => /^\d+$/.test(slot) && value && typeof value === 'object').map(([slot, value]) => [Number(slot), {
+      visible: value.visible !== false,
+      verticalX: guideValue(value.verticalX, defaultGuide.verticalX, 20, 80),
+      horizontalY: guideValue(value.horizontalY, defaultGuide.horizontalY, 10, 90),
+      angle: guideValue(value.angle, defaultGuide.angle, -30, 30)
+    }]))
+  } catch { return {} }
+}
 const readImage = async (file: File): Promise<{ dataUrl: string; width: number; height: number }> => {
   const bitmap = await createImageBitmap(file)
   const canvas = document.createElement('canvas')
@@ -30,10 +46,25 @@ const readImage = async (file: File): Promise<{ dataUrl: string; width: number; 
   return { dataUrl: canvas.toDataURL('image/png'), width: canvas.width, height: canvas.height }
 }
 
+function FaceGuideOverlay({ head, guide }: { head: ModelPart; guide: FaceGuide }) {
+  const x = head.width * guide.verticalX / 100
+  const y = head.height * guide.horizontalY / 100
+  return <svg className="face-components-guide-overlay" viewBox={`0 0 ${head.width} ${head.height}`} preserveAspectRatio="none" aria-hidden="true">
+    <g transform={`rotate(${guide.angle} ${x} ${head.height / 2})`}>
+      <line className="face-components-guide-halo" x1={x} y1={-head.height} x2={x} y2={head.height * 2} />
+      <line className="face-components-guide-halo" x1={-head.width} y1={y} x2={head.width * 2} y2={y} />
+      <line className="face-components-guide-line" x1={x} y1={-head.height} x2={x} y2={head.height * 2} />
+      <line className="face-components-guide-line" x1={-head.width} y1={y} x2={head.width * 2} y2={y} />
+      <circle className="face-components-guide-center" cx={x} cy={y} r={2.4} />
+    </g>
+  </svg>
+}
+
 export function FaceComponentsWorkspace() {
   const [previewBackground] = usePreviewBackground()
   const [models, setModels] = useState<FabricatorSlotSummary[]>([])
   const [modelSlot, setModelSlot] = useState(1)
+  const [guidesByModel, setGuidesByModel] = useState<Record<number, FaceGuide>>(readFaceGuides)
   const [model, setModel] = useState<FabricatorProject | null>(null)
   const [assets, setAssets] = useState<FaceComponentAssetSummary[]>([])
   const [details, setDetails] = useState<Record<string, FaceComponentAsset>>({})
@@ -53,6 +84,7 @@ export function FaceComponentsWorkspace() {
   const stageRef = useRef<HTMLDivElement>(null)
   const [stageSize, setStageSize] = useState({ width: 0, height: 0 })
   const head = useMemo(() => model?.parts.find((part) => /cabe[çc]a|head/i.test(part.name)) ?? null, [model])
+  const guide = guidesByModel[modelSlot] ?? defaultGuide
   const previewScale = head && stageSize.width > 0 && stageSize.height > 0
     ? Math.min((stageSize.width - 24) / head.width, (stageSize.height - 24) / head.height) * .9
     : 0
@@ -70,6 +102,10 @@ export function FaceComponentsWorkspace() {
   } : undefined
 
   useEffect(() => { void window.desktop.listFabricatorSlots().then((slots) => { setModels(slots); const first = slots.findIndex(Boolean); if (first >= 0) setModelSlot(first + 1) }).catch((reason) => setError(String(reason))) }, [])
+  useEffect(() => { try { window.localStorage.setItem(GUIDE_STORAGE_KEY, JSON.stringify(guidesByModel)) } catch { /* Keep guides available during this session. */ } }, [guidesByModel])
+  function updateGuide(patch: Partial<FaceGuide>) {
+    setGuidesByModel((current) => ({ ...current, [modelSlot]: { ...(current[modelSlot] ?? defaultGuide), ...patch } }))
+  }
   useEffect(() => {
     const stage = stageRef.current
     if (!stage) return
@@ -218,8 +254,34 @@ export function FaceComponentsWorkspace() {
           </div>
         </section>
       </aside>
-      <main className="face-components-stage-column"><nav className="face-components-part-tabs">{categories.flatMap((category) => category.parts.map((id, side) => <button key={id} className={libraryCategory !== 'mouth' && selectedPart === id ? 'active' : ''} onClick={() => { setSelectedPart(id); setLibraryCategory(category.kind) }} type="button">{category.names[side]}</button>))}</nav><div className="face-components-stage" ref={stageRef} style={{ '--preview-background': previewBackground } as CSSProperties}>{head && previewScale > 0 && <div className="face-components-preview-canvas" style={{ width: head.width * previewScale, height: head.height * previewScale }}><img className="face-components-head" src={head.dataUrl} alt="Cabeça do modelo" />{(['eye-left','eye-right','pupil-left','pupil-right','brow-left','brow-right'] as PartId[]).map((id) => renderPart(id, true, selectedAssets))}{mouthPiece && mouthStyle && <img className="face-component-layer" src={mouthPiece.dataUrl} alt="Boca selecionada" style={mouthStyle} />}</div>}{!head && <span>Selecione um modelo com cabeça.</span>}</div><div className="face-components-stage-footer">{notice}</div></main>
-      <aside className="face-components-controls"><header><strong>{libraryCategory === 'mouth' ? 'Ajuste da boca' : 'Ajuste da peça'}</strong></header>{libraryCategory === 'mouth' ? <><p>{selectedMouth ? `${selectedMouth.category === 'mouth-open' ? 'Boca aberta' : 'Boca fechada'} · ${selectedMouth.name}` : 'Selecione uma boca salva ou importe uma folha.'}</p><p>As variantes e o encaixe da boca são editados no painel de nariz e boca.</p><button className="face-components-edit-mouth" type="button" onClick={() => setShowNoseMouthEditor(true)}>Editar boca</button></> : <>{categories.map((category) => <label className="face-component-link" key={category.kind}><input type="checkbox" checked={linked[category.kind]} onChange={(event) => setLinked((current) => ({ ...current, [category.kind]: event.target.checked }))} /> Espelhar lado direito · {category.label}</label>)}{selectedAsset ? <><strong className="face-component-selected-name">{selectedAsset.name}</strong>{(['x','y','scaleX','scaleY','rotation'] as const).map((field) => <label className="face-component-number" key={field}>{({ x:'Posição X', y:'Posição Y', scaleX:'Escala horizontal', scaleY:'Escala vertical', rotation:'Rotação' })[field]}<input type="number" step={field.startsWith('scale') ? .01 : 1} value={selectedAsset.defaultTransform[field]} onChange={(event) => { const value = Number(event.target.value); if (Number.isFinite(value)) void updateTransform({ [field]: field.startsWith('scale') ? clamp(value, .01, 20) : value }) }} /></label>)}</> : <p>Selecione uma peça ou importe um asset para ajustar.</p>}</>}</aside>
+      <main className="face-components-stage-column">
+        <nav className="face-components-part-tabs">{categories.flatMap((category) => category.parts.map((id, side) => <button key={id} className={libraryCategory !== 'mouth' && selectedPart === id ? 'active' : ''} onClick={() => { setSelectedPart(id); setLibraryCategory(category.kind) }} type="button">{category.names[side]}</button>))}</nav>
+        <div className="face-components-stage" ref={stageRef} style={{ '--preview-background': previewBackground } as CSSProperties}>
+          {head && previewScale > 0 && <div className="face-components-preview-canvas" style={{ width: head.width * previewScale, height: head.height * previewScale }}>
+            <img className="face-components-head" src={head.dataUrl} alt="Cabeça do modelo" />
+            {(['eye-left','eye-right','pupil-left','pupil-right','brow-left','brow-right'] as PartId[]).map((id) => renderPart(id, true, selectedAssets))}
+            {mouthPiece && mouthStyle && <img className="face-component-layer" src={mouthPiece.dataUrl} alt="Boca selecionada" style={mouthStyle} />}
+            {guide.visible && <FaceGuideOverlay head={head} guide={guide} />}
+          </div>}
+          {!head && <span>Selecione um modelo com cabeça.</span>}
+        </div>
+        <div className="face-components-stage-footer">{notice}</div>
+      </main>
+      <aside className="face-components-controls">
+        <header><strong>{libraryCategory === 'mouth' ? 'Ajuste da boca' : 'Ajuste da peça'}</strong></header>
+        {libraryCategory === 'mouth' ? <><p>{selectedMouth ? `${selectedMouth.category === 'mouth-open' ? 'Boca aberta' : 'Boca fechada'} · ${selectedMouth.name}` : 'Selecione uma boca salva ou importe uma folha.'}</p><p>As variantes e o encaixe da boca são editados no painel de nariz e boca.</p><button className="face-components-edit-mouth" type="button" onClick={() => setShowNoseMouthEditor(true)}>Editar boca</button></> : <>
+          {categories.map((category) => <label className="face-component-link" key={category.kind}><input type="checkbox" checked={linked[category.kind]} onChange={(event) => setLinked((current) => ({ ...current, [category.kind]: event.target.checked }))} /> Espelhar lado direito · {category.label}</label>)}
+          {selectedAsset ? <><strong className="face-component-selected-name">{selectedAsset.name}</strong>{(['x','y','scaleX','scaleY','rotation'] as const).map((field) => <label className="face-component-number" key={field}>{({ x:'Posição X', y:'Posição Y', scaleX:'Escala horizontal', scaleY:'Escala vertical', rotation:'Rotação' })[field]}<input type="number" step={field.startsWith('scale') ? .01 : 1} value={selectedAsset.defaultTransform[field]} onChange={(event) => { const value = Number(event.target.value); if (Number.isFinite(value)) void updateTransform({ [field]: field.startsWith('scale') ? clamp(value, .01, 20) : value }) }} /></label>)}</> : <p>Selecione uma peça ou importe um asset para ajustar.</p>}
+        </>}
+        <section className="face-components-guide-controls" aria-label="Guias de alinhamento do rosto">
+          <header><strong>Guias de desenho</strong><label><input type="checkbox" checked={guide.visible} onChange={(event) => updateGuide({ visible: event.target.checked })} /> Mostrar</label></header>
+          <p>Marcação visual para alinhar as peças. Não modifica o personagem.</p>
+          <label>Inclinação do eixo <output>{guide.angle}°</output><input type="range" min="-30" max="30" step="1" value={guide.angle} disabled={!guide.visible} onChange={(event) => updateGuide({ angle: Number(event.target.value) })} /></label>
+          <label>Posição do eixo <output>{guide.verticalX}%</output><input type="range" min="20" max="80" step="1" value={guide.verticalX} disabled={!guide.visible} onChange={(event) => updateGuide({ verticalX: Number(event.target.value) })} /></label>
+          <label>Altura da linha horizontal <output>{guide.horizontalY}%</output><input type="range" min="10" max="90" step="1" value={guide.horizontalY} disabled={!guide.visible} onChange={(event) => updateGuide({ horizontalY: Number(event.target.value) })} /></label>
+          <button type="button" onClick={() => setGuidesByModel((current) => ({ ...current, [modelSlot]: defaultGuide }))}>Restaurar guias</button>
+        </section>
+      </aside>
     </div>{error && <div className={`face-components-error${openModal ? ' face-components-error-modal' : ''}`} role="alert">{error}</div>}
     {openModal && <div className="face-components-modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) setOpenModal(null) }}>
       <div className="face-components-modal" role="dialog" aria-modal="true" aria-labelledby="face-components-modal-title">
