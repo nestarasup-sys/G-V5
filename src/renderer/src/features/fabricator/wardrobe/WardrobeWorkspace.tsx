@@ -62,7 +62,7 @@ function rebindComponents(components: WardrobeComponent[], reference: Fabricator
   return { components: changed ? rebound : components, changed }
 }
 const categoryNames: Record<WardrobeCategory, string> = {
-  camisa: 'Camisas', jaqueta: 'Jaquetas', 'manga-superior': 'Mangas superiores', 'manga-inferior': 'Mangas inferiores', luvas: 'Luvas', capa: 'Capa', cinto: 'Cinto', saia: 'Saia', 'calca-coxa': 'Calças · coxas', 'calca-canela': 'Calças · canelas', shorts: 'Shorts'
+  camisa: 'Camisas', jaqueta: 'Jaquetas', 'manga-superior': 'Mangas superiores', 'manga-inferior': 'Mangas inferiores', luvas: 'Luvas', capa: 'Capa', cinto: 'Cinto', saia: 'Saia', 'calca-coxa': 'Calças · coxas', 'calca-canela': 'Calças · canelas', shorts: 'Shorts', meia: 'Meias', sapato: 'Sapatos'
 }
 const categories = Object.keys(categoryNames) as WardrobeCategory[]
 function dataUrl(buffer: ArrayBuffer): string {
@@ -87,7 +87,9 @@ function guessName(category: WardrobeCategory, x: number, width: number): string
   if (category === 'capa') return 'Capa'
   if (category === 'cinto') return 'Cinto'
   if (category === 'saia') return 'Saia'
-  if (category === 'shorts') return 'Shorts'
+  if (category === 'shorts') return 'Bermuda'
+  if (category === 'meia') return `Meia ${x < width / 2 ? 'esquerda' : 'direita'}`
+  if (category === 'sapato') return `Sapato ${x < width / 2 ? 'esquerdo' : 'direito'}`
   const side = x < width / 2 ? 'esquerda' : 'direita'
   if (category === 'luvas') return `Luvas ${side}`
   if (category === 'manga-superior') return `Manga superior ${side}`
@@ -107,11 +109,13 @@ function serializeModel(model: FabricatorProject): FabricatorProjectSave {
 }
 function guessBone(category: WardrobeCategory, x: number, width: number, model: FabricatorProject): FabricatorProject['parts'][number] | undefined {
   const side = x < width / 2 ? 'left' : 'right'
-  const centerCategory = category === 'camisa' || category === 'jaqueta' || category === 'capa' || category === 'cinto' || category === 'saia' || category === 'shorts'
+  const centerCategory = category === 'camisa' || category === 'jaqueta' || category === 'capa' || category === 'cinto' || category === 'saia'
   const target = category === 'capa' ? { x: .5, y: .31 }
     : category === 'cinto' || category === 'saia' ? { x: .5, y: .49 }
       : category === 'camisa' || category === 'jaqueta' ? { x: .5, y: .36 }
-    : category === 'shorts' ? { x: .5, y: .42 }
+    : category === 'shorts' ? { x: side === 'left' ? .42 : .58, y: .42 }
+      : category === 'meia' ? { x: side === 'left' ? .43 : .57, y: .83 }
+        : category === 'sapato' ? { x: side === 'left' ? .43 : .57, y: .94 }
         : category === 'manga-superior' ? { x: side === 'left' ? .27 : .73, y: .27 }
           : category === 'manga-inferior' ? { x: side === 'left' ? .22 : .78, y: .45 }
             : category === 'luvas' ? { x: side === 'left' ? .21 : .79, y: .49 }

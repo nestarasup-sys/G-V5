@@ -393,13 +393,14 @@ const clothingCategories: Record<'Superior' | 'Inferior', Array<{ id: ClothingGr
     { id: 'saia', label: 'Saia', source: ['saia'] }
   ],
   Inferior: [
-    { id: 'calca', label: 'Calças', source: ['calca-coxa', 'calca-canela'] },
-    { id: 'shorts', label: 'Shorts', source: ['shorts'] }
+    { id: 'calca', label: 'Calça/Bermuda', source: ['calca-coxa', 'calca-canela', 'shorts'] },
+    { id: 'meia', label: 'Meias', source: ['meia'] },
+    { id: 'sapato', label: 'Sapatos', source: ['sapato'] }
   ]
 }
 
-type UpperWardrobePanel = { id: string; label: string; category: ClothingGroupCategory; side: 'left' | 'right' | null }
-const upperWardrobePanels: UpperWardrobePanel[] = [
+type WardrobePanel = { id: string; label: string; category: ClothingGroupCategory; side: 'left' | 'right' | null; source?: WardrobeCategory[] }
+const upperWardrobePanels: WardrobePanel[] = [
   { id: 'shirt', label: 'Camisa', category: 'camisa', side: null },
   { id: 'jacket', label: 'Jaqueta', category: 'jaqueta', side: null },
   { id: 'upper-left', label: 'Manga superior esquerda', category: 'manga-superior', side: 'left' },
@@ -407,15 +408,23 @@ const upperWardrobePanels: UpperWardrobePanel[] = [
   { id: 'lower-left', label: 'Manga inferior esquerda', category: 'manga-inferior', side: 'left' },
   { id: 'lower-right', label: 'Manga inferior direita', category: 'manga-inferior', side: 'right' }
 ]
-const upperWardrobePageTwoPanels: UpperWardrobePanel[] = [
+const upperWardrobePageTwoPanels: WardrobePanel[] = [
   { id: 'gloves-left', label: 'Luvas esquerda', category: 'luvas', side: 'left' },
   { id: 'gloves-right', label: 'Luvas direita', category: 'luvas', side: 'right' },
   { id: 'cape', label: 'Capa', category: 'capa', side: null },
   { id: 'belt', label: 'Cinto', category: 'cinto', side: null },
   { id: 'skirt', label: 'Saia', category: 'saia', side: null }
 ]
-function wardrobeComponentMatchesPanel(component: WardrobeSet['components'][number], panel: UpperWardrobePanel): boolean {
-  if (component.category !== panel.category) return false
+const lowerWardrobePanels: WardrobePanel[] = [
+  { id: 'pants-left', label: 'Calça/Bermuda', category: 'calca', side: 'left', source: ['calca-coxa', 'calca-canela', 'shorts'] },
+  { id: 'pants-right', label: 'Direita Calça/Bermuda', category: 'calca', side: 'right', source: ['calca-coxa', 'calca-canela', 'shorts'] },
+  { id: 'sock-left', label: 'Meia', category: 'meia', side: 'left' },
+  { id: 'sock-right', label: 'Direita Meia', category: 'meia', side: 'right' },
+  { id: 'shoe-left', label: 'Sapato', category: 'sapato', side: 'left' },
+  { id: 'shoe-right', label: 'Direita Sapato', category: 'sapato', side: 'right' }
+]
+function wardrobeComponentMatchesPanel(component: WardrobeSet['components'][number], panel: WardrobePanel): boolean {
+  if (panel.source ? !panel.source.includes(component.category) : component.category !== panel.category) return false
   if (!panel.side) return true
   const sideHint = `${component.name} ${component.attachedPartId}`.toLocaleLowerCase()
   const left = /esquerda|\bleft\b/.test(sideHint)
@@ -1129,7 +1138,7 @@ export function CustomizerPage() {
   const [wardrobeLoading, setWardrobeLoading] = useState(false)
   const [wardrobeDetails, setWardrobeDetails] = useState<Record<string, WardrobeSet>>({})
   const [wardrobeThumbnails, setWardrobeThumbnails] = useState<Record<string, string>>({})
-  const [wardrobeLibraryPanel, setWardrobeLibraryPanel] = useState<UpperWardrobePanel | null>(null)
+  const [wardrobeLibraryPanel, setWardrobeLibraryPanel] = useState<WardrobePanel | null>(null)
   const [wardrobeLibraryPage, setWardrobeLibraryPage] = useState(0)
   const [faceCatalogItems, setFaceCatalogItems] = useState<FaceCatalogItemSummary[]>([])
   const [faceCatalogDetails, setFaceCatalogDetails] = useState<Record<string, FaceCatalogItem>>({})
@@ -1929,7 +1938,7 @@ export function CustomizerPage() {
     return `${group.modelSlot}:${group.setId}:${group.category}:${group.componentId ?? ''}`
   }
 
-  async function applyUpperWardrobePanel(panel: UpperWardrobePanel, candidate: { summary: WardrobeSetSummary; component: WardrobeSet['components'][number] } | null) {
+  async function applyUpperWardrobePanel(panel: WardrobePanel, candidate: { summary: WardrobeSetSummary; component: WardrobeSet['components'][number] } | null) {
     if (!selectedCharacter || selectedCatalogModelSlot === null) return
     const current = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
     const before = current.customization.wardrobeGroups ?? []
@@ -2491,7 +2500,7 @@ export function CustomizerPage() {
     </section>
   }
 
-  const upperWardrobeCandidates = (panel: UpperWardrobePanel) => wardrobeSets
+  const upperWardrobeCandidates = (panel: WardrobePanel) => wardrobeSets
     .filter((summary) => summary.modelSlot === selectedCatalogModelSlot)
     .flatMap((summary) => {
       const set = wardrobeDetails[`${summary.modelSlot}:${summary.id}`]
@@ -2536,8 +2545,11 @@ export function CustomizerPage() {
     </section>
   }
 
-  const renderUpperWardrobePanels = () => <div className={`customizer-hair-layout customizer-upper-wardrobe-layout${upperWardrobePage === 2 ? ' page-two' : ''}`} aria-label={`Peças de roupa superior · página ${upperWardrobePage}`}>
-    {(upperWardrobePage === 1 ? upperWardrobePanels : upperWardrobePageTwoPanels).map((panel) => {
+  const renderUpperWardrobePanels = () => {
+    const panels = clothingSection === 'Inferior' ? lowerWardrobePanels : upperWardrobePage === 1 ? upperWardrobePanels : upperWardrobePageTwoPanels
+    const pageTwo = clothingSection === 'Superior' && upperWardrobePage === 2
+    return <div className={`customizer-hair-layout customizer-upper-wardrobe-layout${pageTwo ? ' page-two' : ''}`} aria-label={`Peças de roupa ${clothingSection.toLowerCase()}${pageTwo ? ' · página 2' : ''}`}>
+    {panels.map((panel) => {
       const candidates = upperWardrobeCandidates(panel)
       const appliedGroups = selectedCharacter?.customization.wardrobeGroups ?? []
       const selectedIndex = candidates.findIndex(({ summary, component }) => appliedGroups.some((group) =>
@@ -2580,7 +2592,8 @@ export function CustomizerPage() {
         </div>
       </article>
     })}
-  </div>
+    </div>
+  }
 
   const renderWardrobeCatalog = () => (
     <div className="customizer-wardrobe-catalog">

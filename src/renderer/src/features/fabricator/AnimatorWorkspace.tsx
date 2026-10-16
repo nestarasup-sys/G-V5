@@ -13,7 +13,7 @@ const faceOrder: FaceElementKind[] = ['brow-left', 'brow-right', 'eye-left', 'ey
 const wardrobeCategories: Record<CustomizerWardrobeGroup['category'], string[]> = {
   camisa: ['camisa'], jaqueta: ['jaqueta'], 'manga-superior': ['manga-superior'], 'manga-inferior': ['manga-inferior'],
   luvas: ['luvas'], capa: ['capa'], cinto: ['cinto'], saia: ['saia'],
-  calca: ['calca-coxa', 'calca-canela'], shorts: ['shorts']
+  calca: ['calca-coxa', 'calca-canela', 'shorts'], shorts: ['shorts'], meia: ['meia'], sapato: ['sapato']
 }
 const imageCache = new Map<string, Promise<HTMLImageElement>>()
 
