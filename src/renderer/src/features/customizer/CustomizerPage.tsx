@@ -937,8 +937,8 @@ export async function prepareSavedCharacterRenderer(character: CustomizerCharact
         }
         if (item) activeItems[category] = item
       }))
-      if (Object.keys(activeItems).length) await drawFaceCatalogOverlay(context, artwork, source, activeItems, currentAppearance, studioFaceTransforms)
-      else if (!hasCatalogSelection && legacyFaceImage && currentAppearance.setId === appearance?.setId) context.drawImage(legacyFaceImage, 0, 0, canvas.width, canvas.height)
+      if (hasCatalogSelection) await drawFaceCatalogOverlay(context, artwork, source, activeItems, currentAppearance, studioFaceTransforms)
+      else if (legacyFaceImage && currentAppearance.setId === appearance?.setId) context.drawImage(legacyFaceImage, 0, 0, canvas.width, canvas.height)
     } else if (legacyFaceImage) context.drawImage(legacyFaceImage, 0, 0, canvas.width, canvas.height)
     if (frontHairImage) context.drawImage(frontHairImage, 0, 0, canvas.width, canvas.height)
     if (shapeScale.x === 1 && shapeScale.y === 1) return { dataUrl: canvas.toDataURL('image/png'), width: canvas.width, height: canvas.height }

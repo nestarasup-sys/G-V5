@@ -5,7 +5,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import type { AnimatorAnimation, AnimatorAnimationAsset, AnimatorAnimationDraft, AnimatorAnimationSave, AnimatorAnimationSummary, FaceAssetSave, FaceCatalogItem, FaceCatalogItemSave, FaceCatalogItemSummary, FaceComponentAsset, FaceComponentAssetSave, FaceComponentAssetSummary, FaceComponentKind, FaceElementKind, FaceSet, FaceSetSave, FaceSetSummary, FaceSheetKind, FabricatorAssetSave, FabricatorHistoryEntry, FabricatorHistorySaveEntry, FabricatorHistorySaveState, FabricatorHistoryState, FabricatorPose, FabricatorPoseDraft, FabricatorPoseDraftSave, FabricatorPoseSave, FabricatorPoseSummary, FabricatorProject, FabricatorProjectSave, FabricatorSlotSummary, HairStyle, HairStyleAsset, HairStyleSave, HairStyleSummary, HairWorkspace, HairWorkspaceAsset, HairWorkspaceSave, ModelPart, PosePart, WardrobeAssetSave, WardrobeCategory, WardrobeSet, WardrobeSetSave, WardrobeSetSummary } from '../src/shared/fabricator'
 import { resolvePoseCategory } from '../src/shared/fabricator'
-import type { CustomizerCharacter } from '../src/shared/customizer'
+import type { CustomizerCharacter, CustomizerFaceAppearance } from '../src/shared/customizer'
 import { characterBodyDimensionLimits, characterProportionLimits } from '../src/shared/customizer'
 import type { StudioAsset, StudioDocument, StudioFaceTransform, StudioFaceTransforms } from '../src/shared/studio'
 import { applyModelHeadShape } from '../src/shared/headShape'
@@ -109,18 +109,7 @@ function isCustomizerCharacter(value: unknown): value is CustomizerCharacter {
         && [group.offsetX, group.offsetY, group.scaleX, group.scaleY, group.rotation].every(Number.isFinite)
         && group.scaleX > 0 && group.scaleY > 0)
     ))
-    && (character.customization.faceAppearance === undefined || (
-      !!character.customization.faceAppearance
-      && isValidModelSlot(character.customization.faceAppearance.modelSlot)
-      && (character.customization.faceAppearance.setId === undefined || isValidWardrobeId(character.customization.faceAppearance.setId))
-      && [character.customization.faceAppearance.eyeCatalogId, character.customization.faceAppearance.eyebrowCatalogId, character.customization.faceAppearance.noseCatalogId, character.customization.faceAppearance.mouthClosedCatalogId, character.customization.faceAppearance.mouthOpenCatalogId].every((id) => id === undefined || isValidFaceCatalogId(id))
-      && Boolean(character.customization.faceAppearance.setId || character.customization.faceAppearance.eyeCatalogId || character.customization.faceAppearance.eyebrowCatalogId || character.customization.faceAppearance.noseCatalogId || character.customization.faceAppearance.mouthClosedCatalogId || character.customization.faceAppearance.mouthOpenCatalogId)
-      && [0, 1, 2].includes(character.customization.faceAppearance.eyeState)
-      && typeof character.customization.faceAppearance.eyebrows === 'boolean'
-      && Number.isInteger(character.customization.faceAppearance.noseIndex) && character.customization.faceAppearance.noseIndex >= 0 && character.customization.faceAppearance.noseIndex <= 5
-      && Number.isInteger(character.customization.faceAppearance.expressionIndex) && character.customization.faceAppearance.expressionIndex >= 0 && character.customization.faceAppearance.expressionIndex <= 20
-      && typeof character.customization.faceAppearance.mouthOpen === 'boolean'
-    ))
+    && (character.customization.faceAppearance === undefined || isValidCustomizerFaceAppearance(character.customization.faceAppearance))
     && (character.customization.hairAppearance === undefined || (
       !!character.customization.hairAppearance
       && isValidModelSlot(character.customization.hairAppearance.modelSlot)
@@ -174,6 +163,36 @@ const isValidWardrobeId = (id: string) => /^[a-zA-Z0-9_-]{1,80}$/.test(id)
 const isValidFaceCatalogId = (id: string) => /^[a-zA-Z0-9_-]{1,120}$/.test(id)
 const faceSheetKinds: FaceSheetKind[] = ['eyes', 'eyebrows', 'nose', 'mouth-closed', 'mouth-open']
 const faceElementKinds: FaceElementKind[] = ['eye-left', 'eye-right', 'brow-left', 'brow-right', 'nose', 'mouth']
+const faceComponentPartIds = ['eye-left', 'eye-right', 'pupil-left', 'pupil-right', 'brow-left', 'brow-right'] as const
+
+function isValidCustomizerFaceAppearance(appearance: CustomizerFaceAppearance): boolean {
+  const componentEntries = Object.entries(appearance.components ?? {})
+  const componentParts = new Set<string>(faceComponentPartIds)
+  const catalogIds = [appearance.eyeCatalogId, appearance.eyeLeftCatalogId, appearance.eyeRightCatalogId, appearance.eyebrowCatalogId, appearance.eyebrowLeftCatalogId, appearance.eyebrowRightCatalogId, appearance.noseCatalogId, appearance.mouthClosedCatalogId, appearance.mouthOpenCatalogId]
+  const componentsValid = appearance.components === undefined || (!!appearance.components && typeof appearance.components === 'object' && !Array.isArray(appearance.components)
+    && componentEntries.length <= faceComponentPartIds.length
+    && componentEntries.every(([part, component]) => componentParts.has(part) && !!component && typeof component === 'object'
+      && (component.assetId === null || isValidWardrobeId(component.assetId))
+      && (component.transform === undefined || [component.transform.x, component.transform.y, component.transform.scaleX, component.transform.scaleY, component.transform.rotation].every(Number.isFinite)
+        && component.transform.scaleX > 0 && component.transform.scaleX <= 20 && component.transform.scaleY > 0 && component.transform.scaleY <= 20
+        && (component.transform.flipX === undefined || typeof component.transform.flipX === 'boolean'))
+      && (component.colors === undefined || isHairColorMap(component.colors))))
+  const linksValid = appearance.linkedSides === undefined || (!!appearance.linkedSides && typeof appearance.linkedSides === 'object' && !Array.isArray(appearance.linkedSides)
+    && Object.entries(appearance.linkedSides).every(([kind, linked]) => ['eye', 'pupil', 'eyebrow'].includes(kind) && typeof linked === 'boolean'))
+  const partColorsValid = appearance.partColors === undefined || (!!appearance.partColors && typeof appearance.partColors === 'object' && !Array.isArray(appearance.partColors)
+    && Object.entries(appearance.partColors).every(([part, colors]) => ['eye-left', 'eye-right', 'brow-left', 'brow-right'].includes(part) && isHairColorMap(colors)))
+  const hasSelection = Boolean(appearance.setId || catalogIds.some(Boolean) || componentEntries.some(([, component]) => component?.assetId))
+
+  return isValidModelSlot(appearance.modelSlot)
+    && (appearance.setId === undefined || isValidWardrobeId(appearance.setId))
+    && catalogIds.every((id) => id === undefined || id === null || isValidFaceCatalogId(id))
+    && componentsValid && linksValid && partColorsValid && hasSelection
+    && [0, 1, 2].includes(appearance.eyeState)
+    && typeof appearance.eyebrows === 'boolean'
+    && Number.isInteger(appearance.noseIndex) && appearance.noseIndex >= 0 && appearance.noseIndex <= 5
+    && Number.isInteger(appearance.expressionIndex) && appearance.expressionIndex >= 0 && appearance.expressionIndex <= 20
+    && typeof appearance.mouthOpen === 'boolean'
+}
 
 function validFaceSet(modelSlot: number, set: FaceSetSave): boolean {
   if (!isValidModelSlot(modelSlot) || set?.schemaVersion !== 1 || set.modelSlot !== modelSlot || !isValidWardrobeId(set.id)
