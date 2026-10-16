@@ -1154,6 +1154,7 @@ export function CustomizerPage() {
   const [previewLoading, setPreviewLoading] = useState(true)
   const thumbnailCache = useRef(new Set<string>())
   const hairPaletteStripRef = useRef<HTMLDivElement>(null)
+  const wardrobePaletteStripRefs = useRef<Record<string, HTMLDivElement | null>>({})
   const previewLoadRequest = useRef(0)
   const clothingDragRef = useRef<{ pointerId: number; clientX: number; clientY: number; scaleX: number; scaleY: number; startX: number; startY: number; groupKey: string; characterId: string; beforeGroups: CustomizerWardrobeGroup[]; latest: CustomizerCharacter | null } | null>(null)
   const wardrobeTransformDirty = useRef(false)
@@ -1949,12 +1950,12 @@ export function CustomizerPage() {
     await saveCharacterCustomization({ wardrobeGroups: after })
   }
 
-  async function setWardrobePieceColor(setId: string, category: ClothingGroupCategory, componentId: string, role: HairColorRole, value: string) {
+  async function applyWardrobePiecePalette(setId: string, category: ClothingGroupCategory, componentId: string, colors: HairColorOverrides) {
     if (!selectedCharacter) return
     const current = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
     const before = current.customization.wardrobeGroups ?? []
     const after = before.map((group) => group.setId === setId && group.modelSlot === selectedCatalogModelSlot && group.category === category && group.componentId === componentId
-      ? { ...group, colors: { ...group.colors, [role]: value } }
+      ? { ...group, colors }
       : group)
     await saveCharacterCustomization({ wardrobeGroups: after })
   }
@@ -2540,12 +2541,15 @@ export function CustomizerPage() {
           <button className="customizer-upper-piece-arrow" aria-label={`Próxima peça: ${panel.label}`} onClick={() => move(1)} disabled={!candidates.length || !selectedCharacter || selectedCatalogModelSlot === null} type="button">›</button>
         </div>
         <footer className="customizer-upper-piece-footer"><span>{currentCandidate ? currentCandidate.component.name : 'Nenhuma selecionada'}</span></footer>
-        {currentCandidate && <div className="customizer-upper-piece-colors" aria-label={`Cores de ${panel.label}`}>
-          <div className="customizer-upper-piece-colors-heading"><strong>Cores da peça</strong>{hasLocalColors && <button type="button" onClick={() => void resetWardrobePieceColors(currentCandidate.summary.id, panel.category, currentCandidate.component.id)}>Restaurar</button>}</div>
-          <div className="customizer-upper-piece-color-swatches">{hairColorControls.map((color) => <label key={color.id} title={`${color.label} de ${panel.label}`} style={{ '--hair-color-swatch': colors[color.id] ?? color.fallback } as React.CSSProperties}>
-            <input type="color" aria-label={`${color.label} de ${panel.label}`} value={colors[color.id] ?? color.fallback} disabled={!selectedCharacter} onChange={(event) => void setWardrobePieceColor(currentCandidate.summary.id, panel.category, currentCandidate.component.id, color.id, event.target.value)} />
-            <span>{color.id === 'highlight' ? 'L' : color.id === 'accent' ? 'A' : color.id === 'outline' ? 'C' : color.id === 'fade' ? 'D' : 'B'}</span>
-          </label>)}</div>
+        {currentCandidate && <div className="customizer-upper-piece-colors" aria-label={`Paletas de ${panel.label}`}>
+          <div className="customizer-upper-piece-colors-heading"><strong>Paleta da peça</strong>{hasLocalColors && <button type="button" onClick={() => void resetWardrobePieceColors(currentCandidate.summary.id, panel.category, currentCandidate.component.id)}>Restaurar</button>}</div>
+          <div className="customizer-hair-palette-presets customizer-upper-piece-palette-presets">
+            <button className="customizer-hair-palette-scroll previous" aria-label={`Ver paletas anteriores de ${panel.label}`} onClick={() => wardrobePaletteStripRefs.current[panel.id]?.scrollBy({ left: -180, behavior: 'smooth' })} type="button"><Icon name="chevronRight" /></button>
+            <div className="customizer-hair-palette-preset-list" ref={(node) => { wardrobePaletteStripRefs.current[panel.id] = node }}>
+              {hairPalettePresets.map((preset) => <button key={preset.name} type="button" disabled={!selectedCharacter} aria-pressed={hairColorControls.every((color) => colors[color.id] === preset.colors[color.id])} onClick={() => void applyWardrobePiecePalette(currentCandidate.summary.id, panel.category, currentCandidate.component.id, preset.colors)} title={`Aplicar paleta ${preset.name} somente a ${panel.label}`}><span style={{ background: `linear-gradient(115deg, ${preset.colors.highlight} 0 23%, ${preset.colors.base} 23% 65%, ${preset.colors.fade} 65% 84%, ${preset.colors.outline} 84%)` }} />{preset.name}</button>)}
+            </div>
+            <button className="customizer-hair-palette-scroll" aria-label={`Ver próximas paletas de ${panel.label}`} onClick={() => wardrobePaletteStripRefs.current[panel.id]?.scrollBy({ left: 180, behavior: 'smooth' })} type="button"><Icon name="chevronRight" /></button>
+          </div>
         </div>}
       </article>
     })}

@@ -614,10 +614,10 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .customizer-upper-piece-colors { min-width:0;display:grid;gap:3px;padding:3px 5px 5px;border-top:1px solid #eee6ef;background:#faf8fb; }
 .customizer-upper-piece-colors-heading { min-width:0;display:flex;align-items:center;justify-content:space-between;color:#725b75;font-size:8px; }
 .customizer-upper-piece-colors-heading button { padding:1px 5px;border:1px solid #e6c8dc;border-radius:4px;background:#fff;color:#a14f83;font-size:8px;font-weight:700;cursor:pointer; }
-.customizer-upper-piece-color-swatches { min-width:0;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:3px; }
-.customizer-upper-piece-color-swatches label { position:relative;min-width:0;height:22px;display:grid;place-items:center;border:1px solid #b9a6bd;border-radius:4px;background:var(--hair-color-swatch);color:#fff;cursor:pointer; }
-.customizer-upper-piece-color-swatches input { position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer; }
-.customizer-upper-piece-color-swatches span { pointer-events:none;font-size:9px;font-weight:900;text-shadow:0 1px 3px #000,0 0 3px #000; }
+.customizer-upper-piece-palette-presets { grid-template-columns:16px minmax(0,1fr) 16px;gap:2px;padding:0;border:0; }
+.customizer-upper-piece-palette-presets .customizer-hair-palette-scroll { width:16px;height:22px; }
+.customizer-upper-piece-palette-presets .customizer-hair-palette-preset-list { gap:2px; }
+.customizer-upper-piece-palette-presets .customizer-hair-palette-preset-list button { min-height:22px;font-size:8px; }
 .customizer-wardrobe-category { display:grid;gap:7px; }
 .customizer-wardrobe-category>header { display:flex;align-items:center;gap:7px;padding-bottom:5px;border-bottom:1px solid #f0ebef; }
 .customizer-wardrobe-category h3 { margin:0;color:#534a55;font:750 12px Manrope,sans-serif; }
