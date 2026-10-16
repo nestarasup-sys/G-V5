@@ -150,7 +150,7 @@ export type FaceSetSave = Omit<FaceSet, 'sheets' | 'pieces'> & {
 export type FaceSetSummary = Pick<FaceSet, 'id' | 'modelSlot' | 'name' | 'updatedAt'> & { pieceCount: number }
 export type FaceAssetSave = { id: string; dataUrl: string }
 export type FaceComponentKind = 'eye' | 'pupil' | 'eye-closed' | 'eyebrow'
-export type FaceComponentAsset = { schemaVersion: 1; id: string; modelSlot: number; kind: FaceComponentKind; name: string; width: number; height: number; defaultTransform: FaceTransform; rightSidePositioned?: boolean; updatedAt: string; dataUrl: string }
+export type FaceComponentAsset = { schemaVersion: 1; id: string; modelSlot: number; kind: FaceComponentKind; name: string; width: number; height: number; defaultTransform: FaceTransform; rightSidePositioned?: boolean; pairId?: string; updatedAt: string; dataUrl: string }
 export type FaceComponentAssetSave = Omit<FaceComponentAsset, 'dataUrl'>
 export type FaceComponentAssetSummary = Omit<FaceComponentAsset, 'dataUrl' | 'defaultTransform'>
 /** One imported facial sheet and its cropped variants, stored independently for the Customizer catalog. */

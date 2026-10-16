@@ -31,6 +31,13 @@ const initialTransform = (kind: FaceComponentKind, head: ModelPart, width: numbe
   rotation: 0
 })
 const partCategory = (id: PartId) => categories.find((category) => category.parts.includes(id))!
+const isRightLibraryAsset = (asset: FaceComponentAssetSummary) => asset.rightSidePositioned === true || / · (?:Olho|Olho aberto|Olho fechado|Pupila|Sobrancelha) direit[oa]$/.test(asset.name)
+const libraryBaseName = (name: string) => name.replace(/ · (?:Olho|Olho aberto|Olho fechado|Pupila|Sobrancelha) (?:esquerd[oa]|direit[oa])$/, '')
+function sameLibraryPair(left: FaceComponentAsset, right: FaceComponentAsset): boolean {
+  if (left.kind !== right.kind || !isRightLibraryAsset(right)) return false
+  if (left.pairId || right.pairId) return Boolean(left.pairId && left.pairId === right.pairId || right.pairId === left.id)
+  return libraryBaseName(left.name) === libraryBaseName(right.name) && left.dataUrl === right.dataUrl
+}
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value))
 const guideValue = (value: unknown, fallback: number, min: number, max: number) => typeof value === 'number' && Number.isFinite(value) ? clamp(value, min, max) : fallback
 function readFaceGuides(): Record<number, FaceGuide> {
@@ -49,7 +56,7 @@ function readFaceGuides(): Record<number, FaceGuide> {
     }))
   } catch { return {} }
 }
-type ComponentSelection = { parts: Partial<Record<PartId, string>>; linked: Partial<Record<FaceComponentKind, boolean>> }
+type ComponentSelection = { parts: Partial<Record<PartId, string>>; linked: Partial<Record<FaceComponentKind, boolean>>; moveTogether?: Partial<Record<FaceComponentKind, boolean>> }
 function readComponentSelections(): Record<number, ComponentSelection> {
   try {
     const stored = JSON.parse(window.localStorage.getItem(COMPONENT_SELECTION_STORAGE_KEY) ?? '{}') as Record<string, ComponentSelection>
@@ -113,8 +120,9 @@ function FaceGuideOverlay({ head, guide }: { head: ModelPart; guide: FaceGuide }
   </svg>
 }
 
-function FaceTransformControls({ head, transform, sourceWidth, sourceHeight, pupil, onChange, onReset }: {
+function FaceTransformControls({ head, transform, sourceWidth, sourceHeight, pupil, moveTogether, onChange, onReset }: {
   head: ModelPart; transform: FaceTransform; sourceWidth: number; sourceHeight: number; pupil: boolean
+  moveTogether?: boolean
   onChange: (patch: Partial<FaceTransform>) => void; onReset: () => void
 }) {
   const xRange = pupil ? head.width * .25 : head.width
@@ -126,14 +134,14 @@ function FaceTransformControls({ head, transform, sourceWidth, sourceHeight, pup
     <input type="range" min="1" max={Math.max(120, Math.ceil(value / 10) * 10)} step="1" value={value} onChange={(event) => onChange({ [field]: clamp(Number(event.target.value) / 100 * headSize / sourceSize, .01, 20) })} />
   </label>
   return <div className="face-component-transform-controls">
-    <div className="face-component-move-controls"><strong>Posição</strong><div className="face-component-nudge-pad">
+    {!moveTogether && <><div className="face-component-move-controls"><strong>Posição</strong><div className="face-component-nudge-pad">
       <button type="button" aria-label="Subir peça" onClick={() => onChange({ y: transform.y - 1 })}>↑</button>
       <button type="button" aria-label="Mover peça para a esquerda" onClick={() => onChange({ x: transform.x - 1 })}>←</button>
       <button type="button" aria-label="Descer peça" onClick={() => onChange({ y: transform.y + 1 })}>↓</button>
       <button type="button" aria-label="Mover peça para a direita" onClick={() => onChange({ x: transform.x + 1 })}>→</button>
     </div></div>
     <label className="face-component-slider"><span>{pupil ? 'Deslocamento horizontal' : 'Horizontal'}<output>{pupil ? `${Math.round(transform.x)} px` : `${Math.round(transform.x / head.width * 100)}%`}</output></span><input type="range" min={pupil ? -xRange : 0} max={xRange} step="1" value={transform.x} onChange={(event) => onChange({ x: Number(event.target.value) })} /></label>
-    <label className="face-component-slider"><span>{pupil ? 'Deslocamento vertical' : 'Vertical'}<output>{pupil ? `${Math.round(transform.y)} px` : `${Math.round(transform.y / head.height * 100)}%`}</output></span><input type="range" min={pupil ? -yRange : 0} max={yRange} step="1" value={transform.y} onChange={(event) => onChange({ y: Number(event.target.value) })} /></label>
+    <label className="face-component-slider"><span>{pupil ? 'Deslocamento vertical' : 'Vertical'}<output>{pupil ? `${Math.round(transform.y)} px` : `${Math.round(transform.y / head.height * 100)}%`}</output></span><input type="range" min={pupil ? -yRange : 0} max={yRange} step="1" value={transform.y} onChange={(event) => onChange({ y: Number(event.target.value) })} /></label></>}
     {sizeControl('Largura', widthPercent, sourceWidth, head.width, 'scaleX')}
     {sizeControl('Altura', heightPercent, sourceHeight, head.height, 'scaleY')}
     <label className="face-component-slider"><span>Rotação<output>{Math.round(transform.rotation)}°</output></span><input type="range" min="-180" max="180" step="1" value={transform.rotation} onChange={(event) => onChange({ rotation: Number(event.target.value) })} /></label>
@@ -161,12 +169,14 @@ export function FaceComponentsWorkspace() {
   const [noseDetails, setNoseDetails] = useState<Record<string, FaceCatalogItem>>({})
   const [selectedNoseId, setSelectedNoseId] = useState<string | null>(null)
   const [linked, setLinked] = useState<Record<FaceComponentKind, boolean>>({ eye: true, pupil: true, 'eye-closed': true, eyebrow: true })
+  const [moveTogether, setMoveTogether] = useState<Record<FaceComponentKind, boolean>>({ eye: false, pupil: false, 'eye-closed': false, eyebrow: false })
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('Importe assets PNG transparentes; o formato de folha pode ser definido depois.')
   const [openModal, setOpenModal] = useState<'import' | 'delete' | null>(null)
   const [markedForDeletion, setMarkedForDeletion] = useState<string[]>([])
   const componentDetailsRef = useRef(details)
+  const selectedAssetsRef = useRef(selectedAssets)
   const preparingPair = useRef(new Map<string, Promise<FaceComponentAsset>>())
   const hydratedComponentSlot = useRef<number | null>(null)
   const catalogDetailsRef = useRef<Record<string, FaceCatalogItem>>({})
@@ -182,6 +192,14 @@ export function FaceComponentsWorkspace() {
     ? Math.min((stageSize.width - 24) / head.width, (stageSize.height - 24) / head.height) * .9
     : 0
   const selectedCategory = partCategory(selectedPart)
+  const libraryAssets = assets.filter((asset) => !isRightLibraryAsset(asset) || !assets.some((candidate) => {
+    const left = details[candidate.id]
+    const right = details[asset.id]
+    return left && right && !isRightLibraryAsset(candidate) && sameLibraryPair(left, right)
+  }))
+  const markedGroupCount = libraryAssets.filter((asset) => markedForDeletion.includes(asset.id)).length
+    + noseCatalog.filter((item) => markedForDeletion.includes(item.id)).length
+    + mouthCatalog.filter((item) => markedForDeletion.includes(item.id)).length
   const selectedId = selectedAssets[selectedPart] ?? (linked[selectedCategory.kind] && selectedPart.endsWith('right') ? selectedAssets[selectedCategory.parts[0]] : undefined)
   const selectedAsset = selectedId ? details[selectedId] : undefined
   const componentPair = categories.find((category) => category.kind === libraryCategory)
@@ -224,6 +242,7 @@ export function FaceComponentsWorkspace() {
     transform: `translate(-50%,-50%) rotate(${noseTransform.rotation}deg)`
   } : undefined
   componentDetailsRef.current = details
+  selectedAssetsRef.current = selectedAssets
   catalogDetailsRef.current = { ...noseDetails, ...mouthDetails }
 
   function queueSave(key: string, run: () => Promise<void>) {
@@ -256,10 +275,10 @@ export function FaceComponentsWorkspace() {
     if (hydratedComponentSlot.current !== modelSlot) return
     try {
       const stored = readComponentSelections()
-      stored[modelSlot] = { parts: selectedAssets, linked }
+      stored[modelSlot] = { parts: selectedAssets, linked, moveTogether }
       window.localStorage.setItem(COMPONENT_SELECTION_STORAGE_KEY, JSON.stringify(stored))
     } catch { /* The saved assets remain available in the library. */ }
-  }, [modelSlot, selectedAssets, linked])
+  }, [modelSlot, selectedAssets, linked, moveTogether])
   function updateGuide(patch: Partial<FaceGuide>) {
     setGuidesByModel((current) => ({ ...current, [modelSlot]: { ...(current[modelSlot] ?? defaultGuide), ...patch } }))
   }
@@ -314,6 +333,7 @@ export function FaceComponentsWorkspace() {
       setModel(project); setAssets(list); setDetails(Object.fromEntries(loadedAssets.map((item) => [item.id, item])))
       setSelectedAssets(savedParts)
       setLinked({ eye: true, pupil: true, 'eye-closed': true, eyebrow: true, ...savedSelection?.linked })
+      setMoveTogether({ eye: false, pupil: false, 'eye-closed': false, eyebrow: false, ...savedSelection?.moveTogether })
       hydratedComponentSlot.current = modelSlot
     }).catch((reason) => { if (active) setError(String(reason)) })
     return () => { active = false }
@@ -352,11 +372,12 @@ export function FaceComponentsWorkspace() {
       const baseTransform = initialTransform(kind, head, image.width, image.height)
       const imported: FaceComponentAsset[] = []
       const assigned: Partial<Record<PartId, string>> = {}
+      const pairId = crypto.randomUUID()
       for (const [index, side] of category.parts.entries()) {
         const defaultTransform: FaceTransform = index === 0 ? baseTransform : { ...baseTransform, x: kind === 'pupil' ? -baseTransform.x : head.width - baseTransform.x, rotation: -baseTransform.rotation, flipX: true }
         const anchor = kind === 'eye' || kind === 'pupil' || kind === 'eye-closed' ? importAnchorsByModel[modelSlot]?.[kind] : undefined
         const transform = anchor ? alignImportedFacePiece(kind as AlignableFaceKind, index === 0 ? 'left' : 'right', image.width, image.height, anchor) : defaultTransform
-        const asset: FaceComponentAssetSave = { schemaVersion: 1, id: crypto.randomUUID(), modelSlot, kind, name: `${baseName} · ${category.names[index]}`.slice(0, 120), width: image.width, height: image.height, defaultTransform: transform, rightSidePositioned: index === 1, updatedAt: new Date().toISOString() }
+        const asset: FaceComponentAssetSave = { schemaVersion: 1, id: crypto.randomUUID(), modelSlot, kind, name: `${baseName} · ${category.names[index]}`.slice(0, 120), width: image.width, height: image.height, defaultTransform: transform, rightSidePositioned: index === 1, pairId, updatedAt: new Date().toISOString() }
         await window.desktop.saveFaceComponentAsset(modelSlot, asset, image.dataUrl)
         savedIds.push(asset.id)
         assigned[side] = asset.id
@@ -383,6 +404,7 @@ export function FaceComponentsWorkspace() {
       const assigned: Partial<Record<PartId, string>> = {}
       for (const piece of pieces) {
         const category = categories.find((entry) => entry.kind === piece.kind)!
+        const pairId = crypto.randomUUID()
         for (const [index, side] of category.parts.entries()) {
           const baseTransform = initialTransform(piece.kind, head, piece.width, piece.height)
           const defaultTransform: FaceTransform = index === 0 ? baseTransform : {
@@ -394,7 +416,7 @@ export function FaceComponentsWorkspace() {
           const asset: FaceComponentAssetSave = {
             schemaVersion: 1, id: crypto.randomUUID(), modelSlot, kind: piece.kind,
             name: `${baseName} · ${category.names[index]}`.slice(0, 120), width: piece.width, height: piece.height,
-            defaultTransform: transform, rightSidePositioned: index === 1, updatedAt: new Date().toISOString()
+            defaultTransform: transform, rightSidePositioned: index === 1, pairId, updatedAt: new Date().toISOString()
           }
           await window.desktop.saveFaceComponentAsset(modelSlot, asset, piece.dataUrl)
           savedIds.push(asset.id)
@@ -421,7 +443,7 @@ export function FaceComponentsWorkspace() {
     const copy: FaceComponentAssetSave = {
       schemaVersion: 1, id: crypto.randomUUID(), modelSlot, kind,
       name: `${baseName} · ${partCategory(side).names[right ? 1 : 0]}`.slice(0, 120),
-      width: source.width, height: source.height, rightSidePositioned: right,
+      width: source.width, height: source.height, rightSidePositioned: right, pairId: source.pairId ?? source.id,
       defaultTransform: {
         ...source.defaultTransform,
         x: kind === 'pupil' ? -source.defaultTransform.x : head.width - source.defaultTransform.x,
@@ -432,6 +454,7 @@ export function FaceComponentsWorkspace() {
     await window.desktop.saveFaceComponentAsset(modelSlot, copy, source.dataUrl)
     const loaded: FaceComponentAsset = { ...copy, dataUrl: source.dataUrl }
     componentDetailsRef.current = { ...componentDetailsRef.current, [copy.id]: loaded }
+    selectedAssetsRef.current = { ...selectedAssetsRef.current, [side]: copy.id }
     setDetails((current) => ({ ...current, [copy.id]: loaded }))
     setAssets((current) => [copy, ...current])
     setSelectedAssets((current) => ({ ...current, [side]: copy.id }))
@@ -461,6 +484,12 @@ export function FaceComponentsWorkspace() {
     const category = partCategory(selectedPart)
     const otherSide = selectedPart === category.parts[0] ? category.parts[1] : category.parts[0]
     const chosen = details[asset.id]
+    const companion = chosen && selectedPart.endsWith('right') ? assets.map((item) => details[item.id]).find((item) => item && sameLibraryPair(chosen, item)) : undefined
+    if (companion) {
+      setSelectedAssets((current) => ({ ...current, [selectedPart]: companion.id }))
+      setLinked((current) => ({ ...current, [category.kind]: false }))
+      return
+    }
     const needsCopy = chosen && (selectedAssets[otherSide] === asset.id || selectedPart.endsWith('right') !== Boolean(chosen.rightSidePositioned))
     if (needsCopy) {
       setBusy(true); setError('')
@@ -518,6 +547,17 @@ export function FaceComponentsWorkspace() {
       return
     }
     if (!selectedAsset) return
+    if (moveTogether[selectedCategory.kind] && head) {
+      if (patch.x !== undefined) void movePair(selectedCategory.kind, 'x', pairX + patch.x - selectedAsset.defaultTransform.x)
+      if (patch.y !== undefined) void movePair(selectedCategory.kind, 'y', pairY + patch.y - selectedAsset.defaultTransform.y)
+      const individualPatch: Partial<FaceTransform> = {}
+      if (patch.scaleX !== undefined) individualPatch.scaleX = patch.scaleX
+      if (patch.scaleY !== undefined) individualPatch.scaleY = patch.scaleY
+      if (patch.rotation !== undefined) individualPatch.rotation = patch.rotation
+      if (patch.flipX !== undefined) individualPatch.flipX = patch.flipX
+      if (Object.keys(individualPatch).length > 0) saveComponentTransform(selectedAsset, individualPatch)
+      return
+    }
     saveComponentTransform(selectedAsset, patch)
   }
 
@@ -553,8 +593,8 @@ export function FaceComponentsWorkspace() {
   async function movePair(kind: FaceComponentKind, axis: 'x' | 'y', target: number) {
     if (!head) return
     const category = categories.find((entry) => entry.kind === kind)!
-    const leftId = selectedAssets[category.parts[0]]
-    const rightId = selectedAssets[category.parts[1]]
+    const leftId = selectedAssetsRef.current[category.parts[0]]
+    const rightId = selectedAssetsRef.current[category.parts[1]]
     const left = leftId ? componentDetailsRef.current[leftId] : undefined
     if (!left) return
     let right = rightId ? componentDetailsRef.current[rightId] : undefined
@@ -705,7 +745,7 @@ export function FaceComponentsWorkspace() {
     <header className="face-components-toolbar"><label>Modelo<select value={modelSlot} disabled={busy} onChange={(event) => setModelSlot(Number(event.target.value))}>{models.map((entry, index) => entry && <option key={index + 1} value={index + 1}>Modelo {String(index + 1).padStart(2, '0')} · {entry.name}</option>)}</select></label><span>Selecione uma peça e arraste-a na prévia para mover</span></header>
     <div className="face-components-body">
       <aside className="face-components-library">
-        <header><strong>Biblioteca</strong><small>{assets.length + noseCatalog.length + mouthCatalog.length} assets</small></header>
+        <header><strong>Biblioteca</strong><small>{libraryAssets.length + noseCatalog.length + mouthCatalog.length} assets</small></header>
         <div className="face-components-library-actions"><button type="button" onClick={() => setOpenModal('import')} disabled={!head || busy}><Icon name="plus" /> Importar</button><button type="button" onClick={() => { setMarkedForDeletion([]); setOpenModal('delete') }} disabled={busy}><Icon name="trash" /> Excluir</button></div>
         <nav className="face-components-library-tabs" aria-label="Categorias da biblioteca" role="tablist">
           {categories.map((category) => <button key={category.kind} type="button" role="tab" aria-selected={libraryCategory === category.kind} className={libraryCategory === category.kind ? 'active' : ''} onClick={() => { setLibraryCategory(category.kind); setSelectedPart(category.parts[0]) }}>{category.label}</button>)}
@@ -713,11 +753,15 @@ export function FaceComponentsWorkspace() {
           <button type="button" role="tab" aria-selected={libraryCategory === 'mouth'} className={libraryCategory === 'mouth' ? 'active' : ''} onClick={() => setLibraryCategory('mouth')}>Boca</button>
         </nav>
         <section className="face-components-library-category" role="tabpanel" aria-label={`Assets de ${libraryCategory === 'mouth' ? 'Boca' : libraryCategory === 'nose' ? 'Nariz' : selectedCategory.label}`}>
-          <h3>{libraryCategory === 'mouth' ? 'Boca' : libraryCategory === 'nose' ? 'Nariz' : selectedCategory.label} <small>{libraryCategory === 'mouth' ? mouthCatalog.filter((item) => item.category === mouthKind).length : libraryCategory === 'nose' ? noseCatalog.length : assets.filter((asset) => asset.kind === libraryCategory).length}</small></h3>
+          <h3>{libraryCategory === 'mouth' ? 'Boca' : libraryCategory === 'nose' ? 'Nariz' : selectedCategory.label} <small>{libraryCategory === 'mouth' ? mouthCatalog.filter((item) => item.category === mouthKind).length : libraryCategory === 'nose' ? noseCatalog.length : libraryAssets.filter((asset) => asset.kind === libraryCategory).length}</small></h3>
           {libraryCategory === 'mouth' && <div className="face-components-mouth-variants"><button type="button" className={mouthKind === 'mouth-closed' ? 'active' : ''} onClick={() => { setMouthKind('mouth-closed'); setSelectedMouthId(mouthCatalog.find((item) => item.category === 'mouth-closed')?.id ?? null) }}>Fechadas</button><button type="button" className={mouthKind === 'mouth-open' ? 'active' : ''} onClick={() => { setMouthKind('mouth-open'); setSelectedMouthId(mouthCatalog.find((item) => item.category === 'mouth-open')?.id ?? null) }}>Abertas</button></div>}
           <div className="face-components-assets">
-            {libraryCategory === 'mouth' ? mouthCatalog.filter((item) => item.category === mouthKind).map((item) => <button key={item.id} className={selectedMouthId === item.id ? 'active' : ''} onClick={() => setSelectedMouthId(item.id)} type="button"><img src={mouthDetails[item.id]?.pieces[0]?.dataUrl} alt="" /><span>{item.name}</span></button>) : libraryCategory === 'nose' ? noseCatalog.map((item) => <button key={item.id} className={selectedNoseId === item.id ? 'active' : ''} onClick={() => setSelectedNoseId(item.id)} type="button"><img src={noseDetails[item.id]?.pieces[0]?.dataUrl} alt="" /><span>{item.name}</span></button>) : assets.filter((asset) => asset.kind === libraryCategory).map((asset) => <button key={asset.id} className={selectedId === asset.id ? 'active' : ''} onClick={() => void chooseLibraryAsset(asset)} disabled={busy} type="button"><img src={details[asset.id]?.dataUrl} alt="" /><span>{asset.name}</span></button>)}
-            {(libraryCategory === 'mouth' ? !mouthCatalog.some((item) => item.category === mouthKind) : libraryCategory === 'nose' ? noseCatalog.length === 0 : !assets.some((asset) => asset.kind === libraryCategory)) && <small>Nenhum asset salvo nesta categoria</small>}
+            {libraryCategory === 'mouth' ? mouthCatalog.filter((item) => item.category === mouthKind).map((item) => <button key={item.id} className={selectedMouthId === item.id ? 'active' : ''} onClick={() => setSelectedMouthId(item.id)} type="button"><img src={mouthDetails[item.id]?.pieces[0]?.dataUrl} alt="" /><span>{item.name}</span></button>) : libraryCategory === 'nose' ? noseCatalog.map((item) => <button key={item.id} className={selectedNoseId === item.id ? 'active' : ''} onClick={() => setSelectedNoseId(item.id)} type="button"><img src={noseDetails[item.id]?.pieces[0]?.dataUrl} alt="" /><span>{item.name}</span></button>) : libraryAssets.filter((asset) => asset.kind === libraryCategory).map((asset) => {
+              const displayed = details[asset.id]
+              const active = selectedId === asset.id || selectedPart.endsWith('right') && displayed && selectedAsset && sameLibraryPair(displayed, selectedAsset)
+              return <button key={asset.id} className={active ? 'active' : ''} onClick={() => void chooseLibraryAsset(asset)} disabled={busy} type="button"><img src={displayed?.dataUrl} alt="" /><span>{libraryBaseName(asset.name)}</span></button>
+            })}
+            {(libraryCategory === 'mouth' ? !mouthCatalog.some((item) => item.category === mouthKind) : libraryCategory === 'nose' ? noseCatalog.length === 0 : !libraryAssets.some((asset) => asset.kind === libraryCategory)) && <small>Nenhum asset salvo nesta categoria</small>}
           </div>
         </section>
       </aside>
@@ -746,16 +790,19 @@ export function FaceComponentsWorkspace() {
             return <button key={part} className={selectedPart === part ? 'active' : ''} type="button" aria-pressed={selectedPart === part} disabled={busy} onClick={() => void chooseComponentSide(part)}><span className="face-component-side-image">{displayed && <img src={displayed.dataUrl} alt="" />}</span><span><strong>{index === 0 ? 'Esquerda' : 'Direita'}</strong><small>{index === 1 && linked[componentPair.kind] ? 'Imagem espelhada' : asset ? 'Ajustar este lado' : 'Escolha uma peça'}</small></span></button>
           })}
         </div>}
-        {componentPair && <label className="face-component-link"><input type="checkbox" checked={linked[componentPair.kind]} onChange={(event) => {
-          if (event.target.checked) { setLinked((current) => ({ ...current, [componentPair.kind]: true })); setSelectedPart(componentPair.parts[0]) }
-          else void chooseComponentSide(componentPair.parts[1])
-        }} /> Espelhar imagem da esquerda</label>}
+        {componentPair && <div className="face-component-link-options">
+          <label className="face-component-link"><input type="checkbox" checked={linked[componentPair.kind]} onChange={(event) => {
+            if (event.target.checked) { setLinked((current) => ({ ...current, [componentPair.kind]: true })); setSelectedPart(componentPair.parts[0]) }
+            else void chooseComponentSide(componentPair.parts[1])
+          }} /> Espelhar imagem da esquerda</label>
+          <button className={`face-component-move-together${moveTogether[componentPair.kind] ? ' active' : ''}`} type="button" aria-pressed={moveTogether[componentPair.kind]} disabled={!leftPairAsset || busy} onClick={() => setMoveTogether((current) => ({ ...current, [componentPair.kind]: !current[componentPair.kind] }))}>Mover junto</button>
+        </div>}
         {alignableKind && <section className="face-component-import-anchor" aria-label="Fixar posição e tamanho para novas importações">
           <div><strong>Referência de importação</strong><small>{currentImportAnchor ? 'Novas peças terão a posição e o tamanho desta referência.' : 'Ajuste a primeira peça e fixe para as próximas folhas.'}</small></div>
           <button type="button" disabled={!leftPairAsset} onClick={() => fixImportAnchor(alignableKind)}>{currentImportAnchor ? 'Atualizar fixação' : 'Fixar posição e tamanho'}</button>
           {currentImportAnchor && <button className="face-component-import-anchor-release" type="button" onClick={() => releaseImportAnchor(alignableKind)}>Desfixar</button>}
         </section>}
-        {componentPair && head && leftPairAsset && <section className="face-component-pair-controls" aria-label={`Deslocamento conjunto de ${componentPair.label}`}>
+        {componentPair && head && leftPairAsset && moveTogether[componentPair.kind] && <section className="face-component-pair-controls" aria-label={`Deslocamento conjunto de ${componentPair.label}`}>
           <strong>Deslocamento conjunto</strong><small>Move esquerda e direita na mesma direção.</small>
           <div className="face-component-nudge-pad">
             <button type="button" aria-label="Subir os dois lados" onClick={() => void movePair(componentPair.kind, 'y', pairY - 1)}>↑</button>
@@ -769,8 +816,8 @@ export function FaceComponentsWorkspace() {
         {head && selectedTransform && (activeComponent || selectedCatalogItem) ? <>
           {!componentPair && <div className="face-component-current"><img src={activeComponent?.dataUrl ?? selectedCatalogPiece?.dataUrl} alt="" /><span><strong>{activeComponent?.name ?? selectedCatalogItem?.name}</strong><small>{selectedCatalogItem ? selectedCatalogItem.category === 'nose' ? 'Nariz' : selectedCatalogItem.category === 'mouth-open' ? 'Boca aberta' : 'Boca fechada' : selectedCategory.names[selectedPart.endsWith('right') ? 1 : 0]}</small></span></div>}
           {selectedCatalogItem && <label className="face-component-variant">Variante<select value={selectedCatalogItem.category === 'nose' ? selectedCatalogItem.selectedNose : selectedCatalogItem.selectedExpression} onChange={(event) => updateCatalogVariant(Number(event.target.value))}>{selectedCatalogItem.pieces.map((piece) => <option key={piece.id} value={piece.index}>{selectedCatalogItem.category === 'nose' ? 'Nariz' : 'Expressão'} {String(piece.index + 1).padStart(2, '0')}</option>)}</select></label>}
-          {componentPair && <strong className="face-component-individual-title">Ajuste individual · {selectedPart.endsWith('right') ? 'direita' : 'esquerda'}</strong>}
-          <FaceTransformControls head={head} transform={selectedTransform} sourceWidth={selectedSourceWidth} sourceHeight={selectedSourceHeight} pupil={activeComponent?.kind === 'pupil'} onChange={updateTransform} onReset={() => updateTransform(selectedCatalogItem ? initialCatalogTransform(head, selectedCatalogItem) : initialTransform(activeComponent!.kind, head, activeComponent!.width, activeComponent!.height))} />
+          {componentPair && <strong className="face-component-individual-title">{moveTogether[componentPair.kind] ? 'Tamanho e rotação' : 'Ajuste individual'} · {selectedPart.endsWith('right') ? 'direita' : 'esquerda'}</strong>}
+          <FaceTransformControls head={head} transform={selectedTransform} sourceWidth={selectedSourceWidth} sourceHeight={selectedSourceHeight} pupil={activeComponent?.kind === 'pupil'} moveTogether={componentPair ? moveTogether[componentPair.kind] : false} onChange={updateTransform} onReset={() => updateTransform(selectedCatalogItem ? initialCatalogTransform(head, selectedCatalogItem) : initialTransform(activeComponent!.kind, head, activeComponent!.width, activeComponent!.height))} />
         </> : <p>Selecione uma peça na Biblioteca para ajustar posição, tamanho e rotação.</p>}
         <section className="face-components-guide-controls" aria-label="Guias de alinhamento do rosto">
           <header><strong>Guias de desenho</strong><label><input type="checkbox" checked={guide.visible} onChange={(event) => updateGuide({ visible: event.target.checked })} /> Mostrar</label></header>
@@ -794,10 +841,17 @@ export function FaceComponentsWorkspace() {
           <label className="face-components-import-option"><span className="face-components-import-sheet"><span>7 × 3</span></span><strong>Bocas fechadas</strong><small>Folha com 21 expressões fechadas.</small><span className="face-components-import-action"><Icon name="plus" /> Escolher folha</span><input type="file" accept="image/png,image/jpeg,image/webp" disabled={busy || !head} onChange={(event) => void importCatalogSheet('mouth-closed', event)} /></label>
           <label className="face-components-import-option"><span className="face-components-import-sheet"><span>7 × 3</span></span><strong>Bocas abertas</strong><small>Folha com 21 expressões abertas.</small><span className="face-components-import-action"><Icon name="plus" /> Escolher folha</span><input type="file" accept="image/png,image/jpeg,image/webp" disabled={busy || !head} onChange={(event) => void importCatalogSheet('mouth-open', event)} /></label>
         </div> : <><div className="face-components-delete-list">
-          {categories.map((category) => <section key={category.kind}><h3>{category.label}</h3>{assets.filter((asset) => asset.kind === category.kind).map((asset) => <label key={asset.id} className="face-components-delete-item"><input type="checkbox" checked={markedForDeletion.includes(asset.id)} disabled={busy} onChange={(event) => setMarkedForDeletion((current) => event.target.checked ? [...current, asset.id] : current.filter((id) => id !== asset.id))} /><img src={details[asset.id]?.dataUrl} alt="" /><span>{asset.name}</span></label>)}{!assets.some((asset) => asset.kind === category.kind) && <small>Nenhuma peça importada</small>}</section>)}
+          {categories.map((category) => <section key={category.kind}><h3>{category.label}</h3>{libraryAssets.filter((asset) => asset.kind === category.kind).map((asset) => {
+            const left = details[asset.id]
+            const groupIds = [asset.id, ...assets.filter((candidate) => {
+              const right = details[candidate.id]
+              return left && right && candidate.id !== asset.id && sameLibraryPair(left, right)
+            }).map((candidate) => candidate.id)]
+            return <label key={asset.id} className="face-components-delete-item"><input type="checkbox" checked={groupIds.every((id) => markedForDeletion.includes(id))} disabled={busy} onChange={(event) => setMarkedForDeletion((current) => event.target.checked ? [...new Set([...current, ...groupIds])] : current.filter((id) => !groupIds.includes(id)))} /><img src={left?.dataUrl} alt="" /><span>{libraryBaseName(asset.name)}</span></label>
+          })}{!libraryAssets.some((asset) => asset.kind === category.kind) && <small>Nenhuma peça importada</small>}</section>)}
           <section><h3>Nariz</h3>{noseCatalog.map((item) => <label key={item.id} className="face-components-delete-item"><input type="checkbox" checked={markedForDeletion.includes(item.id)} disabled={busy || item.id.startsWith('legacy_')} onChange={(event) => setMarkedForDeletion((current) => event.target.checked ? [...current, item.id] : current.filter((id) => id !== item.id))} /><img src={noseDetails[item.id]?.pieces[0]?.dataUrl} alt="" /><span>{item.name}{item.id.startsWith('legacy_') ? ' · legado' : ''}</span></label>)}{noseCatalog.length === 0 && <small>Nenhuma peça importada</small>}</section>
           <section><h3>Boca</h3>{mouthCatalog.map((item) => <label key={item.id} className="face-components-delete-item"><input type="checkbox" checked={markedForDeletion.includes(item.id)} disabled={busy || item.id.startsWith('legacy_')} onChange={(event) => setMarkedForDeletion((current) => event.target.checked ? [...current, item.id] : current.filter((id) => id !== item.id))} /><img src={mouthDetails[item.id]?.pieces[0]?.dataUrl} alt="" /><span>{item.name}{item.id.startsWith('legacy_') ? ' · legado' : ''}</span></label>)}{mouthCatalog.length === 0 && <small>Nenhuma peça importada</small>}</section>
-        </div><footer><span>{markedForDeletion.length} {markedForDeletion.length === 1 ? 'peça selecionada' : 'peças selecionadas'}</span><button type="button" className="face-components-delete-confirm" disabled={busy || markedForDeletion.length === 0} onClick={() => void removeSelectedAssets()}>Excluir selecionadas</button></footer></>}
+        </div><footer><span>{markedGroupCount} {markedGroupCount === 1 ? 'peça selecionada' : 'peças selecionadas'}</span><button type="button" className="face-components-delete-confirm" disabled={busy || markedForDeletion.length === 0} onClick={() => void removeSelectedAssets()}>Excluir selecionadas</button></footer></>}
       </div>
     </div>}
   </section>
