@@ -760,7 +760,7 @@ export function FaceComponentsWorkspace() {
 
   function beginPreviewDrag(event: ReactPointerEvent<HTMLImageElement>, key: string, invertX = false, pupil = false) {
     if (event.button !== 0 || !event.isPrimary || !head || !selectedTransform || key !== activePreviewKey) return
-    const canvas = event.currentTarget.parentElement
+    const canvas = event.currentTarget.closest('.face-components-preview-canvas')
     if (!canvas) return
     const bounds = canvas.getBoundingClientRect()
     if (bounds.width <= 0 || bounds.height <= 0) return
@@ -868,6 +868,41 @@ export function FaceComponentsWorkspace() {
     const style: CSSProperties = { left: `${x / head.width * 100}%`, top: `${localY / head.height * 100}%`, width: `${width / head.width * 100}%`, height: `${height / head.height * 100}%`, transform: `translate(-50%,-50%) rotate(${transform.rotation * (mirroredPosition ? -1 : 1)}deg) scaleX(${shouldFlip ? -1 : 1})` }
     const dragKey = `${id}:${assetId}`
     const canDrag = dragKey === activePreviewKey && !openEye
+    if (category.kind === 'pupil' && eyeAsset && eyeTransform) {
+      const eyePartId = rightSide ? 'eye-right' : 'eye-left'
+      const selectedEyeId = overrides[eyePartId] ?? selectedAssets[eyePartId] ?? (rightSide ? selectedAssets['eye-left'] : undefined)
+      const sideEye = selectedEyeId ? details[selectedEyeId] : undefined
+      const leftEye = leftEyeId ? details[leftEyeId] : undefined
+      const maskImage = rightSide && linked.eye ? leftEye ?? sideEye : sideEye
+      if (sideEye && maskImage) {
+        const eyeTransform = sideEye.defaultTransform
+        const eyePhysicalRight = rightSide && sideEye.rightSidePositioned === true
+        const eyeMirrored = rightSide && !eyePhysicalRight
+        const eyeX = eyeMirrored ? head.width - eyeTransform.x : eyeTransform.x
+        const eyeRotation = eyeTransform.rotation * (eyeMirrored ? -1 : 1)
+        const eyeFlip = rightSide && linked.eye ? !Boolean(leftEye?.defaultTransform.flipX) : Boolean(eyeTransform.flipX)
+        const maskStyle: CSSProperties = {
+          left: `${eyeX / head.width * 100}%`, top: `${eyeTransform.y / head.height * 100}%`,
+          width: `${maskImage.width * eyeTransform.scaleX / head.width * 100}%`,
+          height: `${maskImage.height * eyeTransform.scaleY / head.height * 100}%`,
+          transform: `translate(-50%,-50%) rotate(${eyeRotation}deg) scaleX(${eyeFlip ? -1 : 1})`,
+          maskImage: `url(${maskImage.dataUrl})`, WebkitMaskImage: `url(${maskImage.dataUrl})`
+        }
+        const pupilOffsetX = rightSide && !physicalRight && linked.pupil ? -transform.x : transform.x
+        const eyeFlipDirection = eyeFlip ? -1 : 1
+        const pupilRotation = transform.rotation * (rightSide && !physicalRight ? -1 : 1) * eyeFlipDirection
+        const pupilFlip = shouldFlip !== eyeFlip
+        const pupilStyle: CSSProperties = {
+          left: `${50 + pupilOffsetX / (eyeFlipDirection * eyeTransform.scaleX * maskImage.width) * 100}%`,
+          top: `${50 + transform.y / (eyeTransform.scaleY * maskImage.height) * 100}%`,
+          width: `${transform.scaleX * 100}%`, height: `${transform.scaleY * 100}%`,
+          transform: `translate(-50%,-50%) rotate(${pupilRotation}deg) scaleX(${pupilFlip ? -1 : 1})`
+        }
+        return <div key={`${id}-${assetId}`} className={`face-component-pupil-mask${canDrag ? ` face-component-pupil-mask-draggable${draggingPreview ? ' is-dragging' : ''}` : ''}`} style={maskStyle}>
+          <img className="face-component-pupil-image" src={imageAsset.dataUrl} alt={category.names[rightSide ? 1 : 0]} style={pupilStyle} draggable={false} title={canDrag ? 'Arraste a pupila dentro do olho' : undefined} onPointerDown={canDrag ? (event) => beginPreviewDrag(event, dragKey, false, true) : undefined} onPointerMove={canDrag ? movePreviewDrag : undefined} onPointerUp={canDrag ? endPreviewDrag : undefined} onPointerCancel={canDrag ? endPreviewDrag : undefined} onLostPointerCapture={canDrag ? endPreviewDrag : undefined} />
+        </div>
+      }
+    }
     return <img key={`${id}-${assetId}`} className={`face-component-layer${canDrag ? ` face-component-layer-draggable${draggingPreview ? ' is-dragging' : ''}` : ''}`} src={imageAsset.dataUrl} alt={category.names[rightSide ? 1 : 0]} style={style} draggable={false} title={canDrag ? 'Arraste para mover esta peça' : undefined} onPointerDown={canDrag ? (event) => beginPreviewDrag(event, dragKey, mirroredPosition || rightSide && !physicalRight && category.kind === 'pupil' && linked.pupil, category.kind === 'pupil') : undefined} onPointerMove={canDrag ? movePreviewDrag : undefined} onPointerUp={canDrag ? endPreviewDrag : undefined} onPointerCancel={canDrag ? endPreviewDrag : undefined} onLostPointerCapture={canDrag ? endPreviewDrag : undefined} />
   }
 

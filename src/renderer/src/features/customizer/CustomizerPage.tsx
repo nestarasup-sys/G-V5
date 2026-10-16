@@ -751,6 +751,7 @@ async function drawFaceCatalogOverlay(context: CanvasRenderingContext2D, artwork
     if (asset) loaded.set(part, asset)
   }))
   const layerOrder: FaceComponentPartId[] = ['brow-left', 'brow-right', 'eye-left', 'eye-right', 'pupil-left', 'pupil-right']
+  let pupilClipCanvas: HTMLCanvasElement | null = null
   for (const part of layerOrder) {
     const category = part.startsWith('eye') ? 'eye' : part.startsWith('pupil') ? 'pupil' : 'eyebrow'
     const linked = appearance.linkedSides?.[category] !== false
@@ -768,6 +769,7 @@ async function drawFaceCatalogOverlay(context: CanvasRenderingContext2D, artwork
     let scaleY = mirroredTransform.scaleY
     let sourceWidth = asset.width * scaleX
     let sourceHeight = asset.height * scaleY
+    let pupilEyeClip: { asset: FaceComponentAsset; transform: FaceComponentAsset['defaultTransform']; flipX: boolean; colors?: HairColorOverrides } | undefined
     if (category === 'pupil') {
       const eyePart: FaceComponentPartId = isRight ? 'eye-right' : 'eye-left'
       const eyeAsset = loaded.get(eyePart)
@@ -776,6 +778,7 @@ async function drawFaceCatalogOverlay(context: CanvasRenderingContext2D, artwork
       const eyeTransformBase = eyeSelection?.transform ?? eyeAsset?.defaultTransform
       if (eyeTransformBase) {
         const eyeTransform = isRight && !eyeAsset?.rightSidePositioned ? { ...eyeTransformBase, x: sourceHead.width - eyeTransformBase.x, rotation: -eyeTransformBase.rotation } : eyeTransformBase
+        if (eyeAsset) pupilEyeClip = { asset: eyeAsset, transform: eyeTransform, flipX: (isRight && eyeLinked) !== Boolean(eyeTransformBase.flipX), colors: eyeSelection?.colors }
         const pupilOffsetX = isRight && !asset.rightSidePositioned ? -transform.x : transform.x
         const pupilAngle = eyeTransform.rotation * Math.PI / 180
         localX = eyeTransform.x + pupilOffsetX * Math.cos(pupilAngle) - transform.y * Math.sin(pupilAngle)
@@ -796,9 +799,33 @@ async function drawFaceCatalogOverlay(context: CanvasRenderingContext2D, artwork
     const height = sourceHeight / sourceHead.height * targetHead.height
     try {
       const image = await loadHairTintedImage(asset.dataUrl, selectedPart.colors)
-      context.save(); context.translate(x, y); context.rotate((targetHead.rotation + drawRotation) * Math.PI / 180)
-      if ((isRight && linked) !== Boolean(transform.flipX)) context.scale(-1, 1)
-      context.drawImage(image, -width / 2, -height / 2, width, height); context.restore()
+      if (category === 'pupil' && pupilEyeClip) {
+        if (!pupilClipCanvas) { pupilClipCanvas = document.createElement('canvas'); pupilClipCanvas.width = context.canvas.width; pupilClipCanvas.height = context.canvas.height }
+        const clipped = pupilClipCanvas.getContext('2d')
+        if (clipped) {
+          clipped.clearRect(0, 0, pupilClipCanvas.width, pupilClipCanvas.height)
+          clipped.save(); clipped.translate(x, y); clipped.rotate((targetHead.rotation + drawRotation) * Math.PI / 180)
+          if ((isRight && linked) !== Boolean(transform.flipX)) clipped.scale(-1, 1)
+          clipped.drawImage(image, -width / 2, -height / 2, width, height); clipped.restore()
+
+          const eyeMask = await loadHairTintedImage(pupilEyeClip.asset.dataUrl, pupilEyeClip.colors)
+          const eyeLocalX = pupilEyeClip.transform.x / sourceHead.width * targetHead.width
+          const eyeLocalY = pupilEyeClip.transform.y / sourceHead.height * targetHead.height
+          const eyeX = targetHead.x + targetHead.width / 2 + (eyeLocalX - targetHead.width / 2) * Math.cos(radians) - (eyeLocalY - targetHead.height / 2) * Math.sin(radians)
+          const eyeY = targetHead.y + targetHead.height / 2 + (eyeLocalX - targetHead.width / 2) * Math.sin(radians) + (eyeLocalY - targetHead.height / 2) * Math.cos(radians)
+          const eyeWidth = pupilEyeClip.asset.width * pupilEyeClip.transform.scaleX / sourceHead.width * targetHead.width
+          const eyeHeight = pupilEyeClip.asset.height * pupilEyeClip.transform.scaleY / sourceHead.height * targetHead.height
+          clipped.save(); clipped.globalCompositeOperation = 'destination-in'; clipped.translate(eyeX, eyeY)
+          clipped.rotate((targetHead.rotation + pupilEyeClip.transform.rotation) * Math.PI / 180)
+          if (pupilEyeClip.flipX) clipped.scale(-1, 1)
+          clipped.drawImage(eyeMask, -eyeWidth / 2, -eyeHeight / 2, eyeWidth, eyeHeight); clipped.restore()
+          context.drawImage(pupilClipCanvas, 0, 0)
+        }
+      } else {
+        context.save(); context.translate(x, y); context.rotate((targetHead.rotation + drawRotation) * Math.PI / 180)
+        if ((isRight && linked) !== Boolean(transform.flipX)) context.scale(-1, 1)
+        context.drawImage(image, -width / 2, -height / 2, width, height); context.restore()
+      }
     } catch { /* Keep the rest of the face visible if one component asset is unavailable. */ }
   }
 }
