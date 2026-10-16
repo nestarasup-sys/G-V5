@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
-import type { FaceCatalogItem, FaceCatalogItemSave, FaceCatalogItemSummary, FaceComponentAsset, FaceComponentAssetSave, FaceComponentAssetSummary, FaceComponentKind, FaceDetailKind, FaceTransform, FabricatorProject, FabricatorSlotSummary, ModelPart } from '../../../../../shared/fabricator'
+import type { FaceAssetKind, FaceCatalogItem, FaceCatalogItemSave, FaceCatalogItemSummary, FaceComponentAsset, FaceComponentAssetSave, FaceComponentAssetSummary, FaceComponentKind, FaceDetailKind, FaceTransform, FabricatorProject, FabricatorSlotSummary, ModelPart } from '../../../../../shared/fabricator'
 import { Icon } from '../../../ui/components/Icon'
 import { usePreviewBackground } from '../usePreviewBackground'
 import { processFaceSheet } from './processFaceSheet'
@@ -16,6 +16,8 @@ type FaceWorkspaceMode = 'eyes' | 'face'
 type FaceGuide = { visible: boolean; verticalX: number; horizontalY: number; lowerHorizontalY: number; angle: number }
 type PreviewDrag = { pointerId: number; key: string; clientX: number; clientY: number; startX: number; startY: number; modelPerPixelX: number; modelPerPixelY: number; invertX: boolean; pupil: boolean }
 const GUIDE_STORAGE_KEY = 'gacha-nymi:face-dev-guides'
+const EYES_GUIDE_STORAGE_KEY = 'gacha-nymi:eyes-dev-guides'
+const FACE_GUIDE_STORAGE_KEY = 'gacha-nymi:rosto-dev-guides'
 const COMPONENT_SELECTION_STORAGE_KEY = 'gacha-nymi:face-dev-component-selections'
 const LEGACY_PUPIL_SELECTION_STORAGE_KEY = 'gacha-nymi:face-dev-pupil-selections'
 const FACE_IMPORT_ANCHORS_STORAGE_KEY = 'gacha-nymi:face-dev-import-anchors'
@@ -53,9 +55,9 @@ function sameLibraryPair(left: FaceComponentAsset, right: FaceComponentAsset): b
 }
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value))
 const guideValue = (value: unknown, fallback: number, min: number, max: number) => typeof value === 'number' && Number.isFinite(value) ? clamp(value, min, max) : fallback
-function readFaceGuides(): Record<number, FaceGuide> {
+function readFaceGuides(storageKey: string, fallbackStorageKey?: string): Record<number, FaceGuide> {
   try {
-    const stored = JSON.parse(window.localStorage.getItem(GUIDE_STORAGE_KEY) ?? '{}') as Record<string, Partial<FaceGuide>>
+    const stored = JSON.parse(window.localStorage.getItem(storageKey) ?? (fallbackStorageKey ? window.localStorage.getItem(fallbackStorageKey) : null) ?? '{}') as Record<string, Partial<FaceGuide>>
     if (!stored || typeof stored !== 'object' || Array.isArray(stored)) return {}
     return Object.fromEntries(Object.entries(stored).filter(([slot, value]) => /^\d+$/.test(slot) && value && typeof value === 'object').map(([slot, value]) => {
       const horizontalY = guideValue(value.horizontalY, defaultGuide.horizontalY, 10, 90)
@@ -179,9 +181,10 @@ function FaceTransformControls({ head, transform, sourceWidth, sourceHeight, pup
 
 export function FaceComponentsWorkspace({ mode }: { mode: FaceWorkspaceMode }) {
   const [previewBackground] = usePreviewBackground()
+  const guideStorageKey = mode === 'eyes' ? EYES_GUIDE_STORAGE_KEY : FACE_GUIDE_STORAGE_KEY
   const [models, setModels] = useState<FabricatorSlotSummary[]>([])
   const [modelSlot, setModelSlot] = useState(1)
-  const [guidesByModel, setGuidesByModel] = useState<Record<number, FaceGuide>>(readFaceGuides)
+  const [guidesByModel, setGuidesByModel] = useState<Record<number, FaceGuide>>(() => readFaceGuides(guideStorageKey, mode === 'eyes' ? GUIDE_STORAGE_KEY : undefined))
   const [importAnchorsByModel, setImportAnchorsByModel] = useState<FaceImportAnchors>(readFaceImportAnchors)
   const [model, setModel] = useState<FabricatorProject | null>(null)
   const [assets, setAssets] = useState<FaceComponentAssetSummary[]>([])
@@ -190,7 +193,7 @@ export function FaceComponentsWorkspace({ mode }: { mode: FaceWorkspaceMode }) {
   const [selectedPart, setSelectedPart] = useState<PartId>('eye-left')
   const [libraryCategory, setLibraryCategory] = useState<LibraryCategory>(() => mode === 'eyes' ? 'eye' : 'nose')
   const [selectedAssets, setSelectedAssets] = useState<Partial<Record<PartId, string>>>({})
-  const [faceDetailSelectionsByModel, setFaceDetailSelectionsByModel] = useState<FaceDetailSelections>(readFaceDetailSelections)
+  const [faceDetailSelectionsByModel, setFaceDetailSelectionsByModel] = useState<FaceDetailSelections>(() => mode === 'face' ? readFaceDetailSelections() : {})
   const selectedFaceDetails = faceDetailSelectionsByModel[modelSlot] ?? {}
   const [mouthCatalog, setMouthCatalog] = useState<FaceCatalogItemSummary[]>([])
   const [mouthDetails, setMouthDetails] = useState<Record<string, FaceCatalogItem>>({})
@@ -352,17 +355,18 @@ export function FaceComponentsWorkspace({ mode }: { mode: FaceWorkspaceMode }) {
   }
 
   useEffect(() => { void window.desktop.listFabricatorSlots().then((slots) => { setModels(slots); const first = slots.findIndex(Boolean); if (first >= 0) setModelSlot(first + 1) }).catch((reason) => setError(String(reason))) }, [])
-  useEffect(() => { try { window.localStorage.setItem(GUIDE_STORAGE_KEY, JSON.stringify(guidesByModel)) } catch { /* Keep guides available during this session. */ } }, [guidesByModel])
-  useEffect(() => { try { window.localStorage.setItem(FACE_IMPORT_ANCHORS_STORAGE_KEY, JSON.stringify(importAnchorsByModel)) } catch { setError('Não foi possível salvar a fixação de importação neste computador.') } }, [importAnchorsByModel])
-  useEffect(() => { try { window.localStorage.setItem(FACE_DETAIL_SELECTION_STORAGE_KEY, JSON.stringify(faceDetailSelectionsByModel)) } catch { /* Saved assets remain available in the library. */ } }, [faceDetailSelectionsByModel])
+  useEffect(() => { try { window.localStorage.setItem(guideStorageKey, JSON.stringify(guidesByModel)) } catch { /* Keep guides available during this session. */ } }, [guideStorageKey, guidesByModel])
+  useEffect(() => { if (mode !== 'eyes') return; try { window.localStorage.setItem(FACE_IMPORT_ANCHORS_STORAGE_KEY, JSON.stringify(importAnchorsByModel)) } catch { setError('Não foi possível salvar a fixação de importação neste computador.') } }, [mode, importAnchorsByModel])
+  useEffect(() => { if (mode !== 'face') return; try { window.localStorage.setItem(FACE_DETAIL_SELECTION_STORAGE_KEY, JSON.stringify(faceDetailSelectionsByModel)) } catch { /* Saved assets remain available in the library. */ } }, [mode, faceDetailSelectionsByModel])
   useEffect(() => {
+    if (mode !== 'eyes') return
     if (hydratedComponentSlot.current !== modelSlot) return
     try {
       const stored = readComponentSelections()
       stored[modelSlot] = { parts: selectedAssets, linked, moveTogether }
       window.localStorage.setItem(COMPONENT_SELECTION_STORAGE_KEY, JSON.stringify(stored))
     } catch { /* The saved assets remain available in the library. */ }
-  }, [modelSlot, selectedAssets, linked, moveTogether])
+  }, [mode, modelSlot, selectedAssets, linked, moveTogether])
   function updateGuide(patch: Partial<FaceGuide>) {
     setGuidesByModel((current) => ({ ...current, [modelSlot]: { ...(current[modelSlot] ?? defaultGuide), ...patch } }))
   }
@@ -412,25 +416,32 @@ export function FaceComponentsWorkspace({ mode }: { mode: FaceWorkspaceMode }) {
     let active = true
     hydratedComponentSlot.current = null
     setModel(null); setAssets([]); setDetails({}); setSelectedAssets({})
-    void Promise.all([window.desktop.loadFabricatorSlot(modelSlot), window.desktop.listFaceComponentAssets(modelSlot)]).then(async ([project, list]) => {
-      const loaded = await Promise.all(list.map((entry) => window.desktop.loadFaceComponentAsset(modelSlot, entry.id)))
+    const visibleKinds: FaceAssetKind[] = mode === 'eyes'
+      ? categories.map((category) => category.kind)
+      : faceDetailCategories.map((category) => category.kind)
+    void Promise.all([
+      window.desktop.loadFabricatorSlot(modelSlot),
+      Promise.all(visibleKinds.map((kind) => window.desktop.listFaceComponentAssets(modelSlot, kind))).then((lists) => lists.flat())
+    ]).then(async ([project, visibleList]) => {
+      const loaded = await Promise.all(visibleList.map((entry) => window.desktop.loadFaceComponentAsset(modelSlot, entry.id)))
       if (!active) return
       const loadedAssets = loaded.filter((item): item is FaceComponentAsset => Boolean(item))
       const assetKinds = new Map(loadedAssets.map((item) => [item.id, item.kind]))
-      const savedSelection = readComponentSelections()[modelSlot]
+      const savedSelection = mode === 'eyes' ? readComponentSelections()[modelSlot] : undefined
       const savedParts = Object.fromEntries(Object.entries(savedSelection?.parts ?? {}).filter(([part, id]) =>
         categories.some((category) => category.parts.includes(part as PartId) && assetKinds.get(id) === category.kind))) as Partial<Record<PartId, string>>
-      setModel(project); setAssets(list); setDetails(Object.fromEntries(loadedAssets.map((item) => [item.id, item])))
+      setModel(project); setAssets(visibleList); setDetails(Object.fromEntries(loadedAssets.map((item) => [item.id, item])))
       setSelectedAssets(savedParts)
       setLinked({ eye: true, pupil: true, 'eye-closed': true, eyebrow: true, ...savedSelection?.linked })
       setMoveTogether({ eye: false, pupil: false, 'eye-closed': false, eyebrow: false, ...savedSelection?.moveTogether })
       hydratedComponentSlot.current = modelSlot
     }).catch((reason) => { if (active) setError(String(reason)) })
     return () => { active = false }
-  }, [modelSlot])
+  }, [mode, modelSlot])
   useEffect(() => {
     let active = true
     setMouthCatalog([]); setMouthDetails({}); setNoseCatalog([]); setNoseDetails({})
+    if (mode !== 'face') return () => { active = false }
     void window.desktop.listFaceCatalog(modelSlot).then(async (list) => {
       const relevant = list.filter((item) => item.category === 'nose' || item.category === 'mouth-closed' || item.category === 'mouth-open')
       const mouths = relevant.filter((item) => item.category === 'mouth-closed' || item.category === 'mouth-open')
@@ -448,7 +459,7 @@ export function FaceComponentsWorkspace({ mode }: { mode: FaceWorkspaceMode }) {
       setSelectedNoseId((current) => noses.some((item) => item.id === current) ? current : noses[0]?.id ?? null)
     }).catch((reason) => { if (active) setError(String(reason)) })
     return () => { active = false }
-  }, [modelSlot])
+  }, [mode, modelSlot])
 
   async function cleanSelectedEyebrow() {
     if (!selectedAsset || selectedAsset.kind !== 'eyebrow' || busy) return
@@ -1023,7 +1034,7 @@ export function FaceComponentsWorkspace({ mode }: { mode: FaceWorkspaceMode }) {
         <div className="face-components-stage" ref={stageRef} style={{ '--preview-background': previewBackground } as CSSProperties}>
           {head && previewScale > 0 && <div className="face-components-preview-canvas" style={{ width: head.width * previewScale, height: head.height * previewScale }}>
             <img className="face-components-head" src={head.dataUrl} alt="Cabeça do modelo" />
-            {(libraryCategory === 'eye-closed'
+            {mode === 'eyes' && (libraryCategory === 'eye-closed'
               ? ['eye-closed-left','eye-closed-right','brow-left','brow-right']
               : ['eye-left','eye-right','pupil-left','pupil-right','brow-left','brow-right'] as PartId[]).map((id) => renderPart(id as PartId, true, selectedAssets))}
             {mode === 'face' && nosePiece && noseStyle && <img className={`face-component-layer${libraryCategory === 'nose' ? ` face-component-layer-draggable${draggingPreview ? ' is-dragging' : ''}` : ''}`} src={nosePiece.dataUrl} alt="Nariz selecionado" style={noseStyle} draggable={false} title={libraryCategory === 'nose' ? 'Arraste para mover esta peça' : undefined} onPointerDown={libraryCategory === 'nose' && selectedNose ? (event) => beginPreviewDrag(event, `nose:${selectedNose.id}`) : undefined} onPointerMove={libraryCategory === 'nose' ? movePreviewDrag : undefined} onPointerUp={libraryCategory === 'nose' ? endPreviewDrag : undefined} onPointerCancel={libraryCategory === 'nose' ? endPreviewDrag : undefined} onLostPointerCapture={libraryCategory === 'nose' ? endPreviewDrag : undefined} />}
