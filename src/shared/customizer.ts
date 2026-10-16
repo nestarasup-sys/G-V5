@@ -16,7 +16,14 @@ export type CharacterCustomization = {
   /** Facial features chosen from the read-only face library, isolated per character. */
   faceAppearance?: CustomizerFaceAppearance
   /** Front and back hair styles are selected independently per character. styleId reads legacy whole-style selections. */
-  hairAppearance?: { modelSlot: number; styleId?: string; frontStyleId?: string | null; backStyleId?: string | null }
+  hairAppearance?: {
+    modelSlot: number
+    styleId?: string
+    frontStyleId?: string | null
+    backStyleId?: string | null
+    /** Character-only recoloring overrides for the selected raster hair assets. */
+    colors?: Partial<Record<'base' | 'fade' | 'outline' | 'highlight' | 'accent', string>>
+  }
 }
 
 export type CharacterProportions = { scale: number; head: number; headWidth: number; headHeight: number; width: number; height: number }

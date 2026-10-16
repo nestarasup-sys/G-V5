@@ -36,6 +36,16 @@ function characterShapeScale(proportions: CharacterProportions): { x: number; y:
 }
 const wardrobeImageCache = new Map<string, Promise<HTMLImageElement>>()
 const skinTintImageCache = new Map<string, Promise<HTMLImageElement>>()
+const hairTintImageCache = new Map<string, Promise<HTMLImageElement>>()
+type HairColorRole = 'base' | 'fade' | 'outline' | 'highlight' | 'accent'
+type HairColorOverrides = Partial<Record<HairColorRole, string>>
+const hairColorControls: Array<{ id: HairColorRole; label: string; fallback: string }> = [
+  { id: 'base', label: 'Cor base', fallback: '#9b563e' },
+  { id: 'fade', label: 'Degradê', fallback: '#633b37' },
+  { id: 'outline', label: 'Contorno', fallback: '#392b33' },
+  { id: 'highlight', label: 'Luzes', fallback: '#e5ad83' },
+  { id: 'accent', label: 'Acessório', fallback: '#cf6391' }
+]
 const faceElementOrder: FaceElementKind[] = ['brow-left', 'brow-right', 'eye-left', 'eye-right', 'nose', 'mouth']
 const skinTonePresets = [
   { id: '#f5ddcb', name: 'Porcelana' },
@@ -67,6 +77,64 @@ function loadCachedImage(source: string): Promise<HTMLImageElement> {
   wardrobeImageCache.set(source, promise)
   void promise.catch(() => wardrobeImageCache.delete(source))
   return promise
+}
+
+function hairPixelColorRole(red: number, green: number, blue: number): HairColorRole {
+  const luminance = (red * 0.2126 + green * 0.7152 + blue * 0.0722) / 255
+  const maximum = Math.max(red, green, blue)
+  const minimum = Math.min(red, green, blue)
+  const saturation = maximum === 0 ? 0 : (maximum - minimum) / maximum
+  if (saturation > 0.38 && luminance > 0.13 && luminance < 0.9) return 'accent'
+  if (luminance < 0.22) return 'outline'
+  if (luminance < 0.43) return 'fade'
+  if (luminance < 0.76) return 'base'
+  return 'highlight'
+}
+
+function loadHairTintedImage(source: string, overrides: HairColorOverrides | undefined): Promise<HTMLImageElement> {
+  if (!overrides || !Object.values(overrides).some(Boolean)) return loadCachedImage(source)
+  const key = `${source}:${JSON.stringify(overrides)}`
+  const cached = hairTintImageCache.get(key)
+  if (cached) return cached
+  const tinted = loadCachedImage(source).then((sourceImage) => {
+    const canvas = document.createElement('canvas')
+    canvas.width = sourceImage.naturalWidth || sourceImage.width
+    canvas.height = sourceImage.naturalHeight || sourceImage.height
+    const context = canvas.getContext('2d', { willReadFrequently: true })
+    if (!context || !canvas.width || !canvas.height) return sourceImage
+    context.drawImage(sourceImage, 0, 0)
+    const imageData = context.getImageData(0, 0, canvas.width, canvas.height)
+    const pixels = imageData.data
+    const parsed = new Map<HairColorRole, [number, number, number]>()
+    for (const [role, value] of Object.entries(overrides) as Array<[HairColorRole, string]>) {
+      if (!/^#[\da-f]{6}$/i.test(value)) continue
+      parsed.set(role, [Number.parseInt(value.slice(1, 3), 16), Number.parseInt(value.slice(3, 5), 16), Number.parseInt(value.slice(5, 7), 16)])
+    }
+    if (parsed.size === 0) return sourceImage
+    for (let offset = 0; offset < pixels.length; offset += 4) {
+      if (pixels[offset + 3] === 0) continue
+      const role = hairPixelColorRole(pixels[offset], pixels[offset + 1], pixels[offset + 2])
+      const target = parsed.get(role)
+      if (!target) continue
+      const sourceLuminance = Math.max(1, pixels[offset] * 0.2126 + pixels[offset + 1] * 0.7152 + pixels[offset + 2] * 0.0722)
+      const targetLuminance = Math.max(1, target[0] * 0.2126 + target[1] * 0.7152 + target[2] * 0.0722)
+      const shade = sourceLuminance / targetLuminance
+      pixels[offset] = Math.min(255, target[0] * shade)
+      pixels[offset + 1] = Math.min(255, target[1] * shade)
+      pixels[offset + 2] = Math.min(255, target[2] * shade)
+    }
+    context.putImageData(imageData, 0, 0)
+    const output = new Image()
+    output.src = canvas.toDataURL('image/png')
+    if (output.decode) return output.decode().then(() => output)
+    return new Promise<HTMLImageElement>((resolve, reject) => {
+      output.onload = () => resolve(output)
+      output.onerror = () => reject(new Error('Não foi possível recolorir o cabelo.'))
+    })
+  })
+  hairTintImageCache.set(key, tinted)
+  void tinted.catch(() => hairTintImageCache.delete(key))
+  return tinted
 }
 
 function loadSkinTintedImage(source: string, tone: string): Promise<HTMLImageElement> {
@@ -299,7 +367,7 @@ export async function renderArtwork(artwork: CatalogArtwork, maxSize: number, sk
   return trimmed.toDataURL('image/png')
 }
 
-async function renderArtworkWithHair(artwork: CatalogArtwork, source: FabricatorProject, backStyle: HairStyle | null, maxSize: number, skinTone?: string): Promise<string | null> {
+async function renderArtworkWithHair(artwork: CatalogArtwork, source: FabricatorProject, backStyle: HairStyle | null, maxSize: number, skinTone?: string, hairColors?: HairColorOverrides): Promise<string | null> {
   if (!backStyle || backStyle.modelSlot !== source.slot) return renderArtwork(artwork, maxSize, skinTone)
   const sourceHead = source.parts.find((part) => /cabe[çc]a|head/i.test(part.name))
   const targetHead = artwork.parts.find((part) => /cabe[çc]a|head/i.test(part.name))
@@ -326,7 +394,7 @@ async function renderArtworkWithHair(artwork: CatalogArtwork, source: Fabricator
       const y = targetHead.y + targetHead.height / 2 + (localX - targetHead.width / 2) * Math.sin(radians) + (localY - targetHead.height / 2) * Math.cos(radians)
       const width = asset.width * transform.scaleX / sourceHead.width * targetHead.width
       const height = asset.height * transform.scaleY / sourceHead.height * targetHead.height
-      const image = await loadCachedImage(asset.dataUrl)
+      const image = await loadHairTintedImage(asset.dataUrl, hairColors)
       context.save()
       context.translate(x * scale, y * scale)
       context.rotate((targetHead.rotation + transform.rotation) * Math.PI / 180)
@@ -354,7 +422,7 @@ async function renderArtworkWithHair(artwork: CatalogArtwork, source: Fabricator
   return canvas.toDataURL('image/png')
 }
 
-async function renderFrontHairOverlay(artwork: CatalogArtwork, source: FabricatorProject, style: HairStyle | null, maxSize: number): Promise<string | null> {
+async function renderFrontHairOverlay(artwork: CatalogArtwork, source: FabricatorProject, style: HairStyle | null, maxSize: number, hairColors?: HairColorOverrides): Promise<string | null> {
   if (!style?.front || style.modelSlot !== source.slot) return null
   const sourceHead = source.parts.find((part) => /cabe[çc]a|head/i.test(part.name))
   const targetHead = artwork.parts.find((part) => /cabe[çc]a|head/i.test(part.name))
@@ -374,7 +442,7 @@ async function renderFrontHairOverlay(artwork: CatalogArtwork, source: Fabricato
   const width = style.front.width * transform.scaleX / sourceHead.width * targetHead.width
   const height = style.front.height * transform.scaleY / sourceHead.height * targetHead.height
   try {
-    const image = await loadCachedImage(style.front.dataUrl)
+    const image = await loadHairTintedImage(style.front.dataUrl, hairColors)
     context.save()
     context.translate(x * scale, y * scale)
     context.rotate((targetHead.rotation + transform.rotation) * Math.PI / 180)
@@ -487,7 +555,7 @@ export async function prepareSavedCharacterRenderer(character: CustomizerCharact
     return window.desktop.loadHairStyle(modelSlot, id)
   }
   const [backStyle, frontStyle] = await Promise.all([hairStyle('back'), hairStyle('front')])
-  const baseUrl = await renderArtworkWithHair(artwork, source, backStyle, 960, character.customization.modelSkinTone)
+  const baseUrl = await renderArtworkWithHair(artwork, source, backStyle, 960, character.customization.modelSkinTone, hairAppearance?.colors)
   if (!baseUrl) throw new Error(`Não foi possível montar a prévia de ${character.name}.`)
 
   const groups = (character.customization.wardrobeGroups ?? []).filter((group) => group.modelSlot === modelSlot)
@@ -517,7 +585,7 @@ export async function prepareSavedCharacterRenderer(character: CustomizerCharact
       if (face) legacyFaceUrl = await renderFaceOverlay(artwork, source, face, appearance)
     }
   }
-  const frontHairUrl = frontStyle ? await renderFrontHairOverlay(artwork, source, frontStyle, 960) : null
+  const frontHairUrl = frontStyle ? await renderFrontHairOverlay(artwork, source, frontStyle, 960, hairAppearance?.colors) : null
   const baseImage = await loadCachedImage(baseUrl)
   const wardrobeImage = wardrobe.imageUrl ? await loadCachedImage(wardrobe.imageUrl) : null
   const legacyFaceImage = legacyFaceUrl ? await loadCachedImage(legacyFaceUrl) : null
@@ -984,7 +1052,7 @@ export function CustomizerPage() {
   }, [characterFaceAppearance, faceDetails, selectedCatalogModelSlot])
 
   useEffect(() => {
-    if (selectedCatalogModelSlot === null || activeModule !== 'Cabelos') { setHairStyles([]); return }
+    if (selectedCatalogModelSlot === null || !(activeModule === 'Cabelos' || activeModule === 'Cabeça' && headPanelTab === 'hair')) { setHairStyles([]); return }
     let cancelled = false
     setHairLoading(true)
     void window.desktop.listHairStyles(selectedCatalogModelSlot).then(async (summaries) => {
@@ -1000,7 +1068,7 @@ export function CustomizerPage() {
       if (!cancelled) setCatalogError(reason instanceof Error ? reason.message : 'Não foi possível carregar o catálogo de cabelos.')
     }).finally(() => { if (!cancelled) setHairLoading(false) })
     return () => { cancelled = true }
-  }, [activeModule, selectedCatalogModelSlot])
+  }, [activeModule, headPanelTab, selectedCatalogModelSlot])
 
   useEffect(() => {
     let cancelled = false
@@ -1057,8 +1125,8 @@ export function CustomizerPage() {
       })
       if (Object.keys(newlyLoaded).length) setHairDetails((current) => ({ ...current, ...newlyLoaded }))
       const [url, frontUrl] = await Promise.all([
-        renderArtworkWithHair(artwork, source, styles.back ?? null, 720, selectedCharacter?.customization.modelSkinTone),
-        renderFrontHairOverlay(artwork, source, styles.front ?? null, 720)
+        renderArtworkWithHair(artwork, source, styles.back ?? null, 720, selectedCharacter?.customization.modelSkinTone, appearance?.modelSlot === source.slot ? appearance.colors : undefined),
+        renderFrontHairOverlay(artwork, source, styles.front ?? null, 720, appearance?.modelSlot === source.slot ? appearance.colors : undefined)
       ])
       if (!cancelled) { setSelectedArtworkUrl(url); setSelectedFrontHairUrl(frontUrl) }
     })().catch((reason: unknown) => {
@@ -1289,7 +1357,20 @@ export function CustomizerPage() {
     const sameModel = previous?.modelSlot === modelSlot
     const frontStyleId = side === 'front' ? summary?.id ?? null : sameModel ? hairAppearanceStyleId(previous, 'front') : null
     const backStyleId = side === 'back' ? summary?.id ?? null : sameModel ? hairAppearanceStyleId(previous, 'back') : null
-    await saveCharacterCustomization({ hairAppearance: frontStyleId || backStyleId ? { modelSlot, frontStyleId, backStyleId } : undefined })
+    const colors = sameModel ? previous?.colors : undefined
+    await saveCharacterCustomization({ hairAppearance: frontStyleId || backStyleId || colors && Object.keys(colors).length ? { modelSlot, frontStyleId, backStyleId, colors } : undefined })
+  }
+
+  async function setHairColor(role: HairColorRole, value: string) {
+    if (!selectedCharacter || selectedCatalogModelSlot === null) return
+    const current = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
+    const previous = current.customization.hairAppearance
+    const sameModel = previous?.modelSlot === selectedCatalogModelSlot
+    await saveCharacterCustomization({ hairAppearance: {
+      ...(sameModel ? previous : undefined),
+      modelSlot: selectedCatalogModelSlot,
+      colors: { ...(sameModel ? previous?.colors : undefined), [role]: value }
+    } })
   }
 
   async function setFaceCatalogVariant(patch: Partial<CustomizerFaceAppearance>) {
@@ -1604,6 +1685,50 @@ export function CustomizerPage() {
     </div>
   )
 
+  const renderHairCustomizer = () => {
+    const appearance = characterHairAppearance?.modelSlot === selectedCatalogModelSlot ? characterHairAppearance : undefined
+    const colorOverrides = appearance?.colors ?? {}
+    const renderPieceSelector = (side: HairCatalogSide) => {
+      const options = hairStyles.filter((summary) => summary[side] !== null)
+      const selectedId = appearance ? hairAppearanceStyleId(appearance, side) : null
+      const selectedIndex = options.findIndex((summary) => summary.id === selectedId)
+      const selected = selectedIndex >= 0 ? options[selectedIndex] : null
+      const asset = selected ? hairDetails[`${selected.modelSlot}:${selected.id}`]?.[side] : null
+      const chooseAt = (index: number) => {
+        if (!options.length) return
+        const bounded = Math.max(0, Math.min(options.length - 1, index))
+        void chooseHairStyle(options[bounded], side)
+      }
+      return <article className="customizer-hair-piece" key={side}>
+        <header><strong>{side === 'back' ? 'Cabelo de trás' : 'Cabelo frontal'}</strong><span>{selectedIndex >= 0 ? `${selectedIndex + 1}/${options.length}` : `0/${options.length}`}</span></header>
+        <div className="customizer-hair-piece-selector">
+          <button aria-label={`Cabelo ${side === 'back' ? 'anterior traseiro' : 'anterior frontal'}`} onClick={() => chooseAt(selectedIndex < 0 ? options.length - 1 : selectedIndex - 1)} disabled={!options.length || selectedIndex <= 0} type="button"><Icon name="chevronRight" /></button>
+          <div className="customizer-hair-piece-preview" aria-live="polite">
+            {asset ? <img src={asset.dataUrl} alt={selected?.name ?? ''} /> : <span>{options.length ? 'Escolha uma peça' : 'Sem peças salvas'}</span>}
+          </div>
+          <button aria-label={`Próximo cabelo ${side === 'back' ? 'traseiro' : 'frontal'}`} onClick={() => chooseAt(selectedIndex < 0 ? 0 : selectedIndex + 1)} disabled={!options.length || selectedIndex >= options.length - 1} type="button"><Icon name="chevronRight" /></button>
+        </div>
+        <footer><span title={selected?.name ?? 'Nenhum cabelo selecionado'}>{selected?.name ?? 'Nenhum selecionado'}</span>
+          {selected && <button aria-label={`Remover ${side === 'back' ? 'cabelo traseiro' : 'cabelo frontal'}`} title="Remover peça" onClick={() => void chooseHairStyle(null, side)} type="button"><Icon name="eyeOff" /></button>}
+        </footer>
+      </article>
+    }
+    return <section className="customizer-hair-workspace" aria-label="Personalização do cabelo">
+      {selectedCatalogModelSlot === null ? <div className="customizer-catalog-empty">Escolha um modelo para carregar os cabelos do Fabricador Dev.</div>
+        : hairLoading ? <div className="customizer-catalog-empty">Carregando cabelos do Fabricador Dev…</div>
+          : <>
+            <header className="customizer-hair-workspace-heading"><span><strong>Cabelos do Modelo {String(selectedCatalogModelSlot).padStart(2, '0')}</strong><small>As peças e encaixes vêm do Fabricador Dev; as escolhas ficam só neste personagem.</small></span></header>
+            <div className="customizer-hair-color-controls" aria-label="Cores do cabelo">
+              {hairColorControls.map((color) => <label className="customizer-hair-color-control" key={color.id} title={`${color.label} · recolore a faixa de tons correspondente da imagem`}>
+                <span>{color.label}</span><input type="color" aria-label={color.label} value={colorOverrides[color.id] ?? color.fallback} disabled={!selectedCharacter} onChange={(event) => void setHairColor(color.id, event.target.value)} />
+              </label>)}
+            </div>
+            <div className="customizer-hair-pieces">{renderPieceSelector('back')}{renderPieceSelector('front')}</div>
+            {hairStyles.length === 0 && <p className="customizer-face-empty">Nenhum estilo salvo para este modelo. Crie as peças em Cabelos Dev para elas aparecerem aqui.</p>}
+          </>}
+    </section>
+  }
+
   if (activeModule !== null && modules.some((module) => module.name === activeModule)) {
     return (
       <div className="customizer-models-view">
@@ -1667,6 +1792,7 @@ export function CustomizerPage() {
               {customizerOtherTabs.map((tab) => <button key={tab.id} className={otherPanelTab === tab.id ? 'active' : ''} onClick={() => setOtherPanelTab(tab.id)} aria-selected={otherPanelTab === tab.id} role="tab" type="button"><Icon name={tab.icon} /><span>{tab.label}</span></button>)}
             </nav>}
             <div className="customizer-sidebar-scroll-content" aria-label={`Conteúdo de ${customizerTopTabs.find((tab) => tab.id === selectedCustomizerTopTab)?.label ?? 'personalização'}`}>
+            {selectedCustomizerTopTab === 'cabeca' && headPanelTab === 'hair' && renderHairCustomizer()}
             {selectedCustomizerTopTab === 'modelos' && <section className="customizer-model-skin-tones" aria-label="Cor de pele do modelo">
               <strong>Cor de pele</strong>
               <div className="customizer-model-skin-tone-row" role="group" aria-label="Escolher cor de pele">
