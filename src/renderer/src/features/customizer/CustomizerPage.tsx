@@ -3,7 +3,7 @@ import { CharacterPortrait } from '../../ui/components/CharacterPortrait'
 import { Icon, type IconName } from '../../ui/components/Icon'
 import type { FaceCatalogItem, FaceCatalogItemSummary, FaceComponentAsset, FaceComponentAssetSummary, FaceComponentKind, FaceDetailKind, FaceElementKind, FaceSet, FaceSheetKind, FabricatorPose, FabricatorPoseSummary, FabricatorProject, FabricatorSlotSummary, HairStyle, HairStyleSummary, WardrobeCategory, WardrobeSet, WardrobeSetSummary } from '../../../../shared/fabricator'
 import { resolvePoseCategory } from '../../../../shared/fabricator'
-import type { CustomizerCharacter, CustomizerFaceAppearance, CustomizerWardrobeCategory, CustomizerWardrobeGroup, FaceComponentPartId, HairColorOverrides, HairColorRole, HairPartId } from '../../../../shared/customizer'
+import type { CustomizerCharacter, CustomizerFaceAppearance, CustomizerWardrobeCategory, CustomizerWardrobeGroup, CustomizerWardrobePaletteKey, FaceComponentPartId, HairColorOverrides, HairColorRole, HairPartId } from '../../../../shared/customizer'
 import { characterBodyDimensionLimits, characterProportionLimits, defaultCharacterBodyDimensions, defaultCharacterProportions, getCharacterBodyDimensions, getCharacterProportions, type CharacterBodyDimensions, type CharacterProportions } from '../../../../shared/customizer'
 import type { StudioFaceTransforms } from '../../../../shared/studio'
 import { usePreviewBackground } from '../fabricator/usePreviewBackground'
@@ -400,7 +400,7 @@ const clothingCategories: Record<'Superior' | 'Inferior', Array<{ id: ClothingGr
   ]
 }
 
-type WardrobePanel = { id: string; label: string; category: ClothingGroupCategory; side: 'left' | 'right' | null; source?: WardrobeCategory[] }
+type WardrobePanel = { id: CustomizerWardrobePaletteKey; label: string; category: ClothingGroupCategory; side: 'left' | 'right' | null; source?: WardrobeCategory[] }
 const upperWardrobePanels: WardrobePanel[] = [
   { id: 'shirt', label: 'Camisa', category: 'camisa', side: null },
   { id: 'jacket', label: 'Jaqueta', category: 'jaqueta', side: null },
@@ -484,8 +484,7 @@ async function renderWardrobeOverlay(
   modelSlot: number | null,
   source: FabricatorProject | null,
   selected: SelectedWardrobeComponent | null,
-  skinTone?: string,
-  wardrobeColors?: HairColorOverrides
+  skinTone?: string
 ): Promise<{ imageUrl: string | null; selectedUrl: string | null }> {
   if (!groups.length || modelSlot === null || !source) return { imageUrl: null, selectedUrl: null }
   const output = document.createElement('canvas')
@@ -554,8 +553,7 @@ async function renderWardrobeOverlay(
     const garments = (garmentLayers.get(part.id) ?? []).sort((a, b) => a.sequence - b.sequence)
     for (const garment of garments) {
       try {
-        const garmentColors = { ...wardrobeColors, ...garment.group.colors }
-        const image = Object.keys(garmentColors).length ? await loadHairTintedImage(garment.component.dataUrl, garmentColors) : await loadCachedImage(garment.component.dataUrl)
+        const image = garment.group.colors ? await loadHairTintedImage(garment.component.dataUrl, garment.group.colors) : await loadCachedImage(garment.component.dataUrl)
         const matrix = /^matrix\(([^)]+)\)$/.exec(garment.transform.matrix)?.[1].split(',').map(Number) ?? [1, 0, 0, 1, 0, 0]
         const drawGarment = (context: CanvasRenderingContext2D) => {
           context.save()
@@ -963,7 +961,7 @@ export async function prepareSavedCharacterRenderer(character: CustomizerCharact
     const set = await window.desktop.loadWardrobeSet(group.modelSlot, group.setId)
     if (set) details[key] = set
   }))
-  const wardrobe = await renderWardrobeOverlay(groups, details, artwork, modelSlot, source, null, character.customization.modelSkinTone, character.customization.wardrobeColors)
+  const wardrobe = await renderWardrobeOverlay(groups, details, artwork, modelSlot, source, null, character.customization.modelSkinTone)
 
   const appearance = character.customization.faceAppearance
   let faceItems: Partial<Record<FaceSheetKind | FaceElementKind, FaceCatalogItem>> = {}
@@ -1622,7 +1620,7 @@ export function CustomizerPage() {
     const previewGroups = wardrobeTransformDraft && selectedClothing
       ? groups.map((group) => group.setId === selectedClothing.setId && group.category === selectedClothing.category && (group.componentId === selectedClothing.componentId || !group.componentId) ? { ...group, componentId: selectedClothing.componentId, ...wardrobeTransformDraft } : group)
       : groups
-    void renderWardrobeOverlay(previewGroups, wardrobeDetails, displayArtworkProject, selectedCatalogModelSlot, selectedSourceModelProject, wardrobeHighlightVisible ? selectedClothing : null, selectedCharacter?.customization.modelSkinTone, selectedCharacter?.customization.wardrobeColors).then((result) => {
+    void renderWardrobeOverlay(previewGroups, wardrobeDetails, displayArtworkProject, selectedCatalogModelSlot, selectedSourceModelProject, wardrobeHighlightVisible ? selectedClothing : null, selectedCharacter?.customization.modelSkinTone).then((result) => {
       if (!cancelled) { setSelectedWardrobeUrl(result.imageUrl); setSelectedWardrobeHighlightUrl(result.selectedUrl) }
     }).catch((reason: unknown) => {
       if (!cancelled) setCatalogError(reason instanceof Error ? reason.message : 'Não foi possível compor as roupas do personagem.')
@@ -1983,7 +1981,8 @@ export function CustomizerPage() {
       return !panelComponentKeys.has(`${group.modelSlot}:${group.setId}:${group.componentId}`)
     })
     if (candidate) {
-      after.push(...candidate.components.map((component) => ({ modelSlot: candidate.summary.modelSlot, setId: candidate.summary.id, category: panel.category, componentId: component.id, offsetX: 0, offsetY: 0, scaleX: 1, scaleY: 1, rotation: 0 })))
+      const palette = current.customization.wardrobePalettes?.[panel.id]
+      after.push(...candidate.components.map((component) => ({ modelSlot: candidate.summary.modelSlot, setId: candidate.summary.id, category: panel.category, componentId: component.id, offsetX: 0, offsetY: 0, scaleX: 1, scaleY: 1, rotation: 0, ...(palette ? { colors: palette } : {}) })))
       setSelectedClothing({ setId: candidate.summary.id, category: panel.category, componentId: candidate.component.id })
       setWardrobeHighlightVisible(true)
     } else {
@@ -1993,14 +1992,17 @@ export function CustomizerPage() {
     await saveCharacterCustomization({ wardrobeGroups: after })
   }
 
-  async function applyWardrobePalette(colors: HairColorOverrides) {
+  async function applyWardrobePalette(panel: WardrobePanel, candidate: WardrobePanelCandidate, colors: HairColorOverrides) {
     if (!selectedCharacter) return
     const current = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
-    const wardrobeGroups = (current.customization.wardrobeGroups ?? []).map((group) => {
-      const { colors: _pieceColors, ...withoutPieceColors } = group
-      return withoutPieceColors
+    const componentIds = new Set(candidate.components.map((component) => component.id))
+    const wardrobeGroups = (current.customization.wardrobeGroups ?? []).map((group) => group.modelSlot === candidate.summary.modelSlot && group.setId === candidate.summary.id && group.category === panel.category && !!group.componentId && componentIds.has(group.componentId)
+      ? { ...group, colors }
+      : group)
+    await saveCharacterCustomization({
+      wardrobePalettes: { ...current.customization.wardrobePalettes, [panel.id]: colors },
+      wardrobeGroups
     })
-    await saveCharacterCustomization({ wardrobeColors: colors, wardrobeGroups })
   }
 
   async function setWardrobePieceColor(setId: string, category: ClothingGroupCategory, componentIds: string[], role: HairColorRole, value: string) {
@@ -2014,17 +2016,19 @@ export function CustomizerPage() {
     await saveCharacterCustomization({ wardrobeGroups })
   }
 
-  async function resetWardrobePieceColors(setId: string, category: ClothingGroupCategory, componentIds: string[]) {
+  async function resetWardrobePieceColors(panel: WardrobePanel, setId: string, componentIds: string[]) {
     if (!selectedCharacter) return
     const current = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
     const before = current.customization.wardrobeGroups ?? []
     const componentIdSet = new Set(componentIds)
     const after = before.map((group) => {
-      if (group.setId !== setId || group.modelSlot !== selectedCatalogModelSlot || group.category !== category || !group.componentId || !componentIdSet.has(group.componentId)) return group
+      if (group.setId !== setId || group.modelSlot !== selectedCatalogModelSlot || group.category !== panel.category || !group.componentId || !componentIdSet.has(group.componentId)) return group
       const { colors: _colors, ...rest } = group
       return rest
     })
-    await saveCharacterCustomization({ wardrobeGroups: after })
+    const wardrobePalettes = { ...current.customization.wardrobePalettes }
+    delete wardrobePalettes[panel.id]
+    await saveCharacterCustomization({ wardrobeGroups: after, wardrobePalettes })
   }
 
   function beginWardrobeDrag(event: import('react').PointerEvent<HTMLImageElement>) {
@@ -2591,8 +2595,8 @@ export function CustomizerPage() {
       )))
       const currentCandidate = selectedIndex >= 0 ? candidates[selectedIndex] : null
       const currentGroup = currentCandidate ? appliedGroups.find((group) => group.modelSlot === currentCandidate.summary.modelSlot && group.setId === currentCandidate.summary.id && group.category === panel.category && group.componentId === currentCandidate.component.id) : undefined
-      const colors = { ...selectedCharacter?.customization.wardrobeColors, ...currentGroup?.colors }
-      const wardrobeColors = selectedCharacter?.customization.wardrobeColors ?? {}
+      const wardrobePalette = selectedCharacter?.customization.wardrobePalettes?.[panel.id] ?? {}
+      const colors = { ...wardrobePalette, ...currentGroup?.colors }
       const hasLocalColors = Object.keys(colors).length > 0
       const selectedSlot = selectedIndex >= 0 ? selectedIndex + 1 : 0
       const slotCount = candidates.length + 1
@@ -2601,7 +2605,7 @@ export function CustomizerPage() {
         void applyUpperWardrobePanel(panel, nextSlot === 0 ? null : candidates[nextSlot - 1])
       }
       return <article className="customizer-hair-piece customizer-upper-wardrobe-piece" key={panel.id} aria-label={panel.label}>
-        <header><strong>{panel.label} {selectedSlot + 1}/{candidates.length + 1}</strong>{hasLocalColors && currentCandidate && <button className="customizer-hair-reset" type="button" onClick={() => void resetWardrobePieceColors(currentCandidate.summary.id, panel.category, currentCandidate.components.map((component) => component.id))}>Restaurar</button>}</header>
+        <header><strong>{panel.label} {selectedSlot + 1}/{candidates.length + 1}</strong>{hasLocalColors && currentCandidate && <button className="customizer-hair-reset" type="button" onClick={() => void resetWardrobePieceColors(panel, currentCandidate.summary.id, currentCandidate.components.map((component) => component.id))}>Restaurar</button>}</header>
         <div className="customizer-hair-piece-selector customizer-upper-wardrobe-selector">
           <button aria-label={`Peça anterior: ${panel.label}`} onClick={() => move(-1)} disabled={!candidates.length || !selectedCharacter || selectedCatalogModelSlot === null} type="button"><Icon name="chevronRight" /></button>
           <button className="customizer-hair-piece-preview" aria-label={`Abrir biblioteca de ${panel.label}`} title={`Abrir biblioteca de ${panel.label}`} onClick={() => { setWardrobeLibraryPage(0); setWardrobeLibraryPanel(panel) }} type="button">
@@ -2620,7 +2624,7 @@ export function CustomizerPage() {
           <div className="customizer-hair-palette-presets customizer-upper-piece-palette-presets">
             <button className="customizer-hair-palette-scroll previous" aria-label={`Ver paletas anteriores de ${panel.label}`} onClick={() => wardrobePaletteStripRefs.current[panel.id]?.scrollBy({ left: -180, behavior: 'smooth' })} type="button"><Icon name="chevronRight" /></button>
             <div className="customizer-hair-palette-preset-list" ref={(node) => { wardrobePaletteStripRefs.current[panel.id] = node }}>
-              {hairPalettePresets.map((preset) => <button key={preset.name} type="button" disabled={!selectedCharacter || !currentCandidate} aria-pressed={hairColorControls.every((color) => wardrobeColors[color.id] === preset.colors[color.id])} onClick={() => void applyWardrobePalette(preset.colors)} title={`Aplicar paleta ${preset.name} a todas as roupas e acessórios com paleta`}><span style={{ background: `linear-gradient(115deg, ${preset.colors.highlight} 0 23%, ${preset.colors.base} 23% 65%, ${preset.colors.fade} 65% 84%, ${preset.colors.outline} 84%)` }} />{preset.name}</button>)}
+              {hairPalettePresets.map((preset) => <button key={preset.name} type="button" disabled={!selectedCharacter || !currentCandidate} aria-pressed={hairColorControls.every((color) => wardrobePalette[color.id] === preset.colors[color.id])} onClick={() => currentCandidate && void applyWardrobePalette(panel, currentCandidate, preset.colors)} title={`Aplicar paleta ${preset.name} a ${panel.label}`}><span style={{ background: `linear-gradient(115deg, ${preset.colors.highlight} 0 23%, ${preset.colors.base} 23% 65%, ${preset.colors.fade} 65% 84%, ${preset.colors.outline} 84%)` }} />{preset.name}</button>)}
             </div>
             <button className="customizer-hair-palette-scroll" aria-label={`Ver próximas paletas de ${panel.label}`} onClick={() => wardrobePaletteStripRefs.current[panel.id]?.scrollBy({ left: 180, behavior: 'smooth' })} type="button"><Icon name="chevronRight" /></button>
           </div>

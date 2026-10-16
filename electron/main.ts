@@ -5,7 +5,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import type { AnimatorAnimation, AnimatorAnimationAsset, AnimatorAnimationDraft, AnimatorAnimationSave, AnimatorAnimationSummary, FaceAssetKind, FaceAssetSave, FaceCatalogItem, FaceCatalogItemSave, FaceCatalogItemSummary, FaceComponentAsset, FaceComponentAssetSave, FaceComponentAssetSummary, FaceElementKind, FaceSet, FaceSetSave, FaceSetSummary, FaceSheetKind, FabricatorAssetSave, FabricatorHistoryEntry, FabricatorHistorySaveEntry, FabricatorHistorySaveState, FabricatorHistoryState, FabricatorPose, FabricatorPoseDraft, FabricatorPoseDraftSave, FabricatorPoseSave, FabricatorPoseSummary, FabricatorProject, FabricatorProjectSave, FabricatorSlotSummary, HairStyle, HairStyleAsset, HairStyleSave, HairStyleSummary, HairWorkspace, HairWorkspaceAsset, HairWorkspaceSave, ModelPart, PosePart, WardrobeAssetSave, WardrobeCategory, WardrobeSet, WardrobeSetSave, WardrobeSetSummary } from '../src/shared/fabricator'
 import { resolvePoseCategory } from '../src/shared/fabricator'
-import type { CustomizerCharacter, CustomizerFaceAppearance } from '../src/shared/customizer'
+import type { CustomizerCharacter, CustomizerFaceAppearance, CustomizerWardrobePaletteKey, HairColorOverrides } from '../src/shared/customizer'
 import { characterBodyDimensionLimits, characterProportionLimits } from '../src/shared/customizer'
 import type { StudioAsset, StudioDocument, StudioFaceTransform, StudioFaceTransforms } from '../src/shared/studio'
 import { applyModelHeadShape } from '../src/shared/headShape'
@@ -63,6 +63,7 @@ const starterCharacters: Array<Pick<CustomizerCharacter, 'name' | 'hair' | 'outf
 
 const hairColorRoles = ['base', 'fade', 'outline', 'highlight', 'accent'] as const
 const hairPartIds = ['backHair', 'rearHair', 'ponytail', 'frontHair', 'ahoge'] as const
+const wardrobePaletteKeys: CustomizerWardrobePaletteKey[] = ['shirt', 'jacket', 'upper-left', 'upper-right', 'lower-left', 'lower-right', 'gloves-left', 'gloves-right', 'cape', 'belt', 'skirt', 'pants-left', 'shorts-right', 'sock-left', 'sock-right', 'shoe-left', 'shoe-right', 'lower-skirt']
 function isHairColorMap(value: unknown): boolean {
   return !!value && typeof value === 'object' && !Array.isArray(value)
     && Object.entries(value).every(([role, color]) => hairColorRoles.includes(role as typeof hairColorRoles[number]) && typeof color === 'string' && /^#[0-9a-fA-F]{6}$/.test(color))
@@ -101,7 +102,11 @@ function isCustomizerCharacter(value: unknown): value is CustomizerCharacter {
     && Array.isArray(character.customization.layerOrder)
     && character.customization.layerOrder.length <= 1000
     && character.customization.layerOrder.every((id) => typeof id === 'string' && id.length <= 120)
-    && (character.customization.wardrobeColors === undefined || isHairColorMap(character.customization.wardrobeColors))
+    && ((character.customization as CustomizerCharacter['customization'] & { wardrobeColors?: HairColorOverrides }).wardrobeColors === undefined || isHairColorMap((character.customization as CustomizerCharacter['customization'] & { wardrobeColors?: HairColorOverrides }).wardrobeColors))
+    && (character.customization.wardrobePalettes === undefined || (
+      !!character.customization.wardrobePalettes && typeof character.customization.wardrobePalettes === 'object' && !Array.isArray(character.customization.wardrobePalettes)
+      && Object.entries(character.customization.wardrobePalettes).every(([key, colors]) => wardrobePaletteKeys.includes(key as CustomizerWardrobePaletteKey) && isHairColorMap(colors))
+    ))
     && (character.customization.wardrobeGroups === undefined || (
       Array.isArray(character.customization.wardrobeGroups) && character.customization.wardrobeGroups.length <= 100
       && character.customization.wardrobeGroups.every((group) => group && isValidModelSlot(group.modelSlot)
@@ -134,16 +139,21 @@ async function readCustomizerCharacters(): Promise<CustomizerCharacter[]> {
   try {
     const parsed = JSON.parse(await readFile(characterManifestPath(), 'utf8')) as unknown
     if (!Array.isArray(parsed) || !parsed.every(isCustomizerCharacter)) throw new Error('A biblioteca de personagens está inválida.')
-    return parsed.map((character) => ({
-      ...character,
-      customization: {
-        ...character.customization,
-        wardrobeGroups: character.customization.wardrobeGroups?.map((group) => ({
-          ...group,
-          category: group.category === ('cinto-saia-1' as typeof group.category) ? 'cinto' : group.category === ('cinto-saia-2' as typeof group.category) ? 'saia-superior' : group.category === 'saia' ? 'saia-superior' : group.category
-        }))
+    return parsed.map((character) => {
+      const storedCustomization = character.customization as CustomizerCharacter['customization'] & { wardrobeColors?: HairColorOverrides }
+      const { wardrobeColors: legacyWardrobeColors, ...customization } = storedCustomization
+      return {
+        ...character,
+        customization: {
+          ...customization,
+          wardrobeGroups: customization.wardrobeGroups?.map((group) => ({
+            ...group,
+            category: group.category === ('cinto-saia-1' as typeof group.category) ? 'cinto' : group.category === ('cinto-saia-2' as typeof group.category) ? 'saia-superior' : group.category === 'saia' ? 'saia-superior' : group.category,
+            ...(legacyWardrobeColors && !group.colors ? { colors: legacyWardrobeColors } : {})
+          }))
+        }
       }
-    }))
+    })
   } catch (reason) {
     if ((reason as NodeJS.ErrnoException).code !== 'ENOENT') throw reason
     const now = new Date().toISOString()

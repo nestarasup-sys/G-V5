@@ -20,8 +20,8 @@ export type CharacterCustomization = {
   layerOrder: string[]
   /** Garments are character-owned placements; pants stay one group across thigh and calf pieces. */
   wardrobeGroups?: CustomizerWardrobeGroup[]
-  /** Shared clothing palette for every wardrobe piece; hair and face colors remain independent. */
-  wardrobeColors?: HairColorOverrides
+  /** Preset palettes persist independently for each clothing slot; hair and face colors remain independent. */
+  wardrobePalettes?: Partial<Record<CustomizerWardrobePaletteKey, HairColorOverrides>>
   /** Facial features chosen from the read-only face library, isolated per character. */
   faceAppearance?: CustomizerFaceAppearance
   /** Rear, posterior and fringe hair layers are selected independently per character. */
@@ -111,6 +111,7 @@ export type CustomizerFaceAppearance = {
 }
 
 export type CustomizerWardrobeCategory = 'camisa' | 'jaqueta' | 'manga-superior' | 'manga-inferior' | 'luvas' | 'capa' | 'cinto' | 'saia' | 'saia-superior' | 'saia-inferior' | 'calca' | 'shorts' | 'meia' | 'sapato'
+export type CustomizerWardrobePaletteKey = 'shirt' | 'jacket' | 'upper-left' | 'upper-right' | 'lower-left' | 'lower-right' | 'gloves-left' | 'gloves-right' | 'cape' | 'belt' | 'skirt' | 'pants-left' | 'shorts-right' | 'sock-left' | 'sock-right' | 'shoe-left' | 'shoe-right' | 'lower-skirt'
 export type CustomizerWardrobeGroup = {
   modelSlot: number
   setId: string
