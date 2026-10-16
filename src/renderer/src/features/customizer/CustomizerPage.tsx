@@ -1957,10 +1957,9 @@ export function CustomizerPage() {
 
         <aside className="modules-panel panel" aria-label="Áreas do Customizar">
           <DesignBanner />
-          <nav className="customizer-top-tabs home-customizer-top-tabs" aria-label="Áreas do Customizar" role="tablist">
+          <nav className="customizer-top-tabs home-customizer-top-tabs" aria-label="Áreas do Customizar">
             {customizerTopTabs.map((tab) => <button
               key={tab.id}
-              className={selectedCustomizerTopTab === tab.id ? 'active' : ''}
               onClick={() => {
                 setSelectedCustomizerTopTab(tab.id)
                 const moduleByTab: Record<string, string> = {
@@ -1973,8 +1972,6 @@ export function CustomizerPage() {
                 }
                 setActiveModule(moduleByTab[tab.id])
               }}
-              aria-selected={selectedCustomizerTopTab === tab.id}
-              role="tab"
               type="button"
             ><CustomizerCategoryIcon category={tab.id} /><span>{tab.label}</span></button>)}
           </nav>
