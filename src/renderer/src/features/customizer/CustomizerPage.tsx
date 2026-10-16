@@ -438,7 +438,7 @@ function wardrobeComponentMatchesPanel(component: WardrobeSet['components'][numb
 
 type WardrobePanelCandidate = { summary: WardrobeSetSummary; set: WardrobeSet; component: WardrobeSet['components'][number]; components: WardrobeSet['components'] }
 
-async function renderWardrobeThumbnail(set: WardrobeSet, categories: WardrobeCategory[], componentIds?: string[]): Promise<string | null> {
+async function renderWardrobeThumbnail(set: WardrobeSet, categories: WardrobeCategory[], componentIds?: string[], resolution = 112): Promise<string | null> {
   const allowedIds = componentIds ? new Set(componentIds) : null
   const pieces = set.components.filter((component) => categories.includes(component.category) && (!allowedIds || allowedIds.has(component.id)))
   if (!pieces.length) return null
@@ -446,7 +446,7 @@ async function renderWardrobeThumbnail(set: WardrobeSet, categories: WardrobeCat
   const top = Math.min(...pieces.map((piece) => piece.y))
   const right = Math.max(...pieces.map((piece) => piece.x + piece.width))
   const bottom = Math.max(...pieces.map((piece) => piece.y + piece.height))
-  const scale = Math.min(112 / Math.max(1, right - left), 112 / Math.max(1, bottom - top))
+  const scale = Math.min(resolution / Math.max(1, right - left), resolution / Math.max(1, bottom - top))
   const canvas = document.createElement('canvas')
   canvas.width = Math.max(1, Math.ceil((right - left) * scale))
   canvas.height = Math.max(1, Math.ceil((bottom - top) * scale))
@@ -470,7 +470,7 @@ function WardrobePanelCandidatePreview({ candidate, colors }: { candidate: Wardr
   const componentIds = candidate.components.map((component) => component.id)
   useEffect(() => {
     let active = true
-    void renderWardrobeThumbnail(candidate.set, candidate.components.map((component) => component.category), componentIds)
+    void renderWardrobeThumbnail(candidate.set, candidate.components.map((component) => component.category), componentIds, 512)
       .then((thumbnail) => { if (active) setSource(thumbnail) })
     return () => { active = false }
   }, [candidate.set, componentIds.join(':')])
@@ -2608,7 +2608,7 @@ export function CustomizerPage() {
         const nextSlot = (selectedSlot + direction + slotCount) % slotCount
         void applyUpperWardrobePanel(panel, nextSlot === 0 ? null : candidates[nextSlot - 1])
       }
-      return <article className="customizer-hair-piece customizer-upper-wardrobe-piece" key={panel.id} aria-label={panel.label}>
+      return <article className={`customizer-hair-piece customizer-upper-wardrobe-piece customizer-wardrobe-piece-${panel.id}`} key={panel.id} aria-label={panel.label}>
         <header><strong>{panel.label} {selectedSlot + 1}/{candidates.length + 1}</strong>{hasLocalColors && currentCandidate && <button className="customizer-hair-reset" type="button" onClick={() => void resetWardrobePieceColors(panel, currentCandidate.summary.id, currentCandidate.components.map((component) => component.id))}>Restaurar</button>}</header>
         <div className="customizer-hair-piece-selector customizer-upper-wardrobe-selector">
           <button aria-label={`Peça anterior: ${panel.label}`} onClick={() => move(-1)} disabled={!candidates.length || !selectedCharacter || selectedCatalogModelSlot === null} type="button"><Icon name="chevronRight" /></button>
