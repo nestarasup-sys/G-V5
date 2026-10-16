@@ -1977,8 +1977,7 @@ export function CustomizerPage() {
     const choose = (summary: HairStyleSummary | null) => {
       void chooseHairPartStyle(part.id, summary)
     }
-    return <div className="customizer-hair-library-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setHairLibraryPart(null) }}>
-      <section className="customizer-hair-library" role="dialog" aria-modal="true" aria-labelledby="customizer-hair-library-title">
+    return <section className="customizer-hair-library" aria-labelledby="customizer-hair-library-title">
         <header className="customizer-hair-library-heading">
           <button className="customizer-hair-library-remove" type="button" onClick={() => void chooseHairPartStyle(part.id, null)} disabled={!selectedId} aria-label={`Remover ${part.label} do personagem`} title={`Remover ${part.label} do personagem`}><Icon name="trash" /></button>
           <h2 id="customizer-hair-library-title">{part.label}</h2>
@@ -2000,7 +1999,6 @@ export function CustomizerPage() {
           <button className="customizer-hair-library-page-arrow next" type="button" aria-label="Próxima página" disabled={page >= pageCount - 1} onClick={() => setHairLibraryPage((current) => Math.min(pageCount - 1, current + 1))}><Icon name="chevronRight" /></button>
         </footer>
       </section>
-    </div>
   }
 
   if (activeModule !== null && modules.some((module) => module.name === activeModule)) {
@@ -2066,7 +2064,7 @@ export function CustomizerPage() {
               {customizerOtherTabs.map((tab) => <button key={tab.id} className={otherPanelTab === tab.id ? 'active' : ''} onClick={() => setOtherPanelTab(tab.id)} aria-selected={otherPanelTab === tab.id} role="tab" type="button"><Icon name={tab.icon} /><span>{tab.label}</span></button>)}
             </nav>}
             <div className={`customizer-sidebar-scroll-content${selectedCustomizerTopTab === 'cabeca' && headPanelTab === 'hair' ? ' customizer-sidebar-scroll-content-hair' : ''}`} aria-label={`Conteúdo de ${customizerTopTabs.find((tab) => tab.id === selectedCustomizerTopTab)?.label ?? 'personalização'}`}>
-            {selectedCustomizerTopTab === 'cabeca' && headPanelTab === 'hair' && renderHairCustomizer()}
+            {selectedCustomizerTopTab === 'cabeca' && headPanelTab === 'hair' && (hairLibraryPart ? renderHairLibrary() : renderHairCustomizer())}
             {selectedCustomizerTopTab === 'modelos' && <section className="customizer-model-skin-tones" aria-label="Cor de pele do modelo">
               <strong>Cor de pele</strong>
               <div className="customizer-model-skin-tone-row" role="group" aria-label="Escolher cor de pele">
@@ -2320,7 +2318,6 @@ export function CustomizerPage() {
             </div>
           </section>
         </div>
-        {renderHairLibrary()}
       </div>
     )
   }
