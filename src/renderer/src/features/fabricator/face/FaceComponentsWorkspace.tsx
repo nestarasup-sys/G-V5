@@ -216,6 +216,8 @@ export function FaceComponentsWorkspace() {
     ? movementRightAsset.rightSidePositioned || libraryCategory === 'pupil' ? movementRightAsset.defaultTransform.x : head.width - movementRightAsset.defaultTransform.x
     : libraryCategory === 'pupil' ? -movementLeftAsset.defaultTransform.x : head.width - movementLeftAsset.defaultTransform.x : 0
   const pairX = movementLeftAsset ? (movementLeftAsset.defaultTransform.x + rightPairX) / 2 : 0
+  const eyeSeparation = libraryCategory === 'eye' && movementLeftAsset ? Math.max(0, rightPairX - movementLeftAsset.defaultTransform.x) : 0
+  const eyeSeparationMax = head ? Math.max(1, 2 * Math.min(pairX, head.width - pairX)) : 1
   const pairY = movementLeftAsset ? (movementLeftAsset.defaultTransform.y + (movementRightAsset && movementRightAsset.id !== movementLeftAsset.id ? movementRightAsset.defaultTransform.y : movementLeftAsset.defaultTransform.y)) / 2 : 0
   const pairHeightAsset = libraryCategory === 'eye-closed' ? leftPairAsset : movementLeftAsset
   const leftEyeForPupil = details[selectedAssets['eye-left'] ?? '']
@@ -713,6 +715,18 @@ export function FaceComponentsWorkspace() {
     saveComponentTransform(rightCurrent, { [axis]: rightValue + delta })
   }
 
+  async function setEyeSeparation(target: number) {
+    if (!head) return
+    const pair = await editablePair('eye')
+    if (!pair) return
+    const [left, right] = pair
+    const center = clamp((left.defaultTransform.x + right.defaultTransform.x) / 2, 0, head.width)
+    const max = 2 * Math.min(center, head.width - center)
+    const separation = clamp(target, 0, max)
+    saveComponentTransform(left, { x: center - separation / 2 })
+    saveComponentTransform(right, { x: center + separation / 2 })
+  }
+
   async function resizePair(kind: FaceComponentKind, axis: 'scaleX' | 'scaleY', targetPercent: number) {
     if (!head) return
     const scaledKind = kind === 'eye-closed' && axis === 'scaleX' ? 'eye' : kind
@@ -929,6 +943,7 @@ export function FaceComponentsWorkspace() {
             <button type="button" aria-label="Mover os dois lados para a direita" onClick={() => void movePair(componentPair.kind, 'x', 1, true)}>→</button>
           </div>
           <label className="face-component-slider"><span>Horizontal <output>{Math.round(pairX)} px</output></span><input type="range" min={componentPair.kind === 'pupil' ? -head.width * .25 : 0} max={componentPair.kind === 'pupil' ? head.width * .25 : head.width} step="1" value={pairX} onChange={(event) => void movePair(componentPair.kind, 'x', Number(event.target.value))} /></label>
+          {componentPair.kind === 'eye' && <label className="face-component-slider"><span>Separação horizontal <output>{Math.round(eyeSeparation)} px</output></span><input type="range" min="0" max={Math.max(eyeSeparation, eyeSeparationMax)} step="1" value={eyeSeparation} onChange={(event) => void setEyeSeparation(Number(event.target.value))} /></label>}
           <label className="face-component-slider"><span>Vertical <output>{Math.round(pairY)} px</output></span><input type="range" min={componentPair.kind === 'pupil' ? -head.height * .25 : 0} max={componentPair.kind === 'pupil' ? head.height * .25 : head.height} step="1" value={pairY} onChange={(event) => void movePair(componentPair.kind, 'y', Number(event.target.value))} /></label>
           <label className="face-component-slider"><span>Largura dos dois lados <output>{Math.round(pairWidthPercent)}%</output></span><input type="range" min="1" max={Math.max(400, Math.ceil(pairWidthPercent / 100) * 100 + 100)} step="1" value={pairWidthPercent} onChange={(event) => void resizePair(componentPair.kind, 'scaleX', Number(event.target.value))} /></label>
           {pairHeightAsset && <label className="face-component-slider"><span>Altura dos dois lados <output>{Math.round(pairHeightPercent)}%</output></span><input type="range" min="1" max={Math.max(400, Math.ceil(pairHeightPercent / 100) * 100 + 100)} step="1" value={pairHeightPercent} onChange={(event) => void resizePair(componentPair.kind, 'scaleY', Number(event.target.value))} /></label>}
