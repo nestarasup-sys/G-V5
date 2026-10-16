@@ -4,6 +4,7 @@ import { Icon } from '../../../ui/components/Icon'
 import { usePreviewBackground } from '../usePreviewBackground'
 import { processFaceSheet } from './processFaceSheet'
 import { splitEyeSheet } from './splitEyeSheet'
+import { eyeInteriorMask } from './eyeInteriorMask'
 import { alignImportedFacePiece, captureFaceImportAnchor, fitClosedEyeToOpen, validFaceImportAnchor, type AlignableFaceKind, type FaceImportAnchor } from './faceImportAlignment'
 import { removeEyebrowGreen } from './removeEyebrowGreen'
 import './face-components.css'
@@ -159,6 +160,7 @@ export function FaceComponentsWorkspace() {
   const [model, setModel] = useState<FabricatorProject | null>(null)
   const [assets, setAssets] = useState<FaceComponentAssetSummary[]>([])
   const [details, setDetails] = useState<Record<string, FaceComponentAsset>>({})
+  const [eyeMasks, setEyeMasks] = useState<Record<string, string>>({})
   const [selectedPart, setSelectedPart] = useState<PartId>('eye-left')
   const [libraryCategory, setLibraryCategory] = useState<LibraryCategory>('eye')
   const [selectedAssets, setSelectedAssets] = useState<Partial<Record<PartId, string>>>({})
@@ -187,6 +189,22 @@ export function FaceComponentsWorkspace() {
   const [draggingPreview, setDraggingPreview] = useState(false)
   const stageRef = useRef<HTMLDivElement>(null)
   const [stageSize, setStageSize] = useState({ width: 0, height: 0 })
+  useEffect(() => {
+    let cancelled = false
+    const eyeAssets = Object.values(details).filter((asset) => asset.kind === 'eye')
+    void Promise.all(eyeAssets.map(async (asset) => [asset.id, await eyeInteriorMask(asset.dataUrl)] as const)).then((entries) => {
+      if (cancelled) return
+      setEyeMasks((current) => {
+        let changed = false
+        const next = { ...current }
+        for (const [id, mask] of entries) {
+          if (next[id] !== mask) { next[id] = mask; changed = true }
+        }
+        return changed ? next : current
+      })
+    })
+    return () => { cancelled = true }
+  }, [details])
   const head = useMemo(() => model?.parts.find((part) => /cabe[çc]a|head/i.test(part.name)) ?? null, [model])
   const guide = guidesByModel[modelSlot] ?? defaultGuide
   const previewScale = head && stageSize.width > 0 && stageSize.height > 0
@@ -886,7 +904,7 @@ export function FaceComponentsWorkspace() {
           width: `${maskImage.width * eyeTransform.scaleX / head.width * 100}%`,
           height: `${maskImage.height * eyeTransform.scaleY / head.height * 100}%`,
           transform: `translate(-50%,-50%) rotate(${eyeRotation}deg) scaleX(${eyeFlip ? -1 : 1})`,
-          maskImage: `url(${maskImage.dataUrl})`, WebkitMaskImage: `url(${maskImage.dataUrl})`
+          maskImage: `url(${eyeMasks[maskImage.id] ?? maskImage.dataUrl})`, WebkitMaskImage: `url(${eyeMasks[maskImage.id] ?? maskImage.dataUrl})`
         }
         const pupilOffsetX = rightSide && !physicalRight && linked.pupil ? -transform.x : transform.x
         const eyeFlipDirection = eyeFlip ? -1 : 1

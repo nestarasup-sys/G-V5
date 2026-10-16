@@ -9,6 +9,7 @@ import type { StudioFaceTransforms } from '../../../../shared/studio'
 import { usePreviewBackground } from '../fabricator/usePreviewBackground'
 import { DesignBanner } from '../fabricator/DesignWorkspace'
 import { mapWardrobeComponentToPose } from '../fabricator/wardrobe/poseTransform'
+import { eyeInteriorMask } from '../fabricator/face/eyeInteriorMask'
 import { applyCharacterBodyShape } from './bodyShape'
 import { tintSkinPixels } from './skinTint'
 
@@ -808,7 +809,7 @@ async function drawFaceCatalogOverlay(context: CanvasRenderingContext2D, artwork
           if ((isRight && linked) !== Boolean(transform.flipX)) clipped.scale(-1, 1)
           clipped.drawImage(image, -width / 2, -height / 2, width, height); clipped.restore()
 
-          const eyeMask = await loadHairTintedImage(pupilEyeClip.asset.dataUrl, pupilEyeClip.colors)
+          const eyeMask = await loadCachedImage(await eyeInteriorMask(pupilEyeClip.asset.dataUrl))
           const eyeLocalX = pupilEyeClip.transform.x / sourceHead.width * targetHead.width
           const eyeLocalY = pupilEyeClip.transform.y / sourceHead.height * targetHead.height
           const eyeX = targetHead.x + targetHead.width / 2 + (eyeLocalX - targetHead.width / 2) * Math.cos(radians) - (eyeLocalY - targetHead.height / 2) * Math.sin(radians)
