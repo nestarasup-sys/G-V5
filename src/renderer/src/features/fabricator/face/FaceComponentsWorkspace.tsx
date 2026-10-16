@@ -8,9 +8,9 @@ import './face-components.css'
 type PartId = 'eye-left' | 'eye-right' | 'pupil-left' | 'pupil-right' | 'brow-left' | 'brow-right'
 type CatalogKind = 'nose' | 'mouth-closed' | 'mouth-open'
 type LibraryCategory = FaceComponentKind | 'nose' | 'mouth'
-type FaceGuide = { visible: boolean; verticalX: number; horizontalY: number; angle: number }
+type FaceGuide = { visible: boolean; verticalX: number; horizontalY: number; lowerHorizontalY: number; angle: number }
 const GUIDE_STORAGE_KEY = 'gacha-nymi:face-dev-guides'
-const defaultGuide: FaceGuide = { visible: true, verticalX: 50, horizontalY: 45, angle: 12 }
+const defaultGuide: FaceGuide = { visible: true, verticalX: 50, horizontalY: 45, lowerHorizontalY: 65, angle: 12 }
 const categories: Array<{ kind: FaceComponentKind; label: string; parts: [PartId, PartId]; names: [string, string] }> = [
   { kind: 'eye', label: 'Olhos', parts: ['eye-left', 'eye-right'], names: ['Olho esquerdo', 'Olho direito'] },
   { kind: 'pupil', label: 'Pupilas', parts: ['pupil-left', 'pupil-right'], names: ['Pupila esquerda', 'Pupila direita'] },
@@ -30,12 +30,16 @@ function readFaceGuides(): Record<number, FaceGuide> {
   try {
     const stored = JSON.parse(window.localStorage.getItem(GUIDE_STORAGE_KEY) ?? '{}') as Record<string, Partial<FaceGuide>>
     if (!stored || typeof stored !== 'object' || Array.isArray(stored)) return {}
-    return Object.fromEntries(Object.entries(stored).filter(([slot, value]) => /^\d+$/.test(slot) && value && typeof value === 'object').map(([slot, value]) => [Number(slot), {
-      visible: value.visible !== false,
-      verticalX: guideValue(value.verticalX, defaultGuide.verticalX, 20, 80),
-      horizontalY: guideValue(value.horizontalY, defaultGuide.horizontalY, 10, 90),
-      angle: guideValue(value.angle, defaultGuide.angle, -30, 30)
-    }]))
+    return Object.fromEntries(Object.entries(stored).filter(([slot, value]) => /^\d+$/.test(slot) && value && typeof value === 'object').map(([slot, value]) => {
+      const horizontalY = guideValue(value.horizontalY, defaultGuide.horizontalY, 10, 90)
+      return [Number(slot), {
+        visible: value.visible !== false,
+        verticalX: guideValue(value.verticalX, defaultGuide.verticalX, 20, 80),
+        horizontalY,
+        lowerHorizontalY: Math.max(horizontalY + 1, guideValue(value.lowerHorizontalY, defaultGuide.lowerHorizontalY, 11, 99)),
+        angle: guideValue(value.angle, defaultGuide.angle, -30, 30)
+      }]
+    }))
   } catch { return {} }
 }
 const readImage = async (file: File): Promise<{ dataUrl: string; width: number; height: number }> => {
@@ -67,12 +71,15 @@ function initialCatalogTransform(head: ModelPart, item: Pick<FaceCatalogItem, 'c
 function FaceGuideOverlay({ head, guide }: { head: ModelPart; guide: FaceGuide }) {
   const x = head.width * guide.verticalX / 100
   const y = head.height * guide.horizontalY / 100
+  const lowerY = head.height * guide.lowerHorizontalY / 100
   return <svg className="face-components-guide-overlay" viewBox={`0 0 ${head.width} ${head.height}`} preserveAspectRatio="none" aria-hidden="true">
     <g transform={`rotate(${guide.angle} ${x} ${head.height / 2})`}>
       <line className="face-components-guide-halo" x1={x} y1={-head.height} x2={x} y2={head.height * 2} />
       <line className="face-components-guide-halo" x1={-head.width} y1={y} x2={head.width * 2} y2={y} />
+      <line className="face-components-guide-halo" x1={-head.width} y1={lowerY} x2={head.width * 2} y2={lowerY} />
       <line className="face-components-guide-line" x1={x} y1={-head.height} x2={x} y2={head.height * 2} />
       <line className="face-components-guide-line" x1={-head.width} y1={y} x2={head.width * 2} y2={y} />
+      <line className="face-components-guide-line" x1={-head.width} y1={lowerY} x2={head.width * 2} y2={lowerY} />
       <circle className="face-components-guide-center" cx={x} cy={y} r={2.4} />
     </g>
   </svg>
@@ -450,7 +457,8 @@ export function FaceComponentsWorkspace() {
           <p>Marcação visual para alinhar as peças. Não modifica o personagem.</p>
           <label>Inclinação do eixo <output>{guide.angle}°</output><input type="range" min="-30" max="30" step="1" value={guide.angle} disabled={!guide.visible} onChange={(event) => updateGuide({ angle: Number(event.target.value) })} /></label>
           <label>Posição do eixo <output>{guide.verticalX}%</output><input type="range" min="20" max="80" step="1" value={guide.verticalX} disabled={!guide.visible} onChange={(event) => updateGuide({ verticalX: Number(event.target.value) })} /></label>
-          <label>Altura da linha horizontal <output>{guide.horizontalY}%</output><input type="range" min="10" max="90" step="1" value={guide.horizontalY} disabled={!guide.visible} onChange={(event) => updateGuide({ horizontalY: Number(event.target.value) })} /></label>
+          <label>Altura da linha superior <output>{guide.horizontalY}%</output><input type="range" min="10" max={Math.min(90, guide.lowerHorizontalY - 1)} step="1" value={guide.horizontalY} disabled={!guide.visible} onChange={(event) => updateGuide({ horizontalY: Number(event.target.value) })} /></label>
+          <label>Altura da linha inferior <output>{guide.lowerHorizontalY}%</output><input type="range" min={guide.horizontalY + 1} max="99" step="1" value={guide.lowerHorizontalY} disabled={!guide.visible} onChange={(event) => updateGuide({ lowerHorizontalY: Number(event.target.value) })} /></label>
           <button type="button" onClick={() => setGuidesByModel((current) => ({ ...current, [modelSlot]: defaultGuide }))}>Restaurar guias</button>
         </section>
       </aside>
