@@ -2311,7 +2311,7 @@ export function CustomizerPage() {
             </label>)}
           </div>
         </div>
-        <PiecePaletteStrip colors={appearance?.partColors?.[part.id]} disabled={!selectedCharacter || !asset} onSelect={(colors) => void applyHairPartPalette(part.id, colors)} />
+        <PiecePaletteStrip label={part.label} colors={appearance?.partColors?.[part.id]} disabled={!selectedCharacter || !asset} onSelect={(colors) => void applyHairPartPalette(part.id, colors)} />
       </article>
     }
     return <section className="customizer-hair-workspace" aria-label="Personalização do cabelo">
@@ -2455,7 +2455,7 @@ export function CustomizerPage() {
         </button>
         <button aria-label={`Próxima peça: ${part.label}`} onClick={() => chooseAt(selectedSlot + 1)} disabled={!choices.length || !selectedCharacter} type="button"><Icon name="chevronRight" /></button>
       </div>
-      <PiecePaletteStrip colors={activeFaceAppearance?.facePalettes?.[part.id]} disabled={!selectedCharacter || !selected} onSelect={(colors) => void applyFaceCatalogPalette(part.id, colors)} />
+      <PiecePaletteStrip label={part.label} colors={activeFaceAppearance?.facePalettes?.[part.id]} disabled={!selectedCharacter || !selected} onSelect={(colors) => void applyFaceCatalogPalette(part.id, colors)} />
     </article>
   }
 
@@ -2545,7 +2545,7 @@ export function CustomizerPage() {
             </label>)}
           </div>
         </div>
-        <PiecePaletteStrip colors={colors} disabled={!selectedCharacter || !piece} onSelect={(palette) => void applyFacePartPalette(part.id, palette)} />
+        <PiecePaletteStrip label={part.label} colors={colors} disabled={!selectedCharacter || !piece} onSelect={(palette) => void applyFacePartPalette(part.id, palette)} />
       </article>
     }
     return <section className="customizer-hair-workspace customizer-face-workspace" aria-label="Personalização dos olhos e sobrancelhas">
