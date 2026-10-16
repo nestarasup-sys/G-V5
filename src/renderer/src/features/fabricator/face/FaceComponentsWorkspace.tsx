@@ -4,6 +4,7 @@ import { Icon } from '../../../ui/components/Icon'
 import { usePreviewBackground } from '../usePreviewBackground'
 import { processFaceSheet } from './processFaceSheet'
 import { splitEyeSheet } from './splitEyeSheet'
+import { alignImportedFacePiece, captureFaceImportAnchor, validFaceImportAnchor, type AlignableFaceKind, type FaceImportAnchor } from './faceImportAlignment'
 import './face-components.css'
 
 type PartId = 'eye-left' | 'eye-right' | 'pupil-left' | 'pupil-right' | 'eye-closed-left' | 'eye-closed-right' | 'brow-left' | 'brow-right'
@@ -14,6 +15,7 @@ type PreviewDrag = { pointerId: number; key: string; clientX: number; clientY: n
 const GUIDE_STORAGE_KEY = 'gacha-nymi:face-dev-guides'
 const COMPONENT_SELECTION_STORAGE_KEY = 'gacha-nymi:face-dev-component-selections'
 const LEGACY_PUPIL_SELECTION_STORAGE_KEY = 'gacha-nymi:face-dev-pupil-selections'
+const FACE_IMPORT_ANCHORS_STORAGE_KEY = 'gacha-nymi:face-dev-import-anchors'
 const defaultGuide: FaceGuide = { visible: true, verticalX: 50, horizontalY: 45, lowerHorizontalY: 65, angle: 12 }
 const categories: Array<{ kind: FaceComponentKind; label: string; parts: [PartId, PartId]; names: [string, string] }> = [
   { kind: 'eye', label: 'Olhos', parts: ['eye-left', 'eye-right'], names: ['Olho esquerdo', 'Olho direito'] },
@@ -56,6 +58,16 @@ function readComponentSelections(): Record<number, ComponentSelection> {
       parts: { 'pupil-left': selection.left, 'pupil-right': selection.right }, linked: { pupil: selection.linked }
     }])) as Record<number, ComponentSelection>
     return { ...migrated, ...(stored && typeof stored === 'object' && !Array.isArray(stored) ? stored : {}) }
+  } catch { return {} }
+}
+type FaceImportAnchors = Record<number, Partial<Record<AlignableFaceKind, FaceImportAnchor>>>
+function readFaceImportAnchors(): FaceImportAnchors {
+  try {
+    const stored = JSON.parse(window.localStorage.getItem(FACE_IMPORT_ANCHORS_STORAGE_KEY) ?? '{}') as Record<string, Record<string, unknown>>
+    if (!stored || typeof stored !== 'object' || Array.isArray(stored)) return {}
+    return Object.fromEntries(Object.entries(stored).filter(([slot, value]) => /^\d+$/.test(slot) && value && typeof value === 'object').map(([slot, value]) => [Number(slot), Object.fromEntries(
+      (['eye', 'pupil', 'eye-closed'] as const).filter((kind) => validFaceImportAnchor(value[kind])).map((kind) => [kind, value[kind]])
+    )])) as FaceImportAnchors
   } catch { return {} }
 }
 const readImage = async (file: File): Promise<{ dataUrl: string; width: number; height: number }> => {
@@ -134,6 +146,7 @@ export function FaceComponentsWorkspace() {
   const [models, setModels] = useState<FabricatorSlotSummary[]>([])
   const [modelSlot, setModelSlot] = useState(1)
   const [guidesByModel, setGuidesByModel] = useState<Record<number, FaceGuide>>(readFaceGuides)
+  const [importAnchorsByModel, setImportAnchorsByModel] = useState<FaceImportAnchors>(readFaceImportAnchors)
   const [model, setModel] = useState<FabricatorProject | null>(null)
   const [assets, setAssets] = useState<FaceComponentAssetSummary[]>([])
   const [details, setDetails] = useState<Record<string, FaceComponentAsset>>({})
@@ -172,6 +185,8 @@ export function FaceComponentsWorkspace() {
   const selectedId = selectedAssets[selectedPart] ?? (linked[selectedCategory.kind] && selectedPart.endsWith('right') ? selectedAssets[selectedCategory.parts[0]] : undefined)
   const selectedAsset = selectedId ? details[selectedId] : undefined
   const componentPair = categories.find((category) => category.kind === libraryCategory)
+  const alignableKind = libraryCategory === 'eye' || libraryCategory === 'pupil' || libraryCategory === 'eye-closed' ? libraryCategory : null
+  const currentImportAnchor = alignableKind ? importAnchorsByModel[modelSlot]?.[alignableKind] : undefined
   const leftPairId = componentPair ? selectedAssets[componentPair.parts[0]] : undefined
   const rightPairId = componentPair ? selectedAssets[componentPair.parts[1]] : undefined
   const leftPairAsset = leftPairId ? details[leftPairId] : undefined
@@ -236,6 +251,7 @@ export function FaceComponentsWorkspace() {
 
   useEffect(() => { void window.desktop.listFabricatorSlots().then((slots) => { setModels(slots); const first = slots.findIndex(Boolean); if (first >= 0) setModelSlot(first + 1) }).catch((reason) => setError(String(reason))) }, [])
   useEffect(() => { try { window.localStorage.setItem(GUIDE_STORAGE_KEY, JSON.stringify(guidesByModel)) } catch { /* Keep guides available during this session. */ } }, [guidesByModel])
+  useEffect(() => { try { window.localStorage.setItem(FACE_IMPORT_ANCHORS_STORAGE_KEY, JSON.stringify(importAnchorsByModel)) } catch { setError('Não foi possível salvar a fixação de importação neste computador.') } }, [importAnchorsByModel])
   useEffect(() => {
     if (hydratedComponentSlot.current !== modelSlot) return
     try {
@@ -246,6 +262,24 @@ export function FaceComponentsWorkspace() {
   }, [modelSlot, selectedAssets, linked])
   function updateGuide(patch: Partial<FaceGuide>) {
     setGuidesByModel((current) => ({ ...current, [modelSlot]: { ...(current[modelSlot] ?? defaultGuide), ...patch } }))
+  }
+  function fixImportAnchor(kind: AlignableFaceKind) {
+    if (!head) return
+    const category = categories.find((entry) => entry.kind === kind)!
+    const left = details[selectedAssets[category.parts[0]] ?? '']
+    const right = details[selectedAssets[category.parts[1]] ?? '']
+    if (!left) return
+    const anchor = captureFaceImportAnchor(left, right, head)
+    setImportAnchorsByModel((current) => ({ ...current, [modelSlot]: { ...current[modelSlot], [kind]: anchor } }))
+    setNotice(`Posição e tamanho de ${category.label.toLowerCase()} fixados para as próximas importações deste modelo.`)
+  }
+  function releaseImportAnchor(kind: AlignableFaceKind) {
+    setImportAnchorsByModel((current) => {
+      const nextForModel = { ...current[modelSlot] }
+      delete nextForModel[kind]
+      return { ...current, [modelSlot]: nextForModel }
+    })
+    setNotice('Fixação removida. Os assets já salvos mantêm seus ajustes.')
   }
   useEffect(() => {
     const stage = stageRef.current
@@ -319,7 +353,9 @@ export function FaceComponentsWorkspace() {
       const imported: FaceComponentAsset[] = []
       const assigned: Partial<Record<PartId, string>> = {}
       for (const [index, side] of category.parts.entries()) {
-        const transform: FaceTransform = index === 0 ? baseTransform : { ...baseTransform, x: kind === 'pupil' ? -baseTransform.x : head.width - baseTransform.x, rotation: -baseTransform.rotation, flipX: true }
+        const defaultTransform: FaceTransform = index === 0 ? baseTransform : { ...baseTransform, x: kind === 'pupil' ? -baseTransform.x : head.width - baseTransform.x, rotation: -baseTransform.rotation, flipX: true }
+        const anchor = kind === 'eye' || kind === 'pupil' || kind === 'eye-closed' ? importAnchorsByModel[modelSlot]?.[kind] : undefined
+        const transform = anchor ? alignImportedFacePiece(kind as AlignableFaceKind, index === 0 ? 'left' : 'right', image.width, image.height, anchor) : defaultTransform
         const asset: FaceComponentAssetSave = { schemaVersion: 1, id: crypto.randomUUID(), modelSlot, kind, name: `${baseName} · ${category.names[index]}`.slice(0, 120), width: image.width, height: image.height, defaultTransform: transform, rightSidePositioned: index === 1, updatedAt: new Date().toISOString() }
         await window.desktop.saveFaceComponentAsset(modelSlot, asset, image.dataUrl)
         savedIds.push(asset.id)
@@ -349,10 +385,12 @@ export function FaceComponentsWorkspace() {
         const category = categories.find((entry) => entry.kind === piece.kind)!
         for (const [index, side] of category.parts.entries()) {
           const baseTransform = initialTransform(piece.kind, head, piece.width, piece.height)
-          const transform: FaceTransform = index === 0 ? baseTransform : {
+          const defaultTransform: FaceTransform = index === 0 ? baseTransform : {
             ...baseTransform, x: piece.kind === 'pupil' ? -baseTransform.x : head.width - baseTransform.x,
             rotation: -baseTransform.rotation, flipX: true
           }
+          const anchor = importAnchorsByModel[modelSlot]?.[piece.kind]
+          const transform = anchor ? alignImportedFacePiece(piece.kind, index === 0 ? 'left' : 'right', piece.width, piece.height, anchor) : defaultTransform
           const asset: FaceComponentAssetSave = {
             schemaVersion: 1, id: crypto.randomUUID(), modelSlot, kind: piece.kind,
             name: `${baseName} · ${category.names[index]}`.slice(0, 120), width: piece.width, height: piece.height,
@@ -712,6 +750,11 @@ export function FaceComponentsWorkspace() {
           if (event.target.checked) { setLinked((current) => ({ ...current, [componentPair.kind]: true })); setSelectedPart(componentPair.parts[0]) }
           else void chooseComponentSide(componentPair.parts[1])
         }} /> Espelhar imagem da esquerda</label>}
+        {alignableKind && <section className="face-component-import-anchor" aria-label="Fixar posição e tamanho para novas importações">
+          <div><strong>Referência de importação</strong><small>{currentImportAnchor ? 'Novas peças terão a posição e o tamanho desta referência.' : 'Ajuste a primeira peça e fixe para as próximas folhas.'}</small></div>
+          <button type="button" disabled={!leftPairAsset} onClick={() => fixImportAnchor(alignableKind)}>{currentImportAnchor ? 'Atualizar fixação' : 'Fixar posição e tamanho'}</button>
+          {currentImportAnchor && <button className="face-component-import-anchor-release" type="button" onClick={() => releaseImportAnchor(alignableKind)}>Desfixar</button>}
+        </section>}
         {componentPair && head && leftPairAsset && <section className="face-component-pair-controls" aria-label={`Deslocamento conjunto de ${componentPair.label}`}>
           <strong>Deslocamento conjunto</strong><small>Move esquerda e direita na mesma direção.</small>
           <div className="face-component-nudge-pad">
