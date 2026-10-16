@@ -2235,9 +2235,13 @@ export function CustomizerPage() {
     const renderPart = (part: typeof customizerFaceParts[number]) => {
       const options = faceOptionsForCategory(part.category)
       const selectedId = facePartCatalogId(appearance, part)
-      const selectedIndex = options.findIndex((summary) => summary.id === selectedId)
+      const selectedAsset = selectedId ? faceComponentAssets.find((summary) => summary.id === selectedId) : undefined
+      const selectedOption = selectedAsset && isRightFaceAsset(selectedAsset)
+        ? options.find((summary) => sameFaceAssetPair(summary, selectedAsset, faceComponentDetails))
+        : selectedAsset
+      const selectedIndex = options.findIndex((summary) => summary.id === selectedOption?.id)
       const selected = selectedIndex >= 0 ? options[selectedIndex] : null
-      const piece = selected ? faceComponentDetails[selected.id] : null
+      const piece = selectedId ? faceComponentDetails[selectedId] : null
       const colorPartId = facePartSourceId(appearance, part)
       const colors = appearance?.components?.[colorPartId]?.colors ?? {}
       const hasLocalColors = Object.keys(colors).length > 0
@@ -2280,6 +2284,10 @@ export function CustomizerPage() {
     const visible = options.slice(page * pageSize, (page + 1) * pageSize)
     const appearance = characterFaceAppearance?.modelSlot === selectedCatalogModelSlot ? characterFaceAppearance : undefined
     const selectedId = facePartCatalogId(appearance, part)
+    const selectedAsset = selectedId ? faceComponentAssets.find((summary) => summary.id === selectedId) : undefined
+    const selectedOption = selectedAsset && isRightFaceAsset(selectedAsset)
+      ? options.find((summary) => sameFaceAssetPair(summary, selectedAsset, faceComponentDetails))
+      : selectedAsset
     const selectedColors = appearance?.components?.[facePartSourceId(appearance, part)]?.colors
     return <section className="customizer-hair-library" aria-labelledby="customizer-face-library-title">
       <header className="customizer-hair-library-heading">
@@ -2290,7 +2298,7 @@ export function CustomizerPage() {
       <div className="customizer-hair-library-grid" aria-label={'Biblioteca de ' + part.label}>
         {visible.map((summary) => {
           const piece = faceComponentDetails[summary.id]
-          const selected = summary.id === selectedId
+          const selected = summary.id === selectedOption?.id
           return <button className={`customizer-hair-library-item${selected ? ' selected' : ''}`} key={summary.id} title={summary.name} aria-label={'Selecionar ' + summary.name} aria-pressed={selected} type="button" onClick={() => void chooseFacePartCatalogItem(part.id, summary)}>
             {piece ? <HairAssetPreview source={piece.dataUrl} colors={selectedColors} alt="" /> : <span className="customizer-hair-library-placeholder"><Icon name="face" /></span>}
           </button>
