@@ -91,6 +91,17 @@ function facePartSourceId(appearance: CustomizerFaceAppearance | undefined, part
   const linked = appearance?.linkedSides?.[part.category] !== false
   return part.side === 'right' && linked ? part.category === 'eye' ? 'eye-left' : part.category === 'pupil' ? 'pupil-left' : 'brow-left' : part.id
 }
+function isRightFaceAsset(asset: FaceComponentAssetSummary): boolean {
+  return asset.rightSidePositioned === true || / · (?:Olho|Olho aberto|Olho fechado|Pupila|Sobrancelha) direit[oa]$/i.test(asset.name)
+}
+function sameFaceAssetPair(left: FaceComponentAssetSummary, right: FaceComponentAssetSummary, details: Record<string, FaceComponentAsset>): boolean {
+  if (left.kind !== right.kind || !isRightFaceAsset(right)) return false
+  if (left.pairId || right.pairId) return Boolean(left.pairId && left.pairId === right.pairId || right.pairId === left.id)
+  const leftDetail = details[left.id]
+  const rightDetail = details[right.id]
+  const baseName = (name: string) => name.replace(/ · (?:Olho|Olho aberto|Olho fechado|Pupila|Sobrancelha) (?:esquerd[oa]|direit[oa])$/i, '')
+  return Boolean(leftDetail && rightDetail && !isRightFaceAsset(left) && baseName(left.name) === baseName(right.name) && leftDetail.dataUrl === rightDetail.dataUrl)
+}
 const skinTonePresets = [
   { id: '#f5ddcb', name: 'Porcelana' },
   { id: '#edc5a5', name: 'Clara' },
@@ -1664,9 +1675,12 @@ export function CustomizerPage() {
   async function chooseFacePartCatalogItem(partId: FaceLibraryPartId, summary: FaceComponentAssetSummary) {
     const part = customizerFaceParts.find((entry) => entry.id === partId)
     if (!part || !selectedCharacter) return
-    const item = faceComponentDetails[summary.id] ?? await window.desktop.loadFaceComponentAsset(summary.modelSlot, summary.id)
+    const chosenSummary = part.side === 'right'
+      ? faceComponentAssets.find((candidate) => sameFaceAssetPair(summary, candidate, faceComponentDetails)) ?? summary
+      : summary
+    const item = faceComponentDetails[chosenSummary.id] ?? await window.desktop.loadFaceComponentAsset(chosenSummary.modelSlot, chosenSummary.id)
     if (!item) return
-    setFaceComponentDetails((current) => ({ ...current, [summary.id]: item }))
+    setFaceComponentDetails((current) => ({ ...current, [chosenSummary.id]: item }))
     const current = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
     const previous = current.customization.faceAppearance
     const sameModel = previous?.modelSlot === item.modelSlot
@@ -2209,10 +2223,17 @@ export function CustomizerPage() {
       </section>
   }
 
+  const faceOptionsForCategory = (category: FaceComponentKind) => {
+    const candidates = faceComponentAssets.filter((asset) => asset.kind === category)
+    return candidates.filter((asset) => !isRightFaceAsset(asset) || !candidates.some((candidate) =>
+      !isRightFaceAsset(candidate) && sameFaceAssetPair(candidate, asset, faceComponentDetails)
+    ))
+  }
+
   const renderFaceCustomizer = () => {
     const appearance = characterFaceAppearance?.modelSlot === selectedCatalogModelSlot ? characterFaceAppearance : undefined
     const renderPart = (part: typeof customizerFaceParts[number]) => {
-      const options = faceComponentAssets.filter((summary) => summary.kind === part.category)
+      const options = faceOptionsForCategory(part.category)
       const selectedId = facePartCatalogId(appearance, part)
       const selectedIndex = options.findIndex((summary) => summary.id === selectedId)
       const selected = selectedIndex >= 0 ? options[selectedIndex] : null
@@ -2252,7 +2273,7 @@ export function CustomizerPage() {
     if (!faceLibraryPart) return null
     const part = customizerFaceParts.find((entry) => entry.id === faceLibraryPart)
     if (!part) return null
-    const options = faceComponentAssets.filter((summary) => summary.kind === part.category)
+    const options = faceOptionsForCategory(part.category)
     const pageSize = 20
     const pageCount = Math.max(1, Math.ceil(options.length / pageSize))
     const page = Math.min(faceLibraryPage, pageCount - 1)
