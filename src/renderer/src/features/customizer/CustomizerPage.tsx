@@ -1960,6 +1960,16 @@ export function CustomizerPage() {
     await saveCharacterCustomization({ wardrobeGroups: after })
   }
 
+  async function setWardrobePieceColor(setId: string, category: ClothingGroupCategory, componentId: string, role: HairColorRole, value: string) {
+    if (!selectedCharacter) return
+    const current = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
+    const groups = current.customization.wardrobeGroups ?? []
+    const wardrobeGroups = groups.map((group) => group.modelSlot === selectedCatalogModelSlot && group.setId === setId && group.category === category && group.componentId === componentId
+      ? { ...group, colors: { ...group.colors, [role]: value } }
+      : group)
+    await saveCharacterCustomization({ wardrobeGroups })
+  }
+
   async function resetWardrobePieceColors(setId: string, category: ClothingGroupCategory, componentId: string) {
     if (!selectedCharacter) return
     const current = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
@@ -2514,7 +2524,7 @@ export function CustomizerPage() {
     </section>
   }
 
-  const renderUpperWardrobePanels = () => <div className="customizer-upper-wardrobe-grid" aria-label="Peças de roupa superior">
+  const renderUpperWardrobePanels = () => <div className="customizer-hair-layout customizer-upper-wardrobe-layout" aria-label="Peças de roupa superior">
     {upperWardrobePanels.map((panel) => {
       const candidates = upperWardrobeCandidates(panel)
       const appliedGroups = selectedCharacter?.customization.wardrobeGroups ?? []
@@ -2531,26 +2541,31 @@ export function CustomizerPage() {
         const nextSlot = (selectedSlot + direction + slotCount) % slotCount
         void applyUpperWardrobePanel(panel, nextSlot === 0 ? null : candidates[nextSlot - 1])
       }
-      return <article className="customizer-upper-piece-card" key={panel.id} aria-label={panel.label}>
-        <header><h3>{panel.label}</h3><span>{currentCandidate ? `${selectedSlot}/${candidates.length}` : `0/${candidates.length}`}</span></header>
-        <div className="customizer-upper-piece-view">
-          <button className="customizer-upper-piece-arrow" aria-label={`Peça anterior: ${panel.label}`} onClick={() => move(-1)} disabled={!candidates.length || !selectedCharacter || selectedCatalogModelSlot === null} type="button">‹</button>
-          <button className={'customizer-upper-piece-image' + (currentCandidate ? ' selected' : '')} aria-label={`Abrir biblioteca de ${panel.label}`} title={`Abrir biblioteca de ${panel.label}`} onClick={() => { setWardrobeLibraryPage(0); setWardrobeLibraryPanel(panel) }} type="button">
+      return <article className="customizer-hair-piece customizer-upper-wardrobe-piece" key={panel.id} aria-label={panel.label}>
+        <header><strong>{panel.label} {selectedSlot + 1}/{candidates.length + 1}</strong>{hasLocalColors && currentCandidate && <button className="customizer-hair-reset" type="button" onClick={() => void resetWardrobePieceColors(currentCandidate.summary.id, panel.category, currentCandidate.component.id)}>Restaurar</button>}</header>
+        <div className="customizer-hair-piece-selector customizer-upper-wardrobe-selector">
+          <button aria-label={`Peça anterior: ${panel.label}`} onClick={() => move(-1)} disabled={!candidates.length || !selectedCharacter || selectedCatalogModelSlot === null} type="button"><Icon name="chevronRight" /></button>
+          <button className="customizer-hair-piece-preview" aria-label={`Abrir biblioteca de ${panel.label}`} title={`Abrir biblioteca de ${panel.label}`} onClick={() => { setWardrobeLibraryPage(0); setWardrobeLibraryPanel(panel) }} type="button">
             {currentCandidate ? <HairAssetPreview source={currentCandidate.component.dataUrl} colors={colors} alt={currentCandidate.component.name} /> : <span>Escolha uma peça</span>}
           </button>
-          <button className="customizer-upper-piece-arrow" aria-label={`Próxima peça: ${panel.label}`} onClick={() => move(1)} disabled={!candidates.length || !selectedCharacter || selectedCatalogModelSlot === null} type="button">›</button>
+          <button aria-label={`Próxima peça: ${panel.label}`} onClick={() => move(1)} disabled={!candidates.length || !selectedCharacter || selectedCatalogModelSlot === null} type="button"><Icon name="chevronRight" /></button>
+          <div className="customizer-hair-piece-colors" aria-label={`Cores de ${panel.label}`}>
+            {hairColorControls.map((color) => <label key={color.id} className={colors[color.id] ? 'local' : ''} style={{ '--hair-color-swatch': colors[color.id] ?? color.fallback } as React.CSSProperties} title={`${color.label} de ${panel.label}`}>
+              <input type="color" aria-label={`${color.label} de ${panel.label}`} value={colors[color.id] ?? color.fallback} disabled={!selectedCharacter || !currentCandidate} onChange={(event) => void setWardrobePieceColor(currentCandidate!.summary.id, panel.category, currentCandidate!.component.id, color.id, event.target.value)} />
+              <span aria-hidden="true">{color.id === 'highlight' ? 'L' : color.id === 'accent' ? 'A' : color.id === 'outline' ? 'C' : color.id === 'fade' ? 'D' : 'B'}</span>
+            </label>)}
+          </div>
         </div>
-        <footer className="customizer-upper-piece-footer"><span>{currentCandidate ? currentCandidate.component.name : 'Nenhuma selecionada'}</span></footer>
-        {currentCandidate && <div className="customizer-upper-piece-colors" aria-label={`Paletas de ${panel.label}`}>
-          <div className="customizer-upper-piece-colors-heading"><strong>Paleta da peça</strong>{hasLocalColors && <button type="button" onClick={() => void resetWardrobePieceColors(currentCandidate.summary.id, panel.category, currentCandidate.component.id)}>Restaurar</button>}</div>
+        <div className="customizer-upper-piece-colors" aria-label={`Paletas de ${panel.label}`}>
+          <div className="customizer-upper-piece-colors-heading"><strong>{currentCandidate?.component.name ?? 'Paleta da peça'}</strong></div>
           <div className="customizer-hair-palette-presets customizer-upper-piece-palette-presets">
             <button className="customizer-hair-palette-scroll previous" aria-label={`Ver paletas anteriores de ${panel.label}`} onClick={() => wardrobePaletteStripRefs.current[panel.id]?.scrollBy({ left: -180, behavior: 'smooth' })} type="button"><Icon name="chevronRight" /></button>
             <div className="customizer-hair-palette-preset-list" ref={(node) => { wardrobePaletteStripRefs.current[panel.id] = node }}>
-              {hairPalettePresets.map((preset) => <button key={preset.name} type="button" disabled={!selectedCharacter} aria-pressed={hairColorControls.every((color) => colors[color.id] === preset.colors[color.id])} onClick={() => void applyWardrobePiecePalette(currentCandidate.summary.id, panel.category, currentCandidate.component.id, preset.colors)} title={`Aplicar paleta ${preset.name} somente a ${panel.label}`}><span style={{ background: `linear-gradient(115deg, ${preset.colors.highlight} 0 23%, ${preset.colors.base} 23% 65%, ${preset.colors.fade} 65% 84%, ${preset.colors.outline} 84%)` }} />{preset.name}</button>)}
+              {hairPalettePresets.map((preset) => <button key={preset.name} type="button" disabled={!selectedCharacter || !currentCandidate} aria-pressed={hairColorControls.every((color) => colors[color.id] === preset.colors[color.id])} onClick={() => currentCandidate && void applyWardrobePiecePalette(currentCandidate.summary.id, panel.category, currentCandidate.component.id, preset.colors)} title={`Aplicar paleta ${preset.name} somente a ${panel.label}`}><span style={{ background: `linear-gradient(115deg, ${preset.colors.highlight} 0 23%, ${preset.colors.base} 23% 65%, ${preset.colors.fade} 65% 84%, ${preset.colors.outline} 84%)` }} />{preset.name}</button>)}
             </div>
             <button className="customizer-hair-palette-scroll" aria-label={`Ver próximas paletas de ${panel.label}`} onClick={() => wardrobePaletteStripRefs.current[panel.id]?.scrollBy({ left: 180, behavior: 'smooth' })} type="button"><Icon name="chevronRight" /></button>
           </div>
-        </div>}
+        </div>
       </article>
     })}
   </div>
