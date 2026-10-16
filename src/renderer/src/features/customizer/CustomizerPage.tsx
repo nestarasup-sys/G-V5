@@ -2612,7 +2612,7 @@ export function CustomizerPage() {
             </div>
           </section>
           <section className={`customizer-models-sidebar${selectedCustomizerTopTab === 'roupas' && clothesPanelTab === 'upper' ? ' customizer-models-sidebar-clothes-upper' : ''}`} aria-label="Categorias de personalização">
-            <div className={`customizer-models-sidebar-nav${selectedCustomizerTopTab === 'roupas' && clothesPanelTab === 'upper' ? ' customizer-models-sidebar-nav-clothes-upper' : ''}`}>
+            <div className={`customizer-models-sidebar-nav${selectedCustomizerTopTab === 'roupas' ? ' customizer-models-sidebar-nav-clothes' : ''}`}>
             <nav className="customizer-top-tabs" aria-label="Áreas do Customizar" role="tablist">
               {customizerTopTabs.map((tab) => <button
                 key={tab.id}

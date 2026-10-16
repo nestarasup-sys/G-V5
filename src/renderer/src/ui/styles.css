@@ -295,7 +295,7 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .customizer-models-sidebar { min-width:0;min-height:0;display:flex;flex-direction:column;gap:12px;overflow:visible; }
 .customizer-models-sidebar-clothes-upper { gap:8px; }
 .customizer-models-sidebar-nav { position:sticky;top:0;z-index:10;flex:0 0 auto;display:flex;flex-direction:column;gap:12px;padding-bottom:2px;background:#f6f3f5; }
-.customizer-models-sidebar-nav-clothes-upper { gap:8px; }
+.customizer-models-sidebar-nav-clothes { gap:8px; }
 .customizer-sidebar-scroll-content { min-width:0;min-height:0;flex:1;display:flex;flex-direction:column;gap:12px;overflow-x:hidden;overflow-y:auto;scrollbar-gutter:stable;scrollbar-color:#d7b8c8 #fbf7f9;scrollbar-width:thin; }
 .customizer-sidebar-scroll-content-hair { min-height:0;gap:0;overflow:hidden; }
 .customizer-sidebar-scroll-content-clothes-upper { min-height:0;gap:0;overflow:hidden; }
