@@ -132,7 +132,7 @@ function FaceTransformControls({ head, transform, sourceWidth, sourceHeight, pup
   const heightPercent = sourceHeight * transform.scaleY / head.height * 100
   const sizeControl = (label: string, value: number, sourceSize: number, headSize: number, field: 'scaleX' | 'scaleY') => <label className="face-component-slider" key={field}>
     <span>{label}<output>{Math.round(value)}%</output></span>
-    <input type="range" min="1" max={Math.max(120, Math.ceil(value / 10) * 10)} step="1" value={value} onChange={(event) => onChange({ [field]: clamp(Number(event.target.value) / 100 * headSize / sourceSize, .01, 20) })} />
+    <input type="range" min="1" max={Math.max(400, Math.ceil(value / 100) * 100 + 100)} step="1" value={value} onChange={(event) => onChange({ [field]: clamp(Number(event.target.value) / 100 * headSize / sourceSize, .01, 20) })} />
   </label>
   return <div className="face-component-transform-controls">
     {!moveTogether && !followEyes && <><div className="face-component-move-controls"><strong>Posição</strong><div className="face-component-nudge-pad">
@@ -143,10 +143,10 @@ function FaceTransformControls({ head, transform, sourceWidth, sourceHeight, pup
     </div></div>
     <label className="face-component-slider"><span>{pupil ? 'Deslocamento horizontal' : 'Horizontal'}<output>{pupil ? `${Math.round(transform.x)} px` : `${Math.round(transform.x / head.width * 100)}%`}</output></span><input type="range" min={pupil ? -xRange : 0} max={xRange} step="1" value={transform.x} onChange={(event) => onChange({ x: Number(event.target.value) })} /></label>
     <label className="face-component-slider"><span>{pupil ? 'Deslocamento vertical' : 'Vertical'}<output>{pupil ? `${Math.round(transform.y)} px` : `${Math.round(transform.y / head.height * 100)}%`}</output></span><input type="range" min={pupil ? -yRange : 0} max={yRange} step="1" value={transform.y} onChange={(event) => onChange({ y: Number(event.target.value) })} /></label></>}
-    {!followEyes && sizeControl('Largura', widthPercent, sourceWidth, head.width, 'scaleX')}
-    {sizeControl('Altura', heightPercent, sourceHeight, head.height, 'scaleY')}
+    {!moveTogether && !followEyes && sizeControl('Largura', widthPercent, sourceWidth, head.width, 'scaleX')}
+    {!moveTogether && sizeControl('Altura', heightPercent, sourceHeight, head.height, 'scaleY')}
     <label className="face-component-slider"><span>Rotação<output>{Math.round(transform.rotation)}°</output></span><input type="range" min="-180" max="180" step="1" value={transform.rotation} onChange={(event) => onChange({ rotation: Number(event.target.value) })} /></label>
-    <button className="face-component-reset-transform" type="button" onClick={onReset}>{followEyes ? 'Restaurar altura e rotação' : 'Restaurar encaixe da peça'}</button>
+    <button className="face-component-reset-transform" type="button" onClick={onReset}>{moveTogether ? 'Restaurar rotação' : followEyes ? 'Restaurar altura e rotação' : 'Restaurar encaixe da peça'}</button>
   </div>
 }
 
@@ -217,6 +217,12 @@ export function FaceComponentsWorkspace() {
     : libraryCategory === 'pupil' ? -movementLeftAsset.defaultTransform.x : head.width - movementLeftAsset.defaultTransform.x : 0
   const pairX = movementLeftAsset ? (movementLeftAsset.defaultTransform.x + rightPairX) / 2 : 0
   const pairY = movementLeftAsset ? (movementLeftAsset.defaultTransform.y + (movementRightAsset && movementRightAsset.id !== movementLeftAsset.id ? movementRightAsset.defaultTransform.y : movementLeftAsset.defaultTransform.y)) / 2 : 0
+  const pairHeightAsset = libraryCategory === 'eye-closed' ? leftPairAsset : movementLeftAsset
+  const leftEyeForPupil = details[selectedAssets['eye-left'] ?? '']
+  const pairWidthSource = movementLeftAsset?.kind === 'pupil' ? leftEyeForPupil ? leftEyeForPupil.width * leftEyeForPupil.defaultTransform.scaleX : head ? head.width * .19 : 1 : movementLeftAsset?.width ?? 1
+  const pairHeightSource = pairHeightAsset?.kind === 'pupil' ? leftEyeForPupil ? leftEyeForPupil.height * leftEyeForPupil.defaultTransform.scaleY : head ? head.height * .17 : 1 : pairHeightAsset?.height ?? 1
+  const pairWidthPercent = head && movementLeftAsset ? pairWidthSource * movementLeftAsset.defaultTransform.scaleX / head.width * 100 : 0
+  const pairHeightPercent = head && pairHeightAsset ? pairHeightSource * pairHeightAsset.defaultTransform.scaleY / head.height * 100 : 0
   const selectedMouth = selectedMouthId && mouthDetails[selectedMouthId]?.category === mouthKind ? mouthDetails[selectedMouthId] : undefined
   const selectedNose = selectedNoseId ? noseDetails[selectedNoseId] : undefined
   const selectedCatalogItem = libraryCategory === 'nose' ? selectedNose : libraryCategory === 'mouth' ? selectedMouth : undefined
@@ -226,13 +232,13 @@ export function FaceComponentsWorkspace() {
   const eyeAsset = eyeAssetId ? details[eyeAssetId] : undefined
   const leftOpenEyeAsset = details[selectedAssets['eye-left'] ?? '']
   const selectedOpenEye = eyeAsset && selectedPart.endsWith('right') && linked.eye && leftOpenEyeAsset
-    ? { ...eyeAsset, width: leftOpenEyeAsset.width } : eyeAsset
+    ? { ...eyeAsset, width: leftOpenEyeAsset.width, height: leftOpenEyeAsset.height } : eyeAsset
   const followsOpenEye = selectedAsset?.kind === 'eye-closed' && Boolean(eyeAsset && head)
   const selectedTransform = selectedCatalogItem ? selectedCatalogItem.transforms[selectedCatalogItem.category === 'nose' ? 'nose' : 'mouth']
     : selectedAsset && followsOpenEye && selectedOpenEye && head ? fitClosedEyeToOpen(selectedAsset, selectedOpenEye, head, selectedPart.endsWith('right')) : selectedAsset?.defaultTransform
   const activePreviewKey = selectedCatalogItem ? `${selectedCatalogItem.category}:${selectedCatalogItem.id}` : activeComponent ? `${selectedPart}:${activeComponent.id}` : null
-  const selectedSourceWidth = selectedCatalogPiece?.width ?? (selectedAsset?.kind === 'pupil' ? eyeAsset ? eyeAsset.width * eyeAsset.defaultTransform.scaleX : head?.width ? head.width * .19 : 1 : selectedAsset?.width ?? 1)
-  const selectedSourceHeight = selectedCatalogPiece?.height ?? (selectedAsset?.kind === 'pupil' ? eyeAsset ? eyeAsset.height * eyeAsset.defaultTransform.scaleY : head?.height ? head.height * .17 : 1 : selectedAsset?.height ?? 1)
+  const selectedSourceWidth = selectedCatalogPiece?.width ?? (selectedAsset?.kind === 'pupil' ? selectedOpenEye ? selectedOpenEye.width * selectedOpenEye.defaultTransform.scaleX : head?.width ? head.width * .19 : 1 : selectedAsset?.width ?? 1)
+  const selectedSourceHeight = selectedCatalogPiece?.height ?? (selectedAsset?.kind === 'pupil' ? selectedOpenEye ? selectedOpenEye.height * selectedOpenEye.defaultTransform.scaleY : head?.height ? head.height * .17 : 1 : selectedAsset?.height ?? 1)
   const mouthPiece = selectedMouth?.pieces.find((piece) => piece.index === selectedMouth.selectedExpression) ?? selectedMouth?.pieces[0]
   const mouthTransform = selectedMouth?.transforms.mouth
   const mouthStyle: CSSProperties | undefined = head && mouthPiece && mouthTransform ? {
@@ -596,15 +602,29 @@ export function FaceComponentsWorkspace() {
     if (moveTogether[selectedCategory.kind] && head) {
       if (patch.x !== undefined) void movePair(selectedCategory.kind, 'x', pairX + patch.x - selectedAsset.defaultTransform.x)
       if (patch.y !== undefined) void movePair(selectedCategory.kind, 'y', pairY + patch.y - selectedAsset.defaultTransform.y)
+      if (patch.scaleX !== undefined) void resizePair(selectedCategory.kind, 'scaleX', selectedSourceWidth * patch.scaleX / head.width * 100)
+      if (patch.scaleY !== undefined) void resizePair(selectedCategory.kind, 'scaleY', selectedSourceHeight * patch.scaleY / head.height * 100)
       const individualPatch: Partial<FaceTransform> = {}
-      if (patch.scaleX !== undefined) individualPatch.scaleX = patch.scaleX
-      if (patch.scaleY !== undefined) individualPatch.scaleY = patch.scaleY
       if (patch.rotation !== undefined) individualPatch.rotation = patch.rotation
       if (patch.flipX !== undefined) individualPatch.flipX = patch.flipX
       if (Object.keys(individualPatch).length > 0) saveComponentTransform(selectedAsset, individualPatch)
       return
     }
     saveComponentTransform(selectedAsset, patch)
+  }
+
+  function resetSelectedTransform() {
+    if (!head) return
+    if (selectedCatalogItem) { updateTransform(initialCatalogTransform(head, selectedCatalogItem)); return }
+    if (!activeComponent) return
+    if (moveTogether[activeComponent.kind]) { updateTransform({ rotation: 0 }); return }
+    const base = initialTransform(activeComponent.kind, head, activeComponent.width, activeComponent.height)
+    if (selectedPart.endsWith('right')) {
+      normalizeRightAsset(activeComponent)
+      base.x = activeComponent.kind === 'pupil' ? 0 : head.width - base.x
+      base.flipX = true
+    }
+    updateTransform(followsOpenEye ? { scaleY: base.scaleY, rotation: base.rotation, flipX: base.flipX } : base)
   }
 
   function persistComponentAsset(next: FaceComponentAsset) {
@@ -651,39 +671,67 @@ export function FaceComponentsWorkspace() {
     }
   }
 
-  async function movePair(kind: FaceComponentKind, axis: 'x' | 'y', target: number) {
-    if (!head) return
-    const movingKind = kind === 'eye-closed' ? 'eye' : kind
-    const category = categories.find((entry) => entry.kind === movingKind)!
+  async function editablePair(kind: FaceComponentKind): Promise<[FaceComponentAsset, FaceComponentAsset] | null> {
+    if (!head) return null
+    const category = categories.find((entry) => entry.kind === kind)!
     const leftId = selectedAssetsRef.current[category.parts[0]]
     const rightId = selectedAssetsRef.current[category.parts[1]]
     const left = leftId ? componentDetailsRef.current[leftId] : undefined
-    if (!left) return
+    if (!left) return null
     let right = rightId ? componentDetailsRef.current[rightId] : undefined
     if (!right || right.id === left.id) {
-      const key = `${modelSlot}:${movingKind}:${left.id}`
+      const key = `${modelSlot}:${kind}:${left.id}`
       let pending = preparingPair.current.get(key)
       if (!pending) {
         pending = cloneComponentForSide(left, category.parts[1])
         preparingPair.current.set(key, pending)
       }
       try { right = await pending }
-      catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); return }
+      catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); return null }
       finally { preparingPair.current.delete(key) }
     }
     if (!right.rightSidePositioned) right = normalizeRightAsset(right)
     const leftCurrent = componentDetailsRef.current[left.id] ?? left
     const rightCurrent = componentDetailsRef.current[right.id] ?? right
+    return [leftCurrent, rightCurrent]
+  }
+
+  async function movePair(kind: FaceComponentKind, axis: 'x' | 'y', target: number, relative = false) {
+    if (!head) return
+    const pair = await editablePair(kind === 'eye-closed' ? 'eye' : kind)
+    if (!pair) return
+    const [leftCurrent, rightCurrent] = pair
     const leftValue = leftCurrent.defaultTransform[axis]
     const rightValue = rightCurrent.defaultTransform[axis]
     const center = (leftValue + rightValue) / 2
     const limit = axis === 'x' ? head.width : head.height
-    const minimum = movingKind === 'pupil' ? -limit * .25 : 0
-    const maximum = movingKind === 'pupil' ? limit * .25 : limit
-    const delta = clamp(target - center, Math.max(minimum - leftValue, minimum - rightValue), Math.min(maximum - leftValue, maximum - rightValue))
+    const minimum = kind === 'pupil' ? -limit * .25 : 0
+    const maximum = kind === 'pupil' ? limit * .25 : limit
+    const delta = clamp((relative ? center + target : target) - center, Math.max(minimum - leftValue, minimum - rightValue), Math.min(maximum - leftValue, maximum - rightValue))
     if (Math.abs(delta) < .001) return
     saveComponentTransform(leftCurrent, { [axis]: leftValue + delta })
     saveComponentTransform(rightCurrent, { [axis]: rightValue + delta })
+  }
+
+  async function resizePair(kind: FaceComponentKind, axis: 'scaleX' | 'scaleY', targetPercent: number) {
+    if (!head) return
+    const scaledKind = kind === 'eye-closed' && axis === 'scaleX' ? 'eye' : kind
+    const pair = await editablePair(scaledKind)
+    if (!pair) return
+    const dimension = axis === 'scaleX' ? 'width' : 'height'
+    const headSize = head[dimension]
+    const selection = selectedAssetsRef.current
+    for (const [index, asset] of pair.entries()) {
+      let sourceSize = index === 1 && linked[scaledKind] ? pair[0][dimension] : asset[dimension]
+      if (scaledKind === 'pupil') {
+        const side = index === 0 ? 'eye-left' : 'eye-right'
+        const eye = componentDetailsRef.current[selection[side] ?? ''] ?? componentDetailsRef.current[selection['eye-left'] ?? '']
+        const sourceEye = index === 1 && linked.eye ? componentDetailsRef.current[selection['eye-left'] ?? ''] ?? eye : eye
+        sourceSize = sourceEye && eye ? sourceEye[dimension] * eye.defaultTransform[axis] : headSize * (axis === 'scaleX' ? .19 : .17)
+      }
+      const scale = clamp(targetPercent / 100 * headSize / sourceSize, .01, 20)
+      saveComponentTransform(asset, { [axis]: scale })
+    }
   }
 
   function updateCatalogVariant(index: number) {
@@ -786,8 +834,9 @@ export function FaceComponentsWorkspace() {
     const leftEyeId = selectedAssets['eye-left']
     const eyeAsset = category.kind === 'pupil' ? details[rightSide && rightEyeId ? rightEyeId : leftEyeId ?? ''] : undefined
     const eyeTransform = eyeAsset?.defaultTransform
-    const eyeWidth = eyeAsset ? eyeAsset.width * eyeTransform!.scaleX : head.width * .19
-    const eyeHeight = eyeAsset ? eyeAsset.height * eyeTransform!.scaleY : head.height * .17
+    const pupilEyeImage = rightSide && linked.eye ? leftOpen ?? eyeAsset : eyeAsset
+    const eyeWidth = eyeAsset && pupilEyeImage ? pupilEyeImage.width * eyeTransform!.scaleX : head.width * .19
+    const eyeHeight = eyeAsset && pupilEyeImage ? pupilEyeImage.height * eyeTransform!.scaleY : head.height * .17
     let localX = transform.x
     let localY = transform.y
     if (category.kind === 'pupil') {
@@ -871,22 +920,24 @@ export function FaceComponentsWorkspace() {
           <button type="button" disabled={!leftPairAsset} onClick={() => fixImportAnchor(alignableKind)}>{currentImportAnchor ? 'Atualizar fixação' : 'Fixar posição e tamanho'}</button>
           {currentImportAnchor && <button className="face-component-import-anchor-release" type="button" onClick={() => releaseImportAnchor(alignableKind)}>Desfixar</button>}
         </section>}
-        {componentPair && head && movementLeftAsset && moveTogether[componentPair.kind] && <section className="face-component-pair-controls" aria-label={`Deslocamento conjunto de ${componentPair.label}`}>
-          <strong>Deslocamento conjunto</strong><small>Move esquerda e direita na mesma direção.</small>
+        {componentPair && head && movementLeftAsset && moveTogether[componentPair.kind] && <section className="face-component-pair-controls" aria-label={`Posição e tamanho conjuntos de ${componentPair.label}`}>
+          <strong>Posição e tamanho dos dois lados</strong><small>Os controles abaixo ajustam esquerda e direita juntos.{componentPair.kind === 'eye-closed' ? ' A largura acompanha os olhos abertos.' : ''}</small>
           <div className="face-component-nudge-pad">
-            <button type="button" aria-label="Subir os dois lados" onClick={() => void movePair(componentPair.kind, 'y', pairY - 1)}>↑</button>
-            <button type="button" aria-label="Mover os dois lados para a esquerda" onClick={() => void movePair(componentPair.kind, 'x', pairX - 1)}>←</button>
-            <button type="button" aria-label="Descer os dois lados" onClick={() => void movePair(componentPair.kind, 'y', pairY + 1)}>↓</button>
-            <button type="button" aria-label="Mover os dois lados para a direita" onClick={() => void movePair(componentPair.kind, 'x', pairX + 1)}>→</button>
+            <button type="button" aria-label="Subir os dois lados" onClick={() => void movePair(componentPair.kind, 'y', -1, true)}>↑</button>
+            <button type="button" aria-label="Mover os dois lados para a esquerda" onClick={() => void movePair(componentPair.kind, 'x', -1, true)}>←</button>
+            <button type="button" aria-label="Descer os dois lados" onClick={() => void movePair(componentPair.kind, 'y', 1, true)}>↓</button>
+            <button type="button" aria-label="Mover os dois lados para a direita" onClick={() => void movePair(componentPair.kind, 'x', 1, true)}>→</button>
           </div>
           <label className="face-component-slider"><span>Horizontal <output>{Math.round(pairX)} px</output></span><input type="range" min={componentPair.kind === 'pupil' ? -head.width * .25 : 0} max={componentPair.kind === 'pupil' ? head.width * .25 : head.width} step="1" value={pairX} onChange={(event) => void movePair(componentPair.kind, 'x', Number(event.target.value))} /></label>
           <label className="face-component-slider"><span>Vertical <output>{Math.round(pairY)} px</output></span><input type="range" min={componentPair.kind === 'pupil' ? -head.height * .25 : 0} max={componentPair.kind === 'pupil' ? head.height * .25 : head.height} step="1" value={pairY} onChange={(event) => void movePair(componentPair.kind, 'y', Number(event.target.value))} /></label>
+          <label className="face-component-slider"><span>Largura dos dois lados <output>{Math.round(pairWidthPercent)}%</output></span><input type="range" min="1" max={Math.max(400, Math.ceil(pairWidthPercent / 100) * 100 + 100)} step="1" value={pairWidthPercent} onChange={(event) => void resizePair(componentPair.kind, 'scaleX', Number(event.target.value))} /></label>
+          {pairHeightAsset && <label className="face-component-slider"><span>Altura dos dois lados <output>{Math.round(pairHeightPercent)}%</output></span><input type="range" min="1" max={Math.max(400, Math.ceil(pairHeightPercent / 100) * 100 + 100)} step="1" value={pairHeightPercent} onChange={(event) => void resizePair(componentPair.kind, 'scaleY', Number(event.target.value))} /></label>}
         </section>}
         {head && selectedTransform && (activeComponent || selectedCatalogItem) ? <>
           {!componentPair && <div className="face-component-current"><img src={activeComponent?.dataUrl ?? selectedCatalogPiece?.dataUrl} alt="" /><span><strong>{activeComponent?.name ?? selectedCatalogItem?.name}</strong><small>{selectedCatalogItem ? selectedCatalogItem.category === 'nose' ? 'Nariz' : selectedCatalogItem.category === 'mouth-open' ? 'Boca aberta' : 'Boca fechada' : selectedCategory.names[selectedPart.endsWith('right') ? 1 : 0]}</small></span></div>}
           {selectedCatalogItem && <label className="face-component-variant">Variante<select value={selectedCatalogItem.category === 'nose' ? selectedCatalogItem.selectedNose : selectedCatalogItem.selectedExpression} onChange={(event) => updateCatalogVariant(Number(event.target.value))}>{selectedCatalogItem.pieces.map((piece) => <option key={piece.id} value={piece.index}>{selectedCatalogItem.category === 'nose' ? 'Nariz' : 'Expressão'} {String(piece.index + 1).padStart(2, '0')}</option>)}</select></label>}
-          {componentPair && <strong className="face-component-individual-title">{followsOpenEye ? 'Altura e rotação' : moveTogether[componentPair.kind] ? 'Tamanho e rotação' : 'Ajuste individual'} · {selectedPart.endsWith('right') ? 'direita' : 'esquerda'}</strong>}
-          <FaceTransformControls head={head} transform={selectedTransform} sourceWidth={selectedSourceWidth} sourceHeight={selectedSourceHeight} pupil={activeComponent?.kind === 'pupil'} moveTogether={componentPair ? moveTogether[componentPair.kind] : false} followEyes={followsOpenEye} onChange={updateTransform} onReset={() => updateTransform(selectedCatalogItem ? initialCatalogTransform(head, selectedCatalogItem) : initialTransform(activeComponent!.kind, head, activeComponent!.width, activeComponent!.height))} />
+          {componentPair && <strong className="face-component-individual-title">{moveTogether[componentPair.kind] ? 'Rotação individual' : followsOpenEye ? 'Altura e rotação' : 'Ajuste individual'} · {selectedPart.endsWith('right') ? 'direita' : 'esquerda'}</strong>}
+          <FaceTransformControls head={head} transform={selectedTransform} sourceWidth={selectedSourceWidth} sourceHeight={selectedSourceHeight} pupil={activeComponent?.kind === 'pupil'} moveTogether={componentPair ? moveTogether[componentPair.kind] : false} followEyes={followsOpenEye} onChange={updateTransform} onReset={resetSelectedTransform} />
         </> : <p>Selecione uma peça na Biblioteca para ajustar posição, tamanho e rotação.</p>}
         <section className="face-components-guide-controls" aria-label="Guias de alinhamento do rosto">
           <header><strong>Guias de desenho</strong><label><input type="checkbox" checked={guide.visible} onChange={(event) => updateGuide({ visible: event.target.checked })} /> Mostrar</label></header>
