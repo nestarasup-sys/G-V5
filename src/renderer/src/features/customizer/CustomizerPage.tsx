@@ -49,7 +49,23 @@ const hairPalettePresets: Array<{ name: string; colors: HairColorOverrides }> = 
   { name: 'Castanho', colors: { base: '#8e4b35', fade: '#613525', outline: '#33221f', highlight: '#c68156', accent: '#c0638e' } },
   { name: 'Loiro', colors: { base: '#d6b46e', fade: '#a8844b', outline: '#59422e', highlight: '#f4dea0', accent: '#db9c73' } },
   { name: 'Preto', colors: { base: '#343b49', fade: '#242733', outline: '#14151d', highlight: '#78889b', accent: '#a55a83' } },
-  { name: 'Fantasia', colors: { base: '#8756b7', fade: '#593f88', outline: '#302548', highlight: '#c997df', accent: '#e480ae' } }
+  { name: 'Fantasia', colors: { base: '#8756b7', fade: '#593f88', outline: '#302548', highlight: '#c997df', accent: '#e480ae' } },
+  { name: 'Chocolate', colors: { base: '#674433', fade: '#452e29', outline: '#261d1b', highlight: '#a27a55', accent: '#c28d5e' } },
+  { name: 'Cobre', colors: { base: '#b55a36', fade: '#783526', outline: '#40221e', highlight: '#e99661', accent: '#e5b67e' } },
+  { name: 'Ruivo', colors: { base: '#c65430', fade: '#86311f', outline: '#48251f', highlight: '#ed985b', accent: '#e7c382' } },
+  { name: 'Mel', colors: { base: '#b78345', fade: '#7d5734', outline: '#473324', highlight: '#e5b96e', accent: '#f1d595' } },
+  { name: 'Platinado', colors: { base: '#d5d0c9', fade: '#9f9ba4', outline: '#555467', highlight: '#f3eee5', accent: '#e9d3df' } },
+  { name: 'Branco', colors: { base: '#e0e2eb', fade: '#a7acbf', outline: '#54586f', highlight: '#fafaff', accent: '#c5d9ee' } },
+  { name: 'Cinza', colors: { base: '#8c919c', fade: '#5b6272', outline: '#303543', highlight: '#c2c7d3', accent: '#9eacc5' } },
+  { name: 'Azul noite', colors: { base: '#3e5688', fade: '#29375e', outline: '#1b2340', highlight: '#7996c4', accent: '#a2c8ed' } },
+  { name: 'Céu', colors: { base: '#63a9d5', fade: '#3d79a8', outline: '#294866', highlight: '#b8dff1', accent: '#d0edf5' } },
+  { name: 'Menta', colors: { base: '#70bea9', fade: '#408c83', outline: '#275457', highlight: '#c2e9cf', accent: '#e1f3dd' } },
+  { name: 'Rosa', colors: { base: '#d778ac', fade: '#a65080', outline: '#68344f', highlight: '#f3b5d3', accent: '#f5d9e5' } },
+  { name: 'Vinho', colors: { base: '#8d3f62', fade: '#5e2b49', outline: '#341d32', highlight: '#c4799e', accent: '#e1a6b9' } },
+  { name: 'Lilás', colors: { base: '#ad88cf', fade: '#7961a5', outline: '#493b70', highlight: '#dcc3ed', accent: '#f1d9ee' } },
+  { name: 'Pêssego', colors: { base: '#e89c88', fade: '#bb6b67', outline: '#70404c', highlight: '#ffd2ad', accent: '#f4baca' } },
+  { name: 'Verde musgo', colors: { base: '#6e8556', fade: '#4a633e', outline: '#2c4130', highlight: '#a9bc7b', accent: '#d6d0a3' } },
+  { name: 'Turquesa', colors: { base: '#399f9e', fade: '#2a7079', outline: '#204753', highlight: '#8bd8cf', accent: '#c0eee1' } }
 ]
 const faceElementOrder: FaceElementKind[] = ['brow-left', 'brow-right', 'eye-left', 'eye-right', 'nose', 'mouth']
 const skinTonePresets = [
@@ -1918,11 +1934,16 @@ export function CustomizerPage() {
           : <>
             <div className="customizer-hair-layout">
             <div className="customizer-hair-color-controls" aria-label="Paleta geral dos cabelos">
-              <div className="customizer-hair-palette-title"><strong>Paleta geral</strong><span>Alterar uma cor aplica a todos os 5 cabelos.</span></div>
-              <div className="customizer-hair-palette-swatches">{hairColorControls.map((color) => <label className="customizer-hair-color-control" data-role={color.id} key={color.id} title={`${color.label} · aplica a todos os cabelos`}>
-                <span>{color.label}</span><input className={activeHairColorRole === color.id ? 'active' : ''} type="color" aria-label={`${color.label} geral`} value={colorOverrides[color.id] ?? color.fallback} disabled={!selectedCharacter} onFocus={() => setActiveHairColorRole(color.id)} onChange={(event) => void setHairColor(color.id, event.target.value)} />
-              </label>)}</div>
-              <div className="customizer-hair-palette-presets" aria-label="Paletas prontas">{hairPalettePresets.map((preset) => <button key={preset.name} type="button" disabled={!selectedCharacter} onClick={() => void applyHairPalette(preset.colors)} title={`Aplicar a paleta ${preset.name} aos cinco cabelos`}><span style={{ background: `linear-gradient(115deg, ${preset.colors.highlight} 0 23%, ${preset.colors.base} 23% 65%, ${preset.colors.fade} 65% 84%, ${preset.colors.outline} 84%)` }} />{preset.name}</button>)}</div>
+              <div className="customizer-hair-palette-editor">
+                <div className="customizer-hair-palette-title"><strong>Paleta geral</strong><span>Uma cor para os cinco cabelos</span></div>
+                <div className="customizer-hair-palette-swatches">{hairColorControls.map((color) => <label className="customizer-hair-color-control" data-role={color.id} key={color.id} title={`${color.label} · aplica a todos os cabelos`}>
+                  <span>{color.label}</span><input className={activeHairColorRole === color.id ? 'active' : ''} type="color" aria-label={`${color.label} geral`} value={colorOverrides[color.id] ?? color.fallback} disabled={!selectedCharacter} onFocus={() => setActiveHairColorRole(color.id)} onChange={(event) => void setHairColor(color.id, event.target.value)} />
+                </label>)}</div>
+              </div>
+              <aside className="customizer-hair-palette-presets" aria-label="Paletas prontas">
+                <strong>Paletas</strong>
+                <div className="customizer-hair-palette-preset-list">{hairPalettePresets.map((preset) => <button key={preset.name} type="button" disabled={!selectedCharacter} aria-pressed={hairColorControls.every((color) => colorOverrides[color.id] === preset.colors[color.id])} onClick={() => void applyHairPalette(preset.colors)} title={`Aplicar a paleta ${preset.name} aos cinco cabelos`}><span style={{ background: `linear-gradient(115deg, ${preset.colors.highlight} 0 23%, ${preset.colors.base} 23% 65%, ${preset.colors.fade} 65% 84%, ${preset.colors.outline} 84%)` }} />{preset.name}</button>)}</div>
+              </aside>
             </div>
             {customizerHairParts.map(renderPieceSelector)}
             </div>
