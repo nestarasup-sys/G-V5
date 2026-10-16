@@ -413,7 +413,7 @@ const upperWardrobePageTwoPanels: WardrobePanel[] = [
   { id: 'gloves-right', label: 'Luvas direita', category: 'luvas', side: 'right' },
   { id: 'cape', label: 'Capa', category: 'capa', side: null },
   { id: 'belt', label: 'Cinto', category: 'cinto', side: null },
-  { id: 'skirt', label: 'Saia', category: 'saia', side: null }
+  { id: 'skirt', label: 'Saia superior', category: 'saia', side: null }
 ]
 const lowerWardrobePanels: WardrobePanel[] = [
   { id: 'pants-left', label: 'Calça/Bermuda', category: 'calca', side: 'left', source: ['calca-coxa', 'calca-canela', 'shorts'] },
