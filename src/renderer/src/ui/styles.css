@@ -561,7 +561,9 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .customizer-preview-underbar { justify-content:flex-end; }
 .customizer-preview-identity { position:absolute;top:15px;left:15px;z-index:5;display:grid;gap:1px;max-width:min(62%,360px);padding:8px 12px 9px;border:1px solid #00000018;border-radius:8px;background:#fff;color:#17131a;box-shadow:0 3px 12px #25172520; }
 .customizer-preview-identity .eyebrow { color:#6f6670; }
-.customizer-preview-identity>h1 { overflow:hidden;color:#17131a;text-overflow:ellipsis;white-space:nowrap; }
+.customizer-preview-identity>h1 { min-width:0;display:flex;align-items:center;gap:8px;overflow:hidden;color:#17131a; }
+.customizer-preview-character-name { min-width:0;flex:1 1 auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+.customizer-preview-identity>h1 .rename-button { flex:0 0 21px; }
 .customizer-face-catalog { min-height:0;flex:1;display:flex;flex-direction:column;gap:10px;overflow:auto; }
 .customizer-face-sets { display:grid;gap:7px; }
 .customizer-face-sets>header { display:flex;align-items:center;justify-content:space-between;gap:8px;padding-bottom:5px;border-bottom:1px solid #f0ebef; }

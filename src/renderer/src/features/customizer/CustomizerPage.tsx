@@ -2913,7 +2913,7 @@ export function CustomizerPage() {
             <div className="stage-scene" style={customizerPreviewStyle}>
               <div className="preview-title customizer-preview-identity">
                 <p className="eyebrow">CUSTOMIZAR <span>/</span> PERSONAGEM</p>
-                <h1>{selectedCharacter?.name ?? (charactersLoading ? 'Carregando personagens…' : 'Crie um personagem')}<button className="rename-button" aria-label="Editar nome do personagem" disabled={!selectedCharacter} onClick={() => { setNameDraft(selectedCharacter?.name ?? ''); setDialogMode('rename') }} type="button"><Icon name="edit" /></button></h1>
+                <h1><span className="customizer-preview-character-name">{selectedCharacter?.name ?? (charactersLoading ? 'Carregando personagens…' : 'Crie um personagem')}</span><button className="rename-button" aria-label="Editar nome do personagem" disabled={!selectedCharacter} onClick={() => { setNameDraft(selectedCharacter?.name ?? ''); setDialogMode('rename') }} type="button"><Icon name="edit" /></button></h1>
               </div>
               <div className="customizer-preview-controls" aria-label="Controles da prévia">
                 <label className="preview-scene-color" title="Mudar a cor do fundo da prévia">
