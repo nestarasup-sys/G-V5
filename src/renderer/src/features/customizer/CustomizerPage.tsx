@@ -1975,7 +1975,7 @@ export function CustomizerPage() {
     const appearance = characterHairAppearance?.modelSlot === selectedCatalogModelSlot ? characterHairAppearance : undefined
     const selectedId = hairAppearancePartStyleId(appearance, part.id)
     const choose = (summary: HairStyleSummary | null) => {
-      void chooseHairPartStyle(part.id, summary).then(() => setHairLibraryPart(null))
+      void chooseHairPartStyle(part.id, summary)
     }
     return <div className="customizer-hair-library-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setHairLibraryPart(null) }}>
       <section className="customizer-hair-library" role="dialog" aria-modal="true" aria-labelledby="customizer-hair-library-title">
