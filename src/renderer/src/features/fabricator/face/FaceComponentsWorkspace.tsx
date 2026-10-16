@@ -25,6 +25,7 @@ const categories: Array<{ kind: FaceComponentKind; label: string; parts: [PartId
   { kind: 'eye-closed', label: 'Olhos fechados', parts: ['eye-closed-left', 'eye-closed-right'], names: ['Olho fechado esquerdo', 'Olho fechado direito'] },
   { kind: 'eyebrow', label: 'Sobrancelhas', parts: ['brow-left', 'brow-right'], names: ['Sobrancelha esquerda', 'Sobrancelha direita'] }
 ]
+const autoFixKinds: AlignableFaceKind[] = ['eye', 'pupil', 'eye-closed']
 const initialTransform = (kind: FaceComponentKind, head: ModelPart, width: number, height: number): FaceTransform => ({
   x: kind === 'pupil' ? 0 : head.width * (kind === 'eyebrow' ? .38 : .37),
   y: kind === 'pupil' ? 0 : head.height * (kind === 'eyebrow' ? .32 : .46),
@@ -222,8 +223,12 @@ export function FaceComponentsWorkspace() {
   const selectedId = selectedAssets[selectedPart] ?? (linked[selectedCategory.kind] && selectedPart.endsWith('right') ? selectedAssets[selectedCategory.parts[0]] : undefined)
   const selectedAsset = selectedId ? details[selectedId] : undefined
   const componentPair = categories.find((category) => category.kind === libraryCategory)
-  const alignableKind = libraryCategory === 'eye' || libraryCategory === 'pupil' || libraryCategory === 'eye-closed' ? libraryCategory : null
-  const currentImportAnchor = alignableKind ? importAnchorsByModel[modelSlot]?.[alignableKind] : undefined
+  const currentImportAnchors = importAnchorsByModel[modelSlot] ?? {}
+  const autoFixEnabled = autoFixKinds.every((kind) => Boolean(currentImportAnchors[kind]))
+  const autoFixReferencesReady = autoFixKinds.every((kind) => {
+    const category = categories.find((entry) => entry.kind === kind)!
+    return Boolean(details[selectedAssets[category.parts[0]] ?? ''])
+  })
   const leftPairId = componentPair ? selectedAssets[componentPair.parts[0]] : undefined
   const rightPairId = componentPair ? selectedAssets[componentPair.parts[1]] : undefined
   const leftPairAsset = leftPairId ? details[leftPairId] : undefined
@@ -316,23 +321,29 @@ export function FaceComponentsWorkspace() {
   function updateGuide(patch: Partial<FaceGuide>) {
     setGuidesByModel((current) => ({ ...current, [modelSlot]: { ...(current[modelSlot] ?? defaultGuide), ...patch } }))
   }
-  function fixImportAnchor(kind: AlignableFaceKind) {
+  function fixImportAnchors() {
     if (!head) return
-    const category = categories.find((entry) => entry.kind === kind)!
-    const left = details[selectedAssets[category.parts[0]] ?? '']
-    const right = details[selectedAssets[category.parts[1]] ?? '']
-    if (!left) return
-    const anchor = captureFaceImportAnchor(left, right, head)
-    setImportAnchorsByModel((current) => ({ ...current, [modelSlot]: { ...current[modelSlot], [kind]: anchor } }))
-    setNotice(`Posição e tamanho de ${category.label.toLowerCase()} fixados para as próximas importações deste modelo.`)
+    const anchors: Partial<Record<AlignableFaceKind, FaceImportAnchor>> = {}
+    for (const kind of autoFixKinds) {
+      const category = categories.find((entry) => entry.kind === kind)!
+      const left = details[selectedAssets[category.parts[0]] ?? '']
+      const right = details[selectedAssets[category.parts[1]] ?? '']
+      if (!left) {
+        setError(`Selecione uma referência para ${category.label.toLowerCase()} antes de ativar o auto fixar.`)
+        return
+      }
+      anchors[kind] = captureFaceImportAnchor(left, right, head)
+    }
+    setImportAnchorsByModel((current) => ({ ...current, [modelSlot]: anchors }))
+    setNotice('Auto fixar ativado para olhos, pupilas e olhos fechados. As próximas importações deste modelo usarão essas referências.')
   }
-  function releaseImportAnchor(kind: AlignableFaceKind) {
+  function releaseImportAnchors() {
     setImportAnchorsByModel((current) => {
-      const nextForModel = { ...current[modelSlot] }
-      delete nextForModel[kind]
-      return { ...current, [modelSlot]: nextForModel }
+      const next = { ...current }
+      delete next[modelSlot]
+      return next
     })
-    setNotice('Fixação removida. Os assets já salvos mantêm seus ajustes.')
+    setNotice('Auto fixar desativado. Os assets já salvos mantêm seus ajustes.')
   }
   useEffect(() => {
     const stage = stageRef.current
@@ -410,7 +421,7 @@ export function FaceComponentsWorkspace() {
       const pairId = crypto.randomUUID()
       for (const [index, side] of category.parts.entries()) {
         const defaultTransform: FaceTransform = index === 0 ? baseTransform : { ...baseTransform, x: kind === 'pupil' ? -baseTransform.x : head.width - baseTransform.x, rotation: -baseTransform.rotation, flipX: true }
-        const anchor = kind === 'eye' || kind === 'pupil' || kind === 'eye-closed' ? importAnchorsByModel[modelSlot]?.[kind] : undefined
+        const anchor = autoFixKinds.includes(kind as AlignableFaceKind) ? importAnchorsByModel[modelSlot]?.[kind as AlignableFaceKind] : undefined
         const transform = anchor ? alignImportedFacePiece(kind as AlignableFaceKind, index === 0 ? 'left' : 'right', image.width, image.height, anchor) : defaultTransform
         const asset: FaceComponentAssetSave = { schemaVersion: 1, id: crypto.randomUUID(), modelSlot, kind, name: `${baseName} · ${category.names[index]}`.slice(0, 120), width: image.width, height: image.height, defaultTransform: transform, rightSidePositioned: index === 1, pairId, updatedAt: new Date().toISOString() }
         await window.desktop.saveFaceComponentAsset(modelSlot, asset, image.dataUrl)
@@ -966,6 +977,14 @@ export function FaceComponentsWorkspace() {
       </main>
       <aside className="face-components-controls">
         <header><strong>Ajuste da peça</strong></header>
+        <section className="face-component-import-anchor" aria-label="Auto fixar importações de olhos">
+          <div><strong>Auto fixar importações</strong><small>{autoFixEnabled
+            ? 'Ativo para olhos, pupilas e olhos fechados. Nariz e sobrancelhas ficam fora.'
+            : autoFixReferencesReady
+              ? 'Usa as peças atuais de olhos, pupilas e olhos fechados como referência para os próximos imports.'
+              : 'Selecione uma peça de referência em olhos, pupilas e olhos fechados para ativar.'}</small></div>
+          <button type="button" aria-pressed={autoFixEnabled} disabled={!head || (!autoFixEnabled && !autoFixReferencesReady) || busy} onClick={() => autoFixEnabled ? releaseImportAnchors() : fixImportAnchors()}>{autoFixEnabled ? 'Desativar auto fixar' : 'Ativar auto fixar'}</button>
+        </section>
         {componentPair && <div className="face-component-side-options" role="group" aria-label={`Selecionar lado de ${componentPair.label} para ajustar`}>
           {componentPair.parts.map((part, index) => {
             const asset = selectedAssets[part] ? details[selectedAssets[part]] : undefined
@@ -982,11 +1001,6 @@ export function FaceComponentsWorkspace() {
         </div>}
         {libraryCategory === 'eyebrow' && selectedAsset && <button className="face-component-chroma-action" type="button" disabled={busy} onClick={() => void cleanSelectedEyebrow()}>Remover fundo verde da sobrancelha salva</button>}
         {libraryCategory === 'eye-closed' && eyeAsset && <p className="face-component-follow-note">O olho fechado acompanha a posição e a largura do olho aberto. Ajuste a altura e a rotação aqui.</p>}
-        {alignableKind && <section className="face-component-import-anchor" aria-label="Fixar posição e tamanho para novas importações">
-          <div><strong>Referência de importação</strong><small>{alignableKind === 'eye-closed' ? 'A altura usa esta referência; posição e largura acompanham o olho aberto.' : currentImportAnchor ? 'Novas peças terão a posição e o tamanho desta referência.' : 'Ajuste a primeira peça e fixe para as próximas folhas.'}</small></div>
-          <button type="button" disabled={!leftPairAsset} onClick={() => fixImportAnchor(alignableKind)}>{currentImportAnchor ? 'Atualizar fixação' : 'Fixar posição e tamanho'}</button>
-          {currentImportAnchor && <button className="face-component-import-anchor-release" type="button" onClick={() => releaseImportAnchor(alignableKind)}>Desfixar</button>}
-        </section>}
         {componentPair && head && movementLeftAsset && moveTogether[componentPair.kind] && <section className="face-component-pair-controls" aria-label={`Posição e tamanho conjuntos de ${componentPair.label}`}>
           <strong>Posição e tamanho dos dois lados</strong><small>Os controles abaixo ajustam esquerda e direita juntos.{componentPair.kind === 'eye-closed' ? ' A largura acompanha os olhos abertos.' : ''}</small>
           {componentPair.kind === 'eye' && <label className="face-component-slider"><span>Separação horizontal entre os olhos <output>{Math.round(eyeSeparation)} px</output></span><input type="range" min="0" max={Math.max(eyeSeparation, eyeSeparationMax)} step="1" value={eyeSeparation} onChange={(event) => void setEyeSeparation(Number(event.target.value))} /></label>}
