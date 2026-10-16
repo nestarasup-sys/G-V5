@@ -23,6 +23,8 @@ export type CharacterCustomization = {
     backStyleId?: string | null
     /** Character-only recoloring overrides for the selected raster hair assets. */
     colors?: Partial<Record<'base' | 'fade' | 'outline' | 'highlight' | 'accent', string>>
+    /** Independent hair parts selected from Fabricator Dev's front/back asset layers. */
+    parts?: Partial<Record<'backHair' | 'rearHair' | 'ponytail' | 'frontHair' | 'ahoge', string | null>>
   }
 }
 
