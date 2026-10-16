@@ -130,7 +130,7 @@ async function makeFaceThumbnail(set: Pick<FaceSet, 'pieces' | 'selectedNose' | 
 
 function clamp(value: number, min: number, max: number): number { return Math.max(min, Math.min(max, value)) }
 
-export function FaceWorkspace() {
+export function FaceWorkspace({ initialCategory = 'nose' }: { initialCategory?: FaceSheetKind } = {}) {
   const [models, setModels] = useState<FabricatorSlotSummary[]>([])
   const [modelSlot, setModelSlot] = useState(1)
   const [model, setModel] = useState<FabricatorProject | null>(null)
@@ -139,7 +139,7 @@ export function FaceWorkspace() {
   const [catalogLoading, setCatalogLoading] = useState(false)
   const [draft, setDraft] = useState<FaceSet | null>(null)
   const [activeCatalogItems, setActiveCatalogItems] = useState<Partial<Record<FaceSheetKind, string>>>({})
-  const [selected, setSelected] = useState<FaceElementKind>('nose')
+  const [selected, setSelected] = useState<FaceElementKind>(initialCategory === 'nose' ? 'nose' : 'mouth')
   const [eyeState, setEyeState] = useState<EyeState>(0)
   const [mouthOpen, setMouthOpen] = useState(false)
   const [showAllEyes, setShowAllEyes] = useState(false)
