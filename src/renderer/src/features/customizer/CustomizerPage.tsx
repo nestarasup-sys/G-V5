@@ -2574,6 +2574,101 @@ export function CustomizerPage() {
     </section>
   }
 
+  const renderWardrobeCatalog = () => (
+<div className="customizer-wardrobe-catalog">
+                {wardrobeLoading ? <div className="customizer-catalog-empty">Carregando roupas…</div>
+                    : <>
+                      {catalogError && <p className="customizer-catalog-error" role="alert">{catalogError}</p>}
+                      {clothingSection === 'Customizar' && <div className="customizer-wardrobe-toolbar">
+                        <div className="customizer-wardrobe-history" aria-label="Histórico da customização">
+                          <button className="model-history-button" title="Desfazer" aria-label="Desfazer" disabled={!wardrobeHistory.undo.length || wardrobeHistory.characterId !== selectedCharacter?.id} onClick={() => void restoreWardrobeHistory('undo')} type="button"><Icon name="undo" /></button>
+                          <button className="model-history-button" title="Refazer" aria-label="Refazer" disabled={!wardrobeHistory.redo.length || wardrobeHistory.characterId !== selectedCharacter?.id} onClick={() => void restoreWardrobeHistory('redo')} type="button"><Icon name="redo" /></button>
+                        </div>
+                      </div>}
+                      {clothingSection === 'Customizar' ? <div className="customizer-wardrobe-editor">
+                        <section className="customizer-wardrobe-applied" aria-label="Roupas aplicadas neste personagem">
+                          <header><h3>Itens selecionados</h3><small>De baixo para cima</small></header>
+                          {appliedWardrobeEntries.length === 0 ? <p className="customizer-wardrobe-empty">Escolha roupas em Superior ou Inferior para começar.</p>
+                            : <div className="customizer-wardrobe-applied-grid">{appliedWardrobeEntries.map(({ group, component, key, bodyPartName }) => {
+                              const selected = selectedClothing?.setId === group.setId && selectedClothing.category === group.category && selectedClothing.componentId === component.id
+                              return <article className={'customizer-wardrobe-applied-item' + (selected ? ' selected' : '')} key={key}>
+                                <button onClick={() => { setSelectedClothing({ setId: group.setId, category: group.category, componentId: component.id }); setWardrobeHighlightVisible(true) }} aria-pressed={selected} title={`${wardrobeCategoryLabels[group.category]} · ${bodyPartName}`} type="button">
+                                  <img src={component.dataUrl} alt="" />
+                                  <span className="customizer-wardrobe-piece-label"><b>{wardrobeCategoryLabels[group.category]}</b><small>{bodyPartName}</small></span>
+                                </button>
+                                <button className="customizer-wardrobe-applied-remove" onClick={() => void removeWardrobeGroup(group.setId, group.category, component.id)} aria-label={`Remover ${wardrobeCategoryLabels[group.category]} · ${bodyPartName}`} title="Remover" type="button"><Icon name="trash" /></button>
+                              </article>
+                            })}</div>}
+                        </section>
+                        <section className="customizer-wardrobe-controls" aria-label="Controles da roupa selecionada">
+                          {activeWardrobeGroup && activeWardrobeTransform ? <>
+                            <header><h3>{wardrobeCategoryLabels[activeWardrobeGroup.category]} · {activeWardrobePartName}</h3><small>Esta peça e este personagem serão alterados.</small></header>
+                            <div className="customizer-wardrobe-position-grid">
+                              {([['offsetX', 'Posição X'], ['offsetY', 'Posição Y']] as const).map(([field, label]) => <label key={field}>{label}<input type="number" step="1" value={Number(activeWardrobeTransform[field].toFixed(1))} onChange={(event) => changeWardrobeTransform({ [field]: Number(event.target.value) })} onBlur={commitWardrobeTransform} onKeyDown={(event) => { if (event.key === 'Enter') { commitWardrobeTransform(); event.currentTarget.blur() } }} /></label>)}
+                            </div>
+                            {([['scaleX', 'Escala horizontal'], ['scaleY', 'Escala vertical']] as const).map(([field, label]) => <label className="customizer-wardrobe-range" key={field}><span><b>{label}</b><output>{Math.round(activeWardrobeTransform[field] * 100)}%</output></span><input type="range" min="10" max="500" step="1" value={Math.max(10, Math.min(500, Math.round(activeWardrobeTransform[field] * 100)))} onChange={(event) => changeWardrobeTransform({ [field]: Number(event.target.value) / 100 })} onPointerUp={commitWardrobeTransform} onBlur={commitWardrobeTransform} /></label>)}
+                            <label className="customizer-wardrobe-range"><span><b>Rotação</b><output>{Math.round(activeWardrobeTransform.rotation)}°</output></span><input type="range" min="-180" max="180" step="1" value={Math.max(-180, Math.min(180, Math.round(activeWardrobeTransform.rotation)))} onChange={(event) => changeWardrobeTransform({ rotation: Number(event.target.value) })} onPointerUp={commitWardrobeTransform} onBlur={commitWardrobeTransform} /></label>
+                            <div className="customizer-wardrobe-nudge" aria-label="Mover roupa">
+                              <button aria-label="Mover para cima" onClick={() => void adjustWardrobeGroup({ offsetY: activeWardrobeTransform.offsetY - 4 })} type="button">↑</button>
+                              <button aria-label="Mover para esquerda" onClick={() => void adjustWardrobeGroup({ offsetX: activeWardrobeTransform.offsetX - 4 })} type="button">←</button>
+                              <span>Mover</span>
+                              <button aria-label="Mover para direita" onClick={() => void adjustWardrobeGroup({ offsetX: activeWardrobeTransform.offsetX + 4 })} type="button">→</button>
+                              <button aria-label="Mover para baixo" onClick={() => void adjustWardrobeGroup({ offsetY: activeWardrobeTransform.offsetY + 4 })} type="button">↓</button>
+                            </div>
+                            <button className="customizer-wardrobe-reset" onClick={() => void adjustWardrobeGroup({ offsetX: 0, offsetY: 0, scaleX: 1, scaleY: 1, rotation: 0 })} type="button">Resetar ajustes desta roupa</button>
+                          </> : <div className="customizer-wardrobe-empty">Selecione uma roupa na lista para ajustar.</div>}
+                        </section>
+                      </div> : clothingSection === 'Superior' ? <div className="customizer-upper-wardrobe-grid" aria-label="Peças de roupa superior">
+                        {upperWardrobePanels.map((panel) => {
+                          const candidates = wardrobeSets.filter((summary) => summary.modelSlot === selectedCatalogModelSlot).flatMap((summary) => {
+                            const set = wardrobeDetails[`${summary.modelSlot}:${summary.id}`]
+                            return set ? set.components.filter((component) => wardrobeComponentMatchesPanel(component, panel)).map((component) => ({ summary, component })) : []
+                          })
+                          const appliedGroups = selectedCharacter?.customization.wardrobeGroups ?? []
+                          const selectedIndex = candidates.findIndex(({ summary, component }) => appliedGroups.some((group) => group.modelSlot === summary.modelSlot && group.setId === summary.id && group.category === panel.category && group.componentId === component.id))
+                          const currentCandidate = selectedIndex >= 0 ? candidates[selectedIndex] : null
+                          const currentIndex = selectedIndex >= 0 ? selectedIndex + 1 : 0
+                          const slotCount = candidates.length + 1
+                          const move = (direction: -1 | 1) => {
+                            const nextIndex = (currentIndex + direction + slotCount) % slotCount
+                            void applyUpperWardrobePanel(panel, nextIndex === 0 ? null : candidates[nextIndex - 1])
+                          }
+                          return <article className="customizer-upper-piece-card" key={panel.id} aria-label={panel.label}>
+                            <header><h3>{panel.label}</h3><span>{currentCandidate ? `${selectedIndex + 1}/${candidates.length}` : `0/${candidates.length}`}</span></header>
+                            <div className="customizer-upper-piece-view">
+                              <button className="customizer-upper-piece-arrow" aria-label={`Peça anterior: ${panel.label}`} onClick={() => move(-1)} disabled={!candidates.length} type="button">‹</button>
+                              <button className={'customizer-upper-piece-image' + (currentCandidate ? ' selected' : '')} aria-label={currentCandidate ? `Selecionar ${currentCandidate.component.name}` : `Slot vazio: ${panel.label}`} aria-pressed={Boolean(currentCandidate && selectedClothing?.setId === currentCandidate.summary.id && selectedClothing.componentId === currentCandidate.component.id)} onClick={() => void applyUpperWardrobePanel(panel, currentCandidate)} type="button">
+                                {currentCandidate ? <img src={currentCandidate.component.dataUrl} alt={currentCandidate.component.name} /> : <span>Escolha uma peça</span>}
+                              </button>
+                              <button className="customizer-upper-piece-arrow" aria-label={`Próxima peça: ${panel.label}`} onClick={() => move(1)} disabled={!candidates.length} type="button">›</button>
+                            </div>
+                            <footer>{currentCandidate ? currentCandidate.component.name : 'Nenhuma selecionada'}</footer>
+                          </article>
+                        })}
+                      </div> : <div className="customizer-wardrobe-groups">
+                          {wardrobeGroupDefinitions.map((definition) => {
+                            const matches = wardrobeSets.filter((summary) => wardrobeDetails[`${summary.modelSlot}:${summary.id}`]?.components.some((component) => definition.source.includes(component.category)))
+                            return <section className="customizer-wardrobe-category" key={definition.id} aria-label={definition.label}>
+                              <header><h3>{definition.label}</h3><span>{matches.length}</span></header>
+                              {matches.length === 0 ? <p className="customizer-wardrobe-empty">Nenhum conjunto salvo nesta categoria.</p>
+                                : <div className="customizer-wardrobe-items">{matches.map((summary) => {
+                                  const key = `${summary.modelSlot}:${summary.id}:${definition.id}`
+                                  const applied = (selectedCharacter?.customization.wardrobeGroups ?? []).some((group) => group.modelSlot === summary.modelSlot && group.setId === summary.id && group.category === definition.id)
+                                  const selected = selectedClothing?.setId === summary.id && selectedClothing.category === definition.id
+                                  return <article className={'customizer-wardrobe-item' + (selected ? ' selected' : '')} key={key}>
+                                    <button className="customizer-wardrobe-select" onClick={() => void applyWardrobeGroup(summary, definition.id)} aria-label={`${applied ? 'Selecionar' : 'Usar'} conjunto de ${definition.label.toLowerCase()}`} aria-pressed={selected} title={definition.id === 'calca' ? 'Calça completa: coxas e canelas juntas' : definition.label} type="button">
+                                      {wardrobeThumbnails[key] ? <img src={wardrobeThumbnails[key]} alt="" /> : <span className="customizer-catalog-placeholder"><Icon name="shirt" /></span>}
+                                    </button>
+                                    {applied && <button className="customizer-wardrobe-remove" onClick={() => void removeWardrobeGroup(summary.id, definition.id)} aria-label="Remover roupa deste personagem" title="Remover" type="button"><Icon name="trash" /></button>}
+                                  </article>
+                                })}</div>}
+                            </section>
+                          })}
+                      </div>}
+                    </>}
+              </div>
+  )
+
   if (activeModule !== null && modules.some((module) => module.name === activeModule)) {
     return (
       <div className="customizer-models-view">
@@ -2638,6 +2733,7 @@ export function CustomizerPage() {
             {selectedCustomizerTopTab === 'cabeca' && headPanelTab === 'hair' && (hairLibraryPart ? renderHairLibrary() : renderHairCustomizer())}
             {selectedCustomizerTopTab === 'cabeca' && headPanelTab === 'eyes' && (faceLibraryPart ? renderFaceLibrary() : renderFaceCustomizer())}
             {selectedCustomizerTopTab === 'cabeca' && headPanelTab === 'face' && renderFaceCatalogCustomizer()}
+            {selectedCustomizerTopTab === 'roupas' && renderWardrobeCatalog()}
             {selectedCustomizerTopTab === 'modelos' && <section className="customizer-model-skin-tones" aria-label="Cor de pele do modelo">
               <strong>Cor de pele</strong>
               <div className="customizer-model-skin-tone-row" role="group" aria-label="Escolher cor de pele">
@@ -2777,102 +2873,7 @@ export function CustomizerPage() {
                 {headPanelTab === 'adjust' && <div className="customizer-head-placeholder"><Icon name="sliders" /><strong>Ajustes da cabeça</strong><span>Os controles de ajuste por peça serão organizados aqui.</span></div>}
               </div>}
               {activeModule === 'Cabelos' && renderHairCatalog()}
-              {activeModule === 'Roupas' && <div className="customizer-wardrobe-catalog">
-                {selectedCatalogModelSlot === null ? <div className="customizer-catalog-empty">Escolha um modelo para ver as roupas salvas dele.</div>
-                  : wardrobeLoading ? <div className="customizer-catalog-empty">Carregando roupas…</div>
-                    : <>
-                      <div className="customizer-wardrobe-toolbar">
-                        <button className={`customizer-wardrobe-customize-tab${clothingSection === 'Customizar' ? ' active' : ''}`} onClick={() => setClothingSection((current) => current === 'Customizar' ? 'Superior' : 'Customizar')} aria-pressed={clothingSection === 'Customizar'} type="button"><Icon name="sliders" /> Customizar</button>
-                        {clothingSection === 'Customizar' && <div className="customizer-wardrobe-history" aria-label="Histórico da customização">
-                          <button className="model-history-button" title="Desfazer" aria-label="Desfazer" disabled={!wardrobeHistory.undo.length || wardrobeHistory.characterId !== selectedCharacter?.id} onClick={() => void restoreWardrobeHistory('undo')} type="button"><Icon name="undo" /></button>
-                          <button className="model-history-button" title="Refazer" aria-label="Refazer" disabled={!wardrobeHistory.redo.length || wardrobeHistory.characterId !== selectedCharacter?.id} onClick={() => void restoreWardrobeHistory('redo')} type="button"><Icon name="redo" /></button>
-                        </div>}
-                      </div>
-                      <div className="customizer-wardrobe-tabs" role="tablist" aria-label="Tipo de roupa">
-                        {(['Superior', 'Inferior'] as const).map((section) => <button key={section} className={clothingSection === section ? 'active' : ''} role="tab" aria-selected={clothingSection === section} onClick={() => setClothingSection(section)} type="button">{section}</button>)}
-                      </div>
-                      {clothingSection === 'Customizar' ? <div className="customizer-wardrobe-editor">
-                        <section className="customizer-wardrobe-applied" aria-label="Roupas aplicadas neste personagem">
-                          <header><h3>Itens selecionados</h3><small>De baixo para cima</small></header>
-                          {appliedWardrobeEntries.length === 0 ? <p className="customizer-wardrobe-empty">Escolha roupas em Superior ou Inferior para começar.</p>
-                            : <div className="customizer-wardrobe-applied-grid">{appliedWardrobeEntries.map(({ group, component, key, bodyPartName }) => {
-                              const selected = selectedClothing?.setId === group.setId && selectedClothing.category === group.category && selectedClothing.componentId === component.id
-                              return <article className={'customizer-wardrobe-applied-item' + (selected ? ' selected' : '')} key={key}>
-                                <button onClick={() => { setSelectedClothing({ setId: group.setId, category: group.category, componentId: component.id }); setWardrobeHighlightVisible(true) }} aria-pressed={selected} title={`${wardrobeCategoryLabels[group.category]} · ${bodyPartName}`} type="button">
-                                  <img src={component.dataUrl} alt="" />
-                                  <span className="customizer-wardrobe-piece-label"><b>{wardrobeCategoryLabels[group.category]}</b><small>{bodyPartName}</small></span>
-                                </button>
-                                <button className="customizer-wardrobe-applied-remove" onClick={() => void removeWardrobeGroup(group.setId, group.category, component.id)} aria-label={`Remover ${wardrobeCategoryLabels[group.category]} · ${bodyPartName}`} title="Remover" type="button"><Icon name="trash" /></button>
-                              </article>
-                            })}</div>}
-                        </section>
-                        <section className="customizer-wardrobe-controls" aria-label="Controles da roupa selecionada">
-                          {activeWardrobeGroup && activeWardrobeTransform ? <>
-                            <header><h3>{wardrobeCategoryLabels[activeWardrobeGroup.category]} · {activeWardrobePartName}</h3><small>Esta peça e este personagem serão alterados.</small></header>
-                            <div className="customizer-wardrobe-position-grid">
-                              {([['offsetX', 'Posição X'], ['offsetY', 'Posição Y']] as const).map(([field, label]) => <label key={field}>{label}<input type="number" step="1" value={Number(activeWardrobeTransform[field].toFixed(1))} onChange={(event) => changeWardrobeTransform({ [field]: Number(event.target.value) })} onBlur={commitWardrobeTransform} onKeyDown={(event) => { if (event.key === 'Enter') { commitWardrobeTransform(); event.currentTarget.blur() } }} /></label>)}
-                            </div>
-                            {([['scaleX', 'Escala horizontal'], ['scaleY', 'Escala vertical']] as const).map(([field, label]) => <label className="customizer-wardrobe-range" key={field}><span><b>{label}</b><output>{Math.round(activeWardrobeTransform[field] * 100)}%</output></span><input type="range" min="10" max="500" step="1" value={Math.max(10, Math.min(500, Math.round(activeWardrobeTransform[field] * 100)))} onChange={(event) => changeWardrobeTransform({ [field]: Number(event.target.value) / 100 })} onPointerUp={commitWardrobeTransform} onBlur={commitWardrobeTransform} /></label>)}
-                            <label className="customizer-wardrobe-range"><span><b>Rotação</b><output>{Math.round(activeWardrobeTransform.rotation)}°</output></span><input type="range" min="-180" max="180" step="1" value={Math.max(-180, Math.min(180, Math.round(activeWardrobeTransform.rotation)))} onChange={(event) => changeWardrobeTransform({ rotation: Number(event.target.value) })} onPointerUp={commitWardrobeTransform} onBlur={commitWardrobeTransform} /></label>
-                            <div className="customizer-wardrobe-nudge" aria-label="Mover roupa">
-                              <button aria-label="Mover para cima" onClick={() => void adjustWardrobeGroup({ offsetY: activeWardrobeTransform.offsetY - 4 })} type="button">↑</button>
-                              <button aria-label="Mover para esquerda" onClick={() => void adjustWardrobeGroup({ offsetX: activeWardrobeTransform.offsetX - 4 })} type="button">←</button>
-                              <span>Mover</span>
-                              <button aria-label="Mover para direita" onClick={() => void adjustWardrobeGroup({ offsetX: activeWardrobeTransform.offsetX + 4 })} type="button">→</button>
-                              <button aria-label="Mover para baixo" onClick={() => void adjustWardrobeGroup({ offsetY: activeWardrobeTransform.offsetY + 4 })} type="button">↓</button>
-                            </div>
-                            <button className="customizer-wardrobe-reset" onClick={() => void adjustWardrobeGroup({ offsetX: 0, offsetY: 0, scaleX: 1, scaleY: 1, rotation: 0 })} type="button">Resetar ajustes desta roupa</button>
-                          </> : <div className="customizer-wardrobe-empty">Selecione uma roupa na lista para ajustar.</div>}
-                        </section>
-                      </div> : clothingSection === 'Superior' ? <div className="customizer-upper-wardrobe-grid" aria-label="Peças de roupa superior">
-                        {upperWardrobePanels.map((panel) => {
-                          const candidates = wardrobeSets.filter((summary) => summary.modelSlot === selectedCatalogModelSlot).flatMap((summary) => {
-                            const set = wardrobeDetails[`${summary.modelSlot}:${summary.id}`]
-                            return set ? set.components.filter((component) => wardrobeComponentMatchesPanel(component, panel)).map((component) => ({ summary, component })) : []
-                          })
-                          const appliedGroups = selectedCharacter?.customization.wardrobeGroups ?? []
-                          const selectedIndex = candidates.findIndex(({ summary, component }) => appliedGroups.some((group) => group.modelSlot === summary.modelSlot && group.setId === summary.id && group.category === panel.category && group.componentId === component.id))
-                          const currentCandidate = selectedIndex >= 0 ? candidates[selectedIndex] : null
-                          const currentIndex = selectedIndex >= 0 ? selectedIndex + 1 : 0
-                          const slotCount = candidates.length + 1
-                          const move = (direction: -1 | 1) => {
-                            const nextIndex = (currentIndex + direction + slotCount) % slotCount
-                            void applyUpperWardrobePanel(panel, nextIndex === 0 ? null : candidates[nextIndex - 1])
-                          }
-                          return <article className="customizer-upper-piece-card" key={panel.id} aria-label={panel.label}>
-                            <header><h3>{panel.label}</h3><span>{currentCandidate ? `${selectedIndex + 1}/${candidates.length}` : `0/${candidates.length}`}</span></header>
-                            <div className="customizer-upper-piece-view">
-                              <button className="customizer-upper-piece-arrow" aria-label={`Peça anterior: ${panel.label}`} onClick={() => move(-1)} disabled={!candidates.length} type="button">‹</button>
-                              <button className={'customizer-upper-piece-image' + (currentCandidate ? ' selected' : '')} aria-label={currentCandidate ? `Selecionar ${currentCandidate.component.name}` : `Slot vazio: ${panel.label}`} aria-pressed={Boolean(currentCandidate && selectedClothing?.setId === currentCandidate.summary.id && selectedClothing.componentId === currentCandidate.component.id)} onClick={() => void applyUpperWardrobePanel(panel, currentCandidate)} type="button">
-                                {currentCandidate ? <img src={currentCandidate.component.dataUrl} alt={currentCandidate.component.name} /> : <span>Escolha uma peça</span>}
-                              </button>
-                              <button className="customizer-upper-piece-arrow" aria-label={`Próxima peça: ${panel.label}`} onClick={() => move(1)} disabled={!candidates.length} type="button">›</button>
-                            </div>
-                            <footer>{currentCandidate ? currentCandidate.component.name : 'Nenhuma selecionada'}</footer>
-                          </article>
-                        })}
-                      </div> : <div className="customizer-wardrobe-groups">
-                          {wardrobeGroupDefinitions.map((definition) => {
-                            const matches = wardrobeSets.filter((summary) => wardrobeDetails[`${summary.modelSlot}:${summary.id}`]?.components.some((component) => definition.source.includes(component.category)))
-                            return <section className="customizer-wardrobe-category" key={definition.id} aria-label={definition.label}>
-                              <header><h3>{definition.label}</h3><span>{matches.length}</span></header>
-                              {matches.length === 0 ? <p className="customizer-wardrobe-empty">Nenhum conjunto salvo nesta categoria.</p>
-                                : <div className="customizer-wardrobe-items">{matches.map((summary) => {
-                                  const key = `${summary.modelSlot}:${summary.id}:${definition.id}`
-                                  const applied = (selectedCharacter?.customization.wardrobeGroups ?? []).some((group) => group.modelSlot === summary.modelSlot && group.setId === summary.id && group.category === definition.id)
-                                  const selected = selectedClothing?.setId === summary.id && selectedClothing.category === definition.id
-                                  return <article className={'customizer-wardrobe-item' + (selected ? ' selected' : '')} key={key}>
-                                    <button className="customizer-wardrobe-select" onClick={() => void applyWardrobeGroup(summary, definition.id)} aria-label={`${applied ? 'Selecionar' : 'Usar'} conjunto de ${definition.label.toLowerCase()}`} aria-pressed={selected} title={definition.id === 'calca' ? 'Calça completa: coxas e canelas juntas' : definition.label} type="button">
-                                      {wardrobeThumbnails[key] ? <img src={wardrobeThumbnails[key]} alt="" /> : <span className="customizer-catalog-placeholder"><Icon name="shirt" /></span>}
-                                    </button>
-                                    {applied && <button className="customizer-wardrobe-remove" onClick={() => void removeWardrobeGroup(summary.id, definition.id)} aria-label="Remover roupa deste personagem" title="Remover" type="button"><Icon name="trash" /></button>}
-                                  </article>
-                                })}</div>}
-                            </section>
-                          })}
-                      </div>}
-                    </>}
-              </div>}
+              {/* O catálogo de roupas é renderizado no painel lateral visível. */}
               {activeModule !== 'Modelos' && activeModule !== 'Poses' && activeModule !== 'Roupas' && <div className="customizer-catalog-empty">O catálogo de {activeModule} aparecerá aqui.</div>}
             </section>
             </div>
