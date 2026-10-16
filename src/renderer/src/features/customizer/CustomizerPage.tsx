@@ -7,6 +7,7 @@ import type { CustomizerCharacter, CustomizerFaceAppearance, CustomizerWardrobeC
 import { characterBodyDimensionLimits, characterProportionLimits, defaultCharacterBodyDimensions, defaultCharacterProportions, getCharacterBodyDimensions, getCharacterProportions, type CharacterBodyDimensions, type CharacterProportions } from '../../../../shared/customizer'
 import type { StudioFaceTransforms } from '../../../../shared/studio'
 import { usePreviewBackground } from '../fabricator/usePreviewBackground'
+import { DesignBanner } from '../fabricator/DesignWorkspace'
 import { mapWardrobeComponentToPose } from '../fabricator/wardrobe/poseTransform'
 import { applyCharacterBodyShape } from './bodyShape'
 import { tintSkinPixels } from './skinTint'
@@ -1955,6 +1956,7 @@ export function CustomizerPage() {
         </section>
 
         <aside className="modules-panel panel" aria-label="Áreas do Customizar">
+          <DesignBanner />
           <nav className="customizer-top-tabs home-customizer-top-tabs" aria-label="Áreas do Customizar" role="tablist">
             {customizerTopTabs.map((tab) => <button
               key={tab.id}
