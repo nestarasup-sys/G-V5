@@ -446,9 +446,9 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .customizer-hair-library-remove:disabled { opacity:.4;cursor:default; }
 .customizer-hair-library-close { width:100%;font-size:66px;line-height:1;text-shadow:0 2px 2px #81204e; }
 .customizer-hair-library-grid { min-width:0;min-height:0;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));grid-template-rows:repeat(4,minmax(0,1fr));gap:7px;overflow:auto;padding:7px;background:#512477; }
-.customizer-hair-library-item { min-width:0;min-height:0;display:grid;place-items:center;overflow:hidden;padding:4px;border:5px solid #311553;border-radius:4px;background:linear-gradient(145deg,#584396,#47339a);cursor:pointer; }
-.customizer-hair-library-item:hover { border-color:#e986bc; }
-.customizer-hair-library-item.selected { border-color:#ff70b3;background:linear-gradient(145deg,#8b5fc1,#6846ad);box-shadow:inset 0 0 0 3px #f5b3d4; }
+.customizer-hair-library-item { min-width:0;min-height:0;display:grid;place-items:center;overflow:hidden;padding:4px;border:5px solid #311553;border-radius:4px;background:#f0eef2;cursor:pointer; }
+.customizer-hair-library-item:hover { border-color:#e986bc;background:#f8f5f8; }
+.customizer-hair-library-item.selected { border-color:#ff70b3;background:#fceaf3;box-shadow:inset 0 0 0 3px #f5b3d4; }
 .customizer-hair-library-item img { width:100%;height:100%;min-width:0;min-height:0;object-fit:contain; }
 .customizer-hair-library-placeholder { width:100%;height:100%;display:grid;place-items:center;color:#d8c9f1; }
 .customizer-hair-library-placeholder svg { width:45%;height:45%; }
