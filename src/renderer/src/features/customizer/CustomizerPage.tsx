@@ -85,11 +85,10 @@ const facePartColorControls: Array<{ id: HairColorRole; label: string; fallback:
   { id: 'accent', label: 'Acento', fallback: '#bd7198' }
 ]
 function facePartCatalogId(appearance: CustomizerFaceAppearance | undefined, part: typeof customizerFaceParts[number]): string | null | undefined {
-  return appearance?.components?.[facePartSourceId(appearance, part)]?.assetId
+  return appearance?.components?.[part.id]?.assetId
 }
-function facePartSourceId(appearance: CustomizerFaceAppearance | undefined, part: typeof customizerFaceParts[number]): FaceLibraryPartId {
-  const linked = appearance?.linkedSides?.[part.category] !== false
-  return part.side === 'right' && linked ? part.category === 'eye' ? 'eye-left' : part.category === 'pupil' ? 'pupil-left' : 'brow-left' : part.id
+function facePartSourceId(part: typeof customizerFaceParts[number]): FaceLibraryPartId {
+  return part.id
 }
 function isRightFaceAsset(asset: FaceComponentAssetSummary): boolean {
   return asset.rightSidePositioned === true || / · (?:Olho|Olho aberto|Olho fechado|Pupila|Sobrancelha) direit[oa]$/i.test(asset.name)
@@ -711,10 +710,7 @@ async function drawFaceCatalogOverlay(context: CanvasRenderingContext2D, artwork
     if (element.startsWith('brow') && !appearance.eyebrows) continue
     const componentPart = element === 'eye-left' || element === 'eye-right' || element === 'brow-left' || element === 'brow-right' ? element : null
     if (componentPart) {
-      const kind = componentPart.startsWith('eye') ? 'eye' : 'eyebrow'
-      const sourcePart = componentPart.endsWith('right') && appearance.linkedSides?.[kind] !== false
-        ? (kind === 'eye' ? 'eye-left' : 'brow-left') as FaceComponentPartId
-        : componentPart
+      const sourcePart = componentPart
       if (appearance.components?.[sourcePart]?.assetId) continue
     }
     const sheet: FaceSheetKind = element.startsWith('eye') ? 'eyes' : element.startsWith('brow') ? 'eyebrows' : element === 'nose' ? 'nose' : appearance.mouthOpen ? 'mouth-open' : 'mouth-closed'
@@ -750,11 +746,7 @@ async function drawFaceCatalogOverlay(context: CanvasRenderingContext2D, artwork
   const componentIds: FaceComponentPartId[] = ['eye-left', 'eye-right', 'pupil-left', 'pupil-right', 'brow-left', 'brow-right']
   const loaded = new Map<FaceComponentPartId, FaceComponentAsset>()
   await Promise.all(componentIds.map(async (part) => {
-    const category = part.startsWith('eye') ? 'eye' : part.startsWith('pupil') ? 'pupil' : 'eyebrow'
-    const linked = appearance.linkedSides?.[category] !== false
-    const isRight = part.endsWith('right')
-    const sourcePart = isRight && linked ? part.replace('right', 'left') as FaceComponentPartId : part
-    const id = appearance.components?.[sourcePart]?.assetId
+    const id = appearance.components?.[part]?.assetId
     if (!id) return
     const key = `${appearance.modelSlot}:${id}`
     let pending = faceComponentAssetCache.get(key)
@@ -766,13 +758,12 @@ async function drawFaceCatalogOverlay(context: CanvasRenderingContext2D, artwork
   let pupilClipCanvas: HTMLCanvasElement | null = null
   for (const part of layerOrder) {
     const category = part.startsWith('eye') ? 'eye' : part.startsWith('pupil') ? 'pupil' : 'eyebrow'
-    const linked = appearance.linkedSides?.[category] !== false
     const isRight = part.endsWith('right')
-    const sourcePart = isRight && linked ? part.replace('right', 'left') as FaceComponentPartId : part
     const asset = loaded.get(part)
-    const selectedPart = appearance.components?.[sourcePart] ?? appearance.components?.[part]
+    const selectedPart = appearance.components?.[part]
     if (!asset || !selectedPart) continue
-    const transform = selectedPart.transform ?? asset.defaultTransform
+    // Fabricator Dev owns placement and scale; the Customizer only chooses the asset.
+    const transform = asset.defaultTransform
     const mirroredTransform = isRight && category !== 'pupil' && !asset.rightSidePositioned ? { ...transform, x: sourceHead.width - transform.x, rotation: -transform.rotation } : transform
     let localX = mirroredTransform.x
     let localY = mirroredTransform.y
@@ -785,12 +776,12 @@ async function drawFaceCatalogOverlay(context: CanvasRenderingContext2D, artwork
     if (category === 'pupil') {
       const eyePart: FaceComponentPartId = isRight ? 'eye-right' : 'eye-left'
       const eyeAsset = loaded.get(eyePart)
-      const eyeLinked = appearance.linkedSides?.eye !== false
-      const eyeSelection = appearance.components?.[isRight && eyeLinked ? 'eye-left' : eyePart]
-      const eyeTransformBase = eyeSelection?.transform ?? eyeAsset?.defaultTransform
+      if (!eyeAsset) continue
+      const eyeSelection = appearance.components?.[eyePart]
+      const eyeTransformBase = eyeAsset?.defaultTransform
       if (eyeTransformBase) {
         const eyeTransform = isRight && !eyeAsset?.rightSidePositioned ? { ...eyeTransformBase, x: sourceHead.width - eyeTransformBase.x, rotation: -eyeTransformBase.rotation } : eyeTransformBase
-        if (eyeAsset) pupilEyeClip = { asset: eyeAsset, transform: eyeTransform, flipX: (isRight && eyeLinked) !== Boolean(eyeTransformBase.flipX), colors: eyeSelection?.colors }
+        if (eyeAsset) pupilEyeClip = { asset: eyeAsset, transform: eyeTransform, flipX: Boolean(eyeTransformBase.flipX), colors: eyeSelection?.colors }
         const pupilOffsetX = isRight && !asset.rightSidePositioned ? -transform.x : transform.x
         const pupilAngle = eyeTransform.rotation * Math.PI / 180
         localX = eyeTransform.x + pupilOffsetX * Math.cos(pupilAngle) - transform.y * Math.sin(pupilAngle)
@@ -817,7 +808,7 @@ async function drawFaceCatalogOverlay(context: CanvasRenderingContext2D, artwork
         if (clipped) {
           clipped.clearRect(0, 0, pupilClipCanvas.width, pupilClipCanvas.height)
           clipped.save(); clipped.translate(x, y); clipped.rotate((targetHead.rotation + drawRotation) * Math.PI / 180)
-          if ((isRight && linked) !== Boolean(transform.flipX)) clipped.scale(-1, 1)
+          if (transform.flipX) clipped.scale(-1, 1)
           clipped.drawImage(image, -width / 2, -height / 2, width, height); clipped.restore()
 
           const eyeMask = await loadCachedImage(await eyeInteriorMask(pupilEyeClip.asset.dataUrl))
@@ -835,7 +826,7 @@ async function drawFaceCatalogOverlay(context: CanvasRenderingContext2D, artwork
         }
       } else {
         context.save(); context.translate(x, y); context.rotate((targetHead.rotation + drawRotation) * Math.PI / 180)
-        if ((isRight && linked) !== Boolean(transform.flipX)) context.scale(-1, 1)
+        if (transform.flipX) context.scale(-1, 1)
         context.drawImage(image, -width / 2, -height / 2, width, height); context.restore()
       }
     } catch { /* Keep the rest of the face visible if one component asset is unavailable. */ }
@@ -1684,11 +1675,10 @@ export function CustomizerPage() {
     const current = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
     const previous = current.customization.faceAppearance
     const sameModel = previous?.modelSlot === item.modelSlot
-    const linkedSides = { eye: true, pupil: true, eyebrow: true, ...(sameModel ? previous?.linkedSides : undefined) }
-    if (part.side === 'right') linkedSides[part.category] = false
+    const linkedSides = { ...(sameModel ? previous?.linkedSides : undefined), [part.category]: false }
     const appearance: CustomizerFaceAppearance = {
       ...(sameModel ? previous : undefined), modelSlot: item.modelSlot, setId: undefined, linkedSides,
-      components: { ...(sameModel ? previous?.components : undefined), [part.id]: { ...(sameModel ? previous?.components?.[part.id] : undefined), assetId: item.id, transform: item.defaultTransform } },
+      components: { ...(sameModel ? previous?.components : undefined), [part.id]: { ...(sameModel ? previous?.components?.[part.id] : undefined), assetId: item.id, transform: undefined } },
       eyeState: sameModel ? previous.eyeState : 0,
       eyebrows: sameModel ? previous.eyebrows : true,
       noseIndex: sameModel ? previous.noseIndex : 0,
@@ -1704,7 +1694,7 @@ export function CustomizerPage() {
     const previous = current.customization.faceAppearance
     const appearanceBefore = previous?.modelSlot === selectedCatalogModelSlot ? previous : undefined
     const partDefinition = customizerFaceParts.find((entry) => entry.id === part)!
-    const targetPart = facePartSourceId(appearanceBefore, partDefinition)
+    const targetPart = facePartSourceId(partDefinition)
     const components = { ...(appearanceBefore?.components ?? {}) }
     components[targetPart] = { ...(components[targetPart] ?? { assetId: null }), colors: { ...components[targetPart]?.colors, [role]: value } }
     const appearance: CustomizerFaceAppearance = previous?.modelSlot === selectedCatalogModelSlot ? { ...previous, components } : {
@@ -1719,7 +1709,7 @@ export function CustomizerPage() {
     const previous = current.customization.faceAppearance
     if (!previous || previous.modelSlot !== selectedCatalogModelSlot) return
     const partDefinition = customizerFaceParts.find((entry) => entry.id === part)!
-    const targetPart = facePartSourceId(previous, partDefinition)
+    const targetPart = facePartSourceId(partDefinition)
     const components = { ...previous.components }
     if (components[targetPart]) components[targetPart] = { ...components[targetPart]!, colors: undefined }
     await saveCharacterCustomization({ faceAppearance: { ...previous, components } })
@@ -1731,7 +1721,7 @@ export function CustomizerPage() {
     const current = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
     const previous = current.customization.faceAppearance
     if (!previous || previous.modelSlot !== selectedCatalogModelSlot) return
-    const targetPart = facePartSourceId(previous, part)
+    const targetPart = facePartSourceId(part)
     const components = { ...previous.components, [targetPart]: { ...(previous.components?.[targetPart] ?? { assetId: null }), assetId: null } }
     await saveCharacterCustomization({ faceAppearance: { ...previous, components } })
   }
@@ -2242,7 +2232,7 @@ export function CustomizerPage() {
       const selectedIndex = options.findIndex((summary) => summary.id === selectedOption?.id)
       const selected = selectedIndex >= 0 ? options[selectedIndex] : null
       const piece = selectedId ? faceComponentDetails[selectedId] : null
-      const colorPartId = facePartSourceId(appearance, part)
+      const colorPartId = facePartSourceId(part)
       const colors = appearance?.components?.[colorPartId]?.colors ?? {}
       const hasLocalColors = Object.keys(colors).length > 0
       const chooseAt = (index: number) => {
@@ -2288,7 +2278,7 @@ export function CustomizerPage() {
     const selectedOption = selectedAsset && isRightFaceAsset(selectedAsset)
       ? options.find((summary) => sameFaceAssetPair(summary, selectedAsset, faceComponentDetails))
       : selectedAsset
-    const selectedColors = appearance?.components?.[facePartSourceId(appearance, part)]?.colors
+    const selectedColors = appearance?.components?.[facePartSourceId(part)]?.colors
     return <section className="customizer-hair-library" aria-labelledby="customizer-face-library-title">
       <header className="customizer-hair-library-heading">
         <button className="customizer-hair-library-remove" type="button" onClick={() => void clearFacePartSelection(part.id)} disabled={!selectedId} aria-label={'Remover ' + part.label + ' do personagem'} title={'Remover ' + part.label + ' do personagem'}><Icon name="trash" /></button>
