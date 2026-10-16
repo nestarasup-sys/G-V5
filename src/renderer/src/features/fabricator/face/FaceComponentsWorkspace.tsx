@@ -976,18 +976,14 @@ export function FaceComponentsWorkspace() {
       <aside className="face-components-controls">
         <header><strong>Ajuste da peça</strong></header>
         <section className="face-component-import-anchor" aria-label="Auto fixar importações de olhos">
-          <div><strong>Auto fixar importações</strong><small>{autoFixEnabled
-            ? 'Ativo para olhos, pupilas e olhos fechados. Nariz e sobrancelhas ficam fora.'
-            : autoFixReferencesReady
-              ? 'Usa as peças atuais de olhos, pupilas e olhos fechados como referência para os próximos imports.'
-              : 'Selecione uma peça de referência em olhos, pupilas e olhos fechados para ativar.'}</small></div>
+          <strong>Auto fixar</strong>
           <button type="button" aria-pressed={autoFixEnabled} disabled={!head || (!autoFixEnabled && !autoFixReferencesReady) || busy} onClick={() => autoFixEnabled ? releaseImportAnchors() : fixImportAnchors()}>{autoFixEnabled ? 'Desativar auto fixar' : 'Ativar auto fixar'}</button>
         </section>
         {componentPair && <div className="face-component-side-options" role="group" aria-label={`Selecionar lado de ${componentPair.label} para ajustar`}>
           {componentPair.parts.map((part, index) => {
             const asset = selectedAssets[part] ? details[selectedAssets[part]] : undefined
             const displayed = asset ?? (index === 1 ? leftPairAsset : undefined)
-            return <button key={part} className={selectedPart === part ? 'active' : ''} type="button" aria-pressed={selectedPart === part} disabled={busy} onClick={() => void chooseComponentSide(part)}><span className="face-component-side-image">{displayed && <img src={displayed.dataUrl} alt="" />}</span><span><strong>{index === 0 ? 'Esquerda' : 'Direita'}</strong><small>{index === 1 && linked[componentPair.kind] ? 'Imagem espelhada' : asset ? 'Ajustar este lado' : 'Escolha uma peça'}</small></span></button>
+            return <button key={part} className={selectedPart === part ? 'active' : ''} type="button" aria-pressed={selectedPart === part} disabled={busy} onClick={() => void chooseComponentSide(part)}><span className="face-component-side-image">{displayed && <img src={displayed.dataUrl} alt="" />}</span><strong>{index === 0 ? 'Esquerda' : 'Direita'}</strong></button>
           })}
         </div>}
         {componentPair && <div className="face-component-link-options">
@@ -998,9 +994,8 @@ export function FaceComponentsWorkspace() {
           <button className={`face-component-move-together${moveTogether[componentPair.kind] ? ' active' : ''}`} type="button" aria-pressed={moveTogether[componentPair.kind]} disabled={!movementLeftAsset || busy} onClick={() => setMoveTogether((current) => ({ ...current, [componentPair.kind]: !current[componentPair.kind] }))}>Mover junto</button>
         </div>}
         {libraryCategory === 'eyebrow' && selectedAsset && <button className="face-component-chroma-action" type="button" disabled={busy} onClick={() => void cleanSelectedEyebrow()}>Remover fundo verde da sobrancelha salva</button>}
-        {libraryCategory === 'eye-closed' && eyeAsset && <p className="face-component-follow-note">O olho fechado acompanha a posição e a largura do olho aberto. Ajuste a altura e a rotação aqui.</p>}
         {componentPair && head && movementLeftAsset && moveTogether[componentPair.kind] && <section className="face-component-pair-controls" aria-label={`Posição e tamanho conjuntos de ${componentPair.label}`}>
-          <strong>Posição e tamanho dos dois lados</strong><small>Os controles abaixo ajustam esquerda e direita juntos.{componentPair.kind === 'eye-closed' ? ' A largura acompanha os olhos abertos.' : ''}</small>
+          <strong>Posição e tamanho dos dois lados</strong>
           {componentPair.kind === 'eye' && <label className="face-component-slider"><span>Separação horizontal entre os olhos <output>{Math.round(eyeSeparation)} px</output></span><input type="range" min="0" max={Math.max(eyeSeparation, eyeSeparationMax)} step="1" value={eyeSeparation} onChange={(event) => void setEyeSeparation(Number(event.target.value))} /></label>}
           <div className="face-component-nudge-pad">
             <button type="button" aria-label="Subir os dois lados" onClick={() => void movePair(componentPair.kind, 'y', -1, true)}>↑</button>
@@ -1014,14 +1009,13 @@ export function FaceComponentsWorkspace() {
           {pairHeightAsset && <label className="face-component-slider"><span>Altura vertical dos dois lados <output>{Math.round(pairHeightPercent)}%</output></span><input type="range" min="1" max={Math.max(400, Math.ceil(pairHeightPercent / 100) * 100 + 100)} step="1" value={pairHeightPercent} onChange={(event) => void resizePair(componentPair.kind, 'scaleY', Number(event.target.value))} /></label>}
         </section>}
         {head && selectedTransform && (activeComponent || selectedCatalogItem) ? <>
-          {!componentPair && <div className="face-component-current"><img src={activeComponent?.dataUrl ?? selectedCatalogPiece?.dataUrl} alt="" /><span><strong>{activeComponent?.name ?? selectedCatalogItem?.name}</strong><small>{selectedCatalogItem ? selectedCatalogItem.category === 'nose' ? 'Nariz' : selectedCatalogItem.category === 'mouth-open' ? 'Boca aberta' : 'Boca fechada' : selectedCategory.names[selectedPart.endsWith('right') ? 1 : 0]}</small></span></div>}
+          {!componentPair && <div className="face-component-current"><img src={activeComponent?.dataUrl ?? selectedCatalogPiece?.dataUrl} alt="" /><span><strong>{activeComponent?.name ?? selectedCatalogItem?.name}</strong></span></div>}
           {selectedCatalogItem && <label className="face-component-variant">Variante<select value={selectedCatalogItem.category === 'nose' ? selectedCatalogItem.selectedNose : selectedCatalogItem.selectedExpression} onChange={(event) => updateCatalogVariant(Number(event.target.value))}>{selectedCatalogItem.pieces.map((piece) => <option key={piece.id} value={piece.index}>{selectedCatalogItem.category === 'nose' ? 'Nariz' : 'Expressão'} {String(piece.index + 1).padStart(2, '0')}</option>)}</select></label>}
           {componentPair && <strong className="face-component-individual-title">{moveTogether[componentPair.kind] ? 'Rotação individual' : followsOpenEye ? 'Altura e rotação' : 'Ajuste individual'} · {selectedPart.endsWith('right') ? 'direita' : 'esquerda'}</strong>}
           <FaceTransformControls head={head} transform={selectedTransform} sourceWidth={selectedSourceWidth} sourceHeight={selectedSourceHeight} pupil={activeComponent?.kind === 'pupil'} moveTogether={componentPair ? moveTogether[componentPair.kind] : false} followEyes={followsOpenEye} onChange={updateTransform} onReset={resetSelectedTransform} />
-        </> : <p>Selecione uma peça na Biblioteca para ajustar posição, tamanho e rotação.</p>}
+        </> : <div className="face-component-empty">Nenhuma peça selecionada</div>}
         <section className="face-components-guide-controls" aria-label="Guias de alinhamento do rosto">
           <header><strong>Guias de desenho</strong><label><input type="checkbox" checked={guide.visible} onChange={(event) => updateGuide({ visible: event.target.checked })} /> Mostrar</label></header>
-          <p>Marcação visual para alinhar as peças. Não modifica o personagem.</p>
           <label>Inclinação do eixo <output>{guide.angle}°</output><input type="range" min="-30" max="30" step="1" value={guide.angle} disabled={!guide.visible} onChange={(event) => updateGuide({ angle: Number(event.target.value) })} /></label>
           <label>Posição do eixo <output>{guide.verticalX}%</output><input type="range" min="20" max="80" step="1" value={guide.verticalX} disabled={!guide.visible} onChange={(event) => updateGuide({ verticalX: Number(event.target.value) })} /></label>
           <label>Altura da linha superior <output>{guide.horizontalY}%</output><input type="range" min="10" max={Math.min(90, guide.lowerHorizontalY - 1)} step="1" value={guide.horizontalY} disabled={!guide.visible} onChange={(event) => updateGuide({ horizontalY: Number(event.target.value) })} /></label>
