@@ -130,16 +130,16 @@ async function makeFaceThumbnail(set: Pick<FaceSet, 'pieces' | 'selectedNose' | 
 
 function clamp(value: number, min: number, max: number): number { return Math.max(min, Math.min(max, value)) }
 
-export function FaceWorkspace() {
+export function FaceWorkspace({ initialModelSlot = 1, initialElement = 'nose' }: { initialModelSlot?: number; initialElement?: 'nose' | 'mouth' } = {}) {
   const [models, setModels] = useState<FabricatorSlotSummary[]>([])
-  const [modelSlot, setModelSlot] = useState(1)
+  const [modelSlot, setModelSlot] = useState(initialModelSlot)
   const [model, setModel] = useState<FabricatorProject | null>(null)
   const [library, setLibrary] = useState<FaceCatalogItemSummary[]>([])
   const [catalogCards, setCatalogCards] = useState<Record<string, string>>({})
   const [catalogLoading, setCatalogLoading] = useState(false)
   const [draft, setDraft] = useState<FaceSet | null>(null)
   const [activeCatalogItems, setActiveCatalogItems] = useState<Partial<Record<FaceSheetKind, string>>>({})
-  const [selected, setSelected] = useState<FaceElementKind>('nose')
+  const [selected, setSelected] = useState<FaceElementKind>(initialElement)
   const [eyeState, setEyeState] = useState<EyeState>(0)
   const [mouthOpen, setMouthOpen] = useState(false)
   const [showAllEyes, setShowAllEyes] = useState(false)
@@ -164,7 +164,8 @@ export function FaceWorkspace() {
       if (!active) return
       setModels(slots)
       const first = slots.findIndex(Boolean)
-      if (first >= 0) setModelSlot(first + 1)
+      if (slots[initialModelSlot - 1]) setModelSlot(initialModelSlot)
+      else if (first >= 0) setModelSlot(first + 1)
     }).catch((reason) => setError(String(reason)))
     return () => { active = false }
   }, [])
