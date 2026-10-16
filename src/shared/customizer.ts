@@ -80,7 +80,15 @@ export type CustomizerFaceAppearance = {
   setId?: string
   /** Each prepared sheet is selected independently from the Fabricator face catalog. */
   eyeCatalogId?: string
+  /** Independent eye sheets for future one-eye-at-a-time authoring; fall back to eyeCatalogId for legacy characters. */
+  eyeLeftCatalogId?: string | null
+  eyeRightCatalogId?: string | null
   eyebrowCatalogId?: string
+  /** Independent brow sheets for future one-brow-at-a-time authoring; fall back to eyebrowCatalogId for legacy characters. */
+  eyebrowLeftCatalogId?: string | null
+  eyebrowRightCatalogId?: string | null
+  /** Character-only recoloring for each independently selected facial feature. */
+  partColors?: Partial<Record<'eye-left' | 'eye-right' | 'brow-left' | 'brow-right', HairColorOverrides>>
   noseCatalogId?: string
   mouthClosedCatalogId?: string
   mouthOpenCatalogId?: string
