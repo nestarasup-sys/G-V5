@@ -385,6 +385,7 @@ function resolvedHairColors(appearance: CustomizerCharacter['customization']['ha
 const clothingCategories: Record<'Superior' | 'Inferior', Array<{ id: ClothingGroupCategory; label: string; source: WardrobeCategory[] }>> = {
   Superior: [
     { id: 'camisa', label: 'Camisas', source: ['camisa'] },
+    { id: 'jaqueta', label: 'Jaquetas', source: ['jaqueta'] },
     { id: 'manga-superior', label: 'Mangas superiores', source: ['manga-superior'] },
     { id: 'manga-inferior', label: 'Mangas inferiores', source: ['manga-inferior'] }
   ],
@@ -392,6 +393,24 @@ const clothingCategories: Record<'Superior' | 'Inferior', Array<{ id: ClothingGr
     { id: 'calca', label: 'Calças', source: ['calca-coxa', 'calca-canela'] },
     { id: 'shorts', label: 'Shorts', source: ['shorts'] }
   ]
+}
+
+type UpperWardrobePanel = { id: string; label: string; category: ClothingGroupCategory; side: 'left' | 'right' | null }
+const upperWardrobePanels: UpperWardrobePanel[] = [
+  { id: 'shirt', label: 'Camisa', category: 'camisa', side: null },
+  { id: 'jacket', label: 'Jaqueta', category: 'jaqueta', side: null },
+  { id: 'upper-left', label: 'Manga superior esquerda', category: 'manga-superior', side: 'left' },
+  { id: 'upper-right', label: 'Manga superior direita', category: 'manga-superior', side: 'right' },
+  { id: 'lower-left', label: 'Manga inferior esquerda', category: 'manga-inferior', side: 'left' },
+  { id: 'lower-right', label: 'Manga inferior direita', category: 'manga-inferior', side: 'right' }
+]
+function wardrobeComponentMatchesPanel(component: WardrobeSet['components'][number], panel: UpperWardrobePanel): boolean {
+  if (component.category !== panel.category) return false
+  if (!panel.side) return true
+  const sideHint = `${component.name} ${component.attachedPartId}`.toLocaleLowerCase()
+  const left = /esquerda|\bleft\b/.test(sideHint)
+  const right = /direita|\bright\b/.test(sideHint)
+  return panel.side === 'left' ? left && !right : right && !left
 }
 
 async function renderWardrobeThumbnail(set: WardrobeSet, categories: WardrobeCategory[]): Promise<string | null> {
@@ -1932,6 +1951,40 @@ export function CustomizerPage() {
     })
   }
 
+  async function applyUpperWardrobePanel(panel: UpperWardrobePanel, candidate: { summary: WardrobeSetSummary; component: WardrobeSet['components'][number] } | null) {
+    if (!selectedCharacter || selectedCatalogModelSlot === null) return
+    const current = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
+    const before = current.customization.wardrobeGroups ?? []
+    const existingCandidate = candidate && before.find((group) => group.modelSlot === candidate.summary.modelSlot && group.setId === candidate.summary.id && group.category === panel.category && group.componentId === candidate.component.id)
+    if (existingCandidate) {
+      setSelectedClothing({ setId: candidate.summary.id, category: panel.category, componentId: candidate.component.id })
+      setWardrobeHighlightVisible(true)
+      return
+    }
+    const panelComponents = wardrobeSets.flatMap((summary) => {
+      const set = wardrobeDetails[`${summary.modelSlot}:${summary.id}`]
+      return set ? set.components.filter((component) => wardrobeComponentMatchesPanel(component, panel)).map((component) => `${summary.modelSlot}:${summary.id}:${component.id}`) : []
+    })
+    const panelComponentKeys = new Set(panelComponents)
+    const matchingGroups = before.filter((group) => group.modelSlot === selectedCatalogModelSlot && group.category === panel.category && (!group.componentId || panelComponentKeys.has(`${group.modelSlot}:${group.setId}:${group.componentId}`)))
+    if (!candidate && !matchingGroups.length) return
+    const after = before.filter((group) => {
+      if (group.modelSlot !== selectedCatalogModelSlot || group.category !== panel.category) return true
+      if (!group.componentId) return false
+      return !panelComponentKeys.has(`${group.modelSlot}:${group.setId}:${group.componentId}`)
+    })
+    if (candidate) {
+      after.push({ modelSlot: candidate.summary.modelSlot, setId: candidate.summary.id, category: panel.category, componentId: candidate.component.id, offsetX: 0, offsetY: 0, scaleX: 1, scaleY: 1, rotation: 0 })
+      setSelectedClothing({ setId: candidate.summary.id, category: panel.category, componentId: candidate.component.id })
+      setWardrobeHighlightVisible(true)
+    } else {
+      if (selectedClothing?.category === panel.category && panelComponentKeys.has(`${selectedCatalogModelSlot}:${selectedClothing.setId}:${selectedClothing.componentId}`)) setSelectedClothing(null)
+      setWardrobeHighlightVisible(false)
+    }
+    recordWardrobeHistory(before, after)
+    await saveCharacterCustomization({ wardrobeGroups: after })
+  }
+
   async function removeWardrobeGroup(setId: string, category: ClothingGroupCategory, componentId?: string) {
     if (!selectedCharacter) return
     const current = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
@@ -2158,7 +2211,7 @@ export function CustomizerPage() {
   const selectedModelName = availableModels.find((model) => model.slot === selectedCatalogModelSlot)?.name
   const activeFaceAppearance = characterFaceAppearance?.modelSlot === selectedCatalogModelSlot ? characterFaceAppearance : undefined
   const wardrobeGroupDefinitions = clothingSection === 'Customizar' ? [] : clothingCategories[clothingSection]
-  const wardrobeCategoryLabels: Record<ClothingGroupCategory, string> = { calca: 'Calças', shorts: 'Shorts', 'manga-inferior': 'Mangas inferiores', 'manga-superior': 'Mangas superiores', camisa: 'Camisas' }
+  const wardrobeCategoryLabels: Record<ClothingGroupCategory, string> = { calca: 'Calças', shorts: 'Shorts', 'manga-inferior': 'Mangas inferiores', 'manga-superior': 'Mangas superiores', camisa: 'Camisas', jaqueta: 'Jaquetas' }
   const activeWardrobeGroup = selectedClothing ? (selectedCharacter?.customization.wardrobeGroups ?? []).find((group) => group.setId === selectedClothing.setId && group.category === selectedClothing.category && (group.componentId === selectedClothing.componentId || !group.componentId)) : undefined
   const activeWardrobeTransform = wardrobeTransformDraft ?? activeWardrobeGroup
   const activeWardrobeComponent = selectedClothing ? wardrobeDetails[`${activeWardrobeGroup?.modelSlot ?? selectedCatalogModelSlot}:${selectedClothing.setId}`]?.components.find((component) => component.id === selectedClothing.componentId) : undefined
@@ -2177,7 +2230,7 @@ export function CustomizerPage() {
         return { group, component, key, bodyPartName: bodyPart?.name ?? component.name }
       })
     })
-    .sort((a, b) => ['calca', 'shorts', 'manga-inferior', 'manga-superior', 'camisa'].indexOf(a.group.category) - ['calca', 'shorts', 'manga-inferior', 'manga-superior', 'camisa'].indexOf(b.group.category))
+    .sort((a, b) => ['calca', 'shorts', 'manga-inferior', 'manga-superior', 'camisa', 'jaqueta'].indexOf(a.group.category) - ['calca', 'shorts', 'manga-inferior', 'manga-superior', 'camisa', 'jaqueta'].indexOf(b.group.category))
 
   const renderHairCatalog = () => (
     <div className="customizer-hair-catalog">
@@ -2771,6 +2824,33 @@ export function CustomizerPage() {
                             <button className="customizer-wardrobe-reset" onClick={() => void adjustWardrobeGroup({ offsetX: 0, offsetY: 0, scaleX: 1, scaleY: 1, rotation: 0 })} type="button">Resetar ajustes desta roupa</button>
                           </> : <div className="customizer-wardrobe-empty">Selecione uma roupa na lista para ajustar.</div>}
                         </section>
+                      </div> : clothingSection === 'Superior' ? <div className="customizer-upper-wardrobe-grid" aria-label="Peças de roupa superior">
+                        {upperWardrobePanels.map((panel) => {
+                          const candidates = wardrobeSets.filter((summary) => summary.modelSlot === selectedCatalogModelSlot).flatMap((summary) => {
+                            const set = wardrobeDetails[`${summary.modelSlot}:${summary.id}`]
+                            return set ? set.components.filter((component) => wardrobeComponentMatchesPanel(component, panel)).map((component) => ({ summary, component })) : []
+                          })
+                          const appliedGroups = selectedCharacter?.customization.wardrobeGroups ?? []
+                          const selectedIndex = candidates.findIndex(({ summary, component }) => appliedGroups.some((group) => group.modelSlot === summary.modelSlot && group.setId === summary.id && group.category === panel.category && group.componentId === component.id))
+                          const currentCandidate = selectedIndex >= 0 ? candidates[selectedIndex] : null
+                          const currentIndex = selectedIndex >= 0 ? selectedIndex + 1 : 0
+                          const slotCount = candidates.length + 1
+                          const move = (direction: -1 | 1) => {
+                            const nextIndex = (currentIndex + direction + slotCount) % slotCount
+                            void applyUpperWardrobePanel(panel, nextIndex === 0 ? null : candidates[nextIndex - 1])
+                          }
+                          return <article className="customizer-upper-piece-card" key={panel.id} aria-label={panel.label}>
+                            <header><h3>{panel.label}</h3><span>{currentCandidate ? `${selectedIndex + 1}/${candidates.length}` : `0/${candidates.length}`}</span></header>
+                            <div className="customizer-upper-piece-view">
+                              <button className="customizer-upper-piece-arrow" aria-label={`Peça anterior: ${panel.label}`} onClick={() => move(-1)} disabled={!candidates.length} type="button">‹</button>
+                              <button className={'customizer-upper-piece-image' + (currentCandidate ? ' selected' : '')} aria-label={currentCandidate ? `Selecionar ${currentCandidate.component.name}` : `Slot vazio: ${panel.label}`} aria-pressed={Boolean(currentCandidate && selectedClothing?.setId === currentCandidate.summary.id && selectedClothing.componentId === currentCandidate.component.id)} onClick={() => void applyUpperWardrobePanel(panel, currentCandidate)} type="button">
+                                {currentCandidate ? <img src={currentCandidate.component.dataUrl} alt={currentCandidate.component.name} /> : <span>Escolha uma peça</span>}
+                              </button>
+                              <button className="customizer-upper-piece-arrow" aria-label={`Próxima peça: ${panel.label}`} onClick={() => move(1)} disabled={!candidates.length} type="button">›</button>
+                            </div>
+                            <footer>{currentCandidate ? currentCandidate.component.name : 'Nenhuma selecionada'}</footer>
+                          </article>
+                        })}
                       </div> : <div className="customizer-wardrobe-groups">
                           {wardrobeGroupDefinitions.map((definition) => {
                             const matches = wardrobeSets.filter((summary) => wardrobeDetails[`${summary.modelSlot}:${summary.id}`]?.components.some((component) => definition.source.includes(component.category)))

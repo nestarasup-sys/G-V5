@@ -11,7 +11,7 @@ const SLOT_COUNT = 12
 const HISTORY_LIMIT = 40
 const faceOrder: FaceElementKind[] = ['brow-left', 'brow-right', 'eye-left', 'eye-right', 'nose', 'mouth']
 const wardrobeCategories: Record<CustomizerWardrobeGroup['category'], string[]> = {
-  camisa: ['camisa'], 'manga-superior': ['manga-superior'], 'manga-inferior': ['manga-inferior'],
+  camisa: ['camisa'], jaqueta: ['jaqueta'], 'manga-superior': ['manga-superior'], 'manga-inferior': ['manga-inferior'],
   calca: ['calca-coxa', 'calca-canela'], shorts: ['shorts']
 }
 const imageCache = new Map<string, Promise<HTMLImageElement>>()
