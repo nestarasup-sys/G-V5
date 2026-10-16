@@ -6,6 +6,19 @@ export type FaceImportAnchor = {
   right: { width: number; height: number; transform: FaceTransform }
 }
 
+type PositionedFacePiece = Pick<FaceComponentAsset, 'width' | 'defaultTransform' | 'rightSidePositioned'>
+
+/** Keep the closed eye centered over the visible open eye, regardless of source image dimensions. */
+export function fitClosedEyeToOpen(closed: PositionedFacePiece, open: PositionedFacePiece, head: ModelPart, rightSide: boolean): FaceTransform {
+  const openX = rightSide && !open.rightSidePositioned ? head.width - open.defaultTransform.x : open.defaultTransform.x
+  return {
+    ...closed.defaultTransform,
+    x: rightSide && !closed.rightSidePositioned ? head.width - openX : openX,
+    y: open.defaultTransform.y,
+    scaleX: open.width * open.defaultTransform.scaleX / closed.width
+  }
+}
+
 function asPhysicalRight(asset: FaceComponentAsset, head: ModelPart): FaceTransform {
   const transform = asset.defaultTransform
   if (asset.rightSidePositioned || asset.kind === 'pupil') return { ...transform }
