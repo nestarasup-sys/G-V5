@@ -1326,6 +1326,7 @@ export function CustomizerPage() {
     void window.desktop.listFaceComponentAssets(selectedCatalogModelSlot).then(async (summaries) => {
       const details = await Promise.all(summaries.map((summary) => window.desktop.loadFaceComponentAsset(selectedCatalogModelSlot, summary.id)))
       if (cancelled) return
+      for (const item of details) if (item) faceComponentAssetCache.set(`${selectedCatalogModelSlot}:${item.id}`, Promise.resolve(item))
       setFaceComponentAssets(summaries)
       setFaceComponentDetails(Object.fromEntries(details.filter((item): item is FaceComponentAsset => Boolean(item)).map((item) => [item.id, item])))
     }).catch((reason: unknown) => { if (!cancelled) setCatalogError(reason instanceof Error ? reason.message : 'Não foi possível carregar os assets faciais.') })
