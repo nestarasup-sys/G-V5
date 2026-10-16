@@ -134,6 +134,7 @@ button:focus-visible, input:focus-visible { outline: 3px solid #ed8caf; outline-
 .studio-side-primary,.studio-side-danger { min-height:34px;display:flex;align-items:center;justify-content:center;gap:6px;padding:0 9px;border:1px solid #e6a2bb;border-radius:8px;background:#fffafd;color:#aa3d67;font-size:10px;font-weight:700;cursor:pointer; }
 .studio-side-primary:hover { background:#fff0f6; }
 .studio-side-danger { margin-top:6px;border-color:#edc4c8;color:#b34555; }
+.studio-character-reset { width:100%;margin-top:6px; }
 .studio-layer-actions { display:grid;gap:5px; }
 .studio-layer-actions button { min-height:28px;border:1px solid #eadce5;border-radius:6px;background:#fff;color:#746975;font-size:9px;cursor:pointer; }
 .studio-character-actions button { min-height:34px;border-color:#805264;border-radius:11px;color:#493640;font-size:10px;font-weight:750; }
