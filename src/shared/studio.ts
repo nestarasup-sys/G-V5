@@ -19,6 +19,8 @@ export type StudioElement = {
   kind: 'image' | 'character' | 'narrator' | 'speech' | 'thought'
   assetId?: string
   characterId?: string
+  /** Customizer revision used to compose this actor's stored image. */
+  characterSourceUpdatedAt?: string
   flipX?: boolean
   /** Prevents mouse dragging this character inside this Studio. */
   positionLocked?: boolean

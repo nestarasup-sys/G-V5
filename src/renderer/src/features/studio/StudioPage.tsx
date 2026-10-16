@@ -200,6 +200,7 @@ export function StudioPage() {
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [availableCharacters, setAvailableCharacters] = useState<CustomizerCharacter[]>([])
+  const [normalizedStudioVersion, setNormalizedStudioVersion] = useState(0)
   const [castPickerOpen, setCastPickerOpen] = useState(false)
   const [castSelection, setCastSelection] = useState<string[]>([])
   const [savingCast, setSavingCast] = useState(false)
@@ -244,7 +245,7 @@ export function StudioPage() {
   const selectedElement = activeStudio?.elements.find((element) => element.id === selectedElementId) ?? null
   const selectedStudioCharacter = selectedElement?.kind === 'character' ? availableCharacters.find((character) => character.id === selectedElement.characterId) ?? null : null
   const selectedStudioCharacterModelSlot = selectedStudioCharacter ? selectedStudioCharacter.customization.modelSlot ?? 1 : null
-  const selectedStudioPoseSlot = selectedElement?.kind === 'character' ? selectedElement.poseSlot ?? selectedStudioCharacter?.customization.poseSlot ?? null : null
+  const selectedStudioPoseSlot = selectedElement?.kind === 'character' ? selectedElement.poseSlot === undefined ? selectedStudioCharacter?.customization.poseSlot ?? null : selectedElement.poseSlot : null
   const selectedStudioFaceAppearance = selectedElement?.kind === 'character'
     ? selectedElement.faceAppearance ?? selectedStudioCharacter?.customization.faceAppearance
     : undefined
@@ -305,12 +306,24 @@ export function StudioPage() {
 
   useEffect(() => {
     let cancelled = false
-    void window.desktop.listCustomizerCharacters().then((characters) => {
-      if (!cancelled) setAvailableCharacters(characters)
-    }).catch((reason: unknown) => {
-      if (!cancelled) setError(reason instanceof Error ? reason.message : 'Não foi possível carregar o elenco de personagens.')
-    })
-    return () => { cancelled = true }
+    let request = 0
+    const refreshCharacters = () => {
+      const currentRequest = ++request
+      void window.desktop.listCustomizerCharacters().then((characters) => {
+        if (!cancelled && currentRequest === request) setAvailableCharacters(characters)
+      }).catch((reason: unknown) => {
+        if (!cancelled && currentRequest === request) setError(reason instanceof Error ? reason.message : 'Não foi possível carregar o elenco de personagens.')
+      })
+    }
+    const refreshVisibleCharacters = () => { if (!document.hidden) refreshCharacters() }
+    refreshCharacters()
+    window.addEventListener('focus', refreshCharacters)
+    document.addEventListener('visibilitychange', refreshVisibleCharacters)
+    return () => {
+      cancelled = true
+      window.removeEventListener('focus', refreshCharacters)
+      document.removeEventListener('visibilitychange', refreshVisibleCharacters)
+    }
   }, [])
 
   useEffect(() => {
@@ -387,6 +400,7 @@ export function StudioPage() {
       const crops = await Promise.all(characterAssets.map(async (asset) => ({ assetId: asset.id, crop: await trimTransparentImage(asset.dataUrl) })))
       if (cancelled) return
       normalizedStudioIdsRef.current.add(studioId)
+      setNormalizedStudioVersion((version) => version + 1)
       const byAsset = new Map(crops.filter((entry): entry is { assetId: string; crop: TrimmedImage } => entry.crop !== null).map((entry) => [entry.assetId, entry.crop]))
       if (!byAsset.size) return
       setStudios((current) => current.map((studio) => studio.id !== studioId ? studio : {
@@ -405,6 +419,71 @@ export function StudioPage() {
     })()
     return () => { cancelled = true }
   }, [activeStudio])
+
+  useEffect(() => {
+    if (!activeStudio || !normalizedStudioIdsRef.current.has(activeStudio.id) || !availableCharacters.length) return
+    const characters = new Map(availableCharacters.map((character) => [character.id, character]))
+    const pending = activeStudio.elements.flatMap((element) => {
+      if (element.kind !== 'character' || !element.characterId || !element.assetId) return []
+      const character = characters.get(element.characterId)
+      return character && element.characterSourceUpdatedAt !== character.updatedAt ? [{ element, character }] : []
+    })
+    if (!pending.length) return
+    let cancelled = false
+    const studioId = activeStudio.id
+    const stageWidth = sceneRef.current?.clientWidth ?? 1000
+    const stageHeight = sceneRef.current?.clientHeight ?? 562
+    void (async () => {
+      try {
+        const { renderSavedCharacter } = await import('../customizer/CustomizerPage')
+        const updates: Array<{ previous: StudioElement; next: StudioElement; asset: StudioAsset }> = []
+        for (const { element, character } of pending) {
+          const customization = {
+            ...character.customization,
+            poseSlot: element.poseSlot === undefined ? character.customization.poseSlot : element.poseSlot,
+            faceAppearance: element.faceAppearance ?? character.customization.faceAppearance
+          }
+          const rendered = await renderSavedCharacter({ ...character, customization }, element.faceTransforms)
+          if (cancelled) return
+          const crop = await trimTransparentImage(rendered.dataUrl)
+          if (cancelled) return
+          const cropWidth = crop?.width ?? rendered.width
+          const cropHeight = crop?.height ?? rendered.height
+          const characterCanvasWidth = element.characterCanvasWidth ?? element.width * rendered.width / cropWidth
+          const asset = activeStudio.assets.find((item) => item.id === element.assetId)
+          if (!asset) continue
+          updates.push({
+            previous: element,
+            next: {
+              ...element, characterSourceUpdatedAt: character.updatedAt, characterCanvasWidth,
+              width: characterCanvasWidth * cropWidth / rendered.width,
+              height: characterCanvasWidth * stageWidth / stageHeight * cropHeight / rendered.width,
+              text: element.text === asset.name ? character.name : element.text
+            },
+            asset: { ...asset, name: character.name, mimeType: 'image/png', dataUrl: crop?.dataUrl ?? rendered.dataUrl }
+          })
+        }
+        if (cancelled || !updates.length) return
+        setStudios((current) => current.map((studio) => {
+          if (studio.id !== studioId) return studio
+          const valid = updates.filter(({ previous }) => studio.elements.some((element) => element === previous))
+          if (!valid.length) return studio
+          const elements = new Map(valid.map(({ next }) => [next.id, next]))
+          const assets = new Map(valid.map(({ asset }) => [asset.id, asset]))
+          return {
+            ...studio,
+            elements: studio.elements.map((element) => elements.get(element.id) ?? element),
+            assets: studio.assets.map((asset) => assets.get(asset.id) ?? asset),
+            updatedAt: new Date().toISOString()
+          }
+        }))
+        setSaved(false)
+      } catch (reason) {
+        if (!cancelled) setError(reason instanceof Error ? reason.message : 'Não foi possível atualizar o personagem do Studio.')
+      }
+    })()
+    return () => { cancelled = true }
+  }, [activeStudio, availableCharacters, normalizedStudioVersion])
 
   const allocateNumber = () => {
     const highest = studios.reduce((max, studio) => Math.max(max, Number(studio.title.match(/^Studio\s+(\d+)/i)?.[1] ?? 0)), 0)
@@ -595,7 +674,7 @@ export function StudioPage() {
         const canvasHeight = characterCanvasWidth * stageWidth / stageHeight * rendered.height / rendered.width
         const height = Math.min(82, canvasHeight * imageHeight / rendered.height)
         assets.push(asset)
-        elements.push({ id: crypto.randomUUID(), kind: 'character', assetId: asset.id, characterId: character.id, poseSlot: character.customization.poseSlot, characterScale: 100, characterWidthScale: 100, characterHeightScale: 100, characterCanvasWidth, text: character.name, x: 0, y: 0, width, height, rotation: 0, zIndex: ++zIndex })
+        elements.push({ id: crypto.randomUUID(), kind: 'character', assetId: asset.id, characterId: character.id, characterSourceUpdatedAt: character.updatedAt, characterScale: 100, characterWidthScale: 100, characterHeightScale: 100, characterCanvasWidth, text: character.name, x: 0, y: 0, width, height, rotation: 0, zIndex: ++zIndex })
       }
       const nextElements = [...retained, ...elements]
       const retainedAssetIds = new Set(retained.map((element) => element.assetId).filter((id): id is string => Boolean(id)))
@@ -631,7 +710,7 @@ export function StudioPage() {
       while (studioFaceRenderRunningRef.current) await new Promise((resolve) => window.setTimeout(resolve, 16))
       const characterCopy: CustomizerCharacter = {
         ...selectedStudioCharacter,
-        customization: { ...selectedStudioCharacter.customization, poseSlot: selectedElement.poseSlot ?? selectedStudioCharacter.customization.poseSlot, faceAppearance: appearance }
+        customization: { ...selectedStudioCharacter.customization, poseSlot: selectedElement.poseSlot === undefined ? selectedStudioCharacter.customization.poseSlot : selectedElement.poseSlot, faceAppearance: appearance }
       }
       const key = studioCharacterRenderKey(characterCopy)
       if (!studioFaceRendererRef.current || studioFaceRendererRef.current.key !== key) {
@@ -646,7 +725,7 @@ export function StudioPage() {
       const assetId = selectedElement.assetId
       const update = (studio: StudioDocument): StudioDocument => ({
         ...studio,
-        elements: studio.elements.map((element) => element.id === elementId ? { ...element, faceAppearance: appearance, faceTransforms } : element),
+        elements: studio.elements.map((element) => element.id === elementId ? { ...element, faceAppearance: appearance, faceTransforms, characterSourceUpdatedAt: selectedStudioCharacter.updatedAt } : element),
         assets: studio.assets.map((asset) => asset.id === assetId ? { ...asset, dataUrl: studioDataUrl, mimeType: 'image/png' } : asset),
         updatedAt: new Date().toISOString()
       })
@@ -665,12 +744,12 @@ export function StudioPage() {
       const { renderSavedCharacter } = await import('../customizer/CustomizerPage')
       let characterCanvasWidth = selectedElement.characterCanvasWidth
       if (!characterCanvasWidth) {
-        const currentPoseCharacter: CustomizerCharacter = { ...selectedStudioCharacter, customization: { ...selectedStudioCharacter.customization, poseSlot: selectedElement.poseSlot ?? selectedStudioCharacter.customization.poseSlot, faceAppearance: selectedElement.faceAppearance ?? selectedStudioCharacter.customization.faceAppearance } }
+        const currentPoseCharacter: CustomizerCharacter = { ...selectedStudioCharacter, customization: { ...selectedStudioCharacter.customization, poseSlot: selectedElement.poseSlot === undefined ? selectedStudioCharacter.customization.poseSlot : selectedElement.poseSlot, faceAppearance: selectedElement.faceAppearance ?? selectedStudioCharacter.customization.faceAppearance } }
         const currentRendered = await renderSavedCharacter(currentPoseCharacter, selectedElement.faceTransforms)
         const currentCrop = await trimTransparentImage(currentRendered.dataUrl)
         characterCanvasWidth = selectedElement.width * currentRendered.width / (currentCrop?.width ?? currentRendered.width)
       }
-      const characterCopy: CustomizerCharacter = { ...selectedStudioCharacter, customization: { ...selectedStudioCharacter.customization, poseSlot } }
+      const characterCopy: CustomizerCharacter = { ...selectedStudioCharacter, customization: { ...selectedStudioCharacter.customization, poseSlot, faceAppearance: selectedElement.faceAppearance ?? selectedStudioCharacter.customization.faceAppearance } }
       const rendered = await renderSavedCharacter(characterCopy, selectedElement.faceTransforms)
       const trimmed = await trimTransparentImage(rendered.dataUrl)
       const dataUrl = trimmed?.dataUrl ?? rendered.dataUrl
@@ -685,7 +764,7 @@ export function StudioPage() {
       const assetId = selectedElement.assetId
       changeScene((studio) => ({
         ...studio,
-        elements: studio.elements.map((element) => element.id === elementId ? { ...element, poseSlot, characterCanvasWidth, width, height } : element),
+        elements: studio.elements.map((element) => element.id === elementId ? { ...element, poseSlot, characterCanvasWidth, width, height, characterSourceUpdatedAt: selectedStudioCharacter.updatedAt } : element),
         assets: studio.assets.map((asset) => asset.id === assetId ? { ...asset, dataUrl, mimeType: 'image/png' } : asset),
         updatedAt: new Date().toISOString()
       }))
