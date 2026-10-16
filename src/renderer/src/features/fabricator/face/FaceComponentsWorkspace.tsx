@@ -557,22 +557,21 @@ export function FaceComponentsWorkspace() {
 
   async function chooseLibraryAsset(asset: FaceComponentAssetSummary) {
     const category = partCategory(selectedPart)
-    const otherSide = selectedPart === category.parts[0] ? category.parts[1] : category.parts[0]
     const chosen = details[asset.id]
-    const companion = chosen && selectedPart.endsWith('right') ? assets.map((item) => details[item.id]).find((item) => item && sameLibraryPair(chosen, item)) : undefined
-    if (companion) {
-      setSelectedAssets((current) => ({ ...current, [selectedPart]: companion.id }))
+    if (!chosen) return
+    const pair = assets.map((item) => details[item.id]).filter((item): item is FaceComponentAsset => Boolean(item && item.kind === category.kind))
+    const isRight = isRightLibraryAsset(chosen)
+    let left = isRight ? pair.find((item) => !isRightLibraryAsset(item) && sameLibraryPair(item, chosen)) ?? null : chosen
+    let right = isRight ? chosen : pair.find((item) => sameLibraryPair(chosen, item)) ?? null
+    setBusy(true); setError('')
+    try {
+      if (!left) left = await cloneComponentForSide(right ?? chosen, category.parts[0])
+      if (!right) right = await cloneComponentForSide(left, category.parts[1])
+      setSelectedAssets((current) => ({ ...current, [category.parts[0]]: left!.id, [category.parts[1]]: right!.id }))
       setLinked((current) => ({ ...current, [category.kind]: false }))
-      return
-    }
-    const needsCopy = chosen && (selectedAssets[otherSide] === asset.id || selectedPart.endsWith('right') !== Boolean(chosen.rightSidePositioned))
-    if (needsCopy) {
-      setBusy(true); setError('')
-      try { await cloneComponentForSide(chosen, selectedPart) }
-      catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); return }
-      finally { setBusy(false) }
-    } else setSelectedAssets((current) => ({ ...current, [selectedPart]: asset.id }))
-    if (selectedPart.endsWith('right')) setLinked((current) => ({ ...current, [category.kind]: false }))
+      setNotice(`${category.label}: conjunto esquerdo e direito selecionado.`)
+    } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) }
+    finally { setBusy(false) }
   }
 
   async function importCatalogSheet(kind: CatalogKind, event: ChangeEvent<HTMLInputElement>, noseMode: 'one' | 'six' = 'one') {
