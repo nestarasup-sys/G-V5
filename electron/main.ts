@@ -3,7 +3,7 @@ import { mkdir, readFile, writeFile, readdir, unlink, rename, stat, access, rm, 
 import { basename, dirname, extname, join, resolve } from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
-import type { AnimatorAnimation, AnimatorAnimationAsset, AnimatorAnimationDraft, AnimatorAnimationSave, AnimatorAnimationSummary, FaceAssetSave, FaceCatalogItem, FaceCatalogItemSave, FaceCatalogItemSummary, FaceElementKind, FaceSet, FaceSetSave, FaceSetSummary, FaceSheetKind, FabricatorAssetSave, FabricatorHistoryEntry, FabricatorHistorySaveEntry, FabricatorHistorySaveState, FabricatorHistoryState, FabricatorPose, FabricatorPoseDraft, FabricatorPoseDraftSave, FabricatorPoseSave, FabricatorPoseSummary, FabricatorProject, FabricatorProjectSave, FabricatorSlotSummary, HairStyle, HairStyleAsset, HairStyleSave, HairStyleSummary, HairWorkspace, HairWorkspaceAsset, HairWorkspaceSave, ModelPart, PosePart, WardrobeAssetSave, WardrobeCategory, WardrobeSet, WardrobeSetSave, WardrobeSetSummary } from '../src/shared/fabricator'
+import type { AnimatorAnimation, AnimatorAnimationAsset, AnimatorAnimationDraft, AnimatorAnimationSave, AnimatorAnimationSummary, FaceAssetSave, FaceCatalogItem, FaceCatalogItemSave, FaceCatalogItemSummary, FaceComponentAsset, FaceComponentAssetSave, FaceComponentAssetSummary, FaceComponentKind, FaceElementKind, FaceSet, FaceSetSave, FaceSetSummary, FaceSheetKind, FabricatorAssetSave, FabricatorHistoryEntry, FabricatorHistorySaveEntry, FabricatorHistorySaveState, FabricatorHistoryState, FabricatorPose, FabricatorPoseDraft, FabricatorPoseDraftSave, FabricatorPoseSave, FabricatorPoseSummary, FabricatorProject, FabricatorProjectSave, FabricatorSlotSummary, HairStyle, HairStyleAsset, HairStyleSave, HairStyleSummary, HairWorkspace, HairWorkspaceAsset, HairWorkspaceSave, ModelPart, PosePart, WardrobeAssetSave, WardrobeCategory, WardrobeSet, WardrobeSetSave, WardrobeSetSummary } from '../src/shared/fabricator'
 import { resolvePoseCategory } from '../src/shared/fabricator'
 import type { CustomizerCharacter } from '../src/shared/customizer'
 import { characterBodyDimensionLimits, characterProportionLimits } from '../src/shared/customizer'
@@ -29,6 +29,8 @@ const faceModelPath = (modelSlot: number) => join(app.getPath('userData'), 'fabr
 const faceSetPath = (modelSlot: number, id: string) => join(faceModelPath(modelSlot), `set-${id}`)
 const faceCatalogPath = (modelSlot: number) => join(faceModelPath(modelSlot), 'catalog')
 const faceCatalogItemPath = (modelSlot: number, id: string) => join(faceCatalogPath(modelSlot), `item-${id}`)
+const faceComponentPath = (modelSlot: number) => join(app.getPath('userData'), 'fabricator', 'face-components', `model-${modelSlot}`)
+const faceComponentItemPath = (modelSlot: number, id: string) => join(faceComponentPath(modelSlot), `item-${id}`)
 const hairModelPath = (modelSlot: number) => join(app.getPath('userData'), 'fabricator', 'hair', `model-${modelSlot}`)
 const hairStylePath = (modelSlot: number, id: string) => join(hairModelPath(modelSlot), 'styles', `style-${id}`)
 const characterLibraryPath = () => join(app.getPath('userData'), 'customizer', 'characters')
@@ -348,6 +350,56 @@ async function listFaceCatalogItems(modelSlot: number): Promise<FaceCatalogItemS
     }
   } catch (reason) { if ((reason as NodeJS.ErrnoException).code !== 'ENOENT') throw reason }
   return [...items.values()].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+}
+
+function validFaceComponentAsset(modelSlot: number, asset: FaceComponentAssetSave): boolean {
+  const transform = asset?.defaultTransform
+  return isValidModelSlot(modelSlot) && asset?.schemaVersion === 1 && asset.modelSlot === modelSlot
+    && isValidWardrobeId(asset.id) && ['eye', 'pupil', 'eyebrow'].includes(asset.kind)
+    && typeof asset.name === 'string' && asset.name.trim().length > 0 && asset.name.length <= 120
+    && Number.isFinite(asset.width) && Number.isFinite(asset.height) && asset.width > 0 && asset.height > 0 && asset.width * asset.height <= 32_000_000
+    && Boolean(transform) && [transform.x, transform.y, transform.scaleX, transform.scaleY, transform.rotation].every(Number.isFinite)
+    && (transform.flipX === undefined || typeof transform.flipX === 'boolean')
+    && transform.scaleX > 0 && transform.scaleY > 0 && transform.scaleX <= 20 && transform.scaleY <= 20
+    && typeof asset.updatedAt === 'string'
+}
+
+async function listFaceComponentAssets(modelSlot: number, kind?: FaceComponentKind): Promise<FaceComponentAssetSummary[]> {
+  if (!isValidModelSlot(modelSlot)) throw new Error('Modelo inválido.')
+  const directory = faceComponentPath(modelSlot)
+  const output: FaceComponentAssetSummary[] = []
+  try {
+    for (const entry of await readdir(directory, { withFileTypes: true })) {
+      if (!entry.isDirectory() || !/^item-[a-zA-Z0-9_-]{1,120}$/.test(entry.name)) continue
+      try {
+        const asset = JSON.parse(await readFile(join(directory, entry.name, 'asset.json'), 'utf8')) as FaceComponentAssetSave
+        if (!validFaceComponentAsset(modelSlot, asset) || asset.id !== entry.name.slice(5) || kind && asset.kind !== kind) continue
+        const { defaultTransform: _transform, ...summary } = asset
+        output.push(summary)
+      } catch { /* Hide incomplete component assets. */ }
+    }
+  } catch (reason) { if ((reason as NodeJS.ErrnoException).code !== 'ENOENT') throw reason }
+  return output.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+}
+
+async function readFaceComponentAsset(modelSlot: number, id: string): Promise<FaceComponentAsset | null> {
+  if (!isValidModelSlot(modelSlot) || !isValidWardrobeId(id)) throw new Error('Asset facial inválido.')
+  try {
+    const folder = faceComponentItemPath(modelSlot, id)
+    const asset = JSON.parse(await readFile(join(folder, 'asset.json'), 'utf8')) as FaceComponentAssetSave
+    if (!validFaceComponentAsset(modelSlot, asset) || asset.id !== id) return null
+    const dataUrl = `data:image/png;base64,${(await readFile(join(folder, 'asset.png'))).toString('base64')}`
+    return { ...asset, dataUrl }
+  } catch (reason) { if ((reason as NodeJS.ErrnoException).code === 'ENOENT') return null; throw reason }
+}
+
+async function writeFaceComponentAsset(modelSlot: number, asset: FaceComponentAssetSave, dataUrl: string): Promise<void> {
+  if (!validFaceComponentAsset(modelSlot, asset) || typeof dataUrl !== 'string' || !dataUrl.startsWith('data:image/png;base64,')) throw new Error('Asset facial inválido; use uma imagem PNG.')
+  const folder = faceComponentItemPath(modelSlot, asset.id)
+  await mkdir(folder, { recursive: true })
+  await writeFile(join(folder, 'asset.png'), dataUrlBuffer(dataUrl))
+  await writeFile(join(folder, 'asset.json.tmp'), JSON.stringify(asset), 'utf8')
+  await rename(join(folder, 'asset.json.tmp'), join(folder, 'asset.json'))
 }
 
 function validHairWorkspace(modelSlot: number, workspace: HairWorkspaceSave): boolean {
@@ -1554,6 +1606,31 @@ async function registerFabricatorHandlers(): Promise<void> {
     if (!isValidModelSlot(modelSlot) || !isValidFaceCatalogId(id)) throw new Error('Peça facial inválida.')
     const base = resolve(faceCatalogPath(modelSlot))
     const target = resolve(faceCatalogItemPath(modelSlot, id))
+    if (dirname(target) !== base || basename(target) !== `item-${id}`) throw new Error('Caminho de exclusão inválido.')
+    const next = faceSaveQueue.catch(() => undefined).then(() => rm(target, { recursive: true, force: true }))
+    faceSaveQueue = next
+    await next
+  })
+
+  ipcMain.handle('fabricator:face-components:list', async (event, modelSlot: number, kind?: FaceComponentKind): Promise<FaceComponentAssetSummary[]> => {
+    assertTrustedSender(event)
+    return listFaceComponentAssets(modelSlot, kind)
+  })
+  ipcMain.handle('fabricator:face-components:load', async (event, modelSlot: number, id: string): Promise<FaceComponentAsset | null> => {
+    assertTrustedSender(event)
+    return readFaceComponentAsset(modelSlot, id)
+  })
+  ipcMain.handle('fabricator:face-components:save', async (event, modelSlot: number, asset: FaceComponentAssetSave, dataUrl: string): Promise<void> => {
+    assertTrustedSender(event)
+    const next = faceSaveQueue.catch(() => undefined).then(() => writeFaceComponentAsset(modelSlot, asset, dataUrl))
+    faceSaveQueue = next
+    await next
+  })
+  ipcMain.handle('fabricator:face-components:delete', async (event, modelSlot: number, id: string): Promise<void> => {
+    assertTrustedSender(event)
+    if (!isValidModelSlot(modelSlot) || !isValidWardrobeId(id)) throw new Error('Asset facial inválido.')
+    const base = resolve(faceComponentPath(modelSlot))
+    const target = resolve(faceComponentItemPath(modelSlot, id))
     if (dirname(target) !== base || basename(target) !== `item-${id}`) throw new Error('Caminho de exclusão inválido.')
     const next = faceSaveQueue.catch(() => undefined).then(() => rm(target, { recursive: true, force: true }))
     faceSaveQueue = next

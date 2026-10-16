@@ -7,7 +7,7 @@ import { autoConnectParts, createJoint, jointPivot, normalizeLayerOrder, normali
 import { headSizePercent, isHeadPart, resizeHeadPart } from './models/resize'
 import { PoseWorkspace } from './PoseWorkspace'
 import { WardrobeWorkspace } from './wardrobe/WardrobeWorkspace'
-import { FaceWorkspace } from './face/FaceWorkspace'
+import { FaceComponentsWorkspace } from './face/FaceComponentsWorkspace'
 import { HairWorkspace } from './HairWorkspace'
 import { AnimatorWorkspace } from './AnimatorWorkspace'
 import { DesignWorkspace } from './DesignWorkspace'
@@ -994,7 +994,7 @@ export function FabricatorPage() {
         </nav>
       </aside>
 
-      {activeSection === 'Design Dev' ? <DesignWorkspace /> : activeSection === 'Poses' ? <PoseWorkspace /> : activeSection === 'Roupas' ? <WardrobeWorkspace /> : activeSection === 'Rosto' ? <FaceWorkspace /> : activeSection === 'Cabelos Dev' ? <HairWorkspace /> : activeSection === 'Animador Dev' ? <AnimatorWorkspace /> : (
+      {activeSection === 'Design Dev' ? <DesignWorkspace /> : activeSection === 'Poses' ? <PoseWorkspace /> : activeSection === 'Roupas' ? <WardrobeWorkspace /> : activeSection === 'Rosto' ? <FaceComponentsWorkspace /> : activeSection === 'Cabelos Dev' ? <HairWorkspace /> : activeSection === 'Animador Dev' ? <AnimatorWorkspace /> : (
         <section className="fabricator-model-editor" aria-label="Editor de modelos">
           <header className="model-slotbar">
             <div className="model-slot-title"><span className="model-slot-logo"><Icon name="sparkles" /></span><span><strong>Modelos</strong><small>10 espaços de trabalho</small></span></div>

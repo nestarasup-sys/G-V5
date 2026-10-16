@@ -125,7 +125,7 @@ export type WardrobeSetSummary = Pick<WardrobeSet, 'id' | 'modelSlot' | 'modelNa
 export type WardrobeAssetSave = { id: string; dataUrl: string }
 export type FaceSheetKind = 'eyes' | 'eyebrows' | 'nose' | 'mouth-closed' | 'mouth-open'
 export type FaceElementKind = 'eye-left' | 'eye-right' | 'brow-left' | 'brow-right' | 'nose' | 'mouth'
-export type FaceTransform = { x: number; y: number; scaleX: number; scaleY: number; rotation: number }
+export type FaceTransform = { x: number; y: number; scaleX: number; scaleY: number; rotation: number; flipX?: boolean }
 export type FaceCrop = { x: number; y: number; width: number; height: number }
 export type FacePiece = { id: string; sheet: FaceSheetKind; index: number; side?: 'left' | 'right'; crop: FaceCrop; width: number; height: number; dataUrl: string }
 export type FaceSheet = { kind: FaceSheetKind; name: string; width: number; height: number; tolerance: number; dataUrl: string }
@@ -149,6 +149,10 @@ export type FaceSetSave = Omit<FaceSet, 'sheets' | 'pieces'> & {
 }
 export type FaceSetSummary = Pick<FaceSet, 'id' | 'modelSlot' | 'name' | 'updatedAt'> & { pieceCount: number }
 export type FaceAssetSave = { id: string; dataUrl: string }
+export type FaceComponentKind = 'eye' | 'pupil' | 'eyebrow'
+export type FaceComponentAsset = { schemaVersion: 1; id: string; modelSlot: number; kind: FaceComponentKind; name: string; width: number; height: number; defaultTransform: FaceTransform; updatedAt: string; dataUrl: string }
+export type FaceComponentAssetSave = Omit<FaceComponentAsset, 'dataUrl'>
+export type FaceComponentAssetSummary = Omit<FaceComponentAsset, 'dataUrl' | 'defaultTransform'>
 /** One imported facial sheet and its cropped variants, stored independently for the Customizer catalog. */
 export type FaceCatalogItem = {
   schemaVersion: 1
@@ -319,6 +323,10 @@ export type FabricatorDesktopApi = {
   loadFaceCatalogItem: (modelSlot: number, id: string) => Promise<FaceCatalogItem | null>
   saveFaceCatalogItem: (modelSlot: number, item: FaceCatalogItemSave, assets: FaceAssetSave[]) => Promise<void>
   deleteFaceCatalogItem: (modelSlot: number, id: string) => Promise<void>
+  listFaceComponentAssets: (modelSlot: number, kind?: FaceComponentKind) => Promise<FaceComponentAssetSummary[]>
+  loadFaceComponentAsset: (modelSlot: number, id: string) => Promise<FaceComponentAsset | null>
+  saveFaceComponentAsset: (modelSlot: number, asset: FaceComponentAssetSave, dataUrl: string) => Promise<void>
+  deleteFaceComponentAsset: (modelSlot: number, id: string) => Promise<void>
   loadHairWorkspace: (modelSlot: number) => Promise<HairWorkspace | null>
   saveHairWorkspace: (modelSlot: number, workspace: HairWorkspaceSave, assets: HairWorkspaceAsset[]) => Promise<void>
   listHairStyles: (modelSlot: number) => Promise<HairStyleSummary[]>

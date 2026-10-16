@@ -1,4 +1,7 @@
+import type { FaceComponentKind, FaceTransform } from './fabricator'
+
 export type HairColorRole = 'base' | 'fade' | 'outline' | 'highlight' | 'accent'
+export type FaceComponentPartId = 'eye-left' | 'eye-right' | 'pupil-left' | 'pupil-right' | 'brow-left' | 'brow-right'
 export type HairPartId = 'backHair' | 'rearHair' | 'ponytail' | 'frontHair' | 'ahoge'
 export type HairColorOverrides = Partial<Record<HairColorRole, string>>
 
@@ -89,6 +92,10 @@ export type CustomizerFaceAppearance = {
   eyebrowRightCatalogId?: string | null
   /** Character-only recoloring for each independently selected facial feature. */
   partColors?: Partial<Record<'eye-left' | 'eye-right' | 'brow-left' | 'brow-right', HairColorOverrides>>
+  /** New single-image face assets selected independently for this character. */
+  components?: Partial<Record<FaceComponentPartId, { assetId: string | null; transform?: FaceTransform; colors?: HairColorOverrides }>>
+  /** Right side mirrors the left asset by default; each feature can be unlinked. */
+  linkedSides?: Partial<Record<FaceComponentKind, boolean>>
   noseCatalogId?: string
   mouthClosedCatalogId?: string
   mouthOpenCatalogId?: string
