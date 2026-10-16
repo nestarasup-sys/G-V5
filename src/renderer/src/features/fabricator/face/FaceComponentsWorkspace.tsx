@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ChangeEvent, type CSSProperties } from 'react'
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type CSSProperties } from 'react'
 import type { FaceComponentAsset, FaceComponentAssetSave, FaceComponentAssetSummary, FaceComponentKind, FaceTransform, FabricatorProject, FabricatorSlotSummary, ModelPart } from '../../../../../shared/fabricator'
 import { Icon } from '../../../ui/components/Icon'
 import { FaceWorkspace } from './FaceWorkspace'
@@ -42,12 +42,27 @@ export function FaceComponentsWorkspace() {
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('Importe assets PNG transparentes; o formato de folha pode ser definido depois.')
   const [showNoseMouthEditor, setShowNoseMouthEditor] = useState(false)
+  const stageRef = useRef<HTMLDivElement>(null)
+  const [stageSize, setStageSize] = useState({ width: 0, height: 0 })
   const head = useMemo(() => model?.parts.find((part) => /cabe[çc]a|head/i.test(part.name)) ?? null, [model])
+  const previewScale = head && stageSize.width > 0 && stageSize.height > 0
+    ? Math.min((stageSize.width - 24) / head.width, (stageSize.height - 24) / head.height) * .9
+    : 0
   const selectedCategory = partCategory(selectedPart)
   const selectedId = selectedAssets[selectedPart] ?? (linked[selectedCategory.kind] && selectedPart.endsWith('right') ? selectedAssets[selectedCategory.parts[0]] : undefined)
   const selectedAsset = selectedId ? details[selectedId] : undefined
 
   useEffect(() => { void window.desktop.listFabricatorSlots().then((slots) => { setModels(slots); const first = slots.findIndex(Boolean); if (first >= 0) setModelSlot(first + 1) }).catch((reason) => setError(String(reason))) }, [])
+  useEffect(() => {
+    const stage = stageRef.current
+    if (!stage) return
+    const observer = new ResizeObserver(([entry]) => {
+      const { width, height } = entry.contentRect
+      setStageSize((current) => current.width === width && current.height === height ? current : { width, height })
+    })
+    observer.observe(stage)
+    return () => observer.disconnect()
+  }, [showNoseMouthEditor])
   useEffect(() => {
     let active = true
     setModel(null); setAssets([]); setDetails({}); setSelectedAssets({})
@@ -128,7 +143,7 @@ export function FaceComponentsWorkspace() {
     <header className="face-components-toolbar"><div><Icon name="face" /><span><strong>Rosto Dev · Peças independentes</strong><small>Olhos, pupilas e sobrancelhas em camadas separadas</small></span></div><label>Modelo<select value={modelSlot} disabled={busy} onChange={(event) => setModelSlot(Number(event.target.value))}>{models.map((entry, index) => entry && <option key={index + 1} value={index + 1}>Modelo {String(index + 1).padStart(2, '0')} · {entry.name}</option>)}</select></label><button type="button" onClick={() => setShowNoseMouthEditor(true)}>Editar nariz e boca</button></header>
     <div className="face-components-body">
       <aside className="face-components-library"><header><strong>Biblioteca</strong><small>{assets.length} assets</small></header>{categories.map((category) => <section key={category.kind}><h3>{category.label}</h3><div className="face-components-assets">{assets.filter((asset) => asset.kind === category.kind).map((asset) => <button key={asset.id} className={selectedId === asset.id ? 'active' : ''} onClick={() => setSelectedAssets((current) => ({ ...current, [selectedPart]: asset.id }))} type="button"><img src={details[asset.id]?.dataUrl} alt="" /><span>{asset.name}</span></button>)}{!assets.some((asset) => asset.kind === category.kind) && <small>Nenhum asset salvo</small>}</div><label className="face-component-import"><Icon name="plus" /> Importar {category.label.toLowerCase()}<input type="file" accept="image/png,image/jpeg,image/webp" disabled={busy || !head} onChange={(event) => void importAsset(category.kind, event)} /></label></section>)}</aside>
-      <main className="face-components-stage-column"><nav className="face-components-part-tabs">{categories.flatMap((category) => category.parts.map((id, side) => <button key={id} className={selectedPart === id ? 'active' : ''} onClick={() => setSelectedPart(id)} type="button">{category.names[side]}</button>))}</nav><div className="face-components-stage" style={head ? { aspectRatio: `${head.width}/${head.height}` } : undefined}>{head && <img className="face-components-head" src={head.dataUrl} alt="Cabeça do modelo" />}{(['eye-left','eye-right','pupil-left','pupil-right','brow-left','brow-right'] as PartId[]).map((id) => renderPart(id, true, selectedAssets))}{!head && <span>Selecione um modelo com cabeça.</span>}</div><div className="face-components-stage-footer">{notice}</div></main>
+      <main className="face-components-stage-column"><nav className="face-components-part-tabs">{categories.flatMap((category) => category.parts.map((id, side) => <button key={id} className={selectedPart === id ? 'active' : ''} onClick={() => setSelectedPart(id)} type="button">{category.names[side]}</button>))}</nav><div className="face-components-stage" ref={stageRef}>{head && previewScale > 0 && <div className="face-components-preview-canvas" style={{ width: head.width * previewScale, height: head.height * previewScale }}><img className="face-components-head" src={head.dataUrl} alt="Cabeça do modelo" />{(['eye-left','eye-right','pupil-left','pupil-right','brow-left','brow-right'] as PartId[]).map((id) => renderPart(id, true, selectedAssets))}</div>}{!head && <span>Selecione um modelo com cabeça.</span>}</div><div className="face-components-stage-footer">{notice}</div></main>
       <aside className="face-components-controls"><header><strong>Ajuste da peça</strong>{selectedAsset && <button className="danger" onClick={() => void removeAsset(selectedAsset)} disabled={busy} aria-label="Excluir asset" type="button"><Icon name="trash" /></button>}</header>{categories.map((category) => <label className="face-component-link" key={category.kind}><input type="checkbox" checked={linked[category.kind]} onChange={(event) => setLinked((current) => ({ ...current, [category.kind]: event.target.checked }))} /> Espelhar lado direito · {category.label}</label>)}{selectedAsset ? <><strong className="face-component-selected-name">{selectedAsset.name}</strong>{(['x','y','scaleX','scaleY','rotation'] as const).map((field) => <label className="face-component-number" key={field}>{({ x:'Posição X', y:'Posição Y', scaleX:'Escala horizontal', scaleY:'Escala vertical', rotation:'Rotação' })[field]}<input type="number" step={field.startsWith('scale') ? .01 : 1} value={selectedAsset.defaultTransform[field]} onChange={(event) => { const value = Number(event.target.value); if (Number.isFinite(value)) void updateTransform({ [field]: field.startsWith('scale') ? clamp(value, .01, 20) : value }) }} /></label>)}</> : <p>Selecione uma peça ou importe um asset para ajustar.</p>}</aside>
     </div>{error && <div className="face-components-error" role="alert">{error}</div>}
   </section>
