@@ -37,7 +37,7 @@
 .face-components-stage { --preview-checker:color-mix(in srgb,var(--preview-background,#fdfcfd) 92%,#666 8%);position:relative;flex:1;min-height:0;width:100%;display:grid;place-items:center;overflow:hidden;border:1px solid #ddd5e0;border-radius:8px;background-color:var(--preview-background,#fdfcfd);background-image:linear-gradient(45deg,var(--preview-checker) 25%,transparent 25%),linear-gradient(-45deg,var(--preview-checker) 25%,transparent 25%),linear-gradient(45deg,transparent 75%,var(--preview-checker) 75%),linear-gradient(-45deg,transparent 75%,var(--preview-checker) 75%);background-position:0 0,0 6px,6px -6px,-6px 0;background-size:12px 12px; }
 .face-components-preview-canvas { position:relative;flex:none; }
 .face-components-head { display:block;width:100%;height:100%;object-fit:fill; }
-.face-component-layer { position:absolute;object-fit:contain;pointer-events:none; }
+.face-component-layer { position:absolute;object-fit:fill;pointer-events:none; }
 .face-component-layer-draggable { pointer-events:auto;cursor:grab;touch-action:none;user-select:none;-webkit-user-drag:none; }
 .face-component-layer-draggable.is-dragging { cursor:grabbing; }
 .face-components-guide-overlay { position:absolute;inset:0;z-index:10;width:100%;height:100%;overflow:hidden;pointer-events:none; }
