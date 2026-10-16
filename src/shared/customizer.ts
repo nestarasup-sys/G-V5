@@ -96,7 +96,7 @@ export type CustomizerFaceAppearance = {
   /** Character-only recoloring for each independently selected facial feature. */
   partColors?: Partial<Record<'eye-left' | 'eye-right' | 'brow-left' | 'brow-right', HairColorOverrides>>
   /** New single-image face assets selected independently for this character. */
-  components?: Partial<Record<FaceComponentPartId, { assetId: string | null; transform?: FaceTransform; colors?: HairColorOverrides }>>
+  components?: Partial<Record<FaceComponentPartId, { assetId: string | null; transform?: FaceTransform; colors?: HairColorOverrides; manualColorRoles?: HairColorRole[] }>>
   /** Independently selected face details managed by Rosto Dev. */
   faceDetails?: Partial<Record<FaceDetailKind, string | null>>
   /** Per-piece color palette for nose, mouth, and face details. */

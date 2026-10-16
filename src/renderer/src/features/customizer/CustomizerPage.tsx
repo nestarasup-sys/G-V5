@@ -189,13 +189,15 @@ function loadHairPreviewImage(source: string): Promise<string> {
   return preview
 }
 
-function HairAssetPreview({ source, alt, colors }: { source: string; alt: string; colors?: HairColorOverrides }) {
+type HairTintOptions = { preserveNearWhite?: boolean; allowNearWhiteRoles?: readonly HairColorRole[] }
+
+function HairAssetPreview({ source, alt, colors, tintOptions }: { source: string; alt: string; colors?: HairColorOverrides; tintOptions?: HairTintOptions }) {
   const [previewSource, setPreviewSource] = useState(source)
-  const colorKey = JSON.stringify(colors)
+  const colorKey = JSON.stringify([colors, tintOptions])
   useEffect(() => {
     let cancelled = false
     setPreviewSource(source)
-    void loadHairTintedImage(source, colors).then((image) => loadHairPreviewImage(image.src)).then((trimmed) => {
+    void loadHairTintedImage(source, colors, tintOptions).then((image) => loadHairPreviewImage(image.src)).then((trimmed) => {
       if (!cancelled) setPreviewSource(trimmed)
     }).catch(() => undefined)
     return () => { cancelled = true }
@@ -270,9 +272,9 @@ function hairPixelColorRole(red: number, green: number, blue: number, profile: R
   return 'highlight'
 }
 
-function loadHairTintedImage(source: string, overrides: HairColorOverrides | undefined): Promise<HTMLImageElement> {
+function loadHairTintedImage(source: string, overrides: HairColorOverrides | undefined, options?: HairTintOptions): Promise<HTMLImageElement> {
   if (!overrides || !Object.values(overrides).some(Boolean)) return loadCachedImage(source)
-  const key = `${source}:${JSON.stringify(overrides)}`
+  const key = `${source}:${JSON.stringify([overrides, options])}`
   const cached = hairTintImageCache.get(key)
   if (cached) return cached
   const tinted = loadCachedImage(source).then((sourceImage) => {
@@ -304,7 +306,13 @@ function loadHairTintedImage(source: string, overrides: HairColorOverrides | und
       const role = hairPixelColorRole(pixels[offset], pixels[offset + 1], pixels[offset + 2], profile)
       const target = parsed.get(role)
       if (!target) continue
-      const sourceLuminance = Math.max(1, pixels[offset] * 0.2126 + pixels[offset + 1] * 0.7152 + pixels[offset + 2] * 0.0722)
+      const red = pixels[offset]
+      const green = pixels[offset + 1]
+      const blue = pixels[offset + 2]
+      const luminance = red * 0.2126 + green * 0.7152 + blue * 0.0722
+      const nearWhite = luminance >= 220 && Math.max(red, green, blue) - Math.min(red, green, blue) <= 32
+      if (options?.preserveNearWhite && nearWhite && !options.allowNearWhiteRoles?.includes(role)) continue
+      const sourceLuminance = Math.max(1, luminance)
       const referenceLuminance = roleCounts[role] ? luminanceTotals[role] / roleCounts[role] : sourceLuminance
       const shade = Math.max(0.48, Math.min(1.52, sourceLuminance / Math.max(1, referenceLuminance)))
       pixels[offset] = Math.min(255, target[0] * shade)
@@ -811,7 +819,7 @@ async function drawFaceCatalogOverlay(context: CanvasRenderingContext2D, artwork
     if (!piece || !transform) continue
     try {
       const catalogPalette = sheet === 'nose' ? appearance.facePalettes?.nose : sheet.startsWith('mouth') ? appearance.facePalettes?.mouth : undefined
-      const image = await loadHairTintedImage(piece.dataUrl, appearance.partColors?.[element as 'eye-left' | 'eye-right' | 'brow-left' | 'brow-right'] ?? catalogPalette)
+      const image = await loadHairTintedImage(piece.dataUrl, appearance.partColors?.[element as 'eye-left' | 'eye-right' | 'brow-left' | 'brow-right'] ?? catalogPalette, catalogPalette ? { preserveNearWhite: true } : undefined)
       const localX = transform.x / sourceHead.width * targetHead.width + (studioTransform?.x ?? 0) / 100 * targetHead.width
       const localY = transform.y / sourceHead.height * targetHead.height + (studioTransform?.y ?? 0) / 100 * targetHead.height
       const radians = targetHead.rotation * Math.PI / 180
@@ -884,7 +892,7 @@ async function drawFaceCatalogOverlay(context: CanvasRenderingContext2D, artwork
     const width = sourceWidth / sourceHead.width * targetHead.width
     const height = sourceHeight / sourceHead.height * targetHead.height
     try {
-      const image = await loadHairTintedImage(asset.dataUrl, selectedPart.colors)
+      const image = await loadHairTintedImage(asset.dataUrl, selectedPart.colors, { preserveNearWhite: true, allowNearWhiteRoles: selectedPart.manualColorRoles })
       if (category === 'pupil' && pupilEyeClip) {
         if (!pupilClipCanvas) { pupilClipCanvas = document.createElement('canvas'); pupilClipCanvas.width = context.canvas.width; pupilClipCanvas.height = context.canvas.height }
         const clipped = pupilClipCanvas.getContext('2d')
@@ -932,7 +940,7 @@ async function drawFaceCatalogOverlay(context: CanvasRenderingContext2D, artwork
     const width = asset.width * transform.scaleX / sourceHead.width * targetHead.width
     const height = asset.height * transform.scaleY / sourceHead.height * targetHead.height
     try {
-      const image = await loadHairTintedImage(asset.dataUrl, appearance.facePalettes?.[kind])
+      const image = await loadHairTintedImage(asset.dataUrl, appearance.facePalettes?.[kind], { preserveNearWhite: true })
       context.save(); context.translate(x, y); context.rotate((targetHead.rotation + transform.rotation) * Math.PI / 180)
       if (transform.flipX) context.scale(-1, 1)
       context.drawImage(image, -width / 2, -height / 2, width, height); context.restore()
@@ -1821,7 +1829,8 @@ export function CustomizerPage() {
     const partDefinition = customizerFaceParts.find((entry) => entry.id === part)!
     const targetPart = facePartSourceId(partDefinition)
     const components = { ...(appearanceBefore?.components ?? {}) }
-    components[targetPart] = { ...(components[targetPart] ?? { assetId: null }), colors: { ...components[targetPart]?.colors, [role]: value } }
+    const manualColorRoles = [...new Set([...(components[targetPart]?.manualColorRoles ?? []), role])]
+    components[targetPart] = { ...(components[targetPart] ?? { assetId: null }), colors: { ...components[targetPart]?.colors, [role]: value }, manualColorRoles }
     const appearance: CustomizerFaceAppearance = previous?.modelSlot === selectedCatalogModelSlot ? { ...previous, components } : {
       modelSlot: selectedCatalogModelSlot, eyeState: 0, eyebrows: true, noseIndex: 0, expressionIndex: 0, mouthOpen: false, components
     }
@@ -1834,7 +1843,7 @@ export function CustomizerPage() {
     const previous = current.customization.faceAppearance
     const sameModel = previous?.modelSlot === selectedCatalogModelSlot
     const components = { ...(sameModel ? previous?.components : undefined) }
-    components[part] = { ...(components[part] ?? { assetId: null }), colors }
+    components[part] = { ...(components[part] ?? { assetId: null }), colors, manualColorRoles: [] }
     await saveCharacterCustomization({ faceAppearance: {
       ...(sameModel ? previous : undefined), modelSlot: selectedCatalogModelSlot,
       eyeState: sameModel ? previous.eyeState : 0, eyebrows: sameModel ? previous.eyebrows : true,
@@ -2442,7 +2451,7 @@ export function CustomizerPage() {
       <div className="customizer-hair-piece-selector customizer-face-layout-selector">
         <button aria-label={`Peça anterior: ${part.label}`} onClick={() => chooseAt(selectedSlot - 1)} disabled={!choices.length || !selectedCharacter} type="button"><Icon name="chevronRight" /></button>
         <button className="customizer-hair-piece-preview" aria-label={`Abrir biblioteca de ${part.label}`} title={`Abrir biblioteca de ${part.label}`} type="button" onClick={() => { setFaceCatalogLibraryPage(0); setFaceCatalogLibraryPart(part.id) }}>
-          {selected ? <img src={selected.type === 'catalog' ? selected.piece.dataUrl : selected.asset.dataUrl} alt={selected.summary.name} /> : null}
+          {selected && <HairAssetPreview source={selected.type === 'catalog' ? selected.piece.dataUrl : selected.asset.dataUrl} colors={activeFaceAppearance?.facePalettes?.[part.id]} tintOptions={{ preserveNearWhite: true }} alt={selected.summary.name} />}
         </button>
         <button aria-label={`Próxima peça: ${part.label}`} onClick={() => chooseAt(selectedSlot + 1)} disabled={!choices.length || !selectedCharacter} type="button"><Icon name="chevronRight" /></button>
       </div>
@@ -2512,7 +2521,8 @@ export function CustomizerPage() {
       const selectedSlot = selectedIndex >= 0 ? selectedIndex + 1 : 0
       const slotCount = options.length + 1
       const colorPartId = facePartSourceId(part)
-      const colors = appearance?.components?.[colorPartId]?.colors ?? {}
+      const componentAppearance = appearance?.components?.[colorPartId]
+      const colors = componentAppearance?.colors ?? {}
       const hasLocalColors = Object.keys(colors).length > 0
       const chooseAt = (index: number) => {
         if (!selectedCharacter) return
@@ -2525,7 +2535,7 @@ export function CustomizerPage() {
         <div className="customizer-hair-piece-selector">
           <button aria-label={'Peça anterior: ' + part.label} onClick={() => chooseAt(selectedSlot - 1)} disabled={!options.length || !selectedCharacter} type="button"><Icon name="chevronRight" /></button>
           <button className="customizer-hair-piece-preview" aria-label={'Abrir biblioteca de ' + part.label} title={'Abrir biblioteca de ' + part.label} onClick={() => { setFaceLibraryPage(0); setFaceLibraryPart(part.id) }} type="button">
-            {piece ? <HairAssetPreview source={piece.dataUrl} colors={colors} alt={selected?.name ?? ''} /> : null}
+            {piece ? <HairAssetPreview source={piece.dataUrl} colors={colors} tintOptions={{ preserveNearWhite: true, allowNearWhiteRoles: componentAppearance?.manualColorRoles }} alt={selected?.name ?? ''} /> : null}
           </button>
           <button aria-label={'Próxima peça: ' + part.label} onClick={() => chooseAt(selectedSlot + 1)} disabled={!options.length || !selectedCharacter} type="button"><Icon name="chevronRight" /></button>
           <div className="customizer-hair-piece-colors" aria-label={'Cores de ' + part.label}>
@@ -2562,7 +2572,8 @@ export function CustomizerPage() {
       ? options.find((summary) => sameFaceAssetPair(summary, selectedAsset, faceComponentDetails))
       : selectedAsset
     const selectedIndex = options.findIndex((summary) => summary.id === selectedOption?.id)
-    const selectedColors = appearance?.components?.[facePartSourceId(part)]?.colors
+    const selectedFacePart = appearance?.components?.[facePartSourceId(part)]
+    const selectedColors = selectedFacePart?.colors
     return <section className="customizer-hair-library" aria-labelledby="customizer-face-library-title">
       <header className="customizer-hair-library-heading">
         <button className="customizer-hair-library-remove" type="button" onClick={() => void clearFacePartSelection(part.id)} disabled={!selectedId} aria-label={'Remover ' + part.label + ' do personagem'} title={'Remover ' + part.label + ' do personagem'}><Icon name="trash" /></button>
@@ -2575,7 +2586,7 @@ export function CustomizerPage() {
           const piece = faceComponentDetails[summary.id]
           const selected = summary.id === selectedOption?.id
           return <button className={`customizer-hair-library-item${selected ? ' selected' : ''}`} key={summary.id} title={summary.name} aria-label={'Selecionar ' + summary.name} aria-pressed={selected} type="button" onClick={() => void chooseFacePartCatalogItem(part.id, summary)}>
-            {piece ? <HairAssetPreview source={piece.dataUrl} colors={selectedColors} alt="" /> : <span className="customizer-hair-library-placeholder"><Icon name="face" /></span>}
+            {piece ? <HairAssetPreview source={piece.dataUrl} colors={selectedColors} tintOptions={{ preserveNearWhite: true, allowNearWhiteRoles: selectedFacePart?.manualColorRoles }} alt="" /> : <span className="customizer-hair-library-placeholder"><Icon name="face" /></span>}
           </button>
         })}
         {!options.length && <p className="customizer-hair-library-empty">Nenhum asset salvo para {part.label}. Importe esta peça no Rosto Dev.</p>}
