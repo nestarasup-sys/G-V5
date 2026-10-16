@@ -1583,6 +1583,14 @@ export function CustomizerPage() {
     await saveCharacterCustomization({ hairAppearance: { ...(sameModel ? previous : undefined), modelSlot: selectedCatalogModelSlot, colors, partColors: {} } })
   }
 
+  async function restoreHairColors() {
+    if (!selectedCharacter || selectedCatalogModelSlot === null) return
+    const current = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
+    const previous = current.customization.hairAppearance
+    if (!previous || previous.modelSlot !== selectedCatalogModelSlot) return
+    await saveCharacterCustomization({ hairAppearance: { ...previous, colors: undefined, partColors: undefined } })
+  }
+
   async function setFaceCatalogVariant(patch: Partial<CustomizerFaceAppearance>) {
     if (!selectedCharacter) return
     const current = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
@@ -1936,7 +1944,7 @@ export function CustomizerPage() {
             <div className="customizer-hair-layout">
             <div className="customizer-hair-color-controls" aria-label="Paleta geral dos cabelos">
               <div className="customizer-hair-palette-editor">
-                <div className="customizer-hair-palette-title"><strong>Paleta geral</strong><span>Uma cor para os cinco cabelos</span></div>
+                <div className="customizer-hair-palette-title"><strong>Paleta geral</strong><span>Uma cor para os cinco cabelos</span><button type="button" onClick={() => void restoreHairColors()} disabled={!appearance || !Object.keys(colorOverrides).length && !Object.values(appearance.partColors ?? {}).some((colors) => Object.keys(colors ?? {}).length)} title="Restaurar as cores originais dos cinco cabelos">Restaurar</button></div>
                 <div className="customizer-hair-palette-swatches">{hairColorControls.map((color) => <label className="customizer-hair-color-control" data-role={color.id} key={color.id} title={`${color.label} · aplica a todos os cabelos`}>
                   <span>{color.label}</span><input className={activeHairColorRole === color.id ? 'active' : ''} type="color" aria-label={`${color.label} geral`} value={colorOverrides[color.id] ?? color.fallback} disabled={!selectedCharacter} onFocus={() => setActiveHairColorRole(color.id)} onChange={(event) => void setHairColor(color.id, event.target.value)} />
                 </label>)}</div>

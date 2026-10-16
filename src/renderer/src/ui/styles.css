@@ -404,6 +404,9 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .customizer-hair-palette-title { min-width:0;display:flex;flex-wrap:wrap;align-items:baseline;gap:1px 6px;color:#fff; }
 .customizer-hair-palette-title strong { font-size:clamp(10px,.9vw,13px); }
 .customizer-hair-palette-title span { overflow:hidden;color:#d9cde8;font-size:clamp(7px,.65vw,10px);text-overflow:ellipsis; }
+.customizer-hair-palette-title button { flex:none;margin-left:auto;padding:2px 7px;border:1px solid #d6b7e0;border-radius:4px;background:#503562;color:#fff;font-size:clamp(8px,.72vw,10px);font-weight:750;cursor:pointer; }
+.customizer-hair-palette-title button:disabled { opacity:.45;cursor:default; }
+.customizer-hair-palette-title button:focus-visible { outline:2px solid #fff;outline-offset:2px; }
 .customizer-hair-palette-swatches { min-width:0;min-height:0;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:3px; }
 .customizer-hair-color-control { min-width:0;min-height:0;display:grid;grid-template-rows:auto minmax(0,1fr);gap:3px;align-items:stretch;color:#fff;font-size:clamp(8px,.75vw,11px);font-weight:750;text-align:center; }
 .customizer-hair-color-control span { display:flex;align-items:center;justify-content:center;line-height:1.15; }
