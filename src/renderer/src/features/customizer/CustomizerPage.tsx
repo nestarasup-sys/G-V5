@@ -818,8 +818,9 @@ async function drawFaceCatalogOverlay(context: CanvasRenderingContext2D, artwork
     const studioTransform = studioFaceTransforms?.[`${sheet}:${item.id}`] ?? studioFaceTransforms?.[studioCategory]
     if (!piece || !transform) continue
     try {
-      const catalogPalette = sheet === 'nose' ? appearance.facePalettes?.nose : sheet.startsWith('mouth') ? appearance.facePalettes?.mouth : undefined
-      const image = await loadHairTintedImage(piece.dataUrl, appearance.partColors?.[element as 'eye-left' | 'eye-right' | 'brow-left' | 'brow-right'] ?? catalogPalette, catalogPalette ? { preserveNearWhite: true } : undefined)
+      const catalogPalettePart: FacePalettePartId | undefined = sheet === 'nose' ? 'nose' : sheet.startsWith('mouth') ? 'mouth' : undefined
+      const catalogPalette = catalogPalettePart ? appearance.facePalettes?.[catalogPalettePart] : undefined
+      const image = await loadHairTintedImage(piece.dataUrl, appearance.partColors?.[element as 'eye-left' | 'eye-right' | 'brow-left' | 'brow-right'] ?? catalogPalette, catalogPalette ? { preserveNearWhite: true, allowNearWhiteRoles: appearance.facePaletteManualRoles?.[catalogPalettePart!] } : undefined)
       const localX = transform.x / sourceHead.width * targetHead.width + (studioTransform?.x ?? 0) / 100 * targetHead.width
       const localY = transform.y / sourceHead.height * targetHead.height + (studioTransform?.y ?? 0) / 100 * targetHead.height
       const radians = targetHead.rotation * Math.PI / 180
@@ -940,7 +941,7 @@ async function drawFaceCatalogOverlay(context: CanvasRenderingContext2D, artwork
     const width = asset.width * transform.scaleX / sourceHead.width * targetHead.width
     const height = asset.height * transform.scaleY / sourceHead.height * targetHead.height
     try {
-      const image = await loadHairTintedImage(asset.dataUrl, appearance.facePalettes?.[kind], { preserveNearWhite: true })
+      const image = await loadHairTintedImage(asset.dataUrl, appearance.facePalettes?.[kind], { preserveNearWhite: true, allowNearWhiteRoles: appearance.facePaletteManualRoles?.[kind] })
       context.save(); context.translate(x, y); context.rotate((targetHead.rotation + transform.rotation) * Math.PI / 180)
       if (transform.flipX) context.scale(-1, 1)
       context.drawImage(image, -width / 2, -height / 2, width, height); context.restore()
@@ -1992,7 +1993,21 @@ export function CustomizerPage() {
       modelSlot: selectedCatalogModelSlot, eyeState: 0, eyebrows: true, noseIndex: 0, expressionIndex: 0, mouthOpen: false
     }
     const facePalettes = { ...(sameModel ? previous.facePalettes : undefined), [part]: colors }
-    await saveCharacterCustomization({ faceAppearance: { ...base, facePalettes } })
+    const facePaletteManualRoles = { ...(sameModel ? previous.facePaletteManualRoles : undefined), [part]: [] }
+    await saveCharacterCustomization({ faceAppearance: { ...base, facePalettes, facePaletteManualRoles } })
+  }
+
+  async function setFaceCatalogPartColor(part: FacePalettePartId, role: HairColorRole, value: string) {
+    const current = selectedCharacter && (charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter)
+    if (!current || selectedCatalogModelSlot === null) return
+    const previous = current.customization.faceAppearance
+    const sameModel = previous?.modelSlot === selectedCatalogModelSlot
+    const base: CustomizerFaceAppearance = sameModel ? previous : {
+      modelSlot: selectedCatalogModelSlot, eyeState: 0, eyebrows: true, noseIndex: 0, expressionIndex: 0, mouthOpen: false
+    }
+    const facePalettes = { ...(sameModel ? previous.facePalettes : undefined), [part]: { ...(sameModel ? previous.facePalettes?.[part] : undefined), [role]: value } }
+    const facePaletteManualRoles = { ...(sameModel ? previous.facePaletteManualRoles : undefined), [part]: [...new Set([...(sameModel ? previous.facePaletteManualRoles?.[part] ?? [] : []), role])] }
+    await saveCharacterCustomization({ faceAppearance: { ...base, facePalettes, facePaletteManualRoles } })
   }
 
   async function chooseFaceDetailCatalogItem(kind: FaceDetailKind, summary: FaceComponentAssetSummary) {
@@ -2434,6 +2449,7 @@ export function CustomizerPage() {
     const selected = selectedIndex >= 0 ? choices[selectedIndex] : null
     const selectedSlot = selectedIndex >= 0 ? selectedIndex + 1 : 0
     const slotCount = choices.length + 1
+    const colors = activeFaceAppearance?.facePalettes?.[part.id] ?? {}
     const chooseAt = (index: number) => {
       if (!selectedCharacter) return
       const slot = wrapSlotIndex(index, slotCount)
@@ -2451,11 +2467,17 @@ export function CustomizerPage() {
       <div className="customizer-hair-piece-selector customizer-face-layout-selector">
         <button aria-label={`Peça anterior: ${part.label}`} onClick={() => chooseAt(selectedSlot - 1)} disabled={!choices.length || !selectedCharacter} type="button"><Icon name="chevronRight" /></button>
         <button className="customizer-hair-piece-preview" aria-label={`Abrir biblioteca de ${part.label}`} title={`Abrir biblioteca de ${part.label}`} type="button" onClick={() => { setFaceCatalogLibraryPage(0); setFaceCatalogLibraryPart(part.id) }}>
-          {selected && <HairAssetPreview source={selected.type === 'catalog' ? selected.piece.dataUrl : selected.asset.dataUrl} colors={activeFaceAppearance?.facePalettes?.[part.id]} tintOptions={{ preserveNearWhite: true }} alt={selected.summary.name} />}
+          {selected && <HairAssetPreview source={selected.type === 'catalog' ? selected.piece.dataUrl : selected.asset.dataUrl} colors={colors} tintOptions={{ preserveNearWhite: true, allowNearWhiteRoles: activeFaceAppearance?.facePaletteManualRoles?.[part.id] }} alt={selected.summary.name} />}
         </button>
         <button aria-label={`Próxima peça: ${part.label}`} onClick={() => chooseAt(selectedSlot + 1)} disabled={!choices.length || !selectedCharacter} type="button"><Icon name="chevronRight" /></button>
+        <div className="customizer-hair-piece-colors" aria-label={`Cores de ${part.label}`}>
+          {facePartColorControls.map((color) => <label key={color.id} className={colors[color.id] ? 'local' : ''} style={{ '--hair-color-swatch': colors[color.id] ?? color.fallback } as React.CSSProperties} title={`${color.label} de ${part.label}`}>
+            <input type="color" aria-label={`${color.label} de ${part.label}`} value={colors[color.id] ?? color.fallback} disabled={!selectedCharacter || !selected} onChange={(event) => void setFaceCatalogPartColor(part.id, color.id, event.target.value)} />
+            <span aria-hidden="true">{color.id === 'highlight' ? 'L' : color.id === 'accent' ? 'A' : color.id === 'outline' ? 'C' : color.id === 'fade' ? 'D' : 'B'}</span>
+          </label>)}
+        </div>
       </div>
-      <PiecePaletteStrip label={part.label} colors={activeFaceAppearance?.facePalettes?.[part.id]} disabled={!selectedCharacter || !selected} onSelect={(colors) => void applyFaceCatalogPalette(part.id, colors)} />
+      <PiecePaletteStrip label={part.label} colors={colors} disabled={!selectedCharacter || !selected} onSelect={(palette) => void applyFaceCatalogPalette(part.id, palette)} />
     </article>
   }
 

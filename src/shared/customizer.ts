@@ -101,6 +101,8 @@ export type CustomizerFaceAppearance = {
   faceDetails?: Partial<Record<FaceDetailKind, string | null>>
   /** Per-piece color palette for nose, mouth, and face details. */
   facePalettes?: Partial<Record<FacePalettePartId, HairColorOverrides>>
+  /** Roles the user changed manually; these may recolor near-white pixels. */
+  facePaletteManualRoles?: Partial<Record<FacePalettePartId, HairColorRole[]>>
   /** Right side mirrors the left asset by default; each feature can be unlinked. */
   linkedSides?: Partial<Record<FaceComponentKind, boolean>>
   noseCatalogId?: string
