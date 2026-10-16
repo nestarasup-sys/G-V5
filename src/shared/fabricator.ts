@@ -76,7 +76,7 @@ export type FabricatorHistorySaveEntry = { action: FabricatorHistoryAction; proj
 export type FabricatorHistorySaveState = { undo: FabricatorHistorySaveEntry[]; redo: FabricatorHistorySaveEntry[] }
 
 export type PosePart = Omit<ModelPart, 'chromaBaseDataUrl' | 'chromaBaseSaved'>
-export type WardrobeCategory = 'camisa' | 'jaqueta' | 'manga-superior' | 'manga-inferior' | 'luvas' | 'capa' | 'cinto-saia-1' | 'cinto-saia-2' | 'calca-coxa' | 'calca-canela' | 'shorts'
+export type WardrobeCategory = 'camisa' | 'jaqueta' | 'manga-superior' | 'manga-inferior' | 'luvas' | 'capa' | 'cinto' | 'saia' | 'calca-coxa' | 'calca-canela' | 'shorts'
 /** Encaixe da roupa expresso no referencial imutável do osso na folha original. */
 export type WardrobeBinding = {
   version: 1

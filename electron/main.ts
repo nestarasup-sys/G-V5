@@ -105,7 +105,7 @@ function isCustomizerCharacter(value: unknown): value is CustomizerCharacter {
       Array.isArray(character.customization.wardrobeGroups) && character.customization.wardrobeGroups.length <= 100
       && character.customization.wardrobeGroups.every((group) => group && isValidModelSlot(group.modelSlot)
         && isValidWardrobeId(group.setId)
-        && ['camisa', 'jaqueta', 'manga-superior', 'manga-inferior', 'luvas', 'capa', 'cinto-saia-1', 'cinto-saia-2', 'calca', 'shorts'].includes(group.category)
+        && ['camisa', 'jaqueta', 'manga-superior', 'manga-inferior', 'luvas', 'capa', 'cinto', 'saia', 'cinto-saia-1', 'cinto-saia-2', 'calca', 'shorts'].includes(group.category)
         && [group.offsetX, group.offsetY, group.scaleX, group.scaleY, group.rotation].every(Number.isFinite)
         && group.scaleX > 0 && group.scaleY > 0)
     ))
@@ -133,7 +133,16 @@ async function readCustomizerCharacters(): Promise<CustomizerCharacter[]> {
   try {
     const parsed = JSON.parse(await readFile(characterManifestPath(), 'utf8')) as unknown
     if (!Array.isArray(parsed) || !parsed.every(isCustomizerCharacter)) throw new Error('A biblioteca de personagens está inválida.')
-    return parsed
+    return parsed.map((character) => ({
+      ...character,
+      customization: {
+        ...character.customization,
+        wardrobeGroups: character.customization.wardrobeGroups?.map((group) => ({
+          ...group,
+          category: group.category === ('cinto-saia-1' as typeof group.category) ? 'cinto' : group.category === ('cinto-saia-2' as typeof group.category) ? 'saia' : group.category
+        }))
+      }
+    }))
   } catch (reason) {
     if ((reason as NodeJS.ErrnoException).code !== 'ENOENT') throw reason
     const now = new Date().toISOString()
@@ -158,7 +167,7 @@ async function writeCustomizerCharacters(characters: CustomizerCharacter[]): Pro
   await rename(temporary, characterManifestPath())
 }
 
-const wardrobeCategories: WardrobeCategory[] = ['camisa', 'jaqueta', 'manga-superior', 'manga-inferior', 'luvas', 'capa', 'cinto-saia-1', 'cinto-saia-2', 'calca-coxa', 'calca-canela', 'shorts']
+const wardrobeCategories: WardrobeCategory[] = ['camisa', 'jaqueta', 'manga-superior', 'manga-inferior', 'luvas', 'capa', 'cinto', 'saia', 'calca-coxa', 'calca-canela', 'shorts']
 const isValidWardrobeId = (id: string) => /^[a-zA-Z0-9_-]{1,80}$/.test(id)
 const isValidFaceCatalogId = (id: string) => /^[a-zA-Z0-9_-]{1,120}$/.test(id)
 const faceSheetKinds: FaceSheetKind[] = ['eyes', 'eyebrows', 'nose', 'mouth-closed', 'mouth-open']
@@ -568,6 +577,7 @@ async function readWardrobeSet(modelSlot: number, id: string): Promise<WardrobeS
     if (set.schemaVersion !== 1 || set.modelSlot !== modelSlot || set.id !== id || !Array.isArray(set.components) || set.components.length > 100) return null
     const components = await Promise.all(set.components.map(async (component) => ({
       ...component,
+      category: (component.category as string) === 'cinto-saia-1' ? 'cinto' as const : (component.category as string) === 'cinto-saia-2' ? 'saia' as const : component.category,
       dataUrl: `data:image/png;base64,${(await readFile(join(folder, 'parts', `${component.id}.png`))).toString('base64')}`
     })))
     return { ...set, components }

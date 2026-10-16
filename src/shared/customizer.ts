@@ -108,7 +108,7 @@ export type CustomizerFaceAppearance = {
   mouthOpen: boolean
 }
 
-export type CustomizerWardrobeCategory = 'camisa' | 'jaqueta' | 'manga-superior' | 'manga-inferior' | 'luvas' | 'capa' | 'cinto-saia-1' | 'cinto-saia-2' | 'calca' | 'shorts'
+export type CustomizerWardrobeCategory = 'camisa' | 'jaqueta' | 'manga-superior' | 'manga-inferior' | 'luvas' | 'capa' | 'cinto' | 'saia' | 'calca' | 'shorts'
 export type CustomizerWardrobeGroup = {
   modelSlot: number
   setId: string

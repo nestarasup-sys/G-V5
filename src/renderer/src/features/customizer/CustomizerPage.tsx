@@ -389,8 +389,8 @@ const clothingCategories: Record<'Superior' | 'Inferior', Array<{ id: ClothingGr
     { id: 'manga-inferior', label: 'Mangas inferiores', source: ['manga-inferior'] },
     { id: 'luvas', label: 'Luvas', source: ['luvas'] },
     { id: 'capa', label: 'Capa', source: ['capa'] },
-    { id: 'cinto-saia-1', label: 'Cinto/Saia 1', source: ['cinto-saia-1'] },
-    { id: 'cinto-saia-2', label: 'Cinto/Saia 2', source: ['cinto-saia-2'] }
+    { id: 'cinto', label: 'Cinto', source: ['cinto'] },
+    { id: 'saia', label: 'Saia', source: ['saia'] }
   ],
   Inferior: [
     { id: 'calca', label: 'Calças', source: ['calca-coxa', 'calca-canela'] },
@@ -411,8 +411,8 @@ const upperWardrobePageTwoPanels: UpperWardrobePanel[] = [
   { id: 'gloves-left', label: 'Luvas esquerda', category: 'luvas', side: 'left' },
   { id: 'gloves-right', label: 'Luvas direita', category: 'luvas', side: 'right' },
   { id: 'cape', label: 'Capa', category: 'capa', side: null },
-  { id: 'belt-skirt-1', label: 'Cinto/Saia 1', category: 'cinto-saia-1', side: null },
-  { id: 'belt-skirt-2', label: 'Cinto/Saia 2', category: 'cinto-saia-2', side: null }
+  { id: 'belt', label: 'Cinto', category: 'cinto', side: null },
+  { id: 'skirt', label: 'Saia', category: 'saia', side: null }
 ]
 function wardrobeComponentMatchesPanel(component: WardrobeSet['components'][number], panel: UpperWardrobePanel): boolean {
   if (component.category !== panel.category) return false
