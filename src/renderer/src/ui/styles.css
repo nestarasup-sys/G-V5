@@ -626,7 +626,7 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .home-customizer-top-tabs { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; padding: 7px; }
 .home-customizer-top-tabs button { min-height: 84px; gap: 6px; padding: 7px 3px; font-size: clamp(11px, .9vw, 14px); }
 .home-customizer-top-tabs button svg { width: clamp(25px, 2vw, 32px); height: clamp(25px, 2vw, 32px); }
-.design-banner { width:320px;flex:0 0 320px;overflow:hidden;margin-bottom:12px;border:2px solid #54236f;border-radius:11px;background:#772e9a;box-shadow:0 3px 0 #431b5a; }
+.design-banner { width:320px;height:142px;flex:0 0 142px;overflow:hidden;margin-bottom:12px;border:2px solid #54236f;border-radius:11px;background:#772e9a;box-shadow:0 3px 0 #431b5a; }
 .design-banner-brand { height:30px;display:flex;align-items:center;justify-content:space-between;padding:0 10px;background:linear-gradient(90deg,#a64091,#d653a2);color:#fff; }
 .design-banner-brand strong { font:900 16px/1 Manrope,sans-serif;letter-spacing:.3px;text-shadow:0 1px 2px #69245266; }
 .design-banner-brand>span { font-size:19px;line-height:1; }
