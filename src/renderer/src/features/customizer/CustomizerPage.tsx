@@ -1628,8 +1628,7 @@ export function CustomizerPage() {
             </section>}
             {selectedCustomizerTopTab === 'modelos' && <section className="customizer-pose-carousel" aria-label="Pose do modelo">
               <header className="customizer-pose-carousel-heading" aria-live="polite">
-                <strong>{selectedPoseCategory}</strong>
-                {posePageCount > 1 && <span>Página {activePosePage + 1} de {posePageCount}</span>}
+                <strong>{selectedPoseCategory} · Página {activePosePage + 1}{posePageCount > 1 ? ` de ${posePageCount}` : ''}</strong>
               </header>
               <div className="customizer-pose-carousel-body">
                 <div className="customizer-pose-carousel-nav" role="group" aria-label="Navegação à esquerda">
