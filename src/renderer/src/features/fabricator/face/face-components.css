@@ -93,6 +93,16 @@
 .face-component-slider span { display:flex;align-items:center;justify-content:space-between;gap:6px; }
 .face-component-slider output { color:#9a62a0;font-variant-numeric:tabular-nums; }
 .face-component-slider input { width:100%;margin:0;accent-color:#8153b7;cursor:pointer; }
+.face-component-opacity-slider { padding:2px 0 3px;border:0;border-radius:0;background:transparent; }
+.face-component-opacity-slider>span { color:#715b79; }
+.face-component-opacity-slider output { min-width:36px;padding:2px 6px;border:1px solid #e5d8eb;border-radius:999px;background:#f8f3fb;color:#8153b7;text-align:center; }
+.face-component-opacity-slider input[type="range"] { height:16px;appearance:none;-webkit-appearance:none;border:0;border-radius:999px;background:transparent;accent-color:#8153b7; }
+.face-component-opacity-slider input[type="range"]::-webkit-slider-runnable-track { height:6px;border:1px solid #d9cce1;border-radius:999px;background:linear-gradient(to right,#8153b7 0%,#8153b7 var(--transparency-progress),#ece7ef var(--transparency-progress),#ece7ef 100%); }
+.face-component-opacity-slider input[type="range"]::-webkit-slider-thumb { width:15px;height:15px;margin-top:-5px;appearance:none;-webkit-appearance:none;border:2px solid #fff;border-radius:50%;background:#8153b7;box-shadow:0 1px 3px #42215b66; }
+.face-component-opacity-slider input[type="range"]::-moz-range-track { height:6px;border:1px solid #d9cce1;border-radius:999px;background:#ece7ef; }
+.face-component-opacity-slider input[type="range"]::-moz-range-progress { height:6px;border-radius:999px;background:#8153b7; }
+.face-component-opacity-slider input[type="range"]::-moz-range-thumb { width:11px;height:11px;border:2px solid #fff;border-radius:50%;background:#8153b7;box-shadow:0 1px 3px #42215b66; }
+.face-component-opacity-slider input[type="range"]:focus-visible { outline:2px solid #bc8bd4;outline-offset:2px; }
 .face-component-reset-transform { min-height:27px;border:1px solid #ddc9e3;border-radius:6px;background:#fff;color:#754c8e;font-size:10px;font-weight:700;cursor:pointer; }
 .face-component-empty { padding:14px 8px;border:1px dashed #e2d3e2;border-radius:8px;background:#fcf9fc;color:#99869b;font-size:10px;text-align:center; }
 .face-components-guide-controls { display:grid;gap:8px;margin-top:auto;padding:9px;border:1px solid #d8c5e6;border-radius:9px;background:linear-gradient(145deg,#fcf9ff,#f6effa); }

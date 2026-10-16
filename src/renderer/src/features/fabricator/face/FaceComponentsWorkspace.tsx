@@ -175,7 +175,7 @@ function FaceTransformControls({ head, transform, sourceWidth, sourceHeight, pup
     {!moveTogether && !followEyes && sizeControl('Largura horizontal', widthPercent, sourceWidth, head.width, 'scaleX')}
     {!moveTogether && sizeControl('Altura vertical', heightPercent, sourceHeight, head.height, 'scaleY')}
     <label className="face-component-slider"><span>Rotação<output>{Math.round(transform.rotation)}°</output></span><input type="range" min="-180" max="180" step="1" value={transform.rotation} onChange={(event) => onChange({ rotation: Number(event.target.value) })} /></label>
-    {opacity !== undefined && onOpacityChange && <label className="face-component-slider"><span>Transparência<output>{Math.round((1 - opacity) * 100)}%</output></span><input type="range" min="0" max="100" step="1" value={Math.round((1 - opacity) * 100)} onChange={(event) => onOpacityChange(1 - Number(event.target.value) / 100)} aria-label="Transparência do nariz" /></label>}
+    {opacity !== undefined && onOpacityChange && <label className="face-component-slider face-component-opacity-slider"><span>Transparência<output>{Math.round((1 - opacity) * 100)}%</output></span><input type="range" min="0" max="100" step="1" value={Math.round((1 - opacity) * 100)} style={{ '--transparency-progress': `${Math.round((1 - opacity) * 100)}%` } as CSSProperties} onChange={(event) => onOpacityChange(1 - Number(event.target.value) / 100)} aria-label="Transparência do nariz" /></label>}
     <button className="face-component-reset-transform" type="button" onClick={onReset}>{moveTogether ? 'Restaurar rotação' : followEyes ? 'Restaurar altura e rotação' : 'Restaurar encaixe da peça'}</button>
   </div>
 }
