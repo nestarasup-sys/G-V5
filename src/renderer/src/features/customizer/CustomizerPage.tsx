@@ -2525,14 +2525,6 @@ export function CustomizerPage() {
     </section>
   }
 
-  const toggleUpperWardrobePage = () => {
-    setUpperWardrobePage((page) => page === 1 ? 2 : 1)
-    setWardrobeLibraryPanel(null)
-  }
-  const renderUpperWardrobePageButton = () => <button className={`customizer-upper-page-button${upperWardrobePage === 2 ? ' is-page-two' : ''}`} type="button" onClick={toggleUpperWardrobePage} aria-label={`Ir para página ${upperWardrobePage === 1 ? 2 : 1} de Superior`}>
-    Página {upperWardrobePage === 1 ? 2 : 1}<span aria-hidden="true"><Icon name="chevronRight" /></span>
-  </button>
-
   const renderUpperWardrobePanels = () => <div className="customizer-hair-layout customizer-upper-wardrobe-layout" aria-label="Peças de roupa superior">
     {upperWardrobePanels.map((panel) => {
       const candidates = upperWardrobeCandidates(panel)
@@ -2551,7 +2543,7 @@ export function CustomizerPage() {
         void applyUpperWardrobePanel(panel, nextSlot === 0 ? null : candidates[nextSlot - 1])
       }
       return <article className="customizer-hair-piece customizer-upper-wardrobe-piece" key={panel.id} aria-label={panel.label}>
-        <header><strong>{panel.label} {selectedSlot + 1}/{candidates.length + 1}</strong><div className="customizer-upper-piece-header-actions">{hasLocalColors && currentCandidate && <button className="customizer-hair-reset" type="button" onClick={() => void resetWardrobePieceColors(currentCandidate.summary.id, panel.category, currentCandidate.component.id)}>Restaurar</button>}{panel.id === 'jacket' && renderUpperWardrobePageButton()}</div></header>
+        <header><strong>{panel.label} {selectedSlot + 1}/{candidates.length + 1}</strong>{hasLocalColors && currentCandidate && <button className="customizer-hair-reset" type="button" onClick={() => void resetWardrobePieceColors(currentCandidate.summary.id, panel.category, currentCandidate.component.id)}>Restaurar</button>}</header>
         <div className="customizer-hair-piece-selector customizer-upper-wardrobe-selector">
           <button aria-label={`Peça anterior: ${panel.label}`} onClick={() => move(-1)} disabled={!candidates.length || !selectedCharacter || selectedCatalogModelSlot === null} type="button"><Icon name="chevronRight" /></button>
           <button className="customizer-hair-piece-preview" aria-label={`Abrir biblioteca de ${panel.label}`} title={`Abrir biblioteca de ${panel.label}`} onClick={() => { setWardrobeLibraryPage(0); setWardrobeLibraryPanel(panel) }} type="button">
@@ -2584,7 +2576,7 @@ export function CustomizerPage() {
       {wardrobeLoading ? <div className="customizer-catalog-empty">Carregando roupas…</div> : <>
         {catalogError && <p className="customizer-catalog-error" role="alert">{catalogError}</p>}
         {upperWardrobePage === 2
-          ? <section className="customizer-upper-wardrobe-page-placeholder" aria-label="Página 2 de roupas superiores"><header><strong>Jaqueta</strong>{renderUpperWardrobePageButton()}</header><div><strong>Página 2 de Superior</strong><span>Espaço reservado para as próximas peças.</span></div></section>
+          ? <section className="customizer-upper-wardrobe-page-placeholder" aria-label="Página 2 de roupas superiores"><strong>Página 2 de Superior</strong><span>Espaço reservado para as próximas peças.</span></section>
           : wardrobeLibraryPanel ? renderUpperWardrobeLibrary() : renderUpperWardrobePanels()}
       </>}
     </div>
@@ -2620,6 +2612,7 @@ export function CustomizerPage() {
             </div>
           </section>
           <section className={`customizer-models-sidebar${selectedCustomizerTopTab === 'roupas' && clothesPanelTab === 'upper' ? ' customizer-models-sidebar-clothes-upper' : ''}`} aria-label="Categorias de personalização">
+            <div className={`customizer-models-sidebar-nav${selectedCustomizerTopTab === 'roupas' && clothesPanelTab === 'upper' ? ' customizer-models-sidebar-nav-clothes-upper' : ''}`}>
             <nav className="customizer-top-tabs" aria-label="Áreas do Customizar" role="tablist">
               {customizerTopTabs.map((tab) => <button
                 key={tab.id}
@@ -2641,6 +2634,10 @@ export function CustomizerPage() {
             </nav>}
             {selectedCustomizerTopTab === 'roupas' && <nav className="customizer-clothes-category-tabs" aria-label="Categorias de roupas" role="tablist">
               {customizerClothesTabs.map((tab) => <button key={tab.id} className={clothesPanelTab === tab.id ? 'active' : ''} onClick={() => {
+                if (tab.id === 'upper' && clothesPanelTab === 'upper') {
+                  setUpperWardrobePage((page) => page === 1 ? 2 : 1)
+                  setWardrobeLibraryPanel(null)
+                }
                 setClothesPanelTab(tab.id)
                 if (tab.id === 'upper') setClothingSection('Superior')
                 else if (tab.id === 'lower') setClothingSection('Inferior')
@@ -2650,6 +2647,7 @@ export function CustomizerPage() {
             {selectedCustomizerTopTab === 'outros' && <nav className="customizer-other-category-tabs" aria-label="Categorias de outros itens" role="tablist">
               {customizerOtherTabs.map((tab) => <button key={tab.id} className={otherPanelTab === tab.id ? 'active' : ''} onClick={() => setOtherPanelTab(tab.id)} aria-selected={otherPanelTab === tab.id} role="tab" type="button"><Icon name={tab.icon} /><span>{tab.label}</span></button>)}
             </nav>}
+            </div>
             <div className={`customizer-sidebar-scroll-content${selectedCustomizerTopTab === 'cabeca' && (headPanelTab === 'hair' || headPanelTab === 'eyes' || headPanelTab === 'face') ? ' customizer-sidebar-scroll-content-hair' : ''}${selectedCustomizerTopTab === 'roupas' && clothesPanelTab === 'upper' ? ' customizer-sidebar-scroll-content-clothes-upper' : ''}`} aria-label={`Conteúdo de ${customizerTopTabs.find((tab) => tab.id === selectedCustomizerTopTab)?.label ?? 'personalização'}`}>
             {selectedCustomizerTopTab === 'cabeca' && headPanelTab === 'hair' && (hairLibraryPart ? renderHairLibrary() : renderHairCustomizer())}
             {selectedCustomizerTopTab === 'cabeca' && headPanelTab === 'eyes' && (faceLibraryPart ? renderFaceLibrary() : renderFaceCustomizer())}
