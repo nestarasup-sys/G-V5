@@ -3,7 +3,7 @@ import { CharacterPortrait } from '../../ui/components/CharacterPortrait'
 import { Icon, type IconName } from '../../ui/components/Icon'
 import type { FaceCatalogItem, FaceCatalogItemSummary, FaceComponentAsset, FaceComponentAssetSummary, FaceComponentKind, FaceDetailKind, FaceElementKind, FaceSet, FaceSheetKind, FabricatorPose, FabricatorPoseSummary, FabricatorProject, FabricatorSlotSummary, HairStyle, HairStyleSummary, WardrobeCategory, WardrobeSet, WardrobeSetSummary } from '../../../../shared/fabricator'
 import { resolvePoseCategory } from '../../../../shared/fabricator'
-import type { CustomizerCharacter, CustomizerFaceAppearance, CustomizerWardrobeCategory, CustomizerWardrobeGroup, CustomizerWardrobePaletteKey, FaceComponentPartId, HairColorOverrides, HairColorRole, HairPartId } from '../../../../shared/customizer'
+import type { CustomizerCharacter, CustomizerFaceAppearance, CustomizerWardrobeCategory, CustomizerWardrobeGroup, CustomizerWardrobePaletteKey, FaceComponentPartId, FacePalettePartId, HairColorOverrides, HairColorRole, HairPartId } from '../../../../shared/customizer'
 import { characterBodyDimensionLimits, characterProportionLimits, defaultCharacterBodyDimensions, defaultCharacterProportions, getCharacterBodyDimensions, getCharacterProportions, type CharacterBodyDimensions, type CharacterProportions } from '../../../../shared/customizer'
 import type { StudioFaceTransforms } from '../../../../shared/studio'
 import { usePreviewBackground } from '../fabricator/usePreviewBackground'
@@ -201,6 +201,20 @@ function HairAssetPreview({ source, alt, colors }: { source: string; alt: string
     return () => { cancelled = true }
   }, [source, colorKey])
   return <img src={previewSource} alt={alt} />
+}
+
+function PiecePaletteStrip({ label = 'Paleta da peça', colors, disabled, onSelect }: { label?: string; colors?: HairColorOverrides; disabled: boolean; onSelect: (colors: HairColorOverrides) => void }) {
+  const scroll = (button: HTMLButtonElement, direction: number) => button.closest('.customizer-piece-palette')?.querySelector<HTMLElement>('.customizer-piece-palette-list')?.scrollBy({ left: direction * 150, behavior: 'smooth' })
+  return <div className="customizer-piece-palette" aria-label={label}>
+    <strong>{label}</strong>
+    <div className="customizer-piece-palette-strip">
+      <button className="customizer-hair-palette-scroll previous" type="button" aria-label="Paletas anteriores" onClick={(event) => scroll(event.currentTarget, -1)}><Icon name="chevronRight" /></button>
+      <div className="customizer-hair-palette-preset-list customizer-piece-palette-list">
+        {hairPalettePresets.map((preset) => <button key={preset.name} type="button" disabled={disabled} aria-pressed={hairColorControls.every((color) => colors?.[color.id] === preset.colors[color.id])} onClick={() => onSelect(preset.colors)} title={`Aplicar ${preset.name}`}><span style={{ background: `linear-gradient(115deg, ${preset.colors.highlight} 0 23%, ${preset.colors.base} 23% 65%, ${preset.colors.fade} 65% 84%, ${preset.colors.outline} 84%)` }} />{preset.name}</button>)}
+      </div>
+      <button className="customizer-hair-palette-scroll" type="button" aria-label="Próximas paletas" onClick={(event) => scroll(event.currentTarget, 1)}><Icon name="chevronRight" /></button>
+    </div>
+  </div>
 }
 
 function hairHue(red: number, green: number, blue: number): number {
@@ -796,7 +810,8 @@ async function drawFaceCatalogOverlay(context: CanvasRenderingContext2D, artwork
     const studioTransform = studioFaceTransforms?.[`${sheet}:${item.id}`] ?? studioFaceTransforms?.[studioCategory]
     if (!piece || !transform) continue
     try {
-      const image = await loadHairTintedImage(piece.dataUrl, appearance.partColors?.[element as 'eye-left' | 'eye-right' | 'brow-left' | 'brow-right'])
+      const catalogPalette = sheet === 'nose' ? appearance.facePalettes?.nose : sheet.startsWith('mouth') ? appearance.facePalettes?.mouth : undefined
+      const image = await loadHairTintedImage(piece.dataUrl, appearance.partColors?.[element as 'eye-left' | 'eye-right' | 'brow-left' | 'brow-right'] ?? catalogPalette)
       const localX = transform.x / sourceHead.width * targetHead.width + (studioTransform?.x ?? 0) / 100 * targetHead.width
       const localY = transform.y / sourceHead.height * targetHead.height + (studioTransform?.y ?? 0) / 100 * targetHead.height
       const radians = targetHead.rotation * Math.PI / 180
@@ -917,7 +932,7 @@ async function drawFaceCatalogOverlay(context: CanvasRenderingContext2D, artwork
     const width = asset.width * transform.scaleX / sourceHead.width * targetHead.width
     const height = asset.height * transform.scaleY / sourceHead.height * targetHead.height
     try {
-      const image = await loadCachedImage(asset.dataUrl)
+      const image = await loadHairTintedImage(asset.dataUrl, appearance.facePalettes?.[kind])
       context.save(); context.translate(x, y); context.rotate((targetHead.rotation + transform.rotation) * Math.PI / 180)
       if (transform.flipX) context.scale(-1, 1)
       context.drawImage(image, -width / 2, -height / 2, width, height); context.restore()
@@ -1813,6 +1828,21 @@ export function CustomizerPage() {
     await saveCharacterCustomization({ faceAppearance: appearance })
   }
 
+  async function applyFacePartPalette(part: FaceLibraryPartId, colors: HairColorOverrides) {
+    if (!selectedCharacter || selectedCatalogModelSlot === null) return
+    const current = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
+    const previous = current.customization.faceAppearance
+    const sameModel = previous?.modelSlot === selectedCatalogModelSlot
+    const components = { ...(sameModel ? previous?.components : undefined) }
+    components[part] = { ...(components[part] ?? { assetId: null }), colors }
+    await saveCharacterCustomization({ faceAppearance: {
+      ...(sameModel ? previous : undefined), modelSlot: selectedCatalogModelSlot,
+      eyeState: sameModel ? previous.eyeState : 0, eyebrows: sameModel ? previous.eyebrows : true,
+      noseIndex: sameModel ? previous.noseIndex : 0, expressionIndex: sameModel ? previous.expressionIndex : 0,
+      mouthOpen: sameModel ? previous.mouthOpen : false, components
+    } })
+  }
+
   async function resetFacePartColors(part: FaceLibraryPartId) {
     if (!selectedCharacter || selectedCatalogModelSlot === null) return
     const current = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
@@ -1893,6 +1923,17 @@ export function CustomizerPage() {
     await saveCharacterCustomization({ hairAppearance: { ...(sameModel ? previous : undefined), modelSlot: selectedCatalogModelSlot, partColors } })
   }
 
+  async function applyHairPartPalette(part: HairPartId, colors: HairColorOverrides) {
+    if (!selectedCharacter || selectedCatalogModelSlot === null) return
+    const current = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
+    const previous = current.customization.hairAppearance
+    const sameModel = previous?.modelSlot === selectedCatalogModelSlot
+    await saveCharacterCustomization({ hairAppearance: {
+      ...(sameModel ? previous : undefined), modelSlot: selectedCatalogModelSlot,
+      partColors: { ...(sameModel ? previous?.partColors : undefined), [part]: colors }
+    } })
+  }
+
   async function resetHairPartColors(part: HairPartId) {
     if (!selectedCharacter || selectedCatalogModelSlot === null) return
     const current = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
@@ -1931,6 +1972,18 @@ export function CustomizerPage() {
       mouthOpen: sameModel ? old.mouthOpen : false, ...patch
     }
     await saveCharacterCustomization({ faceAppearance: hasSelectedFaceAsset(appearance) ? appearance : undefined })
+  }
+
+  async function applyFaceCatalogPalette(part: FacePalettePartId, colors: HairColorOverrides) {
+    const current = selectedCharacter && (charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter)
+    if (!current || selectedCatalogModelSlot === null) return
+    const previous = current.customization.faceAppearance
+    const sameModel = previous?.modelSlot === selectedCatalogModelSlot
+    const base: CustomizerFaceAppearance = sameModel ? previous : {
+      modelSlot: selectedCatalogModelSlot, eyeState: 0, eyebrows: true, noseIndex: 0, expressionIndex: 0, mouthOpen: false
+    }
+    const facePalettes = { ...(sameModel ? previous.facePalettes : undefined), [part]: colors }
+    await saveCharacterCustomization({ faceAppearance: { ...base, facePalettes } })
   }
 
   async function chooseFaceDetailCatalogItem(kind: FaceDetailKind, summary: FaceComponentAssetSummary) {
@@ -2249,6 +2302,7 @@ export function CustomizerPage() {
             </label>)}
           </div>
         </div>
+        <PiecePaletteStrip colors={appearance?.partColors?.[part.id]} disabled={!selectedCharacter || !asset} onSelect={(colors) => void applyHairPartPalette(part.id, colors)} />
       </article>
     }
     return <section className="customizer-hair-workspace" aria-label="Personalização do cabelo">
@@ -2392,6 +2446,7 @@ export function CustomizerPage() {
         </button>
         <button aria-label={`Próxima peça: ${part.label}`} onClick={() => chooseAt(selectedSlot + 1)} disabled={!choices.length || !selectedCharacter} type="button"><Icon name="chevronRight" /></button>
       </div>
+      <PiecePaletteStrip colors={activeFaceAppearance?.facePalettes?.[part.id]} disabled={!selectedCharacter || !selected} onSelect={(colors) => void applyFaceCatalogPalette(part.id, colors)} />
     </article>
   }
 
@@ -2480,6 +2535,7 @@ export function CustomizerPage() {
             </label>)}
           </div>
         </div>
+        <PiecePaletteStrip colors={colors} disabled={!selectedCharacter || !piece} onSelect={(palette) => void applyFacePartPalette(part.id, palette)} />
       </article>
     }
     return <section className="customizer-hair-workspace customizer-face-workspace" aria-label="Personalização dos olhos e sobrancelhas">

@@ -2,6 +2,7 @@ import type { FaceComponentKind, FaceDetailKind, FaceTransform } from './fabrica
 
 export type HairColorRole = 'base' | 'fade' | 'outline' | 'highlight' | 'accent'
 export type FaceComponentPartId = 'eye-left' | 'eye-right' | 'pupil-left' | 'pupil-right' | 'brow-left' | 'brow-right'
+export type FacePalettePartId = 'nose' | 'mouth' | FaceDetailKind
 export type HairPartId = 'backHair' | 'rearHair' | 'ponytail' | 'frontHair' | 'ahoge'
 export type HairColorOverrides = Partial<Record<HairColorRole, string>>
 
@@ -98,6 +99,8 @@ export type CustomizerFaceAppearance = {
   components?: Partial<Record<FaceComponentPartId, { assetId: string | null; transform?: FaceTransform; colors?: HairColorOverrides }>>
   /** Independently selected face details managed by Rosto Dev. */
   faceDetails?: Partial<Record<FaceDetailKind, string | null>>
+  /** Per-piece color palette for nose, mouth, and face details. */
+  facePalettes?: Partial<Record<FacePalettePartId, HairColorOverrides>>
   /** Right side mirrors the left asset by default; each feature can be unlinked. */
   linkedSides?: Partial<Record<FaceComponentKind, boolean>>
   noseCatalogId?: string
