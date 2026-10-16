@@ -3,7 +3,7 @@ import { CharacterPortrait } from '../../ui/components/CharacterPortrait'
 import { Icon, type IconName } from '../../ui/components/Icon'
 import type { FaceCatalogItem, FaceCatalogItemSummary, FaceElementKind, FaceSet, FaceSheetKind, FabricatorPose, FabricatorPoseSummary, FabricatorProject, FabricatorSlotSummary, HairStyle, HairStyleSummary, WardrobeCategory, WardrobeSet, WardrobeSetSummary } from '../../../../shared/fabricator'
 import { resolvePoseCategory } from '../../../../shared/fabricator'
-import type { CustomizerCharacter, CustomizerFaceAppearance, CustomizerWardrobeCategory, CustomizerWardrobeGroup } from '../../../../shared/customizer'
+import type { CustomizerCharacter, CustomizerFaceAppearance, CustomizerWardrobeCategory, CustomizerWardrobeGroup, HairColorOverrides, HairColorRole, HairPartId } from '../../../../shared/customizer'
 import { characterBodyDimensionLimits, characterProportionLimits, defaultCharacterBodyDimensions, defaultCharacterProportions, getCharacterBodyDimensions, getCharacterProportions, type CharacterBodyDimensions, type CharacterProportions } from '../../../../shared/customizer'
 import type { StudioFaceTransforms } from '../../../../shared/studio'
 import { usePreviewBackground } from '../fabricator/usePreviewBackground'
@@ -38,14 +38,18 @@ const wardrobeImageCache = new Map<string, Promise<HTMLImageElement>>()
 const skinTintImageCache = new Map<string, Promise<HTMLImageElement>>()
 const hairTintImageCache = new Map<string, Promise<HTMLImageElement>>()
 const hairPreviewImageCache = new Map<string, Promise<string>>()
-type HairColorRole = 'base' | 'fade' | 'outline' | 'highlight' | 'accent'
-type HairColorOverrides = Partial<Record<HairColorRole, string>>
 const hairColorControls: Array<{ id: HairColorRole; label: string; fallback: string }> = [
   { id: 'base', label: 'Cor base', fallback: '#9b563e' },
   { id: 'fade', label: 'Degradê', fallback: '#633b37' },
   { id: 'outline', label: 'Contorno', fallback: '#392b33' },
   { id: 'highlight', label: 'Luzes', fallback: '#e5ad83' },
   { id: 'accent', label: 'Acessório', fallback: '#cf6391' }
+]
+const hairPalettePresets: Array<{ name: string; colors: HairColorOverrides }> = [
+  { name: 'Castanho', colors: { base: '#8e4b35', fade: '#613525', outline: '#33221f', highlight: '#c68156', accent: '#c0638e' } },
+  { name: 'Loiro', colors: { base: '#d6b46e', fade: '#a8844b', outline: '#59422e', highlight: '#f4dea0', accent: '#db9c73' } },
+  { name: 'Preto', colors: { base: '#343b49', fade: '#242733', outline: '#14151d', highlight: '#78889b', accent: '#a55a83' } },
+  { name: 'Fantasia', colors: { base: '#8756b7', fade: '#593f88', outline: '#302548', highlight: '#c997df', accent: '#e480ae' } }
 ]
 const faceElementOrder: FaceElementKind[] = ['brow-left', 'brow-right', 'eye-left', 'eye-right', 'nose', 'mouth']
 const skinTonePresets = [
@@ -120,32 +124,75 @@ function loadHairPreviewImage(source: string): Promise<string> {
     return output.toDataURL('image/png')
   })
   hairPreviewImageCache.set(source, preview)
+  if (hairPreviewImageCache.size > 40) hairPreviewImageCache.delete(hairPreviewImageCache.keys().next().value!)
   void preview.catch(() => hairPreviewImageCache.delete(source))
   return preview
 }
 
-function HairAssetPreview({ source, alt }: { source: string; alt: string }) {
+function HairAssetPreview({ source, alt, colors }: { source: string; alt: string; colors?: HairColorOverrides }) {
   const [previewSource, setPreviewSource] = useState(source)
+  const colorKey = JSON.stringify(colors)
   useEffect(() => {
     let cancelled = false
     setPreviewSource(source)
-    void loadHairPreviewImage(source).then((trimmed) => {
+    void loadHairTintedImage(source, colors).then((image) => loadHairPreviewImage(image.src)).then((trimmed) => {
       if (!cancelled) setPreviewSource(trimmed)
     }).catch(() => undefined)
     return () => { cancelled = true }
-  }, [source])
+  }, [source, colorKey])
   return <img src={previewSource} alt={alt} />
 }
 
-function hairPixelColorRole(red: number, green: number, blue: number): HairColorRole {
-  const luminance = (red * 0.2126 + green * 0.7152 + blue * 0.0722) / 255
+function hairHue(red: number, green: number, blue: number): number {
   const maximum = Math.max(red, green, blue)
-  const minimum = Math.min(red, green, blue)
-  const saturation = maximum === 0 ? 0 : (maximum - minimum) / maximum
-  if (saturation > 0.38 && luminance > 0.13 && luminance < 0.9) return 'accent'
-  if (luminance < 0.22) return 'outline'
-  if (luminance < 0.43) return 'fade'
-  if (luminance < 0.76) return 'base'
+  const difference = maximum - Math.min(red, green, blue)
+  if (!difference) return 0
+  const section = maximum === red ? ((green - blue) / difference) % 6 : maximum === green ? (blue - red) / difference + 2 : (red - green) / difference + 4
+  return (section * 60 + 360) % 360
+}
+
+function hairImageColorProfile(pixels: Uint8ClampedArray): { low: number; high: number; hue: number; hasAccent: boolean } {
+  const luminanceBins = new Uint32Array(256)
+  const hueBins = new Uint32Array(24)
+  let count = 0
+  let chromatic = 0
+  for (let offset = 0; offset < pixels.length; offset += 4) {
+    if (pixels[offset + 3] < 160) continue
+    const red = pixels[offset], green = pixels[offset + 1], blue = pixels[offset + 2]
+    const luminance = red * 0.2126 + green * 0.7152 + blue * 0.0722
+    luminanceBins[Math.round(luminance)] += 1
+    count += 1
+    const maximum = Math.max(red, green, blue)
+    if (maximum > 40 && (maximum - Math.min(red, green, blue)) / maximum > 0.3 && luminance > 35) {
+      hueBins[Math.floor(hairHue(red, green, blue) / 15) % 24] += 1
+      chromatic += 1
+    }
+  }
+  const percentile = (fraction: number) => {
+    let seen = 0
+    for (let value = 0; value < luminanceBins.length; value += 1) {
+      seen += luminanceBins[value]
+      if (seen >= count * fraction) return value
+    }
+    return 255
+  }
+  let hueIndex = 0
+  for (let index = 1; index < hueBins.length; index += 1) if (hueBins[index] > hueBins[hueIndex]) hueIndex = index
+  return { low: percentile(0.01), high: percentile(0.98), hue: hueIndex * 15 + 7.5, hasAccent: chromatic > count * 0.03 }
+}
+
+function hairPixelColorRole(red: number, green: number, blue: number, profile: ReturnType<typeof hairImageColorProfile>): HairColorRole {
+  const luminance = red * 0.2126 + green * 0.7152 + blue * 0.0722
+  const maximum = Math.max(red, green, blue)
+  const saturation = maximum === 0 ? 0 : (maximum - Math.min(red, green, blue)) / maximum
+  const hueDistance = Math.abs(hairHue(red, green, blue) - profile.hue)
+  if (profile.hasAccent && saturation > 0.3 && Math.min(hueDistance, 360 - hueDistance) > 48 && luminance > 35) return 'accent'
+  const range = profile.high - profile.low
+  if (range < 18) return 'base'
+  const position = (luminance - profile.low) / range
+  if (position < 0.16) return 'outline'
+  if (position < 0.43) return 'fade'
+  if (position < 0.82) return 'base'
   return 'highlight'
 }
 
@@ -169,14 +216,23 @@ function loadHairTintedImage(source: string, overrides: HairColorOverrides | und
       parsed.set(role, [Number.parseInt(value.slice(1, 3), 16), Number.parseInt(value.slice(3, 5), 16), Number.parseInt(value.slice(5, 7), 16)])
     }
     if (parsed.size === 0) return sourceImage
+    const profile = hairImageColorProfile(pixels)
+    const luminanceTotals: Record<HairColorRole, number> = { base: 0, fade: 0, outline: 0, highlight: 0, accent: 0 }
+    const roleCounts: Record<HairColorRole, number> = { base: 0, fade: 0, outline: 0, highlight: 0, accent: 0 }
+    for (let offset = 0; offset < pixels.length; offset += 4) {
+      if (pixels[offset + 3] < 160) continue
+      const role = hairPixelColorRole(pixels[offset], pixels[offset + 1], pixels[offset + 2], profile)
+      luminanceTotals[role] += pixels[offset] * 0.2126 + pixels[offset + 1] * 0.7152 + pixels[offset + 2] * 0.0722
+      roleCounts[role] += 1
+    }
     for (let offset = 0; offset < pixels.length; offset += 4) {
       if (pixels[offset + 3] === 0) continue
-      const role = hairPixelColorRole(pixels[offset], pixels[offset + 1], pixels[offset + 2])
+      const role = hairPixelColorRole(pixels[offset], pixels[offset + 1], pixels[offset + 2], profile)
       const target = parsed.get(role)
       if (!target) continue
       const sourceLuminance = Math.max(1, pixels[offset] * 0.2126 + pixels[offset + 1] * 0.7152 + pixels[offset + 2] * 0.0722)
-      const targetLuminance = Math.max(1, target[0] * 0.2126 + target[1] * 0.7152 + target[2] * 0.0722)
-      const shade = sourceLuminance / targetLuminance
+      const referenceLuminance = roleCounts[role] ? luminanceTotals[role] / roleCounts[role] : sourceLuminance
+      const shade = Math.max(0.48, Math.min(1.52, sourceLuminance / Math.max(1, referenceLuminance)))
       pixels[offset] = Math.min(255, target[0] * shade)
       pixels[offset + 1] = Math.min(255, target[1] * shade)
       pixels[offset + 2] = Math.min(255, target[2] * shade)
@@ -191,6 +247,7 @@ function loadHairTintedImage(source: string, overrides: HairColorOverrides | und
     })
   })
   hairTintImageCache.set(key, tinted)
+  if (hairTintImageCache.size > 40) hairTintImageCache.delete(hairTintImageCache.keys().next().value!)
   void tinted.catch(() => hairTintImageCache.delete(key))
   return tinted
 }
@@ -227,8 +284,7 @@ type WardrobeEditHistory = { characterId: string; undo: CustomizerWardrobeGroup[
 type SelectedWardrobeComponent = { setId: string; category: ClothingGroupCategory; componentId: string }
 type HairCatalogSide = 'front' | 'back'
 type HairLayerSide = HairCatalogSide | 'fringe'
-type HairPartId = 'backHair' | 'rearHair' | 'ponytail' | 'frontHair' | 'ahoge'
-type HairLayerReference = { style: HairStyle; side: HairLayerSide }
+type HairLayerReference = { style: HairStyle; side: HairLayerSide; part: HairPartId }
 const customizerHairParts: Array<{ id: HairPartId; label: string; side: HairLayerSide }> = [
   { id: 'backHair', label: 'Cabelo traseiro', side: 'back' },
   { id: 'rearHair', label: 'Cabelo posterior', side: 'front' },
@@ -241,14 +297,14 @@ const hairAppearanceStyleId = (appearance: NonNullable<CustomizerCharacter['cust
   const key = side === 'front' ? 'frontStyleId' : 'backStyleId'
   return key in appearance ? appearance[key] ?? null : appearance.styleId ?? null
 }
-function hairAppearanceStyleIds(appearance: NonNullable<CustomizerCharacter['customization']['hairAppearance']> | undefined, side: HairLayerSide): string[] {
+function hairAppearanceStyleIds(appearance: NonNullable<CustomizerCharacter['customization']['hairAppearance']> | undefined, side: HairLayerSide): Array<{ id: string; part: HairPartId }> {
   return customizerHairParts.filter((part) => part.side === side).flatMap((part) => {
     const hasPartOverride = Boolean(appearance?.parts && Object.prototype.hasOwnProperty.call(appearance.parts, part.id))
     const legacyFrontPart = part.id === 'rearHair' && appearance?.parts && Object.prototype.hasOwnProperty.call(appearance.parts, 'frontHair')
       ? appearance.parts.frontHair
       : null
     const id = hasPartOverride ? appearance?.parts?.[part.id] ?? null : part.id === 'backHair' ? hairAppearanceStyleId(appearance, 'back') : part.id === 'rearHair' ? legacyFrontPart ?? hairAppearanceStyleId(appearance, 'front') : null
-    return id ? [id] : []
+    return id ? [{ id, part: part.id }] : []
   })
 }
 function hairAppearancePartStyleId(appearance: NonNullable<CustomizerCharacter['customization']['hairAppearance']> | undefined, part: HairPartId): string | null {
@@ -260,8 +316,11 @@ function hairAppearancePartStyleId(appearance: NonNullable<CustomizerCharacter['
 async function loadHairAppearanceLayers(appearance: NonNullable<CustomizerCharacter['customization']['hairAppearance']> | undefined, modelSlot: number, side: HairLayerSide, cached: Record<string, HairStyle> = {}): Promise<HairLayerReference[]> {
   if (!appearance || appearance.modelSlot !== modelSlot) return []
   const ids = hairAppearanceStyleIds(appearance, side)
-  const styles = await Promise.all(ids.map(async (id) => cached[`${modelSlot}:${id}`] ?? await window.desktop.loadHairStyle(modelSlot, id)))
-  return styles.filter((style): style is HairStyle => Boolean(style)).map((style) => ({ style, side }))
+  const styles = await Promise.all(ids.map(async ({ id }) => cached[`${modelSlot}:${id}`] ?? await window.desktop.loadHairStyle(modelSlot, id)))
+  return styles.flatMap((style, index) => style ? [{ style, side, part: ids[index].part }] : [])
+}
+function resolvedHairColors(appearance: CustomizerCharacter['customization']['hairAppearance'], part: HairPartId): HairColorOverrides {
+  return { ...appearance?.colors, ...appearance?.partColors?.[part] }
 }
 const clothingCategories: Record<'Superior' | 'Inferior', Array<{ id: ClothingGroupCategory; label: string; source: WardrobeCategory[] }>> = {
   Superior: [
@@ -457,8 +516,8 @@ export async function renderArtwork(artwork: CatalogArtwork, maxSize: number, sk
   return trimmed.toDataURL('image/png')
 }
 
-async function renderArtworkWithHair(artwork: CatalogArtwork, source: FabricatorProject, backStyles: HairStyle | HairLayerReference[] | null, maxSize: number, skinTone?: string, hairColors?: HairColorOverrides): Promise<string | null> {
-  const hairLayers: HairLayerReference[] = Array.isArray(backStyles) ? backStyles : backStyles ? [{ style: backStyles, side: 'back' }] : []
+async function renderArtworkWithHair(artwork: CatalogArtwork, source: FabricatorProject, backStyles: HairStyle | HairLayerReference[] | null, maxSize: number, skinTone?: string, hairAppearance?: CustomizerCharacter['customization']['hairAppearance']): Promise<string | null> {
+  const hairLayers: HairLayerReference[] = Array.isArray(backStyles) ? backStyles : backStyles ? [{ style: backStyles, side: 'back', part: 'backHair' }] : []
   const validHairLayers = hairLayers.filter((layer) => layer.side === 'back' && layer.style.modelSlot === source.slot && Boolean(layer.style.back))
   if (!validHairLayers.length) return renderArtwork(artwork, maxSize, skinTone)
   const sourceHead = source.parts.find((part) => /cabe[çc]a|head/i.test(part.name))
@@ -486,7 +545,7 @@ async function renderArtworkWithHair(artwork: CatalogArtwork, source: Fabricator
       const y = targetHead.y + targetHead.height / 2 + (localX - targetHead.width / 2) * Math.sin(radians) + (localY - targetHead.height / 2) * Math.cos(radians)
       const width = asset.width * transform.scaleX / sourceHead.width * targetHead.width
       const height = asset.height * transform.scaleY / sourceHead.height * targetHead.height
-      const image = await loadHairTintedImage(asset.dataUrl, hairColors)
+      const image = await loadHairTintedImage(asset.dataUrl, resolvedHairColors(hairAppearance, layer.part))
       context.save()
       context.translate(x * scale, y * scale)
       context.rotate((targetHead.rotation + transform.rotation) * Math.PI / 180)
@@ -513,8 +572,8 @@ async function renderArtworkWithHair(artwork: CatalogArtwork, source: Fabricator
   return canvas.toDataURL('image/png')
 }
 
-async function renderFrontHairOverlay(artwork: CatalogArtwork, source: FabricatorProject, frontStyles: HairStyle | HairLayerReference[] | null, maxSize: number, hairColors?: HairColorOverrides): Promise<string | null> {
-  const hairLayers: HairLayerReference[] = Array.isArray(frontStyles) ? frontStyles : frontStyles ? [{ style: frontStyles, side: 'front' }] : []
+async function renderFrontHairOverlay(artwork: CatalogArtwork, source: FabricatorProject, frontStyles: HairStyle | HairLayerReference[] | null, maxSize: number, hairAppearance?: CustomizerCharacter['customization']['hairAppearance']): Promise<string | null> {
+  const hairLayers: HairLayerReference[] = Array.isArray(frontStyles) ? frontStyles : frontStyles ? [{ style: frontStyles, side: 'front', part: 'rearHair' }] : []
   const validHairLayers = hairLayers.filter((layer) => (layer.side === 'front' || layer.side === 'fringe') && layer.style[layer.side] && layer.style.modelSlot === source.slot)
   if (!validHairLayers.length) return null
   const sourceHead = source.parts.find((part) => /cabe[çc]a|head/i.test(part.name))
@@ -539,7 +598,7 @@ async function renderFrontHairOverlay(artwork: CatalogArtwork, source: Fabricato
     const width = asset.width * transform.scaleX / sourceHead.width * targetHead.width
     const height = asset.height * transform.scaleY / sourceHead.height * targetHead.height
     try {
-      const image = await loadHairTintedImage(asset.dataUrl, hairColors)
+      const image = await loadHairTintedImage(asset.dataUrl, resolvedHairColors(hairAppearance, layer.part))
       context.save()
       context.translate(x * scale, y * scale)
       context.rotate((targetHead.rotation + transform.rotation) * Math.PI / 180)
@@ -653,7 +712,7 @@ export async function prepareSavedCharacterRenderer(character: CustomizerCharact
     loadHairAppearanceLayers(hairAppearance, modelSlot, 'fringe')
   ])
   const frontStyles = [...posteriorStyles, ...fringeStyles]
-  const baseUrl = await renderArtworkWithHair(artwork, source, backStyles, 960, character.customization.modelSkinTone, hairAppearance?.colors)
+  const baseUrl = await renderArtworkWithHair(artwork, source, backStyles, 960, character.customization.modelSkinTone, hairAppearance)
   if (!baseUrl) throw new Error(`Não foi possível montar a prévia de ${character.name}.`)
 
   const groups = (character.customization.wardrobeGroups ?? []).filter((group) => group.modelSlot === modelSlot)
@@ -683,7 +742,7 @@ export async function prepareSavedCharacterRenderer(character: CustomizerCharact
       if (face) legacyFaceUrl = await renderFaceOverlay(artwork, source, face, appearance)
     }
   }
-  const frontHairUrl = frontStyles.length ? await renderFrontHairOverlay(artwork, source, frontStyles, 960, hairAppearance?.colors) : null
+  const frontHairUrl = frontStyles.length ? await renderFrontHairOverlay(artwork, source, frontStyles, 960, hairAppearance) : null
   const baseImage = await loadCachedImage(baseUrl)
   const wardrobeImage = wardrobe.imageUrl ? await loadCachedImage(wardrobe.imageUrl) : null
   const legacyFaceImage = legacyFaceUrl ? await loadCachedImage(legacyFaceUrl) : null
@@ -1213,8 +1272,8 @@ export function CustomizerPage() {
       for (const layer of [...backStyles, ...frontStyles]) if (!hairDetails[`${source.slot}:${layer.style.id}`]) newlyLoaded[`${source.slot}:${layer.style.id}`] = layer.style
       if (Object.keys(newlyLoaded).length) setHairDetails((current) => ({ ...current, ...newlyLoaded }))
       const [url, frontUrl] = await Promise.all([
-        renderArtworkWithHair(artwork, source, backStyles, 720, selectedCharacter?.customization.modelSkinTone, appearance?.modelSlot === source.slot ? appearance.colors : undefined),
-        renderFrontHairOverlay(artwork, source, frontStyles, 720, appearance?.modelSlot === source.slot ? appearance.colors : undefined)
+        renderArtworkWithHair(artwork, source, backStyles, 720, selectedCharacter?.customization.modelSkinTone, appearance?.modelSlot === source.slot ? appearance : undefined),
+        renderFrontHairOverlay(artwork, source, frontStyles, 720, appearance?.modelSlot === source.slot ? appearance : undefined)
       ])
       if (!cancelled) { setSelectedArtworkUrl(url); setSelectedFrontHairUrl(frontUrl) }
     })().catch((reason: unknown) => {
@@ -1445,8 +1504,7 @@ export function CustomizerPage() {
     const sameModel = previous?.modelSlot === modelSlot
     const frontStyleId = side === 'front' ? summary?.id ?? null : sameModel ? hairAppearanceStyleId(previous, 'front') : null
     const backStyleId = side === 'back' ? summary?.id ?? null : sameModel ? hairAppearanceStyleId(previous, 'back') : null
-    const colors = sameModel ? previous?.colors : undefined
-    await saveCharacterCustomization({ hairAppearance: frontStyleId || backStyleId || colors && Object.keys(colors).length ? { modelSlot, frontStyleId, backStyleId, colors } : undefined })
+    await saveCharacterCustomization({ hairAppearance: { ...(sameModel ? previous : undefined), modelSlot, frontStyleId, backStyleId } })
   }
 
   async function chooseHairPartStyle(part: HairPartId, summary: HairStyleSummary | null) {
@@ -1464,11 +1522,48 @@ export function CustomizerPage() {
     const current = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
     const previous = current.customization.hairAppearance
     const sameModel = previous?.modelSlot === selectedCatalogModelSlot
+    const partColors = { ...(sameModel ? previous?.partColors : undefined) }
+    for (const part of customizerHairParts) {
+      if (!partColors[part.id]?.[role]) continue
+      const next = { ...partColors[part.id] }
+      delete next[role]
+      if (Object.keys(next).length) partColors[part.id] = next
+      else delete partColors[part.id]
+    }
     await saveCharacterCustomization({ hairAppearance: {
       ...(sameModel ? previous : undefined),
       modelSlot: selectedCatalogModelSlot,
-      colors: { ...(sameModel ? previous?.colors : undefined), [role]: value }
+      colors: { ...(sameModel ? previous?.colors : undefined), [role]: value },
+      partColors
     } })
+  }
+
+  async function setHairPartColor(part: HairPartId, role: HairColorRole, value: string) {
+    if (!selectedCharacter || selectedCatalogModelSlot === null) return
+    const current = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
+    const previous = current.customization.hairAppearance
+    const sameModel = previous?.modelSlot === selectedCatalogModelSlot
+    const partColors = { ...(sameModel ? previous?.partColors : undefined) }
+    partColors[part] = { ...partColors[part], [role]: value }
+    await saveCharacterCustomization({ hairAppearance: { ...(sameModel ? previous : undefined), modelSlot: selectedCatalogModelSlot, partColors } })
+  }
+
+  async function resetHairPartColors(part: HairPartId) {
+    if (!selectedCharacter || selectedCatalogModelSlot === null) return
+    const current = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
+    const previous = current.customization.hairAppearance
+    if (!previous || previous.modelSlot !== selectedCatalogModelSlot) return
+    const partColors = { ...previous.partColors }
+    delete partColors[part]
+    await saveCharacterCustomization({ hairAppearance: { ...previous, partColors } })
+  }
+
+  async function applyHairPalette(colors: HairColorOverrides) {
+    if (!selectedCharacter || selectedCatalogModelSlot === null) return
+    const current = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
+    const previous = current.customization.hairAppearance
+    const sameModel = previous?.modelSlot === selectedCatalogModelSlot
+    await saveCharacterCustomization({ hairAppearance: { ...(sameModel ? previous : undefined), modelSlot: selectedCatalogModelSlot, colors, partColors: {} } })
   }
 
   async function setFaceCatalogVariant(patch: Partial<CustomizerFaceAppearance>) {
@@ -1793,21 +1888,26 @@ export function CustomizerPage() {
       const selectedIndex = options.findIndex((summary) => summary.id === selectedId)
       const selected = selectedIndex >= 0 ? options[selectedIndex] : null
       const asset = selected ? hairDetails[`${selected.modelSlot}:${selected.id}`]?.[side] : null
+      const pieceColors = resolvedHairColors(appearance, part.id)
+      const hasLocalColors = Object.keys(appearance?.partColors?.[part.id] ?? {}).length > 0
       const chooseAt = (index: number) => {
         if (!options.length) return
         const bounded = Math.max(0, Math.min(options.length - 1, index))
         void chooseHairPartStyle(part.id, options[bounded])
       }
       return <article className="customizer-hair-piece" key={part.id}>
-        <header><strong>{part.label} {selectedIndex >= 0 ? `${selectedIndex + 1}/${options.length}` : `0/${options.length}`}</strong></header>
+        <header><strong>{part.label} {selectedIndex >= 0 ? `${selectedIndex + 1}/${options.length}` : `0/${options.length}`}</strong>{hasLocalColors && <button className="customizer-hair-reset" onClick={() => void resetHairPartColors(part.id)} title={`Voltar ${part.label} à paleta geral`} type="button">Usar paleta geral</button>}</header>
         <div className="customizer-hair-piece-selector">
           <button aria-label={`Peça anterior: ${part.label}`} onClick={() => chooseAt(selectedIndex < 0 ? options.length - 1 : selectedIndex - 1)} disabled={!options.length || selectedIndex <= 0} type="button"><Icon name="chevronRight" /></button>
           <div className="customizer-hair-piece-preview" aria-live="polite">
-            {asset ? <HairAssetPreview source={asset.dataUrl} alt={selected?.name ?? ''} /> : <span>{options.length ? 'Escolha uma peça' : 'Sem peças salvas'}</span>}
+            {asset ? <HairAssetPreview source={asset.dataUrl} colors={pieceColors} alt={selected?.name ?? ''} /> : <span>{options.length ? 'Escolha uma peça' : 'Sem peças salvas'}</span>}
           </div>
           <button aria-label={`Próxima peça: ${part.label}`} onClick={() => chooseAt(selectedIndex < 0 ? 0 : selectedIndex + 1)} disabled={!options.length || selectedIndex >= options.length - 1} type="button"><Icon name="chevronRight" /></button>
           <div className="customizer-hair-piece-colors" aria-label={`Cores de ${part.label}`}>
-            {hairColorControls.slice(0, 3).map((color) => <button key={color.id} className={activeHairColorRole === color.id ? 'active' : ''} style={{ '--hair-color-swatch': colorOverrides[color.id] ?? color.fallback } as React.CSSProperties} aria-label={`Editar ${color.label} de ${part.label}`} title={`Editar ${color.label}`} onClick={() => setActiveHairColorRole(color.id)} type="button"><Icon name="star" /></button>)}
+            {hairColorControls.map((color) => <label key={color.id} className={appearance?.partColors?.[part.id]?.[color.id] ? 'local' : ''} style={{ '--hair-color-swatch': pieceColors[color.id] ?? color.fallback } as React.CSSProperties} title={`${color.label} de ${part.label} · ${appearance?.partColors?.[part.id]?.[color.id] ? 'ajuste individual' : 'paleta geral'}`}>
+              <input type="color" aria-label={`${color.label} de ${part.label}`} value={pieceColors[color.id] ?? color.fallback} disabled={!selectedCharacter || !asset} onFocus={() => setActiveHairColorRole(color.id)} onChange={(event) => void setHairPartColor(part.id, color.id, event.target.value)} />
+              <span aria-hidden="true">{color.id === 'highlight' ? 'L' : color.id === 'accent' ? 'A' : color.id === 'outline' ? 'C' : color.id === 'fade' ? 'D' : 'B'}</span>
+            </label>)}
           </div>
         </div>
       </article>
@@ -1817,10 +1917,12 @@ export function CustomizerPage() {
         : hairLoading ? <div className="customizer-catalog-empty">Carregando cabelos do Fabricador Dev…</div>
           : <>
             <div className="customizer-hair-layout">
-            <div className="customizer-hair-color-controls" aria-label="Cores do cabelo">
-              {hairColorControls.map((color) => <label className="customizer-hair-color-control" data-role={color.id} key={color.id} title={`${color.label} · recolore a faixa de tons correspondente da imagem`}>
-                <span>{color.id === 'base' ? 'Todas base' : color.id === 'fade' ? 'Todas degradê' : color.id === 'outline' ? 'Contorno' : color.id === 'highlight' ? 'High. Color' : 'Acc. Color'}</span><input className={activeHairColorRole === color.id ? 'active' : ''} type="color" aria-label={color.label} value={colorOverrides[color.id] ?? color.fallback} disabled={!selectedCharacter} onFocus={() => setActiveHairColorRole(color.id)} onChange={(event) => void setHairColor(color.id, event.target.value)} />
-              </label>)}
+            <div className="customizer-hair-color-controls" aria-label="Paleta geral dos cabelos">
+              <div className="customizer-hair-palette-title"><strong>Paleta geral</strong><span>Alterar uma cor aplica a todos os 5 cabelos.</span></div>
+              <div className="customizer-hair-palette-swatches">{hairColorControls.map((color) => <label className="customizer-hair-color-control" data-role={color.id} key={color.id} title={`${color.label} · aplica a todos os cabelos`}>
+                <span>{color.label}</span><input className={activeHairColorRole === color.id ? 'active' : ''} type="color" aria-label={`${color.label} geral`} value={colorOverrides[color.id] ?? color.fallback} disabled={!selectedCharacter} onFocus={() => setActiveHairColorRole(color.id)} onChange={(event) => void setHairColor(color.id, event.target.value)} />
+              </label>)}</div>
+              <div className="customizer-hair-palette-presets" aria-label="Paletas prontas">{hairPalettePresets.map((preset) => <button key={preset.name} type="button" disabled={!selectedCharacter} onClick={() => void applyHairPalette(preset.colors)} title={`Aplicar a paleta ${preset.name} aos cinco cabelos`}><span style={{ background: `linear-gradient(115deg, ${preset.colors.highlight} 0 23%, ${preset.colors.base} 23% 65%, ${preset.colors.fade} 65% 84%, ${preset.colors.outline} 84%)` }} />{preset.name}</button>)}</div>
             </div>
             {customizerHairParts.map(renderPieceSelector)}
             </div>

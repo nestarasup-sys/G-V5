@@ -1,3 +1,7 @@
+export type HairColorRole = 'base' | 'fade' | 'outline' | 'highlight' | 'accent'
+export type HairPartId = 'backHair' | 'rearHair' | 'ponytail' | 'frontHair' | 'ahoge'
+export type HairColorOverrides = Partial<Record<HairColorRole, string>>
+
 export type CharacterCustomization = {
   /** Reference to the read-only Fabricator source selected for this character. */
   modelSlot: number | null
@@ -22,9 +26,11 @@ export type CharacterCustomization = {
     frontStyleId?: string | null
     backStyleId?: string | null
     /** Character-only recoloring overrides for the selected raster hair assets. */
-    colors?: Partial<Record<'base' | 'fade' | 'outline' | 'highlight' | 'accent', string>>
+    colors?: HairColorOverrides
+    /** Overrides by piece. A changed global role clears only that role from every piece. */
+    partColors?: Partial<Record<HairPartId, HairColorOverrides>>
     /** Independent hair parts selected from Fabricator Dev's rear, posterior and fringe layers. */
-    parts?: Partial<Record<'backHair' | 'rearHair' | 'ponytail' | 'frontHair' | 'ahoge', string | null>>
+    parts?: Partial<Record<HairPartId, string | null>>
   }
 }
 

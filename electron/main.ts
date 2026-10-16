@@ -59,6 +59,13 @@ const starterCharacters: Array<Pick<CustomizerCharacter, 'name' | 'hair' | 'outf
   { name: 'Ayla', hair: '#47354b', outfit: '#df9ab6', skin: '#d69d85' }
 ]
 
+const hairColorRoles = ['base', 'fade', 'outline', 'highlight', 'accent'] as const
+const hairPartIds = ['backHair', 'rearHair', 'ponytail', 'frontHair', 'ahoge'] as const
+function isHairColorMap(value: unknown): boolean {
+  return !!value && typeof value === 'object' && !Array.isArray(value)
+    && Object.entries(value).every(([role, color]) => hairColorRoles.includes(role as typeof hairColorRoles[number]) && typeof color === 'string' && /^#[0-9a-fA-F]{6}$/.test(color))
+}
+
 function isCustomizerCharacter(value: unknown): value is CustomizerCharacter {
   if (!value || typeof value !== 'object') return false
   const character = value as Partial<CustomizerCharacter>
@@ -118,7 +125,15 @@ function isCustomizerCharacter(value: unknown): value is CustomizerCharacter {
       && (character.customization.hairAppearance.styleId === undefined || isValidWardrobeId(character.customization.hairAppearance.styleId))
       && (character.customization.hairAppearance.frontStyleId === undefined || character.customization.hairAppearance.frontStyleId === null || isValidWardrobeId(character.customization.hairAppearance.frontStyleId))
       && (character.customization.hairAppearance.backStyleId === undefined || character.customization.hairAppearance.backStyleId === null || isValidWardrobeId(character.customization.hairAppearance.backStyleId))
-      && Boolean(character.customization.hairAppearance.styleId || character.customization.hairAppearance.frontStyleId || character.customization.hairAppearance.backStyleId)
+      && (character.customization.hairAppearance.colors === undefined || isHairColorMap(character.customization.hairAppearance.colors))
+      && (character.customization.hairAppearance.parts === undefined || (
+        !!character.customization.hairAppearance.parts && typeof character.customization.hairAppearance.parts === 'object'
+        && Object.entries(character.customization.hairAppearance.parts).every(([part, id]) => hairPartIds.includes(part as typeof hairPartIds[number]) && (id === null || typeof id === 'string' && isValidWardrobeId(id)))
+      ))
+      && (character.customization.hairAppearance.partColors === undefined || (
+        !!character.customization.hairAppearance.partColors && typeof character.customization.hairAppearance.partColors === 'object'
+        && Object.entries(character.customization.hairAppearance.partColors).every(([part, colors]) => hairPartIds.includes(part as typeof hairPartIds[number]) && isHairColorMap(colors))
+      ))
     ))
     && typeof character.createdAt === 'string' && typeof character.updatedAt === 'string'
 }
