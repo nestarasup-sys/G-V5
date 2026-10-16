@@ -90,8 +90,19 @@ function facePartCatalogId(appearance: CustomizerFaceAppearance | undefined, par
 function facePartSourceId(part: typeof customizerFaceParts[number]): FaceLibraryPartId {
   return part.id
 }
+function hasSelectedFaceAsset(appearance: CustomizerFaceAppearance): boolean {
+  return Boolean(appearance.setId
+    || appearance.eyeCatalogId || appearance.eyeLeftCatalogId || appearance.eyeRightCatalogId
+    || appearance.eyebrowCatalogId || appearance.eyebrowLeftCatalogId || appearance.eyebrowRightCatalogId
+    || appearance.noseCatalogId || appearance.mouthClosedCatalogId || appearance.mouthOpenCatalogId
+    || Object.values(appearance.components ?? {}).some((component) => component?.assetId)
+    || Object.values(appearance.faceDetails ?? {}).some(Boolean))
+}
 function isRightFaceAsset(asset: FaceComponentAssetSummary): boolean {
   return asset.rightSidePositioned === true || / · (?:Olho|Olho aberto|Olho fechado|Pupila|Sobrancelha) direit[oa]$/i.test(asset.name)
+}
+function wrapSlotIndex(index: number, slotCount: number): number {
+  return slotCount > 0 ? (index % slotCount + slotCount) % slotCount : 0
 }
 function sameFaceAssetPair(left: FaceComponentAssetSummary, right: FaceComponentAssetSummary, details: Record<string, FaceComponentAsset>): boolean {
   if (left.kind !== right.kind || !isRightFaceAsset(right)) return false
@@ -1767,7 +1778,8 @@ export function CustomizerPage() {
     for (const targetPart of pair) {
       components[targetPart.id] = { ...(previous.components?.[targetPart.id] ?? { assetId: null }), assetId: null }
     }
-    await saveCharacterCustomization({ faceAppearance: { ...previous, components } })
+    const appearance = { ...previous, components }
+    await saveCharacterCustomization({ faceAppearance: hasSelectedFaceAsset(appearance) ? appearance : undefined })
   }
 
   async function chooseHairStyle(summary: HairStyleSummary | null, side: HairCatalogSide) {
@@ -1854,12 +1866,13 @@ export function CustomizerPage() {
     const current = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
     const old = current.customization.faceAppearance
     const sameModel = old?.modelSlot === selectedCatalogModelSlot
-    await saveCharacterCustomization({ faceAppearance: {
+    const appearance: CustomizerFaceAppearance = {
       ...(sameModel ? old : undefined), modelSlot: selectedCatalogModelSlot,
       eyeState: sameModel ? old.eyeState : 0, eyebrows: sameModel ? old.eyebrows : true,
       noseIndex: sameModel ? old.noseIndex : 0, expressionIndex: sameModel ? old.expressionIndex : 0,
       mouthOpen: sameModel ? old.mouthOpen : false, ...patch
-    } })
+    }
+    await saveCharacterCustomization({ faceAppearance: hasSelectedFaceAsset(appearance) ? appearance : undefined })
   }
 
   async function chooseFaceDetailCatalogItem(kind: FaceDetailKind, summary: FaceComponentAssetSummary) {
@@ -1884,7 +1897,7 @@ export function CustomizerPage() {
     const faceAppearance = part === 'nose'
       ? { ...base, noseCatalogId: undefined, noseIndex: 0 }
       : { ...base, mouthClosedCatalogId: undefined, mouthOpenCatalogId: undefined, expressionIndex: 0 }
-    await saveCharacterCustomization({ faceAppearance })
+    await saveCharacterCustomization({ faceAppearance: hasSelectedFaceAsset(faceAppearance) ? faceAppearance : undefined })
   }
 
   function wardrobeGroupKey(group: Pick<CustomizerWardrobeGroup, 'modelSlot' | 'setId' | 'category' | 'componentId'>) {
@@ -2200,22 +2213,24 @@ export function CustomizerPage() {
       const selectedId = hairAppearancePartStyleId(appearance, part.id)
       const selectedIndex = options.findIndex((summary) => summary.id === selectedId)
       const selected = selectedIndex >= 0 ? options[selectedIndex] : null
+      const selectedSlot = selectedIndex >= 0 ? selectedIndex + 1 : 0
+      const slotCount = options.length + 1
       const asset = selected ? hairDetails[`${selected.modelSlot}:${selected.id}`]?.[side] : null
       const pieceColors = resolvedHairColors(appearance, part.id)
       const hasLocalColors = Object.keys(appearance?.partColors?.[part.id] ?? {}).length > 0
       const chooseAt = (index: number) => {
-        if (!options.length) return
-        const bounded = Math.max(0, Math.min(options.length - 1, index))
-        void chooseHairPartStyle(part.id, options[bounded])
+        if (!selectedCharacter) return
+        const slot = wrapSlotIndex(index, slotCount)
+        void chooseHairPartStyle(part.id, slot === 0 ? null : options[slot - 1])
       }
       return <article className="customizer-hair-piece" key={part.id}>
-        <header><strong>{part.label} {selectedIndex >= 0 ? `${selectedIndex + 1}/${options.length}` : `0/${options.length}`}</strong>{hasLocalColors && <button className="customizer-hair-reset" onClick={() => void resetHairPartColors(part.id)} title={`Voltar ${part.label} à paleta geral`} type="button">Usar paleta geral</button>}</header>
+        <header><strong>{part.label} {selectedSlot + 1}/{slotCount}</strong>{hasLocalColors && <button className="customizer-hair-reset" onClick={() => void resetHairPartColors(part.id)} title={`Voltar ${part.label} à paleta geral`} type="button">Usar paleta geral</button>}</header>
         <div className="customizer-hair-piece-selector">
-          <button aria-label={`Peça anterior: ${part.label}`} onClick={() => chooseAt(selectedIndex < 0 ? options.length - 1 : selectedIndex - 1)} disabled={!options.length || selectedIndex <= 0} type="button"><Icon name="chevronRight" /></button>
+          <button aria-label={`Peça anterior: ${part.label}`} onClick={() => chooseAt(selectedSlot - 1)} disabled={!options.length || !selectedCharacter} type="button"><Icon name="chevronRight" /></button>
           <button className="customizer-hair-piece-preview" aria-label={`Abrir biblioteca de ${part.label}`} title={`Abrir biblioteca de ${part.label}`} onClick={() => { setHairLibraryPage(0); setHairLibraryPart(part.id) }} type="button">
-            {asset ? <HairAssetPreview source={asset.dataUrl} colors={pieceColors} alt={selected?.name ?? ''} /> : <span>{options.length ? 'Escolha uma peça' : 'Sem peças salvas'}</span>}
+            {asset ? <HairAssetPreview source={asset.dataUrl} colors={pieceColors} alt={selected?.name ?? ''} /> : null}
           </button>
-          <button aria-label={`Próxima peça: ${part.label}`} onClick={() => chooseAt(selectedIndex < 0 ? 0 : selectedIndex + 1)} disabled={!options.length || selectedIndex >= options.length - 1} type="button"><Icon name="chevronRight" /></button>
+          <button aria-label={`Próxima peça: ${part.label}`} onClick={() => chooseAt(selectedSlot + 1)} disabled={!options.length || !selectedCharacter} type="button"><Icon name="chevronRight" /></button>
           <div className="customizer-hair-piece-colors" aria-label={`Cores de ${part.label}`}>
             {hairColorControls.map((color) => <label key={color.id} className={appearance?.partColors?.[part.id]?.[color.id] ? 'local' : ''} style={{ '--hair-color-swatch': pieceColors[color.id] ?? color.fallback } as React.CSSProperties} title={`${color.label} de ${part.label} · ${appearance?.partColors?.[part.id]?.[color.id] ? 'ajuste individual' : 'paleta geral'}`}>
               <input type="color" aria-label={`${color.label} de ${part.label}`} value={pieceColors[color.id] ?? color.fallback} disabled={!selectedCharacter || !asset} onFocus={() => setActiveHairColorRole(color.id)} onChange={(event) => void setHairPartColor(part.id, color.id, event.target.value)} />
@@ -2255,9 +2270,10 @@ export function CustomizerPage() {
     if (!part) return null
     const options = hairStyles.filter((summary) => summary[part.side] !== null)
     const pageSize = 20
-    const pageCount = Math.max(1, Math.ceil(options.length / pageSize))
+    const slots: Array<HairStyleSummary | null> = [null, ...options]
+    const pageCount = Math.max(1, Math.ceil(slots.length / pageSize))
     const page = Math.min(hairLibraryPage, pageCount - 1)
-    const visible = options.slice(page * pageSize, (page + 1) * pageSize)
+    const visible = slots.slice(page * pageSize, (page + 1) * pageSize)
     const appearance = characterHairAppearance?.modelSlot === selectedCatalogModelSlot ? characterHairAppearance : undefined
     const selectedId = hairAppearancePartStyleId(appearance, part.id)
     const choose = (summary: HairStyleSummary | null) => {
@@ -2271,6 +2287,7 @@ export function CustomizerPage() {
         </header>
         <div className="customizer-hair-library-grid" aria-label={`Peças disponíveis para ${part.label}`}>
           {visible.map((summary) => {
+            if (!summary) return <button className={`customizer-hair-library-item${!selectedId ? ' selected' : ''}`} key="empty-slot" title="Slot vazio" aria-label={`Slot vazio · remover ${part.label} do personagem`} aria-pressed={!selectedId} type="button" onClick={() => choose(null)} />
             const asset = hairDetails[`${summary.modelSlot}:${summary.id}`]?.[part.side]
             const isSelected = summary.id === selectedId
             return <button className={`customizer-hair-library-item${isSelected ? ' selected' : ''}`} key={summary.id} title={summary.name} aria-label={`Selecionar ${summary.name}`} aria-pressed={isSelected} type="button" onClick={() => choose(summary)}>
@@ -2341,24 +2358,28 @@ export function CustomizerPage() {
     const selectedId = faceCatalogSelectedId(part.id)
     const selectedIndex = choices.findIndex((choice) => faceCatalogChoiceSelected(part.id, choice))
     const selected = selectedIndex >= 0 ? choices[selectedIndex] : null
+    const selectedSlot = selectedIndex >= 0 ? selectedIndex + 1 : 0
+    const slotCount = choices.length + 1
     const chooseAt = (index: number) => {
-      if (!choices.length) return
-      chooseFaceCatalogChoice(part.id, choices[Math.max(0, Math.min(choices.length - 1, index))])
+      if (!selectedCharacter) return
+      const slot = wrapSlotIndex(index, slotCount)
+      if (slot === 0) void clearFaceCatalogPart(part.id)
+      else chooseFaceCatalogChoice(part.id, choices[slot - 1])
     }
     const isMouth = part.id === 'mouth'
     const clearPart = part.id
     return <article className={`customizer-hair-piece customizer-face-piece customizer-face-layout-piece${isMouth ? ' customizer-face-layout-mouth' : ''}`} key={part.id}>
-      <header><strong>{part.label} {selectedIndex >= 0 ? `${selectedIndex + 1}/${choices.length}` : `0/${choices.length}`}</strong><button className="customizer-hair-reset" type="button" disabled={!selectedId} onClick={() => void clearFaceCatalogPart(clearPart)}>Remover</button></header>
+      <header><strong>{part.label} {selectedSlot + 1}/{slotCount}</strong><button className="customizer-hair-reset" type="button" disabled={!selectedId} onClick={() => void clearFaceCatalogPart(clearPart)}>Remover</button></header>
       {isMouth && <nav className="customizer-face-layout-mode" aria-label="Tipo de boca">
         <button className={!activeFaceAppearance?.mouthOpen ? 'active' : ''} type="button" aria-pressed={!activeFaceAppearance?.mouthOpen} onClick={() => void setFaceCatalogVariant({ mouthOpen: false })}>Fechada</button>
         <button className={activeFaceAppearance?.mouthOpen ? 'active' : ''} type="button" aria-pressed={Boolean(activeFaceAppearance?.mouthOpen)} onClick={() => void setFaceCatalogVariant({ mouthOpen: true })}>Aberta</button>
       </nav>}
       <div className="customizer-hair-piece-selector customizer-face-layout-selector">
-        <button aria-label={`Peça anterior: ${part.label}`} onClick={() => chooseAt(selectedIndex < 0 ? 0 : selectedIndex - 1)} disabled={!choices.length || selectedIndex <= 0} type="button"><Icon name="chevronRight" /></button>
+        <button aria-label={`Peça anterior: ${part.label}`} onClick={() => chooseAt(selectedSlot - 1)} disabled={!choices.length || !selectedCharacter} type="button"><Icon name="chevronRight" /></button>
         <button className="customizer-hair-piece-preview" aria-label={`Abrir biblioteca de ${part.label}`} title={`Abrir biblioteca de ${part.label}`} type="button" onClick={() => { setFaceCatalogLibraryPage(0); setFaceCatalogLibraryPart(part.id) }}>
-          {selected ? <img src={selected.type === 'catalog' ? selected.piece.dataUrl : selected.asset.dataUrl} alt={selected.summary.name} /> : <span>{choices.length ? 'Escolha uma peça' : part.help}</span>}
+          {selected ? <img src={selected.type === 'catalog' ? selected.piece.dataUrl : selected.asset.dataUrl} alt={selected.summary.name} /> : null}
         </button>
-        <button aria-label={`Próxima peça: ${part.label}`} onClick={() => chooseAt(selectedIndex < 0 ? 0 : selectedIndex + 1)} disabled={!choices.length || selectedIndex >= choices.length - 1} type="button"><Icon name="chevronRight" /></button>
+        <button aria-label={`Próxima peça: ${part.label}`} onClick={() => chooseAt(selectedSlot + 1)} disabled={!choices.length || !selectedCharacter} type="button"><Icon name="chevronRight" /></button>
       </div>
     </article>
   }
@@ -2368,10 +2389,12 @@ export function CustomizerPage() {
     const part = faceCatalogLayoutParts.find((entry) => entry.id === faceCatalogLibraryPart)!
     const choices = faceCatalogChoicesForPart(part.id)
     const pageSize = 20
-    const pageCount = Math.max(1, Math.ceil(choices.length / pageSize))
+    const slots: Array<FaceCatalogChoice | null> = [null, ...choices]
+    const pageCount = Math.max(1, Math.ceil(slots.length / pageSize))
     const page = Math.min(faceCatalogLibraryPage, pageCount - 1)
-    const visible = choices.slice(page * pageSize, (page + 1) * pageSize)
+    const visible = slots.slice(page * pageSize, (page + 1) * pageSize)
     const selectedId = faceCatalogSelectedId(part.id)
+    const selectedIndex = choices.findIndex((choice) => faceCatalogChoiceSelected(part.id, choice))
     return <section className={`customizer-hair-library customizer-face-layout-library${part.id === 'mouth' ? ' customizer-face-layout-library-mouth' : ''}`} aria-labelledby="customizer-face-layout-library-title">
       <header className="customizer-hair-library-heading">
         <button className="customizer-hair-library-remove" type="button" onClick={() => void clearFaceCatalogPart(part.id)} disabled={!selectedId} aria-label={`Remover ${part.label}`} title={`Remover ${part.label}`}><Icon name="trash" /></button>
@@ -2384,13 +2407,14 @@ export function CustomizerPage() {
       </nav>}
       <div className="customizer-hair-library-grid" aria-label={`Biblioteca de ${part.label}`}>
         {visible.map((choice) => {
+          if (!choice) return <button className={`customizer-hair-library-item${selectedIndex < 0 ? ' selected' : ''}`} key="empty-slot" title="Slot vazio" aria-label={`Slot vazio · remover ${part.label} do personagem`} aria-pressed={selectedIndex < 0} type="button" onClick={() => { void clearFaceCatalogPart(part.id); setFaceCatalogLibraryPart(null) }} />
           const selected = faceCatalogChoiceSelected(part.id, choice)
           const itemId = choice.type === 'catalog' ? `${choice.summary.id}:${choice.piece.id}` : choice.summary.id
           const imageUrl = choice.type === 'catalog' ? choice.piece.dataUrl : choice.asset.dataUrl
           const itemIndex = choice.type === 'catalog' ? ` · ${choice.piece.index + 1}` : ''
           return <button className={`customizer-hair-library-item${selected ? ' selected' : ''}`} key={itemId} title={`${choice.summary.name}${itemIndex}`} aria-label={`Selecionar ${part.label}${itemIndex}`} aria-pressed={selected} type="button" onClick={() => { chooseFaceCatalogChoice(part.id, choice); setFaceCatalogLibraryPart(null) }}><img src={imageUrl} alt="" /></button>
         })}
-        {!choices.length && <p className="customizer-hair-library-empty">Nenhuma peça de {part.label.toLowerCase()} salva no Fabricador Dev.</p>}
+        {!choices.length && <p className="customizer-hair-library-empty">Nenhuma outra peça de {part.label.toLowerCase()} salva no Fabricador Dev.</p>}
       </div>
       <footer className="customizer-hair-library-pagination">
         <button className="customizer-hair-library-page-arrow" type="button" aria-label="Página anterior" disabled={page === 0} onClick={() => setFaceCatalogLibraryPage((current) => Math.max(0, current - 1))}><Icon name="chevronRight" /></button>
@@ -2419,21 +2443,25 @@ export function CustomizerPage() {
       const selectedIndex = options.findIndex((summary) => summary.id === selectedOption?.id)
       const selected = selectedIndex >= 0 ? options[selectedIndex] : null
       const piece = selectedId ? faceComponentDetails[selectedId] : null
+      const selectedSlot = selectedIndex >= 0 ? selectedIndex + 1 : 0
+      const slotCount = options.length + 1
       const colorPartId = facePartSourceId(part)
       const colors = appearance?.components?.[colorPartId]?.colors ?? {}
       const hasLocalColors = Object.keys(colors).length > 0
       const chooseAt = (index: number) => {
-        if (!options.length) return
-        void chooseFacePartCatalogItem(part.id, options[Math.max(0, Math.min(options.length - 1, index))])
+        if (!selectedCharacter) return
+        const slot = wrapSlotIndex(index, slotCount)
+        if (slot === 0) void clearFacePartSelection(part.id)
+        else void chooseFacePartCatalogItem(part.id, options[slot - 1])
       }
       return <article className="customizer-hair-piece customizer-face-piece" key={part.id}>
-        <header><strong>{part.label} {selectedIndex >= 0 ? `${selectedIndex + 1}/${options.length}` : `0/${options.length}`}</strong>{hasLocalColors && <button className="customizer-hair-reset" onClick={() => void resetFacePartColors(colorPartId)} title={'Restaurar cores de ' + part.label} type="button">Restaurar</button>}</header>
+        <header><strong>{part.label} {selectedSlot + 1}/{slotCount}</strong>{hasLocalColors && <button className="customizer-hair-reset" onClick={() => void resetFacePartColors(colorPartId)} title={'Restaurar cores de ' + part.label} type="button">Restaurar</button>}</header>
         <div className="customizer-hair-piece-selector">
-          <button aria-label={'Peça anterior: ' + part.label} onClick={() => chooseAt(selectedIndex < 0 ? options.length - 1 : selectedIndex - 1)} disabled={!options.length || selectedIndex <= 0} type="button"><Icon name="chevronRight" /></button>
+          <button aria-label={'Peça anterior: ' + part.label} onClick={() => chooseAt(selectedSlot - 1)} disabled={!options.length || !selectedCharacter} type="button"><Icon name="chevronRight" /></button>
           <button className="customizer-hair-piece-preview" aria-label={'Abrir biblioteca de ' + part.label} title={'Abrir biblioteca de ' + part.label} onClick={() => { setFaceLibraryPage(0); setFaceLibraryPart(part.id) }} type="button">
-            {piece ? <HairAssetPreview source={piece.dataUrl} colors={colors} alt={selected?.name ?? ''} /> : <span>{options.length ? 'Escolha uma peça' : 'Sem assets salvos no Rosto Dev'}</span>}
+            {piece ? <HairAssetPreview source={piece.dataUrl} colors={colors} alt={selected?.name ?? ''} /> : null}
           </button>
-          <button aria-label={'Próxima peça: ' + part.label} onClick={() => chooseAt(selectedIndex < 0 ? 0 : selectedIndex + 1)} disabled={!options.length || selectedIndex >= options.length - 1} type="button"><Icon name="chevronRight" /></button>
+          <button aria-label={'Próxima peça: ' + part.label} onClick={() => chooseAt(selectedSlot + 1)} disabled={!options.length || !selectedCharacter} type="button"><Icon name="chevronRight" /></button>
           <div className="customizer-hair-piece-colors" aria-label={'Cores de ' + part.label}>
             {facePartColorControls.map((color) => <label key={color.id} className={colors[color.id] ? 'local' : ''} style={{ '--hair-color-swatch': colors[color.id] ?? color.fallback } as React.CSSProperties} title={color.label + ' de ' + part.label}>
               <input type="color" aria-label={color.label + ' de ' + part.label} value={colors[color.id] ?? color.fallback} disabled={!selectedCharacter || !piece} onChange={(event) => void setFacePartColor(part.id, color.id, event.target.value)} />
@@ -2456,15 +2484,17 @@ export function CustomizerPage() {
     if (!part) return null
     const options = faceOptionsForCategory(part.category)
     const pageSize = 20
-    const pageCount = Math.max(1, Math.ceil(options.length / pageSize))
+    const slots: Array<FaceComponentAssetSummary | null> = [null, ...options]
+    const pageCount = Math.max(1, Math.ceil(slots.length / pageSize))
     const page = Math.min(faceLibraryPage, pageCount - 1)
-    const visible = options.slice(page * pageSize, (page + 1) * pageSize)
+    const visible = slots.slice(page * pageSize, (page + 1) * pageSize)
     const appearance = characterFaceAppearance?.modelSlot === selectedCatalogModelSlot ? characterFaceAppearance : undefined
     const selectedId = facePartCatalogId(appearance, part)
     const selectedAsset = selectedId ? faceComponentAssets.find((summary) => summary.id === selectedId) : undefined
     const selectedOption = selectedAsset && isRightFaceAsset(selectedAsset)
       ? options.find((summary) => sameFaceAssetPair(summary, selectedAsset, faceComponentDetails))
       : selectedAsset
+    const selectedIndex = options.findIndex((summary) => summary.id === selectedOption?.id)
     const selectedColors = appearance?.components?.[facePartSourceId(part)]?.colors
     return <section className="customizer-hair-library" aria-labelledby="customizer-face-library-title">
       <header className="customizer-hair-library-heading">
@@ -2474,6 +2504,7 @@ export function CustomizerPage() {
       </header>
       <div className="customizer-hair-library-grid" aria-label={'Biblioteca de ' + part.label}>
         {visible.map((summary) => {
+          if (!summary) return <button className={`customizer-hair-library-item${selectedIndex < 0 ? ' selected' : ''}`} key="empty-slot" title="Slot vazio" aria-label={`Slot vazio · remover ${part.label} do personagem`} aria-pressed={selectedIndex < 0} type="button" onClick={() => void clearFacePartSelection(part.id)} />
           const piece = faceComponentDetails[summary.id]
           const selected = summary.id === selectedOption?.id
           return <button className={`customizer-hair-library-item${selected ? ' selected' : ''}`} key={summary.id} title={summary.name} aria-label={'Selecionar ' + summary.name} aria-pressed={selected} type="button" onClick={() => void chooseFacePartCatalogItem(part.id, summary)}>
