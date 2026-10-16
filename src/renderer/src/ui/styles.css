@@ -623,6 +623,9 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 
 
 .modules-panel { display: flex; flex-direction: column; padding: 15px 15px 12px; }
+.home-customizer-top-tabs { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; padding: 7px; }
+.home-customizer-top-tabs button { min-height: 84px; gap: 6px; padding: 7px 3px; font-size: clamp(11px, .9vw, 14px); }
+.home-customizer-top-tabs button svg { width: clamp(25px, 2vw, 32px); height: clamp(25px, 2vw, 32px); }
 .modules-topline { height: 32px; min-height: 32px; display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
 .app-wordmark { display: flex; align-items: center; gap: 8px; color: #302a32; font: 800 17px Manrope, sans-serif; letter-spacing: -.7px; }
 .wordmark-icon { width: 25px; height: 25px; flex:0 0 auto; display:block; border:1px solid #f5dce8; border-radius: 8px; background: var(--rose-pale); object-fit:cover; }

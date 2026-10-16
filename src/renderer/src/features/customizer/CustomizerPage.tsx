@@ -584,7 +584,8 @@ const modules: { name: string; icon: IconName; detail: string }[] = [
   { name: 'Cabelos', icon: 'bow', detail: 'Biblioteca de cabelos do personagem' },
   { name: 'Roupas', icon: 'shirt', detail: 'Monte um visual único' },
   { name: 'Acessórios', icon: 'flower', detail: 'Peças e objetos de cena' },
-  { name: 'Objetos', icon: 'box', detail: 'Itens para compor a cena' }
+  { name: 'Objetos', icon: 'box', detail: 'Itens para compor a cena' },
+  { name: 'Perfil', icon: 'user', detail: 'Informações do personagem' }
 ]
 
 const customizerTopTabs: { id: string; label: string }[] = [
@@ -1953,37 +1954,28 @@ export function CustomizerPage() {
 
         </section>
 
-        <aside className="modules-panel panel" aria-label="Áreas do aplicativo">
-          <div className="modules-topline">
-            <div className="app-wordmark"><img className="wordmark-icon" src="./gacha-nymi.ico" alt="Logo Gacha Nymi" /><span>NYMI<small>ESTÚDIO CRIATIVO</small></span></div>
-            <button className="icon-button favorite-button" aria-label="Favoritos"><Icon name="star" /></button>
-          </div>
-          <div className="feature-banner">
-            <div className="banner-copy"><span>SEU UNIVERSO,</span><strong>DO SEU JEITO.</strong><small>Crie. Imagine. Compartilhe.</small></div>
-            <div className="banner-art" aria-hidden="true"><span className="banner-orbit orbit-one" /><span className="banner-orbit orbit-two" /><span className="banner-star">✦</span><span className="banner-sparkle">✧</span></div>
-          </div>
-          <div className="module-intro">
-            <div><p className="eyebrow">COMECE POR AQUI</p><h2>Seu espaço criativo</h2></div>
-            <span className="module-count">{String(modules.length).padStart(2, '0')}</span>
-          </div>
-          <div className="module-grid">
-            {modules.map((module, index) => (
-              <button
-                className="module-card"
-                key={module.name}
-                onClick={() => {
-                  setActiveModule(module.name)
-                  if (module.name === 'Modelos') setSelectedCustomizerTopTab('modelos')
-                }}
-                title={module.detail}
-              >
-                <span className="module-icon"><Icon name={module.icon} /></span>
-                <span className="module-name">{module.name}</span>
-                {index === 0 && <span className="module-new">NOVO</span>}
-              </button>
-            ))}
-          </div>
-          <button className="help-link" onClick={() => setActiveModule('Central de ajuda')}><span className="help-icon">?</span><span><strong>Precisa de uma ideia?</strong><small>Explore o guia rápido do Nymi</small></span><Icon name="chevronRight" /></button>
+        <aside className="modules-panel panel" aria-label="Áreas do Customizar">
+          <nav className="customizer-top-tabs home-customizer-top-tabs" aria-label="Áreas do Customizar" role="tablist">
+            {customizerTopTabs.map((tab) => <button
+              key={tab.id}
+              className={selectedCustomizerTopTab === tab.id ? 'active' : ''}
+              onClick={() => {
+                setSelectedCustomizerTopTab(tab.id)
+                const moduleByTab: Record<string, string> = {
+                  modelos: 'Modelos',
+                  corpo: 'Modelos',
+                  cabeca: 'Cabeça',
+                  roupas: 'Roupas',
+                  outros: 'Acessórios',
+                  perfil: 'Perfil'
+                }
+                setActiveModule(moduleByTab[tab.id])
+              }}
+              aria-selected={selectedCustomizerTopTab === tab.id}
+              role="tab"
+              type="button"
+            ><CustomizerCategoryIcon category={tab.id} /><span>{tab.label}</span></button>)}
+          </nav>
         </aside>
       {dialogMode && <div className="character-dialog-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setDialogMode(null) }}>
         <form className="character-dialog" onSubmit={(event) => void submitCharacterDialog(event)} aria-labelledby="character-dialog-title">
