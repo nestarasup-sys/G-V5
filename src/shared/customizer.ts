@@ -20,19 +20,23 @@ export type CharacterCustomization = {
 }
 
 export type CharacterProportions = { scale: number; head: number; headWidth: number; headHeight: number; width: number; height: number }
-export type CharacterBodyDimensions = { torsoWidth: number; torsoHeight: number; armsWidth: number; armsHeight: number; legsWidth: number; legsHeight: number; balance: number }
-export const defaultCharacterBodyDimensions: CharacterBodyDimensions = { torsoWidth: 100, torsoHeight: 100, armsWidth: 100, armsHeight: 100, legsWidth: 100, legsHeight: 100, balance: 35 }
+export type CharacterBodyDimensions = { torsoWidth: number; torsoHeight: number; armsWidth: number; armsHeight: number; thighsWidth: number; thighsHeight: number; lowerLegsWidth: number; lowerLegsHeight: number; balance: number }
+export const defaultCharacterBodyDimensions: CharacterBodyDimensions = { torsoWidth: 100, torsoHeight: 100, armsWidth: 100, armsHeight: 100, thighsWidth: 100, thighsHeight: 100, lowerLegsWidth: 100, lowerLegsHeight: 100, balance: 35 }
 export const characterBodyDimensionLimits: Record<keyof CharacterBodyDimensions, { min: number; max: number }> = {
   torsoWidth: { min: 60, max: 160 }, torsoHeight: { min: 60, max: 160 },
   armsWidth: { min: 60, max: 160 }, armsHeight: { min: 60, max: 160 },
-  legsWidth: { min: 60, max: 160 }, legsHeight: { min: 60, max: 160 },
+  thighsWidth: { min: 60, max: 160 }, thighsHeight: { min: 60, max: 160 },
+  lowerLegsWidth: { min: 60, max: 160 }, lowerLegsHeight: { min: 60, max: 160 },
   balance: { min: 0, max: 100 }
 }
 export function getCharacterBodyDimensions(customization: CharacterCustomization | undefined): CharacterBodyDimensions {
-  const values = customization?.bodyDimensions as (Partial<CharacterBodyDimensions> & { chestWidth?: number; chestHeight?: number }) | undefined
+  const values = customization?.bodyDimensions as (Partial<CharacterBodyDimensions> & { chestWidth?: number; chestHeight?: number; legsWidth?: number; legsHeight?: number }) | undefined
   return Object.fromEntries((Object.keys(defaultCharacterBodyDimensions) as Array<keyof CharacterBodyDimensions>).map((key) => {
-    // Characters saved by the first body panel used "chest" for the single torso part.
-    const value = values?.[key] ?? (key === 'torsoWidth' ? values?.chestWidth : key === 'torsoHeight' ? values?.chestHeight : undefined)
+    // Older panels had one control for both leg segments and called the torso "chest".
+    const legacy = key === 'torsoWidth' ? values?.chestWidth : key === 'torsoHeight' ? values?.chestHeight
+      : key === 'thighsWidth' || key === 'lowerLegsWidth' ? values?.legsWidth
+        : key === 'thighsHeight' || key === 'lowerLegsHeight' ? values?.legsHeight : undefined
+    const value = values?.[key] ?? legacy
     const { min, max } = characterBodyDimensionLimits[key]
     return [key, typeof value === 'number' && Number.isFinite(value) ? Math.min(max, Math.max(min, value)) : defaultCharacterBodyDimensions[key]]
   })) as CharacterBodyDimensions

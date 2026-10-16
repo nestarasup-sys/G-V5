@@ -5,15 +5,18 @@ import { autoConnectParts } from '../fabricator/models/rig'
 
 type Point = { x: number; y: number }
 type BodyArtwork = { width: number; height: number; parts: ModelPart[]; joints?: JointLink[] }
-type BodyGroup = 'torso' | 'head' | 'arms' | 'legs' | 'unknown'
+type BodyGroup = 'torso' | 'head' | 'arms' | 'thighs' | 'lowerLegs' | 'unknown'
+type NamedGroup = BodyGroup | 'genericLeg'
 
 const center = (part: ModelPart): Point => ({ x: part.x + part.width / 2, y: part.y + part.height / 2 })
 
-function groupOf(part: ModelPart): BodyGroup {
+function groupOf(part: ModelPart): NamedGroup {
   if (/tronco|corpo|torso|chest|peito/i.test(part.name)) return 'torso'
   if (/cabe[çc]a|head/i.test(part.name)) return 'head'
   if (/bra[cç]o|m[aã]o|arm|hand/i.test(part.name)) return 'arms'
-  if (/coxa|perna|canela|panturrilha|joelho|p[eé]|thigh|calf|leg|foot|knee/i.test(part.name)) return 'legs'
+  if (/coxa|thigh/i.test(part.name)) return 'thighs'
+  if (/canela|panturrilha|joelho|p[eé]|calf|shin|foot|knee/i.test(part.name)) return 'lowerLegs'
+  if (/perna|leg/i.test(part.name)) return 'genericLeg'
   return 'unknown'
 }
 
@@ -49,8 +52,8 @@ function rotatedBounds(part: ModelPart) {
  * moves unchanged descendants such as the head, face anchor and lower limbs.
  */
 export function applyCharacterBodyShape<T extends BodyArtwork>(artwork: T, dimensions: CharacterBodyDimensions): T {
-  const { torsoWidth, torsoHeight, armsWidth, armsHeight, legsWidth, legsHeight, balance } = dimensions
-  if ([torsoWidth, torsoHeight, armsWidth, armsHeight, legsWidth, legsHeight].every((value) => value === 100)) return artwork
+  const { torsoWidth, torsoHeight, armsWidth, armsHeight, thighsWidth, thighsHeight, lowerLegsWidth, lowerLegsHeight, balance } = dimensions
+  if ([torsoWidth, torsoHeight, armsWidth, armsHeight, thighsWidth, thighsHeight, lowerLegsWidth, lowerLegsHeight].every((value) => value === 100)) return artwork
   if (!artwork.parts.length) return artwork
 
   const joints = artwork.joints?.length ? artwork.joints : autoConnectParts(artwork.parts)
@@ -67,14 +70,16 @@ export function applyCharacterBodyShape<T extends BodyArtwork>(artwork: T, dimen
   }
 
   const influence = balance / 100
-  const scales: Record<'torso' | 'head' | 'arms' | 'legs', Point> = {
-    torso: {
-      x: (torsoWidth + influence * (.12 * (armsWidth - 100) + .18 * (legsWidth - 100))) / 100,
-      y: (torsoHeight + influence * (.08 * (armsHeight - 100) + .12 * (legsHeight - 100))) / 100
-    },
+  // Coupling changes dimensions, while the joint traversal below changes positions.
+  // Work from the torso outward so direct slider values remain the dominant input.
+  const adjustedTorsoWidth = torsoWidth + influence * (.15 * (armsWidth - 100) + .38 * (thighsWidth - 100) + .08 * (lowerLegsWidth - 100))
+  const adjustedTorsoHeight = torsoHeight + influence * (.10 * (armsHeight - 100) + .25 * (thighsHeight - 100) + .08 * (lowerLegsHeight - 100))
+  const scales: Record<Exclude<BodyGroup, 'unknown'>, Point> = {
+    torso: { x: adjustedTorsoWidth / 100, y: adjustedTorsoHeight / 100 },
     head: { x: 1, y: 1 },
-    arms: { x: armsWidth / 100, y: armsHeight / 100 },
-    legs: { x: legsWidth / 100, y: legsHeight / 100 }
+    arms: { x: (armsWidth + influence * .25 * (adjustedTorsoWidth - 100)) / 100, y: (armsHeight + influence * .15 * (adjustedTorsoHeight - 100)) / 100 },
+    thighs: { x: (thighsWidth + influence * .14 * (adjustedTorsoWidth - 100)) / 100, y: (thighsHeight + influence * .12 * (adjustedTorsoHeight - 100)) / 100 },
+    lowerLegs: { x: (lowerLegsWidth + influence * (.10 * (thighsWidth - 100) + .08 * (adjustedTorsoWidth - 100))) / 100, y: (lowerLegsHeight + influence * .10 * (thighsHeight - 100)) / 100 }
   }
   const result = new Map<string, ModelPart>()
 
@@ -82,11 +87,12 @@ export function applyCharacterBodyShape<T extends BodyArtwork>(artwork: T, dimen
     if (result.has(part.id)) return
     const named = groupOf(part)
     const location = center(part)
-    const group: BodyGroup = part.id === torso.id ? 'torso'
-      : named !== 'unknown' ? named
+    const group: Exclude<BodyGroup, 'unknown'> = part.id === torso.id ? 'torso'
+      : named === 'genericLeg' ? inherited === 'thighs' || inherited === 'lowerLegs' ? 'lowerLegs' : 'thighs'
+        : named !== 'unknown' ? named
         : inherited !== 'unknown' ? inherited
           : location.y < torso.y + torso.height * .15 ? 'head'
-            : location.y > torso.y + torso.height * .65 ? 'legs' : 'arms'
+            : location.y > torso.y + torso.height * .65 ? 'thighs' : 'arms'
     const scale = scales[group]
     const attachment = incoming?.childAnchor ?? center(part)
     let shaped = resizeAroundAnchor(part, part.width * scale.x, part.height * scale.y, attachment)
