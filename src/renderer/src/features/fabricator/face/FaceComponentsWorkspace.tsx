@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ChangeEvent, type CSSProperties } from 'react'
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
 import type { FaceCatalogItem, FaceCatalogItemSave, FaceCatalogItemSummary, FaceComponentAsset, FaceComponentAssetSave, FaceComponentAssetSummary, FaceComponentKind, FaceTransform, FabricatorProject, FabricatorSlotSummary, ModelPart } from '../../../../../shared/fabricator'
 import { Icon } from '../../../ui/components/Icon'
 import { usePreviewBackground } from '../usePreviewBackground'
@@ -9,6 +9,7 @@ type PartId = 'eye-left' | 'eye-right' | 'pupil-left' | 'pupil-right' | 'brow-le
 type CatalogKind = 'nose' | 'mouth-closed' | 'mouth-open'
 type LibraryCategory = FaceComponentKind | 'nose' | 'mouth'
 type FaceGuide = { visible: boolean; verticalX: number; horizontalY: number; lowerHorizontalY: number; angle: number }
+type PreviewDrag = { pointerId: number; key: string; clientX: number; clientY: number; startX: number; startY: number; modelPerPixelX: number; modelPerPixelY: number; invertX: boolean; pupil: boolean }
 const GUIDE_STORAGE_KEY = 'gacha-nymi:face-dev-guides'
 const defaultGuide: FaceGuide = { visible: true, verticalX: 50, horizontalY: 45, lowerHorizontalY: 65, angle: 12 }
 const categories: Array<{ kind: FaceComponentKind; label: string; parts: [PartId, PartId]; names: [string, string] }> = [
@@ -141,6 +142,8 @@ export function FaceComponentsWorkspace() {
   const catalogDetailsRef = useRef<Record<string, FaceCatalogItem>>({})
   const pendingSaves = useRef(new Map<string, { timer: number; run: () => Promise<void> }>())
   const saveChains = useRef(new Map<string, Promise<void>>())
+  const previewDrag = useRef<PreviewDrag | null>(null)
+  const [draggingPreview, setDraggingPreview] = useState(false)
   const stageRef = useRef<HTMLDivElement>(null)
   const [stageSize, setStageSize] = useState({ width: 0, height: 0 })
   const head = useMemo(() => model?.parts.find((part) => /cabe[çc]a|head/i.test(part.name)) ?? null, [model])
@@ -159,6 +162,7 @@ export function FaceComponentsWorkspace() {
   const selectedCatalogPiece = selectedCatalogItem?.pieces.find((piece) => piece.index === (selectedCatalogItem.category === 'nose' ? selectedCatalogItem.selectedNose : selectedCatalogItem.selectedExpression)) ?? selectedCatalogItem?.pieces[0]
   const activeComponent = libraryCategory === 'nose' || libraryCategory === 'mouth' ? undefined : selectedAsset
   const selectedTransform = selectedCatalogItem ? selectedCatalogItem.transforms[selectedCatalogItem.category === 'nose' ? 'nose' : 'mouth'] : selectedAsset?.defaultTransform
+  const activePreviewKey = selectedCatalogItem ? `${selectedCatalogItem.category}:${selectedCatalogItem.id}` : activeComponent ? `${selectedPart}:${activeComponent.id}` : null
   const eyeAssetId = selectedPart.endsWith('right') && !linked.eye ? selectedAssets['eye-right'] : selectedAssets['eye-left']
   const eyeAsset = eyeAssetId ? details[eyeAssetId] : undefined
   const selectedSourceWidth = selectedCatalogPiece?.width ?? (selectedAsset?.kind === 'pupil' ? eyeAsset ? eyeAsset.width * eyeAsset.defaultTransform.scaleX : head?.width ? head.width * .19 : 1 : selectedAsset?.width ?? 1)
@@ -343,6 +347,40 @@ export function FaceComponentsWorkspace() {
     queueSave(`catalog:${next.modelSlot}:${next.id}`, () => window.desktop.saveFaceCatalogItem(next.modelSlot, catalogSaveData(next), catalogImagesForSave(next)))
   }
 
+  function beginPreviewDrag(event: ReactPointerEvent<HTMLImageElement>, key: string, invertX = false, pupil = false) {
+    if (event.button !== 0 || !event.isPrimary || !head || !selectedTransform || key !== activePreviewKey) return
+    const canvas = event.currentTarget.parentElement
+    if (!canvas) return
+    const bounds = canvas.getBoundingClientRect()
+    if (bounds.width <= 0 || bounds.height <= 0) return
+    event.preventDefault()
+    event.currentTarget.setPointerCapture(event.pointerId)
+    previewDrag.current = {
+      pointerId: event.pointerId, key, clientX: event.clientX, clientY: event.clientY,
+      startX: selectedTransform.x, startY: selectedTransform.y,
+      modelPerPixelX: head.width / bounds.width, modelPerPixelY: head.height / bounds.height,
+      invertX, pupil
+    }
+    setDraggingPreview(true)
+  }
+
+  function movePreviewDrag(event: ReactPointerEvent<HTMLImageElement>) {
+    const drag = previewDrag.current
+    if (!drag || drag.pointerId !== event.pointerId || drag.key !== activePreviewKey || !head) return
+    const xRange = drag.pupil ? head.width * .25 : head.width
+    const yRange = drag.pupil ? head.height * .25 : head.height
+    const x = drag.startX + (event.clientX - drag.clientX) * drag.modelPerPixelX * (drag.invertX ? -1 : 1)
+    const y = drag.startY + (event.clientY - drag.clientY) * drag.modelPerPixelY
+    updateTransform({ x: clamp(x, drag.pupil ? -xRange : 0, xRange), y: clamp(y, drag.pupil ? -yRange : 0, yRange) })
+  }
+
+  function endPreviewDrag(event: ReactPointerEvent<HTMLImageElement>) {
+    if (previewDrag.current?.pointerId !== event.pointerId) return
+    previewDrag.current = null
+    setDraggingPreview(false)
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
+  }
+
   async function removeSelectedAssets() {
     if (markedForDeletion.length === 0) return
     setBusy(true)
@@ -407,11 +445,13 @@ export function FaceComponentsWorkspace() {
     const width = category.kind === 'pupil' ? eyeWidth * transform.scaleX : asset.width * transform.scaleX
     const height = category.kind === 'pupil' ? eyeHeight * transform.scaleY : asset.height * transform.scaleY
     const style: CSSProperties = { left: `${x / head.width * 100}%`, top: `${localY / head.height * 100}%`, width: `${width / head.width * 100}%`, height: `${height / head.height * 100}%`, transform: `translate(-50%,-50%) rotate(${transform.rotation * (mirroredPosition ? -1 : 1)}deg) scaleX(${shouldFlip ? -1 : 1})` }
-    return <img key={`${id}-${assetId}`} className="face-component-layer" src={asset.dataUrl} alt={category.names[rightSide ? 1 : 0]} style={style} />
+    const dragKey = `${id}:${assetId}`
+    const canDrag = dragKey === activePreviewKey
+    return <img key={`${id}-${assetId}`} className={`face-component-layer${canDrag ? ` face-component-layer-draggable${draggingPreview ? ' is-dragging' : ''}` : ''}`} src={asset.dataUrl} alt={category.names[rightSide ? 1 : 0]} style={style} draggable={false} title={canDrag ? 'Arraste para mover esta peça' : undefined} onPointerDown={canDrag ? (event) => beginPreviewDrag(event, dragKey, rightSide && (category.kind !== 'pupil' || linked.pupil), category.kind === 'pupil') : undefined} onPointerMove={canDrag ? movePreviewDrag : undefined} onPointerUp={canDrag ? endPreviewDrag : undefined} onPointerCancel={canDrag ? endPreviewDrag : undefined} onLostPointerCapture={canDrag ? endPreviewDrag : undefined} />
   }
 
   return <section className="fabricator-workspace face-components-workspace" aria-label="Biblioteca de olhos, pupilas, sobrancelhas, nariz e bocas">
-    <header className="face-components-toolbar"><label>Modelo<select value={modelSlot} disabled={busy} onChange={(event) => setModelSlot(Number(event.target.value))}>{models.map((entry, index) => entry && <option key={index + 1} value={index + 1}>Modelo {String(index + 1).padStart(2, '0')} · {entry.name}</option>)}</select></label><span>Selecione uma peça na Biblioteca para ajustar</span></header>
+    <header className="face-components-toolbar"><label>Modelo<select value={modelSlot} disabled={busy} onChange={(event) => setModelSlot(Number(event.target.value))}>{models.map((entry, index) => entry && <option key={index + 1} value={index + 1}>Modelo {String(index + 1).padStart(2, '0')} · {entry.name}</option>)}</select></label><span>Selecione uma peça e arraste-a na prévia para mover</span></header>
     <div className="face-components-body">
       <aside className="face-components-library">
         <header><strong>Biblioteca</strong><small>{assets.length + noseCatalog.length + mouthCatalog.length} assets</small></header>
@@ -436,8 +476,8 @@ export function FaceComponentsWorkspace() {
           {head && previewScale > 0 && <div className="face-components-preview-canvas" style={{ width: head.width * previewScale, height: head.height * previewScale }}>
             <img className="face-components-head" src={head.dataUrl} alt="Cabeça do modelo" />
             {(['eye-left','eye-right','pupil-left','pupil-right','brow-left','brow-right'] as PartId[]).map((id) => renderPart(id, true, selectedAssets))}
-            {nosePiece && noseStyle && <img className="face-component-layer" src={nosePiece.dataUrl} alt="Nariz selecionado" style={noseStyle} />}
-            {mouthPiece && mouthStyle && <img className="face-component-layer" src={mouthPiece.dataUrl} alt="Boca selecionada" style={mouthStyle} />}
+            {nosePiece && noseStyle && <img className={`face-component-layer${libraryCategory === 'nose' ? ` face-component-layer-draggable${draggingPreview ? ' is-dragging' : ''}` : ''}`} src={nosePiece.dataUrl} alt="Nariz selecionado" style={noseStyle} draggable={false} title={libraryCategory === 'nose' ? 'Arraste para mover esta peça' : undefined} onPointerDown={libraryCategory === 'nose' && selectedNose ? (event) => beginPreviewDrag(event, `nose:${selectedNose.id}`) : undefined} onPointerMove={libraryCategory === 'nose' ? movePreviewDrag : undefined} onPointerUp={libraryCategory === 'nose' ? endPreviewDrag : undefined} onPointerCancel={libraryCategory === 'nose' ? endPreviewDrag : undefined} onLostPointerCapture={libraryCategory === 'nose' ? endPreviewDrag : undefined} />}
+            {mouthPiece && mouthStyle && <img className={`face-component-layer${libraryCategory === 'mouth' ? ` face-component-layer-draggable${draggingPreview ? ' is-dragging' : ''}` : ''}`} src={mouthPiece.dataUrl} alt="Boca selecionada" style={mouthStyle} draggable={false} title={libraryCategory === 'mouth' ? 'Arraste para mover esta peça' : undefined} onPointerDown={libraryCategory === 'mouth' && selectedMouth ? (event) => beginPreviewDrag(event, `${selectedMouth.category}:${selectedMouth.id}`) : undefined} onPointerMove={libraryCategory === 'mouth' ? movePreviewDrag : undefined} onPointerUp={libraryCategory === 'mouth' ? endPreviewDrag : undefined} onPointerCancel={libraryCategory === 'mouth' ? endPreviewDrag : undefined} onLostPointerCapture={libraryCategory === 'mouth' ? endPreviewDrag : undefined} />}
             {guide.visible && <FaceGuideOverlay head={head} guide={guide} />}
           </div>}
           {!head && <span>Selecione um modelo com cabeça.</span>}
