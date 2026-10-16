@@ -29,7 +29,7 @@
 .face-components-part-tabs { display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px; }
 .face-components-part-tabs button { min-width:0;padding:7px 4px;border:1px solid #dfd4e4;border-radius:6px;background:#fff;color:#5b4c66;font-size:9px;cursor:pointer; }
 .face-components-part-tabs button.active { border-color:#e76dab;background:#fff1f8;color:#9b386c;font-weight:800; }
-.face-components-stage { position:relative;flex:1;min-height:0;width:100%;display:grid;place-items:center;overflow:hidden;border:1px solid #ddd5e0;border-radius:8px;background-color:#fff;background-image:linear-gradient(45deg,#eee9ee 25%,transparent 25%),linear-gradient(-45deg,#eee9ee 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#eee9ee 75%),linear-gradient(-45deg,transparent 75%,#eee9ee 75%);background-size:16px 16px;background-position:0 0,0 8px,8px -8px,-8px 0; }
+.face-components-stage { --preview-checker:color-mix(in srgb,var(--preview-background,#fdfcfd) 92%,#666 8%);position:relative;flex:1;min-height:0;width:100%;display:grid;place-items:center;overflow:hidden;border:1px solid #ddd5e0;border-radius:8px;background-color:var(--preview-background,#fdfcfd);background-image:linear-gradient(45deg,var(--preview-checker) 25%,transparent 25%),linear-gradient(-45deg,var(--preview-checker) 25%,transparent 25%),linear-gradient(45deg,transparent 75%,var(--preview-checker) 75%),linear-gradient(-45deg,transparent 75%,var(--preview-checker) 75%);background-position:0 0,0 6px,6px -6px,-6px 0;background-size:12px 12px; }
 .face-components-preview-canvas { position:relative;flex:none; }
 .face-components-head { display:block;width:100%;height:100%;object-fit:fill; }
 .face-component-layer { position:absolute;object-fit:contain;pointer-events:none; }
