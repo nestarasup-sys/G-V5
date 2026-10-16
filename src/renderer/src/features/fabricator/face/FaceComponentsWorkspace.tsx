@@ -959,7 +959,6 @@ export function FaceComponentsWorkspace() {
         </section>
       </aside>
       <main className="face-components-stage-column">
-        <nav className="face-components-part-tabs">{categories.flatMap((category) => category.parts.map((id, side) => <button key={id} className={libraryCategory === category.kind && selectedPart === id ? 'active' : ''} onClick={() => void chooseComponentSide(id)} type="button">{category.names[side]}</button>))}</nav>
         <div className="face-components-stage" ref={stageRef} style={{ '--preview-background': previewBackground } as CSSProperties}>
           {head && previewScale > 0 && <div className="face-components-preview-canvas" style={{ width: head.width * previewScale, height: head.height * previewScale }}>
             <img className="face-components-head" src={head.dataUrl} alt="Cabeça do modelo" />
