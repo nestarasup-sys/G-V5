@@ -2653,7 +2653,7 @@ export function CustomizerPage() {
           <section className="customizer-model-preview" aria-label="Prévia do personagem">
             <div className="stage-wrap customizer-preview-stage-wrap" ref={customizerPreviewStageRef}>
               <div className="stage-scene" style={customizerPreviewStyle}>
-                <button className="customizer-back-button customizer-preview-back" onClick={() => setActiveModule(null)} type="button"><span aria-hidden="true">←</span> Customizar</button>
+                <button className="customizer-back-button customizer-preview-back" onClick={() => setActiveModule(null)} aria-label="Voltar ao Customizar" title="Voltar ao Customizar" type="button"><Icon name="close" /></button>
                 <div className="customizer-preview-controls" aria-label="Controles da prévia">
                   <label className="preview-scene-color" title="Mudar a cor do fundo da prévia">
                     <span className="preview-color-swatch" style={{ backgroundColor: previewBackground }} />

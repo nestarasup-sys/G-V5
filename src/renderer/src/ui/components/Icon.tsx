@@ -1,5 +1,5 @@
 export type IconName =
-  | 'plus' | 'search' | 'check' | 'expand' | 'frame' | 'zoomIn' | 'zoomOut'
+  | 'plus' | 'search' | 'check' | 'close' | 'expand' | 'frame' | 'zoomIn' | 'zoomOut'
   | 'chevronDown' | 'sliders' | 'chevronRight' | 'sparkles'
   | 'body' | 'face' | 'shirt' | 'flower' | 'message' | 'paw' | 'box' | 'user'
   | 'bow' | 'camera' | 'settings' | 'download' | 'save' | 'folder' | 'star' | 'edit' | 'bell' | 'link' | 'eye' | 'eyeOff' | 'lock' | 'unlock' | 'trash' | 'brush' | 'reset' | 'undo' | 'redo' | 'eraser' | 'move' | 'warning' | 'flipHorizontal'
@@ -8,6 +8,7 @@ const paths: Record<IconName, string> = {
   plus: 'M12 5v14M5 12h14',
   search: 'm20 20-4.2-4.2M10.8 18a7.2 7.2 0 1 0 0-14.4 7.2 7.2 0 0 0 0 14.4Z',
   check: 'm5 12 4 4L19 6',
+  close: 'M6 6 18 18M18 6 6 18',
   expand: 'M8 3H5a2 2 0 0 0-2 2v3m13-5h3a2 2 0 0 1 2 2v3M3 16v3a2 2 0 0 0 2 2h3m13-5v3a2 2 0 0 1-2 2h-3',
   frame: 'M4 7V5a1 1 0 0 1 1-1h2m10 0h2a1 1 0 0 1 1 1v2M20 17v2a1 1 0 0 1-1 1h-2m-10 0H5a1 1 0 0 1-1-1v-2M7 7h10v10H7z',
   zoomIn: 'M11 19a8 8 0 1 1 0-16 8 8 0 0 1 0 16Zm10 2-4.4-4.4M11 7v8m-4-4h8',
