@@ -2909,12 +2909,6 @@ export function CustomizerPage() {
         </aside>
 
         <section className="preview-column" aria-label="Preview do personagem">
-          <div className="preview-heading">
-            <div className="preview-actions">
-              <button className="quiet-button" aria-live="polite"><Icon name={characterSaveState === 'error' ? 'warning' : characterSaveState === 'saving' ? 'reset' : 'check'} /> {characterSaveState === 'saving' ? 'Salvando' : characterSaveState === 'error' ? 'Falha ao salvar' : 'Salvo'}</button>
-            </div>
-          </div>
-
           <div className="stage-wrap customizer-preview-stage-wrap" ref={mainPreviewStageRef}>
             <div className="stage-scene" style={customizerPreviewStyle}>
               <div className="preview-title customizer-preview-identity">
