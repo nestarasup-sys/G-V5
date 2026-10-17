@@ -183,6 +183,32 @@ export type FaceCatalogItemSave = Omit<FaceCatalogItem, 'sheet' | 'pieces'> & {
   pieces: Array<Omit<FacePiece, 'dataUrl'>>
 }
 export type FaceCatalogItemSummary = Pick<FaceCatalogItem, 'id' | 'modelSlot' | 'category' | 'name' | 'updatedAt'> & { pieceCount: number }
+export type FaceExpressionSelections = {
+  eyes: Record<'left' | 'right', string | null>
+  pupils: Record<'left' | 'right', string | null>
+  nose: { catalogId: string; index: number } | null
+  mouth: { catalogId: string; kind: 'mouth-closed' | 'mouth-open'; index: number } | null
+}
+export type FaceExpressionTransforms = {
+  eyeLeft: FaceTransform
+  eyeRight: FaceTransform
+  pupilLeft: FaceTransform
+  pupilRight: FaceTransform
+  nose: FaceTransform
+  mouth: FaceTransform
+}
+/** A preset stores immutable references to shared face assets plus private transform snapshots. */
+export type FaceExpressionPreset = {
+  schemaVersion: 1
+  id: string
+  modelSlot: number
+  name: string
+  selections: FaceExpressionSelections
+  transforms: FaceExpressionTransforms
+  noseOpacity: number
+  updatedAt: string
+}
+export type FaceExpressionPresetSummary = Pick<FaceExpressionPreset, 'id' | 'modelSlot' | 'name' | 'updatedAt'>
 export type HairTransform = { x: number; y: number; scaleX: number; scaleY: number; rotation: number; flipX?: boolean }
 export type HairWorkspace = {
   schemaVersion: 1
@@ -336,6 +362,10 @@ export type FabricatorDesktopApi = {
   loadFaceCatalogItem: (modelSlot: number, id: string) => Promise<FaceCatalogItem | null>
   saveFaceCatalogItem: (modelSlot: number, item: FaceCatalogItemSave, assets: FaceAssetSave[]) => Promise<void>
   deleteFaceCatalogItem: (modelSlot: number, id: string) => Promise<void>
+  listFaceExpressionPresets: (modelSlot: number) => Promise<FaceExpressionPresetSummary[]>
+  loadFaceExpressionPreset: (modelSlot: number, id: string) => Promise<FaceExpressionPreset | null>
+  saveFaceExpressionPreset: (modelSlot: number, preset: FaceExpressionPreset) => Promise<void>
+  deleteFaceExpressionPreset: (modelSlot: number, id: string) => Promise<void>
   listFaceComponentAssets: (modelSlot: number, kind?: FaceAssetKind) => Promise<FaceComponentAssetSummary[]>
   loadFaceComponentAsset: (modelSlot: number, id: string) => Promise<FaceComponentAsset | null>
   saveFaceComponentAsset: (modelSlot: number, asset: FaceComponentAssetSave, dataUrl: string) => Promise<void>

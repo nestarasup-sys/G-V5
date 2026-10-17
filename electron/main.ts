@@ -3,7 +3,7 @@ import { mkdir, readFile, writeFile, readdir, unlink, rename, stat, access, rm, 
 import { basename, dirname, extname, join, resolve } from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
-import type { AnimatorAnimation, AnimatorAnimationAsset, AnimatorAnimationDraft, AnimatorAnimationSave, AnimatorAnimationSummary, FaceAssetKind, FaceAssetSave, FaceCatalogItem, FaceCatalogItemSave, FaceCatalogItemSummary, FaceComponentAsset, FaceComponentAssetSave, FaceComponentAssetSummary, FaceElementKind, FaceSet, FaceSetSave, FaceSetSummary, FaceSheetKind, FabricatorAssetSave, FabricatorHistoryEntry, FabricatorHistorySaveEntry, FabricatorHistorySaveState, FabricatorHistoryState, FabricatorPose, FabricatorPoseDraft, FabricatorPoseDraftSave, FabricatorPoseSave, FabricatorPoseSummary, FabricatorProject, FabricatorProjectSave, FabricatorSlotSummary, HairStyle, HairStyleAsset, HairStyleSave, HairStyleSummary, HairWorkspace, HairWorkspaceAsset, HairWorkspaceSave, ModelPart, PosePart, WardrobeAssetSave, WardrobeCategory, WardrobeSet, WardrobeSetSave, WardrobeSetSummary } from '../src/shared/fabricator'
+import type { AnimatorAnimation, AnimatorAnimationAsset, AnimatorAnimationDraft, AnimatorAnimationSave, AnimatorAnimationSummary, FaceAssetKind, FaceAssetSave, FaceCatalogItem, FaceCatalogItemSave, FaceCatalogItemSummary, FaceComponentAsset, FaceComponentAssetSave, FaceComponentAssetSummary, FaceElementKind, FaceExpressionPreset, FaceExpressionPresetSummary, FaceExpressionTransforms, FaceSet, FaceSetSave, FaceSetSummary, FaceSheetKind, FaceTransform, FabricatorAssetSave, FabricatorHistoryEntry, FabricatorHistorySaveEntry, FabricatorHistorySaveState, FabricatorHistoryState, FabricatorPose, FabricatorPoseDraft, FabricatorPoseDraftSave, FabricatorPoseSave, FabricatorPoseSummary, FabricatorProject, FabricatorProjectSave, FabricatorSlotSummary, HairStyle, HairStyleAsset, HairStyleSave, HairStyleSummary, HairWorkspace, HairWorkspaceAsset, HairWorkspaceSave, ModelPart, PosePart, WardrobeAssetSave, WardrobeCategory, WardrobeSet, WardrobeSetSave, WardrobeSetSummary } from '../src/shared/fabricator'
 import { resolvePoseCategory } from '../src/shared/fabricator'
 import { hairCategories } from '../src/shared/hairCategories'
 import type { CustomizerCharacter, CustomizerFaceAppearance, CustomizerWardrobePaletteKey, HairColorOverrides } from '../src/shared/customizer'
@@ -30,6 +30,7 @@ const faceModelPath = (modelSlot: number) => join(app.getPath('userData'), 'fabr
 const faceSetPath = (modelSlot: number, id: string) => join(faceModelPath(modelSlot), `set-${id}`)
 const faceCatalogPath = (modelSlot: number) => join(faceModelPath(modelSlot), 'catalog')
 const faceCatalogItemPath = (modelSlot: number, id: string) => join(faceCatalogPath(modelSlot), `item-${id}`)
+const faceExpressionPresetPath = (modelSlot: number, id: string) => join(app.getPath('userData'), 'fabricator', 'expression-presets', `model-${modelSlot}`, `preset-${id}.json`)
 const faceComponentPath = (modelSlot: number) => join(app.getPath('userData'), 'fabricator', 'face-components', `model-${modelSlot}`)
 const faceComponentItemPath = (modelSlot: number, id: string) => join(faceComponentPath(modelSlot), `item-${id}`)
 const hairModelPath = (modelSlot: number) => join(app.getPath('userData'), 'fabricator', 'hair', `model-${modelSlot}`)
@@ -46,6 +47,7 @@ let poseMigration: Promise<void> | null = null
 let animatorSaveQueue: Promise<void> = Promise.resolve()
 let wardrobeSaveQueue: Promise<void> = Promise.resolve()
 let faceSaveQueue: Promise<void> = Promise.resolve()
+let expressionPresetSaveQueue: Promise<void> = Promise.resolve()
 let faceGuideSaveQueue: Promise<void> = Promise.resolve()
 const hairSaveQueues = new Map<number, Promise<void>>()
 let characterSaveQueue: Promise<void> = Promise.resolve()
@@ -248,6 +250,80 @@ function validFaceSet(modelSlot: number, set: FaceSetSave): boolean {
   return Number.isInteger(set.selectedNose) && set.selectedNose >= 0 && set.selectedNose <= 5
     && Number.isInteger(set.selectedExpression) && set.selectedExpression >= 0 && set.selectedExpression <= 20
     && typeof set.eyeLinked === 'boolean' && typeof set.browLinked === 'boolean'
+}
+
+function validFaceExpressionPreset(modelSlot: number, preset: FaceExpressionPreset): boolean {
+  const validTransform = (transform: unknown) => {
+    if (!transform || typeof transform !== 'object') return false
+    const candidate = transform as FaceTransform
+    return [candidate.x, candidate.y, candidate.scaleX, candidate.scaleY, candidate.rotation].every(Number.isFinite)
+      && candidate.scaleX > 0 && candidate.scaleX <= 20 && candidate.scaleY > 0 && candidate.scaleY <= 20
+      && (candidate.flipX === undefined || typeof candidate.flipX === 'boolean')
+  }
+  const selections = preset?.selections
+  const validSideSelections = (value: unknown) => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+    const candidate = value as Record<string, unknown>
+    return ['left', 'right'].every((side) => candidate[side] === null || typeof candidate[side] === 'string' && isValidWardrobeId(candidate[side] as string))
+  }
+  const validCatalogSelection = (value: unknown, kinds: string[]) => {
+    if (value === null) return true
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+    const candidate = value as Record<string, unknown>
+    return typeof candidate.catalogId === 'string' && isValidFaceCatalogId(candidate.catalogId)
+      && Number.isInteger(candidate.index) && (candidate.index as number) >= 0 && (candidate.index as number) <= 20
+      && (candidate.kind === undefined || kinds.includes(String(candidate.kind)))
+  }
+  return isValidModelSlot(modelSlot) && !!preset && preset.schemaVersion === 1 && preset.modelSlot === modelSlot
+    && isValidWardrobeId(preset.id) && typeof preset.name === 'string' && Boolean(preset.name.trim()) && preset.name.length <= 80
+    && typeof preset.updatedAt === 'string' && Number.isFinite(Date.parse(preset.updatedAt))
+    && !!selections && validSideSelections(selections.eyes) && validSideSelections(selections.pupils)
+    && validCatalogSelection(selections.nose, ['nose'])
+    && validCatalogSelection(selections.mouth, ['mouth-closed', 'mouth-open'])
+    && !!preset.transforms && (['eyeLeft', 'eyeRight', 'pupilLeft', 'pupilRight', 'nose', 'mouth'] as Array<keyof FaceExpressionTransforms>).every((key) => validTransform(preset.transforms[key]))
+    && Number.isFinite(preset.noseOpacity) && preset.noseOpacity >= 0 && preset.noseOpacity <= 1
+}
+
+async function listFaceExpressionPresets(modelSlot: number): Promise<FaceExpressionPresetSummary[]> {
+  if (!isValidModelSlot(modelSlot)) throw new Error('Modelo inválido.')
+  const folder = join(app.getPath('userData'), 'fabricator', 'expression-presets', `model-${modelSlot}`)
+  try {
+    const entries = await readdir(folder, { withFileTypes: true })
+    const presets: FaceExpressionPresetSummary[] = []
+    for (const entry of entries) {
+      if (!entry.isFile() || !/^preset-[a-zA-Z0-9_-]{1,80}\.json$/.test(entry.name)) continue
+      try {
+        const preset = JSON.parse(await readFile(join(folder, entry.name), 'utf8')) as FaceExpressionPreset
+        if (validFaceExpressionPreset(modelSlot, preset) && entry.name === `preset-${preset.id}.json`) {
+          presets.push({ id: preset.id, modelSlot, name: preset.name, updatedAt: preset.updatedAt })
+        }
+      } catch { /* Arquivos incompletos não aparecem na biblioteca. */ }
+    }
+    return presets.sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'))
+  } catch (reason) {
+    if ((reason as NodeJS.ErrnoException).code === 'ENOENT') return []
+    throw reason
+  }
+}
+
+async function readFaceExpressionPreset(modelSlot: number, id: string): Promise<FaceExpressionPreset | null> {
+  if (!isValidModelSlot(modelSlot) || !isValidWardrobeId(id)) throw new Error('Preset de expressão inválido.')
+  try {
+    const preset = JSON.parse(await readFile(faceExpressionPresetPath(modelSlot, id), 'utf8')) as FaceExpressionPreset
+    return validFaceExpressionPreset(modelSlot, preset) && preset.id === id ? preset : null
+  } catch (reason) {
+    if ((reason as NodeJS.ErrnoException).code === 'ENOENT') return null
+    throw reason
+  }
+}
+
+async function writeFaceExpressionPreset(modelSlot: number, preset: FaceExpressionPreset): Promise<void> {
+  if (!validFaceExpressionPreset(modelSlot, preset)) throw new Error('Preset de expressão inválido.')
+  const target = faceExpressionPresetPath(modelSlot, preset.id)
+  await mkdir(dirname(target), { recursive: true })
+  const temporary = `${target}.tmp`
+  await writeFile(temporary, JSON.stringify(preset), 'utf8')
+  await rename(temporary, target)
 }
 
 async function writeFaceSet(modelSlot: number, set: FaceSetSave, assets: FaceAssetSave[]): Promise<void> {
@@ -1708,6 +1784,31 @@ async function registerFabricatorHandlers(): Promise<void> {
     if (dirname(target) !== base || basename(target) !== `item-${id}`) throw new Error('Caminho de exclusão inválido.')
     const next = faceSaveQueue.catch(() => undefined).then(() => rm(target, { recursive: true, force: true }))
     faceSaveQueue = next
+    await next
+  })
+
+  ipcMain.handle('fabricator:expression-presets:list', async (event, modelSlot: number): Promise<FaceExpressionPresetSummary[]> => {
+    assertTrustedSender(event)
+    return listFaceExpressionPresets(modelSlot)
+  })
+  ipcMain.handle('fabricator:expression-presets:load', async (event, modelSlot: number, id: string): Promise<FaceExpressionPreset | null> => {
+    assertTrustedSender(event)
+    return readFaceExpressionPreset(modelSlot, id)
+  })
+  ipcMain.handle('fabricator:expression-presets:save', async (event, modelSlot: number, preset: FaceExpressionPreset): Promise<void> => {
+    assertTrustedSender(event)
+    const next = expressionPresetSaveQueue.catch(() => undefined).then(() => writeFaceExpressionPreset(modelSlot, preset))
+    expressionPresetSaveQueue = next
+    await next
+  })
+  ipcMain.handle('fabricator:expression-presets:delete', async (event, modelSlot: number, id: string): Promise<void> => {
+    assertTrustedSender(event)
+    if (!isValidModelSlot(modelSlot) || !isValidWardrobeId(id)) throw new Error('Preset de expressão inválido.')
+    const target = resolve(faceExpressionPresetPath(modelSlot, id))
+    const base = resolve(join(app.getPath('userData'), 'fabricator', 'expression-presets', `model-${modelSlot}`))
+    if (dirname(target) !== base || basename(target) !== `preset-${id}.json`) throw new Error('Caminho de exclusão inválido.')
+    const next = expressionPresetSaveQueue.catch(() => undefined).then(() => rm(target, { force: true }))
+    expressionPresetSaveQueue = next
     await next
   })
 
