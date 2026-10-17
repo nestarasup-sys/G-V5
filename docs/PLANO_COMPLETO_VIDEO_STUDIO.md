@@ -1,5 +1,7 @@
 # Plano completo — Video Studio
 
+> **Implementação iniciada — 17/10/2026:** o plano operacional atualizado está em [VIDEO_STUDIO_V2_ARQUITETURA.md](./VIDEO_STUDIO_V2_ARQUITETURA.md). Este documento é preservado como referência dos requisitos originais. Em conflitos de implementação, o documento V2 prevalece, e itens ainda pendentes não devem ser anunciados como implementados.
+
 ## 1. Visão da área
 
 O **Video Studio** será uma nova área acessível pela barra superior principal, ao lado das áreas existentes. Sua entrada visual e seu espaço de trabalho partirão do Studio atual: cenário, personagens, objetos, preview e painel de edição continuam familiares. A diferença é que o Video Studio terá um projeto próprio, com tempo, faixas, cortes de estado, reprodução e exportação de vídeo. Um projeto novo abre com dez minutos de duração, ajustáveis pelos controles de duração da timeline.
