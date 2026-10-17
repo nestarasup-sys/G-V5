@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import type { VideoActorState, VideoAsset, VideoProject, VideoSceneElement, VideoTextTrack } from '../../../../shared/videoStudio'
+import type { StudioDocument } from '../../../../shared/studio'
 import { createVideoProject } from '../../../../shared/videoStudio'
 import { evaluateVideoProject, moveCharacterBoundary, recordVideoFrame, updateVideoDuration, stateAtFrame } from './videoRuntime'
 import { Icon } from '../../ui/components/Icon'
@@ -32,6 +33,7 @@ export function VideoStudioPage() {
   const [selectedClip, setSelectedClip] = useState<{ trackId: string; clipId: string } | null>(null)
   const [drafts, setDrafts] = useState<Record<string, VideoActorState>>({})
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null)
+  const [studioSources, setStudioSources] = useState<StudioDocument[] | null>(null)
   const projectRef = useRef<VideoProject | null>(null)
   const dirtyRef = useRef(false)
   const pastRef = useRef<VideoProject[]>([])
@@ -202,6 +204,66 @@ export function VideoStudioPage() {
       setSelectedElementId(elementId)
       setSelectedClip(null)
     } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) }
+  }
+
+  const browseStudioScenes = async () => {
+    try {
+      setError('')
+      const studios = await window.desktop.listStudios()
+      setStudioSources(studios)
+      if (!studios.length) setError('Nenhum Studio encontrado. Monte uma cena na área Studio para importá-la aqui.')
+    } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) }
+  }
+
+  const importStudioScene = (source: StudioDocument) => {
+    if (!activeProject) return
+    if ((activeProject.elements.length || activeProject.assets.length || activeProject.saveMarkers.length
+      || activeProject.textTracks.some(track => track.clips.length))
+      && !window.confirm('Substituir a cena atual, as faixas de personagens e os textos por uma cópia do Studio "' + source.title + '"?')) return
+
+    const visualElements = source.elements.filter(element =>
+      (element.kind === 'character' || element.kind === 'image') &&
+      source.assets.some(asset => asset.id === element.assetId))
+    const usedAssetIds = new Set(visualElements.map(element => element.assetId))
+    if (source.backgroundAssetId) usedAssetIds.add(source.backgroundAssetId)
+    const assets = source.assets.filter(asset => usedAssetIds.has(asset.id))
+      .map(asset => ({ ...asset }))
+    const elements: VideoSceneElement[] = visualElements.map(item => {
+      const widthScale = item.kind === 'character' ? (item.characterScale ?? 100) * (item.characterWidthScale ?? 100) / 10000 : 1
+      const heightScale = item.kind === 'character' ? (item.characterScale ?? 100) * (item.characterHeightScale ?? 100) / 10000 : 1
+      return {
+        id: crypto.randomUUID(), kind: item.kind, name: item.kind === 'character' ? 'Personagem' : 'Objeto',
+        assetId: item.assetId!, x: (50 + item.x) / 100 * activeProject.canvas.width,
+        y: (50 + item.y) / 100 * activeProject.canvas.height,
+        width: item.width / 100 * activeProject.canvas.width * widthScale,
+        height: item.height / 100 * activeProject.canvas.height * heightScale,
+        rotation: item.rotation, zIndex: item.zIndex, flipX: item.flipX ?? false
+      }
+    })
+    const characterTracks = elements.filter(item => item.kind === 'character').map((item, index) => ({
+      id: crypto.randomUUID(), elementId: item.id, name: item.name + ' ' + (index + 1),
+      order: index, locked: false, collapsed: false,
+      segments: [{
+        id: crypto.randomUUID(), startFrame: 0, endFrameExclusive: activeProject.durationFrames,
+        state: { poseId: null, expressionId: null, faceMode: 'idle' as const },
+        transitionInMs: 20
+      }]
+    }))
+    commit(project => ({
+      ...project, canvas: {
+        ...project.canvas, backgroundColor: source.backgroundColor,
+        backgroundAssetId: source.backgroundAssetId
+      }, assets, elements, characterTracks, saveMarkers: [],
+      textTracks: project.textTracks.map(track => ({ ...track, clips: [] })),
+      updatedAt: new Date().toISOString()
+    }))
+    setStudioSources(null)
+    setSelectedElementId(null)
+    setSelectedClip(null)
+    setDrafts({})
+    if (source.elements.length !== visualElements.length) {
+      setError('Cena importada. Elementos de texto do Studio normal ainda não têm adaptador e foram ignorados.')
+    }
   }
 
   const importFace = async (elementId: string, mode: 'idle' | 'blink' | 'talk') => {
@@ -396,6 +458,12 @@ export function VideoStudioPage() {
           <button type="button" onClick={() => void addAsset('background')}><Icon name="frame" /> Adicionar fundo</button>
           <button type="button" onClick={() => void addAsset('character')}><Icon name="user" /> Adicionar personagem</button>
           <button type="button" onClick={() => void addAsset('object')}><Icon name="plus" /> Adicionar objeto</button>
+          <button type="button" onClick={() => void browseStudioScenes()}><Icon name="folder" /> Importar cena do Studio</button>
+          {studioSources !== null && <div className="vs-studio-picker">
+            <strong>Cenas disponíveis</strong>
+            {studioSources.map(source => <button type="button" key={source.id} onClick={() => importStudioScene(source)}>{source.title} · {source.elements.length} elementos</button>)}
+            <button type="button" onClick={() => setStudioSources(null)}>Cancelar</button>
+          </div>}
           <div className="vs-divider" />
           <h3>Elementos</h3>
           {project.elements.length === 0 && <p>Nenhum elemento. Importe uma imagem para começar.</p>}
