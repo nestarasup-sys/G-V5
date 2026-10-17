@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
-import type { FaceCatalogItem, FaceCatalogItemSummary, FaceComponentAsset, FaceComponentAssetSummary, FaceExpressionPreset, FaceExpressionPresetSummary, FaceExpressionTransforms, FaceTransform, FabricatorProject } from '../../../../shared/fabricator'
+import type { FaceCatalogItem, FaceCatalogItemSummary, FaceComponentAsset, FaceComponentAssetSummary, FaceExpressionCollection, FaceExpressionPreset, FaceExpressionPresetSummary, FaceExpressionTransforms, FaceTransform, FabricatorProject } from '../../../../shared/fabricator'
 import { Icon, type IconName } from '../../ui/components/Icon'
 import { eyeInteriorMask } from './face/eyeInteriorMask'
 
@@ -36,6 +36,7 @@ const presetSingleLayers: Array<{ key: LayerKey; label: string; icon: IconName }
   { key: 'nose', label: 'Nariz', icon: 'face' }, { key: 'mouth', label: 'Boca', icon: 'message' }
 ]
 const EXPRESSION_COLLECTION_ID = 'standard'
+const expressionWorkingCopyKey = (collectionId: string, index: number) => `${collectionId}:${index}`
 const STANDARD_EXPRESSIONS = [
   'Aliviada', 'Animada', 'Apaixonada', 'Cansada', 'Ciumenta', 'Confusa', 'Decepcionada',
   'Desconfiada', 'Envergonhada', 'Impressionada', 'Indignada', 'Irritada', 'Nojo', 'Normal',
@@ -151,10 +152,12 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
   const [draftNoseOpacity, setDraftNoseOpacity] = useState(1)
   const [baseNoseOpacity, setBaseNoseOpacity] = useState(1)
   const [presets, setPresets] = useState<FaceExpressionPresetSummary[]>([])
+  const [collections, setCollections] = useState<FaceExpressionCollection[]>([])
+  const [selectedCollectionId, setSelectedCollectionId] = useState(EXPRESSION_COLLECTION_ID)
   const [presetId, setPresetId] = useState<string>(() => crypto.randomUUID())
   const [selectedExpressionIndex, setSelectedExpressionIndex] = useState(0)
-  const [customExpressionNames, setCustomExpressionNames] = useState<Record<number, string>>({})
-  const [workingCopies, setWorkingCopies] = useState<Record<number, ExpressionWorkingCopy>>({})
+  const [customExpressionNames, setCustomExpressionNames] = useState<Record<string, string>>({})
+  const [workingCopies, setWorkingCopies] = useState<Record<string, ExpressionWorkingCopy>>({})
   const [switchingExpression, setSwitchingExpression] = useState(false)
   const [selectedLayer, setSelectedLayer] = useState<LayerKey>('eyeLeft')
   const [linkedLayerPairs, setLinkedLayerPairs] = useState<Record<PairedLayerKind, boolean>>({ eye: false, pupil: false, eyebrow: false })
@@ -166,6 +169,8 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
   const [mouthKind, setMouthKind] = useState<'mouth-closed' | 'mouth-open'>('mouth-closed')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [collectionDialogOpen, setCollectionDialogOpen] = useState(false)
+  const [newCollectionName, setNewCollectionName] = useState('')
 
   useEffect(() => {
     let cancelled = false
@@ -183,8 +188,9 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
       window.desktop.loadFabricatorSlot(modelSlot),
       Promise.all([window.desktop.listFaceComponentAssets(modelSlot, 'eye'), window.desktop.listFaceComponentAssets(modelSlot, 'pupil'), window.desktop.listFaceComponentAssets(modelSlot, 'eyebrow')]).then((lists) => lists.flat()),
       window.desktop.listFaceCatalog(modelSlot),
-      window.desktop.listFaceExpressionPresets(modelSlot)
-    ]).then(async ([model, components, catalogs, savedPresets]) => {
+      window.desktop.listFaceExpressionPresets(modelSlot),
+      window.desktop.listFaceExpressionCollections(modelSlot)
+    ]).then(async ([model, components, catalogs, savedPresets, savedCollections]) => {
       const facialCatalogs = catalogs.filter((item) => item.category === 'nose' || item.category === 'mouth-closed' || item.category === 'mouth-open')
       const [loadedComponents, loadedCatalogs] = await Promise.all([
         Promise.all(components.map((asset) => window.desktop.loadFaceComponentAsset(modelSlot, asset.id))),
@@ -199,9 +205,11 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
       setCatalogSummaries(facialCatalogs)
       setCatalogItems(Object.fromEntries(readyCatalogs.map((item) => [item.id, item])))
       setPresets(savedPresets)
+      setCollections(savedCollections)
+      setSelectedCollectionId(EXPRESSION_COLLECTION_ID)
       setCustomExpressionNames(Object.fromEntries(savedPresets
-        .filter((preset) => preset.collectionId === EXPRESSION_COLLECTION_ID && Number.isInteger(preset.expressionIndex) && preset.expressionIndex! >= STANDARD_EXPRESSIONS.length)
-        .map((preset) => [preset.expressionIndex!, preset.name])))
+        .filter((preset) => typeof preset.collectionId === 'string' && Number.isInteger(preset.expressionIndex) && preset.expressionIndex! >= STANDARD_EXPRESSIONS.length)
+        .map((preset) => [expressionWorkingCopyKey(preset.collectionId!, preset.expressionIndex!), preset.name])))
 
       const leftEye = readyComponents.find((asset) => asset.kind === 'eye' && componentSide(asset) === 'left')
       const leftPupil = readyComponents.find((asset) => asset.kind === 'pupil' && componentSide(asset) === 'left')
@@ -257,14 +265,17 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
   const visibleComposition = open ? draft : composition
   const visibleTransforms = open ? draftTransforms : transforms
   const visibleNoseOpacity = open ? draftNoseOpacity : noseOpacity
+  const collectionExpressionNames = useMemo(() => Object.fromEntries(Object.entries(customExpressionNames)
+    .filter(([key]) => key.startsWith(`${selectedCollectionId}:`))
+    .map(([key, name]) => [Number(key.slice(selectedCollectionId.length + 1)), name])), [customExpressionNames, selectedCollectionId])
   const customExpressionIndices = useMemo(() => [...new Set([
-    ...Object.keys(customExpressionNames).map(Number),
-    ...presets.filter((preset) => preset.collectionId === EXPRESSION_COLLECTION_ID && Number.isInteger(preset.expressionIndex) && preset.expressionIndex! >= STANDARD_EXPRESSIONS.length).map((preset) => preset.expressionIndex!)
-  ])].sort((a, b) => a - b), [customExpressionNames, presets])
-  const activeExpressionName = STANDARD_EXPRESSIONS[selectedExpressionIndex] ?? customExpressionNames[selectedExpressionIndex] ?? `Nova expressão ${selectedExpressionIndex - STANDARD_EXPRESSIONS.length + 1}`
+    ...Object.keys(collectionExpressionNames).map(Number),
+    ...presets.filter((preset) => preset.collectionId === selectedCollectionId && Number.isInteger(preset.expressionIndex) && preset.expressionIndex! >= STANDARD_EXPRESSIONS.length).map((preset) => preset.expressionIndex!)
+  ])].sort((a, b) => a - b), [collectionExpressionNames, presets, selectedCollectionId])
+  const activeExpressionName = STANDARD_EXPRESSIONS[selectedExpressionIndex] ?? collectionExpressionNames[selectedExpressionIndex] ?? `Nova expressão ${selectedExpressionIndex - STANDARD_EXPRESSIONS.length + 1}`
   const expressionPresetByIndex = useMemo(() => new Map(presets
-    .filter((preset) => preset.collectionId === EXPRESSION_COLLECTION_ID && Number.isInteger(preset.expressionIndex))
-    .map((preset) => [preset.expressionIndex!, preset])), [presets])
+    .filter((preset) => preset.collectionId === selectedCollectionId && Number.isInteger(preset.expressionIndex))
+    .map((preset) => [preset.expressionIndex!, preset])), [presets, selectedCollectionId])
   const selectedCatalog = category === 'nose'
     ? catalogItems[draft.nose?.catalogId ?? '']
     : category === 'mouth' && draft.mouth?.kind === mouthKind ? catalogItems[draft.mouth.catalogId] : undefined
@@ -421,12 +432,14 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
     if (index === selectedExpressionIndex || switchingExpression || saving) return
     setSwitchingExpression(true)
     setError(null)
-    setWorkingCopies((current) => ({ ...current, [selectedExpressionIndex]: {
+    const currentKey = expressionWorkingCopyKey(selectedCollectionId, selectedExpressionIndex)
+    const targetKey = expressionWorkingCopyKey(selectedCollectionId, index)
+    setWorkingCopies((current) => ({ ...current, [currentKey]: {
       id: presetId, composition: structuredClone(composition), transforms: cloneTransforms(transforms), noseOpacity
     } }))
     setSelectedExpressionIndex(index)
     try {
-      const workingCopy = workingCopies[index]
+      const workingCopy = workingCopies[targetKey]
       if (workingCopy) {
         setPresetId(workingCopy.id); setComposition(workingCopy.composition); setTransforms(cloneTransforms(workingCopy.transforms)); setNoseOpacity(workingCopy.noseOpacity)
         return
@@ -454,13 +467,15 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
     const nextIndex = Math.max(STANDARD_EXPRESSIONS.length - 1, ...customExpressionIndices) + 1
     const name = `Nova expressão ${nextIndex - STANDARD_EXPRESSIONS.length + 1}`
     const nextId = crypto.randomUUID()
+    const currentKey = expressionWorkingCopyKey(selectedCollectionId, selectedExpressionIndex)
+    const nextKey = expressionWorkingCopyKey(selectedCollectionId, nextIndex)
     const nextCopy: ExpressionWorkingCopy = { id: nextId, composition: structuredClone(composition), transforms: cloneTransforms(transforms), noseOpacity }
     setWorkingCopies((current) => ({
       ...current,
-      [selectedExpressionIndex]: { id: presetId, composition: structuredClone(composition), transforms: cloneTransforms(transforms), noseOpacity },
-      [nextIndex]: nextCopy
+      [currentKey]: { id: presetId, composition: structuredClone(composition), transforms: cloneTransforms(transforms), noseOpacity },
+      [nextKey]: nextCopy
     }))
-    setCustomExpressionNames((current) => ({ ...current, [nextIndex]: name }))
+    setCustomExpressionNames((current) => ({ ...current, [nextKey]: name }))
     setPresetId(nextId)
     setSelectedExpressionIndex(nextIndex)
     setError(null)
@@ -469,16 +484,72 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
     setSaving(true); setError(null)
     const saved: FaceExpressionPreset = {
       schemaVersion: 1, id: presetId, modelSlot, name: activeExpressionName,
-      collectionId: EXPRESSION_COLLECTION_ID, expressionIndex: selectedExpressionIndex,
+      collectionId: selectedCollectionId, expressionIndex: selectedExpressionIndex,
       selections: structuredClone(composition), transforms: cloneTransforms(transforms), noseOpacity, updatedAt: new Date().toISOString()
     }
     try {
       await window.desktop.saveFaceExpressionPreset(modelSlot, saved)
       setPresetId(saved.id)
-      setWorkingCopies((current) => ({ ...current, [selectedExpressionIndex]: { id: saved.id, composition: saved.selections, transforms: saved.transforms, noseOpacity: saved.noseOpacity } }))
+      setWorkingCopies((current) => ({ ...current, [expressionWorkingCopyKey(selectedCollectionId, selectedExpressionIndex)]: { id: saved.id, composition: saved.selections, transforms: saved.transforms, noseOpacity: saved.noseOpacity } }))
       setPresets(await window.desktop.listFaceExpressionPresets(modelSlot))
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível salvar este preset.') }
     finally { setSaving(false) }
+  }
+  const selectCollection = async (collectionId: string) => {
+    if (collectionId === selectedCollectionId || switchingExpression || saving) return
+    setSwitchingExpression(true)
+    setError(null)
+    const currentKey = expressionWorkingCopyKey(selectedCollectionId, selectedExpressionIndex)
+    const targetKey = expressionWorkingCopyKey(collectionId, 0)
+    setWorkingCopies((current) => ({ ...current, [currentKey]: {
+      id: presetId, composition: structuredClone(composition), transforms: cloneTransforms(transforms), noseOpacity
+    } }))
+    setSelectedCollectionId(collectionId)
+    setSelectedExpressionIndex(0)
+    try {
+      const workingCopy = workingCopies[targetKey]
+      if (workingCopy) {
+        setPresetId(workingCopy.id); setComposition(workingCopy.composition); setTransforms(cloneTransforms(workingCopy.transforms)); setNoseOpacity(workingCopy.noseOpacity)
+        return
+      }
+      const summary = presets.find((preset) => preset.collectionId === collectionId && preset.expressionIndex === 0)
+      const saved = summary ? await window.desktop.loadFaceExpressionPreset(modelSlot, summary.id) : null
+      if (saved) {
+        setPresetId(saved.id); setComposition(saved.selections); setTransforms(saved.transforms); setNoseOpacity(saved.noseOpacity)
+      } else {
+        setPresetId(crypto.randomUUID()); setComposition(structuredClone(baseComposition)); setTransforms(cloneTransforms(baseTransforms)); setNoseOpacity(baseNoseOpacity)
+      }
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Não foi possível abrir este conjunto.')
+    } finally {
+      setSwitchingExpression(false)
+    }
+  }
+  const saveNewCollection = async () => {
+    const name = newCollectionName.trim()
+    if (!name || saving || loading) return
+    const now = new Date().toISOString()
+    const collection: FaceExpressionCollection = { schemaVersion: 1, id: crypto.randomUUID(), modelSlot, name, createdAt: now, updatedAt: now }
+    setSaving(true); setError(null)
+    try {
+      await window.desktop.saveFaceExpressionCollection(modelSlot, collection)
+      setCollections((current) => [...current, collection].sort((a, b) => a.name.localeCompare(b.name, 'pt-BR')))
+      setWorkingCopies((current) => ({ ...current, [expressionWorkingCopyKey(selectedCollectionId, selectedExpressionIndex)]: {
+        id: presetId, composition: structuredClone(composition), transforms: cloneTransforms(transforms), noseOpacity
+      } }))
+      setSelectedCollectionId(collection.id)
+      setSelectedExpressionIndex(0)
+      setPresetId(crypto.randomUUID())
+      setComposition(structuredClone(baseComposition))
+      setTransforms(cloneTransforms(baseTransforms))
+      setNoseOpacity(baseNoseOpacity)
+      setCollectionDialogOpen(false)
+      setNewCollectionName('')
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Não foi possível criar o conjunto.')
+    } finally {
+      setSaving(false)
+    }
   }
 
   const renderComponent = (assetId: string | null, kind: 'eye' | 'pupil' | 'eyebrow', currentSide: Side, transform: FaceTransform, eyeAsset?: FaceComponentAsset, eyeTransformOverride?: FaceTransform): ReactNode => {
@@ -598,14 +669,19 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
     {error && <div className="expression-preset-error" role="alert">{error}</div>}
     <div className="expression-preset-body">
     <aside className="expression-collection-panel" aria-label="Conjuntos de expressão">
-      <header><strong>Conjuntos</strong><small>1 conjunto</small></header>
-      <button className="expression-collection-card active" type="button" aria-pressed="true">
+      <header className="expression-collection-heading"><span><strong>Conjuntos</strong><small>{collections.length + 1} conjunto(s)</small></span><button type="button" disabled={loading || saving} onClick={() => { setNewCollectionName(''); setCollectionDialogOpen(true) }}><Icon name="plus" />Novo</button></header>
+      <button className={`expression-collection-card${selectedCollectionId === EXPRESSION_COLLECTION_ID ? ' active' : ''}`} type="button" aria-pressed={selectedCollectionId === EXPRESSION_COLLECTION_ID} disabled={switchingExpression || saving} onClick={() => void selectCollection(EXPRESSION_COLLECTION_ID)}>
         <span className="expression-collection-icon"><Icon name="face" /></span>
         <span><strong>Padrão</strong><small>21 expressões</small></span>
         <b>›</b>
       </button>
+      {collections.map((collection) => <button key={collection.id} className={`expression-collection-card${selectedCollectionId === collection.id ? ' active' : ''}`} type="button" aria-pressed={selectedCollectionId === collection.id} disabled={switchingExpression || saving} onClick={() => void selectCollection(collection.id)}>
+        <span className="expression-collection-icon"><Icon name="face" /></span>
+        <span><strong>{collection.name}</strong><small>21 expressões</small></span>
+        <b>›</b>
+      </button>)}
     </aside>
-    <aside className="expression-sequence-panel" aria-label="Sequência do conjunto Padrão">
+    <aside className="expression-sequence-panel" aria-label={`Sequência do conjunto ${selectedCollectionId === EXPRESSION_COLLECTION_ID ? 'Padrão' : collections.find((collection) => collection.id === selectedCollectionId)?.name ?? ''}`}>
       <header className="expression-sequence-actions">
         <button className="expression-sequence-new" type="button" disabled={loading || switchingExpression || saving} onClick={createExpression}><Icon name="plus" />Nova</button>
         <button className="expression-sequence-reset" type="button" title="Restaurar os valores originais da expressão atual" aria-label="Restaurar expressão atual" disabled={loading || switchingExpression || saving} onClick={resetCurrentExpression}><Icon name="reset" />Restaurar</button>
@@ -613,7 +689,7 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
       <nav className="expression-sequence-list" aria-label="Expressões do conjunto Padrão">
         {STANDARD_EXPRESSIONS.map((name, index) => {
           const saved = expressionPresetByIndex.has(index)
-          const cached = workingCopies[index]
+          const cached = workingCopies[expressionWorkingCopyKey(selectedCollectionId, index)]
           const isActive = selectedExpressionIndex === index
           return <button key={name} type="button" className={`expression-sequence-item${isActive ? ' active' : ''}`} aria-pressed={isActive} disabled={loading || switchingExpression || saving} onClick={() => void selectExpression(index)}>
             <b>{String(index + 1).padStart(2, '0')}</b><span>{name}</span><small>{isActive ? 'Editando' : saved ? 'Salvo' : cached ? 'Rascunho' : 'Vazio'}</small>
@@ -621,9 +697,9 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
         })}
         {customExpressionIndices.map((index) => {
           const saved = expressionPresetByIndex.has(index)
-          const cached = workingCopies[index]
+          const cached = workingCopies[expressionWorkingCopyKey(selectedCollectionId, index)]
           const isActive = selectedExpressionIndex === index
-          const name = customExpressionNames[index] ?? expressionPresetByIndex.get(index)?.name ?? `Nova expressão ${index - STANDARD_EXPRESSIONS.length + 1}`
+          const name = collectionExpressionNames[index] ?? expressionPresetByIndex.get(index)?.name ?? `Nova expressão ${index - STANDARD_EXPRESSIONS.length + 1}`
           return <button key={`custom-${index}`} type="button" className={`expression-sequence-item expression-sequence-item-custom${isActive ? ' active' : ''}`} aria-pressed={isActive} disabled={loading || switchingExpression || saving} onClick={() => void selectExpression(index)}>
             <b>+</b><span>{name}</span><small>{isActive ? 'Editando' : saved ? 'Salvo' : cached ? 'Rascunho' : 'Vazio'}</small>
           </button>
@@ -714,6 +790,13 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
         </div>
         <footer><span>{draft.eyes.left || draft.eyes.right ? 'Olhos' : 'Sem olhos'} · {draft.pupils.left || draft.pupils.right ? 'pupilas' : 'sem pupilas'} · {draft.nose ? 'nariz' : 'sem nariz'} · {draft.mouth ? 'boca' : 'sem boca'}</span><button className="expression-picker-apply" onClick={applyComposition} type="button"><Icon name="check" />Usar composição</button></footer>
       </section>
+    </div>}
+    {collectionDialogOpen && <div className="expression-picker-backdrop" role="presentation" onClick={() => setCollectionDialogOpen(false)}>
+      <form className="expression-collection-dialog" role="dialog" aria-modal="true" aria-labelledby="expression-collection-dialog-title" onSubmit={(event) => { event.preventDefault(); void saveNewCollection() }} onClick={(event) => event.stopPropagation()}>
+        <h2 id="expression-collection-dialog-title">Novo conjunto</h2>
+        <label>Nome do conjunto<input autoFocus maxLength={80} value={newCollectionName} onChange={(event) => setNewCollectionName(event.target.value)} placeholder="Ex.: Expressões da Ayla" /></label>
+        <footer><button type="button" onClick={() => setCollectionDialogOpen(false)}>Cancelar</button><button type="submit" disabled={!newCollectionName.trim() || saving}>{saving ? 'Criando…' : 'Criar conjunto'}</button></footer>
+      </form>
     </div>}
   </section>
 }

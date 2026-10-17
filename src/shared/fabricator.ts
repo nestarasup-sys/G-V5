@@ -215,6 +215,7 @@ export type FaceExpressionPreset = {
   updatedAt: string
 }
 export type FaceExpressionPresetSummary = Pick<FaceExpressionPreset, 'id' | 'modelSlot' | 'name' | 'updatedAt' | 'collectionId' | 'expressionIndex'>
+export type FaceExpressionCollection = { schemaVersion: 1; id: string; modelSlot: number; name: string; createdAt: string; updatedAt: string }
 export type HairTransform = { x: number; y: number; scaleX: number; scaleY: number; rotation: number; flipX?: boolean }
 export type HairWorkspace = {
   schemaVersion: 1
@@ -369,6 +370,8 @@ export type FabricatorDesktopApi = {
   saveFaceCatalogItem: (modelSlot: number, item: FaceCatalogItemSave, assets: FaceAssetSave[]) => Promise<void>
   deleteFaceCatalogItem: (modelSlot: number, id: string) => Promise<void>
   listFaceExpressionPresets: (modelSlot: number) => Promise<FaceExpressionPresetSummary[]>
+  listFaceExpressionCollections: (modelSlot: number) => Promise<FaceExpressionCollection[]>
+  saveFaceExpressionCollection: (modelSlot: number, collection: FaceExpressionCollection) => Promise<void>
   loadFaceExpressionPreset: (modelSlot: number, id: string) => Promise<FaceExpressionPreset | null>
   saveFaceExpressionPreset: (modelSlot: number, preset: FaceExpressionPreset) => Promise<void>
   deleteFaceExpressionPreset: (modelSlot: number, id: string) => Promise<void>

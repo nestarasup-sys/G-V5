@@ -1008,6 +1008,12 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .expression-collection-panel,.expression-sequence-panel { min-width: 0; min-height: 0; overflow: hidden; border: 1px solid #eee5eb; border-radius: 10px; background: #fff; }
 .expression-collection-panel { padding: 10px 8px; }
 .expression-collection-panel > header,.expression-sequence-panel > header { display: grid; gap: 4px; padding: 2px 4px 10px; border-bottom: 1px solid #f1e9ee; }
+.expression-collection-panel > header.expression-collection-heading { display: flex; align-items: center; justify-content: space-between; gap: 5px; }
+.expression-collection-heading > span { min-width: 0; display: grid; gap: 4px; }
+.expression-collection-heading > button { min-height: 25px; display: inline-flex; align-items: center; gap: 3px; padding: 2px 6px; border: 1px solid #ead7e0; border-radius: 6px; background: #fff3f7; color: #a3446b; font: inherit; font-size: 9px; font-weight: 800; cursor: pointer; }
+.expression-collection-heading > button:hover:not(:disabled) { border-color: #d78aaa; background: #ffeaf2; }
+.expression-collection-heading > button:disabled { opacity: .55; cursor: wait; }
+.expression-collection-heading > button svg { width: 11px; height: 11px; }
 .expression-collection-panel > header strong,.expression-sequence-panel > header strong { color: #50434f; font-size: 12px; }
 .expression-collection-panel > header small,.expression-sequence-panel > header small { color: #a095a0; font-size: 9px; }
 .expression-sequence-heading { min-width: 0; display: flex; align-items: center; justify-content: space-between; gap: 4px; }
@@ -1030,6 +1036,14 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .expression-sequence-new:disabled { opacity: .55; cursor: wait; }
 .expression-sequence-new svg { width: 11px; height: 11px; }
 .expression-sequence-actions .expression-sequence-reset { margin-left: auto; }
+.expression-collection-dialog { width: min(380px, 100%); display: grid; gap: 16px; padding: 20px; border: 1px solid #eadfe6; border-radius: 14px; background: #fff; box-shadow: 0 20px 60px #3c24321f; color: #554856; }
+.expression-collection-dialog h2 { margin: 0; font-size: 16px; }
+.expression-collection-dialog label { display: grid; gap: 7px; font-size: 11px; font-weight: 700; }
+.expression-collection-dialog input { min-height: 38px; padding: 0 10px; border: 1px solid #e7dbe3; border-radius: 8px; color: inherit; font: inherit; }
+.expression-collection-dialog footer { display: flex; justify-content: flex-end; gap: 8px; }
+.expression-collection-dialog footer button { min-height: 32px; padding: 0 12px; border: 1px solid #e7dbe3; border-radius: 8px; background: #fff; color: inherit; font: inherit; font-size: 11px; font-weight: 700; cursor: pointer; }
+.expression-collection-dialog footer button[type="submit"] { border-color: #d78aaa; background: #fff0f5; color: #963e63; }
+.expression-collection-dialog footer button:disabled { opacity: .5; cursor: wait; }
 .expression-sequence-list { min-height: 0; display: flex; flex-direction: column; gap: 3px; overflow: auto; padding-top: 7px; scrollbar-color: #e6c5d2 #faf8f9; scrollbar-width: thin; }
 .expression-sequence-item { min-height: 27px; display: grid; grid-template-columns: 25px minmax(0,1fr) auto; align-items: center; gap: 5px; padding: 3px 5px; border: 1px solid transparent; border-radius: 6px; background: transparent; color: #645665; text-align: left; cursor: pointer; }
 .expression-sequence-item:hover:not(:disabled) { background: #fff5f8; }
