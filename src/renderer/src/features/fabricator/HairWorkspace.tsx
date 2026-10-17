@@ -103,6 +103,7 @@ export function HairWorkspace() {
   const selectedSide = category.side
   const selectedAsset = (hairWorkspace?.categoryBySide?.[selectedSide] ?? defaultCategories[selectedSide]) === selectedCategory ? hairWorkspace?.[selectedSide] ?? null : null
   const selectedTransform = selectedAsset ? hairWorkspace?.transforms[selectedSide] ?? null : null
+  const visibleDraft = (side: HairSide) => selectedSide !== side || selectedAsset !== null
   const categoryStyles = hairStyles.filter((style) => hairStyleSupportsCategory(style, selectedCategory))
   const activeStyle = hairStyles.find((style) => style.id === activeStyleId)
   const canUpdateActiveStyle = activeStyle?.category === selectedCategory
@@ -361,10 +362,10 @@ export function HairWorkspace() {
         <div className="hair-dev-preview-heading"><strong>PRÉVIA DA CABEÇA</strong><span>{head ? Math.round(head.width) + ' × ' + Math.round(head.height) : ''}</span></div>
         <div className="hair-dev-preview-stage" style={{ backgroundColor: background }} onWheel={(event) => { event.preventDefault(); setZoom((value) => Math.max(.5, Math.min(3, value * (event.deltaY < 0 ? 1.1 : .9)))) }}>
           {head && <div className="hair-dev-head-stage" style={{ aspectRatio: head.width + ' / ' + head.height, transform: 'scale(' + zoom + ')' }} onPointerMove={moveHair} onPointerUp={finishDrag} onPointerCancel={finishDrag}>
-            {hairWorkspace?.back && <HairPiece side="back" asset={hairWorkspace.back} transform={hairWorkspace.transforms.back} head={head} selected={selectedSide === 'back'} onPointerDown={startDrag} />}
+            {hairWorkspace?.back && visibleDraft('back') && <HairPiece side="back" asset={hairWorkspace.back} transform={hairWorkspace.transforms.back} head={head} selected={selectedSide === 'back'} onPointerDown={startDrag} />}
             <img className="hair-dev-head-base" src={head.dataUrl} alt="Cabeça do modelo de referência" draggable={false} />
-            {hairWorkspace?.front && <HairPiece side="front" asset={hairWorkspace.front} transform={hairWorkspace.transforms.front} head={head} selected={selectedSide === 'front'} onPointerDown={startDrag} />}
-            {hairWorkspace?.fringe && hairWorkspace.transforms.fringe && <HairPiece side="fringe" asset={hairWorkspace.fringe} transform={hairWorkspace.transforms.fringe} head={head} selected={selectedSide === 'fringe'} onPointerDown={startDrag} />}
+            {hairWorkspace?.front && visibleDraft('front') && <HairPiece side="front" asset={hairWorkspace.front} transform={hairWorkspace.transforms.front} head={head} selected={selectedSide === 'front'} onPointerDown={startDrag} />}
+            {hairWorkspace?.fringe && hairWorkspace.transforms.fringe && visibleDraft('fringe') && <HairPiece side="fringe" asset={hairWorkspace.fringe} transform={hairWorkspace.transforms.fringe} head={head} selected={selectedSide === 'fringe'} onPointerDown={startDrag} />}
           </div>}
           {(loadingModels || loadingProject || loadingHair) && <span className="hair-dev-message">Carregando modelo e cabelos…</span>}
           {!loadingModels && !loadingProject && !head && <span className="hair-dev-message">{error || 'O modelo não tem uma peça chamada Cabeça.'}</span>}
