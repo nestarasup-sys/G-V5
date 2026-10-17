@@ -12,6 +12,7 @@ import type { StudioAsset, StudioDocument } from '../src/shared/studio'
 import { applyModelHeadShape } from '../src/shared/headShape'
 import { isStudioExpressionEffects, isStudioFaceTransforms } from '../src/shared/studio'
 import { legacyStandardExpressionEffects } from '../src/shared/legacyExpressionEffects'
+import { registerVideoStudioHandlers, waitForVideoStudioWrites } from './videoStudioPersistence'
 
 const slotCount = 10
 const poseSlotCount = 12
@@ -2090,6 +2091,7 @@ function createMainWindow(): void {
 
 app.whenReady().then(async () => {
   await registerFabricatorHandlers()
+  registerVideoStudioHandlers(assertTrustedSender)
   createMainWindow()
 
   app.on('activate', () => {
@@ -2103,7 +2105,7 @@ app.on('window-all-closed', () => {
 
 let waitingForFabricatorWritesBeforeQuit = false
 app.on('before-quit', (event) => {
-  const pendingWrites = [...fabricatorSaveQueues.values(), ...poseSaveWrites, ...hairSaveQueues.values(), studioSaveQueue]
+  const pendingWrites = [...fabricatorSaveQueues.values(), ...poseSaveWrites, ...hairSaveQueues.values(), studioSaveQueue, waitForVideoStudioWrites()]
   if (pendingWrites.length === 0 || waitingForFabricatorWritesBeforeQuit) return
   event.preventDefault()
   waitingForFabricatorWritesBeforeQuit = true
