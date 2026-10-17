@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
-import { buildStudioExpressionTransforms } from './expressionTransforms'
+import { buildStudioExpressionAppearance, buildStudioExpressionTransforms, resolveStudioExpressionBase } from './expressionTransforms'
 import { Icon } from '../../ui/components/Icon'
 import { CharacterPortrait } from '../../ui/components/CharacterPortrait'
 import type { StudioAsset, StudioDocument, StudioElement, StudioFaceTransform, StudioFaceTransforms } from '../../../../shared/studio'
@@ -729,7 +729,7 @@ export function StudioPage() {
         const asset: StudioAsset = { id: crypto.randomUUID(), category: 'character', name: character.name, mimeType: 'image/png', dataUrl: imageData }
         const { width, height, characterCanvasWidth } = fitStudioCharacterToStage(rendered, imageWidth, imageHeight, stageWidth, stageHeight)
         assets.push(asset)
-        elements.push({ id: crypto.randomUUID(), kind: 'character', assetId: asset.id, characterId: character.id, characterSourceUpdatedAt: character.updatedAt, characterScale: 100, characterWidthScale: 100, characterHeightScale: 100, characterCanvasWidth, text: character.name, x: 0, y: 0, width, height, rotation: 0, zIndex: ++zIndex })
+        elements.push({ id: crypto.randomUUID(), kind: 'character', assetId: asset.id, characterId: character.id, characterSourceUpdatedAt: character.updatedAt, characterScale: 100, characterWidthScale: 100, characterHeightScale: 100, ...(character.customization.faceAppearance ? { expressionBase: { appearance: structuredClone(character.customization.faceAppearance), transforms: {} } } : {}), characterCanvasWidth, text: character.name, x: 0, y: 0, width, height, rotation: 0, zIndex: ++zIndex })
       }
       const nextElements = [...retained, ...elements]
       const retainedAssetIds = new Set(retained.map((element) => element.assetId).filter((id): id is string => Boolean(id)))
@@ -750,7 +750,7 @@ export function StudioPage() {
     } finally { setSavingCast(false) }
   }
 
-  const applyStudioFaceAppearance = async (appearance: CustomizerFaceAppearance, faceTransforms: StudioFaceTransforms = selectedElement?.faceTransforms ?? {}, record = true) => {
+  const applyStudioFaceAppearance = async (appearance: CustomizerFaceAppearance, faceTransforms: StudioFaceTransforms = selectedElement?.faceTransforms ?? {}, record = true, expressionState?: Pick<StudioElement, 'expressionBase' | 'activeExpressionPresetId'>) => {
     if (!activeStudio || selectedElement?.kind !== 'character' || !selectedStudioCharacter || !selectedElement.assetId || studioFaceBusy) return
     setStudioFaceBusy(true)
     try {
@@ -780,7 +780,7 @@ export function StudioPage() {
       const assetId = selectedElement.assetId
       const update = (studio: StudioDocument): StudioDocument => ({
         ...studio,
-        elements: studio.elements.map((element) => element.id === elementId ? { ...element, ...faceRenderGeometry(element, rendered, trimmed, sceneRef.current?.clientWidth ?? 1000, sceneRef.current?.clientHeight ?? 562), faceAppearance: appearance, faceTransforms, characterSourceUpdatedAt: selectedStudioCharacter.updatedAt } : element),
+        elements: studio.elements.map((element) => element.id === elementId ? { ...element, ...expressionState, ...faceRenderGeometry(element, rendered, trimmed, sceneRef.current?.clientWidth ?? 1000, sceneRef.current?.clientHeight ?? 562), faceAppearance: appearance, faceTransforms, characterSourceUpdatedAt: selectedStudioCharacter.updatedAt } : element),
         assets: studio.assets.map((asset) => asset.id === assetId ? { ...asset, dataUrl: studioDataUrl, mimeType: 'image/png' } : asset),
         updatedAt: new Date().toISOString()
       })
@@ -792,6 +792,16 @@ export function StudioPage() {
     } finally { setStudioFaceBusy(false) }
   }
 
+  const applyStudioBaseExpression = async () => {
+    const appearance = selectedStudioCharacter?.customization.faceAppearance ?? selectedStudioFaceAppearance
+    if (!selectedElement || !appearance || studioExpressionBusy || studioFaceBusy) return
+    const base = resolveStudioExpressionBase(selectedElement, appearance)
+    setStudioExpressionBusy(true)
+    try {
+      await applyStudioFaceAppearance(base.appearance, base.transforms, true, { expressionBase: base, activeExpressionPresetId: null })
+    } finally { setStudioExpressionBusy(false) }
+  }
+
   const applyStudioExpressionPreset = async (summary: FaceExpressionPresetSummary) => {
     if (!selectedStudioCharacter || !selectedElement || selectedElement.kind !== 'character' || studioExpressionBusy || studioFaceBusy) return
     setStudioExpressionBusy(true)
@@ -799,29 +809,18 @@ export function StudioPage() {
     try {
       const preset: FaceExpressionPreset | null = await window.desktop.loadFaceExpressionPreset(summary.modelSlot, summary.id)
       if (!preset || preset.modelSlot !== selectedStudioCharacterModelSlot) throw new Error('Este preset não está disponível para o modelo selecionado.')
-      const appearance = selectedStudioFaceAppearance ?? selectedStudioCharacter.customization.faceAppearance
-      if (!appearance) throw new Error('A personagem ainda não tem uma aparência facial para ajustar.')
+      const characterAppearance = selectedStudioCharacter.customization.faceAppearance ?? selectedStudioFaceAppearance
+      if (!characterAppearance) throw new Error('A personagem ainda não tem uma aparência facial para ajustar.')
+      const base = resolveStudioExpressionBase(selectedElement, characterAppearance)
+      const appearance = base.appearance
+      const nextAppearance = await buildStudioExpressionAppearance(preset, appearance, (id) => window.desktop.loadFaceCatalogItem(preset.modelSlot, id))
       const faceTransforms = await buildStudioExpressionTransforms(
-        preset, appearance, selectedElement.faceTransforms ?? {},
+        preset, nextAppearance, base.transforms,
         (id) => window.desktop.loadFaceComponentAsset(preset.modelSlot, id),
         (id) => window.desktop.loadFaceCatalogItem(preset.modelSlot, id)
       )
 
-      // The preset contributes only its transform snapshot and nose opacity. Asset
-      // choices and side linking remain owned by this character. Mouth frames
-      // are resolved inside the character's current sheet below.
-      const nextAppearance: CustomizerFaceAppearance = {
-        ...appearance,
-        noseOpacity: preset.selections.nose ? preset.noseOpacity : appearance.noseOpacity
-      }
-      const mouthId = appearance.mouthOpen ? appearance.mouthOpenCatalogId : appearance.mouthClosedCatalogId
-      if (mouthId && preset.selections.mouth) {
-        const mouth = await window.desktop.loadFaceCatalogItem(preset.modelSlot, mouthId)
-        const sheet = appearance.mouthOpen ? 'mouth-open' : 'mouth-closed'
-        const index = preset.selections.mouth.index
-        if (mouth?.pieces.some((piece) => piece.sheet === sheet && piece.index === index)) nextAppearance.expressionIndex = index
-      }
-      await applyStudioFaceAppearance(nextAppearance, faceTransforms)
+      await applyStudioFaceAppearance(nextAppearance, faceTransforms, true, { expressionBase: base, activeExpressionPresetId: preset.id })
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Não foi possível aplicar este preset de expressão.')
     } finally {
@@ -1250,7 +1249,8 @@ export function StudioPage() {
             return <div className="studio-expression-selected">
               <h3>Expressões · {collection?.name ?? 'Conjunto'}</h3>
               <div className="studio-expression-list">
-                {expressions.map((preset) => <button className="studio-expression-option" key={preset.id} type="button" onClick={() => void applyStudioExpressionPreset(preset)} disabled={studioExpressionBusy || studioFaceBusy}>
+                <button className={`studio-expression-option${!selectedElement.activeExpressionPresetId ? ' selected' : ''}`} type="button" onClick={() => void applyStudioBaseExpression()} disabled={studioExpressionBusy || studioFaceBusy} aria-pressed={!selectedElement.activeExpressionPresetId}><b>•</b><span>Base</span></button>
+                {expressions.map((preset) => <button className={`studio-expression-option${selectedElement.activeExpressionPresetId === preset.id ? ' selected' : ''}`} key={preset.id} type="button" aria-pressed={selectedElement.activeExpressionPresetId === preset.id} onClick={() => void applyStudioExpressionPreset(preset)} disabled={studioExpressionBusy || studioFaceBusy}>
                   <b>{String((preset.expressionIndex ?? 0) + 1).padStart(2, '0')}</b><span>{preset.name}</span>
                 </button>)}
                 {!expressions.length && <p className="studio-custom-hint">Nenhuma expressão salva neste conjunto. Salve expressões no Expressão Dev para listá-las aqui.</p>}

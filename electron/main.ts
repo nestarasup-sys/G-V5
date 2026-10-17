@@ -204,6 +204,10 @@ function isValidCustomizerFaceAppearance(appearance: CustomizerFaceAppearance): 
         && component.transform.scaleX > 0 && component.transform.scaleX <= 20 && component.transform.scaleY > 0 && component.transform.scaleY <= 20
         && (component.transform.flipX === undefined || typeof component.transform.flipX === 'boolean'))
       && (component.colors === undefined || isHairColorMap(component.colors))))
+  const transformsValid = appearance.transforms === undefined || (!!appearance.transforms && typeof appearance.transforms === 'object' && !Array.isArray(appearance.transforms)
+    && Object.entries(appearance.transforms).every(([key, value]) => faceElementKinds.includes(key as FaceElementKind) && !!value
+      && [value.x, value.y, value.scaleX, value.scaleY, value.rotation].every(Number.isFinite) && value.scaleX > 0 && value.scaleY > 0
+      && (value.flipX === undefined || typeof value.flipX === 'boolean')))
   const faceDetailsValid = appearance.faceDetails === undefined || (!!appearance.faceDetails && typeof appearance.faceDetails === 'object' && !Array.isArray(appearance.faceDetails)
     && faceDetailEntries.length <= 4
     && faceDetailEntries.every(([kind, id]) => ['eye-highlight-left', 'eye-highlight-right', 'blush', 'facial-shadow'].includes(kind)
@@ -217,7 +221,7 @@ function isValidCustomizerFaceAppearance(appearance: CustomizerFaceAppearance): 
   return isValidModelSlot(appearance.modelSlot)
     && (appearance.setId === undefined || isValidWardrobeId(appearance.setId))
     && catalogIds.every((id) => id === undefined || id === null || isValidFaceCatalogId(id))
-    && componentsValid && faceDetailsValid && linksValid && partColorsValid && hasSelection
+    && componentsValid && transformsValid && faceDetailsValid && linksValid && partColorsValid && hasSelection
     && [0, 1, 2].includes(appearance.eyeState)
     && typeof appearance.eyebrows === 'boolean'
     && Number.isInteger(appearance.noseIndex) && appearance.noseIndex >= 0 && appearance.noseIndex <= 5
@@ -857,6 +861,9 @@ function isStudioDocument(value: unknown): value is StudioDocument {
     && elements.every((element) => Boolean(element && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(element.id) && typeof element.text === 'string'
       && ['image', 'character', 'narrator', 'speech', 'thought'].includes(element.kind)
       && isStudioFaceTransforms(element.faceTransforms)
+      && (element.expressionBase === undefined || Boolean(element.expressionBase && element.expressionBase.appearance && isValidCustomizerFaceAppearance(element.expressionBase.appearance)
+        && element.expressionBase.transforms && isStudioFaceTransforms(element.expressionBase.transforms)))
+      && (element.activeExpressionPresetId === undefined || element.activeExpressionPresetId === null || typeof element.activeExpressionPresetId === 'string' && isValidWardrobeId(element.activeExpressionPresetId))
       && (element.characterSourceUpdatedAt === undefined || (typeof element.characterSourceUpdatedAt === 'string' && Number.isFinite(Date.parse(element.characterSourceUpdatedAt))))
       && (element.kind !== 'image' || assets.some((asset) => asset.id === element.assetId && asset.category === 'object'))
       && (element.kind !== 'character' || (typeof element.characterId === 'string' && assets.some((asset) => asset.id === element.assetId && asset.category === 'character')))

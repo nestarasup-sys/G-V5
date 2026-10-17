@@ -1,6 +1,32 @@
 import type { CustomizerFaceAppearance } from '../../../../shared/customizer'
 import type { FaceCatalogItem, FaceComponentAsset, FaceExpressionPreset, FaceTransform } from '../../../../shared/fabricator'
-import type { StudioFaceTransforms } from '../../../../shared/studio'
+import type { StudioElement, StudioExpressionBase, StudioFaceTransforms } from '../../../../shared/studio'
+
+export function resolveStudioExpressionBase(element: Pick<StudioElement, 'expressionBase' | 'faceTransforms'>, characterAppearance: CustomizerFaceAppearance): StudioExpressionBase {
+  return structuredClone(element.expressionBase ?? {
+    appearance: characterAppearance,
+    transforms: Object.fromEntries(Object.entries(element.faceTransforms ?? {}).filter(([key]) => !key.startsWith('expression-component:') && !key.startsWith('expression:')))
+  })
+}
+
+export async function buildStudioExpressionAppearance(preset: FaceExpressionPreset, base: CustomizerFaceAppearance, loadCatalog: (id: string) => Promise<FaceCatalogItem | null>): Promise<CustomizerFaceAppearance> {
+  const next = structuredClone(base)
+  if (preset.selections.nose) next.noseOpacity = preset.noseOpacity
+  const desiredOpen = preset.selections.mouth?.kind === 'mouth-open'
+  if (preset.selections.mouth && (desiredOpen ? base.mouthOpenCatalogId : base.mouthClosedCatalogId)) next.mouthOpen = desiredOpen
+  const mouthId = next.mouthOpen ? base.mouthOpenCatalogId : base.mouthClosedCatalogId
+  if (mouthId && preset.selections.mouth) {
+    const mouth = await loadCatalog(mouthId)
+    const sheet = next.mouthOpen ? 'mouth-open' : 'mouth-closed'
+    const index = preset.selections.mouth.index
+    if (mouth?.pieces.some((piece) => piece.sheet === sheet && piece.index === index)) next.expressionIndex = index
+  }
+  return next
+}
+
+function relativePieceSize(source: { width: number; height: number }, base: FaceTransform, target: { width: number; height: number }, targetBase: FaceTransform) {
+  return { x: target.width * targetBase.scaleX / (source.width * base.scaleX), y: target.height * targetBase.scaleY / (source.height * base.scaleY) }
+}
 
 /** Transfer the authored change, relative to each asset's own calibrated base. */
 export function transferExpressionTransform(base: FaceTransform, expression: FaceTransform, target: FaceTransform, sourceMirrored = false, targetMirrored = false, positionScale = { x: 1, y: 1 }): FaceTransform {
@@ -58,23 +84,26 @@ export async function buildStudioExpressionTransforms(
     if (targetId) {
       const target = await component(targetId)
       if (!target) return
-      let positionScale = { x: 1, y: 1 }
+      const targetBase = appearance.components?.[part]?.transform ?? target.defaultTransform
+      let positionScale = relativePieceSize(source, base, target, targetBase)
       if (kind === 'pupil') {
         const sourceEyeId = preset.selections.eyes[side]
         const targetEyeId = appearance.components?.[`eye-${side}`]?.assetId
         const [sourceEye, targetEye] = await Promise.all([sourceEyeId ? component(sourceEyeId) : null, targetEyeId ? component(targetEyeId) : null])
         if (sourceEye && targetEye) {
           const eyeBase = preset.referenceTransforms?.[right ? 'eyeRight' : 'eyeLeft'] ?? sourceEye.defaultTransform
-          positionScale = { x: targetEye.width * targetEye.defaultTransform.scaleX / (sourceEye.width * eyeBase.scaleX), y: targetEye.height * targetEye.defaultTransform.scaleY / (sourceEye.height * eyeBase.scaleY) }
+          positionScale = relativePieceSize(sourceEye, eyeBase, targetEye, appearance.components?.[`eye-${side}`]?.transform ?? targetEye.defaultTransform)
         }
       }
-      put(`expression-component:${part}`, transferExpressionTransform(base, preset.transforms[layer], target.defaultTransform, right && !source.rightSidePositioned, right && !target.rightSidePositioned, positionScale))
+      put(`expression-component:${part}`, transferExpressionTransform(base, preset.transforms[layer], targetBase, right && !source.rightSidePositioned, right && !target.rightSidePositioned, positionScale))
     } else if (kind !== 'pupil') {
       const id = kind === 'eye' ? sideCatalog(right ? 'eyeRightCatalogId' : 'eyeLeftCatalogId', appearance.eyeCatalogId) : sideCatalog(right ? 'eyebrowRightCatalogId' : 'eyebrowLeftCatalogId', appearance.eyebrowCatalogId)
       if (!id) return
       const target = await catalog(id)
-      const targetBase = target?.transforms[part as 'eye-left' | 'eye-right' | 'brow-left' | 'brow-right']
-      if (targetBase) put(`expression:${part}:${id}`, transferExpressionTransform(base, preset.transforms[layer], targetBase, right && !source.rightSidePositioned))
+      const element = part as 'eye-left' | 'eye-right' | 'brow-left' | 'brow-right'
+      const targetBase = appearance.transforms?.[element] ?? target?.transforms[element]
+      const piece = target?.pieces?.find((candidate) => candidate.side === side && candidate.index === (kind === 'eye' ? appearance.eyeState ?? 0 : 0))
+      if (targetBase) put(`expression:${part}:${id}`, transferExpressionTransform(base, preset.transforms[layer], targetBase, right && !source.rightSidePositioned, false, piece ? relativePieceSize(source, base, piece, targetBase) : { x: 1, y: 1 }))
     }
   })))
   await Promise.all((['nose', 'mouth'] as const).map(async (kind) => {
@@ -83,10 +112,13 @@ export async function buildStudioExpressionTransforms(
     if (!sourceChoice || !targetId) return
     const [source, target] = await Promise.all([catalog(sourceChoice.catalogId), catalog(targetId)])
     const base = preset.referenceTransforms?.[kind] ?? source?.transforms[kind]
-    const targetBase = target?.transforms[kind]
+    const targetBase = appearance.transforms?.[kind] ?? target?.transforms[kind]
     if (!base || !targetBase) return
     const sheet = kind === 'nose' ? 'nose' : appearance.mouthOpen ? 'mouth-open' : 'mouth-closed'
-    put(`expression:${sheet}:${targetId}`, transferExpressionTransform(base, preset.transforms[kind], targetBase))
+    const sourcePiece = source?.pieces?.find((piece) => piece.index === sourceChoice.index)
+    const targetPiece = target?.pieces?.find((piece) => piece.index === (kind === 'nose' ? appearance.noseIndex : appearance.expressionIndex))
+    const positionScale = sourcePiece && targetPiece ? relativePieceSize(sourcePiece, base, targetPiece, targetBase) : { x: 1, y: 1 }
+    put(`expression:${sheet}:${targetId}`, transferExpressionTransform(base, preset.transforms[kind], targetBase, false, false, positionScale))
   }))
   return result
 }

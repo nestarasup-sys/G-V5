@@ -5,7 +5,7 @@ import ts from 'typescript'
 
 const source = await readFile(new URL('../src/renderer/src/features/studio/expressionTransforms.ts', import.meta.url), 'utf8')
 const compiled = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText
-const { transferExpressionTransform: transfer, buildStudioExpressionTransforms: build } = await import(`data:text/javascript;base64,${Buffer.from(compiled).toString('base64')}`)
+const { transferExpressionTransform: transfer, buildStudioExpressionTransforms: build, resolveStudioExpressionBase: resolveBase, buildStudioExpressionAppearance: expressionAppearance } = await import(`data:text/javascript;base64,${Buffer.from(compiled).toString('base64')}`)
 const base = { x: 100, y: 50, scaleX: .05, scaleY: .08, rotation: 10 }
 const target = { x: 250, y: 70, scaleX: 2, scaleY: .6, rotation: -5 }
 assert.deepEqual(transfer(base, base, target), { ...target, flipX: false }, 'An unchanged preset must preserve a differently calibrated target')
@@ -38,7 +38,7 @@ const again = await build(preset, appearance, first, async (id) => assets[id], a
 assert.deepEqual(first, again, 'Applying an expression twice must not accumulate scaling')
 assert.equal(JSON.stringify(appearance), original, 'Expression application must not change asset choices')
 assert.deepEqual(first.eyes, previous.eyes, 'Studio manual adjustments must survive')
-assert.deepEqual(first['expression-component:eye-left'].sourceTransformOverride, actual)
+assert.deepEqual(first['expression-component:eye-left'].sourceTransformOverride, transfer(base, changed, target, false, false, { x: 40, y: 7.5 }))
 const snapshotPreset = { ...preset, referenceTransforms: { eyeLeft: base, eyeRight: base } }
 const recalibrated = { ...assets, source: asset('source', { ...base, scaleX: 10 }) }
 assert.deepEqual(await build(snapshotPreset, appearance, {}, async (id) => recalibrated[id], async () => null), await build(snapshotPreset, appearance, {}, async (id) => assets[id], async () => null), 'Saved calibration must survive subsequent Dev edits')
@@ -49,6 +49,34 @@ assert.equal(catalogTransforms['expression:eye-left:current-sheet'].sourceTransf
 assert.equal(catalogTransforms['expression:eye-right:current-sheet'].sourceTransformOverride.x, 490)
 assert.ok(!Object.keys(catalogTransforms).some((key) => key.includes(':source')), 'Transforms must address the current sheet rather than the authoring asset')
 await assert.rejects(build(preset, appearance, {}, async () => null, async () => null), /referência/)
+// A user-calibrated character remains the neutral reference across presets and sets.
+const userTransform = { x: 310, y: 95, scaleX: 3, scaleY: 1.2, rotation: 25, flipX: true }
+const userAppearance = { ...appearance, components: { ...appearance.components, 'eye-left': { assetId: 'target', transform: userTransform } }, expressionIndex: 6, mouthOpen: false, mouthClosedCatalogId: 'user-mouth', mouthOpenCatalogId: 'user-mouth-open' }
+const neutral = resolveBase({ faceTransforms: previous }, userAppearance)
+const neutralJson = JSON.stringify(neutral)
+const userApplied = await build(preset, neutral.appearance, neutral.transforms, async (id) => assets[id], async () => null)
+const userEye = userApplied['expression-component:eye-left'].sourceTransformOverride
+assert.ok(Math.abs(userEye.scaleX - 4.5) < 1e-9, 'Preset scale must multiply the user-selected size')
+assert.equal(userEye.rotation, 45, 'Preset rotation must be added to the user-selected angle')
+assert.equal(userEye.x, 910, 'Displacement must follow the actual size of the personalized eye')
+const presetB = { ...preset, transforms: { ...transforms, eyeLeft: { ...base, scaleX: .025, rotation: 0 } } }
+const savedActor = JSON.parse(JSON.stringify({ expressionBase: neutral, faceTransforms: userApplied }))
+const baseForB = resolveBase(savedActor, { ...userAppearance, expressionIndex: 99 })
+const second = await build(presetB, baseForB.appearance, baseForB.transforms, async (id) => assets[id], async () => null)
+assert.ok(Math.abs(second['expression-component:eye-left'].sourceTransformOverride.scaleX - 1.5) < 1e-9)
+assert.equal(JSON.stringify(resolveBase({ ...savedActor, faceTransforms: second }, userAppearance)), neutralJson, 'Base must restore all initial choices after A, B and persistence')
+assert.equal(JSON.stringify(neutral), neutralJson, 'The stored neutral face must never be mutated')
+const mouthPreset = { ...preset, selections: { ...preset.selections, mouth: { catalogId: 'author-mouth', kind: 'mouth-open', index: 12 } } }
+const mouthResult = await expressionAppearance(mouthPreset, neutral.appearance, async (id) => {
+  assert.equal(id, 'user-mouth-open')
+  return { pieces: [{ sheet: 'mouth-open', index: 12 }] }
+})
+assert.equal(mouthResult.mouthOpenCatalogId, 'user-mouth-open')
+assert.equal(mouthResult.expressionIndex, 12)
+assert.equal(mouthResult.mouthOpen, true)
+assert.equal(neutral.appearance.expressionIndex, 6)
+const missingFrame = await expressionAppearance(mouthPreset, neutral.appearance, async () => ({ pieces: [] }))
+assert.equal(missingFrame.expressionIndex, 6, 'A missing frame must preserve the character variant')
 const sharedSource = await readFile(new URL('../src/shared/studio.ts', import.meta.url), 'utf8')
 const sharedCompiled = ts.transpileModule(sharedSource, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText
 const { isStudioFaceTransforms } = await import(`data:text/javascript;base64,${Buffer.from(sharedCompiled).toString('base64')}`)

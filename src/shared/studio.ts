@@ -14,6 +14,7 @@ export type StudioFaceTransform = { x: number; y: number; width: number; height:
 export type StudioFaceTransformCategory = 'eyes' | 'eyebrows' | 'nose' | 'mouth'
 /** Keys are category:itemId; bare category keys remain supported for older Studio data. */
 export type StudioFaceTransforms = Record<string, StudioFaceTransform>
+export type StudioExpressionBase = { appearance: CustomizerFaceAppearance; transforms: StudioFaceTransforms }
 
 /** Shared persistence boundary for manual and expression-specific transforms. */
 export function isStudioFaceTransforms(value: unknown): value is StudioFaceTransforms {
@@ -47,6 +48,9 @@ export type StudioElement = {
   faceAppearance?: CustomizerFaceAppearance
   /** Face-piece transforms are stored per selected catalog sheet on this Studio actor. */
   faceTransforms?: StudioFaceTransforms
+  /** Character-specific neutral face, shared by every expression collection. */
+  expressionBase?: StudioExpressionBase
+  activeExpressionPresetId?: string | null
   /** Pose selected for this actor inside this Studio only. */
   poseSlot?: number | null
   /** Uniform actor size and independent axis squeeze, in percent of its saved base size. */

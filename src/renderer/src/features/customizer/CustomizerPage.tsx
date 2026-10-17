@@ -880,7 +880,7 @@ async function drawFaceCatalogOverlay(context: CanvasRenderingContext2D, artwork
     const studioCategory = sheet === 'eyes' ? 'eyes' : sheet === 'eyebrows' ? 'eyebrows' : sheet === 'nose' ? 'nose' : 'mouth'
     const expressionTransform = studioFaceTransforms?.[`expression:${element}:${item.id}`] ?? studioFaceTransforms?.[`expression:${sheet}:${item.id}`]
     const studioTransform = studioFaceTransforms?.[`${sheet}:${item.id}`] ?? studioFaceTransforms?.[studioCategory]
-    const transform = expressionTransform?.sourceTransformOverride ?? studioTransform?.sourceTransformOverride ?? item.transforms[element]
+    const transform = expressionTransform?.sourceTransformOverride ?? studioTransform?.sourceTransformOverride ?? appearance.transforms?.[element] ?? item.transforms[element]
     if (!piece || !transform) continue
     try {
       const catalogPalettePart: FacePalettePartId | undefined = sheet === 'nose' ? 'nose' : sheet.startsWith('mouth') ? 'mouth' : undefined
@@ -924,7 +924,7 @@ async function drawFaceCatalogOverlay(context: CanvasRenderingContext2D, artwork
     const selectedPart = appearance.components?.[part]
     if (!asset || !selectedPart) continue
     // Fabricator Dev owns placement and scale; the Customizer only chooses the asset.
-    const transform = studioFaceTransforms?.[`expression-component:${part}`]?.sourceTransformOverride ?? asset.defaultTransform
+    const transform = studioFaceTransforms?.[`expression-component:${part}`]?.sourceTransformOverride ?? selectedPart.transform ?? asset.defaultTransform
     const mirroredTransform = isRight && category !== 'pupil' && !asset.rightSidePositioned ? { ...transform, x: sourceHead.width - transform.x, rotation: -transform.rotation } : transform
     let localX = mirroredTransform.x
     let localY = mirroredTransform.y
@@ -940,7 +940,7 @@ async function drawFaceCatalogOverlay(context: CanvasRenderingContext2D, artwork
       if (!eyeAsset) continue
       const eyeSelection = appearance.components?.[eyePart]
       const eyeTransformBase = eyeAsset
-        ? studioFaceTransforms?.[`expression-component:${eyePart}`]?.sourceTransformOverride ?? eyeAsset.defaultTransform
+        ? studioFaceTransforms?.[`expression-component:${eyePart}`]?.sourceTransformOverride ?? eyeSelection?.transform ?? eyeAsset.defaultTransform
         : undefined
       if (eyeTransformBase) {
         const eyeTransform = isRight && !eyeAsset?.rightSidePositioned ? { ...eyeTransformBase, x: sourceHead.width - eyeTransformBase.x, rotation: -eyeTransformBase.rotation } : eyeTransformBase
