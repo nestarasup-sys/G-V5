@@ -15,6 +15,7 @@ import { applyCharacterBodyShape } from './bodyShape'
 import { tintSkinPixels } from './skinTint'
 import { characterRenderSize, configureCharacterSampling } from './renderResolution'
 import { drawFaceExpressionEffects } from './expressionEffectRender'
+import { legacyStandardExpressionEffects } from '../../../../shared/legacyExpressionEffects'
 
 type CatalogArtwork = Pick<FabricatorProject, 'width' | 'height' | 'parts' | 'layerOrder' | 'hiddenPartIds'> & Partial<Pick<FabricatorProject, 'joints'>>
 function withCharacterHeadSize(artwork: CatalogArtwork, proportions: CharacterProportions): CatalogArtwork {
@@ -42,6 +43,31 @@ const wardrobeImageCache = new Map<string, Promise<HTMLImageElement>>()
 const skinTintImageCache = new Map<string, Promise<HTMLImageElement>>()
 const hairTintImageCache = new Map<string, Promise<HTMLImageElement>>()
 const hairPreviewImageCache = new Map<string, Promise<string>>()
+type StandardExpressionEffects = Record<number, FaceExpressionEffects>
+
+async function loadStandardExpressionEffects(modelSlot: number): Promise<StandardExpressionEffects> {
+  const summaries = await window.desktop.listFaceExpressionPresets(modelSlot)
+  const standard = summaries.filter((preset) => (preset.collectionId ?? 'standard') === 'standard'
+    && Number.isInteger(preset.expressionIndex) && preset.expressionIndex! >= 0 && preset.expressionIndex! < 21)
+  const loaded = await Promise.all(standard.map((summary) => window.desktop.loadFaceExpressionPreset(modelSlot, summary.id)))
+  const effectsByIndex: StandardExpressionEffects = {}
+  for (const preset of loaded) {
+    if (!preset || !Number.isInteger(preset.expressionIndex)) continue
+    const fallback = legacyStandardExpressionEffects({ ...preset, collectionId: preset.collectionId ?? 'standard' })
+    const effects = preset.effects ?? fallback
+    if (!effects) continue
+    // Customizer's checkbox controls the mouth blush. Keep the other authored
+    // expression effects exclusive to Studio presets.
+    effectsByIndex[preset.expressionIndex!] = {
+      ...structuredClone(effects),
+      shadow: { ...effects.shadow, enabled: false },
+      blush: { ...effects.blush, enabled: false },
+      mouthBlush: { ...effects.mouthBlush }
+    }
+  }
+  return effectsByIndex
+}
+
 const hairColorControls: Array<{ id: HairColorRole; label: string; fallback: string }> = [
   { id: 'base', label: 'Cor base', fallback: '#9b563e' },
   { id: 'fade', label: 'Degradê', fallback: '#633b37' },
@@ -1131,6 +1157,9 @@ export async function prepareSavedCharacterRenderer(character: CustomizerCharact
   const wardrobe = await renderWardrobeOverlay(groups, details, artwork, modelSlot, source, null, character.customization.modelSkinTone)
 
   const appearance = character.customization.faceAppearance
+  const expressionEffectsByIndex = appearance?.modelSlot === modelSlot
+    ? await loadStandardExpressionEffects(modelSlot).catch((): StandardExpressionEffects => ({}))
+    : {}
   let faceItems: Partial<Record<FaceSheetKind | FaceElementKind, FaceCatalogItem>> = {}
   const faceItemPromises = new Map<string, Promise<FaceCatalogItem | null>>()
   let legacyFaceUrl: string | null = null
@@ -1193,7 +1222,8 @@ export async function prepareSavedCharacterRenderer(character: CustomizerCharact
         }
         if (item) activeItems[category] = item
       }))
-      if (hasCatalogSelection) await drawFaceCatalogOverlay(context, artwork, source, activeItems, currentAppearance, character.customization.modelSkinTone, studioFaceTransforms, expressionEffects)
+      const mouthEffects = expressionEffects ?? expressionEffectsByIndex[currentAppearance.expressionIndex]
+      if (hasCatalogSelection) await drawFaceCatalogOverlay(context, artwork, source, activeItems, currentAppearance, character.customization.modelSkinTone, studioFaceTransforms, mouthEffects)
       else if (legacyFaceImage && currentAppearance.setId === appearance?.setId) context.drawImage(legacyFaceImage, 0, 0, canvas.width, canvas.height)
     } else if (legacyFaceImage) context.drawImage(legacyFaceImage, 0, 0, canvas.width, canvas.height)
     if (frontHairImage) context.drawImage(frontHairImage, 0, 0, canvas.width, canvas.height)
@@ -1353,6 +1383,7 @@ export function CustomizerPage() {
   const [wardrobeLibraryPage, setWardrobeLibraryPage] = useState(0)
   const [faceCatalogItems, setFaceCatalogItems] = useState<FaceCatalogItemSummary[]>([])
   const [faceCatalogDetails, setFaceCatalogDetails] = useState<Record<string, FaceCatalogItem>>({})
+  const [standardExpressionEffects, setStandardExpressionEffects] = useState<StandardExpressionEffects>({})
   const [faceComponentAssets, setFaceComponentAssets] = useState<FaceComponentAssetSummary[]>([])
   const [faceComponentDetails, setFaceComponentDetails] = useState<Record<string, FaceComponentAsset>>({})
   const [faceDetails, setFaceDetails] = useState<Record<string, FaceSet>>({})
@@ -1650,6 +1681,17 @@ export function CustomizerPage() {
   }, [selectedCatalogModelSlot, activeModule])
 
   useEffect(() => {
+    if (selectedCatalogModelSlot === null) { setStandardExpressionEffects({}); return }
+    let cancelled = false
+    void loadStandardExpressionEffects(selectedCatalogModelSlot).then((effects) => {
+      if (!cancelled) setStandardExpressionEffects(effects)
+    }).catch((reason: unknown) => {
+      if (!cancelled) setCatalogError(reason instanceof Error ? reason.message : 'Não foi possível carregar os ajustes das expressões.')
+    })
+    return () => { cancelled = true }
+  }, [selectedCatalogModelSlot])
+
+  useEffect(() => {
     if (selectedCatalogModelSlot === null) { setFaceComponentAssets([]); setFaceComponentDetails({}); setFaceComponentLoading(false); return }
     let cancelled = false
     setFaceComponentLoading(true)
@@ -1711,7 +1753,7 @@ export function CustomizerPage() {
     }
     if (!displayArtworkProject || !selectedSourceModelProject || !appearance || (!hasCatalogSelection && !face)) { setSelectedFaceUrl(null); return }
     const render = hasCatalogSelection
-      ? renderFaceCatalogOverlay(displayArtworkProject, selectedSourceModelProject, catalogItems, appearance, selectedCharacter?.customization.modelSkinTone, undefined, characterRenderSize(displayArtworkProject.width, displayArtworkProject.height, previewExtent.width, previewExtent.height, customizerPreviewZoom, previewExtent.density))
+      ? renderFaceCatalogOverlay(displayArtworkProject, selectedSourceModelProject, catalogItems, appearance, selectedCharacter?.customization.modelSkinTone, undefined, characterRenderSize(displayArtworkProject.width, displayArtworkProject.height, previewExtent.width, previewExtent.height, customizerPreviewZoom, previewExtent.density), standardExpressionEffects[appearance.expressionIndex])
       : renderFaceOverlay(displayArtworkProject, selectedSourceModelProject, face, appearance, characterRenderSize(displayArtworkProject.width, displayArtworkProject.height, previewExtent.width, previewExtent.height, customizerPreviewZoom, previewExtent.density))
     void render.then((url) => {
       if (!cancelled) setSelectedFaceUrl(url)
@@ -1719,7 +1761,7 @@ export function CustomizerPage() {
       if (!cancelled) setCatalogError(reason instanceof Error ? reason.message : 'Não foi possível montar o rosto do personagem.')
     })
     return () => { cancelled = true }
-  }, [characterFaceAppearance, faceCatalogDetails, faceDetails, displayArtworkProject, selectedSourceModelProject, selectedCharacter?.customization.modelSkinTone, previewExtent, customizerPreviewZoom])
+  }, [characterFaceAppearance, faceCatalogDetails, faceDetails, displayArtworkProject, selectedSourceModelProject, selectedCharacter?.customization.modelSkinTone, previewExtent, customizerPreviewZoom, standardExpressionEffects])
 
   useEffect(() => {
     let cancelled = false
