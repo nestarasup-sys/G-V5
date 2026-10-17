@@ -1009,8 +1009,9 @@ export function StudioPage() {
     const changesFaceMode = Object.hasOwn(patch, 'mouthOpen') || Object.hasOwn(patch, 'eyeState')
     let faceMode = selectedElement?.activeFaceMode
     if (Object.hasOwn(patch, 'mouthOpen')) faceMode = patch.mouthOpen ? 'talk' : 'idle'
-    else if (patch.eyeState === 2) faceMode = 'blink'
-    else if (Object.hasOwn(patch, 'eyeState')) faceMode = undefined
+    else if (Object.hasOwn(patch, 'eyeState')) {
+      faceMode = patch.eyeState === 2 ? 'blink' : selectedStudioFaceMode === 'talk' ? 'talk' : 'idle'
+    }
     void applyStudioFaceAppearance(
       { ...selectedStudioFaceAppearance, ...patch },
       selectedElement?.faceTransforms ?? {},
@@ -1315,7 +1316,7 @@ export function StudioPage() {
         {activeItem ? <div className="studio-custom-face-variants">{[0, 1, 2].map((index) => {
           const pieces = activeItem.pieces.filter((piece) => piece.index === index)
           const labels = ['Direita', 'Esquerda', 'Fechados']
-          const displayedEyeState = selectedStudioFaceMode === 'blink' ? 2 : selectedStudioFaceMode === 'talk' ? 0 : selectedStudioFaceAppearance?.eyeState
+          const displayedEyeState = selectedStudioFaceMode === 'blink' ? 2 : selectedStudioFaceAppearance?.eyeState === 1 ? 1 : 0
           return <button className={(displayedEyeState === index ? 'selected' : '')} key={index} onClick={() => updateStudioFaceVariant({ eyeState: index as 0 | 1 | 2 })} disabled={studioFaceBusy} type="button"><span>{renderPair(pieces)}</span><b>{labels[index]}</b></button>
         })}</div> : <p className="studio-custom-hint">Escolha uma folha de olhos para ver as três variantes.</p>}
       </>}

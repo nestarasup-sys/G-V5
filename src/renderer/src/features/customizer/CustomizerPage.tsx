@@ -1254,7 +1254,7 @@ export async function prepareSavedCharacterRenderer(character: CustomizerCharact
         return details.filter((asset): asset is FaceComponentAsset => Boolean(asset?.kind === 'eye-closed'))
       })
     }
-    const candidates = (await closedEyeAssetsPromise).filter((asset) => Boolean(asset.rightSidePositioned) === (side === 'right'))
+    const candidates = (await closedEyeAssetsPromise).filter((asset) => isRightFaceAsset(asset) === (side === 'right'))
     const openBaseName = componentSheetName(openEye.name)
     return candidates.find((asset) => Boolean(openEye.pairId && openEye.pairId === asset.pairId))
       ?? candidates.find((asset) => componentSheetName(asset.name) === openBaseName)
@@ -1300,7 +1300,7 @@ export async function prepareSavedCharacterRenderer(character: CustomizerCharact
     if (wardrobeImage) context.drawImage(wardrobeImage, 0, 0, canvas.width, canvas.height)
     const faceAppearance = currentAppearance && studioFaceMode ? {
       ...currentAppearance,
-      eyeState: studioFaceMode === 'blink' ? 2 as const : 0 as const,
+      eyeState: studioFaceMode === 'blink' ? 2 as const : currentAppearance.eyeState === 1 ? 1 as const : 0 as const,
       mouthOpen: studioFaceMode === 'talk'
     } : currentAppearance
     if (faceAppearance?.modelSlot === modelSlot) {
