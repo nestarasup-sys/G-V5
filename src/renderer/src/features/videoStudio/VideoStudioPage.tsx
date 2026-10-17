@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
+import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import type { VideoActorState, VideoAsset, VideoProject, VideoSceneElement, VideoTextTrack } from '../../../../shared/videoStudio'
 import { createVideoProject } from '../../../../shared/videoStudio'
-import { evaluateVideoProject, frameAtTime, moveCharacterBoundary, recordVideoFrame, updateVideoDuration, stateAtFrame } from './videoRuntime'
+import { evaluateVideoProject, moveCharacterBoundary, recordVideoFrame, updateVideoDuration, stateAtFrame } from './videoRuntime'
 import { Icon } from '../../ui/components/Icon'
 import './videoStudio.css'
 
@@ -36,7 +36,6 @@ export function VideoStudioPage() {
   const dirtyRef = useRef(false)
   const pastRef = useRef<VideoProject[]>([])
   const futureRef = useRef<VideoProject[]>([])
-  const playbackClockRef = useRef(0)
   const laneScrollRef = useRef<HTMLDivElement>(null)
 
   const activeProject = projects.find(item => item.id === activeId) ?? null
@@ -245,7 +244,6 @@ export function VideoStudioPage() {
     const tick = (now: number) => {
       const elapsedFrames = (now - started) * activeProject.frameRate / 1000
       const next = Math.min(activeProject.durationFrames - 1, startFrame + Math.floor(elapsedFrames))
-      playbackClockRef.current = next
       setPlayhead(current => current === next ? current : next)
       if (next >= activeProject.durationFrames - 1) { setPlaying(false); return }
       request = requestAnimationFrame(tick)
@@ -361,7 +359,6 @@ export function VideoStudioPage() {
   const assetById = new Map(project.assets.map(asset => [asset.id, asset]))
   const seconds = project.durationFrames / project.frameRate
   const totalWidth = Math.max(200, seconds * zoom)
-  const laneNameWidth = 158
   const selectedElement = project.elements.find(item => item.id === selectedElementId) ?? null
   const currentTrack = selectedElement ? project.characterTracks.find(item => item.elementId === selectedElement.id) : undefined
   const initialState = currentTrack ? stateAtFrame(currentTrack, playhead) : null
