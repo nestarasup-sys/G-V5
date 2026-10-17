@@ -572,18 +572,23 @@ async function renderWardrobeOverlay(
   modelSlot: number | null,
   source: FabricatorProject | null,
   selected: SelectedWardrobeComponent | null,
-  skinTone?: string
+  skinTone?: string,
+  maxSize = Math.max(artwork.width, artwork.height)
 ): Promise<{ imageUrl: string | null; selectedUrl: string | null }> {
   if (!groups.length || modelSlot === null || !source) return { imageUrl: null, selectedUrl: null }
   const output = document.createElement('canvas')
-  output.width = Math.max(1, artwork.width)
-  output.height = Math.max(1, artwork.height)
+  const pixelScale = Math.min(maxSize / Math.max(artwork.width, artwork.height), Math.sqrt(16_000_000 / (artwork.width * artwork.height)))
+  output.width = Math.max(1, Math.ceil(artwork.width * pixelScale))
+  output.height = Math.max(1, Math.ceil(artwork.height * pixelScale))
   const outputContext = output.getContext('2d')
   if (!outputContext) return { imageUrl: null, selectedUrl: null }
+  configureCharacterSampling(outputContext)
+  outputContext.scale(pixelScale, pixelScale)
   const selectionCanvas = document.createElement('canvas')
   selectionCanvas.width = output.width
   selectionCanvas.height = output.height
   const selectionContext = selectionCanvas.getContext('2d')
+  if (selectionContext) selectionContext.scale(pixelScale, pixelScale)
   const hidden = new Set(artwork.hiddenPartIds ?? [])
   const bodyOrder = (artwork.layerOrder ?? []).filter((id, index, order) => artwork.parts.some((part) => part.id === id) && order.indexOf(id) === index)
   for (const part of artwork.parts) if (!bodyOrder.includes(part.id)) bodyOrder.push(part.id)
@@ -825,17 +830,19 @@ async function renderFrontHairOverlay(artwork: CatalogArtwork, source: Fabricato
   return targetContext ? null : canvas.toDataURL('image/png')
 }
 
-async function renderFaceOverlay(artwork: CatalogArtwork, source: FabricatorProject | null, face: FaceSet | null, appearance: CustomizerFaceAppearance | undefined): Promise<string | null> {
+async function renderFaceOverlay(artwork: CatalogArtwork, source: FabricatorProject | null, face: FaceSet | null, appearance: CustomizerFaceAppearance | undefined, maxSize = Math.max(artwork.width, artwork.height)): Promise<string | null> {
   if (!source || !face || !appearance || appearance.setId !== face.id || appearance.modelSlot !== source.slot) return null
   const sourceHead = source.parts.find((part) => /cabe[çc]a|head/i.test(part.name))
   const targetHead = artwork.parts.find((part) => /cabe[çc]a|head/i.test(part.name))
   if (!sourceHead || !targetHead || sourceHead.width <= 0 || sourceHead.height <= 0) return null
   const canvas = document.createElement('canvas')
-  canvas.width = Math.max(1, artwork.width)
-  canvas.height = Math.max(1, artwork.height)
+  const pixelScale = Math.min(maxSize / Math.max(artwork.width, artwork.height), Math.sqrt(16_000_000 / (artwork.width * artwork.height)))
+  canvas.width = Math.max(1, Math.ceil(artwork.width * pixelScale))
+  canvas.height = Math.max(1, Math.ceil(artwork.height * pixelScale))
   const context = canvas.getContext('2d')
   if (context) configureCharacterSampling(context)
   if (!context) return null
+  context.scale(pixelScale, pixelScale)
   for (const element of faceElementOrder) {
     if (element.startsWith('brow') && !appearance.eyebrows) continue
     const sheet = element.startsWith('eye') ? 'eyes' : element.startsWith('brow') ? 'eyebrows' : element === 'nose' ? 'nose' : appearance.mouthOpen ? 'mouth-open' : 'mouth-closed'
@@ -1055,13 +1062,15 @@ async function drawFaceCatalogOverlay(context: CanvasRenderingContext2D, artwork
   }
 }
 
-async function renderFaceCatalogOverlay(artwork: CatalogArtwork, source: FabricatorProject, items: Partial<Record<FaceSheetKind | FaceElementKind, FaceCatalogItem>>, appearance: CustomizerFaceAppearance, skinTone?: string, studioFaceTransforms?: StudioFaceTransforms): Promise<string | null> {
+async function renderFaceCatalogOverlay(artwork: CatalogArtwork, source: FabricatorProject, items: Partial<Record<FaceSheetKind | FaceElementKind, FaceCatalogItem>>, appearance: CustomizerFaceAppearance, skinTone?: string, studioFaceTransforms?: StudioFaceTransforms, maxSize = Math.max(artwork.width, artwork.height)): Promise<string | null> {
   const canvas = document.createElement('canvas')
-  canvas.width = Math.max(1, artwork.width)
-  canvas.height = Math.max(1, artwork.height)
+  const pixelScale = Math.min(maxSize / Math.max(artwork.width, artwork.height), Math.sqrt(16_000_000 / (artwork.width * artwork.height)))
+  canvas.width = Math.max(1, Math.ceil(artwork.width * pixelScale))
+  canvas.height = Math.max(1, Math.ceil(artwork.height * pixelScale))
   const context = canvas.getContext('2d')
   if (context) configureCharacterSampling(context)
   if (!context) return null
+  context.scale(pixelScale, pixelScale)
   await drawFaceCatalogOverlay(context, artwork, source, items, appearance, skinTone, studioFaceTransforms)
   return canvas.toDataURL('image/png')
 }
@@ -1483,7 +1492,7 @@ export function CustomizerPage() {
         const artwork = pose ? await window.desktop.loadFabricatorPose(model.slot, pose.slot) : sourceProject
         if (!artwork) throw new Error('Não foi possível carregar a prévia deste personagem.')
         if (!cancelled && previewLoadRequest.current === requestId) { setSelectedArtworkProject(artwork); setSelectedSourceModelProject(sourceProject) }
-        const artworkUrl = await renderArtwork(applyCharacterBodyShape(withCharacterHeadSize(artwork, activeProportions), activeBodyDimensions), 720, selectedCharacter.customization.modelSkinTone)
+        const artworkUrl = await renderArtwork(applyCharacterBodyShape(withCharacterHeadSize(artwork, activeProportions), activeBodyDimensions), characterRenderSize(artwork.width, artwork.height, previewExtent.width, previewExtent.height, customizerPreviewZoom, previewExtent.density), selectedCharacter.customization.modelSkinTone)
         if (!cancelled && previewLoadRequest.current === requestId) setSelectedArtworkUrl(artworkUrl)
       } catch (reason) {
         if (!cancelled && previewLoadRequest.current === requestId) setCatalogError(reason instanceof Error ? reason.message : 'Não foi possível carregar a prévia.')
@@ -1492,18 +1501,18 @@ export function CustomizerPage() {
       }
     })()
     return () => { cancelled = true }
-  }, [catalogLoading, catalogModels, catalogPoses, selectedCharacter?.id, selectedCharacter?.customization.modelSkinTone])
+  }, [catalogLoading, catalogModels, catalogPoses, selectedCharacter?.id, selectedCharacter?.customization.modelSkinTone, previewExtent, customizerPreviewZoom])
 
   useEffect(() => {
     if (!displayArtworkProject) return
     let cancelled = false
-    void renderArtwork(displayArtworkProject, 720, selectedCharacter?.customization.modelSkinTone).then((url) => {
+    void renderArtwork(displayArtworkProject, characterRenderSize(displayArtworkProject.width, displayArtworkProject.height, previewExtent.width, previewExtent.height, customizerPreviewZoom, previewExtent.density), selectedCharacter?.customization.modelSkinTone).then((url) => {
       if (!cancelled) setSelectedArtworkUrl(url)
     }).catch((reason: unknown) => {
       if (!cancelled) setCatalogError(reason instanceof Error ? reason.message : 'Não foi possível atualizar a forma do corpo.')
     })
     return () => { cancelled = true }
-  }, [displayArtworkProject, selectedCharacter?.customization.modelSkinTone])
+  }, [displayArtworkProject, selectedCharacter?.customization.modelSkinTone, previewExtent, customizerPreviewZoom])
 
   useEffect(() => {
     setSelectedClothing(null)
@@ -1680,15 +1689,15 @@ export function CustomizerPage() {
     }
     if (!displayArtworkProject || !selectedSourceModelProject || !appearance || (!hasCatalogSelection && !face)) { setSelectedFaceUrl(null); return }
     const render = hasCatalogSelection
-      ? renderFaceCatalogOverlay(displayArtworkProject, selectedSourceModelProject, catalogItems, appearance, selectedCharacter?.customization.modelSkinTone)
-      : renderFaceOverlay(displayArtworkProject, selectedSourceModelProject, face, appearance)
+      ? renderFaceCatalogOverlay(displayArtworkProject, selectedSourceModelProject, catalogItems, appearance, selectedCharacter?.customization.modelSkinTone, undefined, characterRenderSize(displayArtworkProject.width, displayArtworkProject.height, previewExtent.width, previewExtent.height, customizerPreviewZoom, previewExtent.density))
+      : renderFaceOverlay(displayArtworkProject, selectedSourceModelProject, face, appearance, characterRenderSize(displayArtworkProject.width, displayArtworkProject.height, previewExtent.width, previewExtent.height, customizerPreviewZoom, previewExtent.density))
     void render.then((url) => {
       if (!cancelled) setSelectedFaceUrl(url)
     }).catch((reason: unknown) => {
       if (!cancelled) setCatalogError(reason instanceof Error ? reason.message : 'Não foi possível montar o rosto do personagem.')
     })
     return () => { cancelled = true }
-  }, [characterFaceAppearance, faceCatalogDetails, faceDetails, displayArtworkProject, selectedSourceModelProject, selectedCharacter?.customization.modelSkinTone])
+  }, [characterFaceAppearance, faceCatalogDetails, faceDetails, displayArtworkProject, selectedSourceModelProject, selectedCharacter?.customization.modelSkinTone, previewExtent, customizerPreviewZoom])
 
   useEffect(() => {
     let cancelled = false
@@ -1797,13 +1806,13 @@ export function CustomizerPage() {
     const previewGroups = wardrobeTransformDraft && selectedClothing
       ? groups.map((group) => group.setId === selectedClothing.setId && group.category === selectedClothing.category && (group.componentId === selectedClothing.componentId || !group.componentId) ? { ...group, componentId: selectedClothing.componentId, ...wardrobeTransformDraft } : group)
       : groups
-    void renderWardrobeOverlay(previewGroups, wardrobeDetails, displayArtworkProject, selectedCatalogModelSlot, selectedSourceModelProject, wardrobeHighlightVisible ? selectedClothing : null, selectedCharacter?.customization.modelSkinTone).then((result) => {
+    void renderWardrobeOverlay(previewGroups, wardrobeDetails, displayArtworkProject, selectedCatalogModelSlot, selectedSourceModelProject, wardrobeHighlightVisible ? selectedClothing : null, selectedCharacter?.customization.modelSkinTone, characterRenderSize(displayArtworkProject.width, displayArtworkProject.height, previewExtent.width, previewExtent.height, customizerPreviewZoom, previewExtent.density)).then((result) => {
       if (!cancelled) { setSelectedWardrobeUrl(result.imageUrl); setSelectedWardrobeHighlightUrl(result.selectedUrl) }
     }).catch((reason: unknown) => {
       if (!cancelled) setCatalogError(reason instanceof Error ? reason.message : 'Não foi possível compor as roupas do personagem.')
     })
     return () => { cancelled = true }
-  }, [selectedCharacter?.id, selectedCharacter?.customization.modelSkinTone, selectedCharacter?.customization.wardrobeGroups, wardrobeDetails, displayArtworkProject, selectedCatalogModelSlot, selectedSourceModelProject, selectedClothing?.setId, selectedClothing?.category, selectedClothing?.componentId, wardrobeTransformDraft, wardrobeHighlightVisible])
+  }, [selectedCharacter?.id, selectedCharacter?.customization.modelSkinTone, selectedCharacter?.customization.wardrobeGroups, wardrobeDetails, displayArtworkProject, selectedCatalogModelSlot, selectedSourceModelProject, selectedClothing?.setId, selectedClothing?.category, selectedClothing?.componentId, wardrobeTransformDraft, wardrobeHighlightVisible, previewExtent, customizerPreviewZoom])
 
   function selectCharacter(id: string) {
     setSelectedCharacterId(id)
@@ -2389,7 +2398,7 @@ export function CustomizerPage() {
       let artwork: CatalogArtwork | null = firstPose ? await window.desktop.loadFabricatorPose(model.slot, 1) : null
       if (!artwork) artwork = sourceProject
       if (!artwork) throw new Error('Não foi possível abrir este modelo.')
-      const artworkUrl = await renderArtwork(applyCharacterBodyShape(withCharacterHeadSize(artwork, activeProportions), activeBodyDimensions), 720, selectedCharacter?.customization.modelSkinTone)
+      const artworkUrl = await renderArtwork(applyCharacterBodyShape(withCharacterHeadSize(artwork, activeProportions), activeBodyDimensions), characterRenderSize(artwork.width, artwork.height, previewExtent.width, previewExtent.height, customizerPreviewZoom, previewExtent.density), selectedCharacter?.customization.modelSkinTone)
       if (previewLoadRequest.current === requestId) { setSelectedArtworkProject(artwork); setSelectedSourceModelProject(sourceProject); setSelectedArtworkUrl(artworkUrl) }
     } catch (reason) {
       if (previewLoadRequest.current === requestId) setCatalogError(reason instanceof Error ? reason.message : 'Não foi possível abrir este modelo.')
@@ -2414,7 +2423,7 @@ export function CustomizerPage() {
       if (!sourceProject) throw new Error('O modelo de referência desta pose não está disponível.')
       const artwork = await window.desktop.loadFabricatorPose(pose.sourceModelSlot, pose.slot)
       if (!artwork) throw new Error('Não foi possível abrir esta pose.')
-      const artworkUrl = await renderArtwork(applyCharacterBodyShape(withCharacterHeadSize(artwork, activeProportions), activeBodyDimensions), 720, selectedCharacter?.customization.modelSkinTone)
+      const artworkUrl = await renderArtwork(applyCharacterBodyShape(withCharacterHeadSize(artwork, activeProportions), activeBodyDimensions), characterRenderSize(artwork.width, artwork.height, previewExtent.width, previewExtent.height, customizerPreviewZoom, previewExtent.density), selectedCharacter?.customization.modelSkinTone)
       if (previewLoadRequest.current === requestId) { setSelectedArtworkProject(artwork); setSelectedSourceModelProject(sourceProject); setSelectedArtworkUrl(artworkUrl) }
     } catch (reason) {
       if (previewLoadRequest.current === requestId) setCatalogError(reason instanceof Error ? reason.message : 'Não foi possível abrir esta pose.')
