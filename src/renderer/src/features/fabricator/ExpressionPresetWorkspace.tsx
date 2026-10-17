@@ -43,7 +43,7 @@ const STANDARD_EXPRESSIONS = [
   'Desconfiada', 'Envergonhada', 'Impressionada', 'Indignada', 'Irritada', 'Nojo', 'Normal',
   'Orgulhosa', 'Preocupada', 'Séria', 'Sorrindo de canto', 'Sorriso maligno', 'Surpresa', 'Triste/magoada'
 ] as const
-const defaultExpressionEffects = (): FaceExpressionEffects => ({ shadow: { enabled: false, color: '#4b3542', opacity: .38, softness: .55, size: .42, offsetY: -.06 }, blush: { enabled: false, color: '#f0789c', opacity: .48, softness: .72, size: .2, offsetY: .19 }, mouthBlush: { enabled: false, color: '#e86388', opacity: .38, softness: .78, size: .9, offsetY: 0 } })
+const defaultExpressionEffects = (): FaceExpressionEffects => ({ shadow: { enabled: false, color: '#4b3542', opacity: .38, softness: .55, size: .42, offsetY: 0 }, blush: { enabled: false, color: '#f0789c', opacity: .48, softness: .72, size: .68, offsetX: 0, offsetY: .04, aspectRatio: .52, style: 'cheeks' }, mouthBlush: { enabled: false, color: '#e86388', opacity: .38, softness: .78, size: .12, offsetY: 0, aspectRatio: .52 } })
 const cloneEffects = (effects?: FaceExpressionEffects): FaceExpressionEffects => structuredClone(effects ?? defaultExpressionEffects())
 const identityTransform = (): FaceTransform => ({ x: 0, y: 0, scaleX: 1, scaleY: 1, rotation: 0 })
 const emptyTransforms = (): FaceExpressionTransforms => ({ eyeLeft: identityTransform(), eyeRight: identityTransform(), pupilLeft: identityTransform(), pupilRight: identityTransform(), browLeft: identityTransform(), browRight: identityTransform(), nose: identityTransform(), mouth: identityTransform() })
@@ -507,12 +507,17 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
   }
   const saveCurrentPreset = async () => {
     setSaving(true); setError(null)
-    const saved: FaceExpressionPreset = {
-      schemaVersion: 1, id: presetId, modelSlot, name: activeExpressionName,
-      collectionId: selectedCollectionId, expressionIndex: selectedExpressionIndex,
-      selections: structuredClone(composition), transforms: cloneTransforms(transforms), referenceTransforms: defaultTransforms(composition, componentAssets, catalogItems), noseOpacity, effects: cloneEffects(effects), updatedAt: new Date().toISOString()
-    }
     try {
+      const existing = await window.desktop.loadFaceExpressionPreset(modelSlot, presetId)
+      const sameComposition = existing && JSON.stringify(existing.selections) === JSON.stringify(composition)
+      const referenceTransforms = sameComposition && existing.referenceTransforms
+        ? existing.referenceTransforms
+        : defaultTransforms(composition, componentAssets, catalogItems)
+      const saved: FaceExpressionPreset = {
+        schemaVersion: 1, id: presetId, modelSlot, name: activeExpressionName,
+        collectionId: selectedCollectionId, expressionIndex: selectedExpressionIndex,
+        selections: structuredClone(composition), transforms: cloneTransforms(transforms), referenceTransforms: structuredClone(referenceTransforms), noseOpacity, effects: cloneEffects(effects), updatedAt: new Date().toISOString()
+      }
       await window.desktop.saveFaceExpressionPreset(modelSlot, saved)
       setPresetId(saved.id)
       setWorkingCopies((current) => ({ ...current, [expressionWorkingCopyKey(selectedCollectionId, selectedExpressionIndex)]: { id: saved.id, composition: saved.selections, transforms: saved.transforms, noseOpacity: saved.noseOpacity, effects: cloneEffects(saved.effects) } }))
@@ -734,16 +739,21 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
     <main className="expression-head-stage" aria-label="Prévia da cabeça">
       {loading ? <span>Carregando cabeça e biblioteca facial…</span> : head ? <div ref={previewCanvas} className="expression-head-canvas" style={{ aspectRatio: `${head.width} / ${head.height}` }}>
         <img className="expression-head-base" src={head.dataUrl} alt="Cabeça do modelo" />
-        {(['shadow', 'blush', 'mouthBlush'] as const).map((key) => {
+        <div className="expression-head-effects" aria-hidden="true" style={{ WebkitMaskImage: `url(${head.dataUrl})`, maskImage: `url(${head.dataUrl})` }}>{(['shadow', 'blush', 'mouthBlush'] as const).map((key) => {
           const effect = effects[key]
           if (!effect.enabled) return null
-          const color = `color-mix(in srgb, ${effect.color} ${Math.round(effect.opacity * 100)}%, transparent)`
-          if (key === 'shadow') return <span key={key} className="expression-preview-shadow" aria-hidden="true" style={{ background: `linear-gradient(180deg, ${color}, transparent ${Math.round((.35 + effect.size * .4) * 100)}%)`, opacity: effect.opacity, filter: `blur(${Math.round(effect.softness * 18)}px)`, WebkitMaskImage: `url(${head.dataUrl})` }} />
-          if (key === 'blush') return <span key={key} className="expression-preview-blush" aria-hidden="true" style={{ left: '50%', top: `${74 + effect.offsetY * 100}%`, width: `${effect.size * 60}%`, height: `${effect.size * 34}%`, background: `radial-gradient(ellipse, ${color}, transparent ${Math.round((.38 + effect.softness * .6) * 100)}%)`, transform: 'translate(-50%,-50%)' }} />
-          const mouth = visibleComposition.mouth ? catalogItems[visibleComposition.mouth.catalogId]?.pieces.find((piece) => piece.index === visibleComposition.mouth?.index) : undefined
+          const color = `color-mix(in srgb, ${effect.color} ${Math.round(effect.opacity * (key === 'blush' ? .54 : 1) * 100)}%, transparent)`
+          if (key === 'shadow') return <span key={key} className="expression-preview-shadow" style={{ top: `${effect.offsetY * 100}%`, height: `${effect.size * 100}%`, background: `linear-gradient(180deg, ${color}, transparent)` }} />
+          if (key === 'blush') {
+            const shape = effect.style ?? 'cheeks'
+            const radial = (at: string) => `radial-gradient(ellipse at ${at}, ${color}, transparent ${Math.round((.4 + effect.softness * .6) * 100)}%)`
+            const background = shape === 'cheeks' ? `${radial('27% 50%')}, ${radial('73% 50%')}` : shape === 'bands' ? `${radial('50% 25%')}, ${radial('50% 50%')}, ${radial('50% 75%')}` : radial('50% 50%')
+            return <span key={key} className="expression-preview-blush" style={{ left: `${50 + (effect.offsetX ?? 0) * 100}%`, top: `${50 + effect.offsetY * 100}%`, width: `${effect.size * 100}%`, height: `${effect.size * (effect.aspectRatio ?? .52) * 100}%`, background, transform: `translate(-50%,-50%) rotate(${shape === 'diagonal' ? -16 : 0}deg)` }} />
+          }
+          if (!visibleComposition.mouth) return null
           const mouthTransform = visibleTransforms.mouth
-          return <span key={key} className="expression-preview-mouth-blush" aria-hidden="true" style={{ left: `${mouthTransform.x / (head.width || 1) * 100}%`, top: `${(mouthTransform.y + effect.offsetY * head.height) / (head.height || 1) * 100}%`, width: `${(mouth?.width ?? head.width * .18) * mouthTransform.scaleX * effect.size / head.width * 150}%`, height: `${(mouth?.height ?? head.height * .06) * mouthTransform.scaleY * effect.size / head.height * 180}%`, background: `radial-gradient(ellipse, ${color}, transparent ${Math.round((.4 + effect.softness * .58) * 100)}%)`, transform: `translate(-50%,-50%) rotate(${mouthTransform.rotation}deg)` }} />
-        })}
+          return <span key={key} className="expression-preview-mouth-blush" style={{ left: `${(mouthTransform.x + (effect.offsetX ?? 0) * head.width) / (head.width || 1) * 100}%`, top: `${(mouthTransform.y + effect.offsetY * head.height) / (head.height || 1) * 100}%`, width: `${effect.size * 100}%`, height: `${effect.size * (effect.aspectRatio ?? .52) * 100}%`, background: `radial-gradient(ellipse, ${color}, transparent ${Math.round((.4 + effect.softness * .58) * 100)}%)`, transform: `translate(-50%,-50%) rotate(${mouthTransform.rotation}deg)` }} />
+        })}</div>
         {(['left', 'right'] as const).map((currentSide) => {
           const eye = componentAssets[visibleComposition.eyes[currentSide] ?? '']
           const pupil = componentAssets[visibleComposition.pupils[currentSide] ?? '']
@@ -793,7 +803,9 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
           return <details className="expression-effect-card" key={key} open={effect.enabled}>
             <summary><label><input type="checkbox" checked={effect.enabled} onChange={(event) => updateEffect(key, { enabled: event.target.checked })} />{label}</label></summary>
             <label className="expression-effect-color">Cor<input type="color" value={effect.color} onChange={(event) => updateEffect(key, { color: event.target.value })} /></label>
+            {key === 'blush' && <label className="expression-effect-color">Formato<select value={effect.style ?? 'cheeks'} onChange={(event) => updateEffect(key, { style: event.target.value as NonNullable<typeof effect.style> })}><option value="oval">Oval</option><option value="cheeks">Duas bochechas</option><option value="bands">Faixas</option><option value="diagonal">Diagonal</option><option value="spot">Ponto</option></select></label>}
             {([['opacity', 'Intensidade', 0, 1, .01], ['softness', 'Suavidade', 0, 1, .01], ['size', 'Tamanho', .05, 2, .01], ['offsetY', key === 'shadow' ? 'Altura da sombra' : 'Posição vertical', -.5, .5, .01]] as const).map(([field, title, min, max, step]) => <label className="expression-transform-control" key={field}>{title}<input type="range" min={min} max={max} step={step} value={effect[field]} onChange={(event) => updateEffect(key, { [field]: Number(event.target.value) })} /><output>{field === 'offsetY' ? `${Math.round(effect.offsetY * 100)}%` : `${Math.round(effect[field] * 100)}%`}</output></label>)}
+            {key !== 'shadow' && <><label className="expression-transform-control">Proporção vertical<input type="range" min="0.05" max="2" step="0.01" value={effect.aspectRatio ?? .52} onChange={(event) => updateEffect(key, { aspectRatio: Number(event.target.value) })} /><output>{Math.round((effect.aspectRatio ?? .52) * 100)}%</output></label><label className="expression-transform-control">Posição horizontal<input type="range" min="-0.5" max="0.5" step="0.01" value={effect.offsetX ?? 0} onChange={(event) => updateEffect(key, { offsetX: Number(event.target.value) })} /><output>{Math.round((effect.offsetX ?? 0) * 100)}%</output></label></>}
           </details>
         })}
       </section>

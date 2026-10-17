@@ -27,7 +27,10 @@ export function isStudioExpressionEffects(value: unknown): value is FaceExpressi
       && Number.isFinite(effect.opacity) && effect.opacity >= 0 && effect.opacity <= 1
       && Number.isFinite(effect.softness) && effect.softness >= 0 && effect.softness <= 1
       && Number.isFinite(effect.size) && effect.size >= 0.05 && effect.size <= 2
-      && Number.isFinite(effect.offsetY) && effect.offsetY >= -0.5 && effect.offsetY <= 0.5)
+      && Number.isFinite(effect.offsetY) && effect.offsetY >= -0.5 && effect.offsetY <= 0.5
+      && (effect.offsetX === undefined || Number.isFinite(effect.offsetX) && effect.offsetX >= -0.5 && effect.offsetX <= 0.5)
+      && (effect.aspectRatio === undefined || Number.isFinite(effect.aspectRatio) && effect.aspectRatio >= 0.05 && effect.aspectRatio <= 2)
+      && (effect.style === undefined || ['oval', 'cheeks', 'bands', 'diagonal', 'spot'].includes(effect.style)))
   })
 }
 

@@ -42,7 +42,6 @@ const wardrobeImageCache = new Map<string, Promise<HTMLImageElement>>()
 const skinTintImageCache = new Map<string, Promise<HTMLImageElement>>()
 const hairTintImageCache = new Map<string, Promise<HTMLImageElement>>()
 const hairPreviewImageCache = new Map<string, Promise<string>>()
-const faceComponentAssetCache = new Map<string, Promise<FaceComponentAsset | null>>()
 const hairColorControls: Array<{ id: HairColorRole; label: string; fallback: string }> = [
   { id: 'base', label: 'Cor base', fallback: '#9b563e' },
   { id: 'fade', label: 'Degradê', fallback: '#633b37' },
@@ -874,7 +873,15 @@ async function drawFaceCatalogOverlay(context: CanvasRenderingContext2D, artwork
   const sourceHead = source.parts.find((part) => /cabe[çc]a|head/i.test(part.name))
   const targetHead = artwork.parts.find((part) => /cabe[çc]a|head/i.test(part.name))
   if (!sourceHead || !targetHead || sourceHead.width <= 0 || sourceHead.height <= 0) return
-  await drawFaceExpressionEffects(context, artwork, sourceHead, targetHead, appearance, items, expressionEffects)
+  // A Dev asset can be recalibrated without changing the character document.
+  // Keep only a render-local cache so each Customizer/Studio draw sees the current calibration.
+  const componentLoads = new Map<string, Promise<FaceComponentAsset | null>>()
+  const loadComponent = (id: string) => {
+    let pending = componentLoads.get(id)
+    if (!pending) { pending = window.desktop.loadFaceComponentAsset(appearance.modelSlot, id); componentLoads.set(id, pending) }
+    return pending
+  }
+  await drawFaceExpressionEffects(context, artwork, sourceHead, targetHead, appearance, items, expressionEffects, studioFaceTransforms)
   const categoryIds: Partial<Record<FaceSheetKind, string | undefined>> = {
     eyes: appearance.eyeCatalogId,
     eyebrows: appearance.eyebrowCatalogId,
@@ -931,10 +938,7 @@ async function drawFaceCatalogOverlay(context: CanvasRenderingContext2D, artwork
   await Promise.all(componentIds.map(async (part) => {
     const id = appearance.components?.[part]?.assetId
     if (!id) return
-    const key = `${appearance.modelSlot}:${id}`
-    let pending = faceComponentAssetCache.get(key)
-    if (!pending) { pending = window.desktop.loadFaceComponentAsset(appearance.modelSlot, id); faceComponentAssetCache.set(key, pending) }
-    const asset = await pending
+    const asset = await loadComponent(id)
     if (asset) loaded.set(part, asset)
   }))
   const layerOrder: FaceComponentPartId[] = ['brow-left', 'brow-right', 'eye-left', 'eye-right', 'pupil-left', 'pupil-right']
@@ -1021,10 +1025,7 @@ async function drawFaceCatalogOverlay(context: CanvasRenderingContext2D, artwork
   for (const kind of detailOrder) {
     const id = appearance.faceDetails?.[kind]
     if (!id) continue
-    const key = `${appearance.modelSlot}:${id}`
-    let pending = faceComponentAssetCache.get(key)
-    if (!pending) { pending = window.desktop.loadFaceComponentAsset(appearance.modelSlot, id); faceComponentAssetCache.set(key, pending) }
-    const asset = await pending
+    const asset = await loadComponent(id)
     if (!asset || asset.kind !== kind) continue
     const transform = asset.defaultTransform
     const localX = transform.x / sourceHead.width * targetHead.width
@@ -1043,10 +1044,7 @@ async function drawFaceCatalogOverlay(context: CanvasRenderingContext2D, artwork
   }
   for (const id of Object.values(appearance.headExtras ?? {})) {
     if (!id) continue
-    const key = `${appearance.modelSlot}:${id}`
-    let pending = faceComponentAssetCache.get(key)
-    if (!pending) { pending = window.desktop.loadFaceComponentAsset(appearance.modelSlot, id); faceComponentAssetCache.set(key, pending) }
-    const asset = await pending
+    const asset = await loadComponent(id)
     if (!asset || asset.kind !== 'head-extra') continue
     const transform = asset.defaultTransform
     const localX = transform.x / sourceHead.width * targetHead.width
@@ -1636,7 +1634,6 @@ export function CustomizerPage() {
     void window.desktop.listFaceComponentAssets(selectedCatalogModelSlot).then(async (summaries) => {
       const details = await Promise.all(summaries.map((summary) => window.desktop.loadFaceComponentAsset(selectedCatalogModelSlot, summary.id)))
       if (cancelled) return
-      for (const item of details) if (item) faceComponentAssetCache.set(`${selectedCatalogModelSlot}:${item.id}`, Promise.resolve(item))
       setFaceComponentAssets(summaries)
       setFaceComponentDetails(Object.fromEntries(details.filter((item): item is FaceComponentAsset => Boolean(item)).map((item) => [item.id, item])))
     }).catch((reason: unknown) => { if (!cancelled) setCatalogError(reason instanceof Error ? reason.message : 'Não foi possível carregar os assets faciais.') }).finally(() => { if (!cancelled) setFaceComponentLoading(false) })

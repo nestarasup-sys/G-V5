@@ -200,7 +200,7 @@ export type FaceExpressionTransforms = {
   nose: FaceTransform
   mouth: FaceTransform
 }
-export type FaceExpressionEffect = { enabled: boolean; color: string; opacity: number; softness: number; size: number; offsetY: number }
+export type FaceExpressionEffect = { enabled: boolean; color: string; opacity: number; softness: number; size: number; offsetY: number; offsetX?: number; aspectRatio?: number; style?: 'oval' | 'cheeks' | 'bands' | 'diagonal' | 'spot' }
 export type FaceExpressionEffects = { shadow: FaceExpressionEffect; blush: FaceExpressionEffect; mouthBlush: FaceExpressionEffect }
 /** A preset stores immutable references to shared face assets plus private transform snapshots. */
 export type FaceExpressionPreset = {

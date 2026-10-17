@@ -1,0 +1,632 @@
+[
+  {
+    "shadow": {
+      "enabled": false,
+      "color": "#2c1f34",
+      "opacity": 1,
+      "softness": 0.18,
+      "size": 0.5,
+      "offsetY": 0
+    },
+    "blush": {
+      "enabled": false,
+      "color": "#ff90ae",
+      "opacity": 1,
+      "softness": 0.18,
+      "size": 0.42,
+      "offsetX": -0.022365794471543042,
+      "offsetY": 0.04092535331467775,
+      "aspectRatio": 0.5238095238095238,
+      "style": "oval"
+    },
+    "mouthBlush": {
+      "enabled": true,
+      "color": "#6f162e",
+      "opacity": 1,
+      "softness": 0.35,
+      "size": 0.114,
+      "offsetY": 0,
+      "aspectRatio": 0.42105263157894735
+    }
+  },
+  {
+    "shadow": {
+      "enabled": false,
+      "color": "#2c1f34",
+      "opacity": 1,
+      "softness": 0.18,
+      "size": 0.5,
+      "offsetY": 0
+    },
+    "blush": {
+      "enabled": false,
+      "color": "#ff90ae",
+      "opacity": 1,
+      "softness": 0.18,
+      "size": 0.42,
+      "offsetX": -0.022365794471543042,
+      "offsetY": 0.04092535331467775,
+      "aspectRatio": 0.5238095238095238,
+      "style": "oval"
+    },
+    "mouthBlush": {
+      "enabled": true,
+      "color": "#6f162e",
+      "opacity": 1,
+      "softness": 0.35,
+      "size": 0.114,
+      "offsetY": 0,
+      "aspectRatio": 0.42105263157894735
+    }
+  },
+  {
+    "shadow": {
+      "enabled": false,
+      "color": "#2c1f34",
+      "opacity": 1,
+      "softness": 0.18,
+      "size": 0.5,
+      "offsetY": 0
+    },
+    "blush": {
+      "enabled": true,
+      "color": "#ff90ae",
+      "opacity": 1,
+      "softness": 0.4,
+      "size": 0.704,
+      "offsetX": -0.022365794471543042,
+      "offsetY": 0.04092535331467775,
+      "aspectRatio": 0.3125,
+      "style": "oval"
+    },
+    "mouthBlush": {
+      "enabled": true,
+      "color": "#6f162e",
+      "opacity": 1,
+      "softness": 0.35,
+      "size": 0.114,
+      "offsetY": 0,
+      "aspectRatio": 0.42105263157894735
+    }
+  },
+  {
+    "shadow": {
+      "enabled": true,
+      "color": "#2c1f34",
+      "opacity": 1,
+      "softness": 0.18,
+      "size": 0.68,
+      "offsetY": 0
+    },
+    "blush": {
+      "enabled": true,
+      "color": "#080808",
+      "opacity": 1,
+      "softness": 0.18,
+      "size": 0.634,
+      "offsetX": -0.022365794471543042,
+      "offsetY": 0.04092535331467775,
+      "aspectRatio": 0.10883280757097792,
+      "style": "oval"
+    },
+    "mouthBlush": {
+      "enabled": true,
+      "color": "#6f162e",
+      "opacity": 1,
+      "softness": 0.35,
+      "size": 0.114,
+      "offsetY": 0,
+      "aspectRatio": 0.42105263157894735
+    }
+  },
+  {
+    "shadow": {
+      "enabled": true,
+      "color": "#2c1f34",
+      "opacity": 1,
+      "softness": 0.18,
+      "size": 0.72,
+      "offsetY": 0
+    },
+    "blush": {
+      "enabled": true,
+      "color": "#ff90ae",
+      "opacity": 1,
+      "softness": 0.23,
+      "size": 1.0,
+      "offsetX": -0.022365794471543042,
+      "offsetY": 0.04092535331467775,
+      "aspectRatio": 0.22,
+      "style": "oval"
+    },
+    "mouthBlush": {
+      "enabled": true,
+      "color": "#6f162e",
+      "opacity": 1,
+      "softness": 0.35,
+      "size": 0.114,
+      "offsetY": 0,
+      "aspectRatio": 0.42105263157894735
+    }
+  },
+  {
+    "shadow": {
+      "enabled": false,
+      "color": "#2c1f34",
+      "opacity": 1,
+      "softness": 0.18,
+      "size": 0.5,
+      "offsetY": 0
+    },
+    "blush": {
+      "enabled": false,
+      "color": "#ff90ae",
+      "opacity": 1,
+      "softness": 0.18,
+      "size": 0.42,
+      "offsetX": -0.022365794471543042,
+      "offsetY": 0.04092535331467775,
+      "aspectRatio": 0.5238095238095238,
+      "style": "oval"
+    },
+    "mouthBlush": {
+      "enabled": true,
+      "color": "#6f162e",
+      "opacity": 1,
+      "softness": 0.35,
+      "size": 0.114,
+      "offsetY": 0,
+      "aspectRatio": 0.42105263157894735
+    }
+  },
+  {
+    "shadow": {
+      "enabled": true,
+      "color": "#2c1f34",
+      "opacity": 1,
+      "softness": 0.18,
+      "size": 0.81,
+      "offsetY": 0
+    },
+    "blush": {
+      "enabled": false,
+      "color": "#ff90ae",
+      "opacity": 1,
+      "softness": 0.18,
+      "size": 0.42,
+      "offsetX": -0.022365794471543042,
+      "offsetY": 0.04092535331467775,
+      "aspectRatio": 0.5238095238095238,
+      "style": "oval"
+    },
+    "mouthBlush": {
+      "enabled": true,
+      "color": "#6f162e",
+      "opacity": 1,
+      "softness": 0.35,
+      "size": 0.114,
+      "offsetY": 0,
+      "aspectRatio": 0.42105263157894735
+    }
+  },
+  {
+    "shadow": {
+      "enabled": false,
+      "color": "#2c1f34",
+      "opacity": 1,
+      "softness": 0.18,
+      "size": 0.5,
+      "offsetY": 0
+    },
+    "blush": {
+      "enabled": false,
+      "color": "#ff90ae",
+      "opacity": 1,
+      "softness": 0.18,
+      "size": 0.42,
+      "offsetX": -0.022365794471543042,
+      "offsetY": 0.04092535331467775,
+      "aspectRatio": 0.5238095238095238,
+      "style": "oval"
+    },
+    "mouthBlush": {
+      "enabled": true,
+      "color": "#6f162e",
+      "opacity": 1,
+      "softness": 0.35,
+      "size": 0.114,
+      "offsetY": 0,
+      "aspectRatio": 0.42105263157894735
+    }
+  },
+  {
+    "shadow": {
+      "enabled": false,
+      "color": "#2c1f34",
+      "opacity": 1,
+      "softness": 0.18,
+      "size": 0.5,
+      "offsetY": 0
+    },
+    "blush": {
+      "enabled": true,
+      "color": "#c60639",
+      "opacity": 0.6,
+      "softness": 0.14,
+      "size": 0.259,
+      "offsetX": -0.022365794471543042,
+      "offsetY": 0.04092535331467775,
+      "aspectRatio": 1.111969111969112,
+      "style": "bands"
+    },
+    "mouthBlush": {
+      "enabled": true,
+      "color": "#6f162e",
+      "opacity": 1,
+      "softness": 0.35,
+      "size": 0.114,
+      "offsetY": 0,
+      "aspectRatio": 0.42105263157894735
+    }
+  },
+  {
+    "shadow": {
+      "enabled": false,
+      "color": "#2c1f34",
+      "opacity": 1,
+      "softness": 0.18,
+      "size": 0.5,
+      "offsetY": 0
+    },
+    "blush": {
+      "enabled": false,
+      "color": "#ff90ae",
+      "opacity": 1,
+      "softness": 0.18,
+      "size": 0.42,
+      "offsetX": -0.022365794471543042,
+      "offsetY": 0.04092535331467775,
+      "aspectRatio": 0.5238095238095238,
+      "style": "oval"
+    },
+    "mouthBlush": {
+      "enabled": true,
+      "color": "#6f162e",
+      "opacity": 1,
+      "softness": 0.35,
+      "size": 0.114,
+      "offsetY": 0,
+      "aspectRatio": 0.42105263157894735
+    }
+  },
+  {
+    "shadow": {
+      "enabled": true,
+      "color": "#2c1f34",
+      "opacity": 1,
+      "softness": 0.18,
+      "size": 0.68,
+      "offsetY": 0
+    },
+    "blush": {
+      "enabled": false,
+      "color": "#ff90ae",
+      "opacity": 1,
+      "softness": 0.18,
+      "size": 0.42,
+      "offsetX": -0.022365794471543042,
+      "offsetY": 0.04092535331467775,
+      "aspectRatio": 0.5238095238095238,
+      "style": "oval"
+    },
+    "mouthBlush": {
+      "enabled": true,
+      "color": "#6f162e",
+      "opacity": 1,
+      "softness": 0.35,
+      "size": 0.114,
+      "offsetY": 0,
+      "aspectRatio": 0.42105263157894735
+    }
+  },
+  {
+    "shadow": {
+      "enabled": true,
+      "color": "#2c1f34",
+      "opacity": 1,
+      "softness": 0.33,
+      "size": 0.8,
+      "offsetY": 0
+    },
+    "blush": {
+      "enabled": false,
+      "color": "#ff90ae",
+      "opacity": 1,
+      "softness": 0.18,
+      "size": 0.42,
+      "offsetX": -0.022365794471543042,
+      "offsetY": 0.04092535331467775,
+      "aspectRatio": 0.5238095238095238,
+      "style": "oval"
+    },
+    "mouthBlush": {
+      "enabled": true,
+      "color": "#6f162e",
+      "opacity": 1,
+      "softness": 0.35,
+      "size": 0.114,
+      "offsetY": 0,
+      "aspectRatio": 0.42105263157894735
+    }
+  },
+  {
+    "shadow": {
+      "enabled": true,
+      "color": "#2c1f34",
+      "opacity": 1,
+      "softness": 0.41,
+      "size": 0.69,
+      "offsetY": 0
+    },
+    "blush": {
+      "enabled": false,
+      "color": "#ff90ae",
+      "opacity": 1,
+      "softness": 0.18,
+      "size": 0.42,
+      "offsetX": -0.022365794471543042,
+      "offsetY": 0.04092535331467775,
+      "aspectRatio": 0.5238095238095238,
+      "style": "oval"
+    },
+    "mouthBlush": {
+      "enabled": true,
+      "color": "#6f162e",
+      "opacity": 1,
+      "softness": 0.35,
+      "size": 0.114,
+      "offsetY": 0,
+      "aspectRatio": 0.42105263157894735
+    }
+  },
+  {
+    "shadow": {
+      "enabled": true,
+      "color": "#2c1f34",
+      "opacity": 1,
+      "softness": 0.18,
+      "size": 0.05,
+      "offsetY": 0
+    },
+    "blush": {
+      "enabled": false,
+      "color": "#ff90ae",
+      "opacity": 1,
+      "softness": 0.18,
+      "size": 0.42,
+      "offsetX": -0.022365794471543042,
+      "offsetY": 0.04092535331467775,
+      "aspectRatio": 0.5238095238095238,
+      "style": "oval"
+    },
+    "mouthBlush": {
+      "enabled": true,
+      "color": "#6f162e",
+      "opacity": 1,
+      "softness": 0.35,
+      "size": 0.114,
+      "offsetY": 0,
+      "aspectRatio": 0.42105263157894735
+    }
+  },
+  {
+    "shadow": {
+      "enabled": false,
+      "color": "#2c1f34",
+      "opacity": 1,
+      "softness": 0.18,
+      "size": 0.5,
+      "offsetY": 0
+    },
+    "blush": {
+      "enabled": false,
+      "color": "#ff90ae",
+      "opacity": 1,
+      "softness": 0.18,
+      "size": 0.42,
+      "offsetX": -0.022365794471543042,
+      "offsetY": 0.04092535331467775,
+      "aspectRatio": 0.5238095238095238,
+      "style": "oval"
+    },
+    "mouthBlush": {
+      "enabled": true,
+      "color": "#6f162e",
+      "opacity": 1,
+      "softness": 0.35,
+      "size": 0.114,
+      "offsetY": 0,
+      "aspectRatio": 0.42105263157894735
+    }
+  },
+  {
+    "shadow": {
+      "enabled": true,
+      "color": "#2c1f34",
+      "opacity": 1,
+      "softness": 0.18,
+      "size": 0.77,
+      "offsetY": 0
+    },
+    "blush": {
+      "enabled": false,
+      "color": "#ff90ae",
+      "opacity": 1,
+      "softness": 0.18,
+      "size": 0.42,
+      "offsetX": -0.022365794471543042,
+      "offsetY": 0.04092535331467775,
+      "aspectRatio": 0.5238095238095238,
+      "style": "oval"
+    },
+    "mouthBlush": {
+      "enabled": true,
+      "color": "#6f162e",
+      "opacity": 1,
+      "softness": 0.35,
+      "size": 0.114,
+      "offsetY": 0,
+      "aspectRatio": 0.42105263157894735
+    }
+  },
+  {
+    "shadow": {
+      "enabled": true,
+      "color": "#2c1f34",
+      "opacity": 1,
+      "softness": 0.18,
+      "size": 0.66,
+      "offsetY": 0
+    },
+    "blush": {
+      "enabled": false,
+      "color": "#ff90ae",
+      "opacity": 1,
+      "softness": 0.18,
+      "size": 0.42,
+      "offsetX": -0.022365794471543042,
+      "offsetY": 0.04092535331467775,
+      "aspectRatio": 0.5238095238095238,
+      "style": "oval"
+    },
+    "mouthBlush": {
+      "enabled": true,
+      "color": "#6f162e",
+      "opacity": 1,
+      "softness": 0.35,
+      "size": 0.114,
+      "offsetY": 0,
+      "aspectRatio": 0.42105263157894735
+    }
+  },
+  {
+    "shadow": {
+      "enabled": false,
+      "color": "#2c1f34",
+      "opacity": 1,
+      "softness": 0.18,
+      "size": 0.5,
+      "offsetY": 0
+    },
+    "blush": {
+      "enabled": false,
+      "color": "#ff90ae",
+      "opacity": 1,
+      "softness": 0.18,
+      "size": 0.42,
+      "offsetX": -0.022365794471543042,
+      "offsetY": 0.04092535331467775,
+      "aspectRatio": 0.5238095238095238,
+      "style": "oval"
+    },
+    "mouthBlush": {
+      "enabled": true,
+      "color": "#6f162e",
+      "opacity": 1,
+      "softness": 0.35,
+      "size": 0.114,
+      "offsetY": 0,
+      "aspectRatio": 0.42105263157894735
+    }
+  },
+  {
+    "shadow": {
+      "enabled": true,
+      "color": "#2c1f34",
+      "opacity": 1,
+      "softness": 0.18,
+      "size": 0.66,
+      "offsetY": 0
+    },
+    "blush": {
+      "enabled": false,
+      "color": "#ff90ae",
+      "opacity": 1,
+      "softness": 0.18,
+      "size": 0.42,
+      "offsetX": -0.022365794471543042,
+      "offsetY": 0.04092535331467775,
+      "aspectRatio": 0.5238095238095238,
+      "style": "oval"
+    },
+    "mouthBlush": {
+      "enabled": true,
+      "color": "#6f162e",
+      "opacity": 1,
+      "softness": 0.35,
+      "size": 0.114,
+      "offsetY": 0,
+      "aspectRatio": 0.42105263157894735
+    }
+  },
+  {
+    "shadow": {
+      "enabled": false,
+      "color": "#2c1f34",
+      "opacity": 1,
+      "softness": 0.18,
+      "size": 0.5,
+      "offsetY": 0
+    },
+    "blush": {
+      "enabled": false,
+      "color": "#ff90ae",
+      "opacity": 1,
+      "softness": 0.18,
+      "size": 0.42,
+      "offsetX": -0.022365794471543042,
+      "offsetY": 0.04092535331467775,
+      "aspectRatio": 0.5238095238095238,
+      "style": "oval"
+    },
+    "mouthBlush": {
+      "enabled": true,
+      "color": "#6f162e",
+      "opacity": 1,
+      "softness": 0.35,
+      "size": 0.114,
+      "offsetY": 0,
+      "aspectRatio": 0.42105263157894735
+    }
+  },
+  {
+    "shadow": {
+      "enabled": true,
+      "color": "#2c1f34",
+      "opacity": 1,
+      "softness": 0.18,
+      "size": 0.82,
+      "offsetY": 0
+    },
+    "blush": {
+      "enabled": false,
+      "color": "#ff90ae",
+      "opacity": 1,
+      "softness": 0.18,
+      "size": 0.42,
+      "offsetX": -0.022365794471543042,
+      "offsetY": 0.04092535331467775,
+      "aspectRatio": 0.5238095238095238,
+      "style": "oval"
+    },
+    "mouthBlush": {
+      "enabled": true,
+      "color": "#6f162e",
+      "opacity": 1,
+      "softness": 0.35,
+      "size": 0.114,
+      "offsetY": 0,
+      "aspectRatio": 0.42105263157894735
+    }
+  }
+]

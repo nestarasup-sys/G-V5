@@ -1,5 +1,6 @@
 import legacyExpressions from './legacyStandardExpressions.json'
 import type { FaceExpressionPreset, FaceExpressionTransforms, FaceTransform } from '../../../../shared/fabricator'
+import { legacyStandardExpressionEffects } from '../../../../shared/legacyExpressionEffects'
 
 type Side = 'left' | 'right'
 type LegacyTransform = { scaleX: number; scaleY: number; rotation: number; x: number; y: number }
@@ -56,6 +57,7 @@ export function importLegacyStandardExpressions(
       transforms,
       referenceTransforms: structuredClone(base),
       noseOpacity,
+      effects: legacyStandardExpressionEffects({ modelSlot, collectionId: 'standard', expressionIndex: legacy.index }),
       updatedAt
     }
   })

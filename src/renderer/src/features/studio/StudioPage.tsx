@@ -486,7 +486,8 @@ export function StudioPage() {
     const pending = activeStudio.elements.flatMap((element) => {
       if (element.kind !== 'character' || !element.characterId || !element.assetId) return []
       const character = characters.get(element.characterId)
-      return character && element.characterSourceUpdatedAt !== character.updatedAt ? [{ element, character }] : []
+      return character && element.characterSourceUpdatedAt !== character.updatedAt
+        ? [{ element, character }] : []
     })
     if (!pending.length) return
     let cancelled = false
@@ -498,12 +499,32 @@ export function StudioPage() {
         const { renderSavedCharacter } = await import('../customizer/CustomizerPage')
         const updates: Array<{ previous: StudioElement; next: StudioElement; asset: StudioAsset }> = []
         for (const { element, character } of pending) {
+          const savedPreset = element.activeExpressionPresetId
+            ? await window.desktop.loadFaceExpressionPreset(character.customization.modelSlot ?? 1, element.activeExpressionPresetId)
+            : null
+          const sourceAppearance = character.customization.faceAppearance
+          const appearanceFallback = sourceAppearance ?? element.faceAppearance ?? element.expressionBase?.appearance
+          if (!appearanceFallback) continue
+          const previousBase = resolveStudioExpressionBase(element, appearanceFallback)
+          const sceneTransforms = Object.fromEntries(Object.entries(element.faceTransforms ?? {}).filter(([key]) => !key.startsWith('expression-component:') && !key.startsWith('expression:')))
+          const expressionBase = sourceAppearance
+            ? { appearance: structuredClone(sourceAppearance), transforms: sceneTransforms }
+            : previousBase
+          const appearance = savedPreset && expressionBase
+            ? await buildStudioExpressionAppearance(savedPreset, expressionBase.appearance, (id) => window.desktop.loadFaceCatalogItem(savedPreset.modelSlot, id))
+            : expressionBase?.appearance ?? element.faceAppearance
+          const faceTransforms = savedPreset && appearance && expressionBase
+            ? await buildStudioExpressionTransforms(savedPreset, appearance, expressionBase.transforms,
+              (id) => window.desktop.loadFaceComponentAsset(savedPreset.modelSlot, id),
+              (id) => window.desktop.loadFaceCatalogItem(savedPreset.modelSlot, id))
+            : expressionBase?.transforms ?? element.faceTransforms
+          const expressionEffects = savedPreset ? savedPreset.effects : element.activeExpressionEffects
           const customization = {
             ...character.customization,
             poseSlot: element.poseSlot === undefined ? character.customization.poseSlot : element.poseSlot,
-            faceAppearance: element.faceAppearance ?? character.customization.faceAppearance
+            faceAppearance: appearance
           }
-          const rendered = await renderSavedCharacter({ ...character, customization }, element.faceTransforms, element.activeExpressionEffects)
+          const rendered = await renderSavedCharacter({ ...character, customization }, faceTransforms, expressionEffects)
           if (cancelled) return
           const crop = await trimTransparentImage(rendered.dataUrl)
           if (cancelled) return
@@ -515,7 +536,7 @@ export function StudioPage() {
           updates.push({
             previous: element,
             next: {
-              ...element, characterSourceUpdatedAt: character.updatedAt, characterCanvasWidth,
+              ...element, characterSourceUpdatedAt: character.updatedAt, expressionBase, faceAppearance: appearance, faceTransforms, activeExpressionEffects: expressionEffects, characterCanvasWidth,
               width: characterCanvasWidth * cropWidth / rendered.width,
               height: characterCanvasWidth * stageWidth / stageHeight * cropHeight / rendered.width,
               text: element.text === asset.name ? character.name : element.text
@@ -805,7 +826,7 @@ export function StudioPage() {
   const applyStudioBaseExpression = async () => {
     const appearance = selectedStudioCharacter?.customization.faceAppearance ?? selectedStudioFaceAppearance
     if (!selectedElement || !appearance || studioExpressionBusy || studioFaceBusy) return
-    const base = resolveStudioExpressionBase(selectedElement, appearance)
+    const base = { ...resolveStudioExpressionBase(selectedElement, appearance), appearance: structuredClone(appearance) }
     setStudioExpressionBusy(true)
     try {
       await applyStudioFaceAppearance(base.appearance, base.transforms, true, { expressionBase: base, activeExpressionPresetId: null, activeExpressionCollectionId: selectedStudioExpressionCollectionId, activeExpressionEffects: undefined })
@@ -821,7 +842,7 @@ export function StudioPage() {
       if (!preset || preset.modelSlot !== selectedStudioCharacterModelSlot) throw new Error('Este preset não está disponível para o modelo selecionado.')
       const characterAppearance = selectedStudioCharacter.customization.faceAppearance ?? selectedStudioFaceAppearance
       if (!characterAppearance) throw new Error('A personagem ainda não tem uma aparência facial para ajustar.')
-      const base = resolveStudioExpressionBase(selectedElement, characterAppearance)
+      const base = { ...resolveStudioExpressionBase(selectedElement, characterAppearance), appearance: structuredClone(characterAppearance) }
       const appearance = base.appearance
       const nextAppearance = await buildStudioExpressionAppearance(preset, appearance, (id) => window.desktop.loadFaceCatalogItem(preset.modelSlot, id))
       const faceTransforms = await buildStudioExpressionTransforms(

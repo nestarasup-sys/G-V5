@@ -11,6 +11,7 @@ import { characterBodyDimensionLimits, characterProportionLimits } from '../src/
 import type { StudioAsset, StudioDocument } from '../src/shared/studio'
 import { applyModelHeadShape } from '../src/shared/headShape'
 import { isStudioExpressionEffects, isStudioFaceTransforms } from '../src/shared/studio'
+import { legacyStandardExpressionEffects } from '../src/shared/legacyExpressionEffects'
 
 const slotCount = 10
 const poseSlotCount = 12
@@ -357,6 +358,7 @@ async function readFaceExpressionPreset(modelSlot: number, id: string): Promise<
     if (!validFaceExpressionPreset(modelSlot, preset) || preset.id !== id) return null
     return {
       ...preset,
+      effects: preset.effects ?? legacyStandardExpressionEffects(preset),
       selections: { ...preset.selections, eyebrows: preset.selections.eyebrows ?? { left: null, right: null } },
       transforms: { ...preset.transforms, browLeft: preset.transforms.browLeft ?? { x: 0, y: 0, scaleX: 1, scaleY: 1, rotation: 0 }, browRight: preset.transforms.browRight ?? { x: 0, y: 0, scaleX: 1, scaleY: 1, rotation: 0 } }
     }
