@@ -2851,6 +2851,7 @@ export function CustomizerPage() {
             {selectedCustomizerTopTab === 'cabeca' && headPanelTab === 'hair' && (hairLibraryPart ? renderHairLibrary() : renderHairCustomizer())}
             {selectedCustomizerTopTab === 'cabeca' && headPanelTab === 'eyes' && (faceLibraryPart ? renderFaceLibrary() : renderFaceCustomizer())}
             {selectedCustomizerTopTab === 'cabeca' && headPanelTab === 'face' && renderFaceCatalogCustomizer()}
+            {selectedCustomizerTopTab === 'cabeca' && headPanelTab === 'extra' && renderWardrobeCatalog()}
             {selectedCustomizerTopTab === 'roupas' && (clothesPanelTab === 'upper' || clothesPanelTab === 'lower') && renderWardrobeCatalog()}
             {selectedCustomizerTopTab === 'roupas' && clothesPanelTab === 'adjust' && <div className="customizer-catalog-empty">Os ajustes de roupas ainda não estão disponíveis.</div>}
             {selectedCustomizerTopTab === 'modelos' && <section className="customizer-model-skin-tones" aria-label="Cor de pele do modelo">
@@ -2988,7 +2989,7 @@ export function CustomizerPage() {
                   }} aria-selected={headPanelTab === tab.id} role="tab" type="button"><Icon name={tab.icon} /><span>{tab.label}</span></button>)}
                 </nav>
                 {headPanelTab === 'hair' && renderHairCatalog()}
-                {headPanelTab === 'extra' && renderWardrobeCatalog()}
+                {headPanelTab === 'extra' && <div className="customizer-head-placeholder"><Icon name="sparkles" /><strong>Extras da cabeça</strong><span>Escolha os óculos no painel lateral.</span></div>}
                 {headPanelTab === 'adjust' && <div className="customizer-head-placeholder"><Icon name="sliders" /><strong>Ajustes da cabeça</strong><span>Os controles de ajuste por peça serão organizados aqui.</span></div>}
               </div>}
               {activeModule === 'Cabelos' && renderHairCatalog()}
