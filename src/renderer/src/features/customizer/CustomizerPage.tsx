@@ -438,6 +438,7 @@ const clothingCategories: Record<'Superior' | 'Inferior', Array<{ id: ClothingGr
     { id: 'luvas', label: 'Luvas', source: ['luvas'] },
     { id: 'capa', label: 'Capa', source: ['capa'] },
     { id: 'cinto', label: 'Cinto', source: ['cinto'] },
+    { id: 'oculos', label: 'Óculos', source: ['oculos'] },
     { id: 'saia-superior', label: 'Saia superior', source: ['saia'] }
   ],
   Inferior: [
@@ -463,6 +464,9 @@ const upperWardrobePageTwoPanels: WardrobePanel[] = [
   { id: 'cape', label: 'Capa', category: 'capa', side: null },
   { id: 'belt', label: 'Cinto', category: 'cinto', side: null },
   { id: 'skirt', label: 'Saia superior', category: 'saia-superior', side: null, source: ['saia'] }
+]
+const accessoryWardrobePanels: WardrobePanel[] = [
+  { id: 'glasses', label: 'Óculos', category: 'oculos', side: null }
 ]
 const lowerWardrobePanels: WardrobePanel[] = [
   { id: 'pants-left', label: 'Calça', category: 'calca', side: null, source: ['calca-coxa', 'calca-canela'] },
@@ -2714,7 +2718,7 @@ export function CustomizerPage() {
   const renderUpperWardrobePanels = () => {
     const page = clothingSection === 'Inferior' ? lowerWardrobePage : upperWardrobePage
     const pageTwo = page === 2
-    const panels = clothingSection === 'Inferior'
+    const panels = clothesPanelTab === 'accessories' ? accessoryWardrobePanels : clothingSection === 'Inferior'
       ? pageTwo ? lowerWardrobePageTwoPanels : lowerWardrobePanels
       : pageTwo ? upperWardrobePageTwoPanels : upperWardrobePanels
     return <div className={`customizer-hair-layout customizer-upper-wardrobe-layout${clothingSection === 'Superior' && pageTwo ? ' page-two' : ''}${clothingSection === 'Inferior' && pageTwo ? ' lower-page-two' : ''}`} aria-label={`Peças de roupa ${clothingSection.toLowerCase()} · página ${page}`}>
@@ -2847,7 +2851,7 @@ export function CustomizerPage() {
             {selectedCustomizerTopTab === 'cabeca' && headPanelTab === 'hair' && (hairLibraryPart ? renderHairLibrary() : renderHairCustomizer())}
             {selectedCustomizerTopTab === 'cabeca' && headPanelTab === 'eyes' && (faceLibraryPart ? renderFaceLibrary() : renderFaceCustomizer())}
             {selectedCustomizerTopTab === 'cabeca' && headPanelTab === 'face' && renderFaceCatalogCustomizer()}
-            {selectedCustomizerTopTab === 'roupas' && (clothesPanelTab === 'upper' || clothesPanelTab === 'lower') && renderWardrobeCatalog()}
+            {selectedCustomizerTopTab === 'roupas' && (clothesPanelTab === 'upper' || clothesPanelTab === 'lower' || clothesPanelTab === 'accessories') && renderWardrobeCatalog()}
             {selectedCustomizerTopTab === 'roupas' && clothesPanelTab === 'adjust' && <div className="customizer-catalog-empty">Os ajustes de roupas ainda não estão disponíveis.</div>}
             {selectedCustomizerTopTab === 'modelos' && <section className="customizer-model-skin-tones" aria-label="Cor de pele do modelo">
               <strong>Cor de pele</strong>
