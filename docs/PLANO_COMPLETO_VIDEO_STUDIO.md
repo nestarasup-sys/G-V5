@@ -4,16 +4,16 @@
 
 O **Video Studio** será uma nova área acessível pela barra superior principal, ao lado das áreas existentes. Sua entrada visual e seu espaço de trabalho partirão do Studio atual: cenário, personagens, objetos, preview e painel de edição continuam familiares. A diferença é que o Video Studio terá um projeto próprio, com tempo, faixas, quadros-chave, reprodução e exportação de vídeo.
 
-A primeira versão deve permitir montar uma cena, salvar o estado inicial como primeiro quadro, avançar o indicador de tempo, alterar pose ou expressão de um personagem e gravar novos estados. Ao reproduzir, o editor combina esses estados ao longo do tempo para formar a animação.
+A primeira versão começa com um projeto vazio e deve permitir montar uma cena, salvar o estado inicial como primeiro quadro, avançar o indicador de tempo, alterar pose ou expressão de um personagem e gravar novos estados. As alterações feitas pelos controles aparecem na preview antes de serem gravadas. Ao reproduzir, o editor combina esses estados ao longo do tempo para formar a animação.
 
 ## 2. Princípios de estrutura
 
 - **Projeto de vídeo independente:** criar um modelo `VideoProject` versionado; não guardar a timeline dentro de `StudioDocument` nem alterar o Studio original.
-- **Cena inicial por cópia:** criar um vídeo a partir de uma cena existente copiando cenário, personagens, objetos, ordem visual e transformações para um snapshot próprio. Alterar o vídeo não modifica a cena de origem.
+- **Projeto começa em branco:** o usuário adiciona cenário, personagens e objetos usando as funções do Studio. A cena construída pertence ao Video Studio desde o início.
 - **Estado por personagem e por tempo:** a timeline deve registrar canais de animação por personagem. Um quadro de expressão não pode restaurar sem querer a pose, a roupa ou as escolhas de outro personagem.
 - **Dados canônicos únicos:** faixas organizam e editam dados, mas não mantêm uma segunda cópia concorrente dos mesmos valores animados.
 - **Preview e exportação coerentes:** a mesma avaliação da cena em um instante de tempo deve alimentar a preview e o render final.
-- **Edição não destrutiva:** guardar keyframes e interpolação; não gerar um vídeo intermediário a cada alteração.
+- **Edição não destrutiva:** guardar os estados gravados na timeline; mudanças de controles só entram na sequência ao pressionar **Salvar frame**.
 - **Compatibilidade por adaptadores:** reaproveitar componentes e regras existentes sem fazer o Video Studio depender dos formatos internos de tela dos animadores.
 
 ## 3. Layout inicial
@@ -40,9 +40,9 @@ type VideoProject = {
   id: string
   name: string
   frameRate: number
-  durationFrames: number
+  durationFrames: number // inicializado para 10 minutos na taxa de quadros do projeto
   canvas: { width: number; height: number; backgroundColor: string }
-  scene: VideoSceneSnapshot
+  scene: VideoSceneSnapshot // cena montada no próprio Video Studio; fundo estático na primeira versão
   tracks: VideoTrack[]
   createdAt: string
   updatedAt: string
@@ -50,7 +50,7 @@ type VideoProject = {
 
 type VideoTrack = {
   id: string
-  kind: 'character' | 'scene' | 'camera' | 'audio'
+  kind: 'character' | 'dialogue' | 'thought' | 'scene'
   targetId?: string
   name: string
   order: number
@@ -68,49 +68,45 @@ type VideoKeyframe = {
 }
 ```
 
-O tipo `channels` precisa ser substituído por tipos discriminados e validados antes de codificar. A proposta separa identidade do alvo, posição temporal e canais animáveis. Para personagens, os canais devem poder representar posição, escala, rotação, pose/rig, aparência facial, expressão e ordem visual conforme as capacidades reais do Studio. O snapshot inicial guarda os elementos e referências de asset necessários para reabrir o projeto sem depender de uma cena que pode ser alterada depois.
+O tipo `channels` precisa ser substituído por tipos discriminados e validados antes de codificar. A proposta separa identidade do alvo, posição temporal e canais animáveis. Para personagens, os canais iniciais devem representar pose e preset de expressão; transformações poderão ser incluídas quando forem definidas como parte do escopo. O primeiro frame grava os valores-base de todos os personagens e o fundo. Nos frames seguintes, somente as propriedades editadas são gravadas nas faixas afetadas. O fundo é estático na primeira versão: posição, escala e demais ajustes são feitos antes de salvar o primeiro frame.
 
-Áudio e câmera aparecem no formato como extensões planejadas; não precisam entrar na primeira entrega se ainda não houver fluxo correspondente. Não criar um canal sem suporte de preview, persistência e exportação.
+As faixas de texto de fala e pensamento seguem o modelo de faixas do Editor V4. Áudio e câmera ficam fora do escopo inicial. Não criar um canal sem suporte completo de preview, persistência e exportação.
 
 ## 5. Fluxo principal de uso
 
-1. Abrir **Video Studio** e criar um projeto vazio ou iniciar a partir de uma cena do Studio.
-2. Montar cenário, personagens e objetos na preview. A origem é copiada para o projeto de vídeo.
-3. Definir formato de tela e taxa de quadros. A duração pode crescer conforme a edição.
-4. Posicionar o playhead no quadro inicial e usar **Salvar quadro-chave**. Esse primeiro registro deve capturar o estado-base da cena.
-5. Avançar o playhead. Selecionar um personagem e alterar sua pose, expressão, aparência ou transformação.
-6. Salvar outro quadro-chave apenas nos canais alterados daquele personagem. Os outros personagens mantêm seus estados.
-7. Repetir em outros tempos e alvos; cada faixa deixa claro o que foi alterado e onde.
-8. Usar **Play/Pause**, mover o playhead, ajustar a velocidade da preview e revisar a transição.
-9. Salvar o projeto e exportar o intervalo desejado quando a exportação estiver implementada.
+1. Abrir **Video Studio** e criar um projeto vazio.
+2. Montar cenário, personagens e objetos na preview. Ajustar o fundo antes da gravação inicial.
+3. A timeline abre com dez minutos disponíveis. A duração pode ser estendida posteriormente.
+4. Posicionar o playhead no início e usar **Salvar frame**. Esse primeiro registro captura os valores-base dos personagens e estabelece a cena estática.
+5. Avançar o playhead. Selecionar um personagem e alterar sua pose e/ou preset de expressão. Essas escolhas aparecem na preview, mas ainda não foram gravadas.
+6. Usar **Salvar frame**. O editor insere um corte no playhead apenas nas faixas dos personagens cujas propriedades foram alteradas; as demais faixas não recebem mudanças.
+7. Repetir em outros tempos e personagens. A faixa do personagem mostra os segmentos e cortes que determinam seus estados.
+8. Usar **Play/Pause**, mover o playhead e revisar a sequência.
+9. Salvar o projeto e exportar quando essa etapa for implementada.
 
-O comando de salvar quadro-chave deve atualizar o keyframe existente no mesmo quadro e canal quando apropriado, com indicação clara de sobrescrita; criar duplicatas invisíveis no mesmo instante deve ser evitado.
+O comando **Salvar frame** aplica um corte sincronizado no playhead nas faixas afetadas, mantendo as propriedades anteriores nos trechos anteriores ao corte. O frame salvo representa as mudanças pendentes da preview naquele instante. Se já houver um corte no mesmo instante, a operação deve atualizar esse corte e informar a substituição, sem criar duplicatas invisíveis. O mecanismo visual pode usar cortes/segmentos por faixa, embora a persistência interna possa normalizá-los como estados temporais ou keyframes.
 
 ## 6. Comportamento da timeline
 
 ### Faixas da primeira fase
 
-- Uma faixa por personagem, nomeada e identificável visualmente.
-- Faixa de cena para fundo e propriedades globais animáveis que forem suportadas.
-- Futuras faixas de câmera e áudio, ativadas apenas quando houver comportamento completo.
+- Uma faixa por personagem, nomeada e identificável visualmente, como no Editor V4.
+- Faixas próprias para texto de fala e texto de pensamento.
+- Sem faixa animada de fundo na primeira versão; o fundo é definido antes de **Salvar frame** inicial e permanece estático.
 
-Dentro da faixa do personagem, os keyframes podem ser agrupados por canal — transformação, pose, expressão e aparência — para que uma mudança facial não pareça substituir o corpo inteiro. A interface deve mostrar keyframes e permitir selecionar, mover, copiar/colar, apagar e duplicar, respeitando a faixa e o alvo.
+Cada faixa de personagem contém estados/cortes nos tempos em que suas propriedades mudam. A gravação é independente por faixa: ao salvar uma pose e expressão novas para um personagem, não inserir cortes redundantes nas faixas dos demais. A interface deve permitir selecionar, mover, copiar/colar, apagar e duplicar cortes/estados, respeitando o personagem e o tempo.
 
 ### Régua e navegação
 
-- Régua em quadros e timecode, alinhados à taxa de quadros do projeto.
+- Régua temporal com playhead, começando com dez minutos de duração visível/disponível; definir unidade e FPS na etapa técnica.
 - Playhead arrastável, zoom horizontal e rolagem.
 - Snap configurável para quadros-chave e limites relevantes.
 - Seleção múltipla e comandos de teclado devem ser considerados no desenho da interação.
 - Faixas podem ser recolhidas, ocultadas e bloqueadas sem alterar o conteúdo salvo.
 
-### Interpolação
+### Troca entre estados
 
-- **Hold:** mantém o valor até o próximo keyframe; útil para escolhas discretas de pose, asset e expressão.
-- **Linear:** transição constante para transformações contínuas.
-- **Bezier:** transição ajustável para movimento com aceleração e desaceleração.
-
-Assets discretos não devem receber interpolação visual inválida. A regra deve ser definida por canal e indicada na interface.
+Pose e expressão são aplicadas como mudanças praticamente instantâneas junto ao corte: a transição deve durar **0 ou 20 ms**, sem interpolação longa. O padrão recomendado para a primeira versão é corte instantâneo (0 ms), para não introduzir uma animação intermediária que o usuário não gravou. Uma futura opção de 20 ms pode suavizar apenas a troca visual se isso for necessário. Não aplicar interpolação contínua a poses ou expressões discretas.
 
 ## 7. Reuso dos sistemas existentes
 
@@ -122,7 +118,7 @@ Inspecionar e reaproveitar a renderização da cena, catálogo e referências de
 
 Reaproveitar os conceitos e, após análise dos formatos, adaptadores para pose, rig corporal, expressão, transformações do rosto e efeitos faciais. A timeline de vídeo será a autoridade temporal do projeto. Não embutir um animador inteiro por keyframe nem reaproveitar um componente que grava dados globais de Fabricador ou Customizador.
 
-As animações prontas dos animadores podem futuramente ser inseridas como blocos/clipes ou convertidas em keyframes do projeto. Essa conversão deve preservar valores, duração e easing e oferecer uma prévia antes de aplicar.
+Nesta fase, o usuário cria a animação gravando frames manualmente. Os presets de pose e expressão dos animadores servem como valores aplicáveis à preview; somente **Salvar frame** persiste a escolha na faixa. Inserção de animações prontas como blocos fica para depois.
 
 ### Editor V4
 
@@ -133,7 +129,7 @@ Estudar a timeline existente em `C:\TRABALHO 2\EDITOR V4\EDITOR V4`, principalme
 - Salvar cada projeto de vídeo em estrutura própria e versionada, sem sobrescrever `StudioDocument`, Customizador, Fabricador ou dados de presets.
 - Autosave com estado visível, gravação atômica e recuperação de rascunho após fechamento inesperado.
 - Desfazer/refazer deve cobrir alterações de cena, keyframes e operações da timeline.
-- Ao duplicar uma cena para vídeo, registrar a origem para referência, mantendo o snapshot independente.
+- O projeto começa sem cena importada. Personagens, objetos e fundo adicionados passam a pertencer ao projeto de vídeo.
 - Referências de assets devem ser validadas ao abrir. Assets ausentes devem aparecer como faltantes sem apagar keyframes ou dados do projeto.
 - Criar migrações explícitas para versões do schema e validar arquivos antes de aceitar gravação.
 - Separar preferências de interface (altura da timeline, zoom e faixas recolhidas) do conteúdo criativo do projeto.
@@ -146,7 +142,7 @@ Uma função determinística `evaluateVideoProject(project, frame)` deve resolve
 
 ### Exportação
 
-Exportação é uma etapa própria, posterior à edição e à reprodução. Deve oferecer resolução, FPS, intervalo, formato disponível no ambiente, progresso, cancelamento e mensagens compreensíveis de erro. Antes de prometer MP4 ou qualquer codec, verificar suporte real no Electron e nas dependências do projeto. O render deve processar os quadros de forma determinística, manter sincronismo e não depender de screenshots da UI em tamanhos variáveis.
+Exportação não é requisito para a primeira entrega, mas a arquitetura deve preparar um caminho rápido de renderização. Deve oferecer resolução, FPS, intervalo, progresso, cancelamento e mensagens compreensíveis de erro. A saída desejada é MP4; se a codificação direta não for a opção mais rápida ou confiável, exportar por um formato intermediário rápido e converter para MP4. Antes de definir o codec, verificar suporte real no Electron e nas dependências do projeto. O render deve processar os quadros de forma determinística e manter sincronismo.
 
 ## 10. Plano de implementação por fases
 
@@ -204,15 +200,14 @@ Exportação é uma etapa própria, posterior à edição e à reprodução. Dev
 
 ## 12. Riscos e decisões para a etapa de projeto técnico
 
-1. **Snapshot ou vínculo vivo com a cena:** a proposta inicial é snapshot independente para garantir que atualizações futuras da cena não mudem vídeos existentes.
-2. **Salvar quadro completo ou somente canais alterados:** a proposta é gravar por personagem/canal, com estado inicial explícito, para evitar que uma edição apague mudanças feitas em outro instante.
-3. **Assets alterados ou removidos:** definir política de snapshot/embutimento de assets versus referência a arquivos compartilhados. O projeto precisa continuar recuperável quando uma referência falhar.
-4. **Formato de exportação:** escolher somente depois de auditar os codecs e o caminho de renderização disponíveis no Electron atual.
-5. **Áudio e câmera:** manter fora do primeiro marco funcional, mas reservar compatibilidade no desenho se isso não criar complexidade prematura.
-6. **Interpolação de pose e expressão:** confirmar quais valores são interpoláveis e quais devem trocar em um instante definido.
+1. **Assets usados pelo projeto:** definir se o projeto deve manter referências aos assets atuais do app ou copiar os arquivos usados para uma pasta própria. A preferência do usuário ainda está em aberto.
+2. **Formato de exportação:** escolher o caminho MP4 ou intermediário após auditar codecs e desempenho disponíveis no Electron.
+3. **Duração:** definir como ampliar a timeline além dos dez minutos iniciais e se ela aumenta automaticamente ao salvar um frame depois do limite.
+4. **Troca de estado:** padrão instantâneo; validar se a opção de 20 ms deve existir como configuração.
+5. **Texto de fala e pensamento:** definir se essas faixas são somente texto ou se terão estilo/animação já no primeiro escopo.
 
 ## 13. Escopo inicial recomendado
 
-A primeira versão utilizável deve cobrir: projeto independente, snapshot de cena, uma faixa por personagem, keyframes de transformação/pose/expressão, edição e remoção de keyframes, preview determinística, play/pause, persistência e desfazer/refazer. Timeline de áudio, câmera avançada, clipes de animação prontos e exportação final podem entrar nas fases seguintes após validar o núcleo e os formatos de dados.
+A primeira versão utilizável deve cobrir: projeto vazio e independente, cena montada no Video Studio, fundo estático ajustado antes do primeiro frame, timeline inicial de dez minutos, uma faixa por personagem, faixas de fala e pensamento, gravação manual de pose e preset de expressão por **Salvar frame**, cortes locais às faixas afetadas, preview determinística, play/pause, persistência e desfazer/refazer. Exportação não precisa estar pronta, mas o desenho técnico deve permitir render rápido e conversão para MP4. Animações prontas em bloco, áudio e câmera ficam para fases seguintes.
 
 Esse recorte mantém a ideia central — montar a cena, gravar mudanças ao longo do tempo e assistir — enquanto evita que a primeira entrega misture edição, composição, áudio e codecs antes da estrutura temporal estar estável.
