@@ -1,3 +1,5 @@
+export {}
+
 type Request = { id: number; file: File }
 type Complete = { type: 'complete'; id: number; width: number; height: number; png: ArrayBuffer }
 type Failure = { type: 'error'; id: number; message: string }

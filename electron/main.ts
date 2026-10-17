@@ -64,7 +64,7 @@ const starterCharacters: Array<Pick<CustomizerCharacter, 'name' | 'hair' | 'outf
 
 const hairColorRoles = ['base', 'fade', 'outline', 'highlight', 'accent'] as const
 const hairPartIds = ['backHair', 'rearHair', 'ponytail', 'frontHair', 'ahoge'] as const
-const wardrobePaletteKeys: CustomizerWardrobePaletteKey[] = ['shirt', 'jacket', 'upper-left', 'upper-right', 'lower-left', 'lower-right', 'gloves-left', 'gloves-right', 'cape', 'belt', 'skirt', 'pants-left', 'shorts-right', 'sock-left', 'sock-right', 'shoe-left', 'shoe-right', 'lower-skirt']
+const wardrobePaletteKeys: CustomizerWardrobePaletteKey[] = ['shirt', 'jacket', 'upper-left', 'upper-right', 'lower-left', 'lower-right', 'gloves-left', 'gloves-right', 'cape', 'belt', 'glasses', 'head-accessory', 'skirt', 'pants-left', 'shorts-right', 'sock-left', 'sock-right', 'shoe-left', 'shoe-right', 'lower-skirt']
 function isHairColorMap(value: unknown): boolean {
   return !!value && typeof value === 'object' && !Array.isArray(value)
     && Object.entries(value).every(([role, color]) => hairColorRoles.includes(role as typeof hairColorRoles[number]) && typeof color === 'string' && /^#[0-9a-fA-F]{6}$/.test(color))
@@ -112,7 +112,7 @@ function isCustomizerCharacter(value: unknown): value is CustomizerCharacter {
       Array.isArray(character.customization.wardrobeGroups) && character.customization.wardrobeGroups.length <= 100
       && character.customization.wardrobeGroups.every((group) => group && isValidModelSlot(group.modelSlot)
         && isValidWardrobeId(group.setId)
-        && ['camisa', 'jaqueta', 'manga-superior', 'manga-inferior', 'luvas', 'capa', 'cinto', 'saia', 'saia-superior', 'saia-inferior', 'cinto-saia-1', 'cinto-saia-2', 'calca', 'shorts', 'meia', 'sapato'].includes(group.category)
+        && ['camisa', 'jaqueta', 'manga-superior', 'manga-inferior', 'luvas', 'capa', 'cinto', 'oculos', 'acessorio-cabeca', 'saia', 'saia-superior', 'saia-inferior', 'cinto-saia-1', 'cinto-saia-2', 'calca', 'shorts', 'meia', 'sapato'].includes(group.category)
         && [group.offsetX, group.offsetY, group.scaleX, group.scaleY, group.rotation].every(Number.isFinite)
         && group.scaleX > 0 && group.scaleY > 0)
     ))
@@ -179,7 +179,7 @@ async function writeCustomizerCharacters(characters: CustomizerCharacter[]): Pro
   await rename(temporary, characterManifestPath())
 }
 
-const wardrobeCategories: WardrobeCategory[] = ['camisa', 'jaqueta', 'manga-superior', 'manga-inferior', 'luvas', 'capa', 'cinto', 'saia', 'calca-coxa', 'calca-canela', 'shorts', 'meia', 'sapato']
+const wardrobeCategories: WardrobeCategory[] = ['camisa', 'jaqueta', 'manga-superior', 'manga-inferior', 'luvas', 'capa', 'cinto', 'oculos', 'acessorio-cabeca', 'saia', 'calca-coxa', 'calca-canela', 'shorts', 'meia', 'sapato']
 const isValidWardrobeId = (id: string) => /^[a-zA-Z0-9_-]{1,80}$/.test(id)
 const isValidFaceCatalogId = (id: string) => /^[a-zA-Z0-9_-]{1,120}$/.test(id)
 const faceSheetKinds: FaceSheetKind[] = ['eyes', 'eyebrows', 'nose', 'mouth-closed', 'mouth-open']
@@ -602,7 +602,7 @@ async function readHairStyle(modelSlot: number, id: string): Promise<HairStyle |
 }
 
 async function writeWardrobeSet(modelSlot: number, set: WardrobeSetSave, assets: WardrobeAssetSave[]): Promise<void> {
-  if (!isValidModelSlot(modelSlot) || set.schemaVersion !== 1 || set.modelSlot !== modelSlot || !isValidWardrobeId(set.id) || !Array.isArray(set.components) || set.components.length < 1 || set.components.length > 100) throw new Error('Conjunto de roupa inválido.')
+  if (!isValidModelSlot(modelSlot) || set.schemaVersion !== 1 || (set.edition !== undefined && set.edition !== 1 && set.edition !== 2) || set.modelSlot !== modelSlot || !isValidWardrobeId(set.id) || !Array.isArray(set.components) || set.components.length < 1 || set.components.length > 100) throw new Error('Conjunto de roupa inválido.')
   const folder = wardrobeSetPath(modelSlot, set.id)
   const partsFolder = join(folder, 'parts')
   await mkdir(partsFolder, { recursive: true })
@@ -627,7 +627,7 @@ async function readWardrobeSet(modelSlot: number, id: string): Promise<WardrobeS
   try {
     const folder = wardrobeSetPath(modelSlot, id)
     const set = JSON.parse(await readFile(join(folder, 'wardrobe.json'), 'utf8')) as WardrobeSetSave
-    if (set.schemaVersion !== 1 || set.modelSlot !== modelSlot || set.id !== id || !Array.isArray(set.components) || set.components.length > 100) return null
+    if (set.schemaVersion !== 1 || (set.edition !== undefined && set.edition !== 1 && set.edition !== 2) || set.modelSlot !== modelSlot || set.id !== id || !Array.isArray(set.components) || set.components.length > 100) return null
     const components = await Promise.all(set.components.map(async (component) => ({
       ...component,
       category: (component.category as string) === 'cinto-saia-1' ? 'cinto' as const : (component.category as string) === 'cinto-saia-2' ? 'saia' as const : component.category,
@@ -1597,7 +1597,7 @@ async function registerFabricatorHandlers(): Promise<void> {
         if (!entry.isDirectory() || !/^set-[a-zA-Z0-9_-]{1,80}$/.test(entry.name)) continue
         try {
           const set = JSON.parse(await readFile(join(folder, entry.name, 'wardrobe.json'), 'utf8')) as WardrobeSet
-          if (set.schemaVersion === 1 && set.modelSlot === modelSlot && set.id === entry.name.slice(4) && Array.isArray(set.components)) sets.push({ id: set.id, modelSlot, modelName: set.modelName, name: set.name, updatedAt: set.updatedAt, componentCount: set.components.length })
+          if (set.schemaVersion === 1 && (set.edition === undefined || set.edition === 1 || set.edition === 2) && set.modelSlot === modelSlot && set.id === entry.name.slice(4) && Array.isArray(set.components)) sets.push({ id: set.id, modelSlot, modelName: set.modelName, name: set.name, updatedAt: set.updatedAt, edition: set.edition ?? 1, componentCount: set.components.length })
         } catch { /* Manifestos inválidos não entram na biblioteca. */ }
       }
       return sets.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))

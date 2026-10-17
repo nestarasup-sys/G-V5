@@ -439,6 +439,7 @@ const clothingCategories: Record<'Superior' | 'Inferior', Array<{ id: ClothingGr
     { id: 'capa', label: 'Capa', source: ['capa'] },
     { id: 'cinto', label: 'Cinto', source: ['cinto'] },
     { id: 'oculos', label: 'Óculos', source: ['oculos'] },
+    { id: 'acessorio-cabeca', label: 'Acessórios de cabeça', source: ['acessorio-cabeca'] },
     { id: 'saia-superior', label: 'Saia superior', source: ['saia'] }
   ],
   Inferior: [
@@ -466,7 +467,8 @@ const upperWardrobePageTwoPanels: WardrobePanel[] = [
   { id: 'skirt', label: 'Saia superior', category: 'saia-superior', side: null, source: ['saia'] }
 ]
 const accessoryWardrobePanels: WardrobePanel[] = [
-  { id: 'glasses', label: 'Óculos', category: 'oculos', side: null }
+  { id: 'glasses', label: 'Óculos', category: 'oculos', side: null },
+  { id: 'head-accessory', label: 'Acessório de cabeça', category: 'acessorio-cabeca', side: null }
 ]
 const lowerWardrobePanels: WardrobePanel[] = [
   { id: 'pants-left', label: 'Calça', category: 'calca', side: null, source: ['calca-coxa', 'calca-canela'] },

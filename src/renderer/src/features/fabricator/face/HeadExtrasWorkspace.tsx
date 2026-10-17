@@ -75,7 +75,7 @@ export function HeadExtrasWorkspace() {
     void window.desktop.loadFaceGuides('face').then(async (saved) => {
       if (cancelled) return
       const next = saved ?? readSharedGuides()
-      setGuidesByModel(next)
+      setGuidesByModel(next as Record<number, FaceGuide>)
       if (!saved) await window.desktop.saveFaceGuides('face', next)
       if (!cancelled) setGuidesLoaded(true)
     }).catch((reason) => { if (!cancelled) { setError(reason instanceof Error ? reason.message : String(reason)); setGuidesLoaded(true) } })
@@ -145,7 +145,7 @@ export function HeadExtrasWorkspace() {
       const asset: FaceComponentAssetSave = { schemaVersion: 1, id, modelSlot, kind: 'head-extra', name: file.name.replace(/\.[^.]+$/, '') || 'Óculos', width: image.width, height: image.height, defaultTransform: transform, updatedAt: now }
       await window.desktop.saveFaceComponentAsset(modelSlot, asset, image.dataUrl)
       const saved: FaceComponentAsset = { ...asset, dataUrl: image.dataUrl }
-      setAssets((current) => [{ id, modelSlot, kind: 'head-extra', name: asset.name, width: image.width, height: image.height, updatedAt: now }, ...current])
+      setAssets((current) => [{ schemaVersion: 1, id, modelSlot, kind: 'head-extra', name: asset.name, width: image.width, height: image.height, updatedAt: now }, ...current])
       detailsRef.current = { ...detailsRef.current, [id]: saved }
       setDetails(detailsRef.current)
       setSelectedId(id); setNotice(`“${asset.name}” foi adicionado à biblioteca.`)
@@ -153,7 +153,7 @@ export function HeadExtrasWorkspace() {
     finally { setBusy(false) }
   }
 
-  async function updateAsset(patch: Partial<Pick<FaceComponentAsset, 'name' | 'defaultTransform'>>) {
+  async function updateAsset(patch: Partial<Pick<FaceComponentAsset, 'name'>> & { defaultTransform?: Partial<FaceTransform> }) {
     if (!selected) return
     const currentAsset = detailsRef.current[selected.id] ?? selected
     const next: FaceComponentAsset = { ...currentAsset, ...patch, defaultTransform: { ...currentAsset.defaultTransform, ...patch.defaultTransform }, updatedAt: new Date().toISOString() }

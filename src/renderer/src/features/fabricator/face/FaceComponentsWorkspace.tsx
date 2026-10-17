@@ -36,7 +36,7 @@ const faceDetailCategories: Array<{ kind: FaceDetailKind; label: string }> = [
   { kind: 'blush', label: 'Blush' },
   { kind: 'facial-shadow', label: 'Sombra facial' }
 ]
-const isFaceDetailKind = (kind: LibraryCategory): kind is FaceDetailKind => faceDetailCategories.some((category) => category.kind === kind)
+const isFaceDetailKind = (kind: string): kind is FaceDetailKind => faceDetailCategories.some((category) => category.kind === kind)
 const isFaceComponentKind = (kind: FaceComponentAsset['kind']): kind is FaceComponentKind => categories.some((category) => category.kind === kind)
 const initialTransform = (kind: FaceComponentKind, head: ModelPart, width: number, height: number): FaceTransform => ({
   x: kind === 'pupil' ? 0 : head.width * (kind === 'eyebrow' ? .38 : .37),
@@ -366,7 +366,7 @@ export function FaceComponentsWorkspace({ mode }: { mode: FaceWorkspaceMode }) {
       const legacyEyes = readFaceGuides(EYES_GUIDE_STORAGE_KEY)
       const legacyFace = readFaceGuides(FACE_GUIDE_STORAGE_KEY, GUIDE_STORAGE_KEY)
       const next = saved ?? { ...legacyEyes, ...legacyFace }
-      setGuidesByModel(next)
+      setGuidesByModel(next as Record<number, FaceGuide>)
       if (!saved) await window.desktop.saveFaceGuides(guideProfile, next)
       if (!cancelled) setGuidesLoadedFor(guideProfile)
     }).catch((reason) => { if (!cancelled) { setError(reason instanceof Error ? reason.message : String(reason)); setGuidesLoadedFor(guideProfile) } })

@@ -76,7 +76,8 @@ export type FabricatorHistorySaveEntry = { action: FabricatorHistoryAction; proj
 export type FabricatorHistorySaveState = { undo: FabricatorHistorySaveEntry[]; redo: FabricatorHistorySaveEntry[] }
 
 export type PosePart = Omit<ModelPart, 'chromaBaseDataUrl' | 'chromaBaseSaved'>
-export type WardrobeCategory = 'camisa' | 'jaqueta' | 'manga-superior' | 'manga-inferior' | 'luvas' | 'capa' | 'cinto' | 'oculos' | 'saia' | 'calca-coxa' | 'calca-canela' | 'shorts' | 'meia' | 'sapato'
+export type WardrobeCategory = 'camisa' | 'jaqueta' | 'manga-superior' | 'manga-inferior' | 'luvas' | 'capa' | 'cinto' | 'oculos' | 'acessorio-cabeca' | 'saia' | 'calca-coxa' | 'calca-canela' | 'shorts' | 'meia' | 'sapato'
+export type WardrobeEdition = 1 | 2
 /** Encaixe da roupa expresso no referencial imutável do osso na folha original. */
 export type WardrobeBinding = {
   version: 1
@@ -111,6 +112,8 @@ export type WardrobeComponent = {
 }
 export type WardrobeSet = {
   schemaVersion: 1
+  /** Conjuntos antigos sem edição pertencem ao editor original. */
+  edition?: WardrobeEdition
   id: string
   modelSlot: number
   modelName: string
@@ -121,7 +124,7 @@ export type WardrobeSet = {
   updatedAt: string
 }
 export type WardrobeSetSave = Omit<WardrobeSet, 'components'> & { components: Array<Omit<WardrobeComponent, 'dataUrl'>> }
-export type WardrobeSetSummary = Pick<WardrobeSet, 'id' | 'modelSlot' | 'modelName' | 'name' | 'updatedAt'> & { componentCount: number }
+export type WardrobeSetSummary = Pick<WardrobeSet, 'id' | 'modelSlot' | 'modelName' | 'name' | 'updatedAt'> & { edition: WardrobeEdition; componentCount: number }
 export type WardrobeAssetSave = { id: string; dataUrl: string }
 export type FaceSheetKind = 'eyes' | 'eyebrows' | 'nose' | 'mouth-closed' | 'mouth-open'
 export type FaceElementKind = 'eye-left' | 'eye-right' | 'brow-left' | 'brow-right' | 'nose' | 'mouth'

@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
-import type { FabricatorHistoryState, FabricatorPose, FabricatorPoseSummary, FabricatorProject, FabricatorProjectSave, FabricatorSlotSummary, ModelPart, WardrobeCategory, WardrobeComponent, WardrobeSet, WardrobeSetSave, WardrobeSetSummary } from '../../../../../shared/fabricator'
+import type { FabricatorHistoryState, FabricatorPose, FabricatorPoseSummary, FabricatorProject, FabricatorProjectSave, FabricatorSlotSummary, ModelPart, WardrobeCategory, WardrobeComponent, WardrobeEdition, WardrobeSet, WardrobeSetSave, WardrobeSetSummary } from '../../../../../shared/fabricator'
 import { Icon } from '../../../ui/components/Icon'
 import { usePreviewBackground } from '../usePreviewBackground'
 import { orderedParts, partJointAnchor, sourcePointFromCanvas } from '../models/rig'
 import { isHeadPart } from '../models/resize'
 import { resizeAroundAnchor } from '../../../../../shared/headShape'
 import { bindWardrobeComponent, mapWardrobeComponentToPose, poseDeltaToSource } from './poseTransform'
+import { splitWardrobeV2Reference, supportsWardrobeV2, wardrobeV2SourceUrl } from './wardrobeV2Reference'
 
 type WorkerPiece = Omit<WardrobeComponent, 'category' | 'attachedPartId' | 'rotation' | 'dataUrl'> & { png: ArrayBuffer }
 type WorkerMessage = { type: 'complete'; id: number; width: number; height: number; pieces: WorkerPiece[] } | { type: 'error'; id: number; message: string }
@@ -62,7 +63,7 @@ function rebindComponents(components: WardrobeComponent[], reference: Fabricator
   return { components: changed ? rebound : components, changed }
 }
 const categoryNames: Record<WardrobeCategory, string> = {
-  camisa: 'Camisas', jaqueta: 'Jaquetas', 'manga-superior': 'Mangas superiores', 'manga-inferior': 'Mangas inferiores', luvas: 'Luvas', capa: 'Capa', cinto: 'Cinto', oculos: 'Óculos', saia: 'Saia', 'calca-coxa': 'Calças · coxas', 'calca-canela': 'Calças · canelas', shorts: 'Shorts', meia: 'Meias', sapato: 'Sapatos'
+  camisa: 'Camisas', jaqueta: 'Jaquetas', 'manga-superior': 'Mangas superiores', 'manga-inferior': 'Mangas inferiores', luvas: 'Luvas', capa: 'Capa', cinto: 'Cinto', oculos: 'Óculos', 'acessorio-cabeca': 'Acessórios de cabeça', saia: 'Saia', 'calca-coxa': 'Calças · coxas', 'calca-canela': 'Calças · canelas', shorts: 'Shorts', meia: 'Meias', sapato: 'Sapatos'
 }
 const categories = Object.keys(categoryNames) as WardrobeCategory[]
 function dataUrl(buffer: ArrayBuffer): string {
@@ -73,8 +74,13 @@ function dataUrl(buffer: ArrayBuffer): string {
 function readFile(file: File): Promise<string> {
   return new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.onerror = () => reject(new Error('Não foi possível ler a imagem.')); reader.readAsDataURL(file) })
 }
-function guessCategory(piece: WorkerPiece, width: number, height: number): WardrobeCategory {
+function guessCategory(piece: WorkerPiece, width: number, height: number, edition: WardrobeEdition): WardrobeCategory {
   const cx = (piece.x + piece.width / 2) / width; const cy = (piece.y + piece.height / 2) / height
+  if (edition === 2) {
+    if (cy > .9) return 'sapato'
+    if (cy > .46 && cy < .58 && (cx < .3 || cx > .7)) return 'luvas'
+    if (cy < .23 && cx > .32 && cx < .68) return 'oculos'
+  }
   if (cy < .19 && Math.abs(cx - .5) > .1) return 'manga-superior'
   if (cy < .39 && cx > .34 && cx < .66) return 'camisa'
   if (cy > .62) return 'calca-canela'
@@ -87,6 +93,7 @@ function guessName(category: WardrobeCategory, x: number, width: number): string
   if (category === 'capa') return 'Capa'
   if (category === 'cinto') return 'Cinto'
   if (category === 'oculos') return 'Óculos'
+  if (category === 'acessorio-cabeca') return 'Acessório de cabeça'
   if (category === 'saia') return 'Saia'
   if (category === 'shorts') return 'Bermuda'
   if (category === 'meia') return `Meia ${x < width / 2 ? 'esquerda' : 'direita'}`
@@ -110,9 +117,9 @@ function serializeModel(model: FabricatorProject): FabricatorProjectSave {
 }
 function guessBone(category: WardrobeCategory, x: number, width: number, model: FabricatorProject): FabricatorProject['parts'][number] | undefined {
   const side = x < width / 2 ? 'left' : 'right'
-  const centerCategory = category === 'camisa' || category === 'jaqueta' || category === 'capa' || category === 'cinto' || category === 'oculos' || category === 'saia'
+  const centerCategory = category === 'camisa' || category === 'jaqueta' || category === 'capa' || category === 'cinto' || category === 'oculos' || category === 'acessorio-cabeca' || category === 'saia'
   const target = category === 'capa' ? { x: .5, y: .31 }
-    : category === 'oculos' ? { x: .5, y: .2 }
+    : category === 'oculos' || category === 'acessorio-cabeca' ? { x: .5, y: .2 }
       : category === 'cinto' || category === 'saia' ? { x: .5, y: .49 }
       : category === 'camisa' || category === 'jaqueta' ? { x: .5, y: .36 }
     : category === 'shorts' ? { x: side === 'left' ? .42 : .58, y: .42 }
@@ -137,7 +144,7 @@ function guessBone(category: WardrobeCategory, x: number, width: number, model: 
   }
   return candidates.sort((a, b) => distance(a) - distance(b))[0] ?? model.parts[0]
 }
-export function WardrobeWorkspace() {
+export function WardrobeWorkspace({ edition = 1 }: { edition?: WardrobeEdition }) {
   const [previewBackground, setPreviewBackground] = usePreviewBackground()
   const [models, setModels] = useState<FabricatorSlotSummary[]>(Array.from({ length: 10 }, () => null))
   const [modelSlot, setModelSlot] = useState(1)
@@ -175,7 +182,8 @@ export function WardrobeWorkspace() {
   const previewPoseParts = testPose ? orderedParts(testPose.parts, testPose.layerOrder).filter((part) => !(testPose.hiddenPartIds ?? []).includes(part.id)) : []
   const previewLayerStride = (draft?.components.length ?? 0) + 2
   const scale = previewProject && previewSize.width && previewSize.height ? Math.min((previewSize.width - 48) / previewProject.width, (previewSize.height - 48) / previewProject.height) * zoom : 1
-  const sourceParts = model && sourceReference?.sourceDataUrl === model.sourceDataUrl ? sourceReference.parts : null
+  const referenceSource = model ? edition === 2 ? wardrobeV2SourceUrl : model.sourceDataUrl : null
+  const sourceParts = model && sourceReference?.sourceDataUrl === referenceSource ? sourceReference.parts : null
   const referenceModel = model && sourceParts ? { ...model, parts: model.parts.map((part) => withSourceFrame(part, sourceParts[part.id])) } : model
   const referenceBone = (partId: string) => referenceModel?.parts.find((part) => part.id === partId)
 
@@ -183,8 +191,10 @@ export function WardrobeWorkspace() {
     setError('')
     try {
       const [savedModels, reference, library] = await Promise.all([window.desktop.listFabricatorSlots(), window.desktop.loadFabricatorSlot(targetSlot), window.desktop.listWardrobeSets(targetSlot)])
-      const firstAvailableModel = savedModels.find((slot) => slot)
+      setModels(savedModels)
+      const firstAvailableModel = savedModels.find((slot) => slot && (edition === 1 || slot.partCount === 10))
       if (!reference && firstAvailableModel && firstAvailableModel.slot !== targetSlot) { setModels(savedModels); setModelSlot(firstAvailableModel.slot); return }
+      if (edition === 2 && reference && !supportsWardrobeV2(reference)) throw new Error('Roupas Dev 2.0 requer o modelo original de 1122 × 1402 com 10 partes correspondente à folha enviada.')
       let recoveredModel = reference
       let history: FabricatorHistoryState | null = null
       if (reference) {
@@ -211,15 +221,20 @@ export function WardrobeWorkspace() {
           })
           if (recoveredParts.some((part, index) => part !== reference.parts[index])) {
             recoveredModel = { ...reference, parts: recoveredParts }
-            try { await window.desktop.saveFabricatorProject(serializeModel(recoveredModel), []) }
-            catch { setError('Recuperei a origem das peças pelo histórico, mas não consegui gravá-la no modelo. Ela ficará disponível nesta sessão.') }
+            if (edition === 1) {
+              try { await window.desktop.saveFabricatorProject(serializeModel(recoveredModel), []) }
+              catch { setError('Recuperei a origem das peças pelo histórico, mas não consegui gravá-la no modelo. Ela ficará disponível nesta sessão.') }
+            }
           }
         }
       }
-      setModels(savedModels); setModel(recoveredModel); setSets(library)
+      setModels(savedModels); setModel(recoveredModel); setSets(library.filter((set) => set.edition === edition))
       setActiveSetId(null); setDraft(null); setSelectedId(null); setDirty(false); setBodyOffsets({}); setMoveBodyMode(false)
-    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível carregar a biblioteca de roupas.') }
-  }, [])
+    } catch (reason) {
+      setModel(null); setSets([]); setDraft(null); setActiveSetId(null); setSelectedId(null)
+      setError(reason instanceof Error ? reason.message : 'Não foi possível carregar a biblioteca de roupas.')
+    }
+  }, [edition])
   useEffect(() => { void reload(modelSlot) }, [modelSlot, reload])
   useEffect(() => {
     const element = previewRef.current
@@ -233,16 +248,25 @@ export function WardrobeWorkspace() {
     const worker = new Worker(new URL('./wardrobeReference.worker.ts', import.meta.url), { type: 'module' })
     worker.onmessage = (event: MessageEvent<ReferenceMessage>) => {
       if (!alive) return
-      if (event.data.type === 'complete') setReferencePreview({ sourceDataUrl: model.sourceDataUrl, imageDataUrl: dataUrl(event.data.png) })
-      else setError(event.data.message)
+      if (event.data.type === 'complete') {
+        if (referenceSource) setReferencePreview({ sourceDataUrl: referenceSource, imageDataUrl: dataUrl(event.data.png) })
+      } else setError(event.data.message)
       worker.terminate()
     }
     worker.onerror = () => { if (alive) setError('Não foi possível limpar o fundo verde da referência.'); worker.terminate() }
-    worker.postMessage({ id: 1, sourceDataUrl: model.sourceDataUrl, tolerance: model.tolerance })
+    worker.postMessage({ id: 1, sourceDataUrl: referenceSource, tolerance: model.tolerance })
     return () => { alive = false; worker.terminate() }
-  }, [model])
+  }, [model, referenceSource])
   useEffect(() => {
     if (!model) { setSourceReference(null); return }
+    if (edition === 2) {
+      if (referencePreview?.sourceDataUrl !== referenceSource) { setSourceReference(null); return }
+      let alive = true
+      void splitWardrobeV2Reference(referencePreview.imageDataUrl, model).then((parts) => {
+        if (alive) { setSourceReference({ sourceDataUrl: wardrobeV2SourceUrl, parts }); setError('') }
+      }).catch((reason) => { if (alive) setError(reason instanceof Error ? reason.message : String(reason)) })
+      return () => { alive = false }
+    }
     let alive = true
     setSourceReference(null)
     const worker = new Worker(new URL('../models/imageProcessor.worker.ts', import.meta.url), { type: 'module' })
@@ -266,7 +290,7 @@ export function WardrobeWorkspace() {
     worker.onerror = () => { if (alive) setError('Não foi possível carregar as peças separadas do corpo original.'); worker.terminate() }
     worker.postMessage({ id: 1, sourceDataUrl: model.sourceDataUrl, tolerance: model.tolerance })
     return () => { alive = false; worker.terminate() }
-  }, [model])
+  }, [model, edition, referencePreview, referenceSource])
   useEffect(() => {
     if (!sourceParts || !referenceModel || !draft) return
     const rebound = rebindComponents(draft.components, referenceModel)
@@ -277,16 +301,18 @@ export function WardrobeWorkspace() {
   useEffect(() => () => workerRef.current?.terminate(), [])
 
   const openSet = async (id: string) => {
+    if (edition === 2 && !sourceParts) { setError('Aguarde a referência 2.0 carregar antes de abrir o conjunto.'); return }
     if (dirty && !window.confirm('Há alterações não salvas neste conjunto. Descartar e abrir outro?')) return
     try {
       const loaded = await window.desktop.loadWardrobeSet(modelSlot, id)
-      if (!loaded) throw new Error('O conjunto não foi encontrado.')
+      if (!loaded || (loaded.edition ?? 1) !== edition) throw new Error('O conjunto não pertence a esta versão de Roupas Dev.')
       const rebound = referenceModel ? rebindComponents(loaded.components, referenceModel) : { components: loaded.components, changed: false }
       setDraft(rebound.changed ? { ...loaded, components: rebound.components } : loaded); setActiveSetId(id); setSelectedId(rebound.components[0]?.id ?? null); setDirty(rebound.changed); setBodyOffsets({}); setError('')
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível abrir o conjunto.') }
   }
   const importSheet = async (file?: File) => {
     if (!file || !model) return
+    if (edition === 2 && !sourceParts) { setError('Aguarde a referência 2.0 carregar antes de importar a folha.'); return }
     if (!/\.(png|jpe?g|webp)$/i.test(file.name)) { setError('Use uma imagem PNG, JPG ou WebP.'); return }
     setProcessing(true); setError('')
     try {
@@ -300,16 +326,20 @@ export function WardrobeWorkspace() {
         if (message.id !== id) return
         setProcessing(false); worker.terminate(); workerRef.current = null
         if (message.type === 'error') { setError(message.message); return }
+        if (edition === 2 && (message.width !== model.width || message.height !== model.height)) {
+          setError(`A folha 2.0 precisa ter ${model.width} × ${model.height} pixels para manter o encaixe com a referência.`)
+          return
+        }
         if (!message.pieces.length) { setError('Não encontrei peças visíveis. Confira se a folha tem transparência entre as peças.'); return }
         const components = message.pieces.map((piece) => {
-          const category = guessCategory(piece, message.width, message.height)
+          const category = guessCategory(piece, message.width, message.height, edition)
           const { png, ...metadata } = piece
           const bone = guessBone(category, piece.x + piece.width / 2, message.width, referenceModel ?? model)
           const positioned: WardrobeComponent = { ...metadata, category, attachedPartId: bone?.id ?? '', rotation: 0, originX: metadata.x, originY: metadata.y, originWidth: metadata.width, originHeight: metadata.height, dataUrl: dataUrl(png) }
           if (bone) positioned.binding = bindWardrobeComponent(positioned, bone)
           return { ...positioned, name: guessName(category, piece.x + piece.width / 2, message.width) }
         })
-        setDraft({ schemaVersion: 1, id: crypto.randomUUID(), modelSlot, modelName: model.name, name: file.name.replace(/\.[^.]+$/, ''), width: model.width, height: model.height, components, updatedAt: new Date().toISOString() })
+        setDraft({ schemaVersion: 1, edition, id: crypto.randomUUID(), modelSlot, modelName: model.name, name: file.name.replace(/\.[^.]+$/, ''), width: model.width, height: model.height, components, updatedAt: new Date().toISOString() })
         setActiveSetId(null); setSelectedId(components[0]?.id ?? null); setDirty(true); setBodyOffsets({})
       }
       worker.onerror = () => { setProcessing(false); setError('Falha ao processar a imagem localmente.'); worker.terminate(); workerRef.current = null }
@@ -335,7 +365,7 @@ export function WardrobeWorkspace() {
     setError('')
   }
   const calibrateSourceAnchor = async (partId: string, x: number, y: number) => {
-    if (!model) return
+    if (!model || edition === 2) return
     const selectedPart = model.parts.find((part) => part.id === partId)
     if (!selectedPart) return
     const currentAnchor = partJointAnchor(selectedPart, model.joints) ?? { x: selectedPart.x + selectedPart.width / 2, y: selectedPart.y + selectedPart.height / 2 }
@@ -442,19 +472,19 @@ export function WardrobeWorkspace() {
     updateComponent(selected.id, { x: selected.originX ?? selected.x, y: selected.originY ?? selected.y, width: selected.originWidth ?? selected.width, height: selected.originHeight ?? selected.height, rotation: 0 })
   }
   const save = async () => {
-    if (!draft || !draft.components.length || saving) return
+    if (!draft || !draft.components.length || saving || edition === 2 && !sourceParts) return
     setSaving(true); setError('')
     try {
-      const set: WardrobeSet = { ...draft, modelSlot, modelName: model?.name ?? draft.modelName, updatedAt: new Date().toISOString() }
+      const set: WardrobeSet = { ...draft, edition, modelSlot, modelName: model?.name ?? draft.modelName, updatedAt: new Date().toISOString() }
       const serialized: WardrobeSetSave = { ...set, components: set.components.map(({ dataUrl: _dataUrl, ...component }) => component) }
       await window.desktop.saveWardrobeSet(modelSlot, serialized, set.components.map(({ id, dataUrl: image }) => ({ id, dataUrl: image })))
-      setDraft(set); setActiveSetId(set.id); setDirty(false); setSets(await window.desktop.listWardrobeSets(modelSlot))
+      setDraft(set); setActiveSetId(set.id); setDirty(false); setSets((await window.desktop.listWardrobeSets(modelSlot)).filter((item) => item.edition === edition))
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível salvar o conjunto.') }
     finally { setSaving(false) }
   }
   const deleteSet = async () => {
     if (!activeSetId || !window.confirm(`Excluir permanentemente o conjunto “${draft?.name ?? activeSetId}”?`)) return
-    try { await window.desktop.deleteWardrobeSet(modelSlot, activeSetId); setDraft(null); setActiveSetId(null); setSelectedId(null); setDirty(false); setSets(await window.desktop.listWardrobeSets(modelSlot)) }
+    try { await window.desktop.deleteWardrobeSet(modelSlot, activeSetId); setDraft(null); setActiveSetId(null); setSelectedId(null); setDirty(false); setSets((await window.desktop.listWardrobeSets(modelSlot)).filter((item) => item.edition === edition)) }
     catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível excluir o conjunto.') }
   }
   const openTestPosePicker = async () => {
@@ -488,20 +518,20 @@ export function WardrobeWorkspace() {
   }
   const exitTestPose = () => { setTestPose(null); setTestDragOffsets({}) }
 
-  return <section className="fabricator-workspace wardrobe-workspace" aria-label="Biblioteca de roupas">
+  return <section className="fabricator-workspace wardrobe-workspace" aria-label={edition === 2 ? 'Biblioteca de roupas 2.0' : 'Biblioteca de roupas'}>
     <header className="wardrobe-toolbar">
-      <div className="wardrobe-title"><span className="model-slot-logo"><Icon name="shirt" /></span><span><strong>Roupas</strong><small>Biblioteca independente por modelo</small></span></div>
-      <label className="wardrobe-model-select">Modelo<select value={modelSlot} onChange={(event) => { if (dirty && !window.confirm('Há alterações não salvas. Descartar e trocar de modelo?')) return; setTestPose(null); setModelSlot(Number(event.target.value)) }}>{models.map((item, index) => <option key={index + 1} value={index + 1} disabled={!item}>{String(index + 1).padStart(2, '0')} · {item?.name ?? 'Vazio'}</option>)}</select></label>
+      <div className="wardrobe-title"><span className="model-slot-logo"><Icon name="shirt" /></span><span><strong>{edition === 2 ? 'Roupas 2.0' : 'Roupas'}</strong><small>{edition === 2 ? 'Referência com mãos e pés separados' : 'Biblioteca independente por modelo'}</small></span></div>
+      <label className="wardrobe-model-select">Modelo<select value={modelSlot} onChange={(event) => { if (dirty && !window.confirm('Há alterações não salvas. Descartar e trocar de modelo?')) return; setTestPose(null); setModelSlot(Number(event.target.value)) }}>{models.map((item, index) => <option key={index + 1} value={index + 1} disabled={!item || edition === 2 && item.partCount !== 10}>{String(index + 1).padStart(2, '0')} · {item?.name ?? 'Vazio'}</option>)}</select></label>
       {draft && <input aria-label="Nome do conjunto" className="wardrobe-name-input" value={draft.name} onChange={(event) => { setDirty(true); setDraft((current) => current ? { ...current, name: event.target.value } : current) }} placeholder="Nome do conjunto" />}
       <div className="wardrobe-toolbar-actions"><span className={`wardrobe-save-state${dirty ? ' pending' : ''}`}><i />{dirty ? 'Alterações não salvas' : model ? `${model.parts.length} peças no modelo` : 'Escolha um modelo salvo'}</span><button className="pose-button secondary" disabled={!model || processing} onClick={() => { if (dirty && !window.confirm('Descartar as alterações atuais e importar outra folha?')) return; inputRef.current?.click() }} type="button"><Icon name="plus" /> Importar folha</button>{testPose ? <button className="pose-button danger" onClick={exitTestPose} type="button"><Icon name="eyeOff" /> Sair do teste</button> : <button className="pose-button secondary" disabled={!model || !draft?.components.length} onClick={() => void openTestPosePicker()} type="button"><Icon name="eye" /> Testar pose</button>}<button className="pose-button primary" disabled={!draft || saving} onClick={() => void save()} type="button"><Icon name="check" />{saving ? 'Salvando…' : activeSetId ? 'Salvar alterações' : 'Salvar conjunto'}</button>{activeSetId && <button className="pose-icon-button" title="Excluir conjunto" onClick={() => void deleteSet()} type="button"><Icon name="trash" /></button>}<input ref={inputRef} hidden type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => { void importSheet(event.target.files?.[0]); event.currentTarget.value = '' }} /></div>
     </header>
     {error && <div className="wardrobe-error" role="alert">{error}<button onClick={() => setError('')} type="button">Fechar</button></div>}
     <div className="wardrobe-body">
       <aside className="wardrobe-library"><header><span><strong>Conjuntos</strong><small>{sets.length} salvos para este modelo</small></span><span className="wardrobe-count">{sets.length}</span></header><div className="wardrobe-set-list">{sets.map((set) => <button className={`wardrobe-set-row${activeSetId === set.id ? ' active' : ''}`} key={set.id} onClick={() => void openSet(set.id)} type="button"><span className="wardrobe-set-icon"><Icon name="shirt" /></span><span><b>{set.name}</b><small>{set.componentCount} peças</small></span><Icon name="chevronRight" /></button>)}{!sets.length && <div className="wardrobe-library-empty"><Icon name="box" /><span>Nenhum conjunto salvo.<br />Importe sua primeira folha.</span></div>}</div><div className="wardrobe-category-legend"><strong>Categorias</strong>{categories.map((category) => <span key={category}><i />{categoryNames[category]}</span>)}</div></aside>
-      <section className="wardrobe-preview-card"><header><span><i /> {testPose ? `TESTE DA POSE · ${testPose.name}` : 'PRÉVIA DE ENCAIXE · FOLHA ORIGINAL'}</span><span>{previewProject ? `${previewProject.width} × ${previewProject.height}` : 'Sem modelo'}</span></header>
+      <section className="wardrobe-preview-card"><header><span><i /> {testPose ? `TESTE DA POSE · ${testPose.name}` : edition === 2 ? 'PRÉVIA DE ENCAIXE · FOLHA 2.0' : 'PRÉVIA DE ENCAIXE · FOLHA ORIGINAL'}</span><span>{previewProject ? `${previewProject.width} × ${previewProject.height}` : 'Sem modelo'}</span></header>
         {!testPose && <div className="wardrobe-preview-controls"><button className={`pose-button ${moveBodyMode ? 'primary' : 'secondary'}`} disabled={!sourceParts || Boolean(calibratingPartId)} onClick={() => setMoveBodyMode((value) => !value)} type="button">{moveBodyMode ? 'Mover corpo: ligado' : 'Mover corpo'}</button><button className="pose-button secondary" disabled={!Object.keys(bodyOffsets).length} onClick={() => setBodyOffsets({})} type="button">Repor corpo</button><label className="preview-background-picker" title="Mudar a cor do fundo em Modelos, Poses, Rosto e Roupas"><span>Fundo da prévia</span><input type="color" aria-label="Cor do fundo das prévias" value={previewBackground} onChange={(event) => setPreviewBackground(event.target.value)} /><code>{previewBackground.toUpperCase()}</code></label></div>}
         <div ref={previewRef} className={`wardrobe-preview-stage${testPose ? ' testing-pose' : ''}`} style={{ '--preview-background': previewBackground } as import('react').CSSProperties}>{previewProject && <div className={`wardrobe-artboard${calibratingPartId ? ' calibrating-origin' : ''}`} onPointerDown={handleArtboardPointerDown} style={{ width: previewProject.width * scale, height: previewProject.height * scale }}>
-        {!testPose && model && !sourceParts && referencePreview?.sourceDataUrl === model.sourceDataUrl && <img className="wardrobe-base-image" src={referencePreview.imageDataUrl} alt={`Folha original desmontada do modelo ${model.name}`} style={{ left: 0, top: 0, width: previewProject.width * scale, height: previewProject.height * scale, zIndex: 1 }} />}
+        {!testPose && model && !sourceParts && referencePreview?.sourceDataUrl === referenceSource && <img className="wardrobe-base-image" src={referencePreview.imageDataUrl} alt={`Folha original desmontada do modelo ${model.name}`} style={{ left: 0, top: 0, width: previewProject.width * scale, height: previewProject.height * scale, zIndex: 1 }} />}
         {!testPose && model && sourceParts && model.parts.map((part, index) => { const source = sourceParts[part.id]; if (!source) return null; const offset = bodyOffsets[part.id] ?? zeroOffset; const frame = sourcePreviewFrame(part, source); return <img key={part.id} className={`wardrobe-reference-body-part${moveBodyMode ? ' movable' : ''}`} src={source.imageDataUrl} alt={part.name} title={moveBodyMode ? `Arraste ${part.name} para conferir o vínculo` : part.name} draggable={false} onPointerDown={(event) => beginBodyDrag(event, part.id)} onPointerMove={moveBodyDrag} onPointerUp={finishBodyDrag} onPointerCancel={finishBodyDrag} style={{ left: (frame.x + offset.x) * scale, top: (frame.y + offset.y) * scale, width: frame.width * scale, height: frame.height * scale, zIndex: moveBodyMode ? 1000 + index : 1 }} /> })}
         {testPose && previewPoseParts.map((part, index) => <img key={part.id} className="wardrobe-pose-body-part" src={part.dataUrl} alt={part.name} draggable={false} style={{ left: part.x * scale, top: part.y * scale, width: part.width * scale, height: part.height * scale, zIndex: 2 + index * previewLayerStride, transform: `rotate(${part.rotation}deg)` }} />)}
         {draft?.components.map((component, index) => {
