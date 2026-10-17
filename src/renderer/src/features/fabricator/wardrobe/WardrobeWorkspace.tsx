@@ -77,9 +77,18 @@ function readFile(file: File): Promise<string> {
 function guessCategory(piece: WorkerPiece, width: number, height: number, edition: WardrobeEdition): WardrobeCategory {
   const cx = (piece.x + piece.width / 2) / width; const cy = (piece.y + piece.height / 2) / height
   if (edition === 2) {
-    if (cy > .9) return 'sapato'
-    if (cy > .46 && cy < .58 && (cx < .3 || cx > .7)) return 'luvas'
-    if (cy < .23 && cx > .32 && cx < .68) return 'oculos'
+    const central = cx > .34 && cx < .66
+    const outer = cx < .34 || cx > .66
+    const aspect = piece.width / Math.max(1, piece.height)
+    // Dev 2.0 sheets may place artwork freely; classify against the fixed body zones,
+    // not the tighter coordinates used by the legacy wardrobe sheet.
+    if (cy < .22 && central) return aspect > 1.45 ? 'oculos' : 'acessorio-cabeca'
+    if (cy > .88 && cx > .28 && cx < .72) return 'sapato'
+    if (cy >= .22 && cy < .34 && outer) return 'manga-superior'
+    if (cy >= .34 && cy < .51 && outer) return cy > .46 ? 'luvas' : 'manga-inferior'
+    if (cy >= .3 && cy < .49 && central) return 'camisa'
+    if (cy >= .49 && cy < .67 && central) return 'calca-coxa'
+    if (cy >= .67 && cy < .89 && cx > .3 && cx < .7) return 'calca-canela'
   }
   if (cy < .19 && Math.abs(cx - .5) > .1) return 'manga-superior'
   if (cy < .39 && cx > .34 && cx < .66) return 'camisa'
