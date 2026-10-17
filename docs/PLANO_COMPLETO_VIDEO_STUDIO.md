@@ -52,7 +52,7 @@ type VideoProject = {
   schemaVersion: number
   id: string
   name: string
-  frameRate: number
+  frameRate: number // padrão recomendado: 30 FPS
   durationFrames: number // começa em 10 minutos e muda pelos controles de duração
   canvas: { width: number; height: number; backgroundColor: string }
   scene: VideoSceneSnapshot // composição montada no Video Studio; fundo estático na primeira versão
@@ -324,8 +324,8 @@ Exportação não é requisito para a primeira entrega, mas a arquitetura deve p
 
 ## 13. Decisões técnicas ainda abertas
 
-1. **FPS padrão:** escolher o FPS inicial do Video Studio; essa escolha afeta como a transição de 20 ms aparece nos quadros exportados.
-2. **Transição de sprites:** 20 ms é menor que um quadro a 30 FPS (~33,3 ms), então pode aparecer como um único corte no MP4. Para preservar a duração solicitada, o runtime deve calcular em tempo contínuo e o export deve amostrar na grade do FPS; não prometer vários quadros quando o FPS não comporta.
+1. **FPS e custo:** adotar 30 FPS como padrão equilibrado. 60 FPS fica como opção futura de maior fluidez, com aproximadamente o dobro de quadros para renderizar no mesmo intervalo.
+2. **Transição de sprites:** 20 ms é menor que um quadro a 30 FPS (~33,3 ms), então pode aparecer como um corte ou uma transição de um quadro no MP4. A 60 FPS (~16,7 ms por quadro), pode haver cerca de um quadro intermediário. O runtime calcula em tempo contínuo e o export amostra na grade do FPS escolhido.
 3. **Controles de duração:** definir o tamanho de cada passo dos controles de duração (+/−); os controles de zoom horizontal permanecem separados.
 
 ## 14. Escopo inicial recomendado
