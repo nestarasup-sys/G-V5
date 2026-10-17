@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ChangeEvent, type PointerEve
 import type { FabricatorProject, FabricatorSlotSummary, HairStyle, HairStyleSave, HairTransform, HairWorkspace as HairWorkspaceData, HairWorkspaceSave, ModelPart } from '../../../../shared/fabricator'
 import type { HairPartId } from '../../../../shared/customizer'
 import { hairCategories, hairStyleSupportsCategory, type HairAssetSide } from '../../../../shared/hairCategories'
+import { emptyHairTransform, normalizeHairTransforms } from '../../../../shared/hairPersistence'
 import { Icon } from '../../ui/components/Icon'
 import { usePreviewBackground } from './usePreviewBackground'
 
@@ -21,9 +22,8 @@ function initialTransform(side: HairSide, head: ModelPart, asset: Pick<HairAsset
   return { x: head.width / 2, y: head.height * (isFringe ? .29 : .49), scaleX: width / asset.width, scaleY: height / asset.height, rotation: 0 }
 }
 
-function emptyHairWorkspace(modelSlot: number, head: ModelPart): HairWorkspaceData {
-  const fallback = { width: 1, height: 1 }
-  return { schemaVersion: 1, modelSlot, front: null, back: null, fringe: null, transforms: { front: initialTransform('front', head, fallback), back: initialTransform('back', head, fallback), fringe: initialTransform('fringe', head, fallback) }, categoryBySide: defaultCategories, chromaTolerance: 70, chromaMode: 'auto', updatedAt: new Date().toISOString() }
+function emptyHairWorkspace(modelSlot: number): HairWorkspaceData {
+  return { schemaVersion: 1, modelSlot, front: null, back: null, fringe: null, transforms: { front: emptyHairTransform(), back: emptyHairTransform(), fringe: emptyHairTransform() }, categoryBySide: defaultCategories, chromaTolerance: 70, chromaMode: 'auto', updatedAt: new Date().toISOString() }
 }
 
 function readFileDataUrl(file: File): Promise<string> {
@@ -146,11 +146,11 @@ export function HairWorkspace() {
     setLoadingHair(true)
     void window.desktop.loadHairWorkspace(modelSlot).then((saved) => {
       if (cancelled) return
-      setHairWorkspace(saved ? { chromaTolerance: 70, chromaMode: 'auto', ...saved, fringe: saved.fringe ?? null, transforms: { ...saved.transforms, fringe: saved.transforms.fringe ?? initialTransform('fringe', head, saved.fringe ?? { width: 1, height: 1 }) } } : emptyHairWorkspace(modelSlot, head))
+      setHairWorkspace(saved ? { chromaTolerance: 70, chromaMode: 'auto', ...saved, fringe: saved.fringe ?? null, transforms: { ...saved.transforms, fringe: saved.transforms.fringe ?? (saved.fringe ? initialTransform('fringe', head, saved.fringe) : emptyHairTransform()) } } : emptyHairWorkspace(modelSlot))
       setDirty(false)
     }).catch((reason: unknown) => {
       if (!cancelled) {
-        setHairWorkspace(emptyHairWorkspace(modelSlot, head))
+        setHairWorkspace(emptyHairWorkspace(modelSlot))
         setError(reason instanceof Error ? reason.message : 'Não foi possível carregar os cabelos deste modelo.')
       }
     }).finally(() => { if (!cancelled) setLoadingHair(false) })
@@ -221,6 +221,7 @@ export function HairWorkspace() {
         front, back, chromaTolerance: tolerance, chromaMode: mode,
         categoryBySide: { ...current.categoryBySide, front: 'rearHair', back: 'backHair' },
         transforms: {
+          ...current.transforms,
           front: preserveHairFit(current.transforms.front, current.front, front),
           back: preserveHairFit(current.transforms.back, current.back, back)
         }
@@ -266,7 +267,7 @@ export function HairWorkspace() {
     const { front, back, fringe, sourceImageDataUrl, ...rest } = hairWorkspace
     const saved: HairWorkspaceSave = { ...rest, sourceImageSaved: Boolean(sourceImageDataUrl), front: front ? { width: front.width, height: front.height } : null, back: back ? { width: back.width, height: back.height } : null, fringe: fringe ? { width: fringe.width, height: fringe.height } : null }
     const assets = [front ? { id: 'front' as const, dataUrl: front.dataUrl } : null, back ? { id: 'back' as const, dataUrl: back.dataUrl } : null, fringe ? { id: 'fringe' as const, dataUrl: fringe.dataUrl } : null, sourceImageDataUrl ? { id: 'source' as const, dataUrl: sourceImageDataUrl } : null].filter((asset): asset is NonNullable<typeof asset> => asset !== null)
-    await window.desktop.saveHairWorkspace(modelSlot, saved, assets)
+    await window.desktop.saveHairWorkspace(modelSlot, { ...saved, transforms: normalizeHairTransforms(saved) }, assets)
   }
 
   async function saveHair() {
@@ -296,6 +297,7 @@ export function HairWorkspace() {
       }
       const assets = [{ id: selectedSide, dataUrl: selectedAsset.dataUrl }]
       await persistWorkspace()
+      saved.transforms = normalizeHairTransforms(saved)
       await window.desktop.saveHairStyle(modelSlot, saved, assets)
       const detail: HairStyle = { ...saved, front: saved.front && front ? { ...front } : null, back: saved.back && back ? { ...back } : null, fringe: saved.fringe && fringe ? { ...fringe } : null }
       setHairStyles((current) => [detail, ...current.filter((style) => style.id !== id)])
@@ -306,7 +308,7 @@ export function HairWorkspace() {
 
   function openStyle(style: HairStyle) {
     if (dirty && !window.confirm('Há alterações não salvas. Abrir este cabelo e descartar as alterações?')) return
-    setHairWorkspace((current) => current ? { ...current, front: style.front ? { ...style.front } : null, back: style.back ? { ...style.back } : null, fringe: style.fringe ? { ...style.fringe } : null, sourceAppliesToDraft: false, categoryBySide: { ...defaultCategories, [selectedSide]: selectedCategory }, transforms: { ...structuredClone(style.transforms), fringe: style.transforms.fringe ?? initialTransform('fringe', head!, style.fringe ?? { width: 1, height: 1 }) }, updatedAt: new Date().toISOString() } : current)
+    setHairWorkspace((current) => current ? { ...current, front: style.front ? { ...style.front } : null, back: style.back ? { ...style.back } : null, fringe: style.fringe ? { ...style.fringe } : null, sourceAppliesToDraft: false, categoryBySide: { ...defaultCategories, [selectedSide]: selectedCategory }, transforms: { ...structuredClone(style.transforms), fringe: style.transforms.fringe ?? (style.fringe ? initialTransform('fringe', head!, style.fringe) : emptyHairTransform()) }, updatedAt: new Date().toISOString() } : current)
     setActiveStyleId(style.id); setDirty(false); setError(''); setNotice(style.category ? `Editando ${style.name}.` : `Cabelo antigo aberto. Ao salvar, será criada uma cópia em ${category.label}.`)
   }
 
