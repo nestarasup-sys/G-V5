@@ -113,6 +113,20 @@ function studioElementSize(element: StudioElement) {
   }
 }
 
+function fitStudioCharacterToStage(rendered: { width: number; height: number }, cropWidth: number, cropHeight: number, stageWidth: number, stageHeight: number) {
+  const safeRenderedWidth = Math.max(1, rendered.width)
+  const safeCropWidth = Math.max(1, cropWidth)
+  const safeCropHeight = Math.max(1, cropHeight)
+  const widthAtLimit = 20
+  const heightAtWidthLimit = widthAtLimit * stageWidth / Math.max(1, stageHeight) * safeCropHeight / safeCropWidth
+  const fitScale = Math.min(1, 82 / Math.max(1, heightAtWidthLimit))
+  const visibleWidth = widthAtLimit * fitScale
+  const characterCanvasWidth = visibleWidth * safeRenderedWidth / safeCropWidth
+  const width = characterCanvasWidth * safeCropWidth / safeRenderedWidth
+  const height = characterCanvasWidth * stageWidth / Math.max(1, stageHeight) * safeCropHeight / safeRenderedWidth
+  return { characterCanvasWidth, width, height }
+}
+
 function makeElement(kind: StudioElement['kind'], zIndex: number): StudioElement {
   return {
     id: crypto.randomUUID(), kind, text: kind === 'narrator' ? 'Texto do narrador' : 'Digite aqui',
@@ -669,10 +683,7 @@ export function StudioPage() {
         const imageWidth = crop?.width ?? rendered.width
         const imageHeight = crop?.height ?? rendered.height
         const asset: StudioAsset = { id: crypto.randomUUID(), category: 'character', name: character.name, mimeType: 'image/png', dataUrl: imageData }
-        const width = 20
-        const characterCanvasWidth = width * rendered.width / imageWidth
-        const canvasHeight = characterCanvasWidth * stageWidth / stageHeight * rendered.height / rendered.width
-        const height = Math.min(82, canvasHeight * imageHeight / rendered.height)
+        const { width, height, characterCanvasWidth } = fitStudioCharacterToStage(rendered, imageWidth, imageHeight, stageWidth, stageHeight)
         assets.push(asset)
         elements.push({ id: crypto.randomUUID(), kind: 'character', assetId: asset.id, characterId: character.id, characterSourceUpdatedAt: character.updatedAt, characterScale: 100, characterWidthScale: 100, characterHeightScale: 100, characterCanvasWidth, text: character.name, x: 0, y: 0, width, height, rotation: 0, zIndex: ++zIndex })
       }
