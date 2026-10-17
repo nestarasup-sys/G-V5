@@ -1,0 +1,8 @@
+.head-extras-workspace .face-components-library-actions .head-extra-import { position:relative;display:flex;align-items:center;justify-content:center;gap:5px;min-width:0;padding:8px 5px;border:1px solid #a9447e;border-radius:7px;background:#bf438d;color:#fff;font-size:11px;font-weight:800;cursor:pointer; }
+.head-extras-workspace .head-extra-import input { position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer; }
+.head-extras-workspace .head-extra-name,.head-extras-workspace .head-extra-control { display:grid;gap:5px;color:#725c79;font-size:10px;font-weight:700; }
+.head-extras-workspace .head-extra-name input { min-width:0;padding:7px;border:1px solid #dfd0da;border-radius:7px;background:#fff;color:#473449; }
+.head-extras-workspace .head-extra-control>span { display:flex;justify-content:space-between;gap:8px; }
+.head-extras-workspace .head-extra-control output { color:#a34279; }
+.head-extras-workspace .head-extra-control input { width:100%;accent-color:#8756b7; }
+.head-extras-workspace .head-extra-empty { margin:auto;padding:16px;color:#8b7c8e;font-size:11px;text-align:center; }

@@ -1,0 +1,166 @@
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ChangeEvent } from 'react'
+import type { FaceComponentAsset, FaceComponentAssetSave, FaceComponentAssetSummary, FabricatorProject, FabricatorSlotSummary, FaceTransform } from '../../../../../shared/fabricator'
+import { Icon } from '../../../ui/components/Icon'
+import { usePreviewBackground } from '../usePreviewBackground'
+import './face-components.css'
+import './head-extras.css'
+
+const headPart = (model: FabricatorProject | null) => model?.parts.find((part) => /cabe[çc]a|head/i.test(part.name)) ?? null
+const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value))
+function readImage(file: File): Promise<{ dataUrl: string; width: number; height: number }> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onerror = () => reject(new Error('Não foi possível abrir a imagem.'))
+    reader.onload = () => {
+      const image = new Image()
+      image.onerror = () => reject(new Error('O arquivo não contém uma imagem válida.'))
+      image.onload = () => resolve({ dataUrl: String(reader.result), width: image.naturalWidth, height: image.naturalHeight })
+      image.src = String(reader.result)
+    }
+    reader.readAsDataURL(file)
+  })
+}
+
+/** Biblioteca de peças extras que se encaixam sobre a cabeça do modelo. */
+export function HeadExtrasWorkspace() {
+  const [previewBackground] = usePreviewBackground()
+  const [models, setModels] = useState<FabricatorSlotSummary[]>([])
+  const [modelSlot, setModelSlot] = useState(1)
+  const [model, setModel] = useState<FabricatorProject | null>(null)
+  const [assets, setAssets] = useState<FaceComponentAssetSummary[]>([])
+  const [details, setDetails] = useState<Record<string, FaceComponentAsset>>({})
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const [notice, setNotice] = useState('Importe óculos ou outro extra para a cabeça.')
+  const stageRef = useRef<HTMLDivElement>(null)
+  const [stageSize, setStageSize] = useState({ width: 0, height: 0 })
+  const head = useMemo(() => headPart(model), [model])
+  const selected = selectedId ? details[selectedId] : undefined
+
+  useEffect(() => {
+    void window.desktop.listFabricatorSlots().then((slots) => {
+      setModels(slots)
+      const first = slots.findIndex(Boolean)
+      if (first >= 0) setModelSlot(first + 1)
+    }).catch((reason) => setError(String(reason)))
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    setModel(null)
+    void window.desktop.loadFabricatorSlot(modelSlot).then((project) => { if (!cancelled) setModel(project) }).catch((reason) => { if (!cancelled) setError(String(reason)) })
+    return () => { cancelled = true }
+  }, [modelSlot])
+
+  useEffect(() => {
+    let cancelled = false
+    setAssets([])
+    setDetails({})
+    setSelectedId(null)
+    void window.desktop.listFaceComponentAssets(modelSlot, 'head-extra').then(async (summaries) => {
+      const loaded = await Promise.all(summaries.map((summary) => window.desktop.loadFaceComponentAsset(modelSlot, summary.id)))
+      if (cancelled) return
+      const valid = loaded.filter((asset): asset is FaceComponentAsset => Boolean(asset?.kind === 'head-extra'))
+      setAssets(summaries)
+      setDetails(Object.fromEntries(valid.map((asset) => [asset.id, asset])))
+      setSelectedId(valid[0]?.id ?? null)
+      setNotice(valid.length ? `${valid.length} extra${valid.length === 1 ? '' : 's'} salvo${valid.length === 1 ? '' : 's'} neste modelo.` : 'Importe óculos ou outro extra para a cabeça.')
+    }).catch((reason) => { if (!cancelled) setError(String(reason)) })
+    return () => { cancelled = true }
+  }, [modelSlot])
+
+  async function importAsset(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.currentTarget.files?.[0]
+    event.currentTarget.value = ''
+    if (!file || !head) return
+    setBusy(true); setError('')
+    try {
+      const image = await readImage(file)
+      const id = crypto.randomUUID()
+      const now = new Date().toISOString()
+      const transform: FaceTransform = { x: head.width * .5, y: head.height * .25, scaleX: Math.min(.6, head.width * .55 / image.width), scaleY: Math.min(.35, head.height * .3 / image.height), rotation: 0 }
+      const asset: FaceComponentAssetSave = { schemaVersion: 1, id, modelSlot, kind: 'head-extra', name: file.name.replace(/\.[^.]+$/, '') || 'Óculos', width: image.width, height: image.height, defaultTransform: transform, updatedAt: now }
+      await window.desktop.saveFaceComponentAsset(modelSlot, asset, image.dataUrl)
+      const saved: FaceComponentAsset = { ...asset, dataUrl: image.dataUrl }
+      setAssets((current) => [{ id, modelSlot, kind: 'head-extra', name: asset.name, width: image.width, height: image.height, updatedAt: now }, ...current])
+      setDetails((current) => ({ ...current, [id]: saved }))
+      setSelectedId(id); setNotice(`“${asset.name}” foi adicionado à biblioteca.`)
+    } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) }
+    finally { setBusy(false) }
+  }
+
+  async function updateAsset(patch: Partial<Pick<FaceComponentAsset, 'name' | 'defaultTransform'>>) {
+    if (!selected) return
+    const next: FaceComponentAsset = { ...selected, ...patch, defaultTransform: { ...selected.defaultTransform, ...patch.defaultTransform }, updatedAt: new Date().toISOString() }
+    setDetails((current) => ({ ...current, [next.id]: next }))
+    setAssets((current) => current.map((asset) => asset.id === next.id ? { ...asset, name: next.name, updatedAt: next.updatedAt } : asset))
+    try {
+      const { dataUrl, ...save } = next
+      await window.desktop.saveFaceComponentAsset(modelSlot, save, dataUrl)
+    } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) }
+  }
+
+  async function removeSelected() {
+    if (!selected || !window.confirm(`Excluir “${selected.name}” desta biblioteca?`)) return
+    setBusy(true); setError('')
+    try {
+      await window.desktop.deleteFaceComponentAsset(modelSlot, selected.id)
+      const remaining = assets.filter((asset) => asset.id !== selected.id)
+      setAssets(remaining); setDetails((current) => { const next = { ...current }; delete next[selected.id]; return next })
+      setSelectedId(remaining[0]?.id ?? null); setNotice('Extra removido da biblioteca.')
+    } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) }
+    finally { setBusy(false) }
+  }
+
+  useEffect(() => {
+    const stage = stageRef.current
+    if (!stage) return
+    const observer = new ResizeObserver(([entry]) => setStageSize({ width: entry.contentRect.width, height: entry.contentRect.height }))
+    observer.observe(stage)
+    return () => observer.disconnect()
+  }, [])
+  const previewScale = head && stageSize.width > 0 && stageSize.height > 0
+    ? Math.min((stageSize.width - 24) / head.width, (stageSize.height - 24) / head.height) * .9
+    : 0
+  const transform = selected?.defaultTransform
+  const previewStyle: CSSProperties | undefined = head && selected && transform ? {
+    left: `${transform.x / head.width * 100}%`, top: `${transform.y / head.height * 100}%`,
+    width: `${selected.width * transform.scaleX / head.width * 100}%`, height: `${selected.height * transform.scaleY / head.height * 100}%`,
+    transform: `translate(-50%,-50%) rotate(${transform.rotation}deg) scaleX(${transform.flipX ? -1 : 1})`
+  } : undefined
+  const changeTransform = (key: 'x' | 'y' | 'scaleX' | 'scaleY' | 'rotation', percent: number) => {
+    if (!selected || !head) return
+    const values = key === 'x' || key === 'scaleX' ? { [key]: key === 'x' ? head.width * percent / 100 : head.width * percent / selected.width }
+      : key === 'y' || key === 'scaleY' ? { [key]: key === 'y' ? head.height * percent / 100 : head.height * percent / selected.height }
+        : { rotation: percent }
+    void updateAsset({ defaultTransform: values })
+  }
+
+  return <section className="fabricator-workspace face-components-workspace head-extras-workspace" aria-label="Biblioteca Cabeças extra dev">
+    <header className="face-components-toolbar"><label>Modelo<select value={modelSlot} disabled={busy} onChange={(event) => setModelSlot(Number(event.target.value))}>{models.map((entry, index) => entry && <option key={index + 1} value={index + 1}>Modelo {String(index + 1).padStart(2, '0')} · {entry.name}</option>)}</select></label><span>Importe uma peça e ajuste a posição sobre a cabeça</span></header>
+    <div className="face-components-body">
+      <aside className="face-components-library">
+        <header><strong>Biblioteca</strong><small>{assets.length} assets</small></header>
+        <div className="face-components-library-actions"><label className="head-extra-import"><Icon name="plus" /> Importar<input type="file" accept="image/png,image/jpeg,image/webp" disabled={!head || busy} onChange={(event) => void importAsset(event)} /></label><button type="button" onClick={() => void removeSelected()} disabled={!selected || busy}><Icon name="trash" /> Excluir</button></div>
+        <section className="face-components-library-category" aria-label="Extras da cabeça"><h3>Óculos e outros extras</h3><div className="face-components-assets">
+          {assets.map((asset) => <button key={asset.id} className={asset.id === selectedId ? 'active' : ''} type="button" onClick={() => setSelectedId(asset.id)} title={asset.name}><img src={details[asset.id]?.dataUrl} alt="" /><span>{asset.name}</span></button>)}
+          {!assets.length && <small>Nenhum extra salvo para este modelo.</small>}
+        </div></section>
+      </aside>
+      <main className="face-components-stage-column">
+        <div className="face-components-stage" ref={stageRef} style={{ '--preview-background': previewBackground } as CSSProperties}>
+          {head && previewScale > 0 && <div className="face-components-preview-canvas" style={{ width: head.width * previewScale, height: head.height * previewScale }}><img className="face-components-head" src={head.dataUrl} alt="Cabeça do modelo" />{selected && previewStyle && <img className="face-component-layer" src={selected.dataUrl} alt={selected.name} style={previewStyle} />}</div>}
+          {!head && <p className="head-extra-empty">Selecione um modelo que tenha uma peça de cabeça para visualizar os extras.</p>}
+        </div><div className="face-components-stage-footer" aria-live="polite">{notice}</div>
+      </main>
+      <aside className="face-components-controls"><header><strong>Ajuste da peça</strong></header>
+        {selected && transform ? <>
+          <label className="head-extra-name">Nome<input value={selected.name} disabled={busy} onChange={(event) => void updateAsset({ name: event.target.value })} /></label>
+          {([['x', 'Horizontal', transform.x / (head?.width ?? 1) * 100, 0, 100], ['y', 'Vertical', transform.y / (head?.height ?? 1) * 100, 0, 100], ['scaleX', 'Largura', selected.width * transform.scaleX / (head?.width ?? 1) * 100, 1, 150], ['scaleY', 'Altura', selected.height * transform.scaleY / (head?.height ?? 1) * 100, 1, 150], ['rotation', 'Rotação', transform.rotation, -180, 180]] as const).map(([key, label, value, min, max]) => <label className="head-extra-control" key={key}><span>{label}<output>{Math.round(value)}{key === 'rotation' ? '°' : '%'}</output></span><input type="range" min={min} max={max} step="1" value={clamp(value, min, max)} disabled={!head || busy} onChange={(event) => changeTransform(key, Number(event.target.value))} /></label>)}
+          <button className="face-component-reset-transform" type="button" disabled={!head || busy} onClick={() => head && void updateAsset({ defaultTransform: { x: head.width * .5, y: head.height * .25, scaleX: Math.min(.6, head.width * .55 / selected.width), scaleY: Math.min(.35, head.height * .3 / selected.height), rotation: 0 } })}>Restaurar encaixe da peça</button>
+        </> : <p className="head-extra-empty">Selecione ou importe uma peça para ajustar.</p>}
+      </aside>
+    </div>{error && <div className="face-components-error" role="alert">{error}</div>}
+  </section>
+}
