@@ -1010,6 +1010,11 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .expression-collection-panel > header,.expression-sequence-panel > header { display: grid; gap: 4px; padding: 2px 4px 10px; border-bottom: 1px solid #f1e9ee; }
 .expression-collection-panel > header strong,.expression-sequence-panel > header strong { color: #50434f; font-size: 12px; }
 .expression-collection-panel > header small,.expression-sequence-panel > header small { color: #a095a0; font-size: 9px; }
+.expression-sequence-heading { min-width: 0; display: flex; align-items: center; justify-content: space-between; gap: 4px; }
+.expression-sequence-reset { min-height: 23px; display: inline-flex; align-items: center; justify-content: center; gap: 3px; padding: 2px 5px; border: 1px solid #ead7e0; border-radius: 6px; background: #fff; color: #9d4f70; font: inherit; font-size: 8px; font-weight: 700; white-space: nowrap; cursor: pointer; }
+.expression-sequence-reset:hover:not(:disabled) { border-color: #d78aaa; background: #fff2f7; }
+.expression-sequence-reset:disabled { opacity: .55; cursor: wait; }
+.expression-sequence-reset svg { width: 11px; height: 11px; }
 .expression-collection-card { width: 100%; min-height: 58px; display: grid; grid-template-columns: 30px minmax(0,1fr) 14px; align-items: center; gap: 7px; margin-top: 9px; padding: 7px; border: 1px solid #f1e4eb; border-radius: 8px; background: #fffafd; color: #544652; text-align: left; cursor: pointer; }
 .expression-collection-card.active { border-color: #e8b1c5; background: #fff3f7; }
 .expression-collection-icon { width: 29px; height: 29px; display: grid; place-items: center; border-radius: 8px; background: #f9e4ec; color: #b44872; }

@@ -405,6 +405,10 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
     }))
     if (selectedLayer === 'nose') setNoseOpacity(composition.nose ? catalogItems[composition.nose.catalogId]?.opacity ?? 1 : 1)
   }
+  const resetCurrentExpression = () => {
+    setTransforms(defaultTransforms(composition, componentAssets, catalogItems))
+    setNoseOpacity(composition.nose ? catalogItems[composition.nose.catalogId]?.opacity ?? 1 : 1)
+  }
   const selectExpression = async (index: number) => {
     if (index === selectedExpressionIndex || switchingExpression || saving) return
     setSwitchingExpression(true)
@@ -578,7 +582,13 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
       </button>
     </aside>
     <aside className="expression-sequence-panel" aria-label="Sequência do conjunto Padrão">
-      <header><strong>Padrão</strong><small>Ordem da folha de bocas</small></header>
+      <header>
+        <div className="expression-sequence-heading">
+          <strong>Padrão</strong>
+          <button className="expression-sequence-reset" type="button" title="Restaurar os valores originais da expressão atual" aria-label="Restaurar expressão atual" disabled={loading || switchingExpression || saving} onClick={resetCurrentExpression}><Icon name="reset" />Restaurar</button>
+        </div>
+        <small>Ordem da folha de bocas</small>
+      </header>
       <nav className="expression-sequence-list" aria-label="21 expressões padrão">
         {STANDARD_EXPRESSIONS.map((name, index) => {
           const saved = expressionPresetByIndex.has(index)
