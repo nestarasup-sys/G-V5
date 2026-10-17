@@ -98,7 +98,8 @@ export function importStudioComposition(project: VideoProject, source: StudioDoc
     const old = previous.get(element.id)
     return old ?? {
       id: `character:${element.id}`, characterElementId: element.id,
-      label: 'Personagem', locked: false, collapsed: false,
+      label: scene.assets.find((asset) => asset.id === element.assetId)?.name?.replace(/\\.[^.]+$/, '') ?? 'Personagem',
+      locked: false, collapsed: false,
       segments: [{
         id: `segment:${element.id}:0`, startFrame: 0, endFrameExclusive: project.durationFrames,
         state: actorStateFromElement(element), transitionInMs: 20 as const
