@@ -401,7 +401,7 @@ async function listFaceCatalogItems(modelSlot: number): Promise<FaceCatalogItemS
 function validFaceComponentAsset(modelSlot: number, asset: FaceComponentAssetSave): boolean {
   const transform = asset?.defaultTransform
   return isValidModelSlot(modelSlot) && asset?.schemaVersion === 1 && asset.modelSlot === modelSlot
-    && isValidWardrobeId(asset.id) && ['eye', 'pupil', 'eye-closed', 'eyebrow', 'eye-highlight-left', 'eye-highlight-right', 'blush', 'facial-shadow', 'head-extra', 'head-nose'].includes(asset.kind)
+    && isValidWardrobeId(asset.id) && ['eye', 'pupil', 'eye-closed', 'eyebrow', 'eye-highlight-left', 'eye-highlight-right', 'blush', 'facial-shadow', 'head-extra'].includes(asset.kind)
     && typeof asset.name === 'string' && asset.name.trim().length > 0 && asset.name.length <= 120
     && Number.isFinite(asset.width) && Number.isFinite(asset.height) && asset.width > 0 && asset.height > 0 && asset.width * asset.height <= 32_000_000
     && (asset.rightSidePositioned === undefined || typeof asset.rightSidePositioned === 'boolean')
