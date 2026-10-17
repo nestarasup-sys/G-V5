@@ -224,7 +224,7 @@ export function StudioPage() {
   const [studioPresetCategory, setStudioPresetCategory] = useState<'pose' | 'expression'>('pose')
   const [studioExpressionCollections, setStudioExpressionCollections] = useState<FaceExpressionCollection[]>([])
   const [studioExpressionPresets, setStudioExpressionPresets] = useState<FaceExpressionPresetSummary[]>([])
-  const [expandedStudioExpressionCollection, setExpandedStudioExpressionCollection] = useState<string | null>(null)
+  const [selectedStudioExpressionCollectionId, setSelectedStudioExpressionCollectionId] = useState<string | null>(null)
   const [studioExpressionLoading, setStudioExpressionLoading] = useState(false)
   const [studioExpressionBusy, setStudioExpressionBusy] = useState(false)
   const [studioPoseSlots, setStudioPoseSlots] = useState<Array<NonNullable<FabricatorPoseSummary>>>([])
@@ -294,7 +294,7 @@ export function StudioPage() {
 
   useEffect(() => {
     let cancelled = false
-    setExpandedStudioExpressionCollection(null)
+    setSelectedStudioExpressionCollectionId(null)
     if (selectedStudioCharacterModelSlot === null) {
       setStudioExpressionCollections([])
       setStudioExpressionPresets([])
@@ -1216,7 +1216,7 @@ export function StudioPage() {
     if (!selectedStudioCharacter || selectedElement?.kind !== 'character') return <div className="studio-custom-empty"><strong>Presets</strong><span>Selecione um personagem na cena para ver poses e expressões.</span></div>
     return <div className="studio-presets-panel">
       <div className="studio-preset-buttons" aria-label="Categorias de presets">
-        {presetOptions.map((option) => <button key={option.id} className={`studio-preset-button${option.id === studioPresetCategory ? ' active' : ''}${option.id.startsWith('reserved') ? ' reserved' : ''}`} disabled={option.id.startsWith('reserved')} onClick={() => { if (option.id === 'pose') { setStudioPresetCategory('pose'); setExpandedStudioExpressionCollection(null) } else if (option.id === 'expression') { setStudioPresetCategory('expression'); setExpandedStudioExpressionCollection((current) => current ?? 'standard') } }} type="button"><Icon name={option.icon} /><span>{option.label}</span></button>)}
+        {presetOptions.map((option) => <button key={option.id} className={`studio-preset-button${option.id === studioPresetCategory ? ' active' : ''}${option.id.startsWith('reserved') ? ' reserved' : ''}`} disabled={option.id.startsWith('reserved')} onClick={() => { if (option.id === 'pose') { setStudioPresetCategory('pose'); setSelectedStudioExpressionCollectionId(null) } else if (option.id === 'expression') setStudioPresetCategory('expression') }} type="button"><Icon name={option.icon} /><span>{option.label}</span></button>)}
       </div>
         {studioPresetCategory === 'pose' && <section className="studio-preset-catalog" aria-label="Catálogo de poses">
         <h3>Poses do modelo</h3>
@@ -1230,23 +1230,31 @@ export function StudioPage() {
       </section>}
       {studioPresetCategory === 'expression' && <section className="studio-expression-catalog" aria-label="Presets do Expressão Dev">
         {studioExpressionLoading ? <p className="studio-custom-hint">Carregando conjuntos de expressão…</p> : <>
-          {[{ id: 'standard', name: 'Padrão' }, ...studioExpressionCollections].map((collection) => {
-            const expressions = studioExpressionPresets
-              .filter((preset) => preset.collectionId === collection.id && Number.isInteger(preset.expressionIndex))
-              .sort((a, b) => a.expressionIndex! - b.expressionIndex!)
-            const expanded = expandedStudioExpressionCollection === collection.id
-            return <div className="studio-expression-collection" key={collection.id}>
-              <button className={`studio-expression-collection-button${expanded ? ' expanded' : ''}`} type="button" aria-expanded={expanded} onClick={() => setExpandedStudioExpressionCollection((current) => current === collection.id ? null : collection.id)}>
-                <span><strong>{collection.name}</strong><small>{expressions.length} expressão(ões) salva(s)</small></span><Icon name="chevronRight" />
+          <div className="studio-expression-collections" aria-label="Selecionar conjunto de expressão">
+            <h3>Conjunto</h3>
+            {[{ id: 'standard', name: 'Padrão' }, ...studioExpressionCollections].map((collection) => {
+              const count = studioExpressionPresets.filter((preset) => preset.collectionId === collection.id && Number.isInteger(preset.expressionIndex)).length
+              const selected = selectedStudioExpressionCollectionId === collection.id
+              return <button className={`studio-expression-collection-button${selected ? ' selected' : ''}`} key={collection.id} type="button" aria-pressed={selected} onClick={() => setSelectedStudioExpressionCollectionId(collection.id)}>
+                <span><strong>{collection.name}</strong><small>{count} expressão(ões)</small></span>{selected && <Icon name="check" />}
               </button>
-              {expanded && <div className="studio-expression-list">
+            })}
+          </div>
+          {selectedStudioExpressionCollectionId ? (() => {
+            const collection = [{ id: 'standard', name: 'Padrão' }, ...studioExpressionCollections].find((item) => item.id === selectedStudioExpressionCollectionId)
+            const expressions = studioExpressionPresets
+              .filter((preset) => preset.collectionId === selectedStudioExpressionCollectionId && Number.isInteger(preset.expressionIndex))
+              .sort((a, b) => a.expressionIndex! - b.expressionIndex!)
+            return <div className="studio-expression-selected">
+              <h3>Expressões · {collection?.name ?? 'Conjunto'}</h3>
+              <div className="studio-expression-list">
                 {expressions.map((preset) => <button className="studio-expression-option" key={preset.id} type="button" onClick={() => void applyStudioExpressionPreset(preset)} disabled={studioExpressionBusy || studioFaceBusy}>
                   <b>{String((preset.expressionIndex ?? 0) + 1).padStart(2, '0')}</b><span>{preset.name}</span>
                 </button>)}
                 {!expressions.length && <p className="studio-custom-hint">Nenhuma expressão salva neste conjunto. Salve expressões no Expressão Dev para listá-las aqui.</p>}
-              </div>}
+              </div>
             </div>
-          })}
+          })() : <p className="studio-custom-hint">Selecione um conjunto para ver as expressões disponíveis.</p>}
           {(studioExpressionBusy || studioFaceBusy) && <p className="studio-custom-hint" role="status">Aplicando expressão…</p>}
         </>}
       </section>}
