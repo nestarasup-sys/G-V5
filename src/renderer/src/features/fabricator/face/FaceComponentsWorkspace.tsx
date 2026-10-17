@@ -125,6 +125,12 @@ function initialCatalogTransform(head: ModelPart, item: Pick<FaceCatalogItem, 'c
   const scale = piece ? clamp(head.width * targetWidth / piece.width, .04, 4) : .25
   return { x: head.width * .5, y: head.height * (item.category === 'nose' ? .61 : .78), scaleX: scale, scaleY: scale, rotation: 0 }
 }
+function alignMouthPreviewTransform(transform: FaceTransform, closedItem: FaceCatalogItem | undefined, activeItem: FaceCatalogItem | undefined): FaceTransform {
+  const closedBase = closedItem?.transforms.mouth
+  const activeBase = activeItem?.transforms.mouth
+  if (!closedBase || !activeBase || closedBase.scaleX <= 0 || closedBase.scaleY <= 0) return transform
+  return { ...transform, scaleX: transform.scaleX * activeBase.scaleX / closedBase.scaleX, scaleY: transform.scaleY * activeBase.scaleY / closedBase.scaleY }
+}
 function initialFaceDetailTransform(kind: FaceDetailKind, head: ModelPart, width: number, height: number): FaceTransform {
   const targetWidth = kind.startsWith('eye-highlight') ? .075 : kind === 'blush' ? .24 : .3
   const scale = width > 0 && height > 0 ? clamp(head.width * targetWidth / width, .01, 20) : .25
@@ -290,6 +296,12 @@ export function FaceComponentsWorkspace({ mode }: { mode: FaceWorkspaceMode }) {
   const selectedNose = selectedNoseId ? noseDetails[selectedNoseId] : undefined
   const selectedCatalogItem = libraryCategory === 'nose' ? selectedNose : libraryCategory === 'mouth' ? selectedMouth : undefined
   const selectedCatalogPiece = selectedCatalogItem?.pieces.find((piece) => piece.index === (selectedCatalogItem.category === 'nose' ? selectedCatalogItem.selectedNose : selectedCatalogItem.selectedExpression)) ?? selectedCatalogItem?.pieces[0]
+  const firstClosedMouth = Object.values(mouthDetails).find((item) => item.category === 'mouth-closed')
+  const mouthReferenceItem = selectedMouth?.category === 'mouth-closed' ? selectedMouth : firstClosedMouth
+  const sharedMouthTransform = mouthReferenceItem?.transforms.mouth ?? selectedMouth?.transforms.mouth
+  const mouthPreviewTransform = selectedMouth && sharedMouthTransform
+    ? alignMouthPreviewTransform(sharedMouthTransform, mouthReferenceItem, selectedMouth)
+    : sharedMouthTransform
   const activeComponent: (FaceComponentAsset & { kind: FaceComponentKind }) | undefined = mode === 'eyes' && componentPair && selectedAsset && isFaceComponentKind(selectedAsset.kind) ? selectedAsset as FaceComponentAsset & { kind: FaceComponentKind } : undefined
   const activeFaceDetail: (FaceComponentAsset & { kind: FaceDetailKind }) | undefined = mode === 'face' && selectedFaceDetail && isFaceDetailKind(selectedFaceDetail.kind) ? selectedFaceDetail as FaceComponentAsset & { kind: FaceDetailKind } : undefined
   const eyeAssetId = selectedPart.endsWith('right') ? selectedAssets['eye-right'] ?? selectedAssets['eye-left'] : selectedAssets['eye-left']
@@ -298,13 +310,16 @@ export function FaceComponentsWorkspace({ mode }: { mode: FaceWorkspaceMode }) {
   const selectedOpenEye = eyeAsset && selectedPart.endsWith('right') && linked.eye && leftOpenEyeAsset
     ? { ...eyeAsset, width: leftOpenEyeAsset.width, height: leftOpenEyeAsset.height } : eyeAsset
   const followsOpenEye = selectedAsset?.kind === 'eye-closed' && Boolean(eyeAsset && head)
-  const selectedTransform = selectedCatalogItem ? selectedCatalogItem.transforms[selectedCatalogItem.category === 'nose' ? 'nose' : 'mouth']
+  const selectedTransform = selectedCatalogItem ? selectedCatalogItem.category === 'nose' ? selectedCatalogItem.transforms.nose : sharedMouthTransform
     : activeFaceDetail?.defaultTransform ?? (selectedAsset && followsOpenEye && selectedOpenEye && head ? fitClosedEyeToOpen(selectedAsset, selectedOpenEye, head, selectedPart.endsWith('right')) : selectedAsset?.defaultTransform)
   const activePreviewKey = selectedCatalogItem ? `${selectedCatalogItem.category}:${selectedCatalogItem.id}` : activeFaceDetail ? `${activeFaceDetail.kind}:${activeFaceDetail.id}` : activeComponent ? `${selectedPart}:${activeComponent.id}` : null
-  const selectedSourceWidth = selectedCatalogPiece?.width ?? activeFaceDetail?.width ?? (selectedAsset?.kind === 'pupil' ? selectedOpenEye ? selectedOpenEye.width * selectedOpenEye.defaultTransform.scaleX : head?.width ? head.width * .19 : 1 : selectedAsset?.width ?? 1)
-  const selectedSourceHeight = selectedCatalogPiece?.height ?? activeFaceDetail?.height ?? (selectedAsset?.kind === 'pupil' ? selectedOpenEye ? selectedOpenEye.height * selectedOpenEye.defaultTransform.scaleY : head?.height ? head.height * .17 : 1 : selectedAsset?.height ?? 1)
+  const controlSourcePiece = selectedCatalogItem?.category !== 'nose' && selectedCatalogItem
+    ? mouthReferenceItem?.pieces.find((piece) => piece.index === selectedMouth?.selectedExpression) ?? mouthReferenceItem?.pieces[0] ?? selectedCatalogPiece
+    : selectedCatalogPiece
+  const selectedSourceWidth = controlSourcePiece?.width ?? activeFaceDetail?.width ?? (selectedAsset?.kind === 'pupil' ? selectedOpenEye ? selectedOpenEye.width * selectedOpenEye.defaultTransform.scaleX : head?.width ? head.width * .19 : 1 : selectedAsset?.width ?? 1)
+  const selectedSourceHeight = controlSourcePiece?.height ?? activeFaceDetail?.height ?? (selectedAsset?.kind === 'pupil' ? selectedOpenEye ? selectedOpenEye.height * selectedOpenEye.defaultTransform.scaleY : head?.height ? head.height * .17 : 1 : selectedAsset?.height ?? 1)
   const mouthPiece = selectedMouth?.pieces.find((piece) => piece.index === selectedMouth.selectedExpression) ?? selectedMouth?.pieces[0]
-  const mouthTransform = selectedMouth?.transforms.mouth
+  const mouthTransform = mouthPreviewTransform
   const mouthStyle: CSSProperties | undefined = head && mouthPiece && mouthTransform ? {
     left: `${mouthTransform.x / head.width * 100}%`, top: `${mouthTransform.y / head.height * 100}%`,
     width: `${mouthPiece.width * mouthTransform.scaleX / head.width * 100}%`,
@@ -693,13 +708,33 @@ export function FaceComponentsWorkspace({ mode }: { mode: FaceWorkspaceMode }) {
       if (!selectedCatalogItem) return
       const original = catalogDetailsRef.current[selectedCatalogItem.id] ?? selectedCatalogItem
       const element = original.category === 'nose' ? 'nose' : 'mouth'
-      const current = original.transforms[element]
+      if (element === 'nose') {
+        const current = original.transforms.nose
+        if (!current) return
+        const next: FaceCatalogItem = { ...original, transforms: { ...original.transforms, nose: { ...current, ...patch } }, updatedAt: new Date().toISOString() }
+        catalogDetailsRef.current = { ...catalogDetailsRef.current, [next.id]: next }
+        setNoseDetails((items) => ({ ...items, [next.id]: next }))
+        queueSave(`catalog:${next.modelSlot}:${next.id}`, () => window.desktop.saveFaceCatalogItem(next.modelSlot, catalogSaveData(next), catalogImagesForSave(next)))
+        return
+      }
+      const mouthItems = Object.values(catalogDetailsRef.current).filter((item) => item.modelSlot === original.modelSlot && (item.category === 'mouth-closed' || item.category === 'mouth-open'))
+      const current = mouthItems.find((item) => item.category === 'mouth-closed')?.transforms.mouth ?? original.transforms.mouth
       if (!current) return
-      const next: FaceCatalogItem = { ...original, transforms: { ...original.transforms, [element]: { ...current, ...patch } }, updatedAt: new Date().toISOString() }
-      catalogDetailsRef.current = { ...catalogDetailsRef.current, [next.id]: next }
-      if (element === 'nose') setNoseDetails((items) => ({ ...items, [next.id]: next }))
-      else setMouthDetails((items) => ({ ...items, [next.id]: next }))
-      queueSave(`catalog:${next.modelSlot}:${next.id}`, () => window.desktop.saveFaceCatalogItem(next.modelSlot, catalogSaveData(next), catalogImagesForSave(next)))
+      const shared = { ...current, ...patch }
+      const updatedAt = new Date().toISOString()
+      const updates = (mouthItems.length ? mouthItems : [original]).map((item) => {
+        const itemBase = item.transforms.mouth ?? current
+        const isOpenMouth = item.category === 'mouth-open'
+        const itemTransform = isOpenMouth ? {
+          ...shared,
+          scaleX: shared.scaleX * itemBase.scaleX / current.scaleX,
+          scaleY: shared.scaleY * itemBase.scaleY / current.scaleY
+        } : shared
+        return { ...item, transforms: { ...item.transforms, mouth: itemTransform }, updatedAt }
+      })
+      catalogDetailsRef.current = { ...catalogDetailsRef.current, ...Object.fromEntries(updates.map((item) => [item.id, item])) }
+      setMouthDetails((items) => ({ ...items, ...Object.fromEntries(updates.map((item) => [item.id, item])) }))
+      for (const item of updates) queueSave(`catalog:${item.modelSlot}:${item.id}`, () => window.desktop.saveFaceCatalogItem(item.modelSlot, catalogSaveData(item), catalogImagesForSave(item)))
       return
     }
     if (!selectedAsset) return
@@ -727,7 +762,11 @@ export function FaceComponentsWorkspace({ mode }: { mode: FaceWorkspaceMode }) {
 
   function resetSelectedTransform() {
     if (!head) return
-    if (selectedCatalogItem) { updateTransform(initialCatalogTransform(head, selectedCatalogItem)); return }
+    if (selectedCatalogItem) {
+      const resetTarget = selectedCatalogItem.category !== 'nose' ? mouthReferenceItem ?? selectedCatalogItem : selectedCatalogItem
+      updateTransform(initialCatalogTransform(head, resetTarget))
+      return
+    }
     if (activeFaceDetail) { updateTransform(initialFaceDetailTransform(activeFaceDetail.kind as FaceDetailKind, head, activeFaceDetail.width, activeFaceDetail.height)); return }
     if (!activeComponent) return
     if (moveTogether[activeComponent.kind]) { updateTransform({ rotation: 0 }); return }

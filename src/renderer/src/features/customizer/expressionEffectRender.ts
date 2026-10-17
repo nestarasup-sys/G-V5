@@ -84,8 +84,11 @@ export async function drawFaceExpressionEffects(context: CanvasRenderingContext2
   const mouthKind = appearance.mouthOpen ? 'mouth-open' : 'mouth-closed'
   const mouthId = appearance.mouthOpen ? appearance.mouthOpenCatalogId : appearance.mouthClosedCatalogId
   const mouthItem = mouthId ? items[mouthKind] : undefined
-  const mouthOverride = mouthItem && (studioTransforms?.[`expression:${mouthKind}:${mouthItem.id}`]?.sourceTransformOverride ?? studioTransforms?.[`expression:mouth:${mouthItem.id}`]?.sourceTransformOverride)
-  const mouthTransform = mouthOverride ?? appearance.transforms?.mouth ?? mouthItem?.transforms.mouth
+  const closedMouthItem = items['mouth-closed']
+  const closedMouthOverride = closedMouthItem && (studioTransforms?.[`expression:mouth-closed:${closedMouthItem.id}`]?.sourceTransformOverride ?? studioTransforms?.[`expression:mouth:${closedMouthItem.id}`]?.sourceTransformOverride)
+  const activeMouthOverride = mouthItem && (studioTransforms?.[`expression:${mouthKind}:${mouthItem.id}`]?.sourceTransformOverride ?? studioTransforms?.[`expression:mouth:${mouthItem.id}`]?.sourceTransformOverride)
+  const mouthOverride = closedMouthOverride ?? activeMouthOverride
+  const mouthTransform = mouthOverride ?? appearance.transforms?.mouth ?? items['mouth-closed']?.transforms.mouth ?? mouthItem?.transforms.mouth
   const mouthPiece = mouthItem?.pieces.find((piece) => piece.sheet === mouthKind && piece.index === appearance.expressionIndex)
   if (mouth?.enabled && mouth.opacity > 0 && mouthTransform && mouthPiece) {
     const localX = mouthTransform.x / sourceHead.width * head.width

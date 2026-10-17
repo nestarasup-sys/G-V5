@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPoi
 import { buildStudioExpressionAppearance, buildStudioExpressionTransforms, resolveStudioExpressionBase, studioExpressionCollection } from './expressionTransforms'
 import { Icon } from '../../ui/components/Icon'
 import { CharacterPortrait } from '../../ui/components/CharacterPortrait'
+import { resolveStudioTalkMouthId } from '../../../../shared/studio'
 import type { StudioAsset, StudioDocument, StudioElement, StudioFaceMode, StudioFaceTransform, StudioFaceTransforms } from '../../../../shared/studio'
 import type { CustomizerCharacter } from '../../../../shared/customizer'
 import type { CustomizerFaceAppearance } from '../../../../shared/customizer'
@@ -13,7 +14,7 @@ type Tool = 'background' | 'objects' | null
 type DragState = { id: string; pointerId: number; startX: number; startY: number; originalX: number; originalY: number; width: number; height: number }
 
 const STORAGE_KEY = 'gacha-nymi-studio-catalog-v1'
-const STUDIO_FACE_RENDER_VERSION = 3
+const STUDIO_FACE_RENDER_VERSION = 4
 const studioColor = (number: number) => `hsl(${(number * 137.508) % 360} 45% 78%)`
 const defaultStudioEyeTransform: StudioFaceTransform = { x: 0, y: 0, width: 100, height: 100, rotation: 0 }
 function studioFaceModeForElement(element: StudioElement | null, appearance: CustomizerFaceAppearance | undefined): StudioFaceMode {
@@ -291,8 +292,11 @@ export function StudioPage() {
     ? selectedElement.faceAppearance ?? selectedStudioCharacter?.customization.faceAppearance
     : undefined
   const selectedStudioFaceMode = selectedElement?.kind === 'character' ? studioFaceModeForElement(selectedElement, selectedStudioFaceAppearance) : 'idle'
-  const selectedStudioOpenMouth = selectedStudioFaceAppearance?.mouthOpenCatalogId && selectedStudioCharacterModelSlot !== null
-    ? studioFaceDetails[`${selectedStudioCharacterModelSlot}:${selectedStudioFaceAppearance.mouthOpenCatalogId}`]
+  const selectedStudioOpenMouthId = selectedStudioCharacterModelSlot === null
+    ? undefined
+    : resolveStudioTalkMouthId(selectedStudioFaceAppearance, studioFaceItems.filter((item) => item.modelSlot === selectedStudioCharacterModelSlot))
+  const selectedStudioOpenMouth = selectedStudioOpenMouthId && selectedStudioCharacterModelSlot !== null
+    ? studioFaceDetails[`${selectedStudioCharacterModelSlot}:${selectedStudioOpenMouthId}`]
     : undefined
   const selectedStudioTalkAvailable = Boolean(selectedStudioOpenMouth?.pieces.some((piece) => piece.sheet === 'mouth-open' && piece.index === selectedStudioFaceAppearance?.expressionIndex))
   const selectedBackgroundAsset = activeStudio?.assets.find((asset) => asset.id === activeStudio.backgroundAssetId) ?? null
@@ -921,7 +925,10 @@ export function StudioPage() {
       const faceMode = studioFaceModeForElement(selectedElement, selectedStudioFaceAppearance)
       const base = { ...resolveStudioExpressionBase(selectedElement, characterAppearance), appearance: structuredClone(characterAppearance) }
       const appearance = base.appearance
-      const nextAppearance = await buildStudioExpressionAppearance(preset, appearance, (id) => window.desktop.loadFaceCatalogItem(preset.modelSlot, id))
+      let nextAppearance = await buildStudioExpressionAppearance(preset, appearance, (id) => window.desktop.loadFaceCatalogItem(preset.modelSlot, id))
+      if (faceMode === 'talk' && selectedStudioOpenMouthId && !nextAppearance.mouthOpenCatalogId) {
+        nextAppearance = { ...nextAppearance, mouthOpenCatalogId: selectedStudioOpenMouthId }
+      }
       const faceTransforms = await buildStudioExpressionTransforms(
         preset, nextAppearance, base.transforms,
         (id) => window.desktop.loadFaceComponentAsset(preset.modelSlot, id),
@@ -938,7 +945,10 @@ export function StudioPage() {
 
   const applyStudioFaceMode = async (mode: StudioFaceMode) => {
     if (!selectedElement || selectedElement.kind !== 'character' || !selectedStudioFaceAppearance || studioExpressionBusy || studioFaceBusy) return
-    await applyStudioFaceAppearance(selectedStudioFaceAppearance, selectedElement.faceTransforms ?? {}, true, { activeFaceMode: mode })
+    const appearance = mode === 'talk' && selectedStudioOpenMouthId && !selectedStudioFaceAppearance.mouthOpenCatalogId
+      ? { ...selectedStudioFaceAppearance, mouthOpenCatalogId: selectedStudioOpenMouthId }
+      : selectedStudioFaceAppearance
+    await applyStudioFaceAppearance(appearance, selectedElement.faceTransforms ?? {}, true, { activeFaceMode: mode })
   }
 
   const applyStudioPose = async (poseSlot: number | null) => {
@@ -1285,7 +1295,7 @@ export function StudioPage() {
     const selectedItemId = sheetKind === 'eyes' ? selectedStudioFaceAppearance?.eyeCatalogId
       : sheetKind === 'eyebrows' ? selectedStudioFaceAppearance?.eyebrowCatalogId
         : sheetKind === 'nose' ? selectedStudioFaceAppearance?.noseCatalogId
-          : sheetKind === 'mouth-open' ? selectedStudioFaceAppearance?.mouthOpenCatalogId
+          : sheetKind === 'mouth-open' ? selectedStudioFaceAppearance?.mouthOpenCatalogId ?? selectedStudioOpenMouthId
             : selectedStudioFaceAppearance?.mouthClosedCatalogId
     const activeItem = selectedItemId ? studioFaceDetails[`${selectedStudioCharacterModelSlot}:${selectedItemId}`] : null
     const studioTransformKey = studioFaceCategory === 'mouth' ? 'mouth' : selectedItemId ? `${sheetKind}:${selectedItemId}` : studioFaceCategory

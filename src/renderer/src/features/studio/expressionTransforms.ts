@@ -138,11 +138,14 @@ export async function buildStudioExpressionTransforms(
     const base = preset.referenceTransforms?.mouth ?? source?.transforms.mouth
     if (source && base) {
       const sourcePiece = source.pieces.find((piece) => piece.sheet === mouthChoice.kind && piece.index === mouthChoice.index)
+      const closedTargetId = appearance.mouthClosedCatalogId
+      const closedTarget = closedTargetId ? await catalog(closedTargetId) : null
+      const sharedTargetBase = appearance.transforms?.mouth ?? closedTarget?.transforms.mouth
       await Promise.all((['mouth-closed', 'mouth-open'] as const).map(async (sheet) => {
         const targetId = sheet === 'mouth-open' ? appearance.mouthOpenCatalogId : appearance.mouthClosedCatalogId
         if (!targetId) return
         const target = await catalog(targetId)
-        const targetBase = appearance.transforms?.mouth ?? target?.transforms.mouth
+        const targetBase = sharedTargetBase ?? target?.transforms.mouth
         if (!targetBase) return
         const targetPiece = target?.pieces.find((piece) => piece.sheet === sheet && piece.index === appearance.expressionIndex)
         const positionScale = sourcePiece && targetPiece ? relativePieceSize(sourcePiece, base, targetPiece, targetBase) : { x: 1, y: 1 }

@@ -1,5 +1,5 @@
 import type { CustomizerFaceAppearance } from './customizer'
-import type { FaceExpressionEffects, FaceTransform } from './fabricator'
+import type { FaceCatalogItemSummary, FaceExpressionEffects, FaceTransform } from './fabricator'
 
 export type StudioAsset = {
   id: string
@@ -14,6 +14,22 @@ export type StudioFaceTransform = { x: number; y: number; width: number; height:
 export type StudioFaceTransformCategory = 'eyes' | 'eyebrows' | 'nose' | 'mouth'
 /** Studio-local playback state for the character's neutral, blink, or speaking face. */
 export type StudioFaceMode = 'idle' | 'blink' | 'talk'
+
+/** Use the character's talk sheet, its legacy paired sheet, or the model's Dev default. */
+export function resolveStudioTalkMouthId(
+  appearance: Pick<CustomizerFaceAppearance, 'mouthOpenCatalogId' | 'mouthClosedCatalogId'> | undefined,
+  catalog: readonly FaceCatalogItemSummary[]
+): string | undefined {
+  if (appearance?.mouthOpenCatalogId) return appearance.mouthOpenCatalogId
+  const legacyClosed = appearance?.mouthClosedCatalogId?.match(/^legacy_(.+)_mouth-closed$/)
+  const legacyTalkId = legacyClosed ? `legacy_${legacyClosed[1]}_mouth-open` : undefined
+  const legacyTalk = legacyTalkId && catalog.find((item) => item.id === legacyTalkId && item.category === 'mouth-open')
+  if (legacyTalk) return legacyTalk.id
+  return catalog
+    .filter((item) => item.category === 'mouth-open')
+    .sort((left, right) => left.name.localeCompare(right.name, 'pt-BR') || left.id.localeCompare(right.id))[0]?.id
+}
+
 /** Keys are category:itemId; bare category keys remain supported for older Studio data. */
 export type StudioFaceTransforms = Record<string, StudioFaceTransform>
 export type StudioExpressionBase = { appearance: CustomizerFaceAppearance; transforms: StudioFaceTransforms }
