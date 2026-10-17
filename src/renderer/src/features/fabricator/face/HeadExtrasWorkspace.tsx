@@ -193,7 +193,7 @@ export function HeadExtrasWorkspace() {
       <aside className="face-components-library">
         <header><strong>Biblioteca</strong><small>{assets.length} assets</small></header>
         <div className="face-components-library-actions"><label className="head-extra-import"><Icon name="plus" /> Importar<input type="file" accept="image/png,image/jpeg,image/webp" disabled={!head || busy} onChange={(event) => void importAsset(event)} /></label><button type="button" onClick={() => void removeSelected()} disabled={!selected || busy}><Icon name="trash" /> Excluir</button></div>
-        <section className="face-components-library-category" aria-label="Óculos"><h3><Icon name="glasses" /> Óculos</h3><div className="face-components-assets">
+        <section className="face-components-library-category" aria-label="Óculos"><h3><Icon name="face" /> Óculos</h3><div className="face-components-assets">
           {assets.map((asset) => <button key={asset.id} className={asset.id === selectedId ? 'active' : ''} type="button" onClick={() => setSelectedId(asset.id)} title={asset.name}><img src={details[asset.id]?.dataUrl} alt="" /><span>{asset.name}</span></button>)}
           {!assets.length && <small>Nenhum óculos salvo para este modelo.</small>}
         </div></section>

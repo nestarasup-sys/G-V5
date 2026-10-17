@@ -2,7 +2,7 @@ export type IconName =
   | 'plus' | 'search' | 'check' | 'close' | 'expand' | 'frame' | 'zoomIn' | 'zoomOut'
   | 'chevronDown' | 'sliders' | 'chevronRight' | 'sparkles'
   | 'body' | 'face' | 'shirt' | 'flower' | 'message' | 'paw' | 'box' | 'user'
-  | 'bow' | 'glasses' | 'camera' | 'settings' | 'download' | 'save' | 'folder' | 'star' | 'edit' | 'bell' | 'link' | 'eye' | 'eyeOff' | 'lock' | 'unlock' | 'trash' | 'brush' | 'reset' | 'undo' | 'redo' | 'eraser' | 'move' | 'warning' | 'flipHorizontal'
+  | 'bow' | 'camera' | 'settings' | 'download' | 'save' | 'folder' | 'star' | 'edit' | 'bell' | 'link' | 'eye' | 'eyeOff' | 'lock' | 'unlock' | 'trash' | 'brush' | 'reset' | 'undo' | 'redo' | 'eraser' | 'move' | 'warning' | 'flipHorizontal'
 
 const paths: Record<IconName, string> = {
   plus: 'M12 5v14M5 12h14',
@@ -26,7 +26,6 @@ const paths: Record<IconName, string> = {
   box: 'M4 7 12 3l8 4v10l-8 4-8-4V7Zm0 0 8 4 8-4M12 11v10M8 5l8 4',
   user: 'M20 21a8 8 0 0 0-16 0m8-10a5 5 0 1 0 0-10 5 5 0 0 0 0 10Z',
   bow: 'M12 12c-2-4-7-6-9-4-2 2 0 7 5 7l4-3Zm0 0c2-4 7-6 9-4 2 2 0 7-5 7l-4-3Zm0 0v7m-2 2 2-2 2 2',
-  glasses: 'M3 12h2l1-5h4l2 5 2-5h4l1 5h2M5 12a3 3 0 1 0 6 0 3 3 0 0 0-6 0Zm8 0a3 3 0 1 0 6 0 3 3 0 0 0-6 0Z',
   camera: 'M4 7h3l2-3h6l2 3h3a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2Zm8 10a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z',
   settings: 'M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8Zm0-5v2m0 14v2m9-9h-2M5 12H3m15.4-6.4-1.4 1.4M7 17l-1.4 1.4m12.8 0L17 17M7 7 5.6 5.6',
   star: 'm12 3 2.7 5.5 6.1.9-4.4 4.3 1 6.1-5.4-2.9-5.4 2.9 1-6.1-4.4-4.3 6.1-.9L12 3Z',
