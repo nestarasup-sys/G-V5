@@ -17,7 +17,11 @@ function radialBlob(context: CanvasRenderingContext2D, x: number, y: number, wid
   context.scale(Math.max(1, width / 2), Math.max(1, height / 2))
   const gradient = context.createRadialGradient(0, 0, 0, 0, 0, 1)
   gradient.addColorStop(0, rgba(effect.color, effect.opacity * alpha))
-  gradient.addColorStop(Math.max(.05, 1 - effect.softness), rgba(effect.color, effect.opacity * alpha * .56))
+  // Match Expression Dev's `radial-gradient(ellipse, color, transparent N%)`.
+  // The previous midpoint stop made softness invert into a hard, saturated
+  // center in the Customizer even though the Dev preview looked smooth.
+  const transparentAt = Math.max(.05, Math.min(1, .4 + effect.softness * .58))
+  gradient.addColorStop(transparentAt, rgba(effect.color, 0))
   gradient.addColorStop(1, rgba(effect.color, 0))
   context.fillStyle = gradient
   context.fillRect(-1, -1, 2, 2)
