@@ -1041,7 +1041,11 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .expression-preset-inspector > label:not(.expression-transform-control) { display: grid; gap: 6px; color: #776a76; font-size: 11px; font-weight: 700; }
 .expression-preset-inspector select { min-height: 32px; padding: 0 8px; border: 1px solid #e9dfe6; border-radius: 7px; background: #fff; color: #554954; font: inherit; }
 .expression-layer-picker { display: grid; gap: 7px; color: #776a76; font-size: 11px; font-weight: 700; }
-.expression-layer-picker > div { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 4px; padding: 4px; border: 2px solid #49388f; border-radius: 8px; background: linear-gradient(180deg,#6957c2,#5543a8); box-shadow: 0 3px 0 #3f2c79; }
+.expression-layer-picker-grid { display: grid; gap: 7px; padding: 5px; border: 2px solid #49388f; border-radius: 8px; background: linear-gradient(180deg,#6957c2,#5543a8); box-shadow: 0 3px 0 #3f2c79; }
+.expression-layer-pair { display: grid; gap: 3px; }
+.expression-layer-pair > div,.expression-layer-singles { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 4px; }
+.expression-layer-pair > label { min-width: 0; min-height: 19px; display: flex; align-items: center; gap: 5px; padding: 0 3px; color: #f3efff; font-size: 8px; font-weight: 700; cursor: pointer; }
+.expression-layer-pair > label input { width: 12px; height: 12px; flex: 0 0 auto; margin: 0; accent-color: #cbbaff; }
 .expression-layer-picker button { min-width: 0; min-height: 52px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; padding: 4px 2px; border: 2px solid #49388f; border-radius: 5px; background: linear-gradient(180deg,#7768ce,#5e4ab5); color: #fff; font: inherit; font-size: 9px; font-weight: 800; text-align: center; text-shadow: 0 1px 2px #34266f; cursor: pointer; }
 .expression-layer-picker button svg { width: 17px; height: 17px; flex: 0 0 auto; }
 .expression-layer-picker button:hover { filter: brightness(1.12); }
