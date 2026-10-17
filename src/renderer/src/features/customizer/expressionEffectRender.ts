@@ -81,7 +81,9 @@ export async function drawFaceExpressionEffects(context: CanvasRenderingContext2
     const angle = head.rotation * Math.PI / 180
     const x = cx + (localX - head.width / 2) * Math.cos(angle) - (localY - head.height / 2) * Math.sin(angle) + head.width * (mouth.offsetX ?? 0)
     const y = cy + (localX - head.width / 2) * Math.sin(angle) + (localY - head.height / 2) * Math.cos(angle) + head.height * mouth.offsetY
-    radialBlob(paint, x, y, head.width * mouth.size, head.height * mouth.size * (mouth.aspectRatio ?? .52), angle + mouthTransform.rotation * Math.PI / 180, mouth)
+    const width = mouth.width ?? mouth.size
+    const height = mouth.height ?? mouth.size * (mouth.aspectRatio ?? .52)
+    radialBlob(paint, x, y, head.width * width, head.height * height, angle + (mouthTransform.rotation + (mouth.rotation ?? 0)) * Math.PI / 180, mouth)
   }
   try {
     const mask = new Image()
