@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type ChangeEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ChangeEvent, type PointerEvent as ReactPointerEvent } from 'react'
 import type { FaceComponentAsset, FaceComponentAssetSave, FaceComponentAssetSummary, FaceGuideSettings, FabricatorProject, FabricatorSlotSummary, FaceTransform } from '../../../../../shared/fabricator'
 import { Icon } from '../../../ui/components/Icon'
 import { usePreviewBackground } from '../usePreviewBackground'
@@ -11,6 +11,7 @@ const initialExtraTransform = (head: NonNullable<ReturnType<typeof headPart>>, w
   ({ x: head.width * .5, y: head.height * .25, scaleX: Math.min(.6, head.width * .55 / width), scaleY: Math.min(.35, head.height * .3 / height), rotation: 0 })
 const GUIDE_STORAGE_KEY = 'gacha-nymi:rosto-dev-guides'
 type FaceGuide = FaceGuideSettings
+type PreviewDrag = { pointerId: number; assetId: string; startX: number; startY: number; startTransform: FaceTransform; currentTransform: FaceTransform; scale: number }
 const defaultGuide: FaceGuide = { visible: true, verticalX: 50, horizontalY: 45, lowerHorizontalY: 65, angle: 12 }
 function readSharedGuides(): Record<number, FaceGuide> {
   try {
@@ -54,7 +55,10 @@ export function HeadExtrasWorkspace() {
   const [model, setModel] = useState<FabricatorProject | null>(null)
   const [assets, setAssets] = useState<FaceComponentAssetSummary[]>([])
   const [details, setDetails] = useState<Record<string, FaceComponentAsset>>({})
+  const detailsRef = useRef(details)
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const dragRef = useRef<PreviewDrag | null>(null)
+  const [dragging, setDragging] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('Importe óculos ou outro extra para a cabeça.')
@@ -108,7 +112,10 @@ export function HeadExtrasWorkspace() {
   useEffect(() => {
     let cancelled = false
     setAssets([])
+    detailsRef.current = {}
     setDetails({})
+    dragRef.current = null
+    setDragging(false)
     setSelectedId(null)
     void window.desktop.listFaceComponentAssets(modelSlot).then(async (allSummaries) => {
       const summaries = allSummaries.filter((summary) => summary.kind === 'head-extra')
@@ -116,7 +123,9 @@ export function HeadExtrasWorkspace() {
       if (cancelled) return
       const valid = loaded.filter((asset): asset is FaceComponentAsset => Boolean(asset?.kind === 'head-extra'))
       setAssets(summaries)
-      setDetails(Object.fromEntries(valid.map((asset) => [asset.id, asset])))
+      const nextDetails = Object.fromEntries(valid.map((asset) => [asset.id, asset]))
+      detailsRef.current = nextDetails
+      setDetails(nextDetails)
       setSelectedId(valid[0]?.id ?? null)
       setNotice(valid.length ? `${valid.length} extra${valid.length === 1 ? '' : 's'} salvo${valid.length === 1 ? '' : 's'} neste modelo.` : 'Importe óculos ou outro extra para a cabeça.')
     }).catch((reason) => { if (!cancelled) setError(String(reason)) })
@@ -137,7 +146,8 @@ export function HeadExtrasWorkspace() {
       await window.desktop.saveFaceComponentAsset(modelSlot, asset, image.dataUrl)
       const saved: FaceComponentAsset = { ...asset, dataUrl: image.dataUrl }
       setAssets((current) => [{ id, modelSlot, kind: 'head-extra', name: asset.name, width: image.width, height: image.height, updatedAt: now }, ...current])
-      setDetails((current) => ({ ...current, [id]: saved }))
+      detailsRef.current = { ...detailsRef.current, [id]: saved }
+      setDetails(detailsRef.current)
       setSelectedId(id); setNotice(`“${asset.name}” foi adicionado à biblioteca.`)
     } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) }
     finally { setBusy(false) }
@@ -145,8 +155,10 @@ export function HeadExtrasWorkspace() {
 
   async function updateAsset(patch: Partial<Pick<FaceComponentAsset, 'name' | 'defaultTransform'>>) {
     if (!selected) return
-    const next: FaceComponentAsset = { ...selected, ...patch, defaultTransform: { ...selected.defaultTransform, ...patch.defaultTransform }, updatedAt: new Date().toISOString() }
-    setDetails((current) => ({ ...current, [next.id]: next }))
+    const currentAsset = detailsRef.current[selected.id] ?? selected
+    const next: FaceComponentAsset = { ...currentAsset, ...patch, defaultTransform: { ...currentAsset.defaultTransform, ...patch.defaultTransform }, updatedAt: new Date().toISOString() }
+    detailsRef.current = { ...detailsRef.current, [next.id]: next }
+    setDetails(detailsRef.current)
     setAssets((current) => current.map((asset) => asset.id === next.id ? { ...asset, name: next.name, updatedAt: next.updatedAt } : asset))
     try {
       const { dataUrl, ...save } = next
@@ -160,7 +172,9 @@ export function HeadExtrasWorkspace() {
     try {
       await window.desktop.deleteFaceComponentAsset(modelSlot, selected.id)
       const remaining = assets.filter((asset) => asset.id !== selected.id)
-      setAssets(remaining); setDetails((current) => { const next = { ...current }; delete next[selected.id]; return next })
+      setAssets(remaining)
+      const nextDetails = { ...detailsRef.current }; delete nextDetails[selected.id]
+      detailsRef.current = nextDetails; setDetails(nextDetails)
       setSelectedId(remaining[0]?.id ?? null); setNotice('Extra removido da biblioteca.')
     } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) }
     finally { setBusy(false) }
@@ -176,6 +190,32 @@ export function HeadExtrasWorkspace() {
   const previewScale = head && stageSize.width > 0 && stageSize.height > 0
     ? Math.min((stageSize.width - 24) / head.width, (stageSize.height - 24) / head.height) * .9
     : 0
+  function beginPreviewDrag(event: ReactPointerEvent<HTMLImageElement>) {
+    if (!selected || !transform || !previewScale || busy) return
+    event.preventDefault()
+    event.currentTarget.setPointerCapture(event.pointerId)
+    dragRef.current = { pointerId: event.pointerId, assetId: selected.id, startX: event.clientX, startY: event.clientY, startTransform: { ...transform }, currentTransform: { ...transform }, scale: previewScale }
+    setDragging(true)
+  }
+  function movePreviewDrag(event: ReactPointerEvent<HTMLImageElement>) {
+    const drag = dragRef.current
+    if (!drag || drag.pointerId !== event.pointerId || !head) return
+    const next = { ...drag.startTransform,
+      x: clamp(drag.startTransform.x + (event.clientX - drag.startX) / drag.scale, 0, head.width),
+      y: clamp(drag.startTransform.y + (event.clientY - drag.startY) / drag.scale, 0, head.height) }
+    drag.currentTransform = next
+    const asset = detailsRef.current[drag.assetId]
+    if (!asset) return
+    detailsRef.current = { ...detailsRef.current, [drag.assetId]: { ...asset, defaultTransform: next } }
+    setDetails(detailsRef.current)
+  }
+  function endPreviewDrag(event: ReactPointerEvent<HTMLImageElement>) {
+    const drag = dragRef.current
+    if (!drag || drag.pointerId !== event.pointerId) return
+    dragRef.current = null
+    setDragging(false)
+    void updateAsset({ defaultTransform: drag.currentTransform })
+  }
   const transform = selected?.defaultTransform
   const previewStyle: CSSProperties | undefined = head && selected && transform ? {
     left: `${transform.x / head.width * 100}%`, top: `${transform.y / head.height * 100}%`,
@@ -206,7 +246,7 @@ export function HeadExtrasWorkspace() {
       </aside>
       <main className="face-components-stage-column">
         <div className="face-components-stage" ref={stageRef} style={{ '--preview-background': previewBackground } as CSSProperties}>
-          {head && previewScale > 0 && <div className="face-components-preview-canvas" style={{ width: head.width * previewScale, height: head.height * previewScale }}><img className="face-components-head" src={head.dataUrl} alt="Cabeça do modelo" />{selected && previewStyle && <img className="face-component-layer" src={selected.dataUrl} alt={selected.name} style={previewStyle} />}{guide.visible && <HeadGuideOverlay head={head} guide={guide} />}</div>}
+          {head && previewScale > 0 && <div className="face-components-preview-canvas" style={{ width: head.width * previewScale, height: head.height * previewScale }}><img className="face-components-head" src={head.dataUrl} alt="Cabeça do modelo" />{selected && previewStyle && <img className={`face-component-layer face-component-layer-draggable${dragging ? ' is-dragging' : ''}`} src={selected.dataUrl} alt={selected.name} style={previewStyle} draggable={false} title="Arraste para posicionar os óculos" onPointerDown={beginPreviewDrag} onPointerMove={movePreviewDrag} onPointerUp={endPreviewDrag} onPointerCancel={endPreviewDrag} onLostPointerCapture={endPreviewDrag} />}{guide.visible && <HeadGuideOverlay head={head} guide={guide} />}</div>}
           {!head && <p className="head-extra-empty">Selecione um modelo que tenha uma peça de cabeça para visualizar os extras.</p>}
         </div><div className="face-components-stage-footer" aria-live="polite">{notice}</div>
       </main>
