@@ -206,12 +206,15 @@ export type FaceExpressionPreset = {
   id: string
   modelSlot: number
   name: string
+  /** Optional collection coordinates keep older standalone presets readable. */
+  collectionId?: string
+  expressionIndex?: number
   selections: FaceExpressionSelections
   transforms: FaceExpressionTransforms
   noseOpacity: number
   updatedAt: string
 }
-export type FaceExpressionPresetSummary = Pick<FaceExpressionPreset, 'id' | 'modelSlot' | 'name' | 'updatedAt'>
+export type FaceExpressionPresetSummary = Pick<FaceExpressionPreset, 'id' | 'modelSlot' | 'name' | 'updatedAt' | 'collectionId' | 'expressionIndex'>
 export type HairTransform = { x: number; y: number; scaleX: number; scaleY: number; rotation: number; flipX?: boolean }
 export type HairWorkspace = {
   schemaVersion: 1

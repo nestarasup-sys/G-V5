@@ -8,6 +8,7 @@ type PickerCategory = 'eyes' | 'pupils' | 'eyebrows' | 'nose' | 'mouth'
 type ComponentKind = 'eye' | 'pupil' | 'eyebrow'
 type ComponentOption = { key: string; kind: ComponentKind; name: string; leftId: string; rightId: string; ids: string[] }
 type CatalogOption = { key: string; item: FaceCatalogItemSummary; ids: string[] }
+type ExpressionWorkingCopy = { id: string; composition: ExpressionComposition; transforms: FaceExpressionTransforms; noseOpacity: number }
 type ExpressionComposition = {
   eyes: Record<Side, string | null>
   pupils: Record<Side, string | null>
@@ -16,6 +17,12 @@ type ExpressionComposition = {
   mouth: { catalogId: string; kind: 'mouth-closed' | 'mouth-open'; index: number } | null
 }
 type LayerKey = keyof FaceExpressionTransforms
+const EXPRESSION_COLLECTION_ID = 'standard'
+const STANDARD_EXPRESSIONS = [
+  'Aliviada', 'Animada', 'Apaixonada', 'Cansada', 'Ciumenta', 'Confusa', 'Decepcionada',
+  'Desconfiada', 'Envergonhada', 'Impressionada', 'Indignada', 'Irritada', 'Nojo', 'Normal',
+  'Orgulhosa', 'Preocupada', 'Séria', 'Sorrindo de canto', 'Sorriso maligno', 'Surpresa', 'Triste/magoada'
+] as const
 const identityTransform = (): FaceTransform => ({ x: 0, y: 0, scaleX: 1, scaleY: 1, rotation: 0 })
 const emptyTransforms = (): FaceExpressionTransforms => ({ eyeLeft: identityTransform(), eyeRight: identityTransform(), pupilLeft: identityTransform(), pupilRight: identityTransform(), browLeft: identityTransform(), browRight: identityTransform(), nose: identityTransform(), mouth: identityTransform() })
 const cloneTransforms = (transforms: FaceExpressionTransforms): FaceExpressionTransforms => structuredClone(transforms)
@@ -118,11 +125,16 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
   const [draft, setDraft] = useState<ExpressionComposition>(emptyComposition)
   const [transforms, setTransforms] = useState<FaceExpressionTransforms>(emptyTransforms())
   const [draftTransforms, setDraftTransforms] = useState<FaceExpressionTransforms>(emptyTransforms())
+  const [baseComposition, setBaseComposition] = useState<ExpressionComposition>(emptyComposition)
+  const [baseTransforms, setBaseTransforms] = useState<FaceExpressionTransforms>(emptyTransforms())
   const [noseOpacity, setNoseOpacity] = useState(1)
   const [draftNoseOpacity, setDraftNoseOpacity] = useState(1)
+  const [baseNoseOpacity, setBaseNoseOpacity] = useState(1)
   const [presets, setPresets] = useState<FaceExpressionPresetSummary[]>([])
   const [presetId, setPresetId] = useState<string>(() => crypto.randomUUID())
-  const [presetName, setPresetName] = useState('Expressão nova')
+  const [selectedExpressionIndex, setSelectedExpressionIndex] = useState(0)
+  const [workingCopies, setWorkingCopies] = useState<Record<number, ExpressionWorkingCopy>>({})
+  const [switchingExpression, setSwitchingExpression] = useState(false)
   const [selectedLayer, setSelectedLayer] = useState<LayerKey>('eyeLeft')
   const [saving, setSaving] = useState(false)
   const [open, setOpen] = useState(false)
@@ -139,8 +151,10 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
     setCatalogItems({})
     setComposition(emptyComposition)
     setPresets([])
+    setSelectedExpressionIndex(0)
+    setWorkingCopies({})
+    setSwitchingExpression(false)
     setPresetId(crypto.randomUUID())
-    setPresetName('Expressão nova')
     void Promise.all([
       window.desktop.loadFabricatorSlot(modelSlot),
       Promise.all([window.desktop.listFaceComponentAssets(modelSlot, 'eye'), window.desktop.listFaceComponentAssets(modelSlot, 'pupil'), window.desktop.listFaceComponentAssets(modelSlot, 'eyebrow')]).then((lists) => lists.flat()),
@@ -178,12 +192,16 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
         mouth: mouth ? { catalogId: mouth.id, kind: mouth.category as 'mouth-closed' | 'mouth-open', index: mouth.pieces[0]?.index ?? 0 } : null
       }
       const initialTransforms = defaultTransforms(initial, Object.fromEntries(readyComponents.map((asset) => [asset.id, asset])), Object.fromEntries(readyCatalogs.map((item) => [item.id, item])))
-      const selectedPreset = savedPresets[0] ? await window.desktop.loadFaceExpressionPreset(modelSlot, savedPresets[0].id) : null
+      const firstPresetSummary = savedPresets.find((preset) => preset.collectionId === EXPRESSION_COLLECTION_ID && preset.expressionIndex === 0)
+      const selectedPreset = firstPresetSummary ? await window.desktop.loadFaceExpressionPreset(modelSlot, firstPresetSummary.id) : null
       if (cancelled) return
+      setBaseComposition(initial)
+      setBaseTransforms(initialTransforms)
+      setBaseNoseOpacity(nose?.opacity ?? 1)
       if (selectedPreset) {
-        setPresetId(selectedPreset.id); setPresetName(selectedPreset.name); setComposition(selectedPreset.selections); setTransforms(selectedPreset.transforms); setNoseOpacity(selectedPreset.noseOpacity)
+        setPresetId(selectedPreset.id); setComposition(selectedPreset.selections); setTransforms(selectedPreset.transforms); setNoseOpacity(selectedPreset.noseOpacity)
       } else {
-        setComposition(initial); setTransforms(initialTransforms); setNoseOpacity(nose?.opacity ?? 1)
+        setPresetId(crypto.randomUUID()); setComposition(initial); setTransforms(initialTransforms); setNoseOpacity(nose?.opacity ?? 1)
       }
       setError(null)
     }).catch((reason) => { if (!cancelled) setError(reason instanceof Error ? reason.message : 'Não foi possível carregar os itens faciais deste modelo.') })
@@ -212,6 +230,10 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
   const visibleComposition = open ? draft : composition
   const visibleTransforms = open ? draftTransforms : transforms
   const visibleNoseOpacity = open ? draftNoseOpacity : noseOpacity
+  const activeExpressionName = STANDARD_EXPRESSIONS[selectedExpressionIndex]
+  const expressionPresetByIndex = useMemo(() => new Map(presets
+    .filter((preset) => preset.collectionId === EXPRESSION_COLLECTION_ID && Number.isInteger(preset.expressionIndex))
+    .map((preset) => [preset.expressionIndex!, preset])), [presets])
   const selectedCatalog = category === 'nose'
     ? catalogItems[draft.nose?.catalogId ?? '']
     : category === 'mouth' && draft.mouth?.kind === mouthKind ? catalogItems[draft.mouth.catalogId] : undefined
@@ -251,13 +273,19 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
       if (item.transforms.nose) setDraftTransforms((current) => ({ ...current, nose: { ...item.transforms.nose! } }))
       setDraftNoseOpacity(item.opacity ?? 1)
     } else {
-      setDraft((current) => ({ ...current, mouth: { catalogId: item.id, kind: item.category as 'mouth-closed' | 'mouth-open', index: item.pieces[0]?.index ?? 0 } }))
+      const expressionPiece = item.pieces.find((piece) => piece.index === selectedExpressionIndex) ?? item.pieces[0]
+      setDraft((current) => ({ ...current, mouth: { catalogId: item.id, kind: item.category as 'mouth-closed' | 'mouth-open', index: expressionPiece?.index ?? 0 } }))
       if (item.transforms.mouth) setDraftTransforms((current) => ({ ...current, mouth: { ...item.transforms.mouth! } }))
     }
   }
 
   const beginChoosing = () => { setDraft(composition); setDraftTransforms(cloneTransforms(transforms)); setDraftNoseOpacity(noseOpacity); setCategory('eyes'); setOpen(true) }
-  const applyComposition = () => { setComposition(draft); setTransforms(cloneTransforms(draftTransforms)); setNoseOpacity(draftNoseOpacity); setOpen(false); setError(null) }
+  const applyComposition = () => {
+    const nextTransforms = cloneTransforms(draftTransforms)
+    setComposition(draft); setTransforms(nextTransforms); setNoseOpacity(draftNoseOpacity)
+    setBaseComposition(draft); setBaseTransforms(nextTransforms); setBaseNoseOpacity(draftNoseOpacity)
+    setOpen(false); setError(null)
+  }
   const cancelChoosing = () => { setDraft(composition); setDraftTransforms(cloneTransforms(transforms)); setDraftNoseOpacity(noseOpacity); setOpen(false) }
   const updateLayerTransform = (key: LayerKey, patch: Partial<FaceTransform>) => setTransforms((current) => ({ ...current, [key]: { ...current[key], ...patch } }))
   const resetSelectedLayer = () => {
@@ -271,31 +299,52 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
     setTransforms((current) => ({ ...current, [selectedLayer]: { ...(assetTransform ?? catalogTransform ?? identityTransform()) } }))
     if (selectedLayer === 'nose') setNoseOpacity(catalog?.opacity ?? 1)
   }
-  const createNewPreset = () => {
-    setPresetId(crypto.randomUUID()); setPresetName(`Expressão ${presets.length + 1}`)
-    setTransforms(defaultTransforms(composition, componentAssets, catalogItems)); setNoseOpacity(catalogItems[composition.nose?.catalogId ?? '']?.opacity ?? 1)
+  const selectExpression = async (index: number) => {
+    if (index === selectedExpressionIndex || switchingExpression || saving) return
+    setSwitchingExpression(true)
     setError(null)
+    setWorkingCopies((current) => ({ ...current, [selectedExpressionIndex]: {
+      id: presetId, composition: structuredClone(composition), transforms: cloneTransforms(transforms), noseOpacity
+    } }))
+    setSelectedExpressionIndex(index)
+    try {
+      const workingCopy = workingCopies[index]
+      if (workingCopy) {
+        setPresetId(workingCopy.id); setComposition(workingCopy.composition); setTransforms(cloneTransforms(workingCopy.transforms)); setNoseOpacity(workingCopy.noseOpacity)
+        return
+      }
+      const summary = expressionPresetByIndex.get(index)
+      const saved = summary ? await window.desktop.loadFaceExpressionPreset(modelSlot, summary.id) : null
+      if (saved) {
+        setPresetId(saved.id); setComposition(saved.selections); setTransforms(saved.transforms); setNoseOpacity(saved.noseOpacity)
+        return
+      }
+      const nextComposition = structuredClone(baseComposition)
+      if (nextComposition.mouth) {
+        const mouth = catalogItems[nextComposition.mouth.catalogId]
+        if (mouth?.pieces.some((piece) => piece.index === index)) nextComposition.mouth.index = index
+      }
+      setPresetId(crypto.randomUUID()); setComposition(nextComposition); setTransforms(cloneTransforms(baseTransforms)); setNoseOpacity(baseNoseOpacity)
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Não foi possível abrir esta expressão.')
+    } finally {
+      setSwitchingExpression(false)
+    }
   }
   const saveCurrentPreset = async () => {
     setSaving(true); setError(null)
     const saved: FaceExpressionPreset = {
-      schemaVersion: 1, id: presetId, modelSlot, name: presetName.trim() || 'Expressão sem nome',
+      schemaVersion: 1, id: presetId, modelSlot, name: activeExpressionName,
+      collectionId: EXPRESSION_COLLECTION_ID, expressionIndex: selectedExpressionIndex,
       selections: structuredClone(composition), transforms: cloneTransforms(transforms), noseOpacity, updatedAt: new Date().toISOString()
     }
     try {
       await window.desktop.saveFaceExpressionPreset(modelSlot, saved)
-      setPresetId(saved.id); setPresetName(saved.name); setPresets(await window.desktop.listFaceExpressionPresets(modelSlot))
+      setPresetId(saved.id)
+      setWorkingCopies((current) => ({ ...current, [selectedExpressionIndex]: { id: saved.id, composition: saved.selections, transforms: saved.transforms, noseOpacity: saved.noseOpacity } }))
+      setPresets(await window.desktop.listFaceExpressionPresets(modelSlot))
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível salvar este preset.') }
     finally { setSaving(false) }
-  }
-  const loadSavedPreset = async (id: string) => {
-    setLoading(true); setError(null)
-    try {
-      const saved = await window.desktop.loadFaceExpressionPreset(modelSlot, id)
-      if (!saved) throw new Error('O preset selecionado não está disponível.')
-      setPresetId(saved.id); setPresetName(saved.name); setComposition(saved.selections); setTransforms(saved.transforms); setNoseOpacity(saved.noseOpacity)
-    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível abrir este preset.') }
-    finally { setLoading(false) }
   }
 
   const renderComponent = (assetId: string | null, kind: 'eye' | 'pupil' | 'eyebrow', currentSide: Side, transform: FaceTransform, eyeAsset?: FaceComponentAsset, eyeTransformOverride?: FaceTransform): ReactNode => {
@@ -367,17 +416,34 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
       <button className="expression-choose-set-button" onClick={beginChoosing} disabled={loading || !head} type="button"><Icon name="face" />Escolher conjunto</button>
       <span className="model-slot-logo"><Icon name="face" /></span>
       <strong>Preset Expressão Dev</strong>
-      <select className="expression-preset-select" value={presets.some((preset) => preset.id === presetId) ? presetId : ''} onChange={(event) => { if (event.target.value) void loadSavedPreset(event.target.value) }} aria-label="Preset salvo">
-        <option value="">Rascunho novo</option>{presets.map((preset) => <option value={preset.id} key={preset.id}>{preset.name}</option>)}
-      </select>
-      <input className="expression-preset-name-input" aria-label="Nome do preset" maxLength={80} value={presetName} onChange={(event) => setPresetName(event.target.value)} />
+      <span className="expression-current-title"><b>{String(selectedExpressionIndex + 1).padStart(2, '0')}</b>{activeExpressionName}</span>
       <span className="expression-preset-toolbar-spacer" />
       <span className="expression-preset-model-label">Modelo {String(modelSlot).padStart(2, '0')} · {project?.name ?? 'sem modelo'}</span>
-      <button className="expression-new-button" onClick={createNewPreset} disabled={loading} type="button"><Icon name="plus" />Novo</button>
-      <button className="expression-save-button" onClick={() => void saveCurrentPreset()} disabled={loading || saving || !presetName.trim()} type="button"><Icon name="save" />{saving ? 'Salvando…' : 'Salvar'}</button>
+      <button className="expression-save-button" onClick={() => void saveCurrentPreset()} disabled={loading || saving || switchingExpression} type="button"><Icon name="save" />{saving ? 'Salvando…' : `Salvar ${activeExpressionName}`}</button>
     </header>
     {error && <div className="expression-preset-error" role="alert">{error}</div>}
     <div className="expression-preset-body">
+    <aside className="expression-collection-panel" aria-label="Conjuntos de expressão">
+      <header><strong>Conjuntos</strong><small>1 conjunto</small></header>
+      <button className="expression-collection-card active" type="button" aria-pressed="true">
+        <span className="expression-collection-icon"><Icon name="face" /></span>
+        <span><strong>Padrão</strong><small>21 expressões</small></span>
+        <b>›</b>
+      </button>
+    </aside>
+    <aside className="expression-sequence-panel" aria-label="Sequência do conjunto Padrão">
+      <header><strong>Padrão</strong><small>Ordem da folha de bocas</small></header>
+      <nav className="expression-sequence-list" aria-label="21 expressões padrão">
+        {STANDARD_EXPRESSIONS.map((name, index) => {
+          const saved = expressionPresetByIndex.has(index)
+          const cached = workingCopies[index]
+          const isActive = selectedExpressionIndex === index
+          return <button key={name} type="button" className={`expression-sequence-item${isActive ? ' active' : ''}`} aria-pressed={isActive} disabled={loading || switchingExpression || saving} onClick={() => void selectExpression(index)}>
+            <b>{String(index + 1).padStart(2, '0')}</b><span>{name}</span><small>{isActive ? 'Editando' : saved ? 'Salvo' : cached ? 'Rascunho' : 'Vazio'}</small>
+          </button>
+        })}
+      </nav>
+    </aside>
     <main className="expression-head-stage" aria-label="Prévia da cabeça">
       {loading ? <span>Carregando cabeça e biblioteca facial…</span> : head ? <div className="expression-head-canvas" style={{ aspectRatio: `${head.width} / ${head.height}` }}>
         <img className="expression-head-base" src={head.dataUrl} alt="Cabeça do modelo" />

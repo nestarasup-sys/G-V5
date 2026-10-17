@@ -276,6 +276,9 @@ function validFaceExpressionPreset(modelSlot: number, preset: FaceExpressionPres
   }
   return isValidModelSlot(modelSlot) && !!preset && preset.schemaVersion === 1 && preset.modelSlot === modelSlot
     && isValidWardrobeId(preset.id) && typeof preset.name === 'string' && Boolean(preset.name.trim()) && preset.name.length <= 80
+    && ((preset.collectionId === undefined && preset.expressionIndex === undefined)
+      || (typeof preset.collectionId === 'string' && isValidWardrobeId(preset.collectionId)
+        && Number.isInteger(preset.expressionIndex) && (preset.expressionIndex as number) >= 0 && (preset.expressionIndex as number) <= 20))
     && typeof preset.updatedAt === 'string' && Number.isFinite(Date.parse(preset.updatedAt))
     && !!selections && validSideSelections(selections.eyes) && validSideSelections(selections.pupils)
     && (selections.eyebrows === undefined || validSideSelections(selections.eyebrows))
@@ -298,7 +301,7 @@ async function listFaceExpressionPresets(modelSlot: number): Promise<FaceExpress
       try {
         const preset = JSON.parse(await readFile(join(folder, entry.name), 'utf8')) as FaceExpressionPreset
         if (validFaceExpressionPreset(modelSlot, preset) && entry.name === `preset-${preset.id}.json`) {
-          presets.push({ id: preset.id, modelSlot, name: preset.name, updatedAt: preset.updatedAt })
+          presets.push({ id: preset.id, modelSlot, name: preset.name, updatedAt: preset.updatedAt, collectionId: preset.collectionId, expressionIndex: preset.expressionIndex })
         }
       } catch { /* Arquivos incompletos não aparecem na biblioteca. */ }
     }
