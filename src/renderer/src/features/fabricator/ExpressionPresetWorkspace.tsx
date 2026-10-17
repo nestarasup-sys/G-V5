@@ -303,7 +303,10 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
     const asset = componentAssets[assetId]
     if (!asset || asset.kind !== kind) return null
     const right = currentSide === 'right'
-    const physicallyRight = asset.rightSidePositioned === true || componentSide(asset) === 'right'
+    // A name such as "Olho direito" identifies the library slot; it does not
+    // prove that the pixels are already positioned as a right-side asset.
+    // Olhos Dev uses this metadata alone to decide whether the image needs mirroring.
+    const physicallyRight = asset.rightSidePositioned === true
     if (kind !== 'pupil') {
       const mirrored = right && !physicallyRight
       const x = mirrored ? head.width - transform.x : transform.x
@@ -318,7 +321,7 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
     }
     if (!eyeAsset) return null
     const eyeTransform = eyeTransformOverride ?? eyeAsset.defaultTransform
-    const eyePhysicallyRight = eyeAsset.rightSidePositioned === true || componentSide(eyeAsset) === 'right'
+    const eyePhysicallyRight = eyeAsset.rightSidePositioned === true
     const eyeMirrored = right && !eyePhysicallyRight
     const eyeX = eyeMirrored ? head.width - eyeTransform.x : eyeTransform.x
     const eyeRotation = eyeMirrored ? -eyeTransform.rotation : eyeTransform.rotation
@@ -330,8 +333,10 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
       left: `${eyeX / head.width * 100}%`, top: `${eyeTransform.y / head.height * 100}%`,
       width: `${eyeAsset.width * eyeTransform.scaleX / head.width * 100}%`, height: `${eyeAsset.height * eyeTransform.scaleY / head.height * 100}%`,
       transform: `translate(-50%,-50%) rotate(${eyeRotation}deg) scaleX(${eyeFlipDirection})`,
-      maskImage: eyeMasks[eyeAsset.id] ? `url(${eyeMasks[eyeAsset.id]})` : undefined,
-      WebkitMaskImage: eyeMasks[eyeAsset.id] ? `url(${eyeMasks[eyeAsset.id]})` : undefined
+      // Match Olhos Dev: keep the source alpha mask until its sclera-only mask
+      // finishes generating, so the pupil never flashes outside the eye.
+      maskImage: `url(${eyeMasks[eyeAsset.id] ?? eyeAsset.dataUrl})`,
+      WebkitMaskImage: `url(${eyeMasks[eyeAsset.id] ?? eyeAsset.dataUrl})`
     }
     const pupilStyle: CSSProperties = {
       left: `${50 + pupilX / (eyeFlipDirection * eyeTransform.scaleX * eyeAsset.width) * 100}%`,
