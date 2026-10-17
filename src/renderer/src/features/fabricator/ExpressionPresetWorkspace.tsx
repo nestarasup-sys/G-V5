@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerE
 import type { FaceCatalogItem, FaceCatalogItemSummary, FaceComponentAsset, FaceComponentAssetSummary, FaceExpressionCollection, FaceExpressionPreset, FaceExpressionPresetSummary, FaceExpressionTransforms, FaceTransform, FabricatorProject } from '../../../../shared/fabricator'
 import { Icon, type IconName } from '../../ui/components/Icon'
 import { eyeInteriorMask } from './face/eyeInteriorMask'
+import { importLegacyStandardExpressions } from './importLegacyStandardExpressions'
 
 type Side = 'left' | 'right'
 type PickerCategory = 'eyes' | 'pupils' | 'eyebrows' | 'nose' | 'mouth'
@@ -204,7 +205,7 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
       setComponentAssets(Object.fromEntries(readyComponents.map((asset) => [asset.id, asset])))
       setCatalogSummaries(facialCatalogs)
       setCatalogItems(Object.fromEntries(readyCatalogs.map((item) => [item.id, item])))
-      setPresets(savedPresets)
+      let loadedPresets = savedPresets
       setCollections(savedCollections)
       setSelectedCollectionId(EXPRESSION_COLLECTION_ID)
       setCustomExpressionNames(Object.fromEntries(savedPresets
@@ -227,7 +228,27 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
         mouth: mouth ? { catalogId: mouth.id, kind: mouth.category as 'mouth-closed' | 'mouth-open', index: mouth.pieces[0]?.index ?? 0 } : null
       }
       const initialTransforms = defaultTransforms(initial, Object.fromEntries(readyComponents.map((asset) => [asset.id, asset])), Object.fromEntries(readyCatalogs.map((item) => [item.id, item])))
-      const firstPresetSummary = savedPresets.find((preset) => preset.collectionId === EXPRESSION_COLLECTION_ID && preset.expressionIndex === 0)
+      const standardPresets = loadedPresets.filter((preset) => preset.collectionId === EXPRESSION_COLLECTION_ID && Number.isInteger(preset.expressionIndex) && preset.expressionIndex! >= 0 && preset.expressionIndex! < STANDARD_EXPRESSIONS.length)
+      const coveredIndexes = new Set(standardPresets.map((preset) => preset.expressionIndex))
+      if (coveredIndexes.size < STANDARD_EXPRESSIONS.length) {
+        const head = model?.parts.find((part) => /cabe[çc]a|head/i.test(part.name))
+        if (head) {
+          const fullPresets = importLegacyStandardExpressions(
+            modelSlot,
+            initial,
+            initialTransforms,
+            { width: head.width, height: head.height },
+            mouth?.pieces.map((piece) => ({ sheet: piece.sheet, index: piece.index })) ?? [],
+            new Map(standardPresets.map((summary) => [summary.expressionIndex!, summary])),
+            nose?.opacity ?? 1,
+            new Date().toISOString()
+          )
+          await Promise.all(fullPresets.map((preset) => window.desktop.saveFaceExpressionPreset(modelSlot, preset)))
+          loadedPresets = await window.desktop.listFaceExpressionPresets(modelSlot)
+        }
+      }
+      setPresets(loadedPresets)
+      const firstPresetSummary = loadedPresets.find((preset) => preset.collectionId === EXPRESSION_COLLECTION_ID && preset.expressionIndex === 0)
       const selectedPreset = firstPresetSummary ? await window.desktop.loadFaceExpressionPreset(modelSlot, firstPresetSummary.id) : null
       if (cancelled) return
       setBaseComposition(initial)

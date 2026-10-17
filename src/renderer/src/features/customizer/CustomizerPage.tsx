@@ -965,10 +965,11 @@ async function drawFaceCatalogOverlay(context: CanvasRenderingContext2D, artwork
       if (eyeTransformBase) {
         const eyeTransform = isRight && !eyeAsset?.rightSidePositioned ? { ...eyeTransformBase, x: sourceHead.width - eyeTransformBase.x, rotation: -eyeTransformBase.rotation } : eyeTransformBase
         if (eyeAsset) pupilEyeClip = { asset: eyeAsset, transform: eyeTransform, flipX: Boolean(eyeTransformBase.flipX) !== (isRight && !eyeAsset.rightSidePositioned), colors: eyeSelection?.colors }
-        const pupilOffsetX = isRight && !asset.rightSidePositioned ? -transform.x : transform.x
+        const pupilOffsetX = (isRight && !asset.rightSidePositioned ? -transform.x : transform.x) * eyeTransform.scaleX
+        const pupilOffsetY = transform.y * eyeTransform.scaleY
         const pupilAngle = eyeTransform.rotation * Math.PI / 180
-        localX = eyeTransform.x + pupilOffsetX * Math.cos(pupilAngle) - transform.y * Math.sin(pupilAngle)
-        localY = eyeTransform.y + pupilOffsetX * Math.sin(pupilAngle) + transform.y * Math.cos(pupilAngle)
+        localX = eyeTransform.x + pupilOffsetX * Math.cos(pupilAngle) - pupilOffsetY * Math.sin(pupilAngle)
+        localY = eyeTransform.y + pupilOffsetX * Math.sin(pupilAngle) + pupilOffsetY * Math.cos(pupilAngle)
         scaleX = eyeTransform.scaleX * scaleX
         scaleY = eyeTransform.scaleY * scaleY
         sourceWidth = (eyeAsset?.width ?? sourceHead.width * .19) * eyeTransform.scaleX * transform.scaleX

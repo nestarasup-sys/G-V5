@@ -1,0 +1,947 @@
+[
+  {
+    "key": "aliviada",
+    "name": "Aliviada",
+    "eyes": {
+      "left": {
+        "scaleX": 0.98,
+        "scaleY": 0.81,
+        "rotation": 0,
+        "x": 0,
+        "y": 1
+      },
+      "right": {
+        "scaleX": 0.98,
+        "scaleY": 0.81,
+        "rotation": 0,
+        "x": 0,
+        "y": 1
+      }
+    },
+    "eyebrows": {
+      "left": {
+        "scaleX": 1,
+        "scaleY": 0.9,
+        "rotation": -9,
+        "x": 0,
+        "y": 0
+      },
+      "right": {
+        "scaleX": 1,
+        "scaleY": 0.9,
+        "rotation": 10,
+        "x": 0,
+        "y": 0
+      }
+    },
+    "mouth": {
+      "scaleX": 1.17,
+      "scaleY": 0.79,
+      "rotation": 8.5,
+      "x": -4,
+      "y": 0
+    },
+    "mouthTalkIndex": 0,
+    "index": 0
+  },
+  {
+    "key": "animada",
+    "name": "Animada",
+    "eyes": {
+      "left": {
+        "scaleX": 0.99,
+        "scaleY": 1.08,
+        "rotation": -1.5,
+        "x": -1,
+        "y": -1
+      },
+      "right": {
+        "scaleX": 0.99,
+        "scaleY": 1.08,
+        "rotation": 1.5,
+        "x": 1,
+        "y": -1
+      }
+    },
+    "eyebrows": {
+      "left": {
+        "scaleX": 1,
+        "scaleY": 1.08,
+        "rotation": 10,
+        "x": 0,
+        "y": -23
+      },
+      "right": {
+        "scaleX": 1,
+        "scaleY": 1.17,
+        "rotation": -11.5,
+        "x": 0,
+        "y": -32
+      }
+    },
+    "mouth": {
+      "scaleX": 1.51,
+      "scaleY": 0.66,
+      "rotation": 0,
+      "x": 0,
+      "y": 0
+    },
+    "mouthTalkIndex": 1,
+    "index": 1
+  },
+  {
+    "key": "apaixonada",
+    "name": "Apaixonada",
+    "eyes": {
+      "left": {
+        "scaleX": 0.98,
+        "scaleY": 1.04,
+        "rotation": -4,
+        "x": -1,
+        "y": 0
+      },
+      "right": {
+        "scaleX": 0.98,
+        "scaleY": 1.04,
+        "rotation": 4,
+        "x": 1,
+        "y": 0
+      }
+    },
+    "eyebrows": {
+      "left": {
+        "scaleX": 1,
+        "scaleY": 1.04,
+        "rotation": -14,
+        "x": 0,
+        "y": 0
+      },
+      "right": {
+        "scaleX": 1,
+        "scaleY": 1.04,
+        "rotation": 14,
+        "x": 0,
+        "y": 0
+      }
+    },
+    "mouth": {
+      "scaleX": 0.84,
+      "scaleY": 0.55,
+      "rotation": 0,
+      "x": -7,
+      "y": 0
+    },
+    "mouthTalkIndex": 2,
+    "index": 2
+  },
+  {
+    "key": "cansada",
+    "name": "Cansada",
+    "eyes": {
+      "left": {
+        "scaleX": 1.04,
+        "scaleY": 0.7,
+        "rotation": 2,
+        "x": 0,
+        "y": 2
+      },
+      "right": {
+        "scaleX": 1.04,
+        "scaleY": 0.7,
+        "rotation": -2,
+        "x": 0,
+        "y": 2
+      }
+    },
+    "eyebrows": {
+      "left": {
+        "scaleX": 1,
+        "scaleY": 0.78,
+        "rotation": -1.5,
+        "x": 0,
+        "y": 24
+      },
+      "right": {
+        "scaleX": 1,
+        "scaleY": 0.78,
+        "rotation": 1.5,
+        "x": 0,
+        "y": 24
+      }
+    },
+    "mouth": {
+      "scaleX": 1,
+      "scaleY": 1,
+      "rotation": 0,
+      "x": 0,
+      "y": 0
+    },
+    "mouthTalkIndex": 3,
+    "index": 3
+  },
+  {
+    "key": "ciumenta",
+    "name": "Ciumenta",
+    "eyes": {
+      "left": {
+        "scaleX": 0.96,
+        "scaleY": 0.9,
+        "rotation": 3,
+        "x": 1,
+        "y": 0
+      },
+      "right": {
+        "scaleX": 0.96,
+        "scaleY": 0.9,
+        "rotation": -1,
+        "x": 0,
+        "y": 0
+      }
+    },
+    "eyebrows": {
+      "left": {
+        "scaleX": 1,
+        "scaleY": 0.88,
+        "rotation": 12,
+        "x": 0,
+        "y": 0
+      },
+      "right": {
+        "scaleX": 1,
+        "scaleY": 0.88,
+        "rotation": -5,
+        "x": 0,
+        "y": 0
+      }
+    },
+    "mouth": {
+      "scaleX": 1,
+      "scaleY": 1,
+      "rotation": 0,
+      "x": 0,
+      "y": 0
+    },
+    "mouthTalkIndex": 4,
+    "index": 4
+  },
+  {
+    "key": "confusa",
+    "name": "Confusa",
+    "eyes": {
+      "left": {
+        "scaleX": 0.95,
+        "scaleY": 1,
+        "rotation": -7,
+        "x": -2,
+        "y": 0
+      },
+      "right": {
+        "scaleX": 1.02,
+        "scaleY": 0.82,
+        "rotation": 5,
+        "x": 2,
+        "y": 0
+      }
+    },
+    "eyebrows": {
+      "left": {
+        "scaleX": 1,
+        "scaleY": 0.86,
+        "rotation": -18,
+        "x": 0,
+        "y": 0
+      },
+      "right": {
+        "scaleX": 1,
+        "scaleY": 0.84,
+        "rotation": -2,
+        "x": 0,
+        "y": 0
+      }
+    },
+    "mouth": {
+      "scaleX": 1,
+      "scaleY": 1,
+      "rotation": -20.5,
+      "x": 0,
+      "y": 0
+    },
+    "mouthTalkIndex": 5,
+    "index": 5
+  },
+  {
+    "key": "decepcionada",
+    "name": "Decepcionada",
+    "eyes": {
+      "left": {
+        "scaleX": 0.92,
+        "scaleY": 0.78,
+        "rotation": -2.5,
+        "x": 0,
+        "y": 3
+      },
+      "right": {
+        "scaleX": 0.92,
+        "scaleY": 0.78,
+        "rotation": 2,
+        "x": 0,
+        "y": 3
+      }
+    },
+    "eyebrows": {
+      "left": {
+        "scaleX": 1,
+        "scaleY": 0.74,
+        "rotation": 16,
+        "x": 0,
+        "y": 0
+      },
+      "right": {
+        "scaleX": 1,
+        "scaleY": 0.74,
+        "rotation": -10.5,
+        "x": -36,
+        "y": 24
+      }
+    },
+    "mouth": {
+      "scaleX": 1,
+      "scaleY": 1,
+      "rotation": 0,
+      "x": 0,
+      "y": 0
+    },
+    "mouthTalkIndex": 6,
+    "index": 6
+  },
+  {
+    "key": "desconfiada",
+    "name": "Desconfiada",
+    "eyes": {
+      "left": {
+        "scaleX": 1,
+        "scaleY": 0.9,
+        "rotation": -4,
+        "x": -2,
+        "y": 0
+      },
+      "right": {
+        "scaleX": 0.95,
+        "scaleY": 0.63,
+        "rotation": 2,
+        "x": 2,
+        "y": 0
+      }
+    },
+    "eyebrows": {
+      "left": {
+        "scaleX": 1,
+        "scaleY": 0.86,
+        "rotation": -16,
+        "x": 0,
+        "y": 0
+      },
+      "right": {
+        "scaleX": 1,
+        "scaleY": 0.99,
+        "rotation": -2.5,
+        "x": 0,
+        "y": 31
+      }
+    },
+    "mouth": {
+      "scaleX": 1,
+      "scaleY": 0.78,
+      "rotation": -13,
+      "x": 0,
+      "y": 15
+    },
+    "mouthTalkIndex": 7,
+    "index": 7
+  },
+  {
+    "key": "envergonhada",
+    "name": "Envergonhada",
+    "eyes": {
+      "left": {
+        "scaleX": 1.03,
+        "scaleY": 0.9,
+        "rotation": -2,
+        "x": 2,
+        "y": 1
+      },
+      "right": {
+        "scaleX": 1.03,
+        "scaleY": 0.9,
+        "rotation": 2,
+        "x": -2,
+        "y": 1
+      }
+    },
+    "eyebrows": {
+      "left": {
+        "scaleX": 1,
+        "scaleY": 0.8,
+        "rotation": -8,
+        "x": 0,
+        "y": 0
+      },
+      "right": {
+        "scaleX": 1,
+        "scaleY": 0.8,
+        "rotation": 8,
+        "x": 0,
+        "y": 0
+      }
+    },
+    "mouth": {
+      "scaleX": 1.92,
+      "scaleY": 1,
+      "rotation": 0,
+      "x": 0,
+      "y": 0
+    },
+    "mouthTalkIndex": 8,
+    "index": 8
+  },
+  {
+    "key": "impressionada",
+    "name": "Impressionada",
+    "eyes": {
+      "left": {
+        "scaleX": 1,
+        "scaleY": 1.12,
+        "rotation": 0,
+        "x": 0,
+        "y": 0
+      },
+      "right": {
+        "scaleX": 1,
+        "scaleY": 1.12,
+        "rotation": 0,
+        "x": 0,
+        "y": 0
+      }
+    },
+    "eyebrows": {
+      "left": {
+        "scaleX": 1.01,
+        "scaleY": 0.76,
+        "rotation": -4,
+        "x": -28,
+        "y": -42
+      },
+      "right": {
+        "scaleX": 1.01,
+        "scaleY": 0.76,
+        "rotation": 4,
+        "x": -28,
+        "y": -36
+      }
+    },
+    "mouth": {
+      "scaleX": 1,
+      "scaleY": 1,
+      "rotation": 0,
+      "x": 0,
+      "y": 0
+    },
+    "mouthTalkIndex": 9,
+    "index": 9
+  },
+  {
+    "key": "indignada",
+    "name": "Indignada",
+    "eyes": {
+      "left": {
+        "scaleX": 1.08,
+        "scaleY": 0.97,
+        "rotation": -4,
+        "x": 0,
+        "y": 1
+      },
+      "right": {
+        "scaleX": 1.08,
+        "scaleY": 0.79,
+        "rotation": 4,
+        "x": 0,
+        "y": 5
+      }
+    },
+    "eyebrows": {
+      "left": {
+        "scaleX": 1,
+        "scaleY": 0.84,
+        "rotation": 3,
+        "x": -33,
+        "y": 0
+      },
+      "right": {
+        "scaleX": 1,
+        "scaleY": 0.84,
+        "rotation": -4.5,
+        "x": -33,
+        "y": 0
+      }
+    },
+    "mouth": {
+      "scaleX": 1,
+      "scaleY": 1,
+      "rotation": 0,
+      "x": 0,
+      "y": 0
+    },
+    "mouthTalkIndex": 10,
+    "index": 10
+  },
+  {
+    "key": "irritada",
+    "name": "Irritada",
+    "eyes": {
+      "left": {
+        "scaleX": 1,
+        "scaleY": 0.82,
+        "rotation": 3.5,
+        "x": -1,
+        "y": 5
+      },
+      "right": {
+        "scaleX": 1,
+        "scaleY": 0.82,
+        "rotation": -7,
+        "x": 1,
+        "y": 2
+      }
+    },
+    "eyebrows": {
+      "left": {
+        "scaleX": 1,
+        "scaleY": 0.78,
+        "rotation": 6.5,
+        "x": 0,
+        "y": 0
+      },
+      "right": {
+        "scaleX": 1,
+        "scaleY": 0.78,
+        "rotation": -17.5,
+        "x": 0,
+        "y": 0
+      }
+    },
+    "mouth": {
+      "scaleX": 1,
+      "scaleY": 1,
+      "rotation": 0,
+      "x": 0,
+      "y": 0
+    },
+    "mouthTalkIndex": 11,
+    "index": 11
+  },
+  {
+    "key": "nojo",
+    "name": "Nojo",
+    "eyes": {
+      "left": {
+        "scaleX": 1.09,
+        "scaleY": 0.78,
+        "rotation": 2,
+        "x": -1,
+        "y": 2
+      },
+      "right": {
+        "scaleX": 1.09,
+        "scaleY": 0.78,
+        "rotation": -2,
+        "x": 1,
+        "y": 2
+      }
+    },
+    "eyebrows": {
+      "left": {
+        "scaleX": 1,
+        "scaleY": 0.78,
+        "rotation": 1.5,
+        "x": 0,
+        "y": 8
+      },
+      "right": {
+        "scaleX": 1,
+        "scaleY": 0.78,
+        "rotation": 1.5,
+        "x": 0,
+        "y": 18
+      }
+    },
+    "mouth": {
+      "scaleX": 1,
+      "scaleY": 1.78,
+      "rotation": 0,
+      "x": 0,
+      "y": -17
+    },
+    "mouthTalkIndex": 12,
+    "index": 12
+  },
+  {
+    "key": "normal",
+    "name": "Normal",
+    "eyes": {
+      "left": {
+        "scaleX": 1,
+        "scaleY": 1,
+        "rotation": 0,
+        "x": 0,
+        "y": 0
+      },
+      "right": {
+        "scaleX": 1,
+        "scaleY": 1,
+        "rotation": 0,
+        "x": 0,
+        "y": 0
+      }
+    },
+    "eyebrows": {
+      "left": {
+        "scaleX": 1,
+        "scaleY": 1,
+        "rotation": 0,
+        "x": 0,
+        "y": 0
+      },
+      "right": {
+        "scaleX": 1,
+        "scaleY": 1,
+        "rotation": 0,
+        "x": 0,
+        "y": 0
+      }
+    },
+    "mouth": {
+      "scaleX": 1,
+      "scaleY": 1,
+      "rotation": 0,
+      "x": 0,
+      "y": 0
+    },
+    "mouthTalkIndex": 13,
+    "index": 13
+  },
+  {
+    "key": "orgulhosa",
+    "name": "Orgulhosa",
+    "eyes": {
+      "left": {
+        "scaleX": 1.05,
+        "scaleY": 0.9,
+        "rotation": -4,
+        "x": 0,
+        "y": -1
+      },
+      "right": {
+        "scaleX": 1.05,
+        "scaleY": 0.9,
+        "rotation": 4,
+        "x": 0,
+        "y": -1
+      }
+    },
+    "eyebrows": {
+      "left": {
+        "scaleX": 1,
+        "scaleY": 0.88,
+        "rotation": -11,
+        "x": 0,
+        "y": 0
+      },
+      "right": {
+        "scaleX": 1,
+        "scaleY": 0.88,
+        "rotation": 11,
+        "x": 0,
+        "y": 0
+      }
+    },
+    "mouth": {
+      "scaleX": 1,
+      "scaleY": 1,
+      "rotation": 0,
+      "x": 0,
+      "y": 0
+    },
+    "mouthTalkIndex": 14,
+    "index": 14
+  },
+  {
+    "key": "preocupada",
+    "name": "Preocupada",
+    "eyes": {
+      "left": {
+        "scaleX": 0.9,
+        "scaleY": 1.1,
+        "rotation": -3,
+        "x": 0,
+        "y": -2
+      },
+      "right": {
+        "scaleX": 0.9,
+        "scaleY": 1.1,
+        "rotation": 3,
+        "x": 0,
+        "y": -2
+      }
+    },
+    "eyebrows": {
+      "left": {
+        "scaleX": 1,
+        "scaleY": 1.08,
+        "rotation": -10,
+        "x": -28,
+        "y": -19
+      },
+      "right": {
+        "scaleX": 1,
+        "scaleY": 1.08,
+        "rotation": 10,
+        "x": -28,
+        "y": -19
+      }
+    },
+    "mouth": {
+      "scaleX": 1.08,
+      "scaleY": 1,
+      "rotation": -11.5,
+      "x": 2,
+      "y": 0
+    },
+    "mouthTalkIndex": 15,
+    "index": 15
+  },
+  {
+    "key": "seria",
+    "name": "Séria",
+    "eyes": {
+      "left": {
+        "scaleX": 0.96,
+        "scaleY": 0.86,
+        "rotation": -1,
+        "x": 0,
+        "y": 1
+      },
+      "right": {
+        "scaleX": 0.96,
+        "scaleY": 0.86,
+        "rotation": 1,
+        "x": 0,
+        "y": 1
+      }
+    },
+    "eyebrows": {
+      "left": {
+        "scaleX": 1,
+        "scaleY": 0.8,
+        "rotation": 8,
+        "x": 2,
+        "y": 0
+      },
+      "right": {
+        "scaleX": 1,
+        "scaleY": 0.8,
+        "rotation": -10.5,
+        "x": 0,
+        "y": 0
+      }
+    },
+    "mouth": {
+      "scaleX": 1,
+      "scaleY": 1,
+      "rotation": 0,
+      "x": 0,
+      "y": 0
+    },
+    "mouthTalkIndex": 16,
+    "index": 16
+  },
+  {
+    "key": "sorrindo_de_canto",
+    "name": "Sorrindo de canto",
+    "eyes": {
+      "left": {
+        "scaleX": 1.08,
+        "scaleY": 0.92,
+        "rotation": -3,
+        "x": -1,
+        "y": 0
+      },
+      "right": {
+        "scaleX": 0.96,
+        "scaleY": 0.98,
+        "rotation": 2,
+        "x": 1,
+        "y": 0
+      }
+    },
+    "eyebrows": {
+      "left": {
+        "scaleX": 1,
+        "scaleY": 0.88,
+        "rotation": -13,
+        "x": 0,
+        "y": 0
+      },
+      "right": {
+        "scaleX": 1,
+        "scaleY": 0.94,
+        "rotation": 9,
+        "x": 0,
+        "y": 0
+      }
+    },
+    "mouth": {
+      "scaleX": 1.36,
+      "scaleY": 1,
+      "rotation": 20,
+      "x": 0,
+      "y": 0
+    },
+    "mouthTalkIndex": 17,
+    "index": 17
+  },
+  {
+    "key": "sorriso_maligno",
+    "name": "Sorriso maligno",
+    "eyes": {
+      "left": {
+        "scaleX": 1.04,
+        "scaleY": 0.76,
+        "rotation": 2,
+        "x": -1,
+        "y": 1
+      },
+      "right": {
+        "scaleX": 1.04,
+        "scaleY": 0.76,
+        "rotation": -2,
+        "x": 1,
+        "y": 1
+      }
+    },
+    "eyebrows": {
+      "left": {
+        "scaleX": 1,
+        "scaleY": 0.78,
+        "rotation": 14,
+        "x": 0,
+        "y": 0
+      },
+      "right": {
+        "scaleX": 1,
+        "scaleY": 0.78,
+        "rotation": -14,
+        "x": 0,
+        "y": 0
+      }
+    },
+    "mouth": {
+      "scaleX": 1.43,
+      "scaleY": 1,
+      "rotation": 0,
+      "x": 0,
+      "y": 0
+    },
+    "mouthTalkIndex": 18,
+    "index": 18
+  },
+  {
+    "key": "surpresa",
+    "name": "Surpresa",
+    "eyes": {
+      "left": {
+        "scaleX": 1,
+        "scaleY": 1.12,
+        "rotation": 0,
+        "x": 0,
+        "y": 0
+      },
+      "right": {
+        "scaleX": 1,
+        "scaleY": 1.12,
+        "rotation": 0,
+        "x": 0,
+        "y": 0
+      }
+    },
+    "eyebrows": {
+      "left": {
+        "scaleX": 0.99,
+        "scaleY": 1.2,
+        "rotation": 0.5,
+        "x": 0,
+        "y": -32
+      },
+      "right": {
+        "scaleX": 0.98,
+        "scaleY": 1.2,
+        "rotation": 1,
+        "x": 0,
+        "y": -32
+      }
+    },
+    "mouth": {
+      "scaleX": 1,
+      "scaleY": 0.96,
+      "rotation": 0,
+      "x": 0,
+      "y": 0
+    },
+    "mouthTalkIndex": 19,
+    "index": 19
+  },
+  {
+    "key": "triste_magoada",
+    "name": "Triste/magoada",
+    "eyes": {
+      "left": {
+        "scaleX": 0.99,
+        "scaleY": 0.92,
+        "rotation": -3,
+        "x": 0,
+        "y": 2
+      },
+      "right": {
+        "scaleX": 0.99,
+        "scaleY": 0.92,
+        "rotation": 3,
+        "x": 0,
+        "y": 2
+      }
+    },
+    "eyebrows": {
+      "left": {
+        "scaleX": 1,
+        "scaleY": 0.76,
+        "rotation": -12,
+        "x": 0,
+        "y": 0
+      },
+      "right": {
+        "scaleX": 1,
+        "scaleY": 0.76,
+        "rotation": 12,
+        "x": 0,
+        "y": 0
+      }
+    },
+    "mouth": {
+      "scaleX": 1.12,
+      "scaleY": 1,
+      "rotation": -10,
+      "x": 0,
+      "y": 0
+    },
+    "mouthTalkIndex": 20,
+    "index": 20
+  }
+]
