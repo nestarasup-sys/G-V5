@@ -9,6 +9,8 @@ import { hairCategories } from '../src/shared/hairCategories'
 import type { CustomizerCharacter, CustomizerFaceAppearance, CustomizerWardrobePaletteKey, HairColorOverrides } from '../src/shared/customizer'
 import { characterBodyDimensionLimits, characterProportionLimits } from '../src/shared/customizer'
 import type { StudioAsset, StudioDocument } from '../src/shared/studio'
+import type { VideoProject } from '../src/shared/videoStudio'
+import { listVideoProjects, saveVideoProject, deleteVideoProject, importVideoImage, videoStudioLibraryPath } from './videoStudioStore'
 import { applyModelHeadShape } from '../src/shared/headShape'
 import { isStudioExpressionEffects, isStudioFaceTransforms } from '../src/shared/studio'
 import { legacyStandardExpressionEffects } from '../src/shared/legacyExpressionEffects'
@@ -43,6 +45,7 @@ const characterLibraryPath = () => join(app.getPath('userData'), 'customizer', '
 const studioLibraryPath = () => join(app.getPath('userData'), 'studios', 'Studio Principal')
 const studioPath = (id: string) => join(studioLibraryPath(), `studio-${id}`)
 let studioSaveQueue: Promise<void> = Promise.resolve()
+let videoStudioSaveQueue: Promise<void> = Promise.resolve()
 const characterManifestPath = () => join(characterLibraryPath(), 'characters.json')
 const fabricatorSaveQueues = new Map<number, Promise<void>>()
 let poseSaveQueue: Promise<void> = Promise.resolve()
@@ -1385,6 +1388,36 @@ async function readAnimatorDraft(modelSlot: number): Promise<AnimatorAnimationDr
 }
 
 async function registerFabricatorHandlers(): Promise<void> {
+  ipcMain.handle('video-studio:list', async (event): Promise<VideoProject[]> => {
+    assertTrustedSender(event)
+    await videoStudioSaveQueue.catch(() => undefined)
+    return listVideoProjects()
+  })
+
+  ipcMain.handle('video-studio:save', async (event, project: VideoProject): Promise<void> => {
+    assertTrustedSender(event)
+    const next = videoStudioSaveQueue.catch(() => undefined).then(() => saveVideoProject(project))
+    videoStudioSaveQueue = next
+    await next
+  })
+
+  ipcMain.handle('video-studio:delete', async (event, id: string): Promise<void> => {
+    assertTrustedSender(event)
+    const next = videoStudioSaveQueue.catch(() => undefined).then(() => deleteVideoProject(id))
+    videoStudioSaveQueue = next
+    await next
+  })
+
+  ipcMain.handle('video-studio:folder', (event): string => {
+    assertTrustedSender(event)
+    return videoStudioLibraryPath()
+  })
+
+  ipcMain.handle('video-studio:import-image', async (event, category: 'background' | 'object' | 'character') => {
+    assertTrustedSender(event)
+    return importVideoImage(category)
+  })
+
   ipcMain.handle('studio:list', async (event): Promise<StudioDocument[]> => {
     assertTrustedSender(event)
     return listStudios()
@@ -2103,7 +2136,7 @@ app.on('window-all-closed', () => {
 
 let waitingForFabricatorWritesBeforeQuit = false
 app.on('before-quit', (event) => {
-  const pendingWrites = [...fabricatorSaveQueues.values(), ...poseSaveWrites, ...hairSaveQueues.values(), studioSaveQueue]
+  const pendingWrites = [...fabricatorSaveQueues.values(), ...poseSaveWrites, ...hairSaveQueues.values(), studioSaveQueue, videoStudioSaveQueue]
   if (pendingWrites.length === 0 || waitingForFabricatorWritesBeforeQuit) return
   event.preventDefault()
   waitingForFabricatorWritesBeforeQuit = true
