@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
-import type { FaceCatalogItem, FaceCatalogItemSummary, FaceComponentAsset, FaceComponentAssetSummary, FaceExpressionCollection, FaceExpressionPreset, FaceExpressionPresetSummary, FaceExpressionEffects, FaceExpressionTransforms, FaceTransform, FabricatorProject } from '../../../../shared/fabricator'
+import type { FaceCatalogItem, FaceCatalogItemSummary, FaceComponentAsset, FaceComponentAssetSummary, FaceExpressionCollection, FaceExpressionPreset, FaceExpressionPresetSummary, FaceExpressionEffects, FaceExpressionTransforms, FaceExpressionWorkspaceDraft, FaceExpressionWorkspaceEntry, FaceTransform, FabricatorProject } from '../../../../shared/fabricator'
 import { Icon, type IconName } from '../../ui/components/Icon'
 import { eyeInteriorMask } from './face/eyeInteriorMask'
 import { importLegacyStandardExpressions } from './importLegacyStandardExpressions'
@@ -39,6 +39,37 @@ const presetSingleLayers: Array<{ key: LayerKey; label: string; icon: IconName }
 ]
 const EXPRESSION_COLLECTION_ID = 'standard'
 const expressionWorkingCopyKey = (collectionId: string, index: number) => `${collectionId}:${index}`
+const expressionWorkspaceDraftStorageKey = (modelSlot: number) => `fabricator.expression-workspace-draft.v1.model-${modelSlot}`
+const toWorkspaceEntry = (copy: ExpressionWorkingCopy): FaceExpressionWorkspaceEntry => ({
+  id: copy.id, selections: structuredClone(copy.composition), transforms: cloneTransforms(copy.transforms),
+  noseOpacity: copy.noseOpacity, effects: cloneEffects(copy.effects)
+})
+const fromWorkspaceEntry = (entry: FaceExpressionWorkspaceEntry): ExpressionWorkingCopy => ({
+  id: entry.id, composition: structuredClone(entry.selections), transforms: cloneTransforms(entry.transforms),
+  noseOpacity: entry.noseOpacity, effects: cloneEffects(entry.effects)
+})
+function isWorkspaceDraftForModel(value: unknown, modelSlot: number): value is FaceExpressionWorkspaceDraft {
+  if (!value || typeof value !== 'object') return false
+  const draft = value as Partial<FaceExpressionWorkspaceDraft>
+  const validEntry = (entry: unknown) => {
+    if (!entry || typeof entry !== 'object') return false
+    const candidate = entry as FaceExpressionWorkspaceEntry
+    const transformKeys: Array<keyof FaceExpressionTransforms> = ['eyeLeft', 'eyeRight', 'pupilLeft', 'pupilRight', 'browLeft', 'browRight', 'nose', 'mouth']
+    return typeof candidate.id === 'string' && !!candidate.selections && typeof candidate.selections === 'object'
+      && !!candidate.transforms && transformKeys.every((key) => {
+        const transform = candidate.transforms[key]
+        return !!transform && [transform.x, transform.y, transform.scaleX, transform.scaleY, transform.rotation].every(Number.isFinite)
+      }) && Number.isFinite(candidate.noseOpacity) && candidate.noseOpacity >= 0 && candidate.noseOpacity <= 1
+      && !!candidate.effects && typeof candidate.effects === 'object'
+  }
+  return draft.schemaVersion === 1 && draft.modelSlot === modelSlot && typeof draft.selectedCollectionId === 'string'
+    && Number.isInteger(draft.selectedExpressionIndex) && Number(draft.selectedExpressionIndex) >= 0 && Number(draft.selectedExpressionIndex) <= 999
+    && validEntry(draft.current) && !!draft.workingCopies && typeof draft.workingCopies === 'object'
+    && Object.values(draft.workingCopies).every(validEntry)
+    && !!draft.customExpressionNames && typeof draft.customExpressionNames === 'object'
+    && Object.values(draft.customExpressionNames).every((name) => typeof name === 'string')
+    && typeof draft.updatedAt === 'string' && Number.isFinite(Date.parse(draft.updatedAt))
+}
 const STANDARD_EXPRESSIONS = [
   'Aliviada', 'Animada', 'Apaixonada', 'Cansada', 'Ciumenta', 'Confusa', 'Decepcionada',
   'Desconfiada', 'Envergonhada', 'Impressionada', 'Indignada', 'Irritada', 'Nojo', 'Normal',
@@ -163,12 +194,16 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
   const [selectedExpressionIndex, setSelectedExpressionIndex] = useState(0)
   const [customExpressionNames, setCustomExpressionNames] = useState<Record<string, string>>({})
   const [workingCopies, setWorkingCopies] = useState<Record<string, ExpressionWorkingCopy>>({})
+  const [workspaceReady, setWorkspaceReady] = useState(false)
+  const [workspaceSaveStatus, setWorkspaceSaveStatus] = useState<'saving' | 'saved' | 'failed'>('saved')
   const [switchingExpression, setSwitchingExpression] = useState(false)
   const [selectedLayer, setSelectedLayer] = useState<LayerKey>('eyeLeft')
   const [linkedLayerPairs, setLinkedLayerPairs] = useState<Record<PairedLayerKind, boolean>>({ eye: false, pupil: false, eyebrow: false })
   const previewLayerDrag = useRef<PreviewLayerDrag | null>(null)
   const previewEffectDrag = useRef<PreviewEffectDrag | null>(null)
   const previewCanvas = useRef<HTMLDivElement | null>(null)
+  const workspaceSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const latestWorkspaceDraft = useRef<FaceExpressionWorkspaceDraft | null>(null)
   const [saving, setSaving] = useState(false)
   const [open, setOpen] = useState(false)
   const [category, setCategory] = useState<PickerCategory>('eyes')
@@ -181,6 +216,7 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
   useEffect(() => {
     let cancelled = false
     setLoading(true)
+    setWorkspaceReady(false)
     setProject(null)
     setComponentAssets({})
     setCatalogItems({})
@@ -188,6 +224,7 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
     setPresets([])
     setSelectedExpressionIndex(0)
     setWorkingCopies({})
+    latestWorkspaceDraft.current = null
     setSwitchingExpression(false)
     setPresetId(crypto.randomUUID())
     void Promise.all([
@@ -195,8 +232,9 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
       Promise.all([window.desktop.listFaceComponentAssets(modelSlot, 'eye'), window.desktop.listFaceComponentAssets(modelSlot, 'pupil'), window.desktop.listFaceComponentAssets(modelSlot, 'eyebrow')]).then((lists) => lists.flat()),
       window.desktop.listFaceCatalog(modelSlot),
       window.desktop.listFaceExpressionPresets(modelSlot),
-      window.desktop.listFaceExpressionCollections(modelSlot)
-    ]).then(async ([model, components, catalogs, savedPresets, savedCollections]) => {
+      window.desktop.listFaceExpressionCollections(modelSlot),
+      window.desktop.loadFaceExpressionWorkspaceDraft(modelSlot)
+    ]).then(async ([model, components, catalogs, savedPresets, savedCollections, diskWorkspaceDraft]) => {
       const facialCatalogs = catalogs.filter((item) => item.category === 'nose' || item.category === 'mouth-closed' || item.category === 'mouth-open')
       const [loadedComponents, loadedCatalogs] = await Promise.all([
         Promise.all(components.map((asset) => window.desktop.loadFaceComponentAsset(modelSlot, asset.id))),
@@ -259,15 +297,97 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
       setBaseComposition(initial)
       setBaseTransforms(initialTransforms)
       setBaseNoseOpacity(nose?.opacity ?? 1)
-      if (selectedPreset) {
+      let localWorkspaceDraft: FaceExpressionWorkspaceDraft | null = null
+      try {
+        const stored = localStorage.getItem(expressionWorkspaceDraftStorageKey(modelSlot))
+        if (stored) {
+          const parsed: unknown = JSON.parse(stored)
+          if (isWorkspaceDraftForModel(parsed, modelSlot)) localWorkspaceDraft = parsed
+        }
+      } catch { /* Um rascunho local incompleto não impede a abertura do editor. */ }
+      const availableCollections = new Set([EXPRESSION_COLLECTION_ID, ...savedCollections.map((collection) => collection.id)])
+      const candidates = [diskWorkspaceDraft, localWorkspaceDraft]
+        .filter((candidate): candidate is FaceExpressionWorkspaceDraft => isWorkspaceDraftForModel(candidate, modelSlot)
+          && availableCollections.has(candidate.selectedCollectionId))
+        .sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt))
+      const restoredWorkspaceDraft = candidates[0] ?? null
+      const savedCustomNames = Object.fromEntries(loadedPresets
+        .filter((preset) => typeof preset.collectionId === 'string' && Number.isInteger(preset.expressionIndex) && preset.expressionIndex! >= STANDARD_EXPRESSIONS.length)
+        .map((preset) => [expressionWorkingCopyKey(preset.collectionId!, preset.expressionIndex!), preset.name]))
+      if (restoredWorkspaceDraft) {
+        const current = fromWorkspaceEntry(restoredWorkspaceDraft.current)
+        setSelectedCollectionId(restoredWorkspaceDraft.selectedCollectionId)
+        setSelectedExpressionIndex(restoredWorkspaceDraft.selectedExpressionIndex)
+        setPresetId(current.id)
+        setComposition(current.composition)
+        setTransforms(current.transforms)
+        setNoseOpacity(current.noseOpacity)
+        setEffects(current.effects)
+        setWorkingCopies(Object.fromEntries(Object.entries(restoredWorkspaceDraft.workingCopies).map(([key, entry]) => [key, fromWorkspaceEntry(entry)])))
+        setCustomExpressionNames({ ...savedCustomNames, ...restoredWorkspaceDraft.customExpressionNames })
+      } else if (selectedPreset) {
+        setSelectedCollectionId(EXPRESSION_COLLECTION_ID)
+        setSelectedExpressionIndex(0)
         setPresetId(selectedPreset.id); setComposition(selectedPreset.selections); setTransforms(selectedPreset.transforms); setNoseOpacity(selectedPreset.noseOpacity); setEffects(cloneEffects(selectedPreset.effects))
+        setWorkingCopies({})
+        setCustomExpressionNames(savedCustomNames)
       } else {
-        setPresetId(crypto.randomUUID()); setComposition(initial); setTransforms(initialTransforms); setNoseOpacity(nose?.opacity ?? 1)
+        setSelectedCollectionId(EXPRESSION_COLLECTION_ID)
+        setSelectedExpressionIndex(0)
+        setPresetId(crypto.randomUUID()); setComposition(initial); setTransforms(initialTransforms); setNoseOpacity(nose?.opacity ?? 1); setEffects(defaultExpressionEffects())
+        setWorkingCopies({})
+        setCustomExpressionNames(savedCustomNames)
       }
+      setWorkspaceReady(true)
       setError(null)
     }).catch((reason) => { if (!cancelled) setError(reason instanceof Error ? reason.message : 'Não foi possível carregar os itens faciais deste modelo.') })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
+  }, [modelSlot])
+
+  useEffect(() => {
+    if (!workspaceReady || loading || switchingExpression) return
+    const workspaceDraft: FaceExpressionWorkspaceDraft = {
+      schemaVersion: 1,
+      modelSlot,
+      selectedCollectionId,
+      selectedExpressionIndex,
+      current: toWorkspaceEntry({ id: presetId, composition, transforms, noseOpacity, effects }),
+      workingCopies: Object.fromEntries(Object.entries(workingCopies).map(([key, copy]) => [key, toWorkspaceEntry(copy)])),
+      customExpressionNames: { ...customExpressionNames },
+      updatedAt: new Date().toISOString()
+    }
+    latestWorkspaceDraft.current = workspaceDraft
+    setWorkspaceSaveStatus('saving')
+    try {
+      localStorage.setItem(expressionWorkspaceDraftStorageKey(modelSlot), JSON.stringify(workspaceDraft))
+    } catch (reason) {
+      setWorkspaceSaveStatus('failed')
+      setError(reason instanceof Error ? `Não foi possível guardar o rascunho local: ${reason.message}` : 'Não foi possível guardar o rascunho local.')
+    }
+    if (workspaceSaveTimer.current) clearTimeout(workspaceSaveTimer.current)
+    workspaceSaveTimer.current = setTimeout(() => {
+      workspaceSaveTimer.current = null
+      void window.desktop.saveFaceExpressionWorkspaceDraft(modelSlot, workspaceDraft).then(() => {
+        if (latestWorkspaceDraft.current?.updatedAt === workspaceDraft.updatedAt) setWorkspaceSaveStatus('saved')
+      }).catch((reason) => {
+        if (latestWorkspaceDraft.current?.updatedAt === workspaceDraft.updatedAt) {
+          setWorkspaceSaveStatus('failed')
+          setError(reason instanceof Error ? `Falha ao gravar o rascunho no disco: ${reason.message}` : 'Falha ao gravar o rascunho no disco.')
+        }
+      })
+    }, 120)
+    return () => {
+      if (workspaceSaveTimer.current) clearTimeout(workspaceSaveTimer.current)
+      workspaceSaveTimer.current = null
+    }
+  }, [workspaceReady, loading, switchingExpression, modelSlot, selectedCollectionId, selectedExpressionIndex, presetId, composition, transforms, noseOpacity, effects, workingCopies, customExpressionNames])
+
+  useEffect(() => () => {
+    if (workspaceSaveTimer.current) clearTimeout(workspaceSaveTimer.current)
+    workspaceSaveTimer.current = null
+    const latest = latestWorkspaceDraft.current
+    if (latest?.modelSlot === modelSlot) void window.desktop.saveFaceExpressionWorkspaceDraft(modelSlot, latest).catch(() => undefined)
   }, [modelSlot])
 
   useEffect(() => {
@@ -732,6 +852,7 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
       <strong>Preset Expressão Dev</strong>
       <span className="expression-current-title"><b>{String(selectedExpressionIndex + 1).padStart(2, '0')}</b>{activeExpressionName}</span>
       <span className="expression-preset-toolbar-spacer" />
+      {!loading && <span className={`expression-workspace-save-status${workspaceSaveStatus === 'failed' ? ' failed' : ''}`} role="status">{workspaceSaveStatus === 'saving' ? 'Salvando rascunho…' : workspaceSaveStatus === 'failed' ? 'Falha ao salvar' : 'Rascunho salvo'}</span>}
       <span className="expression-preset-model-label">Modelo {String(modelSlot).padStart(2, '0')} · {project?.name ?? 'sem modelo'}</span>
       <button className="expression-save-button" onClick={() => void saveCurrentPreset()} disabled={loading || saving || switchingExpression} type="button"><Icon name="save" />{saving ? 'Salvando…' : `Salvar ${activeExpressionName}`}</button>
     </header>

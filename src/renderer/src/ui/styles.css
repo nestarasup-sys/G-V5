@@ -1110,6 +1110,8 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .expression-new-button:disabled,.expression-save-button:disabled { opacity: .55; cursor: not-allowed; }
 .expression-preset-toolbar-spacer { flex: 1; }
 .expression-preset-model-label { color: #918590; font-size: 11px; }
+.expression-workspace-save-status { color: #8c7183; font-size: 10px; white-space: nowrap; }
+.expression-workspace-save-status.failed { color: #b23255; }
 .expression-choose-set-button { min-height: 36px; display: inline-flex; align-items: center; gap: 8px; padding: 0 13px; border: 1px solid #edc8d7; border-radius: 9px; background: #fff5f8; color: #a33d65; font: inherit; font-size: 12px; font-weight: 800; cursor: pointer; }
 .expression-choose-set-button:hover:not(:disabled) { border-color: #dc83a4; background: #ffedf4; }
 .expression-choose-set-button:disabled { opacity: .55; cursor: not-allowed; }

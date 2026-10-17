@@ -3,7 +3,7 @@ import { mkdir, readFile, writeFile, readdir, unlink, rename, stat, access, rm, 
 import { basename, dirname, extname, join, resolve } from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
-import type { AnimatorAnimation, AnimatorAnimationAsset, AnimatorAnimationDraft, AnimatorAnimationSave, AnimatorAnimationSummary, FaceAssetKind, FaceAssetSave, FaceCatalogItem, FaceCatalogItemSave, FaceCatalogItemSummary, FaceComponentAsset, FaceComponentAssetSave, FaceComponentAssetSummary, FaceElementKind, FaceExpressionCollection, FaceExpressionPreset, FaceExpressionPresetSummary, FaceExpressionTransforms, FaceSet, FaceSetSave, FaceSetSummary, FaceSheetKind, FaceTransform, FabricatorAssetSave, FabricatorHistoryEntry, FabricatorHistorySaveEntry, FabricatorHistorySaveState, FabricatorHistoryState, FabricatorPose, FabricatorPoseDraft, FabricatorPoseDraftSave, FabricatorPoseSave, FabricatorPoseSummary, FabricatorProject, FabricatorProjectSave, FabricatorSlotSummary, HairStyle, HairStyleAsset, HairStyleSave, HairStyleSummary, HairWorkspace, HairWorkspaceAsset, HairWorkspaceSave, ModelPart, PosePart, WardrobeAssetSave, WardrobeCategory, WardrobeSet, WardrobeSetSave, WardrobeSetSummary } from '../src/shared/fabricator'
+import type { AnimatorAnimation, AnimatorAnimationAsset, AnimatorAnimationDraft, AnimatorAnimationSave, AnimatorAnimationSummary, FaceAssetKind, FaceAssetSave, FaceCatalogItem, FaceCatalogItemSave, FaceCatalogItemSummary, FaceComponentAsset, FaceComponentAssetSave, FaceComponentAssetSummary, FaceElementKind, FaceExpressionCollection, FaceExpressionPreset, FaceExpressionPresetSummary, FaceExpressionTransforms, FaceExpressionWorkspaceDraft, FaceSet, FaceSetSave, FaceSetSummary, FaceSheetKind, FaceTransform, FabricatorAssetSave, FabricatorHistoryEntry, FabricatorHistorySaveEntry, FabricatorHistorySaveState, FabricatorHistoryState, FabricatorPose, FabricatorPoseDraft, FabricatorPoseDraftSave, FabricatorPoseSave, FabricatorPoseSummary, FabricatorProject, FabricatorProjectSave, FabricatorSlotSummary, HairStyle, HairStyleAsset, HairStyleSave, HairStyleSummary, HairWorkspace, HairWorkspaceAsset, HairWorkspaceSave, ModelPart, PosePart, WardrobeAssetSave, WardrobeCategory, WardrobeSet, WardrobeSetSave, WardrobeSetSummary } from '../src/shared/fabricator'
 import { resolvePoseCategory } from '../src/shared/fabricator'
 import { hairCategories } from '../src/shared/hairCategories'
 import type { CustomizerCharacter, CustomizerFaceAppearance, CustomizerWardrobePaletteKey, HairColorOverrides } from '../src/shared/customizer'
@@ -34,6 +34,7 @@ const faceCatalogPath = (modelSlot: number) => join(faceModelPath(modelSlot), 'c
 const faceCatalogItemPath = (modelSlot: number, id: string) => join(faceCatalogPath(modelSlot), `item-${id}`)
 const faceExpressionPresetPath = (modelSlot: number, id: string) => join(app.getPath('userData'), 'fabricator', 'expression-presets', `model-${modelSlot}`, `preset-${id}.json`)
 const faceExpressionCollectionsPath = (modelSlot: number) => join(app.getPath('userData'), 'fabricator', 'expression-presets', `model-${modelSlot}`, 'collections.json')
+const faceExpressionWorkspaceDraftPath = (modelSlot: number) => join(app.getPath('userData'), 'fabricator', 'expression-presets', `model-${modelSlot}`, 'workspace-draft.json')
 const faceComponentPath = (modelSlot: number) => join(app.getPath('userData'), 'fabricator', 'face-components', `model-${modelSlot}`)
 const faceComponentItemPath = (modelSlot: number, id: string) => join(faceComponentPath(modelSlot), `item-${id}`)
 const hairModelPath = (modelSlot: number) => join(app.getPath('userData'), 'fabricator', 'hair', `model-${modelSlot}`)
@@ -297,6 +298,55 @@ function validFaceExpressionPreset(modelSlot: number, preset: FaceExpressionPres
     && (preset.referenceTransforms === undefined || Object.values(preset.referenceTransforms).every(validTransform))
     && Number.isFinite(preset.noseOpacity) && preset.noseOpacity >= 0 && preset.noseOpacity <= 1
     && (preset.effects === undefined || isStudioExpressionEffects(preset.effects))
+}
+
+function validFaceExpressionWorkspaceDraft(modelSlot: number, draft: FaceExpressionWorkspaceDraft): boolean {
+  if (!isValidModelSlot(modelSlot) || !draft || draft.schemaVersion !== 1 || draft.modelSlot !== modelSlot
+    || !(draft.selectedCollectionId === 'standard' || isValidWardrobeId(draft.selectedCollectionId))
+    || !Number.isInteger(draft.selectedExpressionIndex) || draft.selectedExpressionIndex < 0 || draft.selectedExpressionIndex > 999
+    || typeof draft.updatedAt !== 'string' || !Number.isFinite(Date.parse(draft.updatedAt))) return false
+  const validEntry = (entry: FaceExpressionWorkspaceDraft['current'], collectionId: string, expressionIndex: number): boolean => {
+    if (!entry || typeof entry !== 'object') return false
+    return validFaceExpressionPreset(modelSlot, {
+      schemaVersion: 1, id: entry.id, modelSlot, name: 'Rascunho', collectionId,
+      expressionIndex, selections: entry.selections, transforms: entry.transforms,
+      noseOpacity: entry.noseOpacity, effects: entry.effects, updatedAt: draft.updatedAt
+    })
+  }
+  if (!validEntry(draft.current, draft.selectedCollectionId, draft.selectedExpressionIndex) || !draft.workingCopies || typeof draft.workingCopies !== 'object' || Array.isArray(draft.workingCopies)
+    || Object.keys(draft.workingCopies).length > 1000 || !draft.customExpressionNames || typeof draft.customExpressionNames !== 'object'
+    || Array.isArray(draft.customExpressionNames) || Object.keys(draft.customExpressionNames).length > 1000) return false
+  for (const [key, entry] of Object.entries(draft.workingCopies)) {
+    const separator = key.lastIndexOf(':')
+    const collectionId = key.slice(0, separator)
+    const index = Number(key.slice(separator + 1))
+    if (separator < 1 || !(collectionId === 'standard' || isValidWardrobeId(collectionId)) || !Number.isInteger(index) || index < 0 || index > 999) return false
+    if (!validEntry(entry, collectionId, index)) return false
+  }
+  for (const [key, name] of Object.entries(draft.customExpressionNames)) {
+    if (!/^.{1,80}:\d{1,3}$/.test(key) || typeof name !== 'string' || !name.trim() || name.length > 80) return false
+  }
+  return true
+}
+
+async function readFaceExpressionWorkspaceDraft(modelSlot: number): Promise<FaceExpressionWorkspaceDraft | null> {
+  if (!isValidModelSlot(modelSlot)) throw new Error('Modelo inválido.')
+  try {
+    const draft = JSON.parse(await readFile(faceExpressionWorkspaceDraftPath(modelSlot), 'utf8')) as FaceExpressionWorkspaceDraft
+    return validFaceExpressionWorkspaceDraft(modelSlot, draft) ? draft : null
+  } catch (reason) {
+    if ((reason as NodeJS.ErrnoException).code === 'ENOENT' || reason instanceof SyntaxError) return null
+    throw reason
+  }
+}
+
+async function writeFaceExpressionWorkspaceDraft(modelSlot: number, draft: FaceExpressionWorkspaceDraft): Promise<void> {
+  if (!validFaceExpressionWorkspaceDraft(modelSlot, draft)) throw new Error('Rascunho de expressão inválido.')
+  const target = faceExpressionWorkspaceDraftPath(modelSlot)
+  await mkdir(dirname(target), { recursive: true })
+  const temporary = `${target}.tmp`
+  await writeFile(temporary, JSON.stringify(draft), 'utf8')
+  await rename(temporary, target)
 }
 
 async function listFaceExpressionPresets(modelSlot: number): Promise<FaceExpressionPresetSummary[]> {
@@ -1863,6 +1913,16 @@ async function registerFabricatorHandlers(): Promise<void> {
     const base = resolve(join(app.getPath('userData'), 'fabricator', 'expression-presets', `model-${modelSlot}`))
     if (dirname(target) !== base || basename(target) !== `preset-${id}.json`) throw new Error('Caminho de exclusão inválido.')
     const next = expressionPresetSaveQueue.catch(() => undefined).then(() => rm(target, { force: true }))
+    expressionPresetSaveQueue = next
+    await next
+  })
+  ipcMain.handle('fabricator:expression-workspace:load', async (event, modelSlot: number): Promise<FaceExpressionWorkspaceDraft | null> => {
+    assertTrustedSender(event)
+    return readFaceExpressionWorkspaceDraft(modelSlot)
+  })
+  ipcMain.handle('fabricator:expression-workspace:save', async (event, modelSlot: number, draft: FaceExpressionWorkspaceDraft): Promise<void> => {
+    assertTrustedSender(event)
+    const next = expressionPresetSaveQueue.catch(() => undefined).then(() => writeFaceExpressionWorkspaceDraft(modelSlot, draft))
     expressionPresetSaveQueue = next
     await next
   })

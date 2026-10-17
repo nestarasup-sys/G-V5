@@ -221,6 +221,24 @@ export type FaceExpressionPreset = {
 }
 export type FaceExpressionPresetSummary = Pick<FaceExpressionPreset, 'id' | 'modelSlot' | 'name' | 'updatedAt' | 'collectionId' | 'expressionIndex'>
 export type FaceExpressionCollection = { schemaVersion: 1; id: string; modelSlot: number; name: string; createdAt: string; updatedAt: string }
+export type FaceExpressionWorkspaceEntry = {
+  id: string
+  selections: FaceExpressionSelections
+  transforms: FaceExpressionTransforms
+  noseOpacity: number
+  effects: FaceExpressionEffects
+}
+/** Autosaved editor state, kept separate from the published expression preset library. */
+export type FaceExpressionWorkspaceDraft = {
+  schemaVersion: 1
+  modelSlot: number
+  selectedCollectionId: string
+  selectedExpressionIndex: number
+  current: FaceExpressionWorkspaceEntry
+  workingCopies: Record<string, FaceExpressionWorkspaceEntry>
+  customExpressionNames: Record<string, string>
+  updatedAt: string
+}
 export type HairTransform = { x: number; y: number; scaleX: number; scaleY: number; rotation: number; flipX?: boolean }
 export type HairWorkspace = {
   schemaVersion: 1
@@ -380,6 +398,8 @@ export type FabricatorDesktopApi = {
   loadFaceExpressionPreset: (modelSlot: number, id: string) => Promise<FaceExpressionPreset | null>
   saveFaceExpressionPreset: (modelSlot: number, preset: FaceExpressionPreset) => Promise<void>
   deleteFaceExpressionPreset: (modelSlot: number, id: string) => Promise<void>
+  loadFaceExpressionWorkspaceDraft: (modelSlot: number) => Promise<FaceExpressionWorkspaceDraft | null>
+  saveFaceExpressionWorkspaceDraft: (modelSlot: number, draft: FaceExpressionWorkspaceDraft) => Promise<void>
   listFaceComponentAssets: (modelSlot: number, kind?: FaceAssetKind) => Promise<FaceComponentAssetSummary[]>
   loadFaceComponentAsset: (modelSlot: number, id: string) => Promise<FaceComponentAsset | null>
   saveFaceComponentAsset: (modelSlot: number, asset: FaceComponentAssetSave, dataUrl: string) => Promise<void>
