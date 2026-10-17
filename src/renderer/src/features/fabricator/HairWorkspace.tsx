@@ -3,6 +3,7 @@ import type { FabricatorProject, FabricatorSlotSummary, HairStyle, HairStyleSave
 import type { HairPartId } from '../../../../shared/customizer'
 import { hairCategories, hairStyleSupportsCategory, type HairAssetSide } from '../../../../shared/hairCategories'
 import { emptyHairTransform, normalizeHairTransforms } from '../../../../shared/hairPersistence'
+import { HairPiecePreview as HairPiece } from './HairPiecePreview'
 import { Icon } from '../../ui/components/Icon'
 import { usePreviewBackground } from './usePreviewBackground'
 
@@ -257,6 +258,10 @@ export function HairWorkspace() {
     if (dragRef.current?.pointerId === event.pointerId) dragRef.current = null
   }
 
+  function updateHairPixels(side: HairSide, dataUrl: string) {
+    updateWorkspace((current) => current[side] ? { ...current, [side]: { ...current[side]!, dataUrl } } : current)
+  }
+
   function changeTransform(patch: Partial<HairTransform>) {
     if (!head || !selectedAsset) return
     updateWorkspace((current) => ({ ...current, transforms: { ...current.transforms, [selectedSide]: { ...(current.transforms[selectedSide] ?? initialTransform(selectedSide, head, selectedAsset)), ...patch } } }))
@@ -364,10 +369,10 @@ export function HairWorkspace() {
         <div className="hair-dev-preview-heading"><strong>PRÉVIA DA CABEÇA</strong><span>{head ? Math.round(head.width) + ' × ' + Math.round(head.height) : ''}</span></div>
         <div className="hair-dev-preview-stage" style={{ backgroundColor: background }} onWheel={(event) => { event.preventDefault(); setZoom((value) => Math.max(.5, Math.min(3, value * (event.deltaY < 0 ? 1.1 : .9)))) }}>
           {head && <div className="hair-dev-head-stage" style={{ aspectRatio: head.width + ' / ' + head.height, transform: 'scale(' + zoom + ')' }} onPointerMove={moveHair} onPointerUp={finishDrag} onPointerCancel={finishDrag}>
-            {hairWorkspace?.back && visibleDraft('back') && <HairPiece side="back" asset={hairWorkspace.back} transform={hairWorkspace.transforms.back} head={head} selected={selectedSide === 'back'} onPointerDown={startDrag} />}
+            {hairWorkspace?.back && visibleDraft('back') && <HairPiece side="back" asset={hairWorkspace.back} transform={hairWorkspace.transforms.back} head={head} selected={selectedSide === 'back'} onPointerDown={startDrag} disabled={saving || loadingHair || processingChroma} onErase={(dataUrl) => updateHairPixels('back', dataUrl)} />}
             <img className="hair-dev-head-base" src={head.dataUrl} alt="Cabeça do modelo de referência" draggable={false} />
-            {hairWorkspace?.front && visibleDraft('front') && <HairPiece side="front" asset={hairWorkspace.front} transform={hairWorkspace.transforms.front} head={head} selected={selectedSide === 'front'} onPointerDown={startDrag} />}
-            {hairWorkspace?.fringe && hairWorkspace.transforms.fringe && visibleDraft('fringe') && <HairPiece side="fringe" asset={hairWorkspace.fringe} transform={hairWorkspace.transforms.fringe} head={head} selected={selectedSide === 'fringe'} onPointerDown={startDrag} />}
+            {hairWorkspace?.front && visibleDraft('front') && <HairPiece side="front" asset={hairWorkspace.front} transform={hairWorkspace.transforms.front} head={head} selected={selectedSide === 'front'} onPointerDown={startDrag} disabled={saving || loadingHair || processingChroma} onErase={(dataUrl) => updateHairPixels('front', dataUrl)} />}
+            {hairWorkspace?.fringe && hairWorkspace.transforms.fringe && visibleDraft('fringe') && <HairPiece side="fringe" asset={hairWorkspace.fringe} transform={hairWorkspace.transforms.fringe} head={head} selected={selectedSide === 'fringe'} onPointerDown={startDrag} disabled={saving || loadingHair || processingChroma} onErase={(dataUrl) => updateHairPixels('fringe', dataUrl)} />}
           </div>}
           {(loadingModels || loadingProject || loadingHair) && <span className="hair-dev-message">Carregando modelo e cabelos…</span>}
           {!loadingModels && !loadingProject && !head && <span className="hair-dev-message">{error || 'O modelo não tem uma peça chamada Cabeça.'}</span>}
@@ -393,15 +398,9 @@ export function HairWorkspace() {
           {([['scaleX', 'Largura · espremer/esticar'], ['scaleY', 'Altura · espremer/esticar']] as const).map(([field, label]) => <label className="hair-dev-range" key={field}><span><b>{label}</b><output>{Math.round(selectedTransform[field] * 100)}%</output></span><input type="range" min="10" max="500" step="1" value={Math.max(10, Math.min(500, Math.round(selectedTransform[field] * 100)))} onChange={(event) => changeTransform({ [field]: Number(event.target.value) / 100 })} /><input className="hair-dev-range-number" type="number" min="10" max="1000" step="1" aria-label={label + ' em porcentagem'} value={Math.round(selectedTransform[field] * 100)} onChange={(event) => changeTransform({ [field]: Math.max(.1, Math.min(10, Number(event.target.value) / 100)) })} /></label>)}
           <label className="hair-dev-range"><span><b>Rotação</b><output>{Math.round(selectedTransform.rotation)}°</output></span><input type="range" min="-180" max="180" step="1" value={Math.max(-180, Math.min(180, Math.round(selectedTransform.rotation)))} onChange={(event) => changeTransform({ rotation: Number(event.target.value) })} /></label>
           <div className="hair-dev-piece-actions"><button className="hair-dev-reset" onClick={flipSelectedHair} type="button"><Icon name="flipHorizontal" /> Inverter na horizontal</button><button className="hair-dev-reset" onClick={resetSelectedTransform} type="button">Restaurar encaixe inicial</button></div>
+          <div data-hair-eraser-controls />
         </> : <p className="hair-dev-empty">Importe uma peça em {category.label} para ajustar seu encaixe.</p>}
       </section>
     </div>
   </section>
-}
-
-function HairPiece({ side, asset, transform, head, selected, onPointerDown }: { side: HairSide; asset: HairAsset; transform: HairTransform; head: ModelPart; selected: boolean; onPointerDown: (event: PointerEvent<HTMLImageElement>, side: HairSide) => void }) {
-  const width = asset.width * transform.scaleX / head.width * 100
-  const height = asset.height * transform.scaleY / head.height * 100
-  const label = side === 'front' ? 'posterior' : side === 'back' ? 'traseiro' : 'franja frontal'
-  return <img className={'hair-dev-piece hair-dev-piece-' + side + (selected ? ' selected' : '')} src={asset.dataUrl} alt={'Cabelo ' + label} draggable={false} onPointerDown={(event) => onPointerDown(event, side)} style={{ left: transform.x / head.width * 100 + '%', top: transform.y / head.height * 100 + '%', width: width + '%', height: height + '%', transform: 'translate(-50%, -50%) rotate(' + transform.rotation + 'deg) scaleX(' + (transform.flipX ? -1 : 1) + ')', pointerEvents: selected ? 'auto' : 'none' }} />
 }

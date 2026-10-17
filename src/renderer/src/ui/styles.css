@@ -1444,6 +1444,13 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .hair-dev-piece-actions { display:grid;grid-template-columns:1fr 1fr;gap:7px; }
 .hair-dev-piece-actions .hair-dev-reset { display:flex;align-items:center;justify-content:center;gap:5px;padding:0 7px; }
 .hair-dev-piece-actions svg { width:13px;height:13px; }
+.hair-dev-eraser-controls { display:grid;gap:9px; }
+.hair-dev-eraser-controls>.hair-dev-reset { display:flex;align-items:center;justify-content:center;gap:6px;width:100%; }
+.hair-dev-eraser-controls svg { width:14px;height:14px; }
+.hair-dev-eraser-toggle.active { border-color:#ca6f97;background:#fff0f6;color:#a63b6a; }
+.hair-dev-eraser-controls>small { color:#9c8d98;font-size:10px;line-height:1.5; }
+.hair-dev-eraser-controls button:disabled { opacity:.45;cursor:default; }
+.hair-dev-piece.hair-dev-eraser-canvas,.hair-dev-piece.hair-dev-eraser-canvas:active { cursor:crosshair; }
 .hair-dev-catalog-save { min-height:29px;display:flex;align-items:center;gap:5px;padding:0 8px;border:1px solid #e5aac0;border-radius:7px;background:#fff3f7;color:#a9436d;font-size:9px;font-weight:750;cursor:pointer; }
 .hair-dev-catalog-save:disabled { opacity:.48;cursor:not-allowed; }
 .hair-dev-catalog-save svg { width:13px;height:13px; }
