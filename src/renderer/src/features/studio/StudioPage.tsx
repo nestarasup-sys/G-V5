@@ -787,45 +787,48 @@ export function StudioPage() {
     try {
       const preset: FaceExpressionPreset | null = await window.desktop.loadFaceExpressionPreset(summary.modelSlot, summary.id)
       if (!preset || preset.modelSlot !== selectedStudioCharacterModelSlot) throw new Error('Este preset não está disponível para o modelo selecionado.')
-      const selections = preset.selections
-      const selectedMouth = selections.mouth
-      const componentParts = [
-        ['eye-left', selections.eyes.left, preset.transforms.eyeLeft],
-        ['eye-right', selections.eyes.right, preset.transforms.eyeRight],
-        ['pupil-left', selections.pupils.left, preset.transforms.pupilLeft],
-        ['pupil-right', selections.pupils.right, preset.transforms.pupilRight],
-        ['brow-left', selections.eyebrows.left, preset.transforms.browLeft],
-        ['brow-right', selections.eyebrows.right, preset.transforms.browRight]
-      ] as const
-      const components = { ...selectedStudioFaceAppearance?.components }
+      const appearance = selectedStudioFaceAppearance ?? selectedStudioCharacter.customization.faceAppearance
+      if (!appearance) throw new Error('A personagem ainda não tem uma aparência facial para ajustar.')
       const faceTransforms: StudioFaceTransforms = { ...(selectedElement.faceTransforms ?? {}) }
       for (const key of Object.keys(faceTransforms)) {
         if (key.startsWith('expression-component:') || key.startsWith('expression:')) delete faceTransforms[key]
       }
-      for (const [part, assetId, transform] of componentParts) {
-        components[part] = { ...(components[part] ?? {}), assetId }
-        if (assetId) faceTransforms[`expression-component:${part}`] = { x: 0, y: 0, width: 100, height: 100, rotation: 0, sourceTransformOverride: transform }
+
+      const applyTransform = (key: string, transform: FaceExpressionPreset['transforms'][keyof FaceExpressionPreset['transforms']]) => {
+        faceTransforms[key] = { x: 0, y: 0, width: 100, height: 100, rotation: 0, sourceTransformOverride: transform }
       }
-      if (selections.nose) faceTransforms[`expression:nose:${selections.nose.catalogId}`] = { x: 0, y: 0, width: 100, height: 100, rotation: 0, sourceTransformOverride: preset.transforms.nose }
-      if (selectedMouth) faceTransforms[`expression:${selectedMouth.kind}:${selectedMouth.catalogId}`] = { x: 0, y: 0, width: 100, height: 100, rotation: 0, sourceTransformOverride: preset.transforms.mouth }
-      const appearance: CustomizerFaceAppearance = {
-        ...selectedStudioFaceAppearance,
-        modelSlot: preset.modelSlot,
-        setId: undefined,
-        eyeCatalogId: undefined, eyeLeftCatalogId: undefined, eyeRightCatalogId: undefined,
-        eyebrowCatalogId: undefined, eyebrowLeftCatalogId: undefined, eyebrowRightCatalogId: undefined,
-        components,
-        eyeState: selectedStudioFaceAppearance?.eyeState ?? 0,
-        eyebrows: Boolean(selections.eyebrows.left || selections.eyebrows.right),
-        noseCatalogId: selections.nose?.catalogId,
-        noseIndex: selections.nose?.index ?? selectedStudioFaceAppearance?.noseIndex ?? 0,
-        noseOpacity: preset.noseOpacity,
-        mouthClosedCatalogId: selectedMouth?.kind === 'mouth-closed' ? selectedMouth.catalogId : undefined,
-        mouthOpenCatalogId: selectedMouth?.kind === 'mouth-open' ? selectedMouth.catalogId : undefined,
-        expressionIndex: selectedMouth?.index ?? 0,
-        mouthOpen: selectedMouth?.kind === 'mouth-open'
+      const componentTransforms = [
+        ['eye-left', preset.transforms.eyeLeft],
+        ['eye-right', preset.transforms.eyeRight],
+        ['pupil-left', preset.transforms.pupilLeft],
+        ['pupil-right', preset.transforms.pupilRight],
+        ['brow-left', preset.transforms.browLeft],
+        ['brow-right', preset.transforms.browRight]
+      ] as const
+      for (const [part, transform] of componentTransforms) applyTransform(`expression-component:${part}`, transform)
+
+      const selectedCatalogId = (sideId: string | null | undefined, sharedId: string | undefined, sideKey: string): string | undefined =>
+        Object.hasOwn(appearance, sideKey) ? sideId ?? undefined : sharedId
+      const leftEyeId = selectedCatalogId(appearance.eyeLeftCatalogId, appearance.eyeCatalogId, 'eyeLeftCatalogId')
+      const rightEyeId = selectedCatalogId(appearance.eyeRightCatalogId, appearance.eyeCatalogId, 'eyeRightCatalogId')
+      const leftBrowId = selectedCatalogId(appearance.eyebrowLeftCatalogId, appearance.eyebrowCatalogId, 'eyebrowLeftCatalogId')
+      const rightBrowId = selectedCatalogId(appearance.eyebrowRightCatalogId, appearance.eyebrowCatalogId, 'eyebrowRightCatalogId')
+      if (leftEyeId) applyTransform(`expression:eye-left:${leftEyeId}`, preset.transforms.eyeLeft)
+      if (rightEyeId) applyTransform(`expression:eye-right:${rightEyeId}`, preset.transforms.eyeRight)
+      if (leftBrowId) applyTransform(`expression:brow-left:${leftBrowId}`, preset.transforms.browLeft)
+      if (rightBrowId) applyTransform(`expression:brow-right:${rightBrowId}`, preset.transforms.browRight)
+      if (appearance.noseCatalogId) applyTransform(`expression:nose:${appearance.noseCatalogId}`, preset.transforms.nose)
+      const mouthKind = appearance.mouthOpen ? 'mouth-open' : 'mouth-closed'
+      const mouthCatalogId = appearance.mouthOpen ? appearance.mouthOpenCatalogId : appearance.mouthClosedCatalogId
+      if (mouthCatalogId) applyTransform(`expression:${mouthKind}:${mouthCatalogId}`, preset.transforms.mouth)
+
+      // The preset contributes only its transform snapshot and nose opacity. Asset
+      // choices, sheet indices, and side linking remain owned by this character.
+      const nextAppearance: CustomizerFaceAppearance = {
+        ...appearance,
+        noseOpacity: preset.noseOpacity
       }
-      await applyStudioFaceAppearance(appearance, faceTransforms)
+      await applyStudioFaceAppearance(nextAppearance, faceTransforms)
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Não foi possível aplicar este preset de expressão.')
     } finally {

@@ -878,7 +878,7 @@ async function drawFaceCatalogOverlay(context: CanvasRenderingContext2D, artwork
     const index = sheet === 'eyes' ? appearance.eyeState : sheet === 'nose' ? appearance.noseIndex : sheet.startsWith('mouth') ? appearance.expressionIndex : 0
     const piece = item.pieces.find((candidate) => candidate.sheet === sheet && candidate.index === index && candidate.side === side)
     const studioCategory = sheet === 'eyes' ? 'eyes' : sheet === 'eyebrows' ? 'eyebrows' : sheet === 'nose' ? 'nose' : 'mouth'
-    const studioTransform = studioFaceTransforms?.[`expression:${sheet}:${item.id}`] ?? studioFaceTransforms?.[`${sheet}:${item.id}`] ?? studioFaceTransforms?.[studioCategory]
+    const studioTransform = studioFaceTransforms?.[`expression:${element}:${item.id}`] ?? studioFaceTransforms?.[`expression:${sheet}:${item.id}`] ?? studioFaceTransforms?.[`${sheet}:${item.id}`] ?? studioFaceTransforms?.[studioCategory]
     const transform = studioTransform?.sourceTransformOverride ?? item.transforms[element]
     if (!piece || !transform) continue
     try {
@@ -938,7 +938,9 @@ async function drawFaceCatalogOverlay(context: CanvasRenderingContext2D, artwork
       const eyeAsset = loaded.get(eyePart)
       if (!eyeAsset) continue
       const eyeSelection = appearance.components?.[eyePart]
-      const eyeTransformBase = eyeAsset?.defaultTransform
+      const eyeTransformBase = eyeAsset
+        ? studioFaceTransforms?.[`expression-component:${eyePart}`]?.sourceTransformOverride ?? eyeAsset.defaultTransform
+        : undefined
       if (eyeTransformBase) {
         const eyeTransform = isRight && !eyeAsset?.rightSidePositioned ? { ...eyeTransformBase, x: sourceHead.width - eyeTransformBase.x, rotation: -eyeTransformBase.rotation } : eyeTransformBase
         if (eyeAsset) pupilEyeClip = { asset: eyeAsset, transform: eyeTransform, flipX: Boolean(eyeTransformBase.flipX), colors: eyeSelection?.colors }
