@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
+import { buildStudioExpressionTransforms } from './expressionTransforms'
 import { Icon } from '../../ui/components/Icon'
 import { CharacterPortrait } from '../../ui/components/CharacterPortrait'
 import type { StudioAsset, StudioDocument, StudioElement, StudioFaceTransform, StudioFaceTransforms } from '../../../../shared/studio'
@@ -125,6 +126,17 @@ function fitStudioCharacterToStage(rendered: { width: number; height: number }, 
   const width = characterCanvasWidth * safeCropWidth / safeRenderedWidth
   const height = characterCanvasWidth * stageWidth / Math.max(1, stageHeight) * safeCropHeight / safeRenderedWidth
   return { characterCanvasWidth, width, height }
+}
+
+function faceRenderGeometry(element: StudioElement, rendered: { width: number; height: number }, crop: { width: number; height: number } | null, stageWidth: number, stageHeight: number) {
+  const cropWidth = crop?.width ?? rendered.width
+  const cropHeight = crop?.height ?? rendered.height
+  const characterCanvasWidth = element.characterCanvasWidth ?? element.width * rendered.width / Math.max(1, cropWidth)
+  return {
+    characterCanvasWidth,
+    width: characterCanvasWidth * cropWidth / rendered.width,
+    height: characterCanvasWidth * stageWidth / Math.max(1, stageHeight) * cropHeight / rendered.width
+  }
 }
 
 function makeElement(kind: StudioElement['kind'], zIndex: number): StudioElement {
@@ -768,7 +780,7 @@ export function StudioPage() {
       const assetId = selectedElement.assetId
       const update = (studio: StudioDocument): StudioDocument => ({
         ...studio,
-        elements: studio.elements.map((element) => element.id === elementId ? { ...element, faceAppearance: appearance, faceTransforms, characterSourceUpdatedAt: selectedStudioCharacter.updatedAt } : element),
+        elements: studio.elements.map((element) => element.id === elementId ? { ...element, ...faceRenderGeometry(element, rendered, trimmed, sceneRef.current?.clientWidth ?? 1000, sceneRef.current?.clientHeight ?? 562), faceAppearance: appearance, faceTransforms, characterSourceUpdatedAt: selectedStudioCharacter.updatedAt } : element),
         assets: studio.assets.map((asset) => asset.id === assetId ? { ...asset, dataUrl: studioDataUrl, mimeType: 'image/png' } : asset),
         updatedAt: new Date().toISOString()
       })
@@ -789,44 +801,25 @@ export function StudioPage() {
       if (!preset || preset.modelSlot !== selectedStudioCharacterModelSlot) throw new Error('Este preset não está disponível para o modelo selecionado.')
       const appearance = selectedStudioFaceAppearance ?? selectedStudioCharacter.customization.faceAppearance
       if (!appearance) throw new Error('A personagem ainda não tem uma aparência facial para ajustar.')
-      const faceTransforms: StudioFaceTransforms = { ...(selectedElement.faceTransforms ?? {}) }
-      for (const key of Object.keys(faceTransforms)) {
-        if (key.startsWith('expression-component:') || key.startsWith('expression:')) delete faceTransforms[key]
-      }
-
-      const applyTransform = (key: string, transform: FaceExpressionPreset['transforms'][keyof FaceExpressionPreset['transforms']]) => {
-        faceTransforms[key] = { x: 0, y: 0, width: 100, height: 100, rotation: 0, sourceTransformOverride: transform }
-      }
-      const componentTransforms = [
-        ['eye-left', preset.transforms.eyeLeft],
-        ['eye-right', preset.transforms.eyeRight],
-        ['pupil-left', preset.transforms.pupilLeft],
-        ['pupil-right', preset.transforms.pupilRight],
-        ['brow-left', preset.transforms.browLeft],
-        ['brow-right', preset.transforms.browRight]
-      ] as const
-      for (const [part, transform] of componentTransforms) applyTransform(`expression-component:${part}`, transform)
-
-      const selectedCatalogId = (sideId: string | null | undefined, sharedId: string | undefined, sideKey: string): string | undefined =>
-        Object.hasOwn(appearance, sideKey) ? sideId ?? undefined : sharedId
-      const leftEyeId = selectedCatalogId(appearance.eyeLeftCatalogId, appearance.eyeCatalogId, 'eyeLeftCatalogId')
-      const rightEyeId = selectedCatalogId(appearance.eyeRightCatalogId, appearance.eyeCatalogId, 'eyeRightCatalogId')
-      const leftBrowId = selectedCatalogId(appearance.eyebrowLeftCatalogId, appearance.eyebrowCatalogId, 'eyebrowLeftCatalogId')
-      const rightBrowId = selectedCatalogId(appearance.eyebrowRightCatalogId, appearance.eyebrowCatalogId, 'eyebrowRightCatalogId')
-      if (leftEyeId) applyTransform(`expression:eye-left:${leftEyeId}`, preset.transforms.eyeLeft)
-      if (rightEyeId) applyTransform(`expression:eye-right:${rightEyeId}`, preset.transforms.eyeRight)
-      if (leftBrowId) applyTransform(`expression:brow-left:${leftBrowId}`, preset.transforms.browLeft)
-      if (rightBrowId) applyTransform(`expression:brow-right:${rightBrowId}`, preset.transforms.browRight)
-      if (appearance.noseCatalogId) applyTransform(`expression:nose:${appearance.noseCatalogId}`, preset.transforms.nose)
-      const mouthKind = appearance.mouthOpen ? 'mouth-open' : 'mouth-closed'
-      const mouthCatalogId = appearance.mouthOpen ? appearance.mouthOpenCatalogId : appearance.mouthClosedCatalogId
-      if (mouthCatalogId) applyTransform(`expression:${mouthKind}:${mouthCatalogId}`, preset.transforms.mouth)
+      const faceTransforms = await buildStudioExpressionTransforms(
+        preset, appearance, selectedElement.faceTransforms ?? {},
+        (id) => window.desktop.loadFaceComponentAsset(preset.modelSlot, id),
+        (id) => window.desktop.loadFaceCatalogItem(preset.modelSlot, id)
+      )
 
       // The preset contributes only its transform snapshot and nose opacity. Asset
-      // choices, sheet indices, and side linking remain owned by this character.
+      // choices and side linking remain owned by this character. Mouth frames
+      // are resolved inside the character's current sheet below.
       const nextAppearance: CustomizerFaceAppearance = {
         ...appearance,
-        noseOpacity: preset.noseOpacity
+        noseOpacity: preset.selections.nose ? preset.noseOpacity : appearance.noseOpacity
+      }
+      const mouthId = appearance.mouthOpen ? appearance.mouthOpenCatalogId : appearance.mouthClosedCatalogId
+      if (mouthId && preset.selections.mouth) {
+        const mouth = await window.desktop.loadFaceCatalogItem(preset.modelSlot, mouthId)
+        const sheet = appearance.mouthOpen ? 'mouth-open' : 'mouth-closed'
+        const index = preset.selections.mouth.index
+        if (mouth?.pieces.some((piece) => piece.sheet === sheet && piece.index === index)) nextAppearance.expressionIndex = index
       }
       await applyStudioFaceAppearance(nextAppearance, faceTransforms)
     } catch (reason) {
@@ -961,6 +954,7 @@ export function StudioPage() {
           if (version === studioFaceRenderVersionRef.current && job.studioId === activeStudioId) {
             patchStudio((studio) => ({
               ...studio,
+              elements: studio.elements.map((element) => element.id === job.elementId ? { ...element, ...faceRenderGeometry(element, rendered, trimmed, sceneRef.current?.clientWidth ?? 1000, sceneRef.current?.clientHeight ?? 562) } : element),
               assets: studio.assets.map((asset) => asset.id === job.assetId ? { ...asset, dataUrl: studioDataUrl, mimeType: 'image/png' } : asset),
               updatedAt: new Date().toISOString()
             }))

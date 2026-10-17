@@ -15,6 +15,24 @@ export type StudioFaceTransformCategory = 'eyes' | 'eyebrows' | 'nose' | 'mouth'
 /** Keys are category:itemId; bare category keys remain supported for older Studio data. */
 export type StudioFaceTransforms = Record<string, StudioFaceTransform>
 
+/** Shared persistence boundary for manual and expression-specific transforms. */
+export function isStudioFaceTransforms(value: unknown): value is StudioFaceTransforms {
+  if (value === undefined) return true
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+  return Object.entries(value).every(([key, entry]) => {
+    const manual = /^(eyes|eyebrows|nose|mouth|mouth-closed|mouth-open)(:[^:]+)?$/i.test(key)
+    const expression = /^expression-component:(eye|pupil|brow)-(left|right)$/.test(key)
+      || /^expression:(eyes|eyebrows|eye-left|eye-right|brow-left|brow-right|nose|mouth-closed|mouth-open):[^:]+$/.test(key)
+    if (!manual && !expression || !entry || typeof entry !== 'object') return false
+    const transform = entry as Partial<StudioFaceTransform>
+    if (![transform.x, transform.y, transform.width, transform.height, transform.rotation].every((number) => typeof number === 'number' && Number.isFinite(number))) return false
+    const source = transform.sourceTransformOverride
+    if (source === undefined) return true
+    return Boolean(source) && typeof source === 'object' && [source.x, source.y, source.scaleX, source.scaleY, source.rotation].every(Number.isFinite)
+      && source.scaleX > 0 && source.scaleY > 0 && (source.flipX === undefined || typeof source.flipX === 'boolean')
+  })
+}
+
 export type StudioElement = {
   id: string
   kind: 'image' | 'character' | 'narrator' | 'speech' | 'thought'

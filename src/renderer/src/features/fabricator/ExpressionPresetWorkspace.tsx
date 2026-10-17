@@ -484,7 +484,7 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
     const saved: FaceExpressionPreset = {
       schemaVersion: 1, id: presetId, modelSlot, name: activeExpressionName,
       collectionId: selectedCollectionId, expressionIndex: selectedExpressionIndex,
-      selections: structuredClone(composition), transforms: cloneTransforms(transforms), noseOpacity, updatedAt: new Date().toISOString()
+      selections: structuredClone(composition), transforms: cloneTransforms(transforms), referenceTransforms: defaultTransforms(composition, componentAssets, catalogItems), noseOpacity, updatedAt: new Date().toISOString()
     }
     try {
       await window.desktop.saveFaceExpressionPreset(modelSlot, saved)

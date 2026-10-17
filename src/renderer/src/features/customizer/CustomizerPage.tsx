@@ -878,8 +878,9 @@ async function drawFaceCatalogOverlay(context: CanvasRenderingContext2D, artwork
     const index = sheet === 'eyes' ? appearance.eyeState : sheet === 'nose' ? appearance.noseIndex : sheet.startsWith('mouth') ? appearance.expressionIndex : 0
     const piece = item.pieces.find((candidate) => candidate.sheet === sheet && candidate.index === index && candidate.side === side)
     const studioCategory = sheet === 'eyes' ? 'eyes' : sheet === 'eyebrows' ? 'eyebrows' : sheet === 'nose' ? 'nose' : 'mouth'
-    const studioTransform = studioFaceTransforms?.[`expression:${element}:${item.id}`] ?? studioFaceTransforms?.[`expression:${sheet}:${item.id}`] ?? studioFaceTransforms?.[`${sheet}:${item.id}`] ?? studioFaceTransforms?.[studioCategory]
-    const transform = studioTransform?.sourceTransformOverride ?? item.transforms[element]
+    const expressionTransform = studioFaceTransforms?.[`expression:${element}:${item.id}`] ?? studioFaceTransforms?.[`expression:${sheet}:${item.id}`]
+    const studioTransform = studioFaceTransforms?.[`${sheet}:${item.id}`] ?? studioFaceTransforms?.[studioCategory]
+    const transform = expressionTransform?.sourceTransformOverride ?? studioTransform?.sourceTransformOverride ?? item.transforms[element]
     if (!piece || !transform) continue
     try {
       const catalogPalettePart: FacePalettePartId | undefined = sheet === 'nose' ? 'nose' : sheet.startsWith('mouth') ? 'mouth' : undefined
@@ -943,7 +944,7 @@ async function drawFaceCatalogOverlay(context: CanvasRenderingContext2D, artwork
         : undefined
       if (eyeTransformBase) {
         const eyeTransform = isRight && !eyeAsset?.rightSidePositioned ? { ...eyeTransformBase, x: sourceHead.width - eyeTransformBase.x, rotation: -eyeTransformBase.rotation } : eyeTransformBase
-        if (eyeAsset) pupilEyeClip = { asset: eyeAsset, transform: eyeTransform, flipX: Boolean(eyeTransformBase.flipX), colors: eyeSelection?.colors }
+        if (eyeAsset) pupilEyeClip = { asset: eyeAsset, transform: eyeTransform, flipX: Boolean(eyeTransformBase.flipX) !== (isRight && !eyeAsset.rightSidePositioned), colors: eyeSelection?.colors }
         const pupilOffsetX = isRight && !asset.rightSidePositioned ? -transform.x : transform.x
         const pupilAngle = eyeTransform.rotation * Math.PI / 180
         localX = eyeTransform.x + pupilOffsetX * Math.cos(pupilAngle) - transform.y * Math.sin(pupilAngle)
@@ -988,7 +989,7 @@ async function drawFaceCatalogOverlay(context: CanvasRenderingContext2D, artwork
         }
       } else {
         context.save(); context.translate(x, y); context.rotate((targetHead.rotation + drawRotation) * Math.PI / 180)
-        if (transform.flipX) context.scale(-1, 1)
+        if (Boolean(transform.flipX) !== (isRight && !asset.rightSidePositioned)) context.scale(-1, 1)
         context.drawImage(image, -width / 2, -height / 2, width, height); context.restore()
       }
     } catch { /* Keep the rest of the face visible if one component asset is unavailable. */ }

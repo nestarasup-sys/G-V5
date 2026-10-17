@@ -8,8 +8,9 @@ import { resolvePoseCategory } from '../src/shared/fabricator'
 import { hairCategories } from '../src/shared/hairCategories'
 import type { CustomizerCharacter, CustomizerFaceAppearance, CustomizerWardrobePaletteKey, HairColorOverrides } from '../src/shared/customizer'
 import { characterBodyDimensionLimits, characterProportionLimits } from '../src/shared/customizer'
-import type { StudioAsset, StudioDocument, StudioFaceTransform, StudioFaceTransforms } from '../src/shared/studio'
+import type { StudioAsset, StudioDocument } from '../src/shared/studio'
 import { applyModelHeadShape } from '../src/shared/headShape'
+import { isStudioFaceTransforms } from '../src/shared/studio'
 
 const slotCount = 10
 const poseSlotCount = 12
@@ -288,6 +289,7 @@ function validFaceExpressionPreset(modelSlot: number, preset: FaceExpressionPres
     && !!preset.transforms && (['eyeLeft', 'eyeRight', 'pupilLeft', 'pupilRight', 'nose', 'mouth'] as Array<keyof FaceExpressionTransforms>).every((key) => validTransform(preset.transforms[key]))
     && (preset.transforms.browLeft === undefined || validTransform(preset.transforms.browLeft))
     && (preset.transforms.browRight === undefined || validTransform(preset.transforms.browRight))
+    && (preset.referenceTransforms === undefined || Object.values(preset.referenceTransforms).every(validTransform))
     && Number.isFinite(preset.noseOpacity) && preset.noseOpacity >= 0 && preset.noseOpacity <= 1
 }
 
@@ -832,17 +834,6 @@ function assertTrustedSender(event: IpcMainInvokeEvent): void {
   } else if (resolve(fileURLToPath(senderUrl)) !== resolve(join(__dirname, '../renderer/index.html'))) {
     throw new Error('Origem da solicitação não autorizada.')
   }
-}
-
-function isStudioFaceTransforms(value: unknown): value is StudioFaceTransforms {
-  if (value === undefined) return true
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
-  return Object.entries(value).every(([key, entry]) => {
-    if (!/^(eyes|eyebrows|nose|mouth|mouth-closed|mouth-open)(:[^:]+)?$/i.test(key)) return false
-    if (!entry || typeof entry !== 'object') return false
-    const transform = entry as Partial<StudioFaceTransform>
-    return [transform.x, transform.y, transform.width, transform.height, transform.rotation].every((number) => typeof number === 'number' && Number.isFinite(number))
-  })
 }
 
 function isStudioDocument(value: unknown): value is StudioDocument {

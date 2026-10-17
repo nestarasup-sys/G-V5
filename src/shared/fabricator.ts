@@ -211,6 +211,8 @@ export type FaceExpressionPreset = {
   expressionIndex?: number
   selections: FaceExpressionSelections
   transforms: FaceExpressionTransforms
+  /** Asset calibration at authoring time, used to transfer relative edits safely. */
+  referenceTransforms?: FaceExpressionTransforms
   noseOpacity: number
   updatedAt: string
 }
