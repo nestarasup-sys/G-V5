@@ -90,6 +90,7 @@ type CharacterStateSegment = {
   state: {
     pose: { sourceId: string; snapshot: SerializablePoseState }
     expression: { sourceId: string; snapshot: SerializableExpressionPreset }
+    faceMode: 'idle' | 'blink' | 'talk'
   }
   transitionInMs: 20
 }
@@ -230,6 +231,16 @@ O Video Studio seguirá a estrutura canônica de estado contínuo do V4, adaptad
 
 Reaproveitar a renderização da cena, catálogo e referências de assets, composição de personagens, cenário, seleção e transformação. O Video Studio monta sua própria cena e mantém estado e arquivo de projeto independentes; não edita o documento ativo do Studio.
 
+#### Modos faciais do Studio
+
+O Studio atual oferece os modos **Idle**, **Blink** e **Talk**. O Video Studio deve conseguir gravar e reproduzir os três como parte do estado facial discreto de cada personagem, junto com o preset de expressão. `Idle` mostra os assets faciais normais; `Blink` resolve o olho fechado correspondente ao catálogo/modelo daquela personagem; `Talk` resolve a boca aberta correspondente ao modelo. Não presumir que duas personagens usam os mesmos nomes, IDs ou pareamento de assets.
+
+O pareamento precisa ser determinístico e por personagem/modelo. Nomes inconsistentes ou assets duplicados não podem fazer Blink escolher uma peça errada. Se o personagem ainda não tiver um vínculo explícito de boca aberta, usar o asset aberto padrão do catálogo do modelo, sem gravar esse fallback nos dados globais do personagem.
+
+Na boca, a peça aberta deve acompanhar a posição e rotação da boca fechada. Largura e altura devem preservar a calibração e proporção naturais da arte aberta, usando a boca fechada como referência de encaixe; não aplicar a largura/altura da boca fechada de forma que achate ou estique a boca aberta. Ao copiar os assets para o projeto, guardar a variante resolvida e os dados de transformação necessários para que o resultado permaneça igual mesmo que o catálogo de origem mude depois.
+
+Esses modos e transformações pertencem ao snapshot do frame no Video Studio. Aplicá-los na preview ou salvá-los na timeline não pode alterar os assets fornecedores de Olhos Dev/Rosto Dev, o Customizador, nem os dados faciais persistidos da personagem. Quando o modo mudar, a gravação deve registrar apenas a faixa daquela personagem.
+
 ### Animador Dev e Animador Rosto Dev
 
 Usar o Animador Dev como catálogo de poses e o Animador Rosto Dev como catálogo de presets de expressão. Adaptar seus formatos para snapshots serializáveis que pertencem ao projeto de vídeo; a timeline é a autoridade temporal. Efeitos incluídos no preset de expressão viajam dentro do snapshot do preset. Não criar faixas independentes para pupila, blush, sombra ou outros controles faciais na primeira fase, nem reaproveitar componentes que gravam dados globais do Fabricador ou Customizador.
@@ -312,6 +323,7 @@ Exportação não é requisito para a primeira entrega, mas a arquitetura deve p
 - Primeiro **Salvar frame** grava a base de todos os personagens; gravações posteriores mostram um corte global e só adicionam estado nas faixas alteradas.
 - Assets copiados permanecem disponíveis e com os mesmos pixels independentemente de mudanças nos arquivos originais.
 - Alterar pose ou expressão de um personagem e salvar não altera o estado de outro personagem.
+- Gravar e reproduzir Idle, Blink e Talk preserva o pareamento facial correto por personagem, incluindo a boca aberta alinhada à boca fechada; isso não altera dados globais de fornecedores ou da personagem.
 - Ajustar pose/preset na preview sem salvar não muda a sequência reproduzida.
 - Cada mudança salva aplica uma transição de 20 ms, com amostragem determinística adequada ao FPS.
 - Redimensionar um limite aumenta um segmento e encurta o adjacente; bloquear a faixa impede mudanças e undo/redo restaura limites/estados.
@@ -330,6 +342,16 @@ Exportação não é requisito para a primeira entrega, mas a arquitetura deve p
 
 ## 14. Escopo inicial recomendado
 
-A primeira versão utilizável deve cobrir: projeto vazio e independente, assets copiados para pasta própria, cena estática montada antes da gravação inicial, timeline de dez minutos extensível/encolhível, uma faixa visual contínua por personagem, faixas de texto para fala e pensamento, gravação manual de pose e preset de expressão por **Salvar frame**, corte global visível com estado alterado apenas nas faixas afetadas, segmentos redimensionáveis, transição de 20 ms, preview determinística, play/pause, persistência e desfazer/refazer. Exportação não precisa estar pronta, mas o desenho técnico deve permitir render rápido e conversão para MP4. Animações prontas em bloco, áudio e câmera ficam para fases seguintes.
+A primeira versão utilizável deve cobrir: projeto vazio e independente, assets copiados para pasta própria, cena estática montada antes da gravação inicial, timeline de dez minutos extensível/encolhível, uma faixa visual contínua por personagem, faixas de texto para fala e pensamento, gravação manual de pose, preset de expressão e modo facial (Idle/Blink/Talk) por **Salvar frame**, corte global visível com estado alterado apenas nas faixas afetadas, segmentos redimensionáveis, transição de 20 ms, preview determinística, play/pause, persistência e desfazer/refazer. Exportação não precisa estar pronta, mas o desenho técnico deve permitir render rápido e conversão para MP4. Animações prontas em bloco, áudio e câmera ficam para fases seguintes.
 
 Esse recorte mantém a ideia central — montar a cena, gravar mudanças ao longo do tempo e assistir — enquanto evita que a primeira entrega misture edição, composição, áudio e codecs antes da estrutura temporal estar estável.
+
+## 15. Handoff para a IA que implementará o Video Studio
+
+Este documento é a especificação de produto e o registro das decisões já confirmadas pelo dono do Gacha NYMI V5. Antes de implementar, leia o plano inteiro e inspecione o repositório do app, com atenção à navegação principal, Studio, modelos persistidos, renderizador e limites entre dados locais do projeto e catálogos fornecedores. O repositório do app é `https://github.com/nestarasup-sys/G-V5`.
+
+O Editor V4 é um projeto separado e a referência principal para o comportamento de timeline. A cópia local indicada pelo usuário é `C:\TRABALHO 2\EDITOR V4\EDITOR V4`. Inspecione o código e os documentos dessa cópia antes de decidir como adaptar faixas, cortes, redimensionamento de segmentos, seleção, playhead, zoom, undo/redo e persistência. A seção 7 registra os arquivos e conceitos que já foram pesquisados; confira a implementação atual no checkout antes de reutilizar contratos ou assumir que o estado do plano está atualizado.
+
+Trate as regras deste plano como requisitos, e não como instruções para modificar os sistemas de origem. O Video Studio precisa de projeto, snapshots e persistência próprios. Não escreva nos dados de Olhos Dev, Rosto Dev, Animador Dev, Animador Rosto Dev, Customizador ou Studio normal ao aplicar poses, presets, Idle, Blink ou Talk. Resolva referências por personagem/modelo e empacote os assets usados no próprio projeto.
+
+Antes da primeira alteração de código, devolva uma leitura técnica breve contendo: arquitetura existente do Studio V5; comportamento concreto de timeline encontrado no Editor V4; mapeamento dos arquivos e adaptadores propostos; formato versionado de projeto; riscos de colisão ou escrita nos dados globais; e plano de validação. Preserve o escopo por fases e os critérios de aceite deste documento. Não substitua o Studio atual por uma implementação paralela nem comece pela exportação antes de validar gravação, reprodução, persistência e recuperação dos frames.
