@@ -1,3 +1,5 @@
+> **Atualização de arquitetura, outubro de 2026:** a implementação atual é regida por [VIDEO_STUDIO_ARQUITETURA_V2.md](./VIDEO_STUDIO_ARQUITETURA_V2.md). Este documento permanece como especificação de produto e histórico de decisões. Em caso de divergência técnica, a arquitetura V2 prevalece (principalmente projetos independentes e Idle/Blink/Talk).
+
 # Plano completo — Video Studio
 
 ## 1. Visão da área
