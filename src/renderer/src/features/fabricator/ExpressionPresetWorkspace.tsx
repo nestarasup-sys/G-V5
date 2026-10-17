@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react'
 import type { FaceCatalogItem, FaceCatalogItemSummary, FaceComponentAsset, FaceComponentAssetSummary, FaceExpressionPreset, FaceExpressionPresetSummary, FaceExpressionTransforms, FaceTransform, FabricatorProject } from '../../../../shared/fabricator'
-import { Icon } from '../../ui/components/Icon'
+import { Icon, type IconName } from '../../ui/components/Icon'
 import { eyeInteriorMask } from './face/eyeInteriorMask'
 
 type Side = 'left' | 'right'
@@ -17,6 +17,12 @@ type ExpressionComposition = {
   mouth: { catalogId: string; kind: 'mouth-closed' | 'mouth-open'; index: number } | null
 }
 type LayerKey = keyof FaceExpressionTransforms
+const presetLayers: Array<{ key: LayerKey; label: string; icon: IconName }> = [
+  { key: 'eyeLeft', label: 'Olho esquerdo', icon: 'eye' }, { key: 'eyeRight', label: 'Olho direito', icon: 'eye' },
+  { key: 'pupilLeft', label: 'Pupila esquerda', icon: 'eye' }, { key: 'pupilRight', label: 'Pupila direita', icon: 'eye' },
+  { key: 'browLeft', label: 'Sobrancelha esquerda', icon: 'eye' }, { key: 'browRight', label: 'Sobrancelha direita', icon: 'eye' },
+  { key: 'nose', label: 'Nariz', icon: 'face' }, { key: 'mouth', label: 'Boca', icon: 'message' }
+]
 const EXPRESSION_COLLECTION_ID = 'standard'
 const STANDARD_EXPRESSIONS = [
   'Aliviada', 'Animada', 'Apaixonada', 'Cansada', 'Ciumenta', 'Confusa', 'Decepcionada',
@@ -464,7 +470,14 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
     </main>
     <aside className="expression-preset-inspector">
       <header><strong>Ajustes deste preset</strong><small>Salvos separados de Olhos Dev e Rosto Dev</small></header>
-      <label>Peça<select value={selectedLayer} onChange={(event) => setSelectedLayer(event.target.value as LayerKey)}>{([['eyeLeft', 'Olho esquerdo'], ['eyeRight', 'Olho direito'], ['pupilLeft', 'Pupila esquerda'], ['pupilRight', 'Pupila direita'], ['browLeft', 'Sobrancelha esquerda'], ['browRight', 'Sobrancelha direita'], ['nose', 'Nariz'], ['mouth', 'Boca']] as const).map(([key, label]) => <option value={key} key={key}>{label}</option>)}</select></label>
+      <section className="expression-layer-picker" aria-label="Peça do preset">
+        <strong>Peça</strong>
+        <div role="group" aria-label="Escolher peça para ajustar">
+          {presetLayers.map(({ key, label, icon }) => <button key={key} type="button" aria-pressed={selectedLayer === key} className={selectedLayer === key ? 'active' : ''} onClick={() => setSelectedLayer(key)}>
+            <Icon name={icon} /><span>{label}</span>
+          </button>)}
+        </div>
+      </section>
       {(['x', 'y'] as const).map((field) => <label className="expression-transform-control" key={field}>{field === 'x' ? 'Posição horizontal' : 'Posição vertical'}<input type="range" min={-100} max={Math.max(100, (field === 'x' ? head?.width : head?.height) ?? 100)} step="1" value={transforms[selectedLayer][field]} onChange={(event) => updateLayerTransform(selectedLayer, { [field]: Number(event.target.value) })} /><output>{Math.round(transforms[selectedLayer][field])} px</output></label>)}
       {(['scaleX', 'scaleY'] as const).map((field) => <label className="expression-transform-control" key={field}>{field === 'scaleX' ? 'Largura' : 'Altura'}<input type="range" min="0.02" max="4" step="0.01" value={transforms[selectedLayer][field]} onChange={(event) => updateLayerTransform(selectedLayer, { [field]: Number(event.target.value) })} /><output>{Math.round(transforms[selectedLayer][field] * 100)}%</output></label>)}
       <label className="expression-transform-control">Rotação<input type="range" min="-180" max="180" step="1" value={transforms[selectedLayer].rotation} onChange={(event) => updateLayerTransform(selectedLayer, { rotation: Number(event.target.value) })} /><output>{Math.round(transforms[selectedLayer].rotation)}°</output></label>
