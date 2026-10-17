@@ -52,7 +52,7 @@ type VideoProject = {
   schemaVersion: number
   id: string
   name: string
-  frameRate: number // padrão recomendado: 30 FPS
+  frameRate: number // padrão inicial: 60 FPS
   durationFrames: number // começa em 10 minutos e muda pelos controles de duração
   canvas: { width: number; height: number; backgroundColor: string }
   scene: VideoSceneSnapshot // composição montada no Video Studio; fundo estático na primeira versão
@@ -272,7 +272,7 @@ Exportação não é requisito para a primeira entrega, mas a arquitetura deve p
 - Auditar a timeline do Editor V4: modelo de dados, comandos, persistência, playback e exportação. Pesquisa de campo inicial já documentada na seção 7; validar os adaptadores específicos do NYMI V5 antes de implementar.
 - Definir quais tipos de pose/expressão podem ser avaliados sem efeitos colaterais nos dados do Fabricador/Customizador.
 - Definir cópia, hash e resolução de caminhos relativos dos assets dentro da pasta do projeto.
-- Fechar o schema inicial do `VideoProject`, tamanho dos passos de duração e FPS padrão.
+- Fechar o schema inicial do `VideoProject` e o tamanho dos passos de duração; usar 60 FPS como padrão inicial.
 
 ### Fase 1 — Casca independente
 
@@ -324,8 +324,8 @@ Exportação não é requisito para a primeira entrega, mas a arquitetura deve p
 
 ## 13. Decisões técnicas ainda abertas
 
-1. **FPS e custo:** adotar 30 FPS como padrão equilibrado. 60 FPS fica como opção futura de maior fluidez, com aproximadamente o dobro de quadros para renderizar no mesmo intervalo.
-2. **Transição de sprites:** 20 ms é menor que um quadro a 30 FPS (~33,3 ms), então pode aparecer como um corte ou uma transição de um quadro no MP4. A 60 FPS (~16,7 ms por quadro), pode haver cerca de um quadro intermediário. O runtime calcula em tempo contínuo e o export amostra na grade do FPS escolhido.
+1. **FPS e custo:** usar 60 FPS como padrão inicial para dar mais fluidez e representar melhor transições curtas. Isso gera aproximadamente o dobro de quadros e custo de renderização em comparação com 30 FPS no mesmo intervalo.
+2. **Transição de sprites:** 20 ms cobre cerca de 1,2 quadros a 60 FPS (~16,7 ms por quadro), então a transição pode aparecer em um ou dois quadros, conforme o alinhamento do corte. O runtime calcula em tempo contínuo e o export amostra na grade do FPS escolhido.
 3. **Controles de duração:** definir o tamanho de cada passo dos controles de duração (+/−); os controles de zoom horizontal permanecem separados.
 
 ## 14. Escopo inicial recomendado
