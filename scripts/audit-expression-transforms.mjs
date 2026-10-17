@@ -84,6 +84,25 @@ assert.equal(mouthResult.mouthOpen, true)
 assert.equal(neutral.appearance.expressionIndex, 6)
 const missingFrame = await expressionAppearance(mouthPreset, neutral.appearance, async () => ({ pieces: [] }))
 assert.equal(missingFrame.expressionIndex, 6, 'A missing frame must preserve the character variant')
+assert.deepEqual(missingFrame, neutral.appearance, 'An unavailable mouth frame must preserve both the sheet and its variant')
+const nosePreset = { ...preset, noseOpacity: 1, selections: { ...preset.selections, nose: { catalogId: 'author-nose', kind: 'nose', index: 0 } } }
+for (const noseOpacity of [0, .15, .5, 1, undefined]) {
+  const personalized = {
+    ...neutral.appearance,
+    noseCatalogId: 'user-nose',
+    noseOpacity,
+    noseSkinTone: '#a76d50',
+    facePalettes: { eyes: 'custom' },
+    facePaletteManualRoles: { eyes: ['base'] },
+    components: { ...neutral.appearance.components, 'eye-left': { assetId: 'target', transform: userTransform, colors: { base: '#514636' }, manualColorRoles: ['base'] } }
+  }
+  const before = structuredClone(personalized)
+  const result = await expressionAppearance(nosePreset, personalized, async () => { throw new Error('A nose expression must not replace the character catalog') })
+  assert.deepEqual(result, before, `Preserve all Base appearance properties with nose opacity ${noseOpacity}`)
+  assert.deepEqual(personalized, before, 'Expression application must not mutate the Base')
+  const withMouth = await expressionAppearance({ ...nosePreset, selections: { ...nosePreset.selections, mouth: mouthPreset.selections.mouth } }, personalized, async () => ({ pieces: [{ sheet: 'mouth-open', index: 12 }] }))
+  assert.deepEqual(withMouth, { ...before, mouthOpen: true, expressionIndex: 12 }, 'Only the available mouth variant may change; colors and opacity remain personalized')
+}
 const sharedSource = await readFile(new URL('../src/shared/studio.ts', import.meta.url), 'utf8')
 const sharedCompiled = ts.transpileModule(sharedSource, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText
 const { isStudioFaceTransforms } = await import(`data:text/javascript;base64,${Buffer.from(sharedCompiled).toString('base64')}`)

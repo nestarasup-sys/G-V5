@@ -15,15 +15,20 @@ export function resolveStudioExpressionBase(element: Pick<StudioElement, 'expres
 
 export async function buildStudioExpressionAppearance(preset: FaceExpressionPreset, base: CustomizerFaceAppearance, loadCatalog: (id: string) => Promise<FaceCatalogItem | null>): Promise<CustomizerFaceAppearance> {
   const next = structuredClone(base)
-  if (preset.selections.nose) next.noseOpacity = preset.noseOpacity
+  // Opacity and colors belong to the character's Base, including explicit zero
+  // opacity. The author's nose opacity is only used in the Dev preview.
   const desiredOpen = preset.selections.mouth?.kind === 'mouth-open'
-  if (preset.selections.mouth && (desiredOpen ? base.mouthOpenCatalogId : base.mouthClosedCatalogId)) next.mouthOpen = desiredOpen
-  const mouthId = next.mouthOpen ? base.mouthOpenCatalogId : base.mouthClosedCatalogId
+  const hasDesiredMouth = Boolean(desiredOpen ? base.mouthOpenCatalogId : base.mouthClosedCatalogId)
+  const mouthOpen = preset.selections.mouth && hasDesiredMouth ? desiredOpen : base.mouthOpen
+  const mouthId = mouthOpen ? base.mouthOpenCatalogId : base.mouthClosedCatalogId
   if (mouthId && preset.selections.mouth) {
     const mouth = await loadCatalog(mouthId)
-    const sheet = next.mouthOpen ? 'mouth-open' : 'mouth-closed'
+    const sheet = mouthOpen ? 'mouth-open' : 'mouth-closed'
     const index = preset.selections.mouth.index
-    if (mouth?.pieces.some((piece) => piece.sheet === sheet && piece.index === index)) next.expressionIndex = index
+    if (mouth?.pieces.some((piece) => piece.sheet === sheet && piece.index === index)) {
+      next.expressionIndex = index
+      next.mouthOpen = mouthOpen
+    }
   }
   return next
 }
