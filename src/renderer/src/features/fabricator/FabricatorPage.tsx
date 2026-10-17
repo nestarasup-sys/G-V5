@@ -996,7 +996,7 @@ export function FabricatorPage() {
         </nav>
       </aside>
 
-      {activeSection === 'Design Dev' ? <DesignWorkspace /> : activeSection === 'Poses' ? <PoseWorkspace /> : activeSection === 'Roupas' ? <WardrobeWorkspace edition={1} /> : activeSection === 'Roupas 2.0' ? <WardrobeWorkspace edition={2} /> : activeSection === 'Olhos' ? <FaceComponentsWorkspace mode="eyes" /> : activeSection === 'Rosto' ? <FaceComponentsWorkspace mode="face" /> : activeSection === 'Preset Expressão Dev' ? <ExpressionPresetWorkspace /> : activeSection === 'Cabeças extra' ? <HeadExtrasWorkspace /> : activeSection === 'Cabelos Dev' ? <HairWorkspace /> : activeSection === 'Animador Dev' ? <AnimatorWorkspace /> : (
+      {activeSection === 'Design Dev' ? <DesignWorkspace /> : activeSection === 'Poses' ? <PoseWorkspace /> : activeSection === 'Roupas' ? <WardrobeWorkspace edition={1} /> : activeSection === 'Roupas 2.0' ? <WardrobeWorkspace edition={2} /> : activeSection === 'Olhos' ? <FaceComponentsWorkspace mode="eyes" /> : activeSection === 'Rosto' ? <FaceComponentsWorkspace mode="face" /> : activeSection === 'Preset Expressão Dev' ? <ExpressionPresetWorkspace modelSlot={activeSlot} /> : activeSection === 'Cabeças extra' ? <HeadExtrasWorkspace /> : activeSection === 'Cabelos Dev' ? <HairWorkspace /> : activeSection === 'Animador Dev' ? <AnimatorWorkspace /> : (
         <section className="fabricator-model-editor" aria-label="Editor de modelos">
           <header className="model-slotbar">
             <div className="model-slot-title"><span className="model-slot-logo"><Icon name="sparkles" /></span><span><strong>Modelos</strong><small>10 espaços de trabalho</small></span></div>
