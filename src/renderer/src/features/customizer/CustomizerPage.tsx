@@ -1501,7 +1501,8 @@ export function CustomizerPage() {
   }, [activeModule, catalogLoading, catalogPoses, selectedCatalogModelSlot, selectedCustomizerTopTab])
 
   useEffect(() => {
-    if (activeModule !== 'Roupas' || selectedCatalogModelSlot === null) return
+    const wardrobeCatalogVisible = activeModule === 'Roupas' || activeModule === 'Cabeça' && headPanelTab === 'extra'
+    if (!wardrobeCatalogVisible || selectedCatalogModelSlot === null) return
     let cancelled = false
     setWardrobeLoading(true)
     void window.desktop.listWardrobeSets(selectedCatalogModelSlot).then((sets) => {
@@ -1510,7 +1511,7 @@ export function CustomizerPage() {
       if (!cancelled) setCatalogError(reason instanceof Error ? reason.message : 'Não foi possível carregar o catálogo de roupas.')
     }).finally(() => { if (!cancelled) setWardrobeLoading(false) })
     return () => { cancelled = true }
-  }, [activeModule, selectedCatalogModelSlot])
+  }, [activeModule, headPanelTab, selectedCatalogModelSlot])
 
   useEffect(() => {
     if (selectedCatalogModelSlot === null) { setFaceCatalogItems([]); return }
@@ -1634,7 +1635,8 @@ export function CustomizerPage() {
   }, [displayArtworkProject, selectedSourceModelProject, selectedCharacter?.id, selectedCharacter?.customization.hairAppearance, selectedCharacter?.customization.modelSkinTone, hairDetails])
 
   useEffect(() => {
-    if (activeModule !== 'Roupas' || !wardrobeSets.length) return
+    const wardrobeCatalogVisible = activeModule === 'Roupas' || activeModule === 'Cabeça' && headPanelTab === 'extra'
+    if (!wardrobeCatalogVisible || !wardrobeSets.length) return
     let cancelled = false
     void (async () => {
       for (const summary of wardrobeSets) {
@@ -1657,7 +1659,7 @@ export function CustomizerPage() {
       }
     })()
     return () => { cancelled = true }
-  }, [activeModule, wardrobeSets])
+  }, [activeModule, headPanelTab, wardrobeSets])
 
   useEffect(() => {
     if (!selectedCharacter || !characterWardrobeGroups.length) return
