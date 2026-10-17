@@ -518,9 +518,9 @@ export function FaceComponentsWorkspace({ mode }: { mode: FaceWorkspaceMode }) {
       const baseName = file.name.replace(/\.[^.]+$/, '').slice(0, 90) || 'Olhos'
       const imported: FaceComponentAsset[] = []
       const assigned: Partial<Record<PartId, string>> = {}
+      const sourceSheetPairId = crypto.randomUUID()
       for (const piece of pieces) {
         const category = categories.find((entry) => entry.kind === piece.kind)!
-        const pairId = crypto.randomUUID()
         for (const [index, side] of category.parts.entries()) {
           const baseTransform = initialTransform(piece.kind, head, piece.width, piece.height)
           const defaultTransform: FaceTransform = index === 0 ? baseTransform : {
@@ -537,7 +537,7 @@ export function FaceComponentsWorkspace({ mode }: { mode: FaceWorkspaceMode }) {
           const asset: FaceComponentAssetSave = {
             schemaVersion: 1, id: crypto.randomUUID(), modelSlot, kind: piece.kind,
             name: `${baseName} · ${category.names[index]}`.slice(0, 120), width: piece.width, height: piece.height,
-            defaultTransform: transform, rightSidePositioned: index === 1, pairId, updatedAt: new Date().toISOString()
+            defaultTransform: transform, rightSidePositioned: index === 1, pairId: sourceSheetPairId, updatedAt: new Date().toISOString()
           }
           await window.desktop.saveFaceComponentAsset(modelSlot, asset, piece.dataUrl)
           savedIds.push(asset.id)

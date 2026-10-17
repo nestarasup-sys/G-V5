@@ -6,7 +6,7 @@ import { resolvePoseCategory } from '../../../../shared/fabricator'
 import { hairCategories, hairStyleSupportsCategory } from '../../../../shared/hairCategories'
 import type { CustomizerCharacter, CustomizerFaceAppearance, CustomizerWardrobeCategory, CustomizerWardrobeGroup, CustomizerWardrobePaletteKey, FaceComponentPartId, FacePalettePartId, HairColorOverrides, HairColorRole, HairPartId } from '../../../../shared/customizer'
 import { characterBodyDimensionLimits, characterProportionLimits, defaultCharacterBodyDimensions, defaultCharacterProportions, getCharacterBodyDimensions, getCharacterProportions, type CharacterBodyDimensions, type CharacterProportions } from '../../../../shared/customizer'
-import type { StudioFaceTransforms } from '../../../../shared/studio'
+import type { StudioFaceMode, StudioFaceTransforms } from '../../../../shared/studio'
 import { usePreviewBackground } from '../fabricator/usePreviewBackground'
 import { DesignBanner } from '../fabricator/DesignWorkspace'
 import { mapWardrobeComponentToPose } from '../fabricator/wardrobe/poseTransform'
@@ -911,7 +911,34 @@ async function renderFaceOverlay(artwork: CatalogArtwork, source: FabricatorProj
   return canvas.toDataURL('image/png')
 }
 
-async function drawFaceCatalogOverlay(context: CanvasRenderingContext2D, artwork: CatalogArtwork, source: FabricatorProject, items: Partial<Record<FaceSheetKind | FaceElementKind, FaceCatalogItem>>, appearance: CustomizerFaceAppearance, skinTone?: string, studioFaceTransforms?: StudioFaceTransforms, expressionEffects?: FaceExpressionEffects): Promise<void> {
+function componentSheetName(name: string): string {
+  return name.replace(/ · (?:Olho fechado|Olho aberto|Olho|Pupila|Sobrancelha) (?:esquerda|direita|esquerdo|direito)$/i, '').trim().toLocaleLowerCase()
+}
+
+function transferEyeCloseAdjustment(openBase: FaceComponentAsset['defaultTransform'], openCurrent: FaceComponentAsset['defaultTransform'], closedBase: FaceComponentAsset['defaultTransform']): FaceComponentAsset['defaultTransform'] {
+  return {
+    ...closedBase,
+    x: closedBase.x + openCurrent.x - openBase.x,
+    y: closedBase.y + openCurrent.y - openBase.y,
+    scaleX: closedBase.scaleX * openCurrent.scaleX / openBase.scaleX,
+    scaleY: closedBase.scaleY * openCurrent.scaleY / openBase.scaleY,
+    rotation: closedBase.rotation + openCurrent.rotation - openBase.rotation,
+    flipX: Boolean(closedBase.flipX) !== (Boolean(openCurrent.flipX) !== Boolean(openBase.flipX))
+  }
+}
+
+function normalizeMouthTransformForSharedBounds(transform: FaceComponentAsset['defaultTransform'], referencePiece: FaceCatalogItem['pieces'][number] | undefined, activePiece: FaceCatalogItem['pieces'][number]): FaceComponentAsset['defaultTransform'] {
+  if (!referencePiece || activePiece.width <= 0 || activePiece.height <= 0) return transform
+  return {
+    ...transform,
+    scaleX: transform.scaleX * referencePiece.width / activePiece.width,
+    scaleY: transform.scaleY * referencePiece.height / activePiece.height
+  }
+}
+
+type StudioClosedEyeResolver = (openEye: FaceComponentAsset, side: 'left' | 'right') => Promise<FaceComponentAsset | null>
+
+async function drawFaceCatalogOverlay(context: CanvasRenderingContext2D, artwork: CatalogArtwork, source: FabricatorProject, items: Partial<Record<FaceSheetKind | FaceElementKind, FaceCatalogItem>>, appearance: CustomizerFaceAppearance, skinTone?: string, studioFaceTransforms?: StudioFaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: StudioFaceMode, resolveClosedEye?: StudioClosedEyeResolver): Promise<void> {
   const sourceHead = source.parts.find((part) => /cabe[çc]a|head/i.test(part.name))
   const targetHead = artwork.parts.find((part) => /cabe[çc]a|head/i.test(part.name))
   if (!sourceHead || !targetHead || sourceHead.width <= 0 || sourceHead.height <= 0) return
@@ -948,11 +975,35 @@ async function drawFaceCatalogOverlay(context: CanvasRenderingContext2D, artwork
     if (!item || item.id !== (hasSideSelection ? sideSelection : categoryIds[sheet])) continue
     const index = sheet === 'eyes' ? appearance.eyeState : sheet === 'nose' ? appearance.noseIndex : sheet.startsWith('mouth') ? appearance.expressionIndex : 0
     const piece = item.pieces.find((candidate) => candidate.sheet === sheet && candidate.index === index && candidate.side === side)
+    if (!piece) continue
     const studioCategory = sheet === 'eyes' ? 'eyes' : sheet === 'eyebrows' ? 'eyebrows' : sheet === 'nose' ? 'nose' : 'mouth'
-    const expressionTransform = studioFaceTransforms?.[`expression:${element}:${item.id}`] ?? studioFaceTransforms?.[`expression:${sheet}:${item.id}`]
-    const studioTransform = studioFaceTransforms?.[`${sheet}:${item.id}`] ?? studioFaceTransforms?.[studioCategory]
-    const transform = expressionTransform?.sourceTransformOverride ?? studioTransform?.sourceTransformOverride ?? appearance.transforms?.[element] ?? item.transforms[element]
-    if (!piece || !transform) continue
+    const pairedMouthSheet = sheet === 'mouth-open' ? 'mouth-closed' : 'mouth-open'
+    const pairedMouthId = sheet === 'mouth-open' ? appearance.mouthClosedCatalogId : appearance.mouthOpenCatalogId
+    const closedMouthId = appearance.mouthClosedCatalogId
+    const openMouthId = appearance.mouthOpenCatalogId
+    const closedMouthExpression = closedMouthId ? studioFaceTransforms?.[`expression:mouth-closed:${closedMouthId}`] : undefined
+    const openMouthExpression = openMouthId ? studioFaceTransforms?.[`expression:mouth-open:${openMouthId}`] : undefined
+    const expressionTransform = element === 'mouth' && studioFaceMode
+      ? closedMouthExpression ?? openMouthExpression ?? studioFaceTransforms?.[`expression:${element}:${item.id}`] ?? studioFaceTransforms?.[`expression:${sheet}:${item.id}`]
+      : studioFaceTransforms?.[`expression:${element}:${item.id}`] ?? studioFaceTransforms?.[`expression:${sheet}:${item.id}`]
+    const studioTransform = element === 'mouth' && studioFaceMode
+      ? studioFaceTransforms?.mouth
+        ?? (closedMouthId ? studioFaceTransforms?.[`mouth-closed:${closedMouthId}`] : undefined)
+        ?? (openMouthId ? studioFaceTransforms?.[`mouth-open:${openMouthId}`] : undefined)
+        ?? studioFaceTransforms?.[`${sheet}:${item.id}`]
+        ?? (pairedMouthId ? studioFaceTransforms?.[`${pairedMouthSheet}:${pairedMouthId}`] : undefined)
+      : studioFaceTransforms?.[`${sheet}:${item.id}`] ?? studioFaceTransforms?.[studioCategory]
+    const sharedMouthBase = element === 'mouth' && studioFaceMode
+      ? appearance.transforms?.mouth ?? items['mouth-closed']?.transforms.mouth ?? item.transforms.mouth
+      : appearance.transforms?.[element] ?? item.transforms[element]
+    const baseTransform = expressionTransform?.sourceTransformOverride ?? studioTransform?.sourceTransformOverride ?? sharedMouthBase
+    const closedMouthPiece = element === 'mouth' && studioFaceMode
+      ? items['mouth-closed']?.pieces.find((candidate) => candidate.sheet === 'mouth-closed' && candidate.index === appearance.expressionIndex)
+      : undefined
+    const transform = element === 'mouth' && studioFaceMode && baseTransform
+      ? normalizeMouthTransformForSharedBounds(baseTransform, closedMouthPiece, piece)
+      : baseTransform
+    if (!transform) continue
     try {
       const catalogPalettePart: FacePalettePartId | undefined = sheet === 'nose' ? 'nose' : sheet.startsWith('mouth') ? 'mouth' : undefined
       const catalogPalette = catalogPalettePart ? appearance.facePalettes?.[catalogPalettePart] : undefined
@@ -983,16 +1034,49 @@ async function drawFaceCatalogOverlay(context: CanvasRenderingContext2D, artwork
     const asset = await loadComponent(id)
     if (asset) loaded.set(part, asset)
   }))
+
+  const closedEyeAssets = new Map<FaceComponentPartId, FaceComponentAsset>()
+  if (studioFaceMode === 'blink') {
+    for (const side of ['left', 'right'] as const) {
+      const part = `eye-${side}` as const
+      const openEye = loaded.get(part)
+      if (!openEye) continue
+      const closedEye = await resolveClosedEye?.(openEye, side)
+      if (!closedEye) throw new Error(`Não encontrei o olho fechado correspondente ao olho ${side === 'left' ? 'esquerdo' : 'direito'} salvo em Olhos Dev.`)
+      closedEyeAssets.set(part, closedEye)
+    }
+    if (!closedEyeAssets.size && !appearance.eyeCatalogId && !appearance.eyeLeftCatalogId && !appearance.eyeRightCatalogId) {
+      throw new Error('Selecione olhos do catálogo ou assets de Olhos Dev com a peça de olho fechado para usar Blink.')
+    }
+    for (const side of ['left', 'right'] as const) {
+      const part = `eye-${side}` as const
+      if (loaded.has(part)) continue
+      const field = side === 'left' ? 'eyeLeftCatalogId' : 'eyeRightCatalogId'
+      const id = Object.hasOwn(appearance, field) ? appearance[field] : appearance.eyeCatalogId
+      const item = (side === 'left' ? items['eye-left'] : items['eye-right']) ?? items.eyes
+      if (id && item?.id === id && !item.pieces.some((piece) => piece.sheet === 'eyes' && piece.index === 2 && piece.side === side)) {
+        throw new Error(`A folha de olhos selecionada não tem a variante fechada do lado ${side === 'left' ? 'esquerdo' : 'direito'}.`)
+      }
+    }
+  }
   const layerOrder: FaceComponentPartId[] = ['brow-left', 'brow-right', 'eye-left', 'eye-right', 'pupil-left', 'pupil-right']
   let pupilClipCanvas: HTMLCanvasElement | null = null
   for (const part of layerOrder) {
     const category = part.startsWith('eye') ? 'eye' : part.startsWith('pupil') ? 'pupil' : 'eyebrow'
     const isRight = part.endsWith('right')
-    const asset = loaded.get(part)
+    if (studioFaceMode === 'blink' && category === 'pupil') continue
+    const asset = category === 'eye' && studioFaceMode === 'blink' ? closedEyeAssets.get(part) ?? loaded.get(part) : loaded.get(part)
     const selectedPart = appearance.components?.[part]
     if (!asset || !selectedPart) continue
     // Fabricator Dev owns placement and scale; the Customizer only chooses the asset.
-    const transform = studioFaceTransforms?.[`expression-component:${part}`]?.sourceTransformOverride ?? selectedPart.transform ?? asset.defaultTransform
+    const expressionTransform = studioFaceTransforms?.[`expression-component:${part}`]?.sourceTransformOverride
+    const originalEye = category === 'eye' ? loaded.get(part) : undefined
+    const openTransform = originalEye
+      ? expressionTransform ?? selectedPart.transform ?? originalEye.defaultTransform
+      : undefined
+    const transform = closedEyeAssets.has(part) && originalEye && openTransform
+      ? transferEyeCloseAdjustment(originalEye.defaultTransform, openTransform, asset.defaultTransform)
+      : expressionTransform ?? selectedPart.transform ?? asset.defaultTransform
     const mirroredTransform = isRight && category !== 'pupil' && !asset.rightSidePositioned ? { ...transform, x: sourceHead.width - transform.x, rotation: -transform.rotation } : transform
     let localX = mirroredTransform.x
     let localY = mirroredTransform.y
@@ -1125,7 +1209,7 @@ async function renderFaceCatalogOverlay(artwork: CatalogArtwork, source: Fabrica
 }
 
 /** Render the selected Customizer character as one self-contained Studio actor image. */
-export async function prepareSavedCharacterRenderer(character: CustomizerCharacter): Promise<{ width: number; height: number; render: (appearance?: CustomizerFaceAppearance, studioFaceTransforms?: StudioFaceTransforms, expressionEffects?: FaceExpressionEffects) => Promise<{ dataUrl: string; width: number; height: number }> }> {
+export async function prepareSavedCharacterRenderer(character: CustomizerCharacter): Promise<{ width: number; height: number; render: (appearance?: CustomizerFaceAppearance, studioFaceTransforms?: StudioFaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: StudioFaceMode) => Promise<{ dataUrl: string; width: number; height: number }> }> {
   const modelSlot = character.customization.modelSlot ?? 1
   const source = await window.desktop.loadFabricatorSlot(modelSlot)
   if (!source) throw new Error(`O modelo de ${character.name} não está disponível.`)
@@ -1162,6 +1246,20 @@ export async function prepareSavedCharacterRenderer(character: CustomizerCharact
     : {}
   let faceItems: Partial<Record<FaceSheetKind | FaceElementKind, FaceCatalogItem>> = {}
   const faceItemPromises = new Map<string, Promise<FaceCatalogItem | null>>()
+  let closedEyeAssetsPromise: Promise<FaceComponentAsset[]> | null = null
+  const resolveClosedEye: StudioClosedEyeResolver = async (openEye, side) => {
+    if (!closedEyeAssetsPromise) {
+      closedEyeAssetsPromise = window.desktop.listFaceComponentAssets(modelSlot, 'eye-closed').then(async (summaries) => {
+        const details = await Promise.all(summaries.map((summary) => window.desktop.loadFaceComponentAsset(modelSlot, summary.id)))
+        return details.filter((asset): asset is FaceComponentAsset => Boolean(asset?.kind === 'eye-closed'))
+      })
+    }
+    const candidates = (await closedEyeAssetsPromise).filter((asset) => Boolean(asset.rightSidePositioned) === (side === 'right'))
+    const openBaseName = componentSheetName(openEye.name)
+    return candidates.find((asset) => Boolean(openEye.pairId && openEye.pairId === asset.pairId))
+      ?? candidates.find((asset) => componentSheetName(asset.name) === openBaseName)
+      ?? null
+  }
   let legacyFaceUrl: string | null = null
   if (appearance?.modelSlot === modelSlot) {
     if (appearance.eyeCatalogId || appearance.eyeLeftCatalogId || appearance.eyeRightCatalogId || appearance.eyebrowCatalogId || appearance.eyebrowLeftCatalogId || appearance.eyebrowRightCatalogId || appearance.noseCatalogId || appearance.mouthClosedCatalogId || appearance.mouthOpenCatalogId || Object.values(appearance.components ?? {}).some((component) => component?.assetId) || Object.values(appearance.headExtras ?? {}).some(Boolean)) {
@@ -1196,17 +1294,23 @@ export async function prepareSavedCharacterRenderer(character: CustomizerCharact
   const shapeScale = characterShapeScale(proportions)
   const outputWidth = Math.max(canvas.width, Math.ceil(canvas.width * shapeScale.x))
   const outputHeight = Math.max(canvas.height, Math.ceil(canvas.height * shapeScale.y))
-  const render = async (currentAppearance: CustomizerFaceAppearance | undefined = appearance, studioFaceTransforms?: StudioFaceTransforms, expressionEffects?: FaceExpressionEffects) => {
+  const render = async (currentAppearance: CustomizerFaceAppearance | undefined = appearance, studioFaceTransforms?: StudioFaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: StudioFaceMode) => {
     context.clearRect(0, 0, canvas.width, canvas.height)
     context.drawImage(baseImage, 0, 0, canvas.width, canvas.height)
     if (wardrobeImage) context.drawImage(wardrobeImage, 0, 0, canvas.width, canvas.height)
-    if (currentAppearance?.modelSlot === modelSlot) {
+    const faceAppearance = currentAppearance && studioFaceMode ? {
+      ...currentAppearance,
+      eyeState: studioFaceMode === 'blink' ? 2 as const : 0 as const,
+      mouthOpen: studioFaceMode === 'talk'
+    } : currentAppearance
+    if (faceAppearance?.modelSlot === modelSlot) {
       const selections: Array<[FaceSheetKind | FaceElementKind, string | undefined]> = [
-        ['eyes', currentAppearance.eyeCatalogId], ['eyebrows', currentAppearance.eyebrowCatalogId], ['nose', currentAppearance.noseCatalogId],
-        ['eye-left', currentAppearance.eyeLeftCatalogId ?? undefined], ['eye-right', currentAppearance.eyeRightCatalogId ?? undefined], ['brow-left', currentAppearance.eyebrowLeftCatalogId ?? undefined], ['brow-right', currentAppearance.eyebrowRightCatalogId ?? undefined],
-        ['mouth-closed', currentAppearance.mouthClosedCatalogId], ['mouth-open', currentAppearance.mouthOpenCatalogId]
+        ['eyes', faceAppearance.eyeCatalogId], ['eyebrows', faceAppearance.eyebrowCatalogId], ['nose', faceAppearance.noseCatalogId],
+        ['eye-left', faceAppearance.eyeLeftCatalogId ?? undefined], ['eye-right', faceAppearance.eyeRightCatalogId ?? undefined], ['brow-left', faceAppearance.eyebrowLeftCatalogId ?? undefined], ['brow-right', faceAppearance.eyebrowRightCatalogId ?? undefined],
+        ['mouth-closed', faceAppearance.mouthClosedCatalogId], ['mouth-open', faceAppearance.mouthOpenCatalogId]
       ]
-      const hasCatalogSelection = selections.some(([, id]) => Boolean(id)) || Object.values(currentAppearance.components ?? {}).some((component) => component?.assetId) || Object.values(currentAppearance.faceDetails ?? {}).some(Boolean) || Object.values(currentAppearance.headExtras ?? {}).some(Boolean)
+      const hasCatalogSelection = selections.some(([, id]) => Boolean(id)) || Object.values(faceAppearance.components ?? {}).some((component) => component?.assetId) || Object.values(faceAppearance.faceDetails ?? {}).some(Boolean) || Object.values(faceAppearance.headExtras ?? {}).some(Boolean)
+      if (studioFaceMode === 'blink' && !hasCatalogSelection) throw new Error('Blink precisa dos assets faciais separados do catálogo de rosto ou de Olhos Dev.')
       const activeItems: Partial<Record<FaceSheetKind | FaceElementKind, FaceCatalogItem>> = {}
       await Promise.all(selections.filter((entry): entry is [FaceSheetKind | FaceElementKind, string] => Boolean(entry[1])).map(async ([category, id]) => {
         let item = faceItems[category]?.id === id ? faceItems[category] : null
@@ -1222,9 +1326,12 @@ export async function prepareSavedCharacterRenderer(character: CustomizerCharact
         }
         if (item) activeItems[category] = item
       }))
-      const mouthEffects = expressionEffects ?? expressionEffectsByIndex[currentAppearance.expressionIndex]
-      if (hasCatalogSelection) await drawFaceCatalogOverlay(context, artwork, source, activeItems, currentAppearance, character.customization.modelSkinTone, studioFaceTransforms, mouthEffects)
-      else if (legacyFaceImage && currentAppearance.setId === appearance?.setId) context.drawImage(legacyFaceImage, 0, 0, canvas.width, canvas.height)
+      if (studioFaceMode === 'talk' && !activeItems['mouth-open']?.pieces.some((piece) => piece.sheet === 'mouth-open' && piece.index === faceAppearance.expressionIndex)) {
+        throw new Error('Selecione uma folha Talk com a mesma variante de boca para usar este modo.')
+      }
+      const mouthEffects = expressionEffects ?? expressionEffectsByIndex[faceAppearance.expressionIndex]
+      if (hasCatalogSelection) await drawFaceCatalogOverlay(context, artwork, source, activeItems, faceAppearance, character.customization.modelSkinTone, studioFaceTransforms, mouthEffects, studioFaceMode, resolveClosedEye)
+      else if (legacyFaceImage && faceAppearance.setId === appearance?.setId) context.drawImage(legacyFaceImage, 0, 0, canvas.width, canvas.height)
     } else if (legacyFaceImage) context.drawImage(legacyFaceImage, 0, 0, canvas.width, canvas.height)
     if (frontHairImage) context.drawImage(frontHairImage, 0, 0, canvas.width, canvas.height)
     if (shapeScale.x === 1 && shapeScale.y === 1) return { dataUrl: canvas.toDataURL('image/png'), width: canvas.width, height: canvas.height }
@@ -1241,9 +1348,9 @@ export async function prepareSavedCharacterRenderer(character: CustomizerCharact
   return { width: outputWidth, height: outputHeight, render }
 }
 
-export async function renderSavedCharacter(character: CustomizerCharacter, studioFaceTransforms?: StudioFaceTransforms, expressionEffects?: FaceExpressionEffects): Promise<{ dataUrl: string; width: number; height: number }> {
+export async function renderSavedCharacter(character: CustomizerCharacter, studioFaceTransforms?: StudioFaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: StudioFaceMode): Promise<{ dataUrl: string; width: number; height: number }> {
   const renderer = await prepareSavedCharacterRenderer(character)
-  return renderer.render(character.customization.faceAppearance, studioFaceTransforms, expressionEffects)
+  return renderer.render(character.customization.faceAppearance, studioFaceTransforms, expressionEffects, studioFaceMode)
 }
 
 const modules: { name: string; icon: IconName; detail: string }[] = [

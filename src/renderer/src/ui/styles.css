@@ -252,6 +252,11 @@ button:focus-visible, input:focus-visible { outline: 3px solid #ed8caf; outline-
 .studio-expression-catalog { display:flex;flex-direction:column;gap:9px;padding-top:9px;border-top:1px solid #eee4eb; }
 .studio-expression-collections,.studio-expression-selected { display:flex;flex-direction:column;gap:5px; }
 .studio-expression-collections h3,.studio-expression-selected h3 { margin:0 0 1px;color:#514451;font-size:10px; }
+.studio-expression-modes { display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px; }
+.studio-expression-mode { min-width:0;min-height:30px;padding:5px 4px;border:1px solid #c59b3b;border-radius:7px;background:linear-gradient(180deg,#fff0b8 0%,#e9c45c 52%,#d9aa36 100%);box-shadow:inset 0 1px 0 #fff9dc;color:#674d16;text-align:center;font-size:10px;font-weight:750;cursor:pointer; }
+.studio-expression-mode:hover:not(:disabled) { border-color:#a77b1d;background:linear-gradient(180deg,#ffe8a0 0%,#e2b849 100%); }
+.studio-expression-mode.active { border-color:#8a6417;background:linear-gradient(180deg,#d9aa36 0%,#f0cd69 100%);box-shadow:inset 0 1px 3px #946c1b55,0 0 0 1px #f4d986; }
+.studio-expression-mode:disabled { opacity:.55;cursor:wait; }
 .studio-expression-collection-button { width:100%;min-height:30px;display:flex;align-items:center;justify-content:space-between;gap:7px;padding:4px 8px;border:1px solid #eee3eb;border-radius:7px;background:#fff;color:#5f5360;text-align:left;cursor:pointer; }
 .studio-expression-collection-button>strong { overflow:hidden;font-size:9px;font-weight:600;text-overflow:ellipsis;white-space:nowrap; }
 .studio-expression-collection-button>svg { width:12px;height:12px;flex:0 0 12px; }

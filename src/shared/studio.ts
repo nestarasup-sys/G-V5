@@ -12,6 +12,8 @@ export type StudioAsset = {
 /** Studio-local adjustment shared by a facial category and its variant frames. */
 export type StudioFaceTransform = { x: number; y: number; width: number; height: number; rotation: number; sourceTransformOverride?: FaceTransform }
 export type StudioFaceTransformCategory = 'eyes' | 'eyebrows' | 'nose' | 'mouth'
+/** Studio-local playback state for the character's neutral, blink, or speaking face. */
+export type StudioFaceMode = 'idle' | 'blink' | 'talk'
 /** Keys are category:itemId; bare category keys remain supported for older Studio data. */
 export type StudioFaceTransforms = Record<string, StudioFaceTransform>
 export type StudioExpressionBase = { appearance: CustomizerFaceAppearance; transforms: StudioFaceTransforms }
@@ -66,6 +68,8 @@ export type StudioElement = {
   positionLocked?: boolean
   /** Face choices made to this actor inside this Studio only. */
   faceAppearance?: CustomizerFaceAppearance
+  /** Studio-only facial playback state; does not modify the character's Customizer data. */
+  activeFaceMode?: StudioFaceMode
   /** Face-piece transforms are stored per selected catalog sheet on this Studio actor. */
   faceTransforms?: StudioFaceTransforms
   /** Character-specific neutral face, shared by every expression collection. */

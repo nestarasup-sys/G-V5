@@ -115,19 +115,40 @@ export async function buildStudioExpressionTransforms(
       if (targetBase) put(`expression:${part}:${id}`, transferExpressionTransform(base, preset.transforms[layer], targetBase, right && !source.rightSidePositioned, false, piece ? relativePieceSize(source, base, piece, targetBase) : { x: 1, y: 1 }))
     }
   })))
-  await Promise.all((['nose', 'mouth'] as const).map(async (kind) => {
-    const sourceChoice = preset.selections[kind]
-    const targetId = kind === 'nose' ? appearance.noseCatalogId : appearance.mouthOpen ? appearance.mouthOpenCatalogId : appearance.mouthClosedCatalogId
-    if (!sourceChoice || !targetId) return
-    const [source, target] = await Promise.all([catalog(sourceChoice.catalogId), catalog(targetId)])
-    const base = preset.referenceTransforms?.[kind] ?? source?.transforms[kind]
-    const targetBase = appearance.transforms?.[kind] ?? target?.transforms[kind]
-    if (!base || !targetBase) return
-    const sheet = kind === 'nose' ? 'nose' : appearance.mouthOpen ? 'mouth-open' : 'mouth-closed'
-    const sourcePiece = source?.pieces?.find((piece) => piece.index === sourceChoice.index)
-    const targetPiece = target?.pieces?.find((piece) => piece.index === (kind === 'nose' ? appearance.noseIndex : appearance.expressionIndex))
-    const positionScale = sourcePiece && targetPiece ? relativePieceSize(sourcePiece, base, targetPiece, targetBase) : { x: 1, y: 1 }
-    put(`expression:${sheet}:${targetId}`, transferExpressionTransform(base, preset.transforms[kind], targetBase, false, false, positionScale))
-  }))
+  const noseChoice = preset.selections.nose
+  if (noseChoice && appearance.noseCatalogId) {
+    const [source, target] = await Promise.all([catalog(noseChoice.catalogId), catalog(appearance.noseCatalogId)])
+    const base = preset.referenceTransforms?.nose ?? source?.transforms.nose
+    const targetBase = appearance.transforms?.nose ?? target?.transforms.nose
+    if (base && targetBase) {
+      const sourcePiece = source?.pieces?.find((piece) => piece.sheet === 'nose' && piece.index === noseChoice.index)
+      const targetPiece = target?.pieces?.find((piece) => piece.sheet === 'nose' && piece.index === appearance.noseIndex)
+      const positionScale = sourcePiece && targetPiece ? relativePieceSize(sourcePiece, base, targetPiece, targetBase) : { x: 1, y: 1 }
+      put(`expression:nose:${appearance.noseCatalogId}`, transferExpressionTransform(base, preset.transforms.nose, targetBase, false, false, positionScale))
+    }
+  }
+
+  // A mouth preset authors one shape at a time, while Studio's Idle/Talk modes
+  // switch between the character's closed and talking sheets. Transfer the
+  // same authored change to both sheets so the speaking mouth keeps the same
+  // placement and scale as its closed counterpart.
+  const mouthChoice = preset.selections.mouth
+  if (mouthChoice) {
+    const source = await catalog(mouthChoice.catalogId)
+    const base = preset.referenceTransforms?.mouth ?? source?.transforms.mouth
+    if (source && base) {
+      const sourcePiece = source.pieces.find((piece) => piece.sheet === mouthChoice.kind && piece.index === mouthChoice.index)
+      await Promise.all((['mouth-closed', 'mouth-open'] as const).map(async (sheet) => {
+        const targetId = sheet === 'mouth-open' ? appearance.mouthOpenCatalogId : appearance.mouthClosedCatalogId
+        if (!targetId) return
+        const target = await catalog(targetId)
+        const targetBase = appearance.transforms?.mouth ?? target?.transforms.mouth
+        if (!targetBase) return
+        const targetPiece = target?.pieces.find((piece) => piece.sheet === sheet && piece.index === appearance.expressionIndex)
+        const positionScale = sourcePiece && targetPiece ? relativePieceSize(sourcePiece, base, targetPiece, targetBase) : { x: 1, y: 1 }
+        put(`expression:${sheet}:${targetId}`, transferExpressionTransform(base, preset.transforms.mouth, targetBase, false, false, positionScale))
+      }))
+    }
+  }
   return result
 }
