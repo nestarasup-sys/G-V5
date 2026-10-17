@@ -1056,7 +1056,7 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .expression-choose-set-button:disabled { opacity: .55; cursor: not-allowed; }
 .expression-choose-set-button svg { width: 16px; height: 16px; }
 .expression-head-stage { position: relative; min-height: 0; flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; overflow: hidden; padding: 16px; background: radial-gradient(ellipse at center, #fffafd 0%, #faf7f9 70%, #f5f1f4 100%); color: #958995; font-size: 12px; }
-.expression-head-canvas { position: relative; flex: 0 1 auto; height: min(70vh, 640px); max-width: 94%; max-height: 100%; overflow: hidden; isolation: isolate; }
+.expression-head-canvas { position: relative; flex: 0 1 auto; height: min(70vh, 640px); max-width: 94%; max-height: 100%; overflow: visible; isolation: isolate; }
 .expression-head-base { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: fill; user-select: none; pointer-events: none; }
 .expression-head-side-layer { position: absolute; inset: 0; }
 .expression-head-piece { position: absolute; z-index: 2; display: block; max-width: none; user-select: none; pointer-events: none; }
