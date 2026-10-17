@@ -225,6 +225,7 @@ export function StudioPage() {
   const [studioExpressionCollections, setStudioExpressionCollections] = useState<FaceExpressionCollection[]>([])
   const [studioExpressionPresets, setStudioExpressionPresets] = useState<FaceExpressionPresetSummary[]>([])
   const [selectedStudioExpressionCollectionId, setSelectedStudioExpressionCollectionId] = useState<string | null>(null)
+  const [studioExpressionCollectionMenuOpen, setStudioExpressionCollectionMenuOpen] = useState(false)
   const [studioExpressionLoading, setStudioExpressionLoading] = useState(false)
   const [studioExpressionBusy, setStudioExpressionBusy] = useState(false)
   const [studioPoseSlots, setStudioPoseSlots] = useState<Array<NonNullable<FabricatorPoseSummary>>>([])
@@ -295,6 +296,7 @@ export function StudioPage() {
   useEffect(() => {
     let cancelled = false
     setSelectedStudioExpressionCollectionId(null)
+    setStudioExpressionCollectionMenuOpen(false)
     if (selectedStudioCharacterModelSlot === null) {
       setStudioExpressionCollections([])
       setStudioExpressionPresets([])
@@ -1231,14 +1233,17 @@ export function StudioPage() {
       {studioPresetCategory === 'expression' && <section className="studio-expression-catalog" aria-label="Presets do Expressão Dev">
         {studioExpressionLoading ? <p className="studio-custom-hint">Carregando conjuntos de expressão…</p> : <>
           <div className="studio-expression-collections" aria-label="Selecionar conjunto de expressão">
-            <h3>Conjunto</h3>
-            {[{ id: 'standard', name: 'Padrão' }, ...studioExpressionCollections].map((collection) => {
-              const count = studioExpressionPresets.filter((preset) => preset.collectionId === collection.id && Number.isInteger(preset.expressionIndex)).length
-              const selected = selectedStudioExpressionCollectionId === collection.id
-              return <button className={`studio-expression-collection-button${selected ? ' selected' : ''}`} key={collection.id} type="button" aria-pressed={selected} onClick={() => setSelectedStudioExpressionCollectionId(collection.id)}>
-                <span><strong>{collection.name}</strong><small>{count} expressão(ões)</small></span>{selected && <Icon name="check" />}
-              </button>
-            })}
+            <button className="studio-expression-collection-button" type="button" aria-expanded={studioExpressionCollectionMenuOpen} onClick={() => setStudioExpressionCollectionMenuOpen((open) => !open)}>
+              <strong>{[{ id: 'standard', name: 'Padrão' }, ...studioExpressionCollections].find((item) => item.id === selectedStudioExpressionCollectionId)?.name ?? 'Escolher conjunto'}</strong><Icon name="chevronDown" />
+            </button>
+            {studioExpressionCollectionMenuOpen && <div className="studio-expression-collection-options" role="listbox" aria-label="Conjuntos disponíveis">
+              {[{ id: 'standard', name: 'Padrão' }, ...studioExpressionCollections].map((collection) => {
+                const selected = selectedStudioExpressionCollectionId === collection.id
+                return <button className={`studio-expression-collection-option${selected ? ' selected' : ''}`} key={collection.id} type="button" role="option" aria-selected={selected} onClick={() => { setSelectedStudioExpressionCollectionId(collection.id); setStudioExpressionCollectionMenuOpen(false) }}>
+                  <span>{collection.name}</span>{selected && <Icon name="check" />}
+                </button>
+              })}
+            </div>}
           </div>
           {selectedStudioExpressionCollectionId ? (() => {
             const collection = [{ id: 'standard', name: 'Padrão' }, ...studioExpressionCollections].find((item) => item.id === selectedStudioExpressionCollectionId)
