@@ -13,6 +13,7 @@ type Tool = 'background' | 'objects' | null
 type DragState = { id: string; pointerId: number; startX: number; startY: number; originalX: number; originalY: number; width: number; height: number }
 
 const STORAGE_KEY = 'gacha-nymi-studio-catalog-v1'
+const STUDIO_FACE_RENDER_VERSION = 2
 const studioColor = (number: number) => `hsl(${(number * 137.508) % 360} 45% 78%)`
 const defaultStudioEyeTransform: StudioFaceTransform = { x: 0, y: 0, width: 100, height: 100, rotation: 0 }
 const studioTools = [
@@ -538,8 +539,10 @@ export function StudioPage() {
       const modelSlot = character?.customization.modelSlot ?? 1
       const latestPresetVersion = element.activeExpressionPresetId ? sceneExpressionPresetVersions[`${modelSlot}:${element.activeExpressionPresetId}`] : undefined
       const presetChanged = Boolean(latestPresetVersion && latestPresetVersion !== element.activeExpressionPresetUpdatedAt)
-      return character && (element.characterSourceUpdatedAt !== character.updatedAt || presetChanged)
-        ? [{ element, character }] : []
+      const characterChanged = Boolean(character && element.characterSourceUpdatedAt !== character.updatedAt)
+      const rendererChanged = element.faceRendererVersion !== STUDIO_FACE_RENDER_VERSION
+      return character && (characterChanged || presetChanged || rendererChanged)
+        ? [{ element, character, shouldRecomposeExpression: characterChanged || presetChanged }] : []
     })
     if (!pending.length) return
     let cancelled = false
@@ -550,7 +553,7 @@ export function StudioPage() {
       try {
         const { renderSavedCharacter } = await import('../customizer/CustomizerPage')
         const updates: Array<{ previous: StudioElement; next: StudioElement; asset: StudioAsset }> = []
-        for (const { element, character } of pending) {
+        for (const { element, character, shouldRecomposeExpression } of pending) {
           const savedPreset = element.activeExpressionPresetId
             ? await window.desktop.loadFaceExpressionPreset(character.customization.modelSlot ?? 1, element.activeExpressionPresetId)
             : null
@@ -560,18 +563,23 @@ export function StudioPage() {
           if (!appearanceFallback) continue
           const previousBase = resolveStudioExpressionBase(element, appearanceFallback)
           const sceneTransforms = Object.fromEntries(Object.entries(element.faceTransforms ?? {}).filter(([key]) => !key.startsWith('expression-component:') && !key.startsWith('expression:')))
-          const expressionBase = sourceAppearance
+          const characterChanged = element.characterSourceUpdatedAt !== character.updatedAt
+          const expressionBase = characterChanged && sourceAppearance
             ? { appearance: structuredClone(sourceAppearance), transforms: sceneTransforms }
             : previousBase
-          const appearance = savedPreset && expressionBase
-            ? await buildStudioExpressionAppearance(savedPreset, expressionBase.appearance, (id) => window.desktop.loadFaceCatalogItem(savedPreset.modelSlot, id))
-            : expressionBase?.appearance ?? element.faceAppearance
-          const faceTransforms = savedPreset && appearance && expressionBase
-            ? await buildStudioExpressionTransforms(savedPreset, appearance, expressionBase.transforms,
-              (id) => window.desktop.loadFaceComponentAsset(savedPreset.modelSlot, id),
-              (id) => window.desktop.loadFaceCatalogItem(savedPreset.modelSlot, id))
-            : expressionBase?.transforms ?? element.faceTransforms
-          const expressionEffects = savedPreset ? savedPreset.effects : element.activeExpressionEffects
+          const appearance = shouldRecomposeExpression
+            ? savedPreset && expressionBase
+              ? await buildStudioExpressionAppearance(savedPreset, expressionBase.appearance, (id) => window.desktop.loadFaceCatalogItem(savedPreset.modelSlot, id))
+              : expressionBase?.appearance ?? element.faceAppearance
+            : element.faceAppearance ?? expressionBase?.appearance
+          const faceTransforms = shouldRecomposeExpression
+            ? savedPreset && appearance && expressionBase
+              ? await buildStudioExpressionTransforms(savedPreset, appearance, expressionBase.transforms,
+                (id) => window.desktop.loadFaceComponentAsset(savedPreset.modelSlot, id),
+                (id) => window.desktop.loadFaceCatalogItem(savedPreset.modelSlot, id))
+              : expressionBase?.transforms ?? element.faceTransforms
+            : element.faceTransforms ?? expressionBase?.transforms
+          const expressionEffects = shouldRecomposeExpression ? savedPreset?.effects : element.activeExpressionEffects
           const customization = {
             ...character.customization,
             poseSlot: element.poseSlot === undefined ? character.customization.poseSlot : element.poseSlot,
@@ -589,7 +597,7 @@ export function StudioPage() {
           updates.push({
             previous: element,
             next: {
-              ...element, characterSourceUpdatedAt: character.updatedAt, expressionBase, faceAppearance: appearance, faceTransforms, activeExpressionEffects: expressionEffects,
+              ...element, characterSourceUpdatedAt: character.updatedAt, faceRendererVersion: STUDIO_FACE_RENDER_VERSION, expressionBase, faceAppearance: appearance, faceTransforms, activeExpressionEffects: expressionEffects,
               ...(savedPreset ? { activeExpressionPresetUpdatedAt: savedPreset.updatedAt } : {}), characterCanvasWidth,
               width: characterCanvasWidth * cropWidth / rendered.width,
               height: characterCanvasWidth * stageWidth / stageHeight * cropHeight / rendered.width,
@@ -813,7 +821,7 @@ export function StudioPage() {
         const asset: StudioAsset = { id: crypto.randomUUID(), category: 'character', name: character.name, mimeType: 'image/png', dataUrl: imageData }
         const { width, height, characterCanvasWidth } = fitStudioCharacterToStage(rendered, imageWidth, imageHeight, stageWidth, stageHeight)
         assets.push(asset)
-        elements.push({ id: crypto.randomUUID(), kind: 'character', assetId: asset.id, characterId: character.id, characterSourceUpdatedAt: character.updatedAt, activeExpressionCollectionId: 'standard', activeExpressionPresetId: null, characterScale: 100, characterWidthScale: 100, characterHeightScale: 100, ...(character.customization.faceAppearance ? { expressionBase: { appearance: structuredClone(character.customization.faceAppearance), transforms: {} } } : {}), characterCanvasWidth, text: character.name, x: 0, y: 0, width, height, rotation: 0, zIndex: ++zIndex })
+        elements.push({ id: crypto.randomUUID(), kind: 'character', assetId: asset.id, characterId: character.id, characterSourceUpdatedAt: character.updatedAt, faceRendererVersion: STUDIO_FACE_RENDER_VERSION, activeExpressionCollectionId: 'standard', activeExpressionPresetId: null, characterScale: 100, characterWidthScale: 100, characterHeightScale: 100, ...(character.customization.faceAppearance ? { expressionBase: { appearance: structuredClone(character.customization.faceAppearance), transforms: {} } } : {}), characterCanvasWidth, text: character.name, x: 0, y: 0, width, height, rotation: 0, zIndex: ++zIndex })
       }
       const nextElements = [...retained, ...elements]
       const retainedAssetIds = new Set(retained.map((element) => element.assetId).filter((id): id is string => Boolean(id)))
@@ -865,7 +873,7 @@ export function StudioPage() {
       const assetId = selectedElement.assetId
       const update = (studio: StudioDocument): StudioDocument => ({
         ...studio,
-        elements: studio.elements.map((element) => element.id === elementId ? { ...element, ...expressionState, ...faceRenderGeometry(element, rendered, trimmed, sceneRef.current?.clientWidth ?? 1000, sceneRef.current?.clientHeight ?? 562), faceAppearance: appearance, faceTransforms, characterSourceUpdatedAt: selectedStudioCharacter.updatedAt } : element),
+        elements: studio.elements.map((element) => element.id === elementId ? { ...element, ...expressionState, faceRendererVersion: STUDIO_FACE_RENDER_VERSION, ...faceRenderGeometry(element, rendered, trimmed, sceneRef.current?.clientWidth ?? 1000, sceneRef.current?.clientHeight ?? 562), faceAppearance: appearance, faceTransforms, characterSourceUpdatedAt: selectedStudioCharacter.updatedAt } : element),
         assets: studio.assets.map((asset) => asset.id === assetId ? { ...asset, dataUrl: studioDataUrl, mimeType: 'image/png' } : asset),
         updatedAt: new Date().toISOString()
       })
@@ -1038,7 +1046,7 @@ export function StudioPage() {
           if (version === studioFaceRenderVersionRef.current && job.studioId === activeStudioId) {
             patchStudio((studio) => ({
               ...studio,
-              elements: studio.elements.map((element) => element.id === job.elementId ? { ...element, ...faceRenderGeometry(element, rendered, trimmed, sceneRef.current?.clientWidth ?? 1000, sceneRef.current?.clientHeight ?? 562) } : element),
+              elements: studio.elements.map((element) => element.id === job.elementId ? { ...element, faceRendererVersion: STUDIO_FACE_RENDER_VERSION, ...faceRenderGeometry(element, rendered, trimmed, sceneRef.current?.clientWidth ?? 1000, sceneRef.current?.clientHeight ?? 562) } : element),
               assets: studio.assets.map((asset) => asset.id === job.assetId ? { ...asset, dataUrl: studioDataUrl, mimeType: 'image/png' } : asset),
               updatedAt: new Date().toISOString()
             }))

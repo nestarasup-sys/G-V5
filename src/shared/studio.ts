@@ -73,6 +73,8 @@ export type StudioElement = {
   activeExpressionPresetId?: string | null
   /** Saved preset revision currently composed into this Studio actor. */
   activeExpressionPresetUpdatedAt?: string
+  /** Renderer revision used to generate the actor's cached Studio image. */
+  faceRendererVersion?: number
   activeExpressionEffects?: FaceExpressionEffects
   /** Expression collection currently selected for this actor in the inspector. */
   activeExpressionCollectionId?: string
