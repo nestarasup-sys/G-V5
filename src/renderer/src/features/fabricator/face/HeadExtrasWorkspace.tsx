@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ChangeEvent } from 'react'
-import type { FaceComponentAsset, FaceComponentAssetSave, FaceComponentAssetSummary, FabricatorProject, FabricatorSlotSummary, FaceTransform } from '../../../../../shared/fabricator'
+import type { FaceComponentAsset, FaceComponentAssetSave, FaceComponentAssetSummary, FaceGuideSettings, FabricatorProject, FabricatorSlotSummary, FaceTransform } from '../../../../../shared/fabricator'
 import { Icon } from '../../../ui/components/Icon'
 import { usePreviewBackground } from '../usePreviewBackground'
 import './face-components.css'
@@ -7,6 +7,29 @@ import './head-extras.css'
 
 const headPart = (model: FabricatorProject | null) => model?.parts.find((part) => /cabe[çc]a|head/i.test(part.name)) ?? null
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value))
+const initialExtraTransform = (head: NonNullable<ReturnType<typeof headPart>>, category: 'head-extra' | 'head-nose', width: number, height: number): FaceTransform => category === 'head-nose'
+  ? { x: head.width * .5, y: head.height * .61, scaleX: clamp(head.width * .075 / width, .04, 4), scaleY: clamp(head.width * .075 / width, .04, 4), rotation: 0 }
+  : { x: head.width * .5, y: head.height * .25, scaleX: Math.min(.6, head.width * .55 / width), scaleY: Math.min(.35, head.height * .3 / height), rotation: 0 }
+const GUIDE_STORAGE_KEY = 'gacha-nymi:rosto-dev-guides'
+type FaceGuide = FaceGuideSettings
+const defaultGuide: FaceGuide = { visible: true, verticalX: 50, horizontalY: 45, lowerHorizontalY: 65, angle: 12 }
+function readSharedGuides(): Record<number, FaceGuide> {
+  try {
+    const stored = JSON.parse(window.localStorage.getItem(GUIDE_STORAGE_KEY) ?? '{}') as Record<string, Partial<FaceGuide>>
+    return Object.fromEntries(Object.entries(stored).filter(([slot, value]) => /^[1-9]\d*$/.test(slot) && Number(slot) <= 10 && value && typeof value === 'object').map(([slot, value]) => {
+      const read = (candidate: unknown, fallback: number) => typeof candidate === 'number' && Number.isFinite(candidate) ? candidate : fallback
+      const horizontalY = clamp(read(value.horizontalY, defaultGuide.horizontalY), 10, 90)
+      return [Number(slot), { visible: value.visible !== false, verticalX: clamp(read(value.verticalX, defaultGuide.verticalX), 20, 80), horizontalY, lowerHorizontalY: Math.max(horizontalY + 1, clamp(read(value.lowerHorizontalY, defaultGuide.lowerHorizontalY), 11, 99)), angle: clamp(read(value.angle, defaultGuide.angle), -30, 30) }]
+    }))
+  } catch { return {} }
+}
+function HeadGuideOverlay({ head, guide }: { head: NonNullable<ReturnType<typeof headPart>>; guide: FaceGuide }) {
+  const x = head.width * guide.verticalX / 100, y = head.height * guide.horizontalY / 100, lowerY = head.height * guide.lowerHorizontalY / 100
+  return <svg className="face-components-guide-overlay" viewBox={`0 0 ${head.width} ${head.height}`} preserveAspectRatio="none" aria-hidden="true"><g transform={`rotate(${guide.angle} ${x} ${head.height / 2})`}>
+    <line className="face-components-guide-halo" x1={x} y1={-head.height} x2={x} y2={head.height * 2} /><line className="face-components-guide-halo" x1={-head.width} y1={y} x2={head.width * 2} y2={y} /><line className="face-components-guide-halo" x1={-head.width} y1={lowerY} x2={head.width * 2} y2={lowerY} />
+    <line className="face-components-guide-line" x1={x} y1={-head.height} x2={x} y2={head.height * 2} /><line className="face-components-guide-line" x1={-head.width} y1={y} x2={head.width * 2} y2={y} /><line className="face-components-guide-line" x1={-head.width} y1={lowerY} x2={head.width * 2} y2={lowerY} /><circle className="face-components-guide-center" cx={x} cy={y} r={2.4} />
+  </g></svg>
+}
 function readImage(file: File): Promise<{ dataUrl: string; width: number; height: number }> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
@@ -33,10 +56,38 @@ export function HeadExtrasWorkspace() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('Importe óculos ou outro extra para a cabeça.')
+  const [category, setCategory] = useState<'head-extra' | 'head-nose'>('head-extra')
+  const [guidesByModel, setGuidesByModel] = useState<Record<number, FaceGuide>>(readSharedGuides)
+  const [guidesLoaded, setGuidesLoaded] = useState(false)
   const stageRef = useRef<HTMLDivElement>(null)
   const [stageSize, setStageSize] = useState({ width: 0, height: 0 })
   const head = useMemo(() => headPart(model), [model])
   const selected = selectedId ? details[selectedId] : undefined
+  const guide = guidesByModel[modelSlot] ?? defaultGuide
+
+  useEffect(() => {
+    let cancelled = false
+    void window.desktop.loadFaceGuides('face').then(async (saved) => {
+      if (cancelled) return
+      const next = saved ?? readSharedGuides()
+      setGuidesByModel(next)
+      if (!saved) await window.desktop.saveFaceGuides('face', next)
+      if (!cancelled) setGuidesLoaded(true)
+    }).catch((reason) => { if (!cancelled) { setError(reason instanceof Error ? reason.message : String(reason)); setGuidesLoaded(true) } })
+    return () => { cancelled = true }
+  }, [])
+
+  useEffect(() => {
+    try { window.localStorage.setItem(GUIDE_STORAGE_KEY, JSON.stringify(guidesByModel)) } catch { /* The app data copy remains authoritative. */ }
+    if (guidesLoaded) void window.desktop.saveFaceGuides('face', guidesByModel).catch((reason) => setError(reason instanceof Error ? reason.message : String(reason)))
+  }, [guidesByModel, guidesLoaded])
+
+  function updateGuide(patch: Partial<FaceGuide>) {
+    const next = { ...guidesByModel, [modelSlot]: { ...(guidesByModel[modelSlot] ?? defaultGuide), ...patch } }
+    setGuidesByModel(next)
+    try { window.localStorage.setItem(GUIDE_STORAGE_KEY, JSON.stringify(next)) } catch { /* The durable app data copy remains available. */ }
+    if (guidesLoaded) void window.desktop.saveFaceGuides('face', next).catch((reason) => setError(reason instanceof Error ? reason.message : String(reason)))
+  }
 
   useEffect(() => {
     void window.desktop.listFabricatorSlots().then((slots) => {
@@ -58,10 +109,11 @@ export function HeadExtrasWorkspace() {
     setAssets([])
     setDetails({})
     setSelectedId(null)
-    void window.desktop.listFaceComponentAssets(modelSlot, 'head-extra').then(async (summaries) => {
+    void window.desktop.listFaceComponentAssets(modelSlot).then(async (allSummaries) => {
+      const summaries = allSummaries.filter((summary) => summary.kind === 'head-extra' || summary.kind === 'head-nose')
       const loaded = await Promise.all(summaries.map((summary) => window.desktop.loadFaceComponentAsset(modelSlot, summary.id)))
       if (cancelled) return
-      const valid = loaded.filter((asset): asset is FaceComponentAsset => Boolean(asset?.kind === 'head-extra'))
+      const valid = loaded.filter((asset): asset is FaceComponentAsset => Boolean(asset?.kind === 'head-extra' || asset?.kind === 'head-nose'))
       setAssets(summaries)
       setDetails(Object.fromEntries(valid.map((asset) => [asset.id, asset])))
       setSelectedId(valid[0]?.id ?? null)
@@ -79,11 +131,11 @@ export function HeadExtrasWorkspace() {
       const image = await readImage(file)
       const id = crypto.randomUUID()
       const now = new Date().toISOString()
-      const transform: FaceTransform = { x: head.width * .5, y: head.height * .25, scaleX: Math.min(.6, head.width * .55 / image.width), scaleY: Math.min(.35, head.height * .3 / image.height), rotation: 0 }
-      const asset: FaceComponentAssetSave = { schemaVersion: 1, id, modelSlot, kind: 'head-extra', name: file.name.replace(/\.[^.]+$/, '') || 'Óculos', width: image.width, height: image.height, defaultTransform: transform, updatedAt: now }
+      const transform = initialExtraTransform(head, category, image.width, image.height)
+      const asset: FaceComponentAssetSave = { schemaVersion: 1, id, modelSlot, kind: category, name: file.name.replace(/\.[^.]+$/, '') || (category === 'head-nose' ? 'Nariz' : 'Óculos'), width: image.width, height: image.height, defaultTransform: transform, updatedAt: now }
       await window.desktop.saveFaceComponentAsset(modelSlot, asset, image.dataUrl)
       const saved: FaceComponentAsset = { ...asset, dataUrl: image.dataUrl }
-      setAssets((current) => [{ id, modelSlot, kind: 'head-extra', name: asset.name, width: image.width, height: image.height, updatedAt: now }, ...current])
+      setAssets((current) => [{ id, modelSlot, kind: category, name: asset.name, width: image.width, height: image.height, updatedAt: now }, ...current])
       setDetails((current) => ({ ...current, [id]: saved }))
       setSelectedId(id); setNotice(`“${asset.name}” foi adicionado à biblioteca.`)
     } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) }
@@ -143,14 +195,18 @@ export function HeadExtrasWorkspace() {
       <aside className="face-components-library">
         <header><strong>Biblioteca</strong><small>{assets.length} assets</small></header>
         <div className="face-components-library-actions"><label className="head-extra-import"><Icon name="plus" /> Importar<input type="file" accept="image/png,image/jpeg,image/webp" disabled={!head || busy} onChange={(event) => void importAsset(event)} /></label><button type="button" onClick={() => void removeSelected()} disabled={!selected || busy}><Icon name="trash" /> Excluir</button></div>
-        <section className="face-components-library-category" aria-label="Extras da cabeça"><h3>Óculos e outros extras</h3><div className="face-components-assets">
-          {assets.map((asset) => <button key={asset.id} className={asset.id === selectedId ? 'active' : ''} type="button" onClick={() => setSelectedId(asset.id)} title={asset.name}><img src={details[asset.id]?.dataUrl} alt="" /><span>{asset.name}</span></button>)}
-          {!assets.length && <small>Nenhum extra salvo para este modelo.</small>}
+        <nav className="face-components-library-tabs head-extra-category-tabs" aria-label="Categorias de extras da cabeça" role="tablist">
+          <button type="button" className={category === 'head-extra' ? 'active' : ''} onClick={() => { setCategory('head-extra'); setSelectedId(assets.find((asset) => asset.kind === 'head-extra')?.id ?? null) }} role="tab" aria-selected={category === 'head-extra'}><Icon name="sparkles" />Extras</button>
+          <button type="button" className={category === 'head-nose' ? 'active' : ''} onClick={() => { setCategory('head-nose'); setSelectedId(assets.find((asset) => asset.kind === 'head-nose')?.id ?? null) }} role="tab" aria-selected={category === 'head-nose'}><Icon name="face" />Nariz</button>
+        </nav>
+        <section className="face-components-library-category" aria-label={category === 'head-nose' ? 'Nariz' : 'Extras da cabeça'}><h3>{category === 'head-nose' ? 'Nariz' : 'Óculos e outros extras'}</h3><div className="face-components-assets">
+          {assets.filter((asset) => asset.kind === category).map((asset) => <button key={asset.id} className={asset.id === selectedId ? 'active' : ''} type="button" onClick={() => setSelectedId(asset.id)} title={asset.name}><img src={details[asset.id]?.dataUrl} alt="" /><span>{asset.name}</span></button>)}
+          {!assets.some((asset) => asset.kind === category) && <small>Nenhuma peça salva para esta categoria.</small>}
         </div></section>
       </aside>
       <main className="face-components-stage-column">
         <div className="face-components-stage" ref={stageRef} style={{ '--preview-background': previewBackground } as CSSProperties}>
-          {head && previewScale > 0 && <div className="face-components-preview-canvas" style={{ width: head.width * previewScale, height: head.height * previewScale }}><img className="face-components-head" src={head.dataUrl} alt="Cabeça do modelo" />{selected && previewStyle && <img className="face-component-layer" src={selected.dataUrl} alt={selected.name} style={previewStyle} />}</div>}
+          {head && previewScale > 0 && <div className="face-components-preview-canvas" style={{ width: head.width * previewScale, height: head.height * previewScale }}><img className="face-components-head" src={head.dataUrl} alt="Cabeça do modelo" />{selected && previewStyle && <img className="face-component-layer" src={selected.dataUrl} alt={selected.name} style={previewStyle} />}{guide.visible && <HeadGuideOverlay head={head} guide={guide} />}</div>}
           {!head && <p className="head-extra-empty">Selecione um modelo que tenha uma peça de cabeça para visualizar os extras.</p>}
         </div><div className="face-components-stage-footer" aria-live="polite">{notice}</div>
       </main>
@@ -158,8 +214,15 @@ export function HeadExtrasWorkspace() {
         {selected && transform ? <>
           <label className="head-extra-name">Nome<input value={selected.name} disabled={busy} onChange={(event) => void updateAsset({ name: event.target.value })} /></label>
           {([['x', 'Horizontal', transform.x / (head?.width ?? 1) * 100, 0, 100], ['y', 'Vertical', transform.y / (head?.height ?? 1) * 100, 0, 100], ['scaleX', 'Largura', selected.width * transform.scaleX / (head?.width ?? 1) * 100, 1, 150], ['scaleY', 'Altura', selected.height * transform.scaleY / (head?.height ?? 1) * 100, 1, 150], ['rotation', 'Rotação', transform.rotation, -180, 180]] as const).map(([key, label, value, min, max]) => <label className="head-extra-control" key={key}><span>{label}<output>{Math.round(value)}{key === 'rotation' ? '°' : '%'}</output></span><input type="range" min={min} max={max} step="1" value={clamp(value, min, max)} disabled={!head || busy} onChange={(event) => changeTransform(key, Number(event.target.value))} /></label>)}
-          <button className="face-component-reset-transform" type="button" disabled={!head || busy} onClick={() => head && void updateAsset({ defaultTransform: { x: head.width * .5, y: head.height * .25, scaleX: Math.min(.6, head.width * .55 / selected.width), scaleY: Math.min(.35, head.height * .3 / selected.height), rotation: 0 } })}>Restaurar encaixe da peça</button>
+          <button className="face-component-reset-transform" type="button" disabled={!head || busy} onClick={() => head && void updateAsset({ defaultTransform: initialExtraTransform(head, selected.kind === 'head-nose' ? 'head-nose' : 'head-extra', selected.width, selected.height) })}>Restaurar encaixe da peça</button>
         </> : <p className="head-extra-empty">Selecione ou importe uma peça para ajustar.</p>}
+        <section className="face-components-guide-controls" aria-label="Guias de desenho compartilhadas"><header><strong>Guias de desenho</strong><label><input type="checkbox" checked={guide.visible} disabled={!guidesLoaded} onChange={(event) => updateGuide({ visible: event.target.checked })} /> Mostrar</label></header>
+          <label>Inclinação do eixo <output>{guide.angle}°</output><input type="range" min="-30" max="30" step="1" value={guide.angle} disabled={!guide.visible || !guidesLoaded} onChange={(event) => updateGuide({ angle: Number(event.target.value) })} /></label>
+          <label>Posição do eixo <output>{guide.verticalX}%</output><input type="range" min="20" max="80" step="1" value={guide.verticalX} disabled={!guide.visible || !guidesLoaded} onChange={(event) => updateGuide({ verticalX: Number(event.target.value) })} /></label>
+          <label>Altura da linha superior <output>{guide.horizontalY}%</output><input type="range" min="10" max={Math.min(90, guide.lowerHorizontalY - 1)} step="1" value={guide.horizontalY} disabled={!guide.visible || !guidesLoaded} onChange={(event) => updateGuide({ horizontalY: Number(event.target.value) })} /></label>
+          <label>Altura da linha inferior <output>{guide.lowerHorizontalY}%</output><input type="range" min={guide.horizontalY + 1} max="99" step="1" value={guide.lowerHorizontalY} disabled={!guide.visible || !guidesLoaded} onChange={(event) => updateGuide({ lowerHorizontalY: Number(event.target.value) })} /></label>
+          <button type="button" disabled={!guidesLoaded} onClick={() => updateGuide(defaultGuide)}>Restaurar guias</button>
+        </section>
       </aside>
     </div>{error && <div className="face-components-error" role="alert">{error}</div>}
   </section>

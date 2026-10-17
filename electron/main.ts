@@ -45,6 +45,7 @@ let poseMigration: Promise<void> | null = null
 let animatorSaveQueue: Promise<void> = Promise.resolve()
 let wardrobeSaveQueue: Promise<void> = Promise.resolve()
 let faceSaveQueue: Promise<void> = Promise.resolve()
+let faceGuideSaveQueue: Promise<void> = Promise.resolve()
 const hairSaveQueues = new Map<number, Promise<void>>()
 let characterSaveQueue: Promise<void> = Promise.resolve()
 
@@ -400,7 +401,7 @@ async function listFaceCatalogItems(modelSlot: number): Promise<FaceCatalogItemS
 function validFaceComponentAsset(modelSlot: number, asset: FaceComponentAssetSave): boolean {
   const transform = asset?.defaultTransform
   return isValidModelSlot(modelSlot) && asset?.schemaVersion === 1 && asset.modelSlot === modelSlot
-    && isValidWardrobeId(asset.id) && ['eye', 'pupil', 'eye-closed', 'eyebrow', 'eye-highlight-left', 'eye-highlight-right', 'blush', 'facial-shadow', 'head-extra'].includes(asset.kind)
+    && isValidWardrobeId(asset.id) && ['eye', 'pupil', 'eye-closed', 'eyebrow', 'eye-highlight-left', 'eye-highlight-right', 'blush', 'facial-shadow', 'head-extra', 'head-nose'].includes(asset.kind)
     && typeof asset.name === 'string' && asset.name.trim().length > 0 && asset.name.length <= 120
     && Number.isFinite(asset.width) && Number.isFinite(asset.height) && asset.width > 0 && asset.height > 0 && asset.width * asset.height <= 32_000_000
     && (asset.rightSidePositioned === undefined || typeof asset.rightSidePositioned === 'boolean')
@@ -409,6 +410,37 @@ function validFaceComponentAsset(modelSlot: number, asset: FaceComponentAssetSav
     && (transform.flipX === undefined || typeof transform.flipX === 'boolean')
     && transform.scaleX > 0 && transform.scaleY > 0 && transform.scaleX <= 20 && transform.scaleY <= 20
     && typeof asset.updatedAt === 'string'
+}
+
+function validFaceGuideProfile(profile: unknown): profile is 'eyes' | 'face' { return profile === 'eyes' || profile === 'face' }
+function validFaceGuides(value: unknown): value is Record<number, { visible: boolean; verticalX: number; horizontalY: number; lowerHorizontalY: number; angle: number }> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+  return Object.entries(value).every(([slot, guide]) => {
+    if (!/^([1-9]|10)$/.test(slot) || !guide || typeof guide !== 'object') return false
+    const item = guide as Record<string, unknown>
+    return typeof item.visible === 'boolean' && typeof item.verticalX === 'number' && Number.isFinite(item.verticalX) && item.verticalX >= 20 && item.verticalX <= 80
+      && typeof item.horizontalY === 'number' && Number.isFinite(item.horizontalY) && item.horizontalY >= 10 && item.horizontalY <= 90
+      && typeof item.lowerHorizontalY === 'number' && Number.isFinite(item.lowerHorizontalY) && item.lowerHorizontalY > item.horizontalY && item.lowerHorizontalY <= 99
+      && typeof item.angle === 'number' && Number.isFinite(item.angle) && item.angle >= -30 && item.angle <= 30
+  })
+}
+const faceGuidePath = (profile: 'eyes' | 'face') => join(app.getPath('userData'), 'fabricator', `guides-${profile}.json`)
+async function readFaceGuides(profile: 'eyes' | 'face') {
+  try {
+    const guides = JSON.parse(await readFile(faceGuidePath(profile), 'utf8')) as unknown
+    return validFaceGuides(guides) ? guides : null
+  } catch (reason) {
+    if ((reason as NodeJS.ErrnoException).code === 'ENOENT') return null
+    throw reason
+  }
+}
+async function writeFaceGuides(profile: 'eyes' | 'face', guides: unknown): Promise<void> {
+  if (!validFaceGuideProfile(profile) || !validFaceGuides(guides)) throw new Error('Guias de desenho inválidas.')
+  const target = faceGuidePath(profile)
+  await mkdir(dirname(target), { recursive: true })
+  const temporary = `${target}.tmp`
+  await writeFile(temporary, JSON.stringify(guides), 'utf8')
+  await rename(temporary, target)
 }
 
 async function listFaceComponentAssets(modelSlot: number, kind?: FaceAssetKind): Promise<FaceComponentAssetSummary[]> {
@@ -1682,6 +1714,18 @@ async function registerFabricatorHandlers(): Promise<void> {
     if (dirname(target) !== base || basename(target) !== `item-${id}`) throw new Error('Caminho de exclusão inválido.')
     const next = faceSaveQueue.catch(() => undefined).then(() => rm(target, { recursive: true, force: true }))
     faceSaveQueue = next
+    await next
+  })
+  ipcMain.handle('fabricator:face-guides:load', async (event, profile: string) => {
+    assertTrustedSender(event)
+    if (!validFaceGuideProfile(profile)) throw new Error('Perfil de guias inválido.')
+    return readFaceGuides(profile)
+  })
+  ipcMain.handle('fabricator:face-guides:save', async (event, profile: string, guides: unknown): Promise<void> => {
+    assertTrustedSender(event)
+    if (!validFaceGuideProfile(profile)) throw new Error('Perfil de guias inválido.')
+    const next = faceGuideSaveQueue.catch(() => undefined).then(() => writeFaceGuides(profile, guides))
+    faceGuideSaveQueue = next
     await next
   })
 
