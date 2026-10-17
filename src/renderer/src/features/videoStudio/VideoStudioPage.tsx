@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import type {
   VideoActorState, VideoAsset, VideoCharacterTrack, VideoFaceMode, VideoProject, VideoSceneElement, VideoTextClip
 } from '../../../../shared/videoStudio'
 import { createVideoProject } from '../../../../shared/videoStudio'
 import {
-  evaluateVideoProject, equalActorState, frameAtTime, moveCharacterBoundary, recordVideoFrame,
+  evaluateVideoProject, equalActorState, moveCharacterBoundary, recordVideoFrame,
   stateAtFrame, updateVideoDuration
 } from './videoRuntime'
 import { Icon } from '../../ui/components/Icon'
@@ -91,15 +91,16 @@ export function VideoStudioPage() {
     return () => window.clearTimeout(timer)
   }, [activeProject, dirty])
 
-  const saveNow = async (document = latestRef.current) => {
-    if (!document) return
+  const saveNow = async (document = latestRef.current): Promise<boolean> => {
+    if (!document) return false
     try {
       setError(null)
       await window.desktop.saveVideoProject(document)
       if (latestRef.current === document) setDirty(false)
+      return true
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Não foi possível salvar o projeto.')
-      throw reason
+      return false
     }
   }
 
@@ -190,9 +191,7 @@ export function VideoStudioPage() {
 
   const back = async () => {
     setPlaying(false)
-    if (dirty) {
-      try { await saveNow() } catch { return }
-    }
+    if (dirty && !(await saveNow())) return
     setActiveId(null)
     setSelectedElementId(null)
     setDrafts({})
@@ -313,7 +312,7 @@ export function VideoStudioPage() {
     seek(playheadRef.current)
   }
 
-  const beginBoundaryDrag = (event: React.PointerEvent<HTMLButtonElement>, track: VideoCharacterTrack, index: number) => {
+  const beginBoundaryDrag = (event: ReactPointerEvent<HTMLButtonElement>, track: VideoCharacterTrack, index: number) => {
     event.preventDefault()
     event.stopPropagation()
     if (track.locked || !activeProject || index < 1) return
