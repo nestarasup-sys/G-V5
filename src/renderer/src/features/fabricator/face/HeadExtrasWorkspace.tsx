@@ -29,17 +29,20 @@ function HeadGuideOverlay({ head, guide }: { head: NonNullable<ReturnType<typeof
     <line className="face-components-guide-line" x1={x} y1={-head.height} x2={x} y2={head.height * 2} /><line className="face-components-guide-line" x1={-head.width} y1={y} x2={head.width * 2} y2={y} /><line className="face-components-guide-line" x1={-head.width} y1={lowerY} x2={head.width * 2} y2={lowerY} /><circle className="face-components-guide-center" cx={x} cy={y} r={2.4} />
   </g></svg>
 }
-function readImage(file: File): Promise<{ dataUrl: string; width: number; height: number }> {
+function processHeadExtraImage(file: File): Promise<{ dataUrl: string; width: number; height: number }> {
   return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onerror = () => reject(new Error('Não foi possível abrir a imagem.'))
-    reader.onload = () => {
-      const image = new Image()
-      image.onerror = () => reject(new Error('O arquivo não contém uma imagem válida.'))
-      image.onload = () => resolve({ dataUrl: String(reader.result), width: image.naturalWidth, height: image.naturalHeight })
-      image.src = String(reader.result)
+    const worker = new Worker(new URL('./headExtraChroma.worker.ts', import.meta.url), { type: 'module' })
+    worker.onmessage = ({ data }: MessageEvent<{ type: 'complete'; id: number; width: number; height: number; png: ArrayBuffer } | { type: 'error'; id: number; message: string }>) => {
+      if (data.id !== 1) return
+      worker.terminate()
+      if (data.type === 'error') { reject(new Error(data.message)); return }
+      const reader = new FileReader()
+      reader.onerror = () => reject(new Error('Não foi possível preparar a imagem processada.'))
+      reader.onload = () => resolve({ dataUrl: String(reader.result), width: data.width, height: data.height })
+      reader.readAsDataURL(new Blob([data.png], { type: 'image/png' }))
     }
-    reader.readAsDataURL(file)
+    worker.onerror = () => { worker.terminate(); reject(new Error('Falha ao processar a imagem dos óculos.')) }
+    worker.postMessage({ id: 1, file })
   })
 }
 
@@ -126,7 +129,7 @@ export function HeadExtrasWorkspace() {
     if (!file || !head) return
     setBusy(true); setError('')
     try {
-      const image = await readImage(file)
+      const image = await processHeadExtraImage(file)
       const id = crypto.randomUUID()
       const now = new Date().toISOString()
       const transform = initialExtraTransform(head, image.width, image.height)
