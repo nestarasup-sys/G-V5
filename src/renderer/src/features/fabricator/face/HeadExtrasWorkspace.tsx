@@ -175,9 +175,14 @@ export function HeadExtrasWorkspace() {
 
   async function updateAsset(patch: Partial<Pick<FaceComponentAsset, 'name'>> & { defaultTransform?: Partial<FaceTransform> }) {
     if (!selected) return
-    const currentAsset = detailsRef.current[selected.id] ?? selected
-    const merged: FaceComponentAsset = { ...currentAsset, ...patch, defaultTransform: { ...currentAsset.defaultTransform, ...patch.defaultTransform }, updatedAt: new Date().toISOString() }
+    const storedAsset = detailsRef.current[selected.id] ?? selected
     const currentHead = headPart(model)
+    // Always merge edits onto the same bounded transform shown in the preview.
+    // Older saved extras may contain extreme scale values from the previous controls.
+    const currentAsset = currentHead && storedAsset.kind === 'head-extra'
+      ? { ...storedAsset, defaultTransform: normalizeExtraTransform(storedAsset, currentHead) }
+      : storedAsset
+    const merged: FaceComponentAsset = { ...currentAsset, ...patch, defaultTransform: { ...currentAsset.defaultTransform, ...patch.defaultTransform }, updatedAt: new Date().toISOString() }
     const next: FaceComponentAsset = currentHead && merged.kind === 'head-extra' ? { ...merged, defaultTransform: normalizeExtraTransform(merged, currentHead) } : merged
     detailsRef.current = { ...detailsRef.current, [next.id]: next }
     setDetails(detailsRef.current)
@@ -252,10 +257,13 @@ export function HeadExtrasWorkspace() {
     transform: `translate(-50%,-50%) rotate(${transform.rotation}deg) scaleX(${transform.flipX ? -1 : 1})`
   } : undefined
   const changeTransform = (key: 'x' | 'y' | 'scaleX' | 'scaleY' | 'rotation', percent: number) => {
-    if (!selected || !head) return
-    const values = key === 'x' || key === 'scaleX' ? { [key]: key === 'x' ? head.width * percent / 100 : head.width * percent / selected.width }
-      : key === 'y' || key === 'scaleY' ? { [key]: key === 'y' ? head.height * percent / 100 : head.height * percent / selected.height }
-        : { rotation: percent }
+    if (!selected || !head || !transform) return
+    const boundedPercent = key === 'rotation' ? clamp(percent, -180, 180) : key === 'scaleX' || key === 'scaleY' ? clamp(percent, 0, 200) : clamp(percent, 0, 100)
+    const values: Partial<FaceTransform> = key === 'x' ? { x: head.width * boundedPercent / 100 }
+      : key === 'y' ? { y: head.height * boundedPercent / 100 }
+        : key === 'scaleX' ? { scaleX: head.width * boundedPercent / 100 / Math.max(1, selected.width) }
+          : key === 'scaleY' ? { scaleY: head.height * boundedPercent / 100 / Math.max(1, selected.height) }
+            : { rotation: boundedPercent }
     void updateAsset({ defaultTransform: values })
   }
 
