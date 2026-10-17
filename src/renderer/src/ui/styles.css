@@ -2172,12 +2172,12 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .face-animator-recipes>button strong { color:#504552;font-size:10px; }
 .face-animator-recipes>button small { color:#988b99;font-size:9px; }
 .face-animator-stage-heading { min-height:34px;display:flex;align-items:center;justify-content:space-between;padding:0 10px;border-bottom:1px solid #f0ebef;color:#988d99;font-size:9px;font-weight:800;letter-spacing:.5px; }
-.face-animator-stage { --face-animator-checker:color-mix(in srgb,var(--preview-background,#fcfbfc) 92%,#777 8%);min-height:200px;flex:1;position:relative;display:grid;place-items:center;overflow:hidden;background-color:var(--preview-background,#fcfbfc);background-image:linear-gradient(45deg,var(--face-animator-checker) 25%,transparent 25%),linear-gradient(-45deg,var(--face-animator-checker) 25%,transparent 25%),linear-gradient(45deg,transparent 75%,var(--face-animator-checker) 75%),linear-gradient(-45deg,transparent 75%,var(--face-animator-checker) 75%);background-position:0 0,0 6px,6px -6px,-6px 0;background-size:12px 12px; }
-.face-animator-head { position:relative;width:min(70%,420px);max-height:94%;overflow:visible;filter:drop-shadow(0 3px 10px #44303a1a); }
+.face-animator-stage { --face-animator-checker:color-mix(in srgb,var(--preview-background,#fcfbfc) 92%,#777 8%);min-height:200px;flex:1;position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;overflow:hidden;padding:16px;background-color:var(--preview-background,#fcfbfc);background-image:linear-gradient(45deg,var(--face-animator-checker) 25%,transparent 25%),linear-gradient(-45deg,var(--face-animator-checker) 25%,transparent 25%),linear-gradient(45deg,transparent 75%,var(--face-animator-checker) 75%),linear-gradient(-45deg,transparent 75%,var(--face-animator-checker) 75%);background-position:0 0,0 6px,6px -6px,-6px 0;background-size:12px 12px; }
+.face-animator-head { position:relative;flex:0 1 auto;height:min(70vh,640px);max-width:94%;max-height:100%;overflow:visible;isolation:isolate;filter:drop-shadow(0 3px 10px #44303a1a); }
 .face-animator-head-base { position:absolute;inset:0;width:100%;height:100%;object-fit:fill; }
-.face-animator-effects { position:absolute;inset:0;overflow:hidden;mask-size:100% 100%;-webkit-mask-size:100% 100%;pointer-events:none;z-index:1; }
-.face-animator-shadow { position:absolute;left:0;width:100%; }
-.face-animator-blush,.face-animator-mouth-blush { position:absolute;border-radius:50%; }
+.face-animator-effects { position:absolute;inset:0;overflow:hidden;mask-size:100% 100%;-webkit-mask-size:100% 100%;mask-repeat:no-repeat;-webkit-mask-repeat:no-repeat;pointer-events:none;z-index:1; }
+.face-animator-shadow { position:absolute;left:0;right:0; }
+.face-animator-blush,.face-animator-mouth-blush { position:absolute;border-radius:50%;pointer-events:none; }
 .face-animator-playback { display:grid;grid-template-columns:auto minmax(80px,1fr) 38px;align-items:center;gap:10px;padding:8px 10px;border-top:1px solid #eee8ed; }
 .face-animator-play { border-color:#bd4b72;background:#bd4b72;color:white; }
 .face-animator-play:disabled { opacity:.45;cursor:not-allowed; }
