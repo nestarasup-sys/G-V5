@@ -1,4 +1,5 @@
 import type { CustomizerFaceAppearance } from './customizer'
+import type { FaceTransform } from './fabricator'
 
 export type StudioAsset = {
   id: string
@@ -9,7 +10,7 @@ export type StudioAsset = {
 }
 
 /** Studio-local adjustment shared by a facial category and its variant frames. */
-export type StudioFaceTransform = { x: number; y: number; width: number; height: number; rotation: number }
+export type StudioFaceTransform = { x: number; y: number; width: number; height: number; rotation: number; sourceTransformOverride?: FaceTransform }
 export type StudioFaceTransformCategory = 'eyes' | 'eyebrows' | 'nose' | 'mouth'
 /** Keys are category:itemId; bare category keys remain supported for older Studio data. */
 export type StudioFaceTransforms = Record<string, StudioFaceTransform>

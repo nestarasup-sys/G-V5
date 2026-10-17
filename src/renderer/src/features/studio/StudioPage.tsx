@@ -4,7 +4,7 @@ import { CharacterPortrait } from '../../ui/components/CharacterPortrait'
 import type { StudioAsset, StudioDocument, StudioElement, StudioFaceTransform, StudioFaceTransforms } from '../../../../shared/studio'
 import type { CustomizerCharacter } from '../../../../shared/customizer'
 import type { CustomizerFaceAppearance } from '../../../../shared/customizer'
-import type { FaceCatalogItem, FaceCatalogItemSummary, FaceSheetKind, FabricatorPoseSummary } from '../../../../shared/fabricator'
+import type { FaceCatalogItem, FaceCatalogItemSummary, FaceExpressionCollection, FaceExpressionPreset, FaceExpressionPresetSummary, FaceSheetKind, FabricatorPoseSummary } from '../../../../shared/fabricator'
 
 type StudioCard = StudioDocument
 type StudioSnapshot = Pick<StudioDocument, 'backgroundColor' | 'backgroundAssetId' | 'backgroundX' | 'backgroundY' | 'backgroundWidth' | 'backgroundHeight' | 'backgroundRotation' | 'assets' | 'elements'>
@@ -222,6 +222,11 @@ export function StudioPage() {
   const [inspectorCustomView, setInspectorCustomView] = useState<'face' | 'presets'>('face')
   const characterInspectorViewRef = useRef<{ tab: 'editor' | 'custom'; customView: 'face' | 'presets' }>({ tab: 'editor', customView: 'face' })
   const [studioPresetCategory, setStudioPresetCategory] = useState<'pose' | 'expression'>('pose')
+  const [studioExpressionCollections, setStudioExpressionCollections] = useState<FaceExpressionCollection[]>([])
+  const [studioExpressionPresets, setStudioExpressionPresets] = useState<FaceExpressionPresetSummary[]>([])
+  const [expandedStudioExpressionCollection, setExpandedStudioExpressionCollection] = useState<string | null>(null)
+  const [studioExpressionLoading, setStudioExpressionLoading] = useState(false)
+  const [studioExpressionBusy, setStudioExpressionBusy] = useState(false)
   const [studioPoseSlots, setStudioPoseSlots] = useState<Array<NonNullable<FabricatorPoseSummary>>>([])
   const [studioPoseThumbnails, setStudioPoseThumbnails] = useState<Record<number, string>>({})
   const [studioPoseDimensions, setStudioPoseDimensions] = useState<Record<number, { width: number; height: number }>>({})
@@ -286,6 +291,31 @@ export function StudioPage() {
   useEffect(() => {
     if (selectedElement?.kind === 'character') studioFaceTransformsRef.current[selectedElement.id] = selectedElement.faceTransforms ?? {}
   }, [activeStudioId, selectedElementId, selectedElement?.faceTransforms])
+
+  useEffect(() => {
+    let cancelled = false
+    setExpandedStudioExpressionCollection(null)
+    if (selectedStudioCharacterModelSlot === null) {
+      setStudioExpressionCollections([])
+      setStudioExpressionPresets([])
+      setStudioExpressionLoading(false)
+      return () => { cancelled = true }
+    }
+    setStudioExpressionLoading(true)
+    void Promise.all([
+      window.desktop.listFaceExpressionCollections(selectedStudioCharacterModelSlot),
+      window.desktop.listFaceExpressionPresets(selectedStudioCharacterModelSlot)
+    ]).then(([collections, presets]) => {
+      if (cancelled) return
+      setStudioExpressionCollections(collections)
+      setStudioExpressionPresets(presets)
+    }).catch((reason) => {
+      if (!cancelled) setError(reason instanceof Error ? reason.message : 'Não foi possível carregar os presets de expressão.')
+    }).finally(() => {
+      if (!cancelled) setStudioExpressionLoading(false)
+    })
+    return () => { cancelled = true }
+  }, [selectedStudioCharacterModelSlot])
 
   useEffect(() => {
     let cancelled = false
@@ -748,6 +778,59 @@ export function StudioPage() {
     } finally { setStudioFaceBusy(false) }
   }
 
+  const applyStudioExpressionPreset = async (summary: FaceExpressionPresetSummary) => {
+    if (!selectedStudioCharacter || !selectedElement || selectedElement.kind !== 'character' || studioExpressionBusy || studioFaceBusy) return
+    setStudioExpressionBusy(true)
+    setError(null)
+    try {
+      const preset: FaceExpressionPreset | null = await window.desktop.loadFaceExpressionPreset(summary.modelSlot, summary.id)
+      if (!preset || preset.modelSlot !== selectedStudioCharacterModelSlot) throw new Error('Este preset não está disponível para o modelo selecionado.')
+      const selections = preset.selections
+      const selectedMouth = selections.mouth
+      const componentParts = [
+        ['eye-left', selections.eyes.left, preset.transforms.eyeLeft],
+        ['eye-right', selections.eyes.right, preset.transforms.eyeRight],
+        ['pupil-left', selections.pupils.left, preset.transforms.pupilLeft],
+        ['pupil-right', selections.pupils.right, preset.transforms.pupilRight],
+        ['brow-left', selections.eyebrows.left, preset.transforms.browLeft],
+        ['brow-right', selections.eyebrows.right, preset.transforms.browRight]
+      ] as const
+      const components = { ...selectedStudioFaceAppearance?.components }
+      const faceTransforms: StudioFaceTransforms = { ...(selectedElement.faceTransforms ?? {}) }
+      for (const key of Object.keys(faceTransforms)) {
+        if (key.startsWith('expression-component:') || key.startsWith('expression:')) delete faceTransforms[key]
+      }
+      for (const [part, assetId, transform] of componentParts) {
+        components[part] = { ...(components[part] ?? {}), assetId }
+        if (assetId) faceTransforms[`expression-component:${part}`] = { x: 0, y: 0, width: 100, height: 100, rotation: 0, sourceTransformOverride: transform }
+      }
+      if (selections.nose) faceTransforms[`expression:nose:${selections.nose.catalogId}`] = { x: 0, y: 0, width: 100, height: 100, rotation: 0, sourceTransformOverride: preset.transforms.nose }
+      if (selectedMouth) faceTransforms[`expression:${selectedMouth.kind}:${selectedMouth.catalogId}`] = { x: 0, y: 0, width: 100, height: 100, rotation: 0, sourceTransformOverride: preset.transforms.mouth }
+      const appearance: CustomizerFaceAppearance = {
+        ...selectedStudioFaceAppearance,
+        modelSlot: preset.modelSlot,
+        setId: undefined,
+        eyeCatalogId: undefined, eyeLeftCatalogId: undefined, eyeRightCatalogId: undefined,
+        eyebrowCatalogId: undefined, eyebrowLeftCatalogId: undefined, eyebrowRightCatalogId: undefined,
+        components,
+        eyeState: selectedStudioFaceAppearance?.eyeState ?? 0,
+        eyebrows: Boolean(selections.eyebrows.left || selections.eyebrows.right),
+        noseCatalogId: selections.nose?.catalogId,
+        noseIndex: selections.nose?.index ?? selectedStudioFaceAppearance?.noseIndex ?? 0,
+        noseOpacity: preset.noseOpacity,
+        mouthClosedCatalogId: selectedMouth?.kind === 'mouth-closed' ? selectedMouth.catalogId : undefined,
+        mouthOpenCatalogId: selectedMouth?.kind === 'mouth-open' ? selectedMouth.catalogId : undefined,
+        expressionIndex: selectedMouth?.index ?? 0,
+        mouthOpen: selectedMouth?.kind === 'mouth-open'
+      }
+      await applyStudioFaceAppearance(appearance, faceTransforms)
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Não foi possível aplicar este preset de expressão.')
+    } finally {
+      setStudioExpressionBusy(false)
+    }
+  }
+
   const applyStudioPose = async (poseSlot: number | null) => {
     if (!activeStudio || selectedElement?.kind !== 'character' || !selectedStudioCharacter || !selectedElement.assetId || studioFaceBusy) return
     setStudioFaceBusy(true)
@@ -1133,7 +1216,7 @@ export function StudioPage() {
     if (!selectedStudioCharacter || selectedElement?.kind !== 'character') return <div className="studio-custom-empty"><strong>Presets</strong><span>Selecione um personagem na cena para ver poses e expressões.</span></div>
     return <div className="studio-presets-panel">
       <div className="studio-preset-buttons" aria-label="Categorias de presets">
-        {presetOptions.map((option) => <button key={option.id} className={`studio-preset-button${option.id === studioPresetCategory ? ' active' : ''}${option.id.startsWith('reserved') ? ' reserved' : ''}`} disabled={option.id.startsWith('reserved')} onClick={() => { if (option.id === 'pose' || option.id === 'expression') setStudioPresetCategory(option.id) }} type="button"><Icon name={option.icon} /><span>{option.label}</span></button>)}
+        {presetOptions.map((option) => <button key={option.id} className={`studio-preset-button${option.id === studioPresetCategory ? ' active' : ''}${option.id.startsWith('reserved') ? ' reserved' : ''}`} disabled={option.id.startsWith('reserved')} onClick={() => { if (option.id === 'pose') { setStudioPresetCategory('pose'); setExpandedStudioExpressionCollection(null) } else if (option.id === 'expression') { setStudioPresetCategory('expression'); setExpandedStudioExpressionCollection((current) => current ?? 'standard') } }} type="button"><Icon name={option.icon} /><span>{option.label}</span></button>)}
       </div>
         {studioPresetCategory === 'pose' && <section className="studio-preset-catalog" aria-label="Catálogo de poses">
         <h3>Poses do modelo</h3>
@@ -1144,6 +1227,28 @@ export function StudioPage() {
           })}
           {!studioPoseSlots.length && <p className="studio-custom-hint">Este modelo ainda não tem poses salvas.</p>}
         </div>
+      </section>}
+      {studioPresetCategory === 'expression' && <section className="studio-expression-catalog" aria-label="Presets do Expressão Dev">
+        {studioExpressionLoading ? <p className="studio-custom-hint">Carregando conjuntos de expressão…</p> : <>
+          {[{ id: 'standard', name: 'Padrão' }, ...studioExpressionCollections].map((collection) => {
+            const expressions = studioExpressionPresets
+              .filter((preset) => preset.collectionId === collection.id && Number.isInteger(preset.expressionIndex))
+              .sort((a, b) => a.expressionIndex! - b.expressionIndex!)
+            const expanded = expandedStudioExpressionCollection === collection.id
+            return <div className="studio-expression-collection" key={collection.id}>
+              <button className={`studio-expression-collection-button${expanded ? ' expanded' : ''}`} type="button" aria-expanded={expanded} onClick={() => setExpandedStudioExpressionCollection((current) => current === collection.id ? null : collection.id)}>
+                <span><strong>{collection.name}</strong><small>{expressions.length} expressão(ões) salva(s)</small></span><Icon name="chevronRight" />
+              </button>
+              {expanded && <div className="studio-expression-list">
+                {expressions.map((preset) => <button className="studio-expression-option" key={preset.id} type="button" onClick={() => void applyStudioExpressionPreset(preset)} disabled={studioExpressionBusy || studioFaceBusy}>
+                  <b>{String((preset.expressionIndex ?? 0) + 1).padStart(2, '0')}</b><span>{preset.name}</span>
+                </button>)}
+                {!expressions.length && <p className="studio-custom-hint">Nenhuma expressão salva neste conjunto. Salve expressões no Expressão Dev para listá-las aqui.</p>}
+              </div>}
+            </div>
+          })}
+          {(studioExpressionBusy || studioFaceBusy) && <p className="studio-custom-hint" role="status">Aplicando expressão…</p>}
+        </>}
       </section>}
     </div>
   }

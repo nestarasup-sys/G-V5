@@ -877,9 +877,9 @@ async function drawFaceCatalogOverlay(context: CanvasRenderingContext2D, artwork
     if (!item || item.id !== (hasSideSelection ? sideSelection : categoryIds[sheet])) continue
     const index = sheet === 'eyes' ? appearance.eyeState : sheet === 'nose' ? appearance.noseIndex : sheet.startsWith('mouth') ? appearance.expressionIndex : 0
     const piece = item.pieces.find((candidate) => candidate.sheet === sheet && candidate.index === index && candidate.side === side)
-    const transform = item.transforms[element]
     const studioCategory = sheet === 'eyes' ? 'eyes' : sheet === 'eyebrows' ? 'eyebrows' : sheet === 'nose' ? 'nose' : 'mouth'
-    const studioTransform = studioFaceTransforms?.[`${sheet}:${item.id}`] ?? studioFaceTransforms?.[studioCategory]
+    const studioTransform = studioFaceTransforms?.[`expression:${sheet}:${item.id}`] ?? studioFaceTransforms?.[`${sheet}:${item.id}`] ?? studioFaceTransforms?.[studioCategory]
+    const transform = studioTransform?.sourceTransformOverride ?? item.transforms[element]
     if (!piece || !transform) continue
     try {
       const catalogPalettePart: FacePalettePartId | undefined = sheet === 'nose' ? 'nose' : sheet.startsWith('mouth') ? 'mouth' : undefined
@@ -923,7 +923,7 @@ async function drawFaceCatalogOverlay(context: CanvasRenderingContext2D, artwork
     const selectedPart = appearance.components?.[part]
     if (!asset || !selectedPart) continue
     // Fabricator Dev owns placement and scale; the Customizer only chooses the asset.
-    const transform = asset.defaultTransform
+    const transform = studioFaceTransforms?.[`expression-component:${part}`]?.sourceTransformOverride ?? asset.defaultTransform
     const mirroredTransform = isRight && category !== 'pupil' && !asset.rightSidePositioned ? { ...transform, x: sourceHead.width - transform.x, rotation: -transform.rotation } : transform
     let localX = mirroredTransform.x
     let localY = mirroredTransform.y
