@@ -44,6 +44,7 @@ const fabricatorApi: FabricatorDesktopApi = {
   loadFaceExpressionPreset: (modelSlot, id) => ipcRenderer.invoke('fabricator:expression-presets:load', modelSlot, id),
   saveFaceExpressionPreset: (modelSlot, preset) => ipcRenderer.invoke('fabricator:expression-presets:save', modelSlot, preset),
   deleteFaceExpressionPreset: (modelSlot, id) => ipcRenderer.invoke('fabricator:expression-presets:delete', modelSlot, id),
+  saveFaceAnimationExport: (modelSlot, data) => ipcRenderer.invoke('fabricator:face-animation:export', modelSlot, data),
   loadFaceExpressionWorkspaceDraft: (modelSlot) => ipcRenderer.invoke('fabricator:expression-workspace:load', modelSlot),
   saveFaceExpressionWorkspaceDraft: (modelSlot, draft) => ipcRenderer.invoke('fabricator:expression-workspace:save', modelSlot, draft),
   listFaceComponentAssets: (modelSlot, kind) => ipcRenderer.invoke('fabricator:face-components:list', modelSlot, kind),

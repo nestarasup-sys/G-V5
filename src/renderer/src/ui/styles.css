@@ -2160,6 +2160,13 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .face-animator-toolbar>label output { color:#a54570;font-weight:750; }
 .face-animator-toolbar>label input { grid-column:1/-1;width:150px;accent-color:#bd4b72; }
 .face-animator-toolbar>button,.face-animator-play { min-height:32px;padding:0 12px;border:1px solid #e9dfe7;border-radius:8px;background:#fff;color:#725d70;font-size:11px;font-weight:700;cursor:pointer; }
+.face-animator-toolbar>button:disabled { opacity:.5;cursor:not-allowed; }
+.face-animator-toolbar>.face-animator-export { border-color:#7958b5;background:#7958b5;color:#fff; }
+.face-animator-toolbar>.face-animator-cancel { border-color:#e6c9d4;color:#a54769; }
+.face-animator-export-status { min-height:31px;display:flex;align-items:center;gap:12px;padding:5px 14px;border-bottom:1px solid #eee8ed;color:#776978;font-size:10px; }
+.face-animator-export-status.error { color:#a33e58;background:#fff6f6; }
+.face-animator-export-status>div { width:min(190px,28%);height:5px;overflow:hidden;border-radius:99px;background:#eee8f1; }
+.face-animator-export-status>div>i { display:block;height:100%;border-radius:inherit;background:#805bb9;transition:width .1s linear; }
 .face-animator-layout { min-height:0;flex:1;display:grid;grid-template-columns:minmax(190px,230px) minmax(340px,1fr) minmax(210px,260px);gap:10px;padding:10px; }
 .face-animator-recipes,.face-animator-stage-column,.face-animator-inspector { min-width:0;min-height:0;display:flex;flex-direction:column;overflow:hidden;border:1px solid #eee8ed;border-radius:10px;background:#fff; }
 .face-animator-recipes { overflow:auto;padding:10px; }
