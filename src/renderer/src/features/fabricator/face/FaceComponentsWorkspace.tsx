@@ -182,8 +182,8 @@ function FaceTransformControls({ head, transform, sourceWidth, sourceHeight, pup
 
 export function FaceComponentsWorkspace({ mode }: { mode: FaceWorkspaceMode }) {
   const [previewBackground] = usePreviewBackground()
-  const guideStorageKey = mode === 'eyes' ? EYES_GUIDE_STORAGE_KEY : FACE_GUIDE_STORAGE_KEY
-  const guideProfile: FaceGuideProfile = mode === 'eyes' ? 'eyes' : 'face'
+  const guideStorageKey = FACE_GUIDE_STORAGE_KEY
+  const guideProfile: FaceGuideProfile = 'face'
   const [models, setModels] = useState<FabricatorSlotSummary[]>([])
   const [modelSlot, setModelSlot] = useState(1)
   const [guidesByModel, setGuidesByModel] = useState<Record<number, FaceGuide>>(() => readFaceGuides(guideStorageKey, mode === 'eyes' ? GUIDE_STORAGE_KEY : undefined))
@@ -363,7 +363,9 @@ export function FaceComponentsWorkspace({ mode }: { mode: FaceWorkspaceMode }) {
     setGuidesLoadedFor(null)
     void window.desktop.loadFaceGuides(guideProfile).then(async (saved) => {
       if (cancelled) return
-      const next = saved ?? readFaceGuides(guideStorageKey, mode === 'eyes' ? GUIDE_STORAGE_KEY : undefined)
+      const legacyEyes = readFaceGuides(EYES_GUIDE_STORAGE_KEY)
+      const legacyFace = readFaceGuides(FACE_GUIDE_STORAGE_KEY, GUIDE_STORAGE_KEY)
+      const next = saved ?? { ...legacyEyes, ...legacyFace }
       setGuidesByModel(next)
       if (!saved) await window.desktop.saveFaceGuides(guideProfile, next)
       if (!cancelled) setGuidesLoadedFor(guideProfile)

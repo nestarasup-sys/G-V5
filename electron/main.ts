@@ -428,7 +428,16 @@ const faceGuidePath = (profile: 'eyes' | 'face') => join(app.getPath('userData')
 async function readFaceGuides(profile: 'eyes' | 'face') {
   try {
     const guides = JSON.parse(await readFile(faceGuidePath(profile), 'utf8')) as unknown
-    return validFaceGuides(guides) ? guides : null
+    if (!validFaceGuides(guides)) return null
+    if (profile !== 'face') return guides
+    // Preserve existing eye-only model settings while unifying all guide editors.
+    try {
+      const eyeGuides = JSON.parse(await readFile(faceGuidePath('eyes'), 'utf8')) as unknown
+      return validFaceGuides(eyeGuides) ? { ...eyeGuides, ...guides } : guides
+    } catch (reason) {
+      if ((reason as NodeJS.ErrnoException).code === 'ENOENT') return guides
+      throw reason
+    }
   } catch (reason) {
     if ((reason as NodeJS.ErrnoException).code === 'ENOENT') return null
     throw reason
