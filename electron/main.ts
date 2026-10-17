@@ -278,7 +278,7 @@ function validFaceExpressionPreset(modelSlot: number, preset: FaceExpressionPres
     && isValidWardrobeId(preset.id) && typeof preset.name === 'string' && Boolean(preset.name.trim()) && preset.name.length <= 80
     && ((preset.collectionId === undefined && preset.expressionIndex === undefined)
       || (typeof preset.collectionId === 'string' && isValidWardrobeId(preset.collectionId)
-        && Number.isInteger(preset.expressionIndex) && (preset.expressionIndex as number) >= 0 && (preset.expressionIndex as number) <= 20))
+        && Number.isInteger(preset.expressionIndex) && (preset.expressionIndex as number) >= 0 && (preset.expressionIndex as number) <= 999))
     && typeof preset.updatedAt === 'string' && Number.isFinite(Date.parse(preset.updatedAt))
     && !!selections && validSideSelections(selections.eyes) && validSideSelections(selections.pupils)
     && (selections.eyebrows === undefined || validSideSelections(selections.eyebrows))

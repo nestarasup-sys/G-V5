@@ -153,6 +153,7 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
   const [presets, setPresets] = useState<FaceExpressionPresetSummary[]>([])
   const [presetId, setPresetId] = useState<string>(() => crypto.randomUUID())
   const [selectedExpressionIndex, setSelectedExpressionIndex] = useState(0)
+  const [customExpressionNames, setCustomExpressionNames] = useState<Record<number, string>>({})
   const [workingCopies, setWorkingCopies] = useState<Record<number, ExpressionWorkingCopy>>({})
   const [switchingExpression, setSwitchingExpression] = useState(false)
   const [selectedLayer, setSelectedLayer] = useState<LayerKey>('eyeLeft')
@@ -198,6 +199,9 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
       setCatalogSummaries(facialCatalogs)
       setCatalogItems(Object.fromEntries(readyCatalogs.map((item) => [item.id, item])))
       setPresets(savedPresets)
+      setCustomExpressionNames(Object.fromEntries(savedPresets
+        .filter((preset) => preset.collectionId === EXPRESSION_COLLECTION_ID && Number.isInteger(preset.expressionIndex) && preset.expressionIndex! >= STANDARD_EXPRESSIONS.length)
+        .map((preset) => [preset.expressionIndex!, preset.name])))
 
       const leftEye = readyComponents.find((asset) => asset.kind === 'eye' && componentSide(asset) === 'left')
       const leftPupil = readyComponents.find((asset) => asset.kind === 'pupil' && componentSide(asset) === 'left')
@@ -253,7 +257,11 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
   const visibleComposition = open ? draft : composition
   const visibleTransforms = open ? draftTransforms : transforms
   const visibleNoseOpacity = open ? draftNoseOpacity : noseOpacity
-  const activeExpressionName = STANDARD_EXPRESSIONS[selectedExpressionIndex]
+  const customExpressionIndices = useMemo(() => [...new Set([
+    ...Object.keys(customExpressionNames).map(Number),
+    ...presets.filter((preset) => preset.collectionId === EXPRESSION_COLLECTION_ID && Number.isInteger(preset.expressionIndex) && preset.expressionIndex! >= STANDARD_EXPRESSIONS.length).map((preset) => preset.expressionIndex!)
+  ])].sort((a, b) => a - b), [customExpressionNames, presets])
+  const activeExpressionName = STANDARD_EXPRESSIONS[selectedExpressionIndex] ?? customExpressionNames[selectedExpressionIndex] ?? `Nova expressão ${selectedExpressionIndex - STANDARD_EXPRESSIONS.length + 1}`
   const expressionPresetByIndex = useMemo(() => new Map(presets
     .filter((preset) => preset.collectionId === EXPRESSION_COLLECTION_ID && Number.isInteger(preset.expressionIndex))
     .map((preset) => [preset.expressionIndex!, preset])), [presets])
@@ -441,6 +449,22 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
       setSwitchingExpression(false)
     }
   }
+  const createExpression = () => {
+    if (loading || switchingExpression || saving) return
+    const nextIndex = Math.max(STANDARD_EXPRESSIONS.length - 1, ...customExpressionIndices) + 1
+    const name = `Nova expressão ${nextIndex - STANDARD_EXPRESSIONS.length + 1}`
+    const nextId = crypto.randomUUID()
+    const nextCopy: ExpressionWorkingCopy = { id: nextId, composition: structuredClone(composition), transforms: cloneTransforms(transforms), noseOpacity }
+    setWorkingCopies((current) => ({
+      ...current,
+      [selectedExpressionIndex]: { id: presetId, composition: structuredClone(composition), transforms: cloneTransforms(transforms), noseOpacity },
+      [nextIndex]: nextCopy
+    }))
+    setCustomExpressionNames((current) => ({ ...current, [nextIndex]: name }))
+    setPresetId(nextId)
+    setSelectedExpressionIndex(nextIndex)
+    setError(null)
+  }
   const saveCurrentPreset = async () => {
     setSaving(true); setError(null)
     const saved: FaceExpressionPreset = {
@@ -582,20 +606,26 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
       </button>
     </aside>
     <aside className="expression-sequence-panel" aria-label="Sequência do conjunto Padrão">
-      <header>
-        <div className="expression-sequence-heading">
-          <strong>Padrão</strong>
-          <button className="expression-sequence-reset" type="button" title="Restaurar os valores originais da expressão atual" aria-label="Restaurar expressão atual" disabled={loading || switchingExpression || saving} onClick={resetCurrentExpression}><Icon name="reset" />Restaurar</button>
-        </div>
-        <small>Ordem da folha de bocas</small>
+      <header className="expression-sequence-actions">
+        <button className="expression-sequence-new" type="button" disabled={loading || switchingExpression || saving} onClick={createExpression}><Icon name="plus" />Nova</button>
+        <button className="expression-sequence-reset" type="button" title="Restaurar os valores originais da expressão atual" aria-label="Restaurar expressão atual" disabled={loading || switchingExpression || saving} onClick={resetCurrentExpression}><Icon name="reset" />Restaurar</button>
       </header>
-      <nav className="expression-sequence-list" aria-label="21 expressões padrão">
+      <nav className="expression-sequence-list" aria-label="Expressões do conjunto Padrão">
         {STANDARD_EXPRESSIONS.map((name, index) => {
           const saved = expressionPresetByIndex.has(index)
           const cached = workingCopies[index]
           const isActive = selectedExpressionIndex === index
           return <button key={name} type="button" className={`expression-sequence-item${isActive ? ' active' : ''}`} aria-pressed={isActive} disabled={loading || switchingExpression || saving} onClick={() => void selectExpression(index)}>
             <b>{String(index + 1).padStart(2, '0')}</b><span>{name}</span><small>{isActive ? 'Editando' : saved ? 'Salvo' : cached ? 'Rascunho' : 'Vazio'}</small>
+          </button>
+        })}
+        {customExpressionIndices.map((index) => {
+          const saved = expressionPresetByIndex.has(index)
+          const cached = workingCopies[index]
+          const isActive = selectedExpressionIndex === index
+          const name = customExpressionNames[index] ?? expressionPresetByIndex.get(index)?.name ?? `Nova expressão ${index - STANDARD_EXPRESSIONS.length + 1}`
+          return <button key={`custom-${index}`} type="button" className={`expression-sequence-item expression-sequence-item-custom${isActive ? ' active' : ''}`} aria-pressed={isActive} disabled={loading || switchingExpression || saving} onClick={() => void selectExpression(index)}>
+            <b>+</b><span>{name}</span><small>{isActive ? 'Editando' : saved ? 'Salvo' : cached ? 'Rascunho' : 'Vazio'}</small>
           </button>
         })}
       </nav>

@@ -1024,6 +1024,12 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .expression-collection-card small { color: #9e8e9a; font-size: 9px; }
 .expression-collection-card > b { color: #aa8192; font-size: 18px; }
 .expression-sequence-panel { display: flex; flex-direction: column; padding: 10px 7px 7px; }
+.expression-sequence-panel > header.expression-sequence-actions { display: flex; align-items: center; justify-content: space-between; gap: 5px; }
+.expression-sequence-new { min-height: 23px; display: inline-flex; align-items: center; justify-content: center; gap: 3px; padding: 2px 7px; border: 1px solid #e5c9d6; border-radius: 6px; background: #fff3f7; color: #a3446b; font: inherit; font-size: 9px; font-weight: 800; cursor: pointer; }
+.expression-sequence-new:hover:not(:disabled) { border-color: #d78aaa; background: #ffeaf2; }
+.expression-sequence-new:disabled { opacity: .55; cursor: wait; }
+.expression-sequence-new svg { width: 11px; height: 11px; }
+.expression-sequence-actions .expression-sequence-reset { margin-left: auto; }
 .expression-sequence-list { min-height: 0; display: flex; flex-direction: column; gap: 3px; overflow: auto; padding-top: 7px; scrollbar-color: #e6c5d2 #faf8f9; scrollbar-width: thin; }
 .expression-sequence-item { min-height: 27px; display: grid; grid-template-columns: 25px minmax(0,1fr) auto; align-items: center; gap: 5px; padding: 3px 5px; border: 1px solid transparent; border-radius: 6px; background: transparent; color: #645665; text-align: left; cursor: pointer; }
 .expression-sequence-item:hover:not(:disabled) { background: #fff5f8; }
