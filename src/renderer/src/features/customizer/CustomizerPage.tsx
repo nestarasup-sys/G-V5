@@ -971,8 +971,11 @@ async function drawFaceCatalogOverlay(context: CanvasRenderingContext2D, artwork
       if (eyeTransformBase) {
         const eyeTransform = isRight && !eyeAsset?.rightSidePositioned ? { ...eyeTransformBase, x: sourceHead.width - eyeTransformBase.x, rotation: -eyeTransformBase.rotation } : eyeTransformBase
         if (eyeAsset) pupilEyeClip = { asset: eyeAsset, transform: eyeTransform, flipX: Boolean(eyeTransformBase.flipX) !== (isRight && !eyeAsset.rightSidePositioned), colors: eyeSelection?.colors }
-        const pupilOffsetX = (isRight && !asset.rightSidePositioned ? -transform.x : transform.x) * eyeTransform.scaleX
-        const pupilOffsetY = transform.y * eyeTransform.scaleY
+        // Fabricator stores pupil x/y as offsets in head pixels. The preview
+        // positions the pupil inside a scaled eye mask, so those offsets must
+        // not be scaled a second time by the eye transform here.
+        const pupilOffsetX = isRight && !asset.rightSidePositioned ? -transform.x : transform.x
+        const pupilOffsetY = transform.y
         const pupilAngle = eyeTransform.rotation * Math.PI / 180
         localX = eyeTransform.x + pupilOffsetX * Math.cos(pupilAngle) - pupilOffsetY * Math.sin(pupilAngle)
         localY = eyeTransform.y + pupilOffsetX * Math.sin(pupilAngle) + pupilOffsetY * Math.cos(pupilAngle)
@@ -980,7 +983,9 @@ async function drawFaceCatalogOverlay(context: CanvasRenderingContext2D, artwork
         scaleY = eyeTransform.scaleY * scaleY
         sourceWidth = (eyeAsset?.width ?? sourceHead.width * .19) * eyeTransform.scaleX * transform.scaleX
         sourceHeight = (eyeAsset?.height ?? sourceHead.height * .17) * eyeTransform.scaleY * transform.scaleY
-        drawRotation = eyeTransform.rotation + transform.rotation * (isRight && !asset.rightSidePositioned ? -1 : 1)
+        const pupilSideDirection = isRight && !asset.rightSidePositioned ? -1 : 1
+        const eyeFlipDirection = pupilEyeClip?.flipX ? -1 : 1
+        drawRotation = eyeTransform.rotation + transform.rotation * pupilSideDirection * eyeFlipDirection
       }
     }
     const localTargetX = localX / sourceHead.width * targetHead.width
@@ -998,7 +1003,8 @@ async function drawFaceCatalogOverlay(context: CanvasRenderingContext2D, artwork
         if (clipped) {
           clipped.clearRect(0, 0, pupilClipCanvas.width, pupilClipCanvas.height)
           clipped.save(); clipped.translate(x, y); clipped.rotate((targetHead.rotation + drawRotation) * Math.PI / 180)
-          if (transform.flipX) clipped.scale(-1, 1)
+          const pupilFlip = Boolean(transform.flipX) !== Boolean(pupilEyeClip.flipX)
+          if (pupilFlip) clipped.scale(-1, 1)
           clipped.drawImage(image, -width / 2, -height / 2, width, height); clipped.restore()
 
           const eyeMask = await loadCachedImage(await eyeInteriorMask(pupilEyeClip.asset.dataUrl))
