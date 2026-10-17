@@ -5,6 +5,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import type { AnimatorAnimation, AnimatorAnimationAsset, AnimatorAnimationDraft, AnimatorAnimationSave, AnimatorAnimationSummary, FaceAssetKind, FaceAssetSave, FaceCatalogItem, FaceCatalogItemSave, FaceCatalogItemSummary, FaceComponentAsset, FaceComponentAssetSave, FaceComponentAssetSummary, FaceElementKind, FaceSet, FaceSetSave, FaceSetSummary, FaceSheetKind, FabricatorAssetSave, FabricatorHistoryEntry, FabricatorHistorySaveEntry, FabricatorHistorySaveState, FabricatorHistoryState, FabricatorPose, FabricatorPoseDraft, FabricatorPoseDraftSave, FabricatorPoseSave, FabricatorPoseSummary, FabricatorProject, FabricatorProjectSave, FabricatorSlotSummary, HairStyle, HairStyleAsset, HairStyleSave, HairStyleSummary, HairWorkspace, HairWorkspaceAsset, HairWorkspaceSave, ModelPart, PosePart, WardrobeAssetSave, WardrobeCategory, WardrobeSet, WardrobeSetSave, WardrobeSetSummary } from '../src/shared/fabricator'
 import { resolvePoseCategory } from '../src/shared/fabricator'
+import { hairCategories } from '../src/shared/hairCategories'
 import type { CustomizerCharacter, CustomizerFaceAppearance, CustomizerWardrobePaletteKey, HairColorOverrides } from '../src/shared/customizer'
 import { characterBodyDimensionLimits, characterProportionLimits } from '../src/shared/customizer'
 import type { StudioAsset, StudioDocument, StudioFaceTransform, StudioFaceTransforms } from '../src/shared/studio'
@@ -493,6 +494,10 @@ async function writeFaceComponentAsset(modelSlot: number, asset: FaceComponentAs
 function validHairWorkspace(modelSlot: number, workspace: HairWorkspaceSave): boolean {
   if (!isValidModelSlot(modelSlot) || workspace?.schemaVersion !== 1 || workspace.modelSlot !== modelSlot || !workspace.transforms) return false
   for (const side of ['front', 'back', 'fringe'] as const) {
+    const category = workspace.categoryBySide?.[side]
+    if (category !== undefined && !hairCategories.some((item) => item.id === category && item.side === side)) return false
+  }
+  for (const side of ['front', 'back', 'fringe'] as const) {
     const asset = workspace[side]
     const transform = workspace.transforms[side]
     if (side === 'fringe' && !asset && !transform) continue
@@ -504,6 +509,7 @@ function validHairWorkspace(modelSlot: number, workspace: HairWorkspaceSave): bo
   if (workspace.chromaTolerance !== undefined && (!Number.isFinite(workspace.chromaTolerance) || workspace.chromaTolerance < 0 || workspace.chromaTolerance > 100)) return false
   if (workspace.chromaMode !== undefined && !['auto', 'green', 'checker'].includes(workspace.chromaMode)) return false
   if (workspace.sourceImageSaved !== undefined && typeof workspace.sourceImageSaved !== 'boolean') return false
+  if (workspace.sourceAppliesToDraft !== undefined && typeof workspace.sourceAppliesToDraft !== 'boolean') return false
   return typeof workspace.updatedAt === 'string'
 }
 
@@ -553,6 +559,10 @@ function validHairStyle(modelSlot: number, style: HairStyleSave): boolean {
   if (!isValidModelSlot(modelSlot) || style?.schemaVersion !== 1 || style.modelSlot !== modelSlot || !isValidWardrobeId(style.id)
     || typeof style.name !== 'string' || !style.name.trim() || style.name.length > 80 || !style.transforms) return false
   if (!style.front && !style.back && !style.fringe) return false
+  if (style.category !== undefined) {
+    const category = hairCategories.find((item) => item.id === style.category)
+    if (!category || !style[category.side]) return false
+  }
   for (const side of ['front', 'back', 'fringe'] as const) {
     const asset = style[side]
     const transform = style.transforms[side]

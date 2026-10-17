@@ -193,8 +193,10 @@ export type HairWorkspace = {
   transforms: { front: HairTransform; back: HairTransform; fringe?: HairTransform }
   sourceImageDataUrl?: string
   sourceImageSaved?: boolean
+  sourceAppliesToDraft?: boolean
   chromaTolerance?: number
   chromaMode?: 'auto' | 'green' | 'checker'
+  categoryBySide?: Partial<Record<'front' | 'back' | 'fringe', import('./customizer').HairPartId>>
   updatedAt: string
 }
 export type HairWorkspaceSave = Omit<HairWorkspace, 'front' | 'back' | 'fringe' | 'sourceImageDataUrl'> & {
@@ -208,6 +210,8 @@ export type HairStyle = {
   id: string
   modelSlot: number
   name: string
+  /** Absent on legacy styles, which remain visible in every compatible category. */
+  category?: import('./customizer').HairPartId
   front: { dataUrl: string; width: number; height: number } | null
   back: { dataUrl: string; width: number; height: number } | null
   fringe?: { dataUrl: string; width: number; height: number } | null

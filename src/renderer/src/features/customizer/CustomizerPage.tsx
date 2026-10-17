@@ -3,6 +3,7 @@ import { CharacterPortrait } from '../../ui/components/CharacterPortrait'
 import { Icon, type IconName } from '../../ui/components/Icon'
 import type { FaceCatalogItem, FaceCatalogItemSummary, FaceComponentAsset, FaceComponentAssetSummary, FaceComponentKind, FaceDetailKind, FaceElementKind, FaceSet, FaceSheetKind, FabricatorPose, FabricatorPoseSummary, FabricatorProject, FabricatorSlotSummary, HairStyle, HairStyleSummary, WardrobeCategory, WardrobeSet, WardrobeSetSummary } from '../../../../shared/fabricator'
 import { resolvePoseCategory } from '../../../../shared/fabricator'
+import { hairCategories, hairStyleSupportsCategory } from '../../../../shared/hairCategories'
 import type { CustomizerCharacter, CustomizerFaceAppearance, CustomizerWardrobeCategory, CustomizerWardrobeGroup, CustomizerWardrobePaletteKey, FaceComponentPartId, FacePalettePartId, HairColorOverrides, HairColorRole, HairPartId } from '../../../../shared/customizer'
 import { characterBodyDimensionLimits, characterProportionLimits, defaultCharacterBodyDimensions, defaultCharacterProportions, getCharacterBodyDimensions, getCharacterProportions, type CharacterBodyDimensions, type CharacterProportions } from '../../../../shared/customizer'
 import type { StudioFaceTransforms } from '../../../../shared/studio'
@@ -393,13 +394,7 @@ type SelectedWardrobeComponent = { setId: string; category: ClothingGroupCategor
 type HairCatalogSide = 'front' | 'back'
 type HairLayerSide = HairCatalogSide | 'fringe'
 type HairLayerReference = { style: HairStyle; side: HairLayerSide; part: HairPartId }
-const customizerHairParts: Array<{ id: HairPartId; label: string; side: HairLayerSide }> = [
-  { id: 'backHair', label: 'Cabelo traseiro', side: 'back' },
-  { id: 'rearHair', label: 'Cabelo posterior', side: 'front' },
-  { id: 'ponytail', label: 'Rabo de cavalo', side: 'back' },
-  { id: 'frontHair', label: 'Franja frontal', side: 'fringe' },
-  { id: 'ahoge', label: 'Ahoge', side: 'fringe' }
-]
+const customizerHairParts = hairCategories
 const hairAppearanceStyleId = (appearance: NonNullable<CustomizerCharacter['customization']['hairAppearance']> | undefined, side: HairCatalogSide): string | null => {
   if (!appearance) return null
   const key = side === 'front' ? 'frontStyleId' : 'backStyleId'
@@ -2371,7 +2366,7 @@ export function CustomizerPage() {
               <nav className="customizer-hair-tabs" aria-label="Categoria de cabelo">
                 {([{ id: 'front', label: 'Posterior' }, { id: 'back', label: 'Traseiro' }] as const).map((category) => <button key={category.id} className={hairCatalogSide === category.id ? 'active' : ''} onClick={() => setHairCatalogSide(category.id)} aria-pressed={hairCatalogSide === category.id} type="button">{category.label}</button>)}
               </nav>
-              <div className="customizer-hair-grid">{hairStyles.filter((summary) => summary[hairCatalogSide] !== null).map((summary) => {
+              <div className="customizer-hair-grid">{hairStyles.filter((summary) => hairStyleSupportsCategory(summary, hairCatalogSide === 'front' ? 'rearHair' : 'backHair')).map((summary) => {
                 const detail = hairDetails[String(summary.modelSlot) + ':' + summary.id]
                 const selected = characterHairAppearance?.modelSlot === summary.modelSlot && hairAppearanceStyleId(characterHairAppearance, hairCatalogSide) === summary.id
                 const asset = detail?.[hairCatalogSide]
@@ -2379,7 +2374,7 @@ export function CustomizerPage() {
                   <span className="customizer-hair-art">{asset && <img src={asset.dataUrl} alt="" />}{!asset && <span><Icon name="bow" /></span>}</span>
                   <b>{summary.name}</b><small>{selected ? 'Aplicado' : `Usar ${hairCatalogSide === 'front' ? 'posterior' : 'traseiro'}`}</small>
                 </button>
-              })}{hairStyles.every((summary) => summary[hairCatalogSide] === null) && <p className="customizer-face-empty">Nenhum cabelo {hairCatalogSide === 'front' ? 'posterior' : 'traseiro'} salvo para este modelo.</p>}</div>
+              })}{hairStyles.every((summary) => !hairStyleSupportsCategory(summary, hairCatalogSide === 'front' ? 'rearHair' : 'backHair')) && <p className="customizer-face-empty">Nenhum cabelo {hairCatalogSide === 'front' ? 'posterior' : 'traseiro'} salvo para este modelo.</p>}</div>
             </>}
     </div>
   )
@@ -2389,7 +2384,7 @@ export function CustomizerPage() {
     const colorOverrides = appearance?.colors ?? {}
     const renderPieceSelector = (part: typeof customizerHairParts[number]) => {
       const { side } = part
-      const options = hairStyles.filter((summary) => summary[side] != null)
+      const options = hairStyles.filter((summary) => hairStyleSupportsCategory(summary, part.id))
       const selectedId = hairAppearancePartStyleId(appearance, part.id)
       const selectedIndex = options.findIndex((summary) => summary.id === selectedId)
       const selected = selectedIndex >= 0 ? options[selectedIndex] : null
@@ -2449,7 +2444,7 @@ export function CustomizerPage() {
     if (!hairLibraryPart) return null
     const part = customizerHairParts.find((item) => item.id === hairLibraryPart)
     if (!part) return null
-    const options = hairStyles.filter((summary) => summary[part.side] !== null)
+    const options = hairStyles.filter((summary) => hairStyleSupportsCategory(summary, part.id))
     const pageSize = 20
     const slots: Array<HairStyleSummary | null> = [null, ...options]
     const pageCount = Math.max(1, Math.ceil(slots.length / pageSize))
