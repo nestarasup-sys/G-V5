@@ -309,15 +309,16 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
   }
   const cancelChoosing = () => { setDraft(composition); setDraftTransforms(cloneTransforms(transforms)); setDraftNoseOpacity(noseOpacity); setOpen(false) }
   const updateLayerTransform = (key: LayerKey, patch: Partial<FaceTransform>) => setTransforms((current) => ({ ...current, [key]: { ...current[key], ...patch } }))
-  const beginPreviewLayerDrag = (event: ReactPointerEvent<HTMLElement>, layer: LayerKey, mirroredX = false, rotation = 0, paired?: Omit<PreviewLayerMapping, 'startX' | 'startY'>) => {
-    if (layer !== selectedLayer || !head || event.button !== 0 && event.pointerType === 'mouse') return
+  const beginPreviewLayerDrag = (event: ReactPointerEvent<HTMLElement>, requestedMappings: Array<Omit<PreviewLayerMapping, 'startX' | 'startY'>>) => {
+    if (!requestedMappings.some(({ layer }) => layer === selectedLayer) || !head || event.button !== 0 && event.pointerType === 'mouse') return
     const bounds = previewCanvas.current?.getBoundingClientRect()
     if (!bounds?.width || !bounds.height) return
     event.preventDefault()
     event.stopPropagation()
     event.currentTarget.setPointerCapture(event.pointerId)
-    const mappings: PreviewLayerMapping[] = [{ layer, startX: transforms[layer].x, startY: transforms[layer].y, mirroredX, rotation }]
-    if (paired) mappings.push({ ...paired, startX: transforms[paired.layer].x, startY: transforms[paired.layer].y })
+    const mappings: PreviewLayerMapping[] = requestedMappings.map((mapping) => ({
+      ...mapping, startX: transforms[mapping.layer].x, startY: transforms[mapping.layer].y
+    }))
     previewLayerDrag.current = {
       pointerId: event.pointerId, clientX: event.clientX, clientY: event.clientY,
       modelPerPixelX: head.width / bounds.width, modelPerPixelY: head.height / bounds.height,
@@ -423,13 +424,14 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
     if (kind !== 'pupil') {
       const mirrored = right && !physicallyRight
       const layer = layerKey(kind, currentSide)
-      const canDrag = selectedLayer === layer
       const pairedSide = right ? 'left' : 'right'
+      const pairedLayer = layerKey(kind, pairedSide)
+      const movePair = linkedLayerPairs[kind]
+      const canDrag = selectedLayer === layer || movePair && selectedLayer === pairedLayer
       const pairedAssetId = kind === 'eye' ? visibleComposition.eyes[pairedSide] : visibleComposition.eyebrows[pairedSide]
       const pairedAsset = pairedAssetId ? componentAssets[pairedAssetId] : undefined
-      const pairedMapping = linkedLayerPairs[kind] && pairedAsset ? {
-        layer: layerKey(kind, pairedSide), mirroredX: pairedSide === 'right' && pairedAsset.rightSidePositioned !== true, rotation: 0
-      } : undefined
+      const dragMappings: Array<Omit<PreviewLayerMapping, 'startX' | 'startY'>> = [{ layer, mirroredX: mirrored, rotation: 0 }]
+      if (movePair && pairedAsset) dragMappings.push({ layer: pairedLayer, mirroredX: pairedSide === 'right' && pairedAsset.rightSidePositioned !== true, rotation: 0 })
       const x = mirrored ? head.width - transform.x : transform.x
       const rotation = mirrored ? -transform.rotation : transform.rotation
       const imageStyle: CSSProperties = {
@@ -440,7 +442,7 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
         pointerEvents: canDrag ? 'auto' : 'none', cursor: canDrag ? 'grab' : undefined, touchAction: canDrag ? 'none' : undefined
       }
       return <img key={`${kind}-${asset.id}-${right}`} className="expression-head-piece" src={asset.dataUrl} alt={canDrag ? `Arraste para mover ${layer === 'browLeft' || layer === 'browRight' ? 'a sobrancelha' : 'o olho'}` : ''} style={imageStyle}
-        onPointerDown={canDrag ? (event) => beginPreviewLayerDrag(event, layer, mirrored, 0, pairedMapping) : undefined}
+        onPointerDown={canDrag ? (event) => beginPreviewLayerDrag(event, dragMappings) : undefined}
         onPointerMove={canDrag ? movePreviewLayerDrag : undefined} onPointerUp={canDrag ? endPreviewLayerDrag : undefined}
         onPointerCancel={canDrag ? endPreviewLayerDrag : undefined} onLostPointerCapture={canDrag ? endPreviewLayerDrag : undefined} />
     }
@@ -471,8 +473,10 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
       transform: `translate(-50%,-50%) rotate(${pupilTransform.rotation * (right && !physicallyRight ? -1 : 1) * eyeFlipDirection}deg) scaleX(${Boolean(pupilTransform.flipX) !== eyeFlip ? -1 : 1})`
     }
     const pupilLayer = layerKey('pupil', currentSide)
-    const canDrag = selectedLayer === pupilLayer
     const pairedSide = right ? 'left' : 'right'
+    const pairedPupilLayer = layerKey('pupil', pairedSide)
+    const movePair = linkedLayerPairs.pupil
+    const canDrag = selectedLayer === pupilLayer || movePair && selectedLayer === pairedPupilLayer
     const pairedPupilId = visibleComposition.pupils[pairedSide]
     const pairedEyeId = visibleComposition.eyes[pairedSide]
     const pairedPupilAsset = pairedPupilId ? componentAssets[pairedPupilId] : undefined
@@ -480,11 +484,12 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
     const pairedEyeTransform = visibleTransforms[layerKey('eye', pairedSide)]
     const pairedEyeMirrored = pairedSide === 'right' && pairedEyeAsset?.rightSidePositioned !== true
     const pairedEyeRotation = pairedEyeMirrored ? -pairedEyeTransform.rotation : pairedEyeTransform.rotation
-    const pairedMapping = linkedLayerPairs.pupil && pairedPupilAsset && pairedEyeAsset ? {
+    const dragMappings: Array<Omit<PreviewLayerMapping, 'startX' | 'startY'>> = [{ layer: pupilLayer, mirroredX: mirroredPupilX, rotation: eyeRotation }]
+    if (movePair && pairedPupilAsset && pairedEyeAsset) dragMappings.push({
       layer: layerKey('pupil', pairedSide), mirroredX: pairedSide === 'right' && pairedPupilAsset.rightSidePositioned !== true, rotation: pairedEyeRotation
-    } : undefined
+    })
     return <span key={`${kind}-${asset.id}-${right}`} className="expression-head-pupil-mask" style={{ ...maskStyle, pointerEvents: canDrag ? 'auto' : 'none', cursor: canDrag ? 'grab' : undefined, touchAction: canDrag ? 'none' : undefined }}
-      onPointerDown={canDrag ? (event) => beginPreviewLayerDrag(event, pupilLayer, mirroredPupilX, eyeRotation, pairedMapping) : undefined}
+      onPointerDown={canDrag ? (event) => beginPreviewLayerDrag(event, dragMappings) : undefined}
       onPointerMove={canDrag ? movePreviewLayerDrag : undefined} onPointerUp={canDrag ? endPreviewLayerDrag : undefined}
       onPointerCancel={canDrag ? endPreviewLayerDrag : undefined} onLostPointerCapture={canDrag ? endPreviewLayerDrag : undefined}>
       <img src={asset.dataUrl} alt={canDrag ? `Arraste para mover a pupila ${right ? 'direita' : 'esquerda'}` : ''} style={pupilStyle} />
@@ -506,7 +511,7 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
     }
     const canDrag = selectedLayer === type
     return <img key={`${type}-${item.id}-${piece.id}`} className="expression-head-piece" src={piece.dataUrl} alt={canDrag ? `Arraste para mover ${type === 'nose' ? 'o nariz' : 'a boca'}` : ''} style={style}
-      onPointerDown={canDrag ? (event) => beginPreviewLayerDrag(event, type) : undefined}
+      onPointerDown={canDrag ? (event) => beginPreviewLayerDrag(event, [{ layer: type, mirroredX: false, rotation: 0 }]) : undefined}
       onPointerMove={canDrag ? movePreviewLayerDrag : undefined} onPointerUp={canDrag ? endPreviewLayerDrag : undefined}
       onPointerCancel={canDrag ? endPreviewLayerDrag : undefined} onLostPointerCapture={canDrag ? endPreviewLayerDrag : undefined} />
   }
