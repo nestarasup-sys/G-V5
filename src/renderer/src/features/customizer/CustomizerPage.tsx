@@ -486,8 +486,8 @@ function wardrobeComponentMatchesPanel(component: WardrobeSet['components'][numb
   if (panel.source ? !panel.source.includes(component.category) : component.category !== panel.category) return false
   if (!panel.side) return true
   const sideHint = `${component.name} ${component.attachedPartId}`.toLocaleLowerCase()
-  const left = /esquerda|\bleft\b/.test(sideHint)
-  const right = /direita|\bright\b/.test(sideHint)
+  const left = /\besquerd[oa]\b|\bleft\b/.test(sideHint)
+  const right = /\bdireit[oa]\b|\bright\b/.test(sideHint)
   return panel.side === 'left' ? left && !right : right && !left
 }
 
