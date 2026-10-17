@@ -252,6 +252,22 @@ function NoseOpacityControl({ value, disabled, onChange }: { value: number; disa
   </>
 }
 
+function MouthBlushControls({ color, opacity, disabled, onChange }: { color: string; opacity: number; disabled: boolean; onChange: (patch: { mouthBlushColor?: string; mouthBlushOpacity?: number }) => void }) {
+  const [open, setOpen] = useState(false)
+  const percentage = Math.round(Math.min(1, Math.max(0, opacity)) * 100)
+  return <span className="customizer-mouth-blush-controls">
+    <label className="customizer-mouth-blush-color" style={{ '--mouth-blush-color': color } as React.CSSProperties} title="Escolher cor do blush na boca">
+      <input type="color" aria-label="Cor do blush na boca" value={color} disabled={disabled} onChange={(event) => onChange({ mouthBlushColor: event.target.value })} />
+      <span aria-hidden="true" />
+    </label>
+    <button className="customizer-mouth-blush-opacity-button" type="button" aria-label={`Intensidade/transparência do blush na boca: ${percentage}%`} aria-expanded={open} title={`Intensidade do blush: ${percentage}%`} disabled={disabled} onClick={() => setOpen((current) => !current)}><Icon name="sliders" /><small>α</small></button>
+    {open && <span className="customizer-mouth-blush-opacity-popover" role="group" aria-label="Intensidade e transparência do blush na boca">
+      <span className="customizer-nose-opacity-heading"><span>Intensidade</span><output>{percentage}%</output></span>
+      <input type="range" min="0" max="100" step="1" value={percentage} disabled={disabled} onChange={(event) => onChange({ mouthBlushOpacity: Number(event.target.value) / 100 })} aria-label="Intensidade e transparência do blush na boca" />
+    </span>}
+  </span>
+}
+
 function NoseSkinTonePalette({ value, disabled, onSelect }: { value: string; disabled: boolean; onSelect: (tone: string) => void }) {
   return <div className="customizer-nose-skin-palette" aria-label="Paleta de cor de pele">
     <strong>Cor da pele</strong>
@@ -2633,7 +2649,7 @@ export function CustomizerPage() {
     else void chooseFaceCatalogItem(choice.summary, choice.piece.index)
   }
 
-  async function setCharacterMouthBlushEnabled(enabled: boolean) {
+  async function updateCharacterMouthBlush(patch: Partial<Pick<CustomizerFaceAppearance, 'mouthBlushEnabled' | 'mouthBlushColor' | 'mouthBlushOpacity'>>) {
     if (!selectedCharacter || selectedCatalogModelSlot === null) return
     const current = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
     const previous = current.customization.faceAppearance
@@ -2646,15 +2662,23 @@ export function CustomizerPage() {
       noseIndex: sameModel ? previous.noseIndex : 0,
       expressionIndex: sameModel ? previous.expressionIndex : 0,
       mouthOpen: sameModel ? previous.mouthOpen : false,
-      mouthBlushEnabled: enabled
+      mouthBlushEnabled: sameModel ? previous.mouthBlushEnabled : false,
+      ...patch
     }
     await saveCharacterCustomization({ faceAppearance: appearance })
   }
 
   const renderMouthBlushToggle = () => <label className="customizer-mouth-blush-toggle" title="Controla o blush na expressão base e nos presets do Studio">
-    <input type="checkbox" checked={Boolean(activeFaceAppearance?.mouthBlushEnabled)} disabled={!selectedCharacter || selectedCatalogModelSlot === null} onChange={(event) => void setCharacterMouthBlushEnabled(event.target.checked)} />
+    <input type="checkbox" checked={Boolean(activeFaceAppearance?.mouthBlushEnabled)} disabled={!selectedCharacter || selectedCatalogModelSlot === null} onChange={(event) => void updateCharacterMouthBlush({ mouthBlushEnabled: event.target.checked })} />
     <span>Blush na boca</span>
   </label>
+
+  const renderMouthBlushControls = () => <MouthBlushControls
+    color={activeFaceAppearance?.mouthBlushColor ?? '#e86388'}
+    opacity={activeFaceAppearance?.mouthBlushOpacity ?? .38}
+    disabled={!selectedCharacter || selectedCatalogModelSlot === null}
+    onChange={(patch) => void updateCharacterMouthBlush(patch)}
+  />
 
   const renderFaceCatalogCard = (part: typeof faceCatalogLayoutParts[number]) => {
     const choices = faceCatalogChoicesForPart(part.id)
@@ -2675,7 +2699,7 @@ export function CustomizerPage() {
     const isMouth = part.id === 'mouth'
     const clearPart = part.id
     return <article className={`customizer-hair-piece customizer-face-piece customizer-face-layout-piece customizer-face-layout-piece-${part.id}${isMouth ? ' customizer-face-layout-mouth' : ''}`} key={part.id}>
-      <header><strong>{part.label} {selectedSlot + 1}/{slotCount}</strong>{isMouth && renderMouthBlushToggle()}<button className="customizer-hair-reset" type="button" disabled={!selectedId} onClick={() => void clearFaceCatalogPart(clearPart)}>Remover</button></header>
+      <header><strong>{part.label} {selectedSlot + 1}/{slotCount}</strong>{isMouth && <span className="customizer-mouth-blush-group">{renderMouthBlushToggle()}{renderMouthBlushControls()}</span>}<button className="customizer-hair-reset" type="button" disabled={!selectedId} onClick={() => void clearFaceCatalogPart(clearPart)}>Remover</button></header>
       {isMouth && <nav className="customizer-face-layout-mode" aria-label="Tipo de boca">
         <button className={!activeFaceAppearance?.mouthOpen ? 'active' : ''} type="button" aria-pressed={!activeFaceAppearance?.mouthOpen} onClick={() => void setFaceCatalogVariant({ mouthOpen: false })}>Fechada</button>
         <button className={activeFaceAppearance?.mouthOpen ? 'active' : ''} type="button" aria-pressed={Boolean(activeFaceAppearance?.mouthOpen)} onClick={() => void setFaceCatalogVariant({ mouthOpen: true })}>Aberta</button>
@@ -2719,7 +2743,7 @@ export function CustomizerPage() {
       <header className={`customizer-hair-library-heading${part.id === 'mouth' ? ' customizer-hair-library-heading-mouth' : ''}`}>
         <button className="customizer-hair-library-remove" type="button" onClick={() => void clearFaceCatalogPart(part.id)} disabled={!selectedId} aria-label={`Remover ${part.label}`} title={`Remover ${part.label}`}><Icon name="trash" /></button>
         <h2 id="customizer-face-layout-library-title">{part.label}</h2>
-        {part.id === 'mouth' && renderMouthBlushToggle()}
+        {part.id === 'mouth' && <span className="customizer-mouth-blush-group">{renderMouthBlushToggle()}{renderMouthBlushControls()}</span>}
         <button className="customizer-hair-library-close" type="button" onClick={() => setFaceCatalogLibraryPart(null)} aria-label="Voltar às peças do rosto">×</button>
       </header>
       {part.id === 'mouth' && <nav className="customizer-face-layout-mode customizer-face-layout-library-mode" aria-label="Tipo de boca">

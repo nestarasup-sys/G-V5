@@ -116,6 +116,9 @@ export type CustomizerFaceAppearance = {
   noseOpacity?: number
   /** Character-level switch for mouth blush in the Studio base and expression presets. */
   mouthBlushEnabled?: boolean
+  /** Shared mouth blush tone and strength used across the base and expression presets. */
+  mouthBlushColor?: string
+  mouthBlushOpacity?: number
   mouthClosedCatalogId?: string
   mouthOpenCatalogId?: string
   eyeState: 0 | 1 | 2

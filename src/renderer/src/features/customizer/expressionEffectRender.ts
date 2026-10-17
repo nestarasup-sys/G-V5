@@ -27,7 +27,11 @@ function radialBlob(context: CanvasRenderingContext2D, x: number, y: number, wid
 /** Paint expression effects against the actual Studio head and active mouth transform. */
 export async function drawFaceExpressionEffects(context: CanvasRenderingContext2D, artwork: Artwork, sourceHead: HeadPart, head: HeadPart, appearance: CustomizerFaceAppearance, items: Partial<Record<FaceSheetKind | FaceElementKind, FaceCatalogItem>>, effects?: FaceExpressionEffects, studioTransforms?: StudioFaceTransforms): Promise<void> {
   const mouthBlush: FaceExpressionEffect | undefined = appearance.mouthBlushEnabled
-    ? { color: '#e86388', opacity: .38, softness: .78, size: .12, width: .12, height: .0624, rotation: 0, offsetY: 0, aspectRatio: .52, ...effects?.mouthBlush, enabled: true }
+    ? {
+      softness: .78, size: .12, width: .12, height: .0624, rotation: 0, offsetY: 0, aspectRatio: .52,
+      ...effects?.mouthBlush, color: appearance.mouthBlushColor ?? effects?.mouthBlush.color ?? '#e86388',
+      opacity: appearance.mouthBlushOpacity ?? effects?.mouthBlush.opacity ?? .38, enabled: true
+    }
     : undefined
   const hasOtherEffects = Boolean(effects && (effects.shadow.enabled && effects.shadow.opacity > 0 || effects.blush.enabled && effects.blush.opacity > 0))
   if (!hasOtherEffects && (!mouthBlush || mouthBlush.opacity <= 0)) return

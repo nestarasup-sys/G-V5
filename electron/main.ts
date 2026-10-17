@@ -230,6 +230,8 @@ function isValidCustomizerFaceAppearance(appearance: CustomizerFaceAppearance): 
     && Number.isInteger(appearance.expressionIndex) && appearance.expressionIndex >= 0 && appearance.expressionIndex <= 20
     && typeof appearance.mouthOpen === 'boolean'
     && (appearance.mouthBlushEnabled === undefined || typeof appearance.mouthBlushEnabled === 'boolean')
+    && (appearance.mouthBlushColor === undefined || /^#[0-9a-f]{6}$/i.test(appearance.mouthBlushColor))
+    && (appearance.mouthBlushOpacity === undefined || Number.isFinite(appearance.mouthBlushOpacity) && appearance.mouthBlushOpacity >= 0 && appearance.mouthBlushOpacity <= 1)
 }
 
 function validFaceSet(modelSlot: number, set: FaceSetSave): boolean {
