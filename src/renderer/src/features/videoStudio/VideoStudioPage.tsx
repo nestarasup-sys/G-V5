@@ -55,7 +55,7 @@ export function VideoStudioPage() {
   const [selectedSegment, setSelectedSegment] = useState('')
   const pastRef = useRef<VideoProject[]>([])
   const futureRef = useRef<VideoProject[]>([])
-  const [historyVersion, setHistoryVersion] = useState(0)
+  const [, setHistoryVersion] = useState(0)
   const timelineScrollRef = useRef<HTMLDivElement>(null)
 
   const seek = (frame: number) => {
