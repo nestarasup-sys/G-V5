@@ -353,8 +353,7 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
       if (patch.scaleX !== undefined) pairedAfter.scaleX = Math.max(.02, Math.min(4, pairedBefore.scaleX * sourceAfter.scaleX / sourceBefore.scaleX))
       if (patch.scaleY !== undefined) pairedAfter.scaleY = Math.max(.02, Math.min(4, pairedBefore.scaleY * sourceAfter.scaleY / sourceBefore.scaleY))
       if (patch.rotation !== undefined) {
-        const direction = (usesMirroredX(key) ? -1 : 1) / (usesMirroredX(pairedKey) ? -1 : 1)
-        pairedAfter.rotation = Math.max(-180, Math.min(180, pairedBefore.rotation + (sourceAfter.rotation - sourceBefore.rotation) * direction))
+        pairedAfter.rotation = Math.max(-180, Math.min(180, pairedBefore.rotation - (sourceAfter.rotation - sourceBefore.rotation)))
       }
       if (patch.flipX !== undefined) pairedAfter.flipX = Boolean(pairedBefore.flipX) !== (Boolean(sourceBefore.flipX) !== Boolean(sourceAfter.flipX))
       return { ...current, [key]: sourceAfter, [pairedKey]: pairedAfter }
