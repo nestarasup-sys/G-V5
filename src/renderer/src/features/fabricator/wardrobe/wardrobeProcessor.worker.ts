@@ -1,17 +1,20 @@
-type WardrobeProcessRequest = { id: number; dataUrl: string }
+type WardrobeProcessRequest = { id: number; dataUrl: string; normalizeTo?: { width: number; height: number } }
 type Piece = { id: string; name: string; x: number; y: number; width: number; height: number; png: ArrayBuffer }
 const scope = self as unknown as { onmessage: ((event: MessageEvent<WardrobeProcessRequest>) => void) | null; postMessage: (message: unknown, transfer?: Transferable[]) => void }
 scope.onmessage = async ({ data }: MessageEvent<WardrobeProcessRequest>) => {
   try {
     const bitmap = await createImageBitmap(await (await fetch(data.dataUrl)).blob())
-    const { width, height } = bitmap
+    let width = bitmap.width
+    let height = bitmap.height
     if (width * height > 32_000_000) throw new Error('A imagem tem mais de 32 milhões de pixels. Reduza as dimensões para continuar.')
-    const canvas = new OffscreenCanvas(width, height)
-    const context = canvas.getContext('2d', { willReadFrequently: true })
+    let canvas = new OffscreenCanvas(width, height)
+    let context = canvas.getContext('2d', { willReadFrequently: true })
     if (!context) throw new Error('Não foi possível analisar a folha de roupas.')
+    let image: ImageData
+    let pixels: Uint8ClampedArray
     context.drawImage(bitmap, 0, 0)
-    const image = context.getImageData(0, 0, width, height)
-    const pixels = image.data
+    image = context.getImageData(0, 0, width, height)
+    pixels = image.data
     const border: number[][] = []
     const stride = Math.max(1, Math.floor(Math.min(width, height) / 120))
     for (let x = 0; x < width; x += stride) { border.push([x, 0], [x, height - 1]) }
@@ -25,8 +28,7 @@ scope.onmessage = async ({ data }: MessageEvent<WardrobeProcessRequest>) => {
     const chromaGreen = greenBorder.length >= Math.max(4, border.length * .2)
       ? [0, 1, 2].map((channel) => greenBorder.map((color) => color[channel]).sort((a, b) => a - b)[Math.floor(greenBorder.length / 2)])
       : null
-    const visible = new Uint8Array(width * height)
-    for (let i = 0; i < visible.length; i += 1) {
+    for (let i = 0; i < width * height; i += 1) {
       const at = i * 4
       if (pixels[at + 3] <= 24) { pixels[at + 3] = 0; continue }
       if (chromaGreen) {
@@ -36,8 +38,33 @@ scope.onmessage = async ({ data }: MessageEvent<WardrobeProcessRequest>) => {
         if (greenish && distance <= 118) pixels[at + 3] = 0
         else if (greenish && distance < 166) pixels[at + 3] = Math.round(pixels[at + 3] * (distance - 118) / 48)
       }
-      visible[i] = pixels[at + 3] > 24 ? 1 : 0
     }
+    if (data.normalizeTo) {
+      let minX = width; let minY = height; let maxX = -1; let maxY = -1
+      for (let y = 0; y < height; y += 1) for (let x = 0; x < width; x += 1) {
+        if (pixels[(y * width + x) * 4 + 3] <= 24) continue
+        minX = Math.min(minX, x); minY = Math.min(minY, y); maxX = Math.max(maxX, x); maxY = Math.max(maxY, y)
+      }
+      if (maxX < minX || maxY < minY) throw new Error('Não encontrei conteúdo visível para normalizar. Confira a transparência ou o fundo verde da imagem.')
+      // Fit the visible sheet as a whole into the model canvas. Uniform scale preserves proportions;
+      // centering removes arbitrary outer margins while leaving room around the content.
+      const contentWidth = maxX - minX + 1; const contentHeight = maxY - minY + 1
+      const padding = 0.06
+      const scale = Math.min(data.normalizeTo.width * (1 - padding * 2) / contentWidth, data.normalizeTo.height * (1 - padding * 2) / contentHeight)
+      width = data.normalizeTo.width; height = data.normalizeTo.height
+      const normalized = new OffscreenCanvas(width, height)
+      const normalizedContext = normalized.getContext('2d', { willReadFrequently: true })
+      if (!normalizedContext) throw new Error('Não foi possível normalizar a folha de roupas.')
+      context.putImageData(image, 0, 0)
+      normalizedContext.drawImage(canvas, minX, minY, contentWidth, contentHeight,
+        (width - contentWidth * scale) / 2, (height - contentHeight * scale) / 2, contentWidth * scale, contentHeight * scale)
+      canvas = normalized
+      context = normalizedContext
+      image = context.getImageData(0, 0, width, height)
+      pixels = image.data
+    } else context.putImageData(image, 0, 0)
+    const visible = new Uint8Array(width * height)
+    for (let i = 0; i < visible.length; i += 1) visible[i] = pixels[i * 4 + 3] > 24 ? 1 : 0
     const visited = new Uint8Array(visible.length)
     const queue = new Int32Array(visible.length)
     const pieces: Piece[] = []

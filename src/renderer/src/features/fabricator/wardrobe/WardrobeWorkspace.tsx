@@ -326,10 +326,6 @@ export function WardrobeWorkspace({ edition = 1 }: { edition?: WardrobeEdition }
         if (message.id !== id) return
         setProcessing(false); worker.terminate(); workerRef.current = null
         if (message.type === 'error') { setError(message.message); return }
-        if (edition === 2 && (message.width !== model.width || message.height !== model.height)) {
-          setError(`A folha 2.0 precisa ter ${model.width} × ${model.height} pixels para manter o encaixe com a referência.`)
-          return
-        }
         if (!message.pieces.length) { setError('Não encontrei peças visíveis. Confira se a folha tem transparência entre as peças.'); return }
         const components = message.pieces.map((piece) => {
           const category = guessCategory(piece, message.width, message.height, edition)
@@ -343,7 +339,7 @@ export function WardrobeWorkspace({ edition = 1 }: { edition?: WardrobeEdition }
         setActiveSetId(null); setSelectedId(components[0]?.id ?? null); setDirty(true); setBodyOffsets({})
       }
       worker.onerror = () => { setProcessing(false); setError('Falha ao processar a imagem localmente.'); worker.terminate(); workerRef.current = null }
-      worker.postMessage({ id, dataUrl: source })
+      worker.postMessage({ id, dataUrl: source, ...(edition === 2 ? { normalizeTo: { width: model.width, height: model.height } } : {}) })
     } catch (reason) { setProcessing(false); setError(reason instanceof Error ? reason.message : 'Não foi possível importar a imagem.') }
   }
   const updateComponent = (id: string, values: Partial<WardrobeComponent>) => {
