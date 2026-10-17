@@ -13,6 +13,7 @@ import { mapWardrobeComponentToPose } from '../fabricator/wardrobe/poseTransform
 import { eyeInteriorMask } from '../fabricator/face/eyeInteriorMask'
 import { applyCharacterBodyShape } from './bodyShape'
 import { tintSkinPixels } from './skinTint'
+import { characterRenderSize, configureCharacterSampling } from './renderResolution'
 
 type CatalogArtwork = Pick<FabricatorProject, 'width' | 'height' | 'parts' | 'layerOrder' | 'hiddenPartIds'> & Partial<Pick<FabricatorProject, 'joints'>>
 function withCharacterHeadSize(artwork: CatalogArtwork, proportions: CharacterProportions): CatalogArtwork {
@@ -537,6 +538,7 @@ async function renderWardrobeThumbnail(set: WardrobeSet, categories: WardrobeCat
   canvas.width = Math.max(1, Math.ceil((right - left) * scale))
   canvas.height = Math.max(1, Math.ceil((bottom - top) * scale))
   const context = canvas.getContext('2d')
+  if (context) configureCharacterSampling(context)
   if (!context) return null
   for (const piece of pieces) {
     try {
@@ -669,6 +671,7 @@ export async function renderArtwork(artwork: CatalogArtwork, maxSize: number, sk
   canvas.width = Math.max(1, Math.round(artwork.width * scale))
   canvas.height = Math.max(1, Math.round(artwork.height * scale))
   const context = canvas.getContext('2d')
+  if (context) configureCharacterSampling(context)
   if (!context) return null
 
   const hidden = new Set(artwork.hiddenPartIds ?? [])
@@ -719,17 +722,25 @@ export async function renderArtwork(artwork: CatalogArtwork, maxSize: number, sk
   return trimmed.toDataURL('image/png')
 }
 
-async function renderArtworkWithHair(artwork: CatalogArtwork, source: FabricatorProject, backStyles: HairStyle | HairLayerReference[] | null, maxSize: number, skinTone?: string, hairAppearance?: CustomizerCharacter['customization']['hairAppearance']): Promise<string | null> {
+async function renderArtworkWithHair(artwork: CatalogArtwork, source: FabricatorProject, backStyles: HairStyle | HairLayerReference[] | null, maxSize: number, skinTone?: string, hairAppearance?: CustomizerCharacter['customization']['hairAppearance'], targetContext?: CanvasRenderingContext2D): Promise<string | null> {
   const hairLayers: HairLayerReference[] = Array.isArray(backStyles) ? backStyles : backStyles ? [{ style: backStyles, side: 'back', part: 'backHair' }] : []
   const validHairLayers = hairLayers.filter((layer) => layer.side === 'back' && layer.style.modelSlot === source.slot && Boolean(layer.style.back))
-  if (!validHairLayers.length) return renderArtwork(artwork, maxSize, skinTone)
+  if (!validHairLayers.length && !targetContext) return renderArtwork(artwork, maxSize, skinTone)
   const sourceHead = source.parts.find((part) => /cabe[çc]a|head/i.test(part.name))
   const targetHead = artwork.parts.find((part) => /cabe[çc]a|head/i.test(part.name))
-  if (!sourceHead || !targetHead || !sourceHead.width || !sourceHead.height) return renderArtwork(artwork, maxSize, skinTone)
+  if (!sourceHead || !targetHead || !sourceHead.width || !sourceHead.height) {
+    const fallback = await renderArtwork(artwork, maxSize, skinTone)
+    if (targetContext && fallback) targetContext.drawImage(await loadCachedImage(fallback), 0, 0, targetContext.canvas.width, targetContext.canvas.height)
+    return targetContext ? null : fallback
+  }
   const scale = Math.min(maxSize / artwork.width, maxSize / artwork.height)
-  const canvas = document.createElement('canvas')
-  canvas.width = Math.max(1, Math.round(artwork.width * scale)); canvas.height = Math.max(1, Math.round(artwork.height * scale))
-  const context = canvas.getContext('2d')
+  const canvas = targetContext?.canvas ?? document.createElement('canvas')
+  if (!targetContext) {
+    canvas.width = Math.max(1, Math.round(artwork.width * scale))
+    canvas.height = Math.max(1, Math.round(artwork.height * scale))
+  }
+  const context = targetContext ?? canvas.getContext('2d')
+  if (context) configureCharacterSampling(context)
   if (!context) return null
   const hidden = new Set(artwork.hiddenPartIds ?? [])
   const order = (artwork.layerOrder ?? []).filter((id, index, ids) => ids.indexOf(id) === index && artwork.parts.some((part) => part.id === id))
@@ -772,21 +783,22 @@ async function renderArtworkWithHair(artwork: CatalogArtwork, source: Fabricator
       } catch { /* Continue rendering the remaining model layers. */ }
     }
   }
-  return canvas.toDataURL('image/png')
+  return targetContext ? null : canvas.toDataURL('image/png')
 }
 
-async function renderFrontHairOverlay(artwork: CatalogArtwork, source: FabricatorProject, frontStyles: HairStyle | HairLayerReference[] | null, maxSize: number, hairAppearance?: CustomizerCharacter['customization']['hairAppearance']): Promise<string | null> {
+async function renderFrontHairOverlay(artwork: CatalogArtwork, source: FabricatorProject, frontStyles: HairStyle | HairLayerReference[] | null, maxSize: number, hairAppearance?: CustomizerCharacter['customization']['hairAppearance'], targetContext?: CanvasRenderingContext2D): Promise<string | null> {
   const hairLayers: HairLayerReference[] = Array.isArray(frontStyles) ? frontStyles : frontStyles ? [{ style: frontStyles, side: 'front', part: 'rearHair' }] : []
   const validHairLayers = hairLayers.filter((layer) => (layer.side === 'front' || layer.side === 'fringe') && layer.style[layer.side] && layer.style.modelSlot === source.slot)
-  if (!validHairLayers.length) return null
+  if (!validHairLayers.length && !targetContext) return null
   const sourceHead = source.parts.find((part) => /cabe[çc]a|head/i.test(part.name))
   const targetHead = artwork.parts.find((part) => /cabe[çc]a|head/i.test(part.name))
   if (!sourceHead || !targetHead || sourceHead.width <= 0 || sourceHead.height <= 0) return null
   const scale = Math.min(maxSize / artwork.width, maxSize / artwork.height)
-  const canvas = document.createElement('canvas')
-  canvas.width = Math.max(1, Math.round(artwork.width * scale))
-  canvas.height = Math.max(1, Math.round(artwork.height * scale))
-  const context = canvas.getContext('2d')
+  const canvas = targetContext?.canvas ?? document.createElement('canvas')
+  if (!targetContext) canvas.width = Math.max(1, Math.round(artwork.width * scale))
+  if (!targetContext) canvas.height = Math.max(1, Math.round(artwork.height * scale))
+  const context = targetContext ?? canvas.getContext('2d')
+  if (context) configureCharacterSampling(context)
   if (!context) return null
   for (const layer of validHairLayers) {
     const asset = layer.style[layer.side]
@@ -810,7 +822,7 @@ async function renderFrontHairOverlay(artwork: CatalogArtwork, source: Fabricato
       context.restore()
     } catch { /* Continue drawing the remaining front hair layers. */ }
   }
-  return canvas.toDataURL('image/png')
+  return targetContext ? null : canvas.toDataURL('image/png')
 }
 
 async function renderFaceOverlay(artwork: CatalogArtwork, source: FabricatorProject | null, face: FaceSet | null, appearance: CustomizerFaceAppearance | undefined): Promise<string | null> {
@@ -822,6 +834,7 @@ async function renderFaceOverlay(artwork: CatalogArtwork, source: FabricatorProj
   canvas.width = Math.max(1, artwork.width)
   canvas.height = Math.max(1, artwork.height)
   const context = canvas.getContext('2d')
+  if (context) configureCharacterSampling(context)
   if (!context) return null
   for (const element of faceElementOrder) {
     if (element.startsWith('brow') && !appearance.eyebrows) continue
@@ -1047,6 +1060,7 @@ async function renderFaceCatalogOverlay(artwork: CatalogArtwork, source: Fabrica
   canvas.width = Math.max(1, artwork.width)
   canvas.height = Math.max(1, artwork.height)
   const context = canvas.getContext('2d')
+  if (context) configureCharacterSampling(context)
   if (!context) return null
   await drawFaceCatalogOverlay(context, artwork, source, items, appearance, skinTone, studioFaceTransforms)
   return canvas.toDataURL('image/png')
@@ -1067,8 +1081,12 @@ export async function prepareSavedCharacterRenderer(character: CustomizerCharact
     loadHairAppearanceLayers(hairAppearance, modelSlot, 'fringe')
   ])
   const frontStyles = [...posteriorStyles, ...fringeStyles]
-  const baseUrl = await renderArtworkWithHair(artwork, source, backStyles, 960, character.customization.modelSkinTone, hairAppearance)
-  if (!baseUrl) throw new Error(`Não foi possível montar a prévia de ${character.name}.`)
+  const baseImage = document.createElement('canvas')
+  baseImage.width = artwork.width
+  baseImage.height = artwork.height
+  const baseContext = baseImage.getContext('2d')
+  if (!baseContext) throw new Error(`Não foi possível montar a prévia de ${character.name}.`)
+  await renderArtworkWithHair(artwork, source, backStyles, Math.max(artwork.width, artwork.height), character.customization.modelSkinTone, hairAppearance, baseContext)
 
   const groups = (character.customization.wardrobeGroups ?? []).filter((group) => group.modelSlot === modelSlot)
   const details: Record<string, WardrobeSet> = {}
@@ -1098,15 +1116,21 @@ export async function prepareSavedCharacterRenderer(character: CustomizerCharact
       if (face) legacyFaceUrl = await renderFaceOverlay(artwork, source, face, appearance)
     }
   }
-  const frontHairUrl = frontStyles.length ? await renderFrontHairOverlay(artwork, source, frontStyles, 960, hairAppearance) : null
-  const baseImage = await loadCachedImage(baseUrl)
+  const frontHairImage = frontStyles.length ? document.createElement('canvas') : null
+  if (frontHairImage) {
+    frontHairImage.width = artwork.width
+    frontHairImage.height = artwork.height
+    const frontContext = frontHairImage.getContext('2d')
+    if (!frontContext) throw new Error('Não foi possível preparar o cabelo do personagem.')
+    await renderFrontHairOverlay(artwork, source, frontStyles, Math.max(artwork.width, artwork.height), hairAppearance, frontContext)
+  }
   const wardrobeImage = wardrobe.imageUrl ? await loadCachedImage(wardrobe.imageUrl) : null
   const legacyFaceImage = legacyFaceUrl ? await loadCachedImage(legacyFaceUrl) : null
-  const frontHairImage = frontHairUrl ? await loadCachedImage(frontHairUrl) : null
   const canvas = document.createElement('canvas')
   canvas.width = Math.max(1, artwork.width)
   canvas.height = Math.max(1, artwork.height)
   const context = canvas.getContext('2d')
+  if (context) configureCharacterSampling(context)
   if (!context) throw new Error('Não foi possível preparar a imagem do personagem.')
   const shapeScale = characterShapeScale(proportions)
   const outputWidth = Math.max(canvas.width, Math.ceil(canvas.width * shapeScale.x))
@@ -1256,6 +1280,23 @@ export function CustomizerPage() {
   const [selectedCustomizerTopTab, setSelectedCustomizerTopTab] = useState('corpo')
   const [previewBackground, setPreviewBackground] = usePreviewBackground()
   const [customizerPreviewZoom, setCustomizerPreviewZoom] = useState(1.15)
+  const [previewExtent, setPreviewExtent] = useState({ width: 0, height: 0, density: window.devicePixelRatio || 1 })
+  useEffect(() => {
+    const update = () => {
+      const stages = document.querySelectorAll<HTMLElement>('.customizer-preview-stage-wrap')
+      const bounds = Array.from(stages, (stage) => stage.getBoundingClientRect())
+      const width = Math.ceil(Math.max(0, ...bounds.map((rect) => rect.width - 136)))
+      const height = Math.ceil(Math.max(0, ...bounds.map((rect) => rect.height - 130)))
+      const density = window.devicePixelRatio || 1
+      setPreviewExtent((current) => current.width === width && current.height === height && current.density === density ? current : { width, height, density })
+    }
+    const observer = new ResizeObserver(update)
+    document.querySelectorAll('.customizer-preview-stage-wrap').forEach((stage) => observer.observe(stage))
+    window.addEventListener('resize', update)
+    update()
+    return () => { observer.disconnect(); window.removeEventListener('resize', update) }
+  }, [selectedCustomizerTopTab])
+
   const [rosterQuery, setRosterQuery] = useState('')
   const [catalogModels, setCatalogModels] = useState<FabricatorSlotSummary[]>([])
   const [catalogPoses, setCatalogPoses] = useState<FabricatorPoseSummary[]>([])
@@ -1667,15 +1708,15 @@ export function CustomizerPage() {
       for (const layer of [...backStyles, ...frontStyles]) if (!hairDetails[`${source.slot}:${layer.style.id}`]) newlyLoaded[`${source.slot}:${layer.style.id}`] = layer.style
       if (Object.keys(newlyLoaded).length) setHairDetails((current) => ({ ...current, ...newlyLoaded }))
       const [url, frontUrl] = await Promise.all([
-        renderArtworkWithHair(artwork, source, backStyles, 720, selectedCharacter?.customization.modelSkinTone, appearance?.modelSlot === source.slot ? appearance : undefined),
-        renderFrontHairOverlay(artwork, source, frontStyles, 720, appearance?.modelSlot === source.slot ? appearance : undefined)
+        renderArtworkWithHair(artwork, source, backStyles, characterRenderSize(artwork.width, artwork.height, previewExtent.width, previewExtent.height, customizerPreviewZoom, previewExtent.density), selectedCharacter?.customization.modelSkinTone, appearance?.modelSlot === source.slot ? appearance : undefined),
+        renderFrontHairOverlay(artwork, source, frontStyles, characterRenderSize(artwork.width, artwork.height, previewExtent.width, previewExtent.height, customizerPreviewZoom, previewExtent.density), appearance?.modelSlot === source.slot ? appearance : undefined)
       ])
       if (!cancelled) { setSelectedArtworkUrl(url); setSelectedFrontHairUrl(frontUrl) }
     })().catch((reason: unknown) => {
       if (!cancelled) setCatalogError(reason instanceof Error ? reason.message : 'Não foi possível montar o cabelo do personagem.')
     })
     return () => { cancelled = true }
-  }, [displayArtworkProject, selectedSourceModelProject, selectedCharacter?.id, selectedCharacter?.customization.hairAppearance, selectedCharacter?.customization.modelSkinTone, hairDetails])
+  }, [displayArtworkProject, selectedSourceModelProject, selectedCharacter?.id, selectedCharacter?.customization.hairAppearance, selectedCharacter?.customization.modelSkinTone, hairDetails, previewExtent, customizerPreviewZoom])
 
   useEffect(() => {
     const wardrobeCatalogVisible = activeModule === 'Roupas' || activeModule === 'Cabeça' && headPanelTab === 'extra'
