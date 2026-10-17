@@ -236,6 +236,7 @@ export function StudioPage() {
   const [studioPresetCategory, setStudioPresetCategory] = useState<'pose' | 'expression'>('expression')
   const [studioExpressionCollections, setStudioExpressionCollections] = useState<FaceExpressionCollection[]>([])
   const [studioExpressionPresets, setStudioExpressionPresets] = useState<FaceExpressionPresetSummary[]>([])
+  const [sceneExpressionPresetVersions, setSceneExpressionPresetVersions] = useState<Record<string, string>>({})
   const [studioExpressionCollectionMenuOpen, setStudioExpressionCollectionMenuOpen] = useState(false)
   const [studioExpressionLoading, setStudioExpressionLoading] = useState(false)
   const [studioExpressionBusy, setStudioExpressionBusy] = useState(false)
@@ -317,21 +318,69 @@ export function StudioPage() {
       setStudioExpressionLoading(false)
       return () => { cancelled = true }
     }
-    setStudioExpressionLoading(true)
-    void Promise.all([
-      window.desktop.listFaceExpressionCollections(selectedStudioCharacterModelSlot),
-      window.desktop.listFaceExpressionPresets(selectedStudioCharacterModelSlot)
-    ]).then(([collections, presets]) => {
-      if (cancelled) return
-      setStudioExpressionCollections(collections)
-      setStudioExpressionPresets(presets)
-    }).catch((reason) => {
-      if (!cancelled) setError(reason instanceof Error ? reason.message : 'Não foi possível carregar os presets de expressão.')
-    }).finally(() => {
-      if (!cancelled) setStudioExpressionLoading(false)
-    })
-    return () => { cancelled = true }
+    const refreshExpressionLibrary = () => {
+      setStudioExpressionLoading(true)
+      void Promise.all([
+        window.desktop.listFaceExpressionCollections(selectedStudioCharacterModelSlot),
+        window.desktop.listFaceExpressionPresets(selectedStudioCharacterModelSlot)
+      ]).then(([collections, presets]) => {
+        if (cancelled) return
+        setStudioExpressionCollections(collections)
+        setStudioExpressionPresets(presets)
+      }).catch((reason) => {
+        if (!cancelled) setError(reason instanceof Error ? reason.message : 'Não foi possível carregar os presets de expressão.')
+      }).finally(() => {
+        if (!cancelled) setStudioExpressionLoading(false)
+      })
+    }
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === 'visible') refreshExpressionLibrary()
+    }
+    refreshExpressionLibrary()
+    window.addEventListener('focus', refreshExpressionLibrary)
+    document.addEventListener('visibilitychange', refreshWhenVisible)
+    return () => {
+      cancelled = true
+      window.removeEventListener('focus', refreshExpressionLibrary)
+      document.removeEventListener('visibilitychange', refreshWhenVisible)
+    }
   }, [selectedStudioCharacterModelSlot])
+
+  const activeScenePresetSignature = JSON.stringify(activeStudio?.elements
+    .filter((element) => element.kind === 'character' && element.characterId && element.activeExpressionPresetId)
+    .map((element) => [element.characterId, element.activeExpressionPresetId]) ?? [])
+
+  useEffect(() => {
+    if (!activeStudio || !activeScenePresetSignature) { setSceneExpressionPresetVersions({}); return }
+    let cancelled = false
+    const characters = new Map(availableCharacters.map((character) => [character.id, character]))
+    const slots = Array.from(new Set(activeStudio.elements.flatMap((element) => {
+      if (element.kind !== 'character' || !element.characterId || !element.activeExpressionPresetId) return []
+      const character = characters.get(element.characterId)
+      return character ? [character.customization.modelSlot ?? 1] : []
+    })))
+    if (!slots.length) { setSceneExpressionPresetVersions({}); return }
+    const refresh = () => {
+      void Promise.all(slots.map(async (modelSlot) => [modelSlot, await window.desktop.listFaceExpressionPresets(modelSlot)] as const))
+        .then((results) => {
+          if (cancelled) return
+          const versions: Record<string, string> = {}
+          for (const [modelSlot, presets] of results) for (const preset of presets) versions[`${modelSlot}:${preset.id}`] = preset.updatedAt
+          setSceneExpressionPresetVersions(versions)
+        }).catch((reason: unknown) => {
+          if (!cancelled) setError(reason instanceof Error ? reason.message : 'Não foi possível atualizar as revisões das expressões do Studio.')
+        })
+    }
+    const refreshWhenVisible = () => { if (document.visibilityState === 'visible') refresh() }
+    refresh()
+    window.addEventListener('focus', refresh)
+    document.addEventListener('visibilitychange', refreshWhenVisible)
+    return () => {
+      cancelled = true
+      window.removeEventListener('focus', refresh)
+      document.removeEventListener('visibilitychange', refreshWhenVisible)
+    }
+  }, [activeStudio?.id, activeScenePresetSignature, availableCharacters])
 
   useEffect(() => {
     let cancelled = false
@@ -486,7 +535,10 @@ export function StudioPage() {
     const pending = activeStudio.elements.flatMap((element) => {
       if (element.kind !== 'character' || !element.characterId || !element.assetId) return []
       const character = characters.get(element.characterId)
-      return character && element.characterSourceUpdatedAt !== character.updatedAt
+      const modelSlot = character?.customization.modelSlot ?? 1
+      const latestPresetVersion = element.activeExpressionPresetId ? sceneExpressionPresetVersions[`${modelSlot}:${element.activeExpressionPresetId}`] : undefined
+      const presetChanged = Boolean(latestPresetVersion && latestPresetVersion !== element.activeExpressionPresetUpdatedAt)
+      return character && (element.characterSourceUpdatedAt !== character.updatedAt || presetChanged)
         ? [{ element, character }] : []
     })
     if (!pending.length) return
@@ -502,6 +554,7 @@ export function StudioPage() {
           const savedPreset = element.activeExpressionPresetId
             ? await window.desktop.loadFaceExpressionPreset(character.customization.modelSlot ?? 1, element.activeExpressionPresetId)
             : null
+          if (element.activeExpressionPresetId && !savedPreset) continue
           const sourceAppearance = character.customization.faceAppearance
           const appearanceFallback = sourceAppearance ?? element.faceAppearance ?? element.expressionBase?.appearance
           if (!appearanceFallback) continue
@@ -536,7 +589,8 @@ export function StudioPage() {
           updates.push({
             previous: element,
             next: {
-              ...element, characterSourceUpdatedAt: character.updatedAt, expressionBase, faceAppearance: appearance, faceTransforms, activeExpressionEffects: expressionEffects, characterCanvasWidth,
+              ...element, characterSourceUpdatedAt: character.updatedAt, expressionBase, faceAppearance: appearance, faceTransforms, activeExpressionEffects: expressionEffects,
+              ...(savedPreset ? { activeExpressionPresetUpdatedAt: savedPreset.updatedAt } : {}), characterCanvasWidth,
               width: characterCanvasWidth * cropWidth / rendered.width,
               height: characterCanvasWidth * stageWidth / stageHeight * cropHeight / rendered.width,
               text: element.text === asset.name ? character.name : element.text
@@ -564,7 +618,7 @@ export function StudioPage() {
       }
     })()
     return () => { cancelled = true }
-  }, [activeStudio, availableCharacters, normalizedStudioVersion])
+  }, [activeStudio, availableCharacters, normalizedStudioVersion, sceneExpressionPresetVersions])
 
   const allocateNumber = () => {
     const highest = studios.reduce((max, studio) => Math.max(max, Number(studio.title.match(/^Studio\s+(\d+)/i)?.[1] ?? 0)), 0)
@@ -780,7 +834,7 @@ export function StudioPage() {
     } finally { setSavingCast(false) }
   }
 
-  const applyStudioFaceAppearance = async (appearance: CustomizerFaceAppearance, faceTransforms: StudioFaceTransforms = selectedElement?.faceTransforms ?? {}, record = true, expressionState?: Pick<StudioElement, 'expressionBase' | 'activeExpressionPresetId' | 'activeExpressionCollectionId' | 'activeExpressionEffects'>) => {
+  const applyStudioFaceAppearance = async (appearance: CustomizerFaceAppearance, faceTransforms: StudioFaceTransforms = selectedElement?.faceTransforms ?? {}, record = true, expressionState?: Pick<StudioElement, 'expressionBase' | 'activeExpressionPresetId' | 'activeExpressionPresetUpdatedAt' | 'activeExpressionCollectionId' | 'activeExpressionEffects'>) => {
     if (!activeStudio || selectedElement?.kind !== 'character' || !selectedStudioCharacter || !selectedElement.assetId || studioFaceBusy) return
     setStudioFaceBusy(true)
     try {
@@ -829,7 +883,7 @@ export function StudioPage() {
     const base = { ...resolveStudioExpressionBase(selectedElement, appearance), appearance: structuredClone(appearance) }
     setStudioExpressionBusy(true)
     try {
-      await applyStudioFaceAppearance(base.appearance, base.transforms, true, { expressionBase: base, activeExpressionPresetId: null, activeExpressionCollectionId: selectedStudioExpressionCollectionId, activeExpressionEffects: undefined })
+      await applyStudioFaceAppearance(base.appearance, base.transforms, true, { expressionBase: base, activeExpressionPresetId: null, activeExpressionPresetUpdatedAt: undefined, activeExpressionCollectionId: selectedStudioExpressionCollectionId, activeExpressionEffects: undefined })
     } finally { setStudioExpressionBusy(false) }
   }
 
@@ -851,7 +905,7 @@ export function StudioPage() {
         (id) => window.desktop.loadFaceCatalogItem(preset.modelSlot, id)
       )
 
-      await applyStudioFaceAppearance(nextAppearance, faceTransforms, true, { expressionBase: base, activeExpressionPresetId: preset.id, activeExpressionCollectionId: preset.collectionId ?? 'standard', activeExpressionEffects: preset.effects })
+      await applyStudioFaceAppearance(nextAppearance, faceTransforms, true, { expressionBase: base, activeExpressionPresetId: preset.id, activeExpressionPresetUpdatedAt: preset.updatedAt, activeExpressionCollectionId: preset.collectionId ?? 'standard', activeExpressionEffects: preset.effects })
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Não foi possível aplicar este preset de expressão.')
     } finally {

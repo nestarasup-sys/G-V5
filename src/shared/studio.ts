@@ -71,6 +71,8 @@ export type StudioElement = {
   /** Character-specific neutral face, shared by every expression collection. */
   expressionBase?: StudioExpressionBase
   activeExpressionPresetId?: string | null
+  /** Saved preset revision currently composed into this Studio actor. */
+  activeExpressionPresetUpdatedAt?: string
   activeExpressionEffects?: FaceExpressionEffects
   /** Expression collection currently selected for this actor in the inspector. */
   activeExpressionCollectionId?: string
