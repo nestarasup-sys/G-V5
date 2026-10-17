@@ -45,6 +45,8 @@ const identityTransform = (): FaceTransform => ({ x: 0, y: 0, scaleX: 1, scaleY:
 const emptyTransforms = (): FaceExpressionTransforms => ({ eyeLeft: identityTransform(), eyeRight: identityTransform(), pupilLeft: identityTransform(), pupilRight: identityTransform(), browLeft: identityTransform(), browRight: identityTransform(), nose: identityTransform(), mouth: identityTransform() })
 const cloneTransforms = (transforms: FaceExpressionTransforms): FaceExpressionTransforms => structuredClone(transforms)
 const layerKey = (kind: 'eye' | 'pupil' | 'eyebrow', side: Side): LayerKey => kind === 'eye' ? side === 'left' ? 'eyeLeft' : 'eyeRight' : kind === 'pupil' ? side === 'left' ? 'pupilLeft' : 'pupilRight' : side === 'left' ? 'browLeft' : 'browRight'
+const pairedLayerKeys: Partial<Record<LayerKey, LayerKey>> = { eyeLeft: 'eyeRight', eyeRight: 'eyeLeft', pupilLeft: 'pupilRight', pupilRight: 'pupilLeft', browLeft: 'browRight', browRight: 'browLeft' }
+const pairedKindForLayer = (layer: LayerKey): PairedLayerKind | null => layer.startsWith('eye') ? 'eye' : layer.startsWith('pupil') ? 'pupil' : layer.startsWith('brow') ? 'eyebrow' : null
 
 function defaultTransforms(composition: ExpressionComposition, components: Record<string, FaceComponentAsset>, catalogs: Record<string, FaceCatalogItem>): FaceExpressionTransforms {
   const transforms = emptyTransforms()
@@ -308,7 +310,37 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
     setOpen(false); setError(null)
   }
   const cancelChoosing = () => { setDraft(composition); setDraftTransforms(cloneTransforms(transforms)); setDraftNoseOpacity(noseOpacity); setOpen(false) }
-  const updateLayerTransform = (key: LayerKey, patch: Partial<FaceTransform>) => setTransforms((current) => ({ ...current, [key]: { ...current[key], ...patch } }))
+  const updateLayerTransform = (key: LayerKey, patch: Partial<FaceTransform>) => {
+    const pairKind = pairedKindForLayer(key)
+    const pairedKey = pairedLayerKeys[key]
+    const linkPair = Boolean(pairKind && pairedKey && linkedLayerPairs[pairKind])
+    const usesMirroredX = (layer: LayerKey) => {
+      if (!layer.endsWith('Right')) return false
+      const side = 'right'
+      const assetId = layer.startsWith('eye') ? composition.eyes[side] : layer.startsWith('pupil') ? composition.pupils[side] : composition.eyebrows[side]
+      return componentAssets[assetId ?? '']?.rightSidePositioned !== true
+    }
+    setTransforms((current) => {
+      const sourceBefore = current[key]
+      const sourceAfter = { ...sourceBefore, ...patch }
+      if (!linkPair || !pairedKey) return { ...current, [key]: sourceAfter }
+      const pairedBefore = current[pairedKey]
+      const pairedAfter = { ...pairedBefore }
+      if (patch.x !== undefined) {
+        const direction = (usesMirroredX(key) ? -1 : 1) / (usesMirroredX(pairedKey) ? -1 : 1)
+        pairedAfter.x = pairedBefore.x + (sourceAfter.x - sourceBefore.x) * direction
+      }
+      if (patch.y !== undefined) pairedAfter.y = pairedBefore.y + (sourceAfter.y - sourceBefore.y)
+      if (patch.scaleX !== undefined) pairedAfter.scaleX = Math.max(.02, Math.min(4, pairedBefore.scaleX * sourceAfter.scaleX / sourceBefore.scaleX))
+      if (patch.scaleY !== undefined) pairedAfter.scaleY = Math.max(.02, Math.min(4, pairedBefore.scaleY * sourceAfter.scaleY / sourceBefore.scaleY))
+      if (patch.rotation !== undefined) {
+        const direction = (usesMirroredX(key) ? -1 : 1) / (usesMirroredX(pairedKey) ? -1 : 1)
+        pairedAfter.rotation = Math.max(-180, Math.min(180, pairedBefore.rotation + (sourceAfter.rotation - sourceBefore.rotation) * direction))
+      }
+      if (patch.flipX !== undefined) pairedAfter.flipX = Boolean(pairedBefore.flipX) !== (Boolean(sourceBefore.flipX) !== Boolean(sourceAfter.flipX))
+      return { ...current, [key]: sourceAfter, [pairedKey]: pairedAfter }
+    })
+  }
   const beginPreviewLayerDrag = (event: ReactPointerEvent<HTMLElement>, requestedMappings: Array<Omit<PreviewLayerMapping, 'startX' | 'startY'>>) => {
     if (!requestedMappings.some(({ layer }) => layer === selectedLayer) || !head || event.button !== 0 && event.pointerType === 'mouse') return
     const bounds = previewCanvas.current?.getBoundingClientRect()
@@ -354,15 +386,24 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
   }
   const resetSelectedLayer = () => {
-    const assetId = selectedLayer === 'eyeLeft' ? composition.eyes.left : selectedLayer === 'eyeRight' ? composition.eyes.right
-      : selectedLayer === 'pupilLeft' ? composition.pupils.left : selectedLayer === 'pupilRight' ? composition.pupils.right
-        : selectedLayer === 'browLeft' ? composition.eyebrows.left : selectedLayer === 'browRight' ? composition.eyebrows.right : null
-    const assetTransform = assetId ? componentAssets[assetId]?.defaultTransform : undefined
-    const catalog = selectedLayer === 'nose' && composition.nose ? catalogItems[composition.nose.catalogId]
-      : selectedLayer === 'mouth' && composition.mouth ? catalogItems[composition.mouth.catalogId] : undefined
-    const catalogTransform = selectedLayer === 'nose' ? catalog?.transforms.nose : selectedLayer === 'mouth' ? catalog?.transforms.mouth : undefined
-    setTransforms((current) => ({ ...current, [selectedLayer]: { ...(assetTransform ?? catalogTransform ?? identityTransform()) } }))
-    if (selectedLayer === 'nose') setNoseOpacity(catalog?.opacity ?? 1)
+    const defaultForLayer = (layer: LayerKey) => {
+      const assetId = layer === 'eyeLeft' ? composition.eyes.left : layer === 'eyeRight' ? composition.eyes.right
+        : layer === 'pupilLeft' ? composition.pupils.left : layer === 'pupilRight' ? composition.pupils.right
+          : layer === 'browLeft' ? composition.eyebrows.left : layer === 'browRight' ? composition.eyebrows.right : null
+      const assetTransform = assetId ? componentAssets[assetId]?.defaultTransform : undefined
+      const catalog = layer === 'nose' && composition.nose ? catalogItems[composition.nose.catalogId]
+        : layer === 'mouth' && composition.mouth ? catalogItems[composition.mouth.catalogId] : undefined
+      const catalogTransform = layer === 'nose' ? catalog?.transforms.nose : layer === 'mouth' ? catalog?.transforms.mouth : undefined
+      return { ...(assetTransform ?? catalogTransform ?? identityTransform()) }
+    }
+    const pairKind = pairedKindForLayer(selectedLayer)
+    const pairedKey = pairedLayerKeys[selectedLayer]
+    setTransforms((current) => ({
+      ...current,
+      [selectedLayer]: defaultForLayer(selectedLayer),
+      ...(pairKind && pairedKey && linkedLayerPairs[pairKind] ? { [pairedKey]: defaultForLayer(pairedKey) } : {})
+    }))
+    if (selectedLayer === 'nose') setNoseOpacity(composition.nose ? catalogItems[composition.nose.catalogId]?.opacity ?? 1 : 1)
   }
   const selectExpression = async (index: number) => {
     if (index === selectedExpressionIndex || switchingExpression || saving) return
