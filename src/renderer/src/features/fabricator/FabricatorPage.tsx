@@ -12,9 +12,10 @@ import { HeadExtrasWorkspace } from './face/HeadExtrasWorkspace'
 import { HairWorkspace } from './HairWorkspace'
 import { AnimatorWorkspace } from './AnimatorWorkspace'
 import { DesignWorkspace } from './DesignWorkspace'
+import { ExpressionPresetWorkspace } from './ExpressionPresetWorkspace'
 
 const sections: { id: string; label: string; icon: IconName }[] = [
-  { id: 'Modelos', label: 'Modelos Dev', icon: 'sparkles' }, { id: 'Poses', label: 'Poses Dev', icon: 'expand' }, { id: 'Roupas', label: 'Roupas Dev', icon: 'shirt' }, { id: 'Roupas 2.0', label: 'Roupas Dev 2.0', icon: 'shirt' }, { id: 'Olhos', label: 'Olhos Dev', icon: 'face' }, { id: 'Rosto', label: 'Rosto Dev', icon: 'face' }, { id: 'Cabeças extra', label: 'Cabeças extra dev', icon: 'face' }, { id: 'Cabelos Dev', label: 'Cabelos Dev', icon: 'bow' }, { id: 'Animador Dev', label: 'Animador Dev', icon: 'body' }, { id: 'Design Dev', label: 'Design Dev', icon: 'flower' }
+  { id: 'Modelos', label: 'Modelos Dev', icon: 'sparkles' }, { id: 'Poses', label: 'Poses Dev', icon: 'expand' }, { id: 'Roupas', label: 'Roupas Dev', icon: 'shirt' }, { id: 'Roupas 2.0', label: 'Roupas Dev 2.0', icon: 'shirt' }, { id: 'Olhos', label: 'Olhos Dev', icon: 'face' }, { id: 'Rosto', label: 'Rosto Dev', icon: 'face' }, { id: 'Preset Expressão Dev', label: 'Preset Expressão Dev', icon: 'face' }, { id: 'Cabeças extra', label: 'Cabeças extra dev', icon: 'face' }, { id: 'Cabelos Dev', label: 'Cabelos Dev', icon: 'bow' }, { id: 'Animador Dev', label: 'Animador Dev', icon: 'body' }, { id: 'Design Dev', label: 'Design Dev', icon: 'flower' }
 ]
 
 type ProcessedPart = Omit<ModelPart, 'dataUrl' | 'chromaBaseDataUrl'> & { png: ArrayBuffer; basePng: ArrayBuffer }
@@ -995,7 +996,7 @@ export function FabricatorPage() {
         </nav>
       </aside>
 
-      {activeSection === 'Design Dev' ? <DesignWorkspace /> : activeSection === 'Poses' ? <PoseWorkspace /> : activeSection === 'Roupas' ? <WardrobeWorkspace edition={1} /> : activeSection === 'Roupas 2.0' ? <WardrobeWorkspace edition={2} /> : activeSection === 'Olhos' ? <FaceComponentsWorkspace mode="eyes" /> : activeSection === 'Rosto' ? <FaceComponentsWorkspace mode="face" /> : activeSection === 'Cabeças extra' ? <HeadExtrasWorkspace /> : activeSection === 'Cabelos Dev' ? <HairWorkspace /> : activeSection === 'Animador Dev' ? <AnimatorWorkspace /> : (
+      {activeSection === 'Design Dev' ? <DesignWorkspace /> : activeSection === 'Poses' ? <PoseWorkspace /> : activeSection === 'Roupas' ? <WardrobeWorkspace edition={1} /> : activeSection === 'Roupas 2.0' ? <WardrobeWorkspace edition={2} /> : activeSection === 'Olhos' ? <FaceComponentsWorkspace mode="eyes" /> : activeSection === 'Rosto' ? <FaceComponentsWorkspace mode="face" /> : activeSection === 'Preset Expressão Dev' ? <ExpressionPresetWorkspace /> : activeSection === 'Cabeças extra' ? <HeadExtrasWorkspace /> : activeSection === 'Cabelos Dev' ? <HairWorkspace /> : activeSection === 'Animador Dev' ? <AnimatorWorkspace /> : (
         <section className="fabricator-model-editor" aria-label="Editor de modelos">
           <header className="model-slotbar">
             <div className="model-slot-title"><span className="model-slot-logo"><Icon name="sparkles" /></span><span><strong>Modelos</strong><small>10 espaços de trabalho</small></span></div>
