@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
-import { buildStudioExpressionAppearance, buildStudioExpressionTransforms, resolveStudioExpressionBase } from './expressionTransforms'
+import { buildStudioExpressionAppearance, buildStudioExpressionTransforms, resolveStudioExpressionBase, studioExpressionCollection } from './expressionTransforms'
 import { Icon } from '../../ui/components/Icon'
 import { CharacterPortrait } from '../../ui/components/CharacterPortrait'
 import type { StudioAsset, StudioDocument, StudioElement, StudioFaceTransform, StudioFaceTransforms } from '../../../../shared/studio'
@@ -233,10 +233,9 @@ export function StudioPage() {
   const [inspectorTab, setInspectorTab] = useState<'editor' | 'custom'>('editor')
   const [inspectorCustomView, setInspectorCustomView] = useState<'face' | 'presets'>('face')
   const characterInspectorViewRef = useRef<{ tab: 'editor' | 'custom'; customView: 'face' | 'presets' }>({ tab: 'editor', customView: 'face' })
-  const [studioPresetCategory, setStudioPresetCategory] = useState<'pose' | 'expression'>('pose')
+  const [studioPresetCategory, setStudioPresetCategory] = useState<'pose' | 'expression'>('expression')
   const [studioExpressionCollections, setStudioExpressionCollections] = useState<FaceExpressionCollection[]>([])
   const [studioExpressionPresets, setStudioExpressionPresets] = useState<FaceExpressionPresetSummary[]>([])
-  const [selectedStudioExpressionCollectionId, setSelectedStudioExpressionCollectionId] = useState<string | null>(null)
   const [studioExpressionCollectionMenuOpen, setStudioExpressionCollectionMenuOpen] = useState(false)
   const [studioExpressionLoading, setStudioExpressionLoading] = useState(false)
   const [studioExpressionBusy, setStudioExpressionBusy] = useState(false)
@@ -270,12 +269,14 @@ export function StudioPage() {
   const studioFaceRenderRunningRef = useRef(false)
   const studioFaceRendererRef = useRef<{ key: string; render: (appearance?: CustomizerFaceAppearance, transforms?: StudioFaceTransforms) => Promise<{ dataUrl: string; width: number; height: number }> } | null>(null)
   const saveGenerationRef = useRef(0)
+  const expressionSaveSignatureRef = useRef<{ studioId: string; value: string } | null>(null)
   const normalizedStudioIdsRef = useRef(new Set<string>())
   const nextStudioNumber = useRef(1)
   const selectedStudio = studios.find((studio) => studio.id === selectedId) ?? null
   const activeStudio = studios.find((studio) => studio.id === activeStudioId) ?? null
   const selectedElement = activeStudio?.elements.find((element) => element.id === selectedElementId) ?? null
   const selectedStudioCharacter = selectedElement?.kind === 'character' ? availableCharacters.find((character) => character.id === selectedElement.characterId) ?? null : null
+  const selectedStudioExpressionCollectionId = studioExpressionCollection(selectedElement, studioExpressionPresets)
   const selectedStudioCharacterModelSlot = selectedStudioCharacter ? selectedStudioCharacter.customization.modelSlot ?? 1 : null
   const selectedStudioPoseSlot = selectedElement?.kind === 'character' ? selectedElement.poseSlot === undefined ? selectedStudioCharacter?.customization.poseSlot ?? null : selectedElement.poseSlot : null
   const selectedStudioFaceAppearance = selectedElement?.kind === 'character'
@@ -305,9 +306,10 @@ export function StudioPage() {
     if (selectedElement?.kind === 'character') studioFaceTransformsRef.current[selectedElement.id] = selectedElement.faceTransforms ?? {}
   }, [activeStudioId, selectedElementId, selectedElement?.faceTransforms])
 
+  useEffect(() => { setStudioExpressionCollectionMenuOpen(false) }, [activeStudioId, selectedElementId])
+
   useEffect(() => {
     let cancelled = false
-    setSelectedStudioExpressionCollectionId(null)
     setStudioExpressionCollectionMenuOpen(false)
     if (selectedStudioCharacterModelSlot === null) {
       setStudioExpressionCollections([])
@@ -615,6 +617,13 @@ export function StudioPage() {
   useEffect(() => {
     if (!activeStudio) return
     setSaved(false)
+    const signature = JSON.stringify(activeStudio.elements.filter((element) => element.kind === 'character').map((element) => [element.id, element.activeExpressionCollectionId, element.activeExpressionPresetId]))
+    const previous = expressionSaveSignatureRef.current
+    expressionSaveSignatureRef.current = { studioId: activeStudio.id, value: signature }
+    if (previous?.studioId === activeStudio.id && previous.value !== signature) {
+      void saveStudio(activeStudio)
+      return
+    }
     const timer = window.setTimeout(() => { void saveStudio(activeStudio) }, 650)
     return () => window.clearTimeout(timer)
   }, [activeStudio, saveStudio])
@@ -729,7 +738,7 @@ export function StudioPage() {
         const asset: StudioAsset = { id: crypto.randomUUID(), category: 'character', name: character.name, mimeType: 'image/png', dataUrl: imageData }
         const { width, height, characterCanvasWidth } = fitStudioCharacterToStage(rendered, imageWidth, imageHeight, stageWidth, stageHeight)
         assets.push(asset)
-        elements.push({ id: crypto.randomUUID(), kind: 'character', assetId: asset.id, characterId: character.id, characterSourceUpdatedAt: character.updatedAt, characterScale: 100, characterWidthScale: 100, characterHeightScale: 100, ...(character.customization.faceAppearance ? { expressionBase: { appearance: structuredClone(character.customization.faceAppearance), transforms: {} } } : {}), characterCanvasWidth, text: character.name, x: 0, y: 0, width, height, rotation: 0, zIndex: ++zIndex })
+        elements.push({ id: crypto.randomUUID(), kind: 'character', assetId: asset.id, characterId: character.id, characterSourceUpdatedAt: character.updatedAt, activeExpressionCollectionId: 'standard', activeExpressionPresetId: null, characterScale: 100, characterWidthScale: 100, characterHeightScale: 100, ...(character.customization.faceAppearance ? { expressionBase: { appearance: structuredClone(character.customization.faceAppearance), transforms: {} } } : {}), characterCanvasWidth, text: character.name, x: 0, y: 0, width, height, rotation: 0, zIndex: ++zIndex })
       }
       const nextElements = [...retained, ...elements]
       const retainedAssetIds = new Set(retained.map((element) => element.assetId).filter((id): id is string => Boolean(id)))
@@ -750,7 +759,7 @@ export function StudioPage() {
     } finally { setSavingCast(false) }
   }
 
-  const applyStudioFaceAppearance = async (appearance: CustomizerFaceAppearance, faceTransforms: StudioFaceTransforms = selectedElement?.faceTransforms ?? {}, record = true, expressionState?: Pick<StudioElement, 'expressionBase' | 'activeExpressionPresetId'>) => {
+  const applyStudioFaceAppearance = async (appearance: CustomizerFaceAppearance, faceTransforms: StudioFaceTransforms = selectedElement?.faceTransforms ?? {}, record = true, expressionState?: Pick<StudioElement, 'expressionBase' | 'activeExpressionPresetId' | 'activeExpressionCollectionId'>) => {
     if (!activeStudio || selectedElement?.kind !== 'character' || !selectedStudioCharacter || !selectedElement.assetId || studioFaceBusy) return
     setStudioFaceBusy(true)
     try {
@@ -798,7 +807,7 @@ export function StudioPage() {
     const base = resolveStudioExpressionBase(selectedElement, appearance)
     setStudioExpressionBusy(true)
     try {
-      await applyStudioFaceAppearance(base.appearance, base.transforms, true, { expressionBase: base, activeExpressionPresetId: null })
+      await applyStudioFaceAppearance(base.appearance, base.transforms, true, { expressionBase: base, activeExpressionPresetId: null, activeExpressionCollectionId: selectedStudioExpressionCollectionId })
     } finally { setStudioExpressionBusy(false) }
   }
 
@@ -820,7 +829,7 @@ export function StudioPage() {
         (id) => window.desktop.loadFaceCatalogItem(preset.modelSlot, id)
       )
 
-      await applyStudioFaceAppearance(nextAppearance, faceTransforms, true, { expressionBase: base, activeExpressionPresetId: preset.id })
+      await applyStudioFaceAppearance(nextAppearance, faceTransforms, true, { expressionBase: base, activeExpressionPresetId: preset.id, activeExpressionCollectionId: preset.collectionId ?? 'standard' })
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Não foi possível aplicar este preset de expressão.')
     } finally {
@@ -1214,7 +1223,7 @@ export function StudioPage() {
     if (!selectedStudioCharacter || selectedElement?.kind !== 'character') return <div className="studio-custom-empty"><strong>Presets</strong><span>Selecione um personagem na cena para ver poses e expressões.</span></div>
     return <div className="studio-presets-panel">
       <div className="studio-preset-buttons" aria-label="Categorias de presets">
-        {presetOptions.map((option) => <button key={option.id} className={`studio-preset-button${option.id === studioPresetCategory ? ' active' : ''}${option.id.startsWith('reserved') ? ' reserved' : ''}`} disabled={option.id.startsWith('reserved')} onClick={() => { if (option.id === 'pose') { setStudioPresetCategory('pose'); setSelectedStudioExpressionCollectionId(null) } else if (option.id === 'expression') setStudioPresetCategory('expression') }} type="button"><Icon name={option.icon} /><span>{option.label}</span></button>)}
+        {presetOptions.map((option) => <button key={option.id} className={`studio-preset-button${option.id === studioPresetCategory ? ' active' : ''}${option.id.startsWith('reserved') ? ' reserved' : ''}`} disabled={option.id.startsWith('reserved')} onClick={() => { if (option.id === 'pose') { setStudioPresetCategory('pose') } else if (option.id === 'expression') setStudioPresetCategory('expression') }} type="button"><Icon name={option.icon} /><span>{option.label}</span></button>)}
       </div>
         {studioPresetCategory === 'pose' && <section className="studio-preset-catalog" aria-label="Catálogo de poses">
         <h3>Poses do modelo</h3>
@@ -1235,7 +1244,7 @@ export function StudioPage() {
             {studioExpressionCollectionMenuOpen && <div className="studio-expression-collection-options" role="listbox" aria-label="Conjuntos disponíveis">
               {[{ id: 'standard', name: 'Padrão' }, ...studioExpressionCollections].map((collection) => {
                 const selected = selectedStudioExpressionCollectionId === collection.id
-                return <button className={`studio-expression-collection-option${selected ? ' selected' : ''}`} key={collection.id} type="button" role="option" aria-selected={selected} onClick={() => { setSelectedStudioExpressionCollectionId(collection.id); setStudioExpressionCollectionMenuOpen(false) }}>
+                return <button className={`studio-expression-collection-option${selected ? ' selected' : ''}`} key={collection.id} type="button" role="option" aria-selected={selected} onClick={() => { updateElement(selectedElement.id, { activeExpressionCollectionId: collection.id }); setStudioExpressionCollectionMenuOpen(false) }}>
                   <span>{collection.name}</span>{selected && <Icon name="check" />}
                 </button>
               })}
@@ -1331,7 +1340,7 @@ export function StudioPage() {
             {!fullView && <span className="studio-scene-title">{activeStudio.title}</span>}
             {!fullView && inspectorOpen && <aside className={`studio-inspector studio-inspector-${inspectorSide}`} aria-label="Inspector da cena" onPointerDown={(event) => event.stopPropagation()}>
               <header className="studio-inspector-tabs"><button className={inspectorTab === 'editor' ? 'active' : ''} onClick={() => { setInspectorTab('editor'); rememberCharacterInspectorView('editor') }} type="button">Editor</button><button className={inspectorTab === 'custom' && inspectorCustomView === 'face' ? 'active' : ''} onClick={() => { setInspectorTab('custom'); setInspectorCustomView('face'); rememberCharacterInspectorView('custom', 'face') }} type="button">Custom</button><button className="studio-inspector-close" onClick={() => setInspectorOpen(false)} aria-label="Fechar inspector" title="Fechar" type="button">×</button></header>
-              <button className={`studio-inspector-presets${inspectorTab === 'custom' && inspectorCustomView === 'presets' ? ' active' : ''}`} onClick={() => { setInspectorTab('custom'); setInspectorCustomView('presets'); rememberCharacterInspectorView('custom', 'presets') }} type="button"><Icon name="sparkles" />Presets</button>
+              <button className={`studio-inspector-presets${inspectorTab === 'custom' && inspectorCustomView === 'presets' ? ' active' : ''}`} onClick={() => { setStudioPresetCategory('expression'); setInspectorTab('custom'); setInspectorCustomView('presets'); rememberCharacterInspectorView('custom', 'presets') }} type="button"><Icon name="sparkles" />Presets</button>
               {inspectorTab === 'editor' ? <div className="studio-inspector-content">{propertyPanel()}</div> : <div className="studio-inspector-content">{inspectorCustomView === 'presets' ? presetsPanel() : customPanel()}</div>}
             </aside>}
           </div>

@@ -5,7 +5,14 @@ import ts from 'typescript'
 
 const source = await readFile(new URL('../src/renderer/src/features/studio/expressionTransforms.ts', import.meta.url), 'utf8')
 const compiled = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText
-const { transferExpressionTransform: transfer, buildStudioExpressionTransforms: build, resolveStudioExpressionBase: resolveBase, buildStudioExpressionAppearance: expressionAppearance } = await import(`data:text/javascript;base64,${Buffer.from(compiled).toString('base64')}`)
+const { transferExpressionTransform: transfer, buildStudioExpressionTransforms: build, resolveStudioExpressionBase: resolveBase, buildStudioExpressionAppearance: expressionAppearance, studioExpressionCollection: collectionFor } = await import(`data:text/javascript;base64,${Buffer.from(compiled).toString('base64')}`)
+assert.equal(collectionFor({}, []), 'standard', 'A new actor starts in the default collection')
+const selection = { activeExpressionCollectionId: 'custom-set', activeExpressionPresetId: 'aliviada' }
+const restoredSelection = JSON.parse(JSON.stringify(selection))
+assert.equal(collectionFor(restoredSelection, []), 'custom-set', 'Stored collection is actor-owned and does not need the catalog to load')
+assert.equal(restoredSelection.activeExpressionPresetId, 'aliviada')
+assert.equal(collectionFor({ activeExpressionPresetId: 'legacy' }, [{ id: 'legacy', collectionId: 'legacy-set' }]), 'legacy-set', 'Recover the collection of previously applied expressions')
+assert.equal(collectionFor({ activeExpressionCollectionId: 'another-set', activeExpressionPresetId: null }, []), 'another-set', 'Base also remembers the collection chosen by the user')
 const base = { x: 100, y: 50, scaleX: .05, scaleY: .08, rotation: 10 }
 const target = { x: 250, y: 70, scaleX: 2, scaleY: .6, rotation: -5 }
 assert.deepEqual(transfer(base, base, target), { ...target, flipX: false }, 'An unchanged preset must preserve a differently calibrated target')

@@ -51,6 +51,8 @@ export type StudioElement = {
   /** Character-specific neutral face, shared by every expression collection. */
   expressionBase?: StudioExpressionBase
   activeExpressionPresetId?: string | null
+  /** Expression collection currently selected for this actor in the inspector. */
+  activeExpressionCollectionId?: string
   /** Pose selected for this actor inside this Studio only. */
   poseSlot?: number | null
   /** Uniform actor size and independent axis squeeze, in percent of its saved base size. */

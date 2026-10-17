@@ -1,6 +1,10 @@
 import type { CustomizerFaceAppearance } from '../../../../shared/customizer'
-import type { FaceCatalogItem, FaceComponentAsset, FaceExpressionPreset, FaceTransform } from '../../../../shared/fabricator'
+import type { FaceCatalogItem, FaceComponentAsset, FaceExpressionPreset, FaceExpressionPresetSummary, FaceTransform } from '../../../../shared/fabricator'
 import type { StudioElement, StudioExpressionBase, StudioFaceTransforms } from '../../../../shared/studio'
+
+export function studioExpressionCollection(element: Pick<StudioElement, 'activeExpressionCollectionId' | 'activeExpressionPresetId'> | null, presets: FaceExpressionPresetSummary[]): string {
+  return element?.activeExpressionCollectionId ?? presets.find((preset) => preset.id === element?.activeExpressionPresetId)?.collectionId ?? 'standard'
+}
 
 export function resolveStudioExpressionBase(element: Pick<StudioElement, 'expressionBase' | 'faceTransforms'>, characterAppearance: CustomizerFaceAppearance): StudioExpressionBase {
   return structuredClone(element.expressionBase ?? {
