@@ -186,6 +186,7 @@ export type FaceCatalogItemSummary = Pick<FaceCatalogItem, 'id' | 'modelSlot' | 
 export type FaceExpressionSelections = {
   eyes: Record<'left' | 'right', string | null>
   pupils: Record<'left' | 'right', string | null>
+  eyebrows: Record<'left' | 'right', string | null>
   nose: { catalogId: string; index: number } | null
   mouth: { catalogId: string; kind: 'mouth-closed' | 'mouth-open'; index: number } | null
 }
@@ -194,6 +195,8 @@ export type FaceExpressionTransforms = {
   eyeRight: FaceTransform
   pupilLeft: FaceTransform
   pupilRight: FaceTransform
+  browLeft: FaceTransform
+  browRight: FaceTransform
   nose: FaceTransform
   mouth: FaceTransform
 }

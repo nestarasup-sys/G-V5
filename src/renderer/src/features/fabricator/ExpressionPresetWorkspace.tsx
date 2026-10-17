@@ -4,26 +4,29 @@ import { Icon } from '../../ui/components/Icon'
 import { eyeInteriorMask } from './face/eyeInteriorMask'
 
 type Side = 'left' | 'right'
-type PickerCategory = 'eyes' | 'pupils' | 'nose' | 'mouth'
+type PickerCategory = 'eyes' | 'pupils' | 'eyebrows' | 'nose' | 'mouth'
 type ExpressionComposition = {
   eyes: Record<Side, string | null>
   pupils: Record<Side, string | null>
+  eyebrows: Record<Side, string | null>
   nose: { catalogId: string; index: number } | null
   mouth: { catalogId: string; kind: 'mouth-closed' | 'mouth-open'; index: number } | null
 }
 type LayerKey = keyof FaceExpressionTransforms
 const identityTransform = (): FaceTransform => ({ x: 0, y: 0, scaleX: 1, scaleY: 1, rotation: 0 })
-const emptyTransforms = (): FaceExpressionTransforms => ({ eyeLeft: identityTransform(), eyeRight: identityTransform(), pupilLeft: identityTransform(), pupilRight: identityTransform(), nose: identityTransform(), mouth: identityTransform() })
+const emptyTransforms = (): FaceExpressionTransforms => ({ eyeLeft: identityTransform(), eyeRight: identityTransform(), pupilLeft: identityTransform(), pupilRight: identityTransform(), browLeft: identityTransform(), browRight: identityTransform(), nose: identityTransform(), mouth: identityTransform() })
 const cloneTransforms = (transforms: FaceExpressionTransforms): FaceExpressionTransforms => structuredClone(transforms)
-const layerKey = (kind: 'eye' | 'pupil', side: Side): LayerKey => kind === 'eye' ? side === 'left' ? 'eyeLeft' : 'eyeRight' : side === 'left' ? 'pupilLeft' : 'pupilRight'
+const layerKey = (kind: 'eye' | 'pupil' | 'eyebrow', side: Side): LayerKey => kind === 'eye' ? side === 'left' ? 'eyeLeft' : 'eyeRight' : kind === 'pupil' ? side === 'left' ? 'pupilLeft' : 'pupilRight' : side === 'left' ? 'browLeft' : 'browRight'
 
 function defaultTransforms(composition: ExpressionComposition, components: Record<string, FaceComponentAsset>, catalogs: Record<string, FaceCatalogItem>): FaceExpressionTransforms {
   const transforms = emptyTransforms()
   for (const side of ['left', 'right'] as const) {
     const eye = composition.eyes[side] ? components[composition.eyes[side]!] : undefined
     const pupil = composition.pupils[side] ? components[composition.pupils[side]!] : undefined
+    const brow = composition.eyebrows[side] ? components[composition.eyebrows[side]!] : undefined
     if (eye) transforms[layerKey('eye', side)] = { ...eye.defaultTransform }
     if (pupil) transforms[layerKey('pupil', side)] = { ...pupil.defaultTransform }
+    if (brow) transforms[layerKey('eyebrow', side)] = { ...brow.defaultTransform }
   }
   const nose = composition.nose ? catalogs[composition.nose.catalogId] : undefined
   const mouth = composition.mouth ? catalogs[composition.mouth.catalogId] : undefined
@@ -33,7 +36,7 @@ function defaultTransforms(composition: ExpressionComposition, components: Recor
 }
 
 const emptyComposition: ExpressionComposition = {
-  eyes: { left: null, right: null }, pupils: { left: null, right: null }, nose: null, mouth: null
+  eyes: { left: null, right: null }, pupils: { left: null, right: null }, eyebrows: { left: null, right: null }, nose: null, mouth: null
 }
 
 function componentSide(asset: FaceComponentAssetSummary): Side {
@@ -44,7 +47,7 @@ function findPairedAsset(asset: FaceComponentAssetSummary, assets: FaceComponent
   return assets.find((candidate) => candidate.id !== asset.id && candidate.kind === asset.kind && componentSide(candidate) === 'right'
     && Boolean(asset.pairId && candidate.pairId === asset.pairId))
     ?? assets.find((candidate) => candidate.id !== asset.id && candidate.kind === asset.kind && componentSide(candidate) === 'right'
-      && candidate.name.replace(/\s*[·-]\s*(?:Olho|Pupila)\s*(?:esquerd[oa]|direit[oa])$/i, '') === asset.name.replace(/\s*[·-]\s*(?:Olho|Pupila)\s*(?:esquerd[oa]|direit[oa])$/i, ''))
+    && candidate.name.replace(/\s*[·-]\s*(?:Olho|Pupila|Sobrancelha)\s*(?:esquerd[oa]|direit[oa])$/i, '') === asset.name.replace(/\s*[·-]\s*(?:Olho|Pupila|Sobrancelha)\s*(?:esquerd[oa]|direit[oa])$/i, ''))
 }
 
 export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) {
@@ -84,7 +87,7 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
     setPresetName('Expressão nova')
     void Promise.all([
       window.desktop.loadFabricatorSlot(modelSlot),
-      Promise.all([window.desktop.listFaceComponentAssets(modelSlot, 'eye'), window.desktop.listFaceComponentAssets(modelSlot, 'pupil')]).then((lists) => lists.flat()),
+      Promise.all([window.desktop.listFaceComponentAssets(modelSlot, 'eye'), window.desktop.listFaceComponentAssets(modelSlot, 'pupil'), window.desktop.listFaceComponentAssets(modelSlot, 'eyebrow')]).then((lists) => lists.flat()),
       window.desktop.listFaceCatalog(modelSlot),
       window.desktop.listFaceExpressionPresets(modelSlot)
     ]).then(async ([model, components, catalogs, savedPresets]) => {
@@ -105,13 +108,16 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
 
       const leftEye = readyComponents.find((asset) => asset.kind === 'eye' && componentSide(asset) === 'left')
       const leftPupil = readyComponents.find((asset) => asset.kind === 'pupil' && componentSide(asset) === 'left')
+      const leftBrow = readyComponents.find((asset) => asset.kind === 'eyebrow' && componentSide(asset) === 'left')
       const rightEye = leftEye ? findPairedAsset(leftEye, components) : readyComponents.find((asset) => asset.kind === 'eye' && componentSide(asset) === 'right')
       const rightPupil = leftPupil ? findPairedAsset(leftPupil, components) : readyComponents.find((asset) => asset.kind === 'pupil' && componentSide(asset) === 'right')
+      const rightBrow = leftBrow ? findPairedAsset(leftBrow, components) : readyComponents.find((asset) => asset.kind === 'eyebrow' && componentSide(asset) === 'right')
       const nose = readyCatalogs.find((item) => item.category === 'nose')
       const mouth = readyCatalogs.find((item) => item.category === 'mouth-closed') ?? readyCatalogs.find((item) => item.category === 'mouth-open')
       const initial: ExpressionComposition = {
         eyes: { left: leftEye?.id ?? null, right: rightEye?.id ?? leftEye?.id ?? null },
         pupils: { left: leftPupil?.id ?? null, right: rightPupil?.id ?? leftPupil?.id ?? null },
+        eyebrows: { left: leftBrow?.id ?? null, right: rightBrow?.id ?? leftBrow?.id ?? null },
         nose: nose ? { catalogId: nose.id, index: nose.pieces[0]?.index ?? 0 } : null,
         mouth: mouth ? { catalogId: mouth.id, kind: mouth.category as 'mouth-closed' | 'mouth-open', index: mouth.pieces[0]?.index ?? 0 } : null
       }
@@ -154,10 +160,11 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
     ? catalogItems[draft.nose?.catalogId ?? '']
     : category === 'mouth' && draft.mouth?.kind === mouthKind ? catalogItems[draft.mouth.catalogId] : undefined
   const filteredCatalogs = catalogSummaries.filter((item) => category === 'nose' ? item.category === 'nose' : item.category === mouthKind)
-  const currentComponentId = category === 'eyes' ? draft.eyes[side] : category === 'pupils' ? draft.pupils[side] : null
+  const currentComponentId = category === 'eyes' ? draft.eyes[side] : category === 'pupils' ? draft.pupils[side] : category === 'eyebrows' ? draft.eyebrows[side] : null
   const setComponentChoice = (id: string) => {
-    const field = category === 'eyes' ? 'eyes' : 'pupils'
-    const key = layerKey(category === 'eyes' ? 'eye' : 'pupil', side)
+    const kind = category === 'eyes' ? 'eye' : category === 'pupils' ? 'pupil' : 'eyebrow'
+    const field = category === 'eyes' ? 'eyes' : category === 'pupils' ? 'pupils' : 'eyebrows'
+    const key = layerKey(kind, side)
     const asset = componentAssets[id]
     setDraft((current) => ({ ...current, [field]: { ...current[field], [side]: id || null } }))
     if (asset) setDraftTransforms((current) => ({ ...current, [key]: { ...asset.defaultTransform } }))
@@ -182,7 +189,8 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
   const updateLayerTransform = (key: LayerKey, patch: Partial<FaceTransform>) => setTransforms((current) => ({ ...current, [key]: { ...current[key], ...patch } }))
   const resetSelectedLayer = () => {
     const assetId = selectedLayer === 'eyeLeft' ? composition.eyes.left : selectedLayer === 'eyeRight' ? composition.eyes.right
-      : selectedLayer === 'pupilLeft' ? composition.pupils.left : selectedLayer === 'pupilRight' ? composition.pupils.right : null
+      : selectedLayer === 'pupilLeft' ? composition.pupils.left : selectedLayer === 'pupilRight' ? composition.pupils.right
+        : selectedLayer === 'browLeft' ? composition.eyebrows.left : selectedLayer === 'browRight' ? composition.eyebrows.right : null
     const assetTransform = assetId ? componentAssets[assetId]?.defaultTransform : undefined
     const catalog = selectedLayer === 'nose' && composition.nose ? catalogItems[composition.nose.catalogId]
       : selectedLayer === 'mouth' && composition.mouth ? catalogItems[composition.mouth.catalogId] : undefined
@@ -217,19 +225,20 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
     finally { setLoading(false) }
   }
 
-  const renderComponent = (assetId: string | null, kind: 'eye' | 'pupil', currentSide: Side, transform: FaceTransform, eyeAsset?: FaceComponentAsset, eyeTransformOverride?: FaceTransform): ReactNode => {
+  const renderComponent = (assetId: string | null, kind: 'eye' | 'pupil' | 'eyebrow', currentSide: Side, transform: FaceTransform, eyeAsset?: FaceComponentAsset, eyeTransformOverride?: FaceTransform): ReactNode => {
     if (!head || !assetId) return null
     const asset = componentAssets[assetId]
     if (!asset || asset.kind !== kind) return null
     const right = currentSide === 'right'
     const physicallyRight = asset.rightSidePositioned === true || componentSide(asset) === 'right'
-    if (kind === 'eye') {
+    if (kind !== 'pupil') {
       const mirrored = right && !physicallyRight
       const x = mirrored ? head.width - transform.x : transform.x
       const rotation = mirrored ? -transform.rotation : transform.rotation
       const imageStyle: CSSProperties = {
         left: `${x / head.width * 100}%`, top: `${transform.y / head.height * 100}%`,
         width: `${asset.width * transform.scaleX / head.width * 100}%`, height: `${asset.height * transform.scaleY / head.height * 100}%`,
+        zIndex: kind === 'eyebrow' ? 4 : 2,
         transform: `translate(-50%,-50%) rotate(${rotation}deg) scaleX(${Boolean(transform.flipX) !== mirrored ? -1 : 1})`
       }
       return <img key={`${kind}-${asset.id}-${right}`} className="expression-head-piece" src={asset.dataUrl} alt="" style={imageStyle} />
@@ -297,9 +306,11 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
         {(['left', 'right'] as const).map((currentSide) => {
           const eye = componentAssets[visibleComposition.eyes[currentSide] ?? '']
           const pupil = componentAssets[visibleComposition.pupils[currentSide] ?? '']
+          const brow = componentAssets[visibleComposition.eyebrows[currentSide] ?? '']
           return <span className="expression-head-side-layer" key={currentSide} data-side={currentSide}>
             {eye && renderComponent(eye.id, 'eye', currentSide, visibleTransforms[layerKey('eye', currentSide)])}
             {pupil && eye && renderComponent(pupil.id, 'pupil', currentSide, visibleTransforms[layerKey('pupil', currentSide)], eye, visibleTransforms[layerKey('eye', currentSide)])}
+            {brow && renderComponent(brow.id, 'eyebrow', currentSide, visibleTransforms[layerKey('eyebrow', currentSide)])}
           </span>
         })}
         {renderCatalogPiece(visibleComposition.nose, 'nose')}
@@ -309,7 +320,7 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
     </main>
     <aside className="expression-preset-inspector">
       <header><strong>Ajustes deste preset</strong><small>Salvos separados de Olhos Dev e Rosto Dev</small></header>
-      <label>Peça<select value={selectedLayer} onChange={(event) => setSelectedLayer(event.target.value as LayerKey)}>{([['eyeLeft', 'Olho esquerdo'], ['eyeRight', 'Olho direito'], ['pupilLeft', 'Pupila esquerda'], ['pupilRight', 'Pupila direita'], ['nose', 'Nariz'], ['mouth', 'Boca']] as const).map(([key, label]) => <option value={key} key={key}>{label}</option>)}</select></label>
+      <label>Peça<select value={selectedLayer} onChange={(event) => setSelectedLayer(event.target.value as LayerKey)}>{([['eyeLeft', 'Olho esquerdo'], ['eyeRight', 'Olho direito'], ['pupilLeft', 'Pupila esquerda'], ['pupilRight', 'Pupila direita'], ['browLeft', 'Sobrancelha esquerda'], ['browRight', 'Sobrancelha direita'], ['nose', 'Nariz'], ['mouth', 'Boca']] as const).map(([key, label]) => <option value={key} key={key}>{label}</option>)}</select></label>
       {(['x', 'y'] as const).map((field) => <label className="expression-transform-control" key={field}>{field === 'x' ? 'Posição horizontal' : 'Posição vertical'}<input type="range" min={-100} max={Math.max(100, (field === 'x' ? head?.width : head?.height) ?? 100)} step="1" value={transforms[selectedLayer][field]} onChange={(event) => updateLayerTransform(selectedLayer, { [field]: Number(event.target.value) })} /><output>{Math.round(transforms[selectedLayer][field])} px</output></label>)}
       {(['scaleX', 'scaleY'] as const).map((field) => <label className="expression-transform-control" key={field}>{field === 'scaleX' ? 'Largura' : 'Altura'}<input type="range" min="0.02" max="4" step="0.01" value={transforms[selectedLayer][field]} onChange={(event) => updateLayerTransform(selectedLayer, { [field]: Number(event.target.value) })} /><output>{Math.round(transforms[selectedLayer][field] * 100)}%</output></label>)}
       <label className="expression-transform-control">Rotação<input type="range" min="-180" max="180" step="1" value={transforms[selectedLayer].rotation} onChange={(event) => updateLayerTransform(selectedLayer, { rotation: Number(event.target.value) })} /><output>{Math.round(transforms[selectedLayer].rotation)}°</output></label>
@@ -323,16 +334,16 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
       <section className="expression-picker-modal" role="dialog" aria-modal="true" aria-labelledby="expression-picker-title" onClick={(event) => event.stopPropagation()}>
         <header><span><small>MODELO {String(modelSlot).padStart(2, '0')}</small><h2 id="expression-picker-title">Escolher conjunto</h2></span><button aria-label="Fechar" onClick={cancelChoosing} type="button">×</button></header>
         <nav className="expression-picker-categories" aria-label="Categorias faciais">
-          {([['eyes', 'Olhos'], ['pupils', 'Pupilas'], ['nose', 'Nariz'], ['mouth', 'Boca']] as const).map(([id, label]) => <button key={id} className={category === id ? 'active' : ''} onClick={() => setCategory(id)} type="button">{label}</button>)}
+          {([['eyes', 'Olhos'], ['pupils', 'Pupilas'], ['eyebrows', 'Sobrancelhas'], ['nose', 'Nariz'], ['mouth', 'Boca']] as const).map(([id, label]) => <button key={id} className={category === id ? 'active' : ''} onClick={() => setCategory(id)} type="button">{label}</button>)}
         </nav>
         <div className="expression-picker-content">
-          {(category === 'eyes' || category === 'pupils') && <>
+          {(category === 'eyes' || category === 'pupils' || category === 'eyebrows') && <>
             <div className="expression-picker-sides"><button className={side === 'left' ? 'active' : ''} onClick={() => setSide('left')} type="button">Esquerdo</button><button className={side === 'right' ? 'active' : ''} onClick={() => setSide('right')} type="button">Direito</button></div>
-            <h3>{category === 'eyes' ? 'Escolha o olho' : 'Escolha a pupila'} · lado {side === 'left' ? 'esquerdo' : 'direito'}</h3>
-            <div className="expression-picker-assets">{componentSummaries.filter((asset) => asset.kind === (category === 'eyes' ? 'eye' : 'pupil')).map((asset) => {
+            <h3>{category === 'eyes' ? 'Escolha o olho' : category === 'pupils' ? 'Escolha a pupila' : 'Escolha a sobrancelha'} · lado {side === 'left' ? 'esquerdo' : 'direito'}</h3>
+            <div className="expression-picker-assets">{componentSummaries.filter((asset) => asset.kind === (category === 'eyes' ? 'eye' : category === 'pupils' ? 'pupil' : 'eyebrow')).map((asset) => {
               const selected = currentComponentId === asset.id
               return <button key={asset.id} className={selected ? 'selected' : ''} onClick={() => setComponentChoice(asset.id)} type="button"><img src={componentAssets[asset.id]?.dataUrl} alt="" /><span>{asset.name}</span></button>
-            })}{!componentSummaries.some((asset) => asset.kind === (category === 'eyes' ? 'eye' : 'pupil')) && <p className="expression-picker-empty">Nenhuma peça salva nesta categoria.</p>}</div>
+            })}{!componentSummaries.some((asset) => asset.kind === (category === 'eyes' ? 'eye' : category === 'pupils' ? 'pupil' : 'eyebrow')) && <p className="expression-picker-empty">Nenhuma peça salva nesta categoria.</p>}</div>
           </>}
           {(category === 'nose' || category === 'mouth') && <>
             {category === 'mouth' && <div className="expression-picker-sides"><button className={mouthKind === 'mouth-closed' ? 'active' : ''} onClick={() => setMouthKind('mouth-closed')} type="button">Fechadas</button><button className={mouthKind === 'mouth-open' ? 'active' : ''} onClick={() => setMouthKind('mouth-open')} type="button">Abertas</button></div>}

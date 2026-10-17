@@ -278,9 +278,12 @@ function validFaceExpressionPreset(modelSlot: number, preset: FaceExpressionPres
     && isValidWardrobeId(preset.id) && typeof preset.name === 'string' && Boolean(preset.name.trim()) && preset.name.length <= 80
     && typeof preset.updatedAt === 'string' && Number.isFinite(Date.parse(preset.updatedAt))
     && !!selections && validSideSelections(selections.eyes) && validSideSelections(selections.pupils)
+    && (selections.eyebrows === undefined || validSideSelections(selections.eyebrows))
     && validCatalogSelection(selections.nose, ['nose'])
     && validCatalogSelection(selections.mouth, ['mouth-closed', 'mouth-open'])
     && !!preset.transforms && (['eyeLeft', 'eyeRight', 'pupilLeft', 'pupilRight', 'nose', 'mouth'] as Array<keyof FaceExpressionTransforms>).every((key) => validTransform(preset.transforms[key]))
+    && (preset.transforms.browLeft === undefined || validTransform(preset.transforms.browLeft))
+    && (preset.transforms.browRight === undefined || validTransform(preset.transforms.browRight))
     && Number.isFinite(preset.noseOpacity) && preset.noseOpacity >= 0 && preset.noseOpacity <= 1
 }
 
@@ -310,7 +313,12 @@ async function readFaceExpressionPreset(modelSlot: number, id: string): Promise<
   if (!isValidModelSlot(modelSlot) || !isValidWardrobeId(id)) throw new Error('Preset de expressão inválido.')
   try {
     const preset = JSON.parse(await readFile(faceExpressionPresetPath(modelSlot, id), 'utf8')) as FaceExpressionPreset
-    return validFaceExpressionPreset(modelSlot, preset) && preset.id === id ? preset : null
+    if (!validFaceExpressionPreset(modelSlot, preset) || preset.id !== id) return null
+    return {
+      ...preset,
+      selections: { ...preset.selections, eyebrows: preset.selections.eyebrows ?? { left: null, right: null } },
+      transforms: { ...preset.transforms, browLeft: preset.transforms.browLeft ?? { x: 0, y: 0, scaleX: 1, scaleY: 1, rotation: 0 }, browRight: preset.transforms.browRight ?? { x: 0, y: 0, scaleX: 1, scaleY: 1, rotation: 0 } }
+    }
   } catch (reason) {
     if ((reason as NodeJS.ErrnoException).code === 'ENOENT') return null
     throw reason
