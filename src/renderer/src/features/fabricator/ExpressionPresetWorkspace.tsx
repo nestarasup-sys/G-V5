@@ -5,6 +5,9 @@ import { eyeInteriorMask } from './face/eyeInteriorMask'
 
 type Side = 'left' | 'right'
 type PickerCategory = 'eyes' | 'pupils' | 'eyebrows' | 'nose' | 'mouth'
+type ComponentKind = 'eye' | 'pupil' | 'eyebrow'
+type ComponentOption = { key: string; kind: ComponentKind; name: string; leftId: string; rightId: string; ids: string[] }
+type CatalogOption = { key: string; item: FaceCatalogItemSummary; ids: string[] }
 type ExpressionComposition = {
   eyes: Record<Side, string | null>
   pupils: Record<Side, string | null>
@@ -50,6 +53,60 @@ function findPairedAsset(asset: FaceComponentAssetSummary, assets: FaceComponent
     && candidate.name.replace(/\s*[·-]\s*(?:Olho|Pupila|Sobrancelha)\s*(?:esquerd[oa]|direit[oa])$/i, '') === asset.name.replace(/\s*[·-]\s*(?:Olho|Pupila|Sobrancelha)\s*(?:esquerd[oa]|direit[oa])$/i, ''))
 }
 
+function componentBaseName(name: string): string {
+  return name.replace(/\s*[·-]\s*(?:Olho(?: aberto| fechado)?|Pupila|Sobrancelha)\s*(?:esquerd[oa]|direit[oa])$/i, '').trim()
+}
+
+function buildComponentOptions(kind: ComponentKind, summaries: FaceComponentAssetSummary[], details: Record<string, FaceComponentAsset>): ComponentOption[] {
+  const remaining = summaries.filter((asset) => asset.kind === kind)
+  const groups: FaceComponentAssetSummary[][] = []
+  while (remaining.length) {
+    const group = [remaining.shift()!]
+    let expanded = true
+    while (expanded) {
+      expanded = false
+      for (let index = remaining.length - 1; index >= 0; index -= 1) {
+        const candidate = remaining[index]
+        const connected = group.some((member) => {
+          const memberDetail = details[member.id]
+          const candidateDetail = details[candidate.id]
+          const sharedPair = Boolean(member.pairId && candidate.pairId && member.pairId === candidate.pairId)
+          const sameImage = Boolean(memberDetail?.dataUrl && candidateDetail?.dataUrl && memberDetail.dataUrl === candidateDetail.dataUrl)
+          const pairedNames = componentSide(member) !== componentSide(candidate) && componentBaseName(member.name) === componentBaseName(candidate.name)
+          return sharedPair || sameImage || pairedNames
+        })
+        if (connected) { group.push(remaining.splice(index, 1)[0]); expanded = true }
+      }
+    }
+    groups.push(group)
+  }
+
+  return groups.map((group) => {
+    const right = group.find((asset) => componentSide(asset) === 'right')
+    const left = group.find((asset) => componentSide(asset) === 'left') ?? group.find((asset) => asset.id !== right?.id) ?? right!
+    const rightAsset = right ?? left
+    const uniqueName = componentBaseName(left.name) || componentBaseName(rightAsset.name) || left.name
+    return { key: group.map((asset) => asset.id).sort().join(':'), kind, name: uniqueName, leftId: left.id, rightId: rightAsset.id, ids: group.map((asset) => asset.id) }
+  }).sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'))
+}
+
+function buildCatalogOptions(summaries: FaceCatalogItemSummary[], items: Record<string, FaceCatalogItem>): CatalogOption[] {
+  const groups: Array<{ key: string; item: FaceCatalogItemSummary; ids: string[]; detail?: FaceCatalogItem }> = []
+  for (const summary of summaries) {
+    const item = items[summary.id]
+    const sortedPieces = item?.pieces.slice().sort((a, b) => a.index - b.index)
+    const duplicate = item && sortedPieces ? groups.find((group) => {
+      const otherPieces = group.detail?.pieces.slice().sort((a, b) => a.index - b.index)
+      return group.detail?.category === item.category && Boolean(otherPieces && otherPieces.length === sortedPieces.length
+        && otherPieces.every((piece, index) => piece.dataUrl === sortedPieces[index].dataUrl))
+    }) : undefined
+    const key = `${summary.category}:${summary.id}`
+    if (duplicate) duplicate.ids.push(summary.id)
+    else groups.push({ key, item: summary, ids: [summary.id], detail: item })
+  }
+  return groups.map(({ key, item, ids }) => ({ key, item, ids })).sort((a, b) => a.item.name.localeCompare(b.item.name, 'pt-BR'))
+}
+
 export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) {
   const [project, setProject] = useState<FabricatorProject | null>(null)
   const [componentSummaries, setComponentSummaries] = useState<FaceComponentAssetSummary[]>([])
@@ -70,7 +127,6 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
   const [saving, setSaving] = useState(false)
   const [open, setOpen] = useState(false)
   const [category, setCategory] = useState<PickerCategory>('eyes')
-  const [side, setSide] = useState<Side>('left')
   const [mouthKind, setMouthKind] = useState<'mouth-closed' | 'mouth-open'>('mouth-closed')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -159,15 +215,32 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
   const selectedCatalog = category === 'nose'
     ? catalogItems[draft.nose?.catalogId ?? '']
     : category === 'mouth' && draft.mouth?.kind === mouthKind ? catalogItems[draft.mouth.catalogId] : undefined
-  const filteredCatalogs = catalogSummaries.filter((item) => category === 'nose' ? item.category === 'nose' : item.category === mouthKind)
-  const currentComponentId = category === 'eyes' ? draft.eyes[side] : category === 'pupils' ? draft.pupils[side] : category === 'eyebrows' ? draft.eyebrows[side] : null
-  const setComponentChoice = (id: string) => {
-    const kind = category === 'eyes' ? 'eye' : category === 'pupils' ? 'pupil' : 'eyebrow'
-    const field = category === 'eyes' ? 'eyes' : category === 'pupils' ? 'pupils' : 'eyebrows'
-    const key = layerKey(kind, side)
-    const asset = componentAssets[id]
-    setDraft((current) => ({ ...current, [field]: { ...current[field], [side]: id || null } }))
-    if (asset) setDraftTransforms((current) => ({ ...current, [key]: { ...asset.defaultTransform } }))
+  const filteredCatalogOptions = useMemo(() => buildCatalogOptions(
+    catalogSummaries.filter((item) => category === 'nose' ? item.category === 'nose' : item.category === mouthKind),
+    catalogItems
+  ), [catalogSummaries, catalogItems, category, mouthKind])
+  const componentOptions = useMemo(() => ({
+    eye: buildComponentOptions('eye', componentSummaries, componentAssets),
+    pupil: buildComponentOptions('pupil', componentSummaries, componentAssets),
+    eyebrow: buildComponentOptions('eyebrow', componentSummaries, componentAssets)
+  }), [componentSummaries, componentAssets])
+  const selectedOptionKind: ComponentKind | null = category === 'eyes' ? 'eye' : category === 'pupils' ? 'pupil' : category === 'eyebrows' ? 'eyebrow' : null
+  const selectedOptionKey = selectedOptionKind ? componentOptions[selectedOptionKind].find((option) => {
+    const field = selectedOptionKind === 'eye' ? draft.eyes : selectedOptionKind === 'pupil' ? draft.pupils : draft.eyebrows
+    return Boolean(field.left && field.right && option.ids.includes(field.left) && option.ids.includes(field.right))
+  })?.key : undefined
+  const visibleComponentOptions = selectedOptionKind ? componentOptions[selectedOptionKind] : []
+  const setComponentChoice = (option: ComponentOption) => {
+    const field = option.kind === 'eye' ? 'eyes' : option.kind === 'pupil' ? 'pupils' : 'eyebrows'
+    const leftKey = layerKey(option.kind, 'left')
+    const rightKey = layerKey(option.kind, 'right')
+    const leftAsset = componentAssets[option.leftId]
+    const rightAsset = componentAssets[option.rightId]
+    setDraft((current) => ({ ...current, [field]: { left: option.leftId, right: option.rightId } }))
+    setDraftTransforms((current) => ({ ...current,
+      ...(leftAsset ? { [leftKey]: { ...leftAsset.defaultTransform } } : {}),
+      ...(rightAsset ? { [rightKey]: { ...rightAsset.defaultTransform } } : {})
+    }))
   }
 
   const chooseCatalog = (summary: FaceCatalogItemSummary) => {
@@ -183,7 +256,7 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
     }
   }
 
-  const beginChoosing = () => { setDraft(composition); setDraftTransforms(cloneTransforms(transforms)); setDraftNoseOpacity(noseOpacity); setCategory('eyes'); setSide('left'); setOpen(true) }
+  const beginChoosing = () => { setDraft(composition); setDraftTransforms(cloneTransforms(transforms)); setDraftNoseOpacity(noseOpacity); setCategory('eyes'); setOpen(true) }
   const applyComposition = () => { setComposition(draft); setTransforms(cloneTransforms(draftTransforms)); setNoseOpacity(draftNoseOpacity); setOpen(false); setError(null) }
   const cancelChoosing = () => { setDraft(composition); setDraftTransforms(cloneTransforms(transforms)); setDraftNoseOpacity(noseOpacity); setOpen(false) }
   const updateLayerTransform = (key: LayerKey, patch: Partial<FaceTransform>) => setTransforms((current) => ({ ...current, [key]: { ...current[key], ...patch } }))
@@ -338,22 +411,27 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
         </nav>
         <div className="expression-picker-content">
           {(category === 'eyes' || category === 'pupils' || category === 'eyebrows') && <>
-            <div className="expression-picker-sides"><button className={side === 'left' ? 'active' : ''} onClick={() => setSide('left')} type="button">Esquerdo</button><button className={side === 'right' ? 'active' : ''} onClick={() => setSide('right')} type="button">Direito</button></div>
-            <h3>{category === 'eyes' ? 'Escolha o olho' : category === 'pupils' ? 'Escolha a pupila' : 'Escolha a sobrancelha'} · lado {side === 'left' ? 'esquerdo' : 'direito'}</h3>
-            <div className="expression-picker-assets">{componentSummaries.filter((asset) => asset.kind === (category === 'eyes' ? 'eye' : category === 'pupils' ? 'pupil' : 'eyebrow')).map((asset) => {
-              const selected = currentComponentId === asset.id
-              return <button key={asset.id} className={selected ? 'selected' : ''} onClick={() => setComponentChoice(asset.id)} type="button"><img src={componentAssets[asset.id]?.dataUrl} alt="" /><span>{asset.name}</span></button>
-            })}{!componentSummaries.some((asset) => asset.kind === (category === 'eyes' ? 'eye' : category === 'pupils' ? 'pupil' : 'eyebrow')) && <p className="expression-picker-empty">Nenhuma peça salva nesta categoria.</p>}</div>
+            <h3>Escolha {category === 'eyes' ? 'um par de olhos' : category === 'pupils' ? 'um par de pupilas' : 'um par de sobrancelhas'}</h3>
+            <div className="expression-picker-assets expression-picker-pairs">{visibleComponentOptions.map((option) => {
+              const leftAsset = componentAssets[option.leftId]
+              const rightAsset = componentAssets[option.rightId]
+              return <button key={option.key} className={selectedOptionKey === option.key ? 'selected' : ''} onClick={() => setComponentChoice(option)} type="button">
+                <span className="expression-component-option-preview"><img src={leftAsset?.dataUrl} alt="" /><img className={option.leftId === option.rightId ? 'mirrored' : ''} src={rightAsset?.dataUrl} alt="" /></span>
+                <span>{option.name}</span><small>Esquerda + direita</small>
+              </button>
+            })}{!visibleComponentOptions.length && <p className="expression-picker-empty">Nenhuma peça salva nesta categoria.</p>}</div>
           </>}
           {(category === 'nose' || category === 'mouth') && <>
             {category === 'mouth' && <div className="expression-picker-sides"><button className={mouthKind === 'mouth-closed' ? 'active' : ''} onClick={() => setMouthKind('mouth-closed')} type="button">Fechadas</button><button className={mouthKind === 'mouth-open' ? 'active' : ''} onClick={() => setMouthKind('mouth-open')} type="button">Abertas</button></div>}
             <h3>{category === 'nose' ? 'Escolha o nariz' : 'Escolha a folha de bocas'}</h3>
-            <div className="expression-picker-assets expression-picker-catalog-assets">{filteredCatalogs.map((item) => {
+            <div className="expression-picker-assets expression-picker-catalog-assets">{filteredCatalogOptions.map((option) => {
+              const item = option.item
               const detail = catalogItems[item.id]
-              const selected = category === 'nose' ? draft.nose?.catalogId === item.id : draft.mouth?.catalogId === item.id
+              const selectedId = category === 'nose' ? draft.nose?.catalogId : draft.mouth?.catalogId
+              const selected = Boolean(selectedId && option.ids.includes(selectedId))
               const preview = detail?.pieces[0]
-              return <button key={item.id} className={selected ? 'selected' : ''} onClick={() => chooseCatalog(item)} type="button"><img src={preview?.dataUrl} alt="" /><span>{item.name}</span><small>{item.pieceCount} peça(s)</small></button>
-            })}{!filteredCatalogs.length && <p className="expression-picker-empty">Nenhum asset salvo nesta categoria.</p>}</div>
+              return <button key={option.key} className={selected ? 'selected' : ''} onClick={() => chooseCatalog(item)} type="button"><img src={preview?.dataUrl} alt="" /><span>{item.name}</span><small>{item.pieceCount} peça(s)</small></button>
+            })}{!filteredCatalogOptions.length && <p className="expression-picker-empty">Nenhum asset salvo nesta categoria.</p>}</div>
             {selectedCatalog && <><h3>{category === 'nose' ? 'Variante do nariz' : 'Expressão da boca'}{category === 'mouth' ? ' · primeira peça = canto superior esquerdo' : ''}</h3><div className="expression-picker-variants">{selectedCatalog.pieces.map((piece) => {
               const selected = category === 'nose' ? draft.nose?.index === piece.index : draft.mouth?.index === piece.index
               return <button className={selected ? 'selected' : ''} key={piece.id} onClick={() => category === 'nose' ? setDraft((current) => current.nose ? { ...current, nose: { ...current.nose, index: piece.index } } : current) : setDraft((current) => current.mouth ? { ...current, mouth: { ...current.mouth, index: piece.index } } : current)} type="button"><img src={piece.dataUrl} alt="" /><b>{String(piece.index + 1).padStart(2, '0')}</b></button>

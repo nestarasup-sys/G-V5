@@ -1057,6 +1057,10 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .expression-picker-assets > button { min-width: 0; min-height: 116px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 7px; padding: 9px; border: 1px solid #ece6eb; border-radius: 10px; background: #fff; color: #5e525d; text-align: center; cursor: pointer; }
 .expression-picker-assets > button:hover,.expression-picker-assets > button.selected { border-color: #db7b9e; background: #fff5f8; box-shadow: 0 0 0 2px #fbe3ec; }
 .expression-picker-assets img { width: 100%; height: 70px; object-fit: contain; image-rendering: auto; }
+.expression-picker-pairs > button { min-height: 124px; }
+.expression-component-option-preview { width: 100%; height: 72px; display: grid; grid-template-columns: 1fr 1fr; align-items: center; gap: 4px; overflow: hidden; border-radius: 7px; background: #faf8fa; }
+.expression-component-option-preview img { width: 100%; height: 66px; object-fit: contain; }
+.expression-component-option-preview img.mirrored { transform: scaleX(-1); }
 .expression-picker-assets span { max-width: 100%; overflow: hidden; color: #554a55; font-size: 10px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
 .expression-picker-assets small { color: #9a8e99; font-size: 9px; }
 .expression-picker-catalog-assets { grid-template-columns: repeat(auto-fill, minmax(145px, 1fr)); }
