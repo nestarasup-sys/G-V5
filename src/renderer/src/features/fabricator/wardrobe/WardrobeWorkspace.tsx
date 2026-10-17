@@ -176,6 +176,7 @@ export function WardrobeWorkspace({ edition = 1 }: { edition?: WardrobeEdition }
   const pieceDragRef = useRef<PieceDrag | null>(null)
   const previewPanDragRef = useRef<PreviewPanDrag | null>(null)
   const previewRef = useRef<HTMLDivElement>(null)
+  const artboardRef = useRef<HTMLDivElement>(null)
   const [previewSize, setPreviewSize] = useState({ width: 0, height: 0 })
   const [referencePreview, setReferencePreview] = useState<{ sourceDataUrl: string; imageDataUrl: string } | null>(null)
   const [sourceReference, setSourceReference] = useState<{ sourceDataUrl: string; parts: Record<string, SourceReferencePart> } | null>(null)
@@ -394,13 +395,29 @@ export function WardrobeWorkspace({ edition = 1 }: { edition?: WardrobeEdition }
     catch (reason) { setError(reason instanceof Error ? `Calibração aplicada nesta sessão, mas não foi salva: ${reason.message}` : 'Calibração aplicada nesta sessão, mas não foi salva.') }
   }
   const handleArtboardPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (calibratingPartId && previewRef.current) {
-      event.preventDefault(); event.stopPropagation()
-      const bounds = event.currentTarget.getBoundingClientRect()
-      void calibrateSourceAnchor(calibratingPartId, (event.clientX - bounds.left) / scale, (event.clientY - bounds.top) / scale)
-      return
-    }
-    if (edition !== 2 || moveBodyMode || testPose || event.button !== 0 || event.target !== event.currentTarget) return
+    if (!calibratingPartId || !previewRef.current) return
+    event.preventDefault(); event.stopPropagation()
+    const bounds = event.currentTarget.getBoundingClientRect()
+    void calibrateSourceAnchor(calibratingPartId, (event.clientX - bounds.left) / scale, (event.clientY - bounds.top) / scale)
+  }
+  const handlePreviewPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (edition !== 2 || moveBodyMode || testPose || calibratingPartId || event.button !== 0 || !artboardRef.current) return
+    const target = event.target as HTMLElement
+    if (target !== event.currentTarget && target !== artboardRef.current) return
+
+    const bounds = artboardRef.current.getBoundingClientRect()
+    const x = (event.clientX - bounds.left) / scale
+    const y = (event.clientY - bounds.top) / scale
+    const overBody = Boolean(model && sourceParts && model.parts.some((part) => {
+      const source = sourceParts[part.id]
+      if (!source) return false
+      const frame = sourcePreviewFrame(part, source)
+      const offset = bodyOffsets[part.id] ?? zeroOffset
+      return x >= frame.x + offset.x && x <= frame.x + offset.x + frame.width && y >= frame.y + offset.y && y <= frame.y + offset.y + frame.height
+    }))
+    const overGarment = Boolean(draft?.components.some((component) => x >= component.x && x <= component.x + component.width && y >= component.y && y <= component.y + component.height))
+    if (overBody || overGarment) return
+
     event.preventDefault()
     event.currentTarget.setPointerCapture(event.pointerId)
     previewPanDragRef.current = { pointerId: event.pointerId, pointerX: event.clientX, pointerY: event.clientY, originX: previewPan.x, originY: previewPan.y }
@@ -558,7 +575,7 @@ export function WardrobeWorkspace({ edition = 1 }: { edition?: WardrobeEdition }
       </aside>}
       <section className="wardrobe-preview-card"><header><span><i /> {testPose ? `TESTE DA POSE · ${testPose.name}` : edition === 2 ? 'PRÉVIA DE ENCAIXE · FOLHA 2.0' : 'PRÉVIA DE ENCAIXE · FOLHA ORIGINAL'}</span><span>{previewProject ? `${previewProject.width} × ${previewProject.height}` : 'Sem modelo'}</span></header>
         {!testPose && <div className="wardrobe-preview-controls"><button className={`pose-button ${moveBodyMode ? 'primary' : 'secondary'}`} disabled={!sourceParts || Boolean(calibratingPartId)} onClick={() => setMoveBodyMode((value) => !value)} type="button">{moveBodyMode ? 'Mover corpo: ligado' : 'Mover corpo'}</button><button className="pose-button secondary" disabled={!Object.keys(bodyOffsets).length} onClick={() => setBodyOffsets({})} type="button">Repor corpo</button>{edition === 2 && <button className="pose-button secondary" disabled={previewPan.x === 0 && previewPan.y === 0} onClick={() => setPreviewPan(zeroOffset)} type="button">Centralizar prévia</button>}<button className="pose-button secondary" aria-pressed={!showBindingMarkers} title={showBindingMarkers ? 'Ocultar os pontos azuis de encaixe na prévia' : 'Mostrar os pontos azuis de encaixe na prévia'} onClick={() => setShowBindingMarkers((visible) => !visible)} type="button"><Icon name={showBindingMarkers ? 'eyeOff' : 'eye'} />{showBindingMarkers ? 'Ocultar pontos azuis' : 'Mostrar pontos azuis'}</button><label className="preview-background-picker" title="Mudar a cor do fundo em Modelos, Poses, Rosto e Roupas"><span>Fundo da prévia</span><input type="color" aria-label="Cor do fundo das prévias" value={previewBackground} onChange={(event) => setPreviewBackground(event.target.value)} /><code>{previewBackground.toUpperCase()}</code></label></div>}
-        <div ref={previewRef} className={`wardrobe-preview-stage${testPose ? ' testing-pose' : ''}${edition === 2 && !moveBodyMode && !calibratingPartId && !testPose ? ' pan-ready' : ''}`} onPointerDown={handleArtboardPointerDown} onPointerMove={movePreviewPan} onPointerUp={finishPreviewPan} onPointerCancel={finishPreviewPan} style={{ '--preview-background': previewBackground } as import('react').CSSProperties}>{previewProject && <div className={`wardrobe-artboard${calibratingPartId ? ' calibrating-origin' : ''}${edition === 2 && !moveBodyMode && !calibratingPartId && !testPose ? ' pan-ready' : ''}`} onPointerDown={handleArtboardPointerDown} onPointerMove={movePreviewPan} onPointerUp={finishPreviewPan} onPointerCancel={finishPreviewPan} style={{ width: previewProject.width * scale, height: previewProject.height * scale, transform: edition === 2 ? `translate(${previewPan.x}px, ${previewPan.y}px)` : undefined }}>
+        <div ref={previewRef} className={`wardrobe-preview-stage${testPose ? ' testing-pose' : ''}${edition === 2 && !moveBodyMode && !calibratingPartId && !testPose ? ' pan-ready' : ''}`} onPointerDown={handlePreviewPointerDown} onPointerMove={movePreviewPan} onPointerUp={finishPreviewPan} onPointerCancel={finishPreviewPan} style={{ '--preview-background': previewBackground } as import('react').CSSProperties}>{previewProject && <div ref={artboardRef} className={`wardrobe-artboard${calibratingPartId ? ' calibrating-origin' : ''}${edition === 2 && !moveBodyMode && !calibratingPartId && !testPose ? ' pan-ready' : ''}`} onPointerDown={handleArtboardPointerDown} style={{ width: previewProject.width * scale, height: previewProject.height * scale, transform: edition === 2 ? `translate(${previewPan.x}px, ${previewPan.y}px)` : undefined }}>
         {!testPose && model && !sourceParts && referencePreview?.sourceDataUrl === referenceSource && <img className="wardrobe-base-image" src={referencePreview.imageDataUrl} alt={`Folha original desmontada do modelo ${model.name}`} style={{ left: 0, top: 0, width: previewProject.width * scale, height: previewProject.height * scale, zIndex: 1 }} />}
         {!testPose && model && sourceParts && model.parts.map((part, index) => { const source = sourceParts[part.id]; if (!source) return null; const offset = bodyOffsets[part.id] ?? zeroOffset; const frame = sourcePreviewFrame(part, source); return <img key={part.id} className={`wardrobe-reference-body-part${moveBodyMode ? ' movable' : ''}`} src={source.imageDataUrl} alt={part.name} title={moveBodyMode ? `Arraste ${part.name} para conferir o vínculo` : part.name} draggable={false} onPointerDown={(event) => beginBodyDrag(event, part.id)} onPointerMove={moveBodyDrag} onPointerUp={finishBodyDrag} onPointerCancel={finishBodyDrag} style={{ left: (frame.x + offset.x) * scale, top: (frame.y + offset.y) * scale, width: frame.width * scale, height: frame.height * scale, zIndex: moveBodyMode ? 1000 + index : 1 }} /> })}
         {testPose && previewPoseParts.map((part, index) => <img key={part.id} className="wardrobe-pose-body-part" src={part.dataUrl} alt={part.name} draggable={false} style={{ left: part.x * scale, top: part.y * scale, width: part.width * scale, height: part.height * scale, zIndex: 2 + index * previewLayerStride, transform: `rotate(${part.rotation}deg)` }} />)}

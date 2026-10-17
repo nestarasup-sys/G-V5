@@ -1806,7 +1806,7 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .wardrobe-artboard { position:relative;flex:0 0 auto;overflow:visible;filter:drop-shadow(0 3px 10px #44303a1a); }
 .wardrobe-preview-stage.pan-ready,.wardrobe-artboard.pan-ready { cursor:grab;touch-action:none; }
 .wardrobe-preview-stage.pan-ready:active,.wardrobe-artboard.pan-ready:active { cursor:grabbing; }
-.wardrobe-body-v2 .wardrobe-reference-body-part:not(.movable),.wardrobe-body-v2 .wardrobe-base-image { pointer-events:auto; }
+.wardrobe-body-v2 .wardrobe-reference-body-part:not(.movable),.wardrobe-body-v2 .wardrobe-base-image { pointer-events:auto;cursor:default; }
 .wardrobe-artboard.calibrating-origin { cursor:crosshair; }
 .wardrobe-calibration-hint { border:1px solid #e15683;background:#fff6fa;color:#a92c57; }
 .wardrobe-calibrate-button { width:100%;justify-content:center;margin:2px 0 8px; }
