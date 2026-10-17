@@ -96,7 +96,8 @@ function hasSelectedFaceAsset(appearance: CustomizerFaceAppearance): boolean {
     || appearance.eyebrowCatalogId || appearance.eyebrowLeftCatalogId || appearance.eyebrowRightCatalogId
     || appearance.noseCatalogId || appearance.mouthClosedCatalogId || appearance.mouthOpenCatalogId
     || Object.values(appearance.components ?? {}).some((component) => component?.assetId)
-    || Object.values(appearance.faceDetails ?? {}).some(Boolean))
+    || Object.values(appearance.faceDetails ?? {}).some(Boolean)
+    || Object.values(appearance.headExtras ?? {}).some(Boolean))
 }
 function isRightFaceAsset(asset: FaceComponentAssetSummary): boolean {
   return asset.rightSidePositioned === true || / · (?:Olho|Olho aberto|Olho fechado|Pupila|Sobrancelha) direit[oa]$/i.test(asset.name)
@@ -490,7 +491,12 @@ function wardrobeComponentMatchesPanel(component: WardrobeSet['components'][numb
   return panel.side === 'left' ? left && !right : right && !left
 }
 
-type WardrobePanelCandidate = { summary: WardrobeSetSummary; set: WardrobeSet; component: WardrobeSet['components'][number]; components: WardrobeSet['components'] }
+type WardrobePanelCandidate = { summary: WardrobeSetSummary; set: WardrobeSet; component: WardrobeSet['components'][number]; components: WardrobeSet['components']; headExtraAsset?: FaceComponentAsset }
+
+function isWardrobePanelCandidateSelected(candidate: WardrobePanelCandidate, panel: WardrobePanel, groups: CustomizerWardrobeGroup[], appearance?: CustomizerFaceAppearance): boolean {
+  if (candidate.headExtraAsset) return appearance?.modelSlot === candidate.summary.modelSlot && appearance.headExtras?.glasses === candidate.headExtraAsset.id
+  return candidate.components.every((component) => groups.some((group) => group.modelSlot === candidate.summary.modelSlot && group.setId === candidate.summary.id && group.category === panel.category && group.componentId === component.id))
+}
 
 async function renderWardrobeThumbnail(set: WardrobeSet, categories: WardrobeCategory[], componentIds?: string[], resolution = 112): Promise<string | null> {
   const allowedIds = componentIds ? new Set(componentIds) : null
@@ -982,6 +988,28 @@ async function drawFaceCatalogOverlay(context: CanvasRenderingContext2D, artwork
       context.drawImage(image, -width / 2, -height / 2, width, height); context.restore()
     } catch { /* Keep the rest of the face visible if one detail asset is unavailable. */ }
   }
+  for (const id of Object.values(appearance.headExtras ?? {})) {
+    if (!id) continue
+    const key = `${appearance.modelSlot}:${id}`
+    let pending = faceComponentAssetCache.get(key)
+    if (!pending) { pending = window.desktop.loadFaceComponentAsset(appearance.modelSlot, id); faceComponentAssetCache.set(key, pending) }
+    const asset = await pending
+    if (!asset || asset.kind !== 'head-extra') continue
+    const transform = asset.defaultTransform
+    const localX = transform.x / sourceHead.width * targetHead.width
+    const localY = transform.y / sourceHead.height * targetHead.height
+    const radians = targetHead.rotation * Math.PI / 180
+    const x = targetHead.x + targetHead.width / 2 + (localX - targetHead.width / 2) * Math.cos(radians) - (localY - targetHead.height / 2) * Math.sin(radians)
+    const y = targetHead.y + targetHead.height / 2 + (localX - targetHead.width / 2) * Math.sin(radians) + (localY - targetHead.height / 2) * Math.cos(radians)
+    const width = asset.width * transform.scaleX / sourceHead.width * targetHead.width
+    const height = asset.height * transform.scaleY / sourceHead.height * targetHead.height
+    try {
+      const image = await loadCachedImage(asset.dataUrl)
+      context.save(); context.translate(x, y); context.rotate((targetHead.rotation + transform.rotation) * Math.PI / 180)
+      if (transform.flipX) context.scale(-1, 1)
+      context.drawImage(image, -width / 2, -height / 2, width, height); context.restore()
+    } catch { /* Keep the character visible if an accessory asset is unavailable. */ }
+  }
 }
 
 async function renderFaceCatalogOverlay(artwork: CatalogArtwork, source: FabricatorProject, items: Partial<Record<FaceSheetKind | FaceElementKind, FaceCatalogItem>>, appearance: CustomizerFaceAppearance, skinTone: string, studioFaceTransforms?: StudioFaceTransforms): Promise<string | null> {
@@ -1027,7 +1055,7 @@ export async function prepareSavedCharacterRenderer(character: CustomizerCharact
   const faceItemPromises = new Map<string, Promise<FaceCatalogItem | null>>()
   let legacyFaceUrl: string | null = null
   if (appearance?.modelSlot === modelSlot) {
-    if (appearance.eyeCatalogId || appearance.eyeLeftCatalogId || appearance.eyeRightCatalogId || appearance.eyebrowCatalogId || appearance.eyebrowLeftCatalogId || appearance.eyebrowRightCatalogId || appearance.noseCatalogId || appearance.mouthClosedCatalogId || appearance.mouthOpenCatalogId || Object.values(appearance.components ?? {}).some((component) => component?.assetId)) {
+    if (appearance.eyeCatalogId || appearance.eyeLeftCatalogId || appearance.eyeRightCatalogId || appearance.eyebrowCatalogId || appearance.eyebrowLeftCatalogId || appearance.eyebrowRightCatalogId || appearance.noseCatalogId || appearance.mouthClosedCatalogId || appearance.mouthOpenCatalogId || Object.values(appearance.components ?? {}).some((component) => component?.assetId) || Object.values(appearance.headExtras ?? {}).some(Boolean)) {
       const selections: Array<[FaceSheetKind | FaceElementKind, string | undefined]> = [
         ['eyes', appearance.eyeCatalogId], ['eyebrows', appearance.eyebrowCatalogId], ['nose', appearance.noseCatalogId],
         ['eye-left', appearance.eyeLeftCatalogId ?? undefined], ['eye-right', appearance.eyeRightCatalogId ?? undefined], ['brow-left', appearance.eyebrowLeftCatalogId ?? undefined], ['brow-right', appearance.eyebrowRightCatalogId ?? undefined],
@@ -1063,7 +1091,7 @@ export async function prepareSavedCharacterRenderer(character: CustomizerCharact
         ['eye-left', currentAppearance.eyeLeftCatalogId ?? undefined], ['eye-right', currentAppearance.eyeRightCatalogId ?? undefined], ['brow-left', currentAppearance.eyebrowLeftCatalogId ?? undefined], ['brow-right', currentAppearance.eyebrowRightCatalogId ?? undefined],
         ['mouth-closed', currentAppearance.mouthClosedCatalogId], ['mouth-open', currentAppearance.mouthOpenCatalogId]
       ]
-      const hasCatalogSelection = selections.some(([, id]) => Boolean(id)) || Object.values(currentAppearance.components ?? {}).some((component) => component?.assetId)
+      const hasCatalogSelection = selections.some(([, id]) => Boolean(id)) || Object.values(currentAppearance.components ?? {}).some((component) => component?.assetId) || Object.values(currentAppearance.faceDetails ?? {}).some(Boolean) || Object.values(currentAppearance.headExtras ?? {}).some(Boolean)
       const activeItems: Partial<Record<FaceSheetKind | FaceElementKind, FaceCatalogItem>> = {}
       await Promise.all(selections.filter((entry): entry is [FaceSheetKind | FaceElementKind, string] => Boolean(entry[1])).map(async ([category, id]) => {
         let item = faceItems[category]?.id === id ? faceItems[category] : null
@@ -1554,7 +1582,7 @@ export function CustomizerPage() {
   useEffect(() => {
     let cancelled = false
     const appearance = characterFaceAppearance
-    const hasCatalogSelection = Boolean(appearance?.eyeCatalogId || appearance?.eyeLeftCatalogId || appearance?.eyeRightCatalogId || appearance?.eyebrowCatalogId || appearance?.eyebrowLeftCatalogId || appearance?.eyebrowRightCatalogId || appearance?.noseCatalogId || appearance?.mouthClosedCatalogId || appearance?.mouthOpenCatalogId || Object.values(appearance?.components ?? {}).some((component) => component?.assetId) || Object.values(appearance?.faceDetails ?? {}).some(Boolean))
+    const hasCatalogSelection = Boolean(appearance?.eyeCatalogId || appearance?.eyeLeftCatalogId || appearance?.eyeRightCatalogId || appearance?.eyebrowCatalogId || appearance?.eyebrowLeftCatalogId || appearance?.eyebrowRightCatalogId || appearance?.noseCatalogId || appearance?.mouthClosedCatalogId || appearance?.mouthOpenCatalogId || Object.values(appearance?.components ?? {}).some((component) => component?.assetId) || Object.values(appearance?.faceDetails ?? {}).some(Boolean) || Object.values(appearance?.headExtras ?? {}).some(Boolean))
     const face = appearance?.setId ? faceDetails[`${appearance.modelSlot}:${appearance.setId}`] : null
     const catalogItems: Partial<Record<FaceSheetKind | FaceElementKind, FaceCatalogItem>> = {}
     if (appearance && hasCatalogSelection) {
@@ -2078,7 +2106,24 @@ export function CustomizerPage() {
     if (!selectedCharacter || selectedCatalogModelSlot === null) return
     const current = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
     const before = current.customization.wardrobeGroups ?? []
-    const existingCandidate = candidate && candidate.components.every((component) => before.some((group) => group.modelSlot === candidate.summary.modelSlot && group.setId === candidate.summary.id && group.category === panel.category && group.componentId === component.id))
+    if (panel.id === 'glasses') {
+      const currentAppearance = current.customization.faceAppearance
+      const selectedHeadExtraId = currentAppearance?.modelSlot === selectedCatalogModelSlot ? currentAppearance.headExtras?.glasses : undefined
+      if (candidate?.headExtraAsset || !candidate && selectedHeadExtraId) {
+        const after = before.filter((group) => group.modelSlot !== selectedCatalogModelSlot || group.category !== panel.category)
+        const base = currentAppearance?.modelSlot === selectedCatalogModelSlot ? currentAppearance : { modelSlot: selectedCatalogModelSlot, eyeState: 0 as const, eyebrows: true, noseIndex: 0, expressionIndex: 0, mouthOpen: false }
+        const headExtras = { ...base.headExtras }
+        if (candidate?.headExtraAsset) headExtras.glasses = candidate.headExtraAsset.id
+        else delete headExtras.glasses
+        const faceAppearance = { ...base, headExtras }
+        setSelectedClothing(null)
+        setWardrobeHighlightVisible(false)
+        await saveCharacterCustomization({ wardrobeGroups: after, faceAppearance: hasSelectedFaceAsset(faceAppearance) ? faceAppearance : undefined })
+        return
+      }
+    }
+    const replacesSelectedHeadExtra = panel.id === 'glasses' && current.customization.faceAppearance?.modelSlot === selectedCatalogModelSlot && Boolean(current.customization.faceAppearance.headExtras?.glasses)
+    const existingCandidate = candidate && !replacesSelectedHeadExtra && candidate.components.every((component) => before.some((group) => group.modelSlot === candidate.summary.modelSlot && group.setId === candidate.summary.id && group.category === panel.category && group.componentId === component.id))
     if (existingCandidate) {
       setSelectedClothing({ setId: candidate.summary.id, category: panel.category, componentId: candidate.component.id })
       setWardrobeHighlightVisible(true)
@@ -2104,6 +2149,16 @@ export function CustomizerPage() {
     } else {
       if (selectedClothing?.category === panel.category && panelComponentKeys.has(`${selectedCatalogModelSlot}:${selectedClothing.setId}:${selectedClothing.componentId}`)) setSelectedClothing(null)
       setWardrobeHighlightVisible(false)
+    }
+    if (panel.id === 'glasses') {
+      const currentAppearance = current.customization.faceAppearance
+      if (currentAppearance?.modelSlot === selectedCatalogModelSlot && currentAppearance.headExtras?.glasses) {
+        const headExtras = { ...currentAppearance.headExtras }
+        delete headExtras.glasses
+        const faceAppearance = { ...currentAppearance, headExtras }
+        await saveCharacterCustomization({ wardrobeGroups: after, faceAppearance: hasSelectedFaceAsset(faceAppearance) ? faceAppearance : undefined })
+        return
+      }
     }
     await saveCharacterCustomization({ wardrobeGroups: after })
   }
@@ -2665,7 +2720,8 @@ export function CustomizerPage() {
     </section>
   }
 
-  const upperWardrobeCandidates = (panel: WardrobePanel): WardrobePanelCandidate[] => wardrobeSets
+  const upperWardrobeCandidates = (panel: WardrobePanel): WardrobePanelCandidate[] => {
+    const wardrobeCandidates = wardrobeSets
     .filter((summary) => summary.modelSlot === selectedCatalogModelSlot)
     .flatMap((summary) => {
       const set = wardrobeDetails[`${summary.modelSlot}:${summary.id}`]
@@ -2678,6 +2734,19 @@ export function CustomizerPage() {
       }
       return components.map((component) => ({ summary, set, component, components: [component] }))
     })
+    if (panel.id !== 'glasses' || selectedCatalogModelSlot === null) return wardrobeCandidates
+    const headExtraCandidates = faceComponentAssets
+      .filter((summary) => summary.kind === 'head-extra' && summary.modelSlot === selectedCatalogModelSlot)
+      .flatMap((summary): WardrobePanelCandidate[] => {
+        const asset = faceComponentDetails[summary.id]
+        if (!asset || asset.kind !== 'head-extra') return []
+        const component: WardrobeSet['components'][number] = { id: asset.id, name: asset.name, category: 'oculos', attachedPartId: 'head', x: 0, y: 0, width: asset.width, height: asset.height, rotation: asset.defaultTransform.rotation, dataUrl: asset.dataUrl }
+        const set: WardrobeSet = { schemaVersion: 1, edition: 2, id: `head-extra:${asset.id}`, modelSlot: summary.modelSlot, modelName: '', name: asset.name, width: asset.width, height: asset.height, components: [component], updatedAt: asset.updatedAt }
+        const wardrobeSummary: WardrobeSetSummary = { id: set.id, modelSlot: set.modelSlot, modelName: set.modelName, name: set.name, updatedAt: set.updatedAt, edition: 2, componentCount: 1 }
+        return [{ summary: wardrobeSummary, set, component, components: [component], headExtraAsset: asset }]
+      })
+    return [...headExtraCandidates, ...wardrobeCandidates]
+  }
 
   const renderUpperWardrobeLibrary = () => {
     if (!wardrobeLibraryPanel) return null
@@ -2689,9 +2758,7 @@ export function CustomizerPage() {
     const page = Math.min(wardrobeLibraryPage, pageCount - 1)
     const visible = slots.slice(page * pageSize, (page + 1) * pageSize)
     const appliedGroups = selectedCharacter?.customization.wardrobeGroups ?? []
-    const selectedIndex = candidates.findIndex(({ summary, components }) => components.every((component) => appliedGroups.some((group) =>
-      group.modelSlot === summary.modelSlot && group.setId === summary.id && group.category === panel.category && group.componentId === component.id
-    )))
+    const selectedIndex = candidates.findIndex((candidate) => isWardrobePanelCandidateSelected(candidate, panel, appliedGroups, selectedCharacter?.customization.faceAppearance))
     const clearPanel = () => void applyUpperWardrobePanel(panel, null)
     return <section className="customizer-hair-library" aria-labelledby="customizer-upper-wardrobe-library-title">
       <header className="customizer-hair-library-heading">
@@ -2727,14 +2794,12 @@ export function CustomizerPage() {
     {panels.map((panel) => {
       const candidates = upperWardrobeCandidates(panel)
       const appliedGroups = selectedCharacter?.customization.wardrobeGroups ?? []
-      const selectedIndex = candidates.findIndex(({ summary, components }) => components.every((component) => appliedGroups.some((group) =>
-        group.modelSlot === summary.modelSlot && group.setId === summary.id && group.category === panel.category && group.componentId === component.id
-      )))
+      const selectedIndex = candidates.findIndex((candidate) => isWardrobePanelCandidateSelected(candidate, panel, appliedGroups, selectedCharacter?.customization.faceAppearance))
       const currentCandidate = selectedIndex >= 0 ? candidates[selectedIndex] : null
       const currentGroup = currentCandidate ? appliedGroups.find((group) => group.modelSlot === currentCandidate.summary.modelSlot && group.setId === currentCandidate.summary.id && group.category === panel.category && group.componentId === currentCandidate.component.id) : undefined
       const wardrobePalette = selectedCharacter?.customization.wardrobePalettes?.[panel.id] ?? {}
       const colors = { ...wardrobePalette, ...currentGroup?.colors }
-      const hasLocalColors = Object.keys(colors).length > 0
+      const hasLocalColors = !currentCandidate?.headExtraAsset && Object.keys(colors).length > 0
       const selectedSlot = selectedIndex >= 0 ? selectedIndex + 1 : 0
       const slotCount = candidates.length + 1
       const move = (direction: -1 | 1) => {
@@ -2751,7 +2816,7 @@ export function CustomizerPage() {
           <button aria-label={`Próxima peça: ${panel.label}`} onClick={() => move(1)} disabled={!candidates.length || !selectedCharacter || selectedCatalogModelSlot === null} type="button"><Icon name="chevronRight" /></button>
           <div className="customizer-hair-piece-colors" aria-label={`Cores de ${panel.label}`}>
             {hairColorControls.map((color) => <label key={color.id} className={colors[color.id] ? 'local' : ''} style={{ '--hair-color-swatch': colors[color.id] ?? color.fallback } as React.CSSProperties} title={`${color.label} de ${panel.label}`}>
-              <input type="color" aria-label={`${color.label} de ${panel.label}`} value={colors[color.id] ?? color.fallback} disabled={!selectedCharacter || !currentCandidate} onChange={(event) => void setWardrobePieceColor(currentCandidate!.summary.id, panel.category, currentCandidate!.components.map((component) => component.id), color.id, event.target.value)} />
+              <input type="color" aria-label={`${color.label} de ${panel.label}`} value={colors[color.id] ?? color.fallback} disabled={!selectedCharacter || !currentCandidate || Boolean(currentCandidate.headExtraAsset)} onChange={(event) => void setWardrobePieceColor(currentCandidate!.summary.id, panel.category, currentCandidate!.components.map((component) => component.id), color.id, event.target.value)} />
               <span aria-hidden="true">{color.id === 'highlight' ? 'L' : color.id === 'accent' ? 'A' : color.id === 'outline' ? 'C' : color.id === 'fade' ? 'D' : 'B'}</span>
             </label>)}
           </div>
@@ -2761,7 +2826,7 @@ export function CustomizerPage() {
           <div className="customizer-hair-palette-presets customizer-upper-piece-palette-presets">
             <button className="customizer-hair-palette-scroll previous" aria-label={`Ver paletas anteriores de ${panel.label}`} onClick={() => wardrobePaletteStripRefs.current[panel.id]?.scrollBy({ left: -180, behavior: 'smooth' })} type="button"><Icon name="chevronRight" /></button>
             <div className="customizer-hair-palette-preset-list" ref={(node) => { wardrobePaletteStripRefs.current[panel.id] = node }}>
-              {hairPalettePresets.map((preset) => <button key={preset.name} type="button" disabled={!selectedCharacter || !currentCandidate} aria-pressed={hairColorControls.every((color) => wardrobePalette[color.id] === preset.colors[color.id])} onClick={() => currentCandidate && void applyWardrobePalette(panel, currentCandidate, preset.colors)} title={`Aplicar paleta ${preset.name} a ${panel.label}`}><span style={{ background: `linear-gradient(115deg, ${preset.colors.highlight} 0 23%, ${preset.colors.base} 23% 65%, ${preset.colors.fade} 65% 84%, ${preset.colors.outline} 84%)` }} />{preset.name}</button>)}
+              {hairPalettePresets.map((preset) => <button key={preset.name} type="button" disabled={!selectedCharacter || !currentCandidate || Boolean(currentCandidate.headExtraAsset)} aria-pressed={hairColorControls.every((color) => wardrobePalette[color.id] === preset.colors[color.id])} onClick={() => currentCandidate && void applyWardrobePalette(panel, currentCandidate, preset.colors)} title={`Aplicar paleta ${preset.name} a ${panel.label}`}><span style={{ background: `linear-gradient(115deg, ${preset.colors.highlight} 0 23%, ${preset.colors.base} 23% 65%, ${preset.colors.fade} 65% 84%, ${preset.colors.outline} 84%)` }} />{preset.name}</button>)}
             </div>
             <button className="customizer-hair-palette-scroll" aria-label={`Ver próximas paletas de ${panel.label}`} onClick={() => wardrobePaletteStripRefs.current[panel.id]?.scrollBy({ left: 180, behavior: 'smooth' })} type="button"><Icon name="chevronRight" /></button>
           </div>

@@ -99,6 +99,8 @@ export type CustomizerFaceAppearance = {
   components?: Partial<Record<FaceComponentPartId, { assetId: string | null; transform?: FaceTransform; colors?: HairColorOverrides; manualColorRoles?: HairColorRole[] }>>
   /** Independently selected face details managed by Rosto Dev. */
   faceDetails?: Partial<Record<FaceDetailKind, string | null>>
+  /** Head accessory assets from Cabeças extra dev, selectable by Customizer category. */
+  headExtras?: Partial<Record<'glasses' | 'head-accessory', string | null>>
   /** Per-piece color palette for nose, mouth, and face details. */
   facePalettes?: Partial<Record<FacePalettePartId, HairColorOverrides>>
   /** Roles the user changed manually; these may recolor near-white pixels. */
