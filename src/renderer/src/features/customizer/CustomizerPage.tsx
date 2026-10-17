@@ -245,7 +245,7 @@ function NoseOpacityControl({ value, disabled, onChange }: { value: number; disa
   return <>
     <button className="customizer-nose-opacity-button" type="button" aria-label={`Transparência do nariz: ${100 - percentage}%`} aria-expanded={open} title={`Transparência ${100 - percentage}%`} disabled={disabled} onClick={() => setOpen((current) => !current)}><Icon name="sliders" /><small>α</small></button>
     {open && <div className="customizer-nose-opacity-popover" role="group" aria-label="Transparência do nariz">
-      <label><span>Transparência</span><strong>{100 - percentage}%</strong></label>
+      <div className="customizer-nose-opacity-heading"><span>Transparência</span><output>{100 - percentage}%</output></div>
       <input type="range" min="0" max="100" step="1" value={100 - percentage} disabled={disabled} onChange={(event) => onChange(1 - Number(event.target.value) / 100)} aria-label="Transparência do nariz" />
     </div>}
   </>
