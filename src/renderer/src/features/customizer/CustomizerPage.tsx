@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { CharacterPortrait } from '../../ui/components/CharacterPortrait'
 import { Icon, type IconName } from '../../ui/components/Icon'
-import type { FaceCatalogItem, FaceCatalogItemSummary, FaceComponentAsset, FaceComponentAssetSummary, FaceComponentKind, FaceDetailKind, FaceElementKind, FaceSet, FaceSheetKind, FabricatorPose, FabricatorPoseSummary, FabricatorProject, FabricatorSlotSummary, HairStyle, HairStyleSummary, WardrobeCategory, WardrobeSet, WardrobeSetSummary } from '../../../../shared/fabricator'
+import type { FaceCatalogItem, FaceCatalogItemSummary, FaceComponentAsset, FaceComponentAssetSummary, FaceComponentKind, FaceDetailKind, FaceElementKind, FaceExpressionEffects, FaceSet, FaceSheetKind, FabricatorPose, FabricatorPoseSummary, FabricatorProject, FabricatorSlotSummary, HairStyle, HairStyleSummary, WardrobeCategory, WardrobeSet, WardrobeSetSummary } from '../../../../shared/fabricator'
 import { resolvePoseCategory } from '../../../../shared/fabricator'
 import { hairCategories, hairStyleSupportsCategory } from '../../../../shared/hairCategories'
 import type { CustomizerCharacter, CustomizerFaceAppearance, CustomizerWardrobeCategory, CustomizerWardrobeGroup, CustomizerWardrobePaletteKey, FaceComponentPartId, FacePalettePartId, HairColorOverrides, HairColorRole, HairPartId } from '../../../../shared/customizer'
@@ -14,6 +14,7 @@ import { eyeInteriorMask } from '../fabricator/face/eyeInteriorMask'
 import { applyCharacterBodyShape } from './bodyShape'
 import { tintSkinPixels } from './skinTint'
 import { characterRenderSize, configureCharacterSampling } from './renderResolution'
+import { drawFaceExpressionEffects } from './expressionEffectRender'
 
 type CatalogArtwork = Pick<FabricatorProject, 'width' | 'height' | 'parts' | 'layerOrder' | 'hiddenPartIds'> & Partial<Pick<FabricatorProject, 'joints'>>
 function withCharacterHeadSize(artwork: CatalogArtwork, proportions: CharacterProportions): CatalogArtwork {
@@ -869,10 +870,11 @@ async function renderFaceOverlay(artwork: CatalogArtwork, source: FabricatorProj
   return canvas.toDataURL('image/png')
 }
 
-async function drawFaceCatalogOverlay(context: CanvasRenderingContext2D, artwork: CatalogArtwork, source: FabricatorProject, items: Partial<Record<FaceSheetKind | FaceElementKind, FaceCatalogItem>>, appearance: CustomizerFaceAppearance, skinTone?: string, studioFaceTransforms?: StudioFaceTransforms): Promise<void> {
+async function drawFaceCatalogOverlay(context: CanvasRenderingContext2D, artwork: CatalogArtwork, source: FabricatorProject, items: Partial<Record<FaceSheetKind | FaceElementKind, FaceCatalogItem>>, appearance: CustomizerFaceAppearance, skinTone?: string, studioFaceTransforms?: StudioFaceTransforms, expressionEffects?: FaceExpressionEffects): Promise<void> {
   const sourceHead = source.parts.find((part) => /cabe[çc]a|head/i.test(part.name))
   const targetHead = artwork.parts.find((part) => /cabe[çc]a|head/i.test(part.name))
   if (!sourceHead || !targetHead || sourceHead.width <= 0 || sourceHead.height <= 0) return
+  await drawFaceExpressionEffects(context, artwork, sourceHead, targetHead, appearance, items, expressionEffects)
   const categoryIds: Partial<Record<FaceSheetKind, string | undefined>> = {
     eyes: appearance.eyeCatalogId,
     eyebrows: appearance.eyebrowCatalogId,
@@ -1063,7 +1065,7 @@ async function drawFaceCatalogOverlay(context: CanvasRenderingContext2D, artwork
   }
 }
 
-async function renderFaceCatalogOverlay(artwork: CatalogArtwork, source: FabricatorProject, items: Partial<Record<FaceSheetKind | FaceElementKind, FaceCatalogItem>>, appearance: CustomizerFaceAppearance, skinTone?: string, studioFaceTransforms?: StudioFaceTransforms, maxSize = Math.max(artwork.width, artwork.height)): Promise<string | null> {
+async function renderFaceCatalogOverlay(artwork: CatalogArtwork, source: FabricatorProject, items: Partial<Record<FaceSheetKind | FaceElementKind, FaceCatalogItem>>, appearance: CustomizerFaceAppearance, skinTone?: string, studioFaceTransforms?: StudioFaceTransforms, maxSize = Math.max(artwork.width, artwork.height), expressionEffects?: FaceExpressionEffects): Promise<string | null> {
   const canvas = document.createElement('canvas')
   const pixelScale = Math.min(maxSize / Math.max(artwork.width, artwork.height), Math.sqrt(16_000_000 / (artwork.width * artwork.height)))
   canvas.width = Math.max(1, Math.ceil(artwork.width * pixelScale))
@@ -1072,12 +1074,12 @@ async function renderFaceCatalogOverlay(artwork: CatalogArtwork, source: Fabrica
   if (context) configureCharacterSampling(context)
   if (!context) return null
   context.scale(pixelScale, pixelScale)
-  await drawFaceCatalogOverlay(context, artwork, source, items, appearance, skinTone, studioFaceTransforms)
+  await drawFaceCatalogOverlay(context, artwork, source, items, appearance, skinTone, studioFaceTransforms, expressionEffects)
   return canvas.toDataURL('image/png')
 }
 
 /** Render the selected Customizer character as one self-contained Studio actor image. */
-export async function prepareSavedCharacterRenderer(character: CustomizerCharacter): Promise<{ width: number; height: number; render: (appearance?: CustomizerFaceAppearance, studioFaceTransforms?: StudioFaceTransforms) => Promise<{ dataUrl: string; width: number; height: number }> }> {
+export async function prepareSavedCharacterRenderer(character: CustomizerCharacter): Promise<{ width: number; height: number; render: (appearance?: CustomizerFaceAppearance, studioFaceTransforms?: StudioFaceTransforms, expressionEffects?: FaceExpressionEffects) => Promise<{ dataUrl: string; width: number; height: number }> }> {
   const modelSlot = character.customization.modelSlot ?? 1
   const source = await window.desktop.loadFabricatorSlot(modelSlot)
   if (!source) throw new Error(`O modelo de ${character.name} não está disponível.`)
@@ -1145,7 +1147,7 @@ export async function prepareSavedCharacterRenderer(character: CustomizerCharact
   const shapeScale = characterShapeScale(proportions)
   const outputWidth = Math.max(canvas.width, Math.ceil(canvas.width * shapeScale.x))
   const outputHeight = Math.max(canvas.height, Math.ceil(canvas.height * shapeScale.y))
-  const render = async (currentAppearance: CustomizerFaceAppearance | undefined = appearance, studioFaceTransforms?: StudioFaceTransforms) => {
+  const render = async (currentAppearance: CustomizerFaceAppearance | undefined = appearance, studioFaceTransforms?: StudioFaceTransforms, expressionEffects?: FaceExpressionEffects) => {
     context.clearRect(0, 0, canvas.width, canvas.height)
     context.drawImage(baseImage, 0, 0, canvas.width, canvas.height)
     if (wardrobeImage) context.drawImage(wardrobeImage, 0, 0, canvas.width, canvas.height)
@@ -1171,7 +1173,7 @@ export async function prepareSavedCharacterRenderer(character: CustomizerCharact
         }
         if (item) activeItems[category] = item
       }))
-      if (hasCatalogSelection) await drawFaceCatalogOverlay(context, artwork, source, activeItems, currentAppearance, character.customization.modelSkinTone, studioFaceTransforms)
+      if (hasCatalogSelection) await drawFaceCatalogOverlay(context, artwork, source, activeItems, currentAppearance, character.customization.modelSkinTone, studioFaceTransforms, expressionEffects)
       else if (legacyFaceImage && currentAppearance.setId === appearance?.setId) context.drawImage(legacyFaceImage, 0, 0, canvas.width, canvas.height)
     } else if (legacyFaceImage) context.drawImage(legacyFaceImage, 0, 0, canvas.width, canvas.height)
     if (frontHairImage) context.drawImage(frontHairImage, 0, 0, canvas.width, canvas.height)
@@ -1189,9 +1191,9 @@ export async function prepareSavedCharacterRenderer(character: CustomizerCharact
   return { width: outputWidth, height: outputHeight, render }
 }
 
-export async function renderSavedCharacter(character: CustomizerCharacter, studioFaceTransforms?: StudioFaceTransforms): Promise<{ dataUrl: string; width: number; height: number }> {
+export async function renderSavedCharacter(character: CustomizerCharacter, studioFaceTransforms?: StudioFaceTransforms, expressionEffects?: FaceExpressionEffects): Promise<{ dataUrl: string; width: number; height: number }> {
   const renderer = await prepareSavedCharacterRenderer(character)
-  return renderer.render(character.customization.faceAppearance, studioFaceTransforms)
+  return renderer.render(character.customization.faceAppearance, studioFaceTransforms, expressionEffects)
 }
 
 const modules: { name: string; icon: IconName; detail: string }[] = [

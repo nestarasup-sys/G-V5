@@ -1,5 +1,5 @@
 import type { CustomizerFaceAppearance } from './customizer'
-import type { FaceTransform } from './fabricator'
+import type { FaceExpressionEffects, FaceTransform } from './fabricator'
 
 export type StudioAsset = {
   id: string
@@ -17,6 +17,20 @@ export type StudioFaceTransforms = Record<string, StudioFaceTransform>
 export type StudioExpressionBase = { appearance: CustomizerFaceAppearance; transforms: StudioFaceTransforms }
 
 /** Shared persistence boundary for manual and expression-specific transforms. */
+export function isStudioExpressionEffects(value: unknown): value is FaceExpressionEffects {
+  if (value === undefined) return true
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+  const effects = value as FaceExpressionEffects
+  return (['shadow', 'blush', 'mouthBlush'] as const).every((key) => {
+    const effect = effects[key]
+    return Boolean(effect && typeof effect.enabled === 'boolean' && /^#[0-9a-f]{6}$/i.test(effect.color)
+      && Number.isFinite(effect.opacity) && effect.opacity >= 0 && effect.opacity <= 1
+      && Number.isFinite(effect.softness) && effect.softness >= 0 && effect.softness <= 1
+      && Number.isFinite(effect.size) && effect.size >= 0.05 && effect.size <= 2
+      && Number.isFinite(effect.offsetY) && effect.offsetY >= -0.5 && effect.offsetY <= 0.5)
+  })
+}
+
 export function isStudioFaceTransforms(value: unknown): value is StudioFaceTransforms {
   if (value === undefined) return true
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false
@@ -51,6 +65,7 @@ export type StudioElement = {
   /** Character-specific neutral face, shared by every expression collection. */
   expressionBase?: StudioExpressionBase
   activeExpressionPresetId?: string | null
+  activeExpressionEffects?: FaceExpressionEffects
   /** Expression collection currently selected for this actor in the inspector. */
   activeExpressionCollectionId?: string
   /** Pose selected for this actor inside this Studio only. */

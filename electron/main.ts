@@ -10,7 +10,7 @@ import type { CustomizerCharacter, CustomizerFaceAppearance, CustomizerWardrobeP
 import { characterBodyDimensionLimits, characterProportionLimits } from '../src/shared/customizer'
 import type { StudioAsset, StudioDocument } from '../src/shared/studio'
 import { applyModelHeadShape } from '../src/shared/headShape'
-import { isStudioFaceTransforms } from '../src/shared/studio'
+import { isStudioExpressionEffects, isStudioFaceTransforms } from '../src/shared/studio'
 
 const slotCount = 10
 const poseSlotCount = 12
@@ -295,6 +295,7 @@ function validFaceExpressionPreset(modelSlot: number, preset: FaceExpressionPres
     && (preset.transforms.browRight === undefined || validTransform(preset.transforms.browRight))
     && (preset.referenceTransforms === undefined || Object.values(preset.referenceTransforms).every(validTransform))
     && Number.isFinite(preset.noseOpacity) && preset.noseOpacity >= 0 && preset.noseOpacity <= 1
+    && (preset.effects === undefined || isStudioExpressionEffects(preset.effects))
 }
 
 async function listFaceExpressionPresets(modelSlot: number): Promise<FaceExpressionPresetSummary[]> {
@@ -864,6 +865,7 @@ function isStudioDocument(value: unknown): value is StudioDocument {
       && (element.expressionBase === undefined || Boolean(element.expressionBase && element.expressionBase.appearance && isValidCustomizerFaceAppearance(element.expressionBase.appearance)
         && element.expressionBase.transforms && isStudioFaceTransforms(element.expressionBase.transforms)))
       && (element.activeExpressionPresetId === undefined || element.activeExpressionPresetId === null || typeof element.activeExpressionPresetId === 'string' && isValidWardrobeId(element.activeExpressionPresetId))
+      && isStudioExpressionEffects(element.activeExpressionEffects)
       && (element.activeExpressionCollectionId === undefined || typeof element.activeExpressionCollectionId === 'string' && isValidWardrobeId(element.activeExpressionCollectionId))
       && (element.characterSourceUpdatedAt === undefined || (typeof element.characterSourceUpdatedAt === 'string' && Number.isFinite(Date.parse(element.characterSourceUpdatedAt))))
       && (element.kind !== 'image' || assets.some((asset) => asset.id === element.assetId && asset.category === 'object'))

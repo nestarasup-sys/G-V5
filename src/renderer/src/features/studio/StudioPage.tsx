@@ -5,7 +5,7 @@ import { CharacterPortrait } from '../../ui/components/CharacterPortrait'
 import type { StudioAsset, StudioDocument, StudioElement, StudioFaceTransform, StudioFaceTransforms } from '../../../../shared/studio'
 import type { CustomizerCharacter } from '../../../../shared/customizer'
 import type { CustomizerFaceAppearance } from '../../../../shared/customizer'
-import type { FaceCatalogItem, FaceCatalogItemSummary, FaceExpressionCollection, FaceExpressionPreset, FaceExpressionPresetSummary, FaceSheetKind, FabricatorPoseSummary } from '../../../../shared/fabricator'
+import type { FaceCatalogItem, FaceCatalogItemSummary, FaceExpressionCollection, FaceExpressionEffects, FaceExpressionPreset, FaceExpressionPresetSummary, FaceSheetKind, FabricatorPoseSummary } from '../../../../shared/fabricator'
 
 type StudioCard = StudioDocument
 type StudioSnapshot = Pick<StudioDocument, 'backgroundColor' | 'backgroundAssetId' | 'backgroundX' | 'backgroundY' | 'backgroundWidth' | 'backgroundHeight' | 'backgroundRotation' | 'assets' | 'elements'>
@@ -267,7 +267,7 @@ export function StudioPage() {
   const studioFaceRenderVersionRef = useRef(0)
   const studioFaceRenderPendingRef = useRef<{ studioId: string; elementId: string; assetId: string; character: CustomizerCharacter; transforms: StudioFaceTransforms } | null>(null)
   const studioFaceRenderRunningRef = useRef(false)
-  const studioFaceRendererRef = useRef<{ key: string; render: (appearance?: CustomizerFaceAppearance, transforms?: StudioFaceTransforms) => Promise<{ dataUrl: string; width: number; height: number }> } | null>(null)
+  const studioFaceRendererRef = useRef<{ key: string; render: (appearance?: CustomizerFaceAppearance, transforms?: StudioFaceTransforms, effects?: FaceExpressionEffects) => Promise<{ dataUrl: string; width: number; height: number }> } | null>(null)
   const saveGenerationRef = useRef(0)
   const expressionSaveSignatureRef = useRef<{ studioId: string; value: string } | null>(null)
   const normalizedStudioIdsRef = useRef(new Set<string>())
@@ -503,7 +503,7 @@ export function StudioPage() {
             poseSlot: element.poseSlot === undefined ? character.customization.poseSlot : element.poseSlot,
             faceAppearance: element.faceAppearance ?? character.customization.faceAppearance
           }
-          const rendered = await renderSavedCharacter({ ...character, customization }, element.faceTransforms)
+          const rendered = await renderSavedCharacter({ ...character, customization }, element.faceTransforms, element.activeExpressionEffects)
           if (cancelled) return
           const crop = await trimTransparentImage(rendered.dataUrl)
           if (cancelled) return
@@ -759,7 +759,7 @@ export function StudioPage() {
     } finally { setSavingCast(false) }
   }
 
-  const applyStudioFaceAppearance = async (appearance: CustomizerFaceAppearance, faceTransforms: StudioFaceTransforms = selectedElement?.faceTransforms ?? {}, record = true, expressionState?: Pick<StudioElement, 'expressionBase' | 'activeExpressionPresetId' | 'activeExpressionCollectionId'>) => {
+  const applyStudioFaceAppearance = async (appearance: CustomizerFaceAppearance, faceTransforms: StudioFaceTransforms = selectedElement?.faceTransforms ?? {}, record = true, expressionState?: Pick<StudioElement, 'expressionBase' | 'activeExpressionPresetId' | 'activeExpressionCollectionId' | 'activeExpressionEffects'>) => {
     if (!activeStudio || selectedElement?.kind !== 'character' || !selectedStudioCharacter || !selectedElement.assetId || studioFaceBusy) return
     setStudioFaceBusy(true)
     try {
@@ -782,7 +782,8 @@ export function StudioPage() {
         const renderer = await prepareSavedCharacterRenderer(characterCopy)
         studioFaceRendererRef.current = { key, render: renderer.render }
       }
-      const rendered = await studioFaceRendererRef.current.render(appearance, faceTransforms)
+      const activeEffects = expressionState && Object.hasOwn(expressionState, 'activeExpressionEffects') ? expressionState.activeExpressionEffects : selectedElement.activeExpressionEffects
+      const rendered = await studioFaceRendererRef.current.render(appearance, faceTransforms, activeEffects)
       const trimmed = await trimTransparentImage(rendered.dataUrl)
       const studioDataUrl = trimmed?.dataUrl ?? rendered.dataUrl
       const elementId = selectedElement.id
@@ -807,7 +808,7 @@ export function StudioPage() {
     const base = resolveStudioExpressionBase(selectedElement, appearance)
     setStudioExpressionBusy(true)
     try {
-      await applyStudioFaceAppearance(base.appearance, base.transforms, true, { expressionBase: base, activeExpressionPresetId: null, activeExpressionCollectionId: selectedStudioExpressionCollectionId })
+      await applyStudioFaceAppearance(base.appearance, base.transforms, true, { expressionBase: base, activeExpressionPresetId: null, activeExpressionCollectionId: selectedStudioExpressionCollectionId, activeExpressionEffects: undefined })
     } finally { setStudioExpressionBusy(false) }
   }
 
@@ -829,7 +830,7 @@ export function StudioPage() {
         (id) => window.desktop.loadFaceCatalogItem(preset.modelSlot, id)
       )
 
-      await applyStudioFaceAppearance(nextAppearance, faceTransforms, true, { expressionBase: base, activeExpressionPresetId: preset.id, activeExpressionCollectionId: preset.collectionId ?? 'standard' })
+      await applyStudioFaceAppearance(nextAppearance, faceTransforms, true, { expressionBase: base, activeExpressionPresetId: preset.id, activeExpressionCollectionId: preset.collectionId ?? 'standard', activeExpressionEffects: preset.effects })
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Não foi possível aplicar este preset de expressão.')
     } finally {
@@ -845,12 +846,12 @@ export function StudioPage() {
       let characterCanvasWidth = selectedElement.characterCanvasWidth
       if (!characterCanvasWidth) {
         const currentPoseCharacter: CustomizerCharacter = { ...selectedStudioCharacter, customization: { ...selectedStudioCharacter.customization, poseSlot: selectedElement.poseSlot === undefined ? selectedStudioCharacter.customization.poseSlot : selectedElement.poseSlot, faceAppearance: selectedElement.faceAppearance ?? selectedStudioCharacter.customization.faceAppearance } }
-        const currentRendered = await renderSavedCharacter(currentPoseCharacter, selectedElement.faceTransforms)
+        const currentRendered = await renderSavedCharacter(currentPoseCharacter, selectedElement.faceTransforms, selectedElement.activeExpressionEffects)
         const currentCrop = await trimTransparentImage(currentRendered.dataUrl)
         characterCanvasWidth = selectedElement.width * currentRendered.width / (currentCrop?.width ?? currentRendered.width)
       }
       const characterCopy: CustomizerCharacter = { ...selectedStudioCharacter, customization: { ...selectedStudioCharacter.customization, poseSlot, faceAppearance: selectedElement.faceAppearance ?? selectedStudioCharacter.customization.faceAppearance } }
-      const rendered = await renderSavedCharacter(characterCopy, selectedElement.faceTransforms)
+      const rendered = await renderSavedCharacter(characterCopy, selectedElement.faceTransforms, selectedElement.activeExpressionEffects)
       const trimmed = await trimTransparentImage(rendered.dataUrl)
       const dataUrl = trimmed?.dataUrl ?? rendered.dataUrl
       const cropWidth = trimmed?.width ?? rendered.width
@@ -956,7 +957,7 @@ export function StudioPage() {
             if (version !== studioFaceRenderVersionRef.current) continue
             studioFaceRendererRef.current = { key, render: renderer.render }
           }
-          const rendered = await studioFaceRendererRef.current.render(job.character.customization.faceAppearance, studioFaceTransformsRef.current[job.elementId] ?? job.transforms)
+          const rendered = await studioFaceRendererRef.current.render(job.character.customization.faceAppearance, studioFaceTransformsRef.current[job.elementId] ?? job.transforms, activeStudio?.elements.find((element) => element.id === job.elementId)?.activeExpressionEffects)
           const trimmed = await trimTransparentImage(rendered.dataUrl)
           const studioDataUrl = trimmed?.dataUrl ?? rendered.dataUrl
           if (version === studioFaceRenderVersionRef.current && job.studioId === activeStudioId) {

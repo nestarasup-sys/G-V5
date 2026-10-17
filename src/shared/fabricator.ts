@@ -200,6 +200,8 @@ export type FaceExpressionTransforms = {
   nose: FaceTransform
   mouth: FaceTransform
 }
+export type FaceExpressionEffect = { enabled: boolean; color: string; opacity: number; softness: number; size: number; offsetY: number }
+export type FaceExpressionEffects = { shadow: FaceExpressionEffect; blush: FaceExpressionEffect; mouthBlush: FaceExpressionEffect }
 /** A preset stores immutable references to shared face assets plus private transform snapshots. */
 export type FaceExpressionPreset = {
   schemaVersion: 1
@@ -214,6 +216,7 @@ export type FaceExpressionPreset = {
   /** Asset calibration at authoring time, used to transfer relative edits safely. */
   referenceTransforms?: FaceExpressionTransforms
   noseOpacity: number
+  effects?: FaceExpressionEffects
   updatedAt: string
 }
 export type FaceExpressionPresetSummary = Pick<FaceExpressionPreset, 'id' | 'modelSlot' | 'name' | 'updatedAt' | 'collectionId' | 'expressionIndex'>

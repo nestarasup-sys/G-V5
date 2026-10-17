@@ -1116,6 +1116,20 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .expression-choose-set-button svg { width: 16px; height: 16px; }
 .expression-head-stage { position: relative; min-height: 0; flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; overflow: hidden; padding: 16px; background: radial-gradient(ellipse at center, #fffafd 0%, #faf7f9 70%, #f5f1f4 100%); color: #958995; font-size: 12px; }
 .expression-head-canvas { position: relative; flex: 0 1 auto; height: min(70vh, 640px); max-width: 94%; max-height: 100%; overflow: visible; isolation: isolate; }
+.expression-preview-shadow,.expression-preview-blush,.expression-preview-mouth-blush { position:absolute;z-index:1;pointer-events:none; }
+.expression-preview-shadow { inset:0;mask-size:100% 100%;-webkit-mask-size:100% 100%; }
+.expression-preview-blush,.expression-preview-mouth-blush { border-radius:50%;filter:blur(5px); }
+.expression-effects-section { display:grid;gap:8px;padding-top:12px;border-top:1px solid #eee5ec; }
+.expression-effects-section > header { display:grid;gap:3px; }
+.expression-effects-section > header strong { color:#594650;font-size:12px; }
+.expression-effects-section > header small { color:#9a8e99;font-size:10px; }
+.expression-effect-card { display:grid;gap:9px;padding:9px;border:1px solid #eee4eb;border-radius:9px;background:#fffafd; }
+.expression-effect-card summary { cursor:pointer;list-style:none; }
+.expression-effect-card summary::-webkit-details-marker { display:none; }
+.expression-effect-card summary label { display:flex;align-items:center;gap:7px;color:#6d5261;font-size:11px;font-weight:700;cursor:pointer; }
+.expression-effect-card summary input { accent-color:#be5480; }
+.expression-effect-color { display:flex;justify-content:space-between;align-items:center;color:#766a75;font-size:10px; }
+.expression-effect-color input { width:34px;height:24px;padding:2px;border:1px solid #eee0e9;border-radius:6px;background:#fff; }
 .expression-head-base { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: fill; user-select: none; pointer-events: none; }
 .expression-head-side-layer { position: absolute; inset: 0; }
 .expression-head-piece { position: absolute; z-index: 2; display: block; max-width: none; user-select: none; pointer-events: none; }
