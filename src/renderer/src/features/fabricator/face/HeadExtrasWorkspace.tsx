@@ -9,6 +9,25 @@ const headPart = (model: FabricatorProject | null) => model?.parts.find((part) =
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value))
 const initialExtraTransform = (head: NonNullable<ReturnType<typeof headPart>>, width: number, height: number): FaceTransform =>
   ({ x: head.width * .5, y: head.height * .25, scaleX: Math.min(.6, head.width * .55 / width), scaleY: Math.min(.35, head.height * .3 / height), rotation: 0 })
+function normalizeExtraTransform(asset: FaceComponentAsset, head: NonNullable<ReturnType<typeof headPart>>): FaceTransform {
+  const source = asset.defaultTransform
+  const finite = (value: number, fallback: number) => Number.isFinite(value) ? value : fallback
+  const maxWidth = head.width * 2
+  const maxHeight = head.height * 2
+  const width = clamp(finite(source.scaleX, 1) * asset.width, 0, maxWidth)
+  const height = clamp(finite(source.scaleY, 1) * asset.height, 0, maxHeight)
+  return {
+    ...source,
+    x: clamp(finite(source.x, head.width / 2), 0, head.width),
+    y: clamp(finite(source.y, head.height / 4), 0, head.height),
+    scaleX: width / Math.max(1, asset.width),
+    scaleY: height / Math.max(1, asset.height),
+    rotation: clamp(finite(source.rotation, 0), -180, 180)
+  }
+}
+function sameTransform(a: FaceTransform, b: FaceTransform): boolean {
+  return a.x === b.x && a.y === b.y && a.scaleX === b.scaleX && a.scaleY === b.scaleY && a.rotation === b.rotation && a.flipX === b.flipX
+}
 const GUIDE_STORAGE_KEY = 'gacha-nymi:rosto-dev-guides'
 type FaceGuide = FaceGuideSettings
 type PreviewDrag = { pointerId: number; assetId: string; startX: number; startY: number; startTransform: FaceTransform; currentTransform: FaceTransform; scale: number }
@@ -56,6 +75,7 @@ export function HeadExtrasWorkspace() {
   const [assets, setAssets] = useState<FaceComponentAssetSummary[]>([])
   const [details, setDetails] = useState<Record<string, FaceComponentAsset>>({})
   const detailsRef = useRef(details)
+  const saveQueueRef = useRef<Promise<void>>(Promise.resolve())
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const dragRef = useRef<PreviewDrag | null>(null)
   const [dragging, setDragging] = useState(false)
@@ -156,13 +176,17 @@ export function HeadExtrasWorkspace() {
   async function updateAsset(patch: Partial<Pick<FaceComponentAsset, 'name'>> & { defaultTransform?: Partial<FaceTransform> }) {
     if (!selected) return
     const currentAsset = detailsRef.current[selected.id] ?? selected
-    const next: FaceComponentAsset = { ...currentAsset, ...patch, defaultTransform: { ...currentAsset.defaultTransform, ...patch.defaultTransform }, updatedAt: new Date().toISOString() }
+    const merged: FaceComponentAsset = { ...currentAsset, ...patch, defaultTransform: { ...currentAsset.defaultTransform, ...patch.defaultTransform }, updatedAt: new Date().toISOString() }
+    const currentHead = headPart(model)
+    const next: FaceComponentAsset = currentHead && merged.kind === 'head-extra' ? { ...merged, defaultTransform: normalizeExtraTransform(merged, currentHead) } : merged
     detailsRef.current = { ...detailsRef.current, [next.id]: next }
     setDetails(detailsRef.current)
     setAssets((current) => current.map((asset) => asset.id === next.id ? { ...asset, name: next.name, updatedAt: next.updatedAt } : asset))
     try {
       const { dataUrl, ...save } = next
-      await window.desktop.saveFaceComponentAsset(modelSlot, save, dataUrl)
+      const queuedSave = saveQueueRef.current.catch(() => undefined).then(() => window.desktop.saveFaceComponentAsset(next.modelSlot, save, dataUrl))
+      saveQueueRef.current = queuedSave
+      await queuedSave
     } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) }
   }
 
@@ -216,7 +240,12 @@ export function HeadExtrasWorkspace() {
     setDragging(false)
     void updateAsset({ defaultTransform: drag.currentTransform })
   }
-  const transform = selected?.defaultTransform
+  const transform = selected && head ? normalizeExtraTransform(selected, head) : selected?.defaultTransform
+  useEffect(() => {
+    if (!selected || !head || selected.kind !== 'head-extra') return
+    const normalized = normalizeExtraTransform(selected, head)
+    if (!sameTransform(selected.defaultTransform, normalized)) void updateAsset({ defaultTransform: normalized })
+  }, [selected?.id, selected?.defaultTransform.x, selected?.defaultTransform.y, selected?.defaultTransform.scaleX, selected?.defaultTransform.scaleY, selected?.defaultTransform.rotation, selected?.defaultTransform.flipX, head?.width, head?.height])
   const previewStyle: CSSProperties | undefined = head && selected && transform ? {
     left: `${transform.x / head.width * 100}%`, top: `${transform.y / head.height * 100}%`,
     width: `${selected.width * transform.scaleX / head.width * 100}%`, height: `${selected.height * transform.scaleY / head.height * 100}%`,
@@ -253,7 +282,7 @@ export function HeadExtrasWorkspace() {
       <aside className="face-components-controls"><header><strong>Ajuste da peça</strong></header>
         {selected && transform ? <>
           <label className="head-extra-name">Nome<input value={selected.name} disabled={busy} onChange={(event) => void updateAsset({ name: event.target.value })} /></label>
-          {([['x', 'Horizontal', transform.x / (head?.width ?? 1) * 100, 0, 100], ['y', 'Vertical', transform.y / (head?.height ?? 1) * 100, 0, 100], ['scaleX', 'Largura', selected.width * transform.scaleX / (head?.width ?? 1) * 100, 1, 150], ['scaleY', 'Altura', selected.height * transform.scaleY / (head?.height ?? 1) * 100, 1, 150], ['rotation', 'Rotação', transform.rotation, -180, 180]] as const).map(([key, label, value, min, max]) => <label className="head-extra-control" key={key}><span>{label}<output>{Math.round(value)}{key === 'rotation' ? '°' : '%'}</output></span><input type="range" min={min} max={max} step="1" value={clamp(value, min, max)} disabled={!head || busy} onChange={(event) => changeTransform(key, Number(event.target.value))} /></label>)}
+          {([['x', 'Horizontal', transform.x / (head?.width ?? 1) * 100, 0, 100], ['y', 'Vertical', transform.y / (head?.height ?? 1) * 100, 0, 100], ['scaleX', 'Largura', selected.width * transform.scaleX / (head?.width ?? 1) * 100, 0, 200], ['scaleY', 'Altura', selected.height * transform.scaleY / (head?.height ?? 1) * 100, 0, 200], ['rotation', 'Rotação', transform.rotation, -180, 180]] as const).map(([key, label, value, min, max]) => <label className="head-extra-control" key={key}><span>{label}<output>{Math.round(clamp(value, min, max))}{key === 'rotation' ? '°' : '%'}</output></span><input type="range" min={min} max={max} step="1" value={clamp(value, min, max)} disabled={!head || busy} onChange={(event) => changeTransform(key, Number(event.target.value))} /></label>)}
           <button className="face-component-reset-transform" type="button" disabled={!head || busy} onClick={() => head && void updateAsset({ defaultTransform: initialExtraTransform(head, selected.width, selected.height) })}>Restaurar encaixe da peça</button>
         </> : <p className="head-extra-empty">Selecione ou importe uma peça para ajustar.</p>}
         <section className="face-components-guide-controls" aria-label="Guias de desenho compartilhadas"><header><strong>Guias de desenho</strong><label><input type="checkbox" checked={guide.visible} disabled={!guidesLoaded} onChange={(event) => updateGuide({ visible: event.target.checked })} /> Mostrar</label></header>
