@@ -24,7 +24,19 @@ export async function buildStudioExpressionAppearance(preset: FaceExpressionPres
   if (mouthId && preset.selections.mouth) {
     const mouth = await loadCatalog(mouthId)
     const sheet = mouthOpen ? 'mouth-open' : 'mouth-closed'
-    const index = preset.selections.mouth.index
+    // The 21 standard presets follow the same row-major mouth sheet order as
+    // the character's customized mouth variants. Keep the character's chosen
+    // mouth asset, but resolve the matching variant from the preset slot so
+    // its authored blush geometry follows the correct expression in Studio.
+    const standardIndex = preset.collectionId === 'standard'
+      && Number.isInteger(preset.expressionIndex)
+      && preset.expressionIndex! >= 0
+      && preset.expressionIndex! < 21
+      ? preset.expressionIndex!
+      : undefined
+    const index = standardIndex !== undefined && mouth?.pieces.some((piece) => piece.sheet === sheet && piece.index === standardIndex)
+      ? standardIndex
+      : preset.selections.mouth.index
     if (mouth?.pieces.some((piece) => piece.sheet === sheet && piece.index === index)) {
       next.expressionIndex = index
       next.mouthOpen = mouthOpen
