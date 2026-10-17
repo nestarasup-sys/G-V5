@@ -2633,6 +2633,29 @@ export function CustomizerPage() {
     else void chooseFaceCatalogItem(choice.summary, choice.piece.index)
   }
 
+  async function setCharacterMouthBlushEnabled(enabled: boolean) {
+    if (!selectedCharacter || selectedCatalogModelSlot === null) return
+    const current = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
+    const previous = current.customization.faceAppearance
+    const sameModel = previous?.modelSlot === selectedCatalogModelSlot
+    const appearance: CustomizerFaceAppearance = {
+      ...(sameModel ? previous : undefined),
+      modelSlot: selectedCatalogModelSlot,
+      eyeState: sameModel ? previous.eyeState : 0,
+      eyebrows: sameModel ? previous.eyebrows : true,
+      noseIndex: sameModel ? previous.noseIndex : 0,
+      expressionIndex: sameModel ? previous.expressionIndex : 0,
+      mouthOpen: sameModel ? previous.mouthOpen : false,
+      mouthBlushEnabled: enabled
+    }
+    await saveCharacterCustomization({ faceAppearance: appearance })
+  }
+
+  const renderMouthBlushToggle = () => <label className="customizer-mouth-blush-toggle" title="Controla o blush na expressão base e nos presets do Studio">
+    <input type="checkbox" checked={Boolean(activeFaceAppearance?.mouthBlushEnabled)} disabled={!selectedCharacter || selectedCatalogModelSlot === null} onChange={(event) => void setCharacterMouthBlushEnabled(event.target.checked)} />
+    <span>Blush na boca</span>
+  </label>
+
   const renderFaceCatalogCard = (part: typeof faceCatalogLayoutParts[number]) => {
     const choices = faceCatalogChoicesForPart(part.id)
     const selectedId = faceCatalogSelectedId(part.id)
@@ -2652,7 +2675,7 @@ export function CustomizerPage() {
     const isMouth = part.id === 'mouth'
     const clearPart = part.id
     return <article className={`customizer-hair-piece customizer-face-piece customizer-face-layout-piece customizer-face-layout-piece-${part.id}${isMouth ? ' customizer-face-layout-mouth' : ''}`} key={part.id}>
-      <header><strong>{part.label} {selectedSlot + 1}/{slotCount}</strong><button className="customizer-hair-reset" type="button" disabled={!selectedId} onClick={() => void clearFaceCatalogPart(clearPart)}>Remover</button></header>
+      <header><strong>{part.label} {selectedSlot + 1}/{slotCount}</strong>{isMouth && renderMouthBlushToggle()}<button className="customizer-hair-reset" type="button" disabled={!selectedId} onClick={() => void clearFaceCatalogPart(clearPart)}>Remover</button></header>
       {isMouth && <nav className="customizer-face-layout-mode" aria-label="Tipo de boca">
         <button className={!activeFaceAppearance?.mouthOpen ? 'active' : ''} type="button" aria-pressed={!activeFaceAppearance?.mouthOpen} onClick={() => void setFaceCatalogVariant({ mouthOpen: false })}>Fechada</button>
         <button className={activeFaceAppearance?.mouthOpen ? 'active' : ''} type="button" aria-pressed={Boolean(activeFaceAppearance?.mouthOpen)} onClick={() => void setFaceCatalogVariant({ mouthOpen: true })}>Aberta</button>
@@ -2693,9 +2716,10 @@ export function CustomizerPage() {
     const selectedId = faceCatalogSelectedId(part.id)
     const selectedIndex = choices.findIndex((choice) => faceCatalogChoiceSelected(part.id, choice))
     return <section className={`customizer-hair-library customizer-face-layout-library${part.id === 'mouth' ? ' customizer-face-layout-library-mouth' : ''}`} aria-labelledby="customizer-face-layout-library-title">
-      <header className="customizer-hair-library-heading">
+      <header className={`customizer-hair-library-heading${part.id === 'mouth' ? ' customizer-hair-library-heading-mouth' : ''}`}>
         <button className="customizer-hair-library-remove" type="button" onClick={() => void clearFaceCatalogPart(part.id)} disabled={!selectedId} aria-label={`Remover ${part.label}`} title={`Remover ${part.label}`}><Icon name="trash" /></button>
         <h2 id="customizer-face-layout-library-title">{part.label}</h2>
+        {part.id === 'mouth' && renderMouthBlushToggle()}
         <button className="customizer-hair-library-close" type="button" onClick={() => setFaceCatalogLibraryPart(null)} aria-label="Voltar às peças do rosto">×</button>
       </header>
       {part.id === 'mouth' && <nav className="customizer-face-layout-mode customizer-face-layout-library-mode" aria-label="Tipo de boca">

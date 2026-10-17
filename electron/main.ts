@@ -218,7 +218,7 @@ function isValidCustomizerFaceAppearance(appearance: CustomizerFaceAppearance): 
     && Object.entries(appearance.linkedSides).every(([kind, linked]) => ['eye', 'pupil', 'eyebrow'].includes(kind) && typeof linked === 'boolean'))
   const partColorsValid = appearance.partColors === undefined || (!!appearance.partColors && typeof appearance.partColors === 'object' && !Array.isArray(appearance.partColors)
     && Object.entries(appearance.partColors).every(([part, colors]) => ['eye-left', 'eye-right', 'brow-left', 'brow-right'].includes(part) && isHairColorMap(colors)))
-  const hasSelection = Boolean(appearance.setId || catalogIds.some(Boolean) || componentEntries.some(([, component]) => component?.assetId) || faceDetailEntries.some(([, id]) => id))
+  const hasSelection = Boolean(appearance.setId || catalogIds.some(Boolean) || componentEntries.some(([, component]) => component?.assetId) || faceDetailEntries.some(([, id]) => id) || appearance.mouthBlushEnabled !== undefined)
 
   return isValidModelSlot(appearance.modelSlot)
     && (appearance.setId === undefined || isValidWardrobeId(appearance.setId))
@@ -229,6 +229,7 @@ function isValidCustomizerFaceAppearance(appearance: CustomizerFaceAppearance): 
     && Number.isInteger(appearance.noseIndex) && appearance.noseIndex >= 0 && appearance.noseIndex <= 5
     && Number.isInteger(appearance.expressionIndex) && appearance.expressionIndex >= 0 && appearance.expressionIndex <= 20
     && typeof appearance.mouthOpen === 'boolean'
+    && (appearance.mouthBlushEnabled === undefined || typeof appearance.mouthBlushEnabled === 'boolean')
 }
 
 function validFaceSet(modelSlot: number, set: FaceSetSave): boolean {

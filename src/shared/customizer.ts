@@ -114,6 +114,8 @@ export type CustomizerFaceAppearance = {
   noseSkinTone?: string
   /** Opacity of the selected nose asset, from 0 (transparent) to 1 (opaque). */
   noseOpacity?: number
+  /** Character-level switch for mouth blush in the Studio base and expression presets. */
+  mouthBlushEnabled?: boolean
   mouthClosedCatalogId?: string
   mouthOpenCatalogId?: string
   eyeState: 0 | 1 | 2

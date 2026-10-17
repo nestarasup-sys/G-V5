@@ -26,7 +26,11 @@ function radialBlob(context: CanvasRenderingContext2D, x: number, y: number, wid
 
 /** Paint expression effects against the actual Studio head and active mouth transform. */
 export async function drawFaceExpressionEffects(context: CanvasRenderingContext2D, artwork: Artwork, sourceHead: HeadPart, head: HeadPart, appearance: CustomizerFaceAppearance, items: Partial<Record<FaceSheetKind | FaceElementKind, FaceCatalogItem>>, effects?: FaceExpressionEffects, studioTransforms?: StudioFaceTransforms): Promise<void> {
-  if (!effects || !Object.values(effects).some((effect) => effect.enabled && effect.opacity > 0)) return
+  const mouthBlush: FaceExpressionEffect | undefined = appearance.mouthBlushEnabled
+    ? { color: '#e86388', opacity: .38, softness: .78, size: .12, width: .12, height: .0624, rotation: 0, offsetY: 0, aspectRatio: .52, ...effects?.mouthBlush, enabled: true }
+    : undefined
+  const hasOtherEffects = Boolean(effects && (effects.shadow.enabled && effects.shadow.opacity > 0 || effects.blush.enabled && effects.blush.opacity > 0))
+  if (!hasOtherEffects && (!mouthBlush || mouthBlush.opacity <= 0)) return
   const layer = document.createElement('canvas')
   layer.width = context.canvas.width
   layer.height = context.canvas.height
@@ -35,8 +39,8 @@ export async function drawFaceExpressionEffects(context: CanvasRenderingContext2
   paint.setTransform(layer.width / artwork.width, 0, 0, layer.height / artwork.height, 0, 0)
   const cx = head.x + head.width / 2
   const cy = head.y + head.height / 2
-  const shadow = effects.shadow
-  if (shadow.enabled && shadow.opacity > 0) {
+  const shadow = effects?.shadow
+  if (shadow?.enabled && shadow.opacity > 0) {
     const extent = head.height * shadow.size
     const startY = head.y + shadow.offsetY * head.height
     const gradient = paint.createLinearGradient(0, startY, 0, startY + extent)
@@ -46,8 +50,8 @@ export async function drawFaceExpressionEffects(context: CanvasRenderingContext2
     paint.fillStyle = gradient
     paint.fillRect(head.x, startY, head.width, extent)
   }
-  const blush = effects.blush
-  if (blush.enabled && blush.opacity > 0) {
+  const blush = effects?.blush
+  if (blush?.enabled && blush.opacity > 0) {
     const width = head.width * blush.size
     const height = head.height * blush.size * (blush.aspectRatio ?? .52)
     const x = cx + head.width * (blush.offsetX ?? 0)
@@ -68,14 +72,14 @@ export async function drawFaceExpressionEffects(context: CanvasRenderingContext2
       default: radialBlob(paint, x, y, width, height, angle, blush, .54)
     }
   }
-  const mouth = effects.mouthBlush
+  const mouth = mouthBlush
   const mouthKind = appearance.mouthOpen ? 'mouth-open' : 'mouth-closed'
   const mouthId = appearance.mouthOpen ? appearance.mouthOpenCatalogId : appearance.mouthClosedCatalogId
   const mouthItem = mouthId ? items[mouthKind] : undefined
   const mouthOverride = mouthItem && (studioTransforms?.[`expression:${mouthKind}:${mouthItem.id}`]?.sourceTransformOverride ?? studioTransforms?.[`expression:mouth:${mouthItem.id}`]?.sourceTransformOverride)
   const mouthTransform = mouthOverride ?? appearance.transforms?.mouth ?? mouthItem?.transforms.mouth
   const mouthPiece = mouthItem?.pieces.find((piece) => piece.sheet === mouthKind && piece.index === appearance.expressionIndex)
-  if (mouth.enabled && mouth.opacity > 0 && mouthTransform && mouthPiece) {
+  if (mouth?.enabled && mouth.opacity > 0 && mouthTransform && mouthPiece) {
     const localX = mouthTransform.x / sourceHead.width * head.width
     const localY = mouthTransform.y / sourceHead.height * head.height
     const angle = head.rotation * Math.PI / 180
