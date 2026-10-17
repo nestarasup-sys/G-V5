@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import type { FaceCatalogItem, FaceCatalogItemSummary, FaceComponentAsset, FaceComponentAssetSummary, FaceExpressionCollection, FaceExpressionPreset, FaceExpressionPresetSummary, FaceExpressionEffects, FaceExpressionTransforms, FaceTransform, FabricatorProject } from '../../../../shared/fabricator'
 import { Icon, type IconName } from '../../ui/components/Icon'
 import { eyeInteriorMask } from './face/eyeInteriorMask'
@@ -28,6 +28,7 @@ type PreviewLayerDrag = {
   modelPerPixelY: number
   mappings: PreviewLayerMapping[]
 }
+type PreviewEffectDrag = { pointerId: number; clientX: number; clientY: number; offsetX: number; offsetY: number }
 const presetLayerPairs: Array<{ kind: PairedLayerKind; label: string; keys: [LayerKey, LayerKey]; labels: [string, string] }> = [
   { kind: 'eye', label: 'Olhos', keys: ['eyeLeft', 'eyeRight'], labels: ['Olho esquerdo', 'Olho direito'] },
   { kind: 'pupil', label: 'Pupilas', keys: ['pupilLeft', 'pupilRight'], labels: ['Pupila esquerda', 'Pupila direita'] },
@@ -166,6 +167,7 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
   const [selectedLayer, setSelectedLayer] = useState<LayerKey>('eyeLeft')
   const [linkedLayerPairs, setLinkedLayerPairs] = useState<Record<PairedLayerKind, boolean>>({ eye: false, pupil: false, eyebrow: false })
   const previewLayerDrag = useRef<PreviewLayerDrag | null>(null)
+  const previewEffectDrag = useRef<PreviewEffectDrag | null>(null)
   const previewCanvas = useRef<HTMLDivElement | null>(null)
   const [saving, setSaving] = useState(false)
   const [open, setOpen] = useState(false)
@@ -448,6 +450,43 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
     if (selectedLayer === 'nose') setNoseOpacity(composition.nose ? catalogItems[composition.nose.catalogId]?.opacity ?? 1 : 1)
   }
   const updateEffect = (key: keyof FaceExpressionEffects, patch: Partial<FaceExpressionEffects[keyof FaceExpressionEffects]>) => setEffects((current) => ({ ...current, [key]: { ...current[key], ...patch } }))
+  const beginBlushDrag = (event: ReactPointerEvent<HTMLSpanElement>) => {
+    if (event.button !== 0 && event.pointerType === 'mouse') return
+    const bounds = previewCanvas.current?.getBoundingClientRect()
+    if (!bounds?.width || !bounds.height) return
+    event.preventDefault()
+    event.stopPropagation()
+    event.currentTarget.setPointerCapture(event.pointerId)
+    previewEffectDrag.current = { pointerId: event.pointerId, clientX: event.clientX, clientY: event.clientY, offsetX: effects.blush.offsetX ?? 0, offsetY: effects.blush.offsetY }
+  }
+  const moveBlushDrag = (event: ReactPointerEvent<HTMLSpanElement>) => {
+    const drag = previewEffectDrag.current
+    const bounds = previewCanvas.current?.getBoundingClientRect()
+    if (!drag || drag.pointerId !== event.pointerId || !bounds?.width || !bounds.height) return
+    event.preventDefault()
+    event.stopPropagation()
+    updateEffect('blush', {
+      offsetX: Math.max(-.5, Math.min(.5, drag.offsetX + (event.clientX - drag.clientX) / bounds.width)),
+      offsetY: Math.max(-.5, Math.min(.5, drag.offsetY + (event.clientY - drag.clientY) / bounds.height))
+    })
+  }
+  const endBlushDrag = (event: ReactPointerEvent<HTMLSpanElement>) => {
+    if (previewEffectDrag.current?.pointerId !== event.pointerId) return
+    previewEffectDrag.current = null
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
+  }
+  const nudgeBlush = (event: ReactKeyboardEvent<HTMLSpanElement>) => {
+    const delta = event.shiftKey ? .05 : .01
+    const movement = event.key === 'ArrowLeft' ? { offsetX: (effects.blush.offsetX ?? 0) - delta }
+      : event.key === 'ArrowRight' ? { offsetX: (effects.blush.offsetX ?? 0) + delta }
+        : event.key === 'ArrowUp' ? { offsetY: effects.blush.offsetY - delta }
+          : event.key === 'ArrowDown' ? { offsetY: effects.blush.offsetY + delta } : null
+    if (!movement) return
+    event.preventDefault()
+    updateEffect('blush', movement.offsetX !== undefined
+      ? { offsetX: Math.max(-.5, Math.min(.5, movement.offsetX)) }
+      : { offsetY: Math.max(-.5, Math.min(.5, movement.offsetY!)) })
+  }
   const resetCurrentExpression = () => {
     setTransforms(defaultTransforms(composition, componentAssets, catalogItems))
     setNoseOpacity(composition.nose ? catalogItems[composition.nose.catalogId]?.opacity ?? 1 : 1)
@@ -739,20 +778,20 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
     <main className="expression-head-stage" aria-label="Prévia da cabeça">
       {loading ? <span>Carregando cabeça e biblioteca facial…</span> : head ? <div ref={previewCanvas} className="expression-head-canvas" style={{ aspectRatio: `${head.width} / ${head.height}` }}>
         <img className="expression-head-base" src={head.dataUrl} alt="Cabeça do modelo" />
-        <div className="expression-head-effects" aria-hidden="true" style={{ WebkitMaskImage: `url(${head.dataUrl})`, maskImage: `url(${head.dataUrl})` }}>{(['shadow', 'blush', 'mouthBlush'] as const).map((key) => {
+        <div className="expression-head-effects" aria-label="Prévia dos efeitos da expressão" style={{ WebkitMaskImage: `url(${head.dataUrl})`, maskImage: `url(${head.dataUrl})` }}>{(['shadow', 'blush', 'mouthBlush'] as const).map((key) => {
           const effect = effects[key]
           if (!effect.enabled) return null
           const color = `color-mix(in srgb, ${effect.color} ${Math.round(effect.opacity * (key === 'blush' ? .54 : 1) * 100)}%, transparent)`
-          if (key === 'shadow') return <span key={key} className="expression-preview-shadow" style={{ top: `${effect.offsetY * 100}%`, height: `${effect.size * 100}%`, background: `linear-gradient(180deg, ${color}, transparent)` }} />
+          if (key === 'shadow') return <span key={key} className="expression-preview-shadow" aria-hidden="true" style={{ top: `${effect.offsetY * 100}%`, height: `${effect.size * 100}%`, background: `linear-gradient(180deg, ${color}, transparent)` }} />
           if (key === 'blush') {
             const shape = effect.style ?? 'cheeks'
             const radial = (at: string) => `radial-gradient(ellipse at ${at}, ${color}, transparent ${Math.round((.4 + effect.softness * .6) * 100)}%)`
             const background = shape === 'cheeks' ? `${radial('27% 50%')}, ${radial('73% 50%')}` : shape === 'bands' ? `${radial('50% 25%')}, ${radial('50% 50%')}, ${radial('50% 75%')}` : radial('50% 50%')
-            return <span key={key} className="expression-preview-blush" style={{ left: `${50 + (effect.offsetX ?? 0) * 100}%`, top: `${50 + effect.offsetY * 100}%`, width: `${effect.size * 100}%`, height: `${effect.size * (effect.aspectRatio ?? .52) * 100}%`, background, transform: `translate(-50%,-50%) rotate(${shape === 'diagonal' ? -16 : 0}deg)` }} />
+            return <span key={key} className="expression-preview-blush expression-preview-blush-draggable" role="group" tabIndex={0} aria-label="Posição do blush nas bochechas. Arraste ou use as setas para mover; Shift move mais." onPointerDown={beginBlushDrag} onPointerMove={moveBlushDrag} onPointerUp={endBlushDrag} onPointerCancel={endBlushDrag} onLostPointerCapture={endBlushDrag} onKeyDown={nudgeBlush} style={{ left: `${50 + (effect.offsetX ?? 0) * 100}%`, top: `${50 + effect.offsetY * 100}%`, width: `${effect.size * 100}%`, height: `${effect.size * (effect.aspectRatio ?? .52) * 100}%`, background, transform: `translate(-50%,-50%) rotate(${shape === 'diagonal' ? -16 : 0}deg)` }} />
           }
           if (!visibleComposition.mouth) return null
           const mouthTransform = visibleTransforms.mouth
-          return <span key={key} className="expression-preview-mouth-blush" style={{ left: `${(mouthTransform.x + (effect.offsetX ?? 0) * head.width) / (head.width || 1) * 100}%`, top: `${(mouthTransform.y + effect.offsetY * head.height) / (head.height || 1) * 100}%`, width: `${(effect.width ?? effect.size) * 100}%`, height: `${(effect.height ?? effect.size * (effect.aspectRatio ?? .52)) * 100}%`, background: `radial-gradient(ellipse, ${color}, transparent ${Math.round((.4 + effect.softness * .58) * 100)}%)`, transform: `translate(-50%,-50%) rotate(${mouthTransform.rotation + (effect.rotation ?? 0)}deg)` }} />
+          return <span key={key} className="expression-preview-mouth-blush" aria-hidden="true" style={{ left: `${(mouthTransform.x + (effect.offsetX ?? 0) * head.width) / (head.width || 1) * 100}%`, top: `${(mouthTransform.y + effect.offsetY * head.height) / (head.height || 1) * 100}%`, width: `${(effect.width ?? effect.size) * 100}%`, height: `${(effect.height ?? effect.size * (effect.aspectRatio ?? .52)) * 100}%`, background: `radial-gradient(ellipse, ${color}, transparent ${Math.round((.4 + effect.softness * .58) * 100)}%)`, transform: `translate(-50%,-50%) rotate(${mouthTransform.rotation + (effect.rotation ?? 0)}deg)` }} />
         })}</div>
         {(['left', 'right'] as const).map((currentSide) => {
           const eye = componentAssets[visibleComposition.eyes[currentSide] ?? '']
@@ -804,6 +843,7 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
             <summary><label><input type="checkbox" checked={effect.enabled} onChange={(event) => updateEffect(key, { enabled: event.target.checked })} />{label}</label></summary>
             <label className="expression-effect-color">Cor<input type="color" value={effect.color} onChange={(event) => updateEffect(key, { color: event.target.value })} /></label>
             {key === 'blush' && <label className="expression-effect-color">Formato<select value={effect.style ?? 'cheeks'} onChange={(event) => updateEffect(key, { style: event.target.value as NonNullable<typeof effect.style> })}><option value="oval">Oval</option><option value="cheeks">Duas bochechas</option><option value="bands">Faixas</option><option value="diagonal">Diagonal</option><option value="spot">Ponto</option></select></label>}
+            {key === 'blush' && <small className="expression-effect-hint">Arraste o blush na prévia para ajustar a posição.</small>}
             {key === 'mouthBlush' ? <>
               {([['opacity', 'Intensidade', 0, 1, .01], ['softness', 'Suavidade', 0, 1, .01]] as const).map(([field, title, min, max, step]) => <label className="expression-transform-control" key={field}>{title}<input type="range" min={min} max={max} step={step} value={effect[field]} onChange={(event) => updateEffect(key, { [field]: Number(event.target.value) })} /><output>{Math.round(effect[field] * 100)}%</output></label>)}
               {([['width', 'Largura', .01, 1, .01], ['height', 'Altura', .01, 1, .01], ['offsetY', 'Posição vertical', -.5, .5, .01], ['offsetX', 'Posição horizontal', -.5, .5, .01], ['rotation', 'Rotação', -180, 180, 1]] as const).map(([field, title, min, max, step]) => {
