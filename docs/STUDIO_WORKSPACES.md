@@ -125,3 +125,22 @@ inclusive com rotação. O inspector oferece X, Y, largura, altura, rotação e
 restaurar enquadramento. Uma interação de arraste gera uma entrada no histórico;
 os ajustes usam o salvamento automático do roteiro e respeitam o bloqueio da
 faixa. O vídeo permanece atrás dos personagens e na frente do fundo.
+
+## Histórico temporário do roteiro
+
+A timeline oferece Desfazer e Refazer imediatamente à esquerda de Play. O módulo
+`editHistory.ts` mantém até 1.000 checkpoints de alterações por sessão de roteiro,
+somente em memória. Ao sair para a biblioteca, trocar de roteiro ou desmontar o
+Video Studio, as duas pilhas são liberadas. O histórico não faz parte do JSON
+salvo; a edição atual continua usando o salvamento automático normal.
+
+O checkpoint é armado no início da ação e só entra na pilha após uma alteração
+real. Eventos intermediários do mesmo arraste não criam checkpoints adicionais;
+uma nova edição após desfazer descarta a pilha de refazer. Os snapshots imutáveis
+compartilham referências de assets e mídia. Navegação do playhead e reprodução
+não são alterações editoriais.
+
+Restaurar um checkpoint pausa a reprodução, invalida renders faciais pendentes
+e restaura o documento diretamente, sem passar pela rotina que grava uma nova
+pose/expressão na faixa. As faixas são avaliadas novamente no playhead atual.
+Os atalhos Ctrl+Z, Ctrl+Shift+Z e Ctrl+Y respeitam os campos de texto e modais.

@@ -6,6 +6,7 @@ import { CharacterPortrait } from '../../ui/components/CharacterPortrait'
 import { resolveStudioTalkMouthId, videoCharacterTrackColor } from '../../../../shared/studio'
 import type { StudioAsset, StudioDocument, StudioElement, StudioFaceMode, StudioFaceTransform, StudioFaceTransforms, VideoAudioSettings, VideoMediaClip, VideoTimelineDocument } from '../../../../shared/studio'
 import { defaultVideoTransform, editVideoMediaClip, isValidVideoMediaClip, splitVideoMediaClip as splitMediaClip } from '../../../../shared/videoMedia'
+import { EditHistory, equalHistoryValue } from './editHistory'
 import { VideoLibraryModal } from './VideoLibraryModal'
 import { VideoStudioClipPreview } from './VideoClipPreview'
 import { isValidVideoAudioSettings } from '../../../../shared/videoAudio'
@@ -99,6 +100,15 @@ function snapshot(studio: StudioDocument): StudioSnapshot {
     elements: studio.elements,
     videoTimeline: studio.videoTimeline
   }
+}
+
+function equalStudioSnapshot(left: StudioSnapshot, right: StudioSnapshot): boolean {
+  const editorialTimeline = (timeline: StudioSnapshot['videoTimeline']) => {
+    if (!timeline) return timeline
+    const { playheadFrame: _frame, playing: _playing, ...content } = timeline
+    return content
+  }
+  return equalHistoryValue({ ...left, videoTimeline: editorialTimeline(left.videoTimeline) }, { ...right, videoTimeline: editorialTimeline(right.videoTimeline) })
 }
 
 function withSnapshot(studio: StudioDocument, next: StudioSnapshot): StudioDocument {
@@ -307,8 +317,7 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
   const dragRef = useRef<DragState | null>(null)
   const videoPlaybackAnchorRef = useRef({ frame: 0, time: 0 })
   const videoInitialStatesRef = useRef<{ studioId: string; states: NonNullable<VideoTimelineDocument['characterBases']> } | null>(null)
-  const undoRef = useRef<StudioSnapshot[]>([])
-  const redoRef = useRef<StudioSnapshot[]>([])
+  const editHistoryRef = useRef(new EditHistory<StudioSnapshot>(equalStudioSnapshot, 1000))
   const studioFaceTransformsRef = useRef<Record<string, StudioFaceTransforms>>({})
   const studioFaceRenderTimerRef = useRef<number | null>(null)
   const studioFaceRenderVersionRef = useRef(0)
@@ -683,14 +692,20 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
   }, [selectedStudioCharacterModelSlot])
 
   useEffect(() => {
-    if (!activeStudioId) return
-    undoRef.current = []
-    redoRef.current = []
+    editHistoryRef.current.reset(activeStudioId)
     setCanUndo(false)
     setCanRedo(false)
     setHistoryVersion((value) => value + 1)
     setSelectedElementId(null)
+    return () => { editHistoryRef.current.reset(null) }
   }, [activeStudioId])
+
+  useEffect(() => {
+    if (!activeStudio || !editHistoryRef.current.observe(activeStudio.id, snapshot(activeStudio))) return
+    setCanUndo(editHistoryRef.current.canUndo)
+    setCanRedo(editHistoryRef.current.canRedo)
+    setHistoryVersion((value) => value + 1)
+  }, [activeStudio])
 
   useEffect(() => {
     if (!activeStudio || normalizedStudioIdsRef.current.has(activeStudio.id)) return
@@ -951,41 +966,58 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
     setSaved(false)
   }
 
+  const refreshHistoryControls = () => {
+    setCanUndo(editHistoryRef.current.canUndo)
+    setCanRedo(editHistoryRef.current.canRedo)
+    setHistoryVersion((value) => value + 1)
+  }
+
   const recordHistory = () => {
     if (!activeStudio) return
-    undoRef.current = [...undoRef.current.slice(-29), snapshot(activeStudio)]
-    redoRef.current = []
-    setCanUndo(undoRef.current.length > 0)
-    setCanRedo(false)
-    setHistoryVersion((value) => value + 1)
+    editHistoryRef.current.begin(activeStudio.id, snapshot(activeStudio))
+    refreshHistoryControls()
   }
 
   const changeScene = (transform: (studio: StudioDocument) => StudioDocument) => {
     if (!activeStudio) return
     recordHistory()
-    patchStudio((studio) => transform(studio))
+    patchStudio(transform)
+  }
+
+  const restoreHistorySnapshot = (next: StudioSnapshot) => {
+    if (!activeStudio) return
+    setVideoPlaying(false)
+    const frame = Math.max(0, Math.min(videoPlayheadFrame, (next.videoTimeline?.durationFrames ?? 1) - 1))
+    setVideoPlayheadFrame(frame)
+    videoPlaybackAnchorRef.current = { frame, time: performance.now() }
+    // Cancel delayed face renders so they cannot repaint a restored expression.
+    studioFaceRenderVersionRef.current += 1
+    studioFaceRenderPendingRef.current = null
+    if (studioFaceRenderTimerRef.current !== null) window.clearTimeout(studioFaceRenderTimerRef.current)
+    studioFaceRenderTimerRef.current = null
+    dragRef.current = null
+    // Restore the document directly: patchStudio would treat the restored character
+    // as a new edit and overwrite the expression/pose key at the current playhead.
+    setStudios((current) => current.map((studio) => {
+      if (studio.id !== activeStudio.id) return studio
+      const restored = withSnapshot(studio, next)
+      return restoreVideoTracks({ ...restored, ...(restored.videoTimeline ? { videoTimeline: { ...restored.videoTimeline, playheadFrame: frame, playing: false } } : {}) }, frame)
+    }))
+    setSaved(false)
   }
 
   const undo = () => {
-    if (!activeStudio || !undoRef.current.length) return
-    const previous = undoRef.current[undoRef.current.length - 1]
-    undoRef.current = undoRef.current.slice(0, -1)
-    redoRef.current = [...redoRef.current.slice(-29), snapshot(activeStudio)]
-    patchStudio((studio) => withSnapshot(studio, previous))
-    setCanUndo(undoRef.current.length > 0)
-    setCanRedo(true)
-    setHistoryVersion((value) => value + 1)
+    if (!activeStudio || studioFaceBusy || studioExpressionBusy || savingCast) return
+    const previous = editHistoryRef.current.undo(activeStudio.id, snapshot(activeStudio))
+    if (previous) restoreHistorySnapshot(previous)
+    refreshHistoryControls()
   }
 
   const redo = () => {
-    if (!activeStudio || !redoRef.current.length) return
-    const next = redoRef.current[redoRef.current.length - 1]
-    redoRef.current = redoRef.current.slice(0, -1)
-    undoRef.current = [...undoRef.current.slice(-29), snapshot(activeStudio)]
-    patchStudio((studio) => withSnapshot(studio, next))
-    setCanUndo(true)
-    setCanRedo(redoRef.current.length > 0)
-    setHistoryVersion((value) => value + 1)
+    if (!activeStudio || studioFaceBusy || studioExpressionBusy || savingCast) return
+    const next = editHistoryRef.current.redo(activeStudio.id, snapshot(activeStudio))
+    if (next) restoreHistorySnapshot(next)
+    refreshHistoryControls()
   }
 
   const importImage = async (category: StudioAsset['category']) => {
@@ -1124,6 +1156,7 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
 
   const seekVideoFrame = (frame: number) => {
     if (!activeStudio) return
+    editHistoryRef.current.cancelPending()
     const clamped = Math.max(0, Math.min(videoTimelineFor(activeStudio).durationFrames, Math.round(frame)))
     setVideoPlaying(false)
     videoPlaybackAnchorRef.current = { frame: clamped, time: performance.now() }
@@ -1766,6 +1799,8 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
 
   const leaveStudio = async () => {
     if (!await saveStudio(activeStudio)) return
+    editHistoryRef.current.reset(null)
+    refreshHistoryControls()
     setActiveStudioId(null)
     setActiveTool(null)
     setSelectedElementId(null)
@@ -1791,14 +1826,17 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (videoLibraryOpen) return
+      const target = event.target
+      if (target instanceof HTMLElement && (target.isContentEditable || target.closest('input:not([type="range"]), textarea, select, [role="dialog"]'))) return
       if (event.key === 'Escape' && castPickerOpen && !savingCast) setCastPickerOpen(false)
       else if (event.key === 'Escape' && fullView) setFullView(false)
+      if (castPickerOpen) return
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z') { event.preventDefault(); event.shiftKey ? redo() : undo() }
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'y') { event.preventDefault(); redo() }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [castPickerOpen, savingCast, fullView, activeStudio, historyVersion, videoLibraryOpen])
+  }, [castPickerOpen, savingCast, studioFaceBusy, studioExpressionBusy, fullView, activeStudio, historyVersion, videoLibraryOpen])
 
   const imageStyle = (x: number, y: number, width: number, height: number, rotation: number, flipX = false) => ({
     left: `calc(50% + ${x}%)`, top: `calc(50% + ${y}%)`, width: `${width}%`, height: `${height}%`,
@@ -1994,8 +2032,8 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
             <button className="video-studio-round-action" onClick={() => void saveStudio(activeStudio)} title="Salvar agora no computador" aria-label={`Salvar ${workspaceTitle}`} type="button"><Icon name="save" /></button>
           </div>
           <div className="video-studio-editor-quick-actions video-studio-history-actions">
-            <button className="video-studio-round-action" disabled={!canUndo} onClick={undo} title="Desfazer (Ctrl+Z)" aria-label="Desfazer" type="button"><Icon name="undo" /></button>
-            <button className="video-studio-round-action" disabled={!canRedo} onClick={redo} title="Refazer (Ctrl+Y)" aria-label="Refazer" type="button"><Icon name="redo" /></button>
+            <button className="video-studio-round-action" disabled={!canUndo || studioFaceBusy || studioExpressionBusy || savingCast} onClick={undo} title="Desfazer (Ctrl+Z)" aria-label="Desfazer" type="button"><Icon name="undo" /></button>
+            <button className="video-studio-round-action" disabled={!canRedo || studioFaceBusy || studioExpressionBusy || savingCast} onClick={redo} title="Refazer (Ctrl+Y)" aria-label="Refazer" type="button"><Icon name="redo" /></button>
           </div>
           <nav className="video-studio-tool-list" aria-label="Ferramentas da cena">
             <button className="video-studio-tool-button video-studio-cast-tool-button" onClick={openCastPicker} type="button" aria-haspopup="dialog" aria-expanded={castPickerOpen}><Icon name="user" /><span>Elenco</span><i aria-hidden="true">{stageCharacters.length}</i></button>
@@ -2044,7 +2082,7 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
             {!fullView && <span className="video-studio-scene-title">{activeStudio.title}</span>}
           </div>
         </section>
-        {!fullView && isVideoWorkspace && <VideoTimeline selectedCanvasId={selectedElementId} studio={activeStudio} playheadFrame={videoPlayheadFrame} playing={videoPlaying} height={videoTimelineHeight} presetNames={Object.fromEntries(studioExpressionPresets.map((preset) => [preset.id, preset.name]))} onResize={setVideoTimelineHeight} onSelectElement={(elementId) => { setVideoPlaying(false); setSelectedElementId(elementId); setInspectorOpen(true); if (elementId.startsWith('video:')) { setActiveTool(null); setInspectorTab('editor') } }} onSeek={seekVideoFrame} onTogglePlayback={() => { if (videoPlaying) seekVideoFrame(videoPlayheadFrame); else setVideoPlaying(true) }} onSaveFrame={saveVideoFrame} onSplitCharacter={splitVideoCharacterTrack} onSplitTextClip={splitVideoTextClip} onSplitVideoClip={splitVideoMediaClip} onUpdateVideoClip={updateVideoMediaClip} onChangeVideoAudio={updateVideoAudio} onBeginAudioEdit={recordHistory} onDuplicateVideoClip={duplicateVideoMediaClip} onUpdateTextClip={updateVideoTextClip} onDeleteTextClip={deleteVideoTextClip} onDeleteVideoClip={deleteVideoMediaClip} onDeleteTextElement={deleteVideoTextElement} onDeleteCharacterSegment={deleteVideoCharacterSegment} onDuplicateTextClip={duplicateVideoTextClip} onMoveCharacterBoundary={moveVideoCharacterBoundary} onAddText={(kind) => addTextElement(kind)} onAddVideo={() => void openVideoLibrary()} onChangeTrackSettings={(id, settings) => changeScene((studio) => ({ ...studio, videoTimeline: { ...videoTimelineFor(studio), trackSettings: { ...videoTimelineFor(studio).trackSettings, [id]: settings } }, updatedAt: new Date().toISOString() }))} onMoveCharacterTrack={moveVideoCharacterTrack} onSetCharacterPositionsLocked={(locked) => changeScene((studio) => ({ ...studio, elements: studio.elements.map((element) => element.kind === 'character' ? { ...element, positionLocked: locked } : element), updatedAt: new Date().toISOString() }))} onChangeDuration={(durationFrames) => changeScene((studio) => ({ ...studio, videoTimeline: { ...videoTimelineFor(studio), durationFrames, playheadFrame: Math.min(videoPlayheadFrame, durationFrames) }, updatedAt: new Date().toISOString() }))} />}
+        {!fullView && isVideoWorkspace && <VideoTimeline canUndo={canUndo && !studioFaceBusy && !studioExpressionBusy && !savingCast} canRedo={canRedo && !studioFaceBusy && !studioExpressionBusy && !savingCast} onUndo={undo} onRedo={redo} selectedCanvasId={selectedElementId} studio={activeStudio} playheadFrame={videoPlayheadFrame} playing={videoPlaying} height={videoTimelineHeight} presetNames={Object.fromEntries(studioExpressionPresets.map((preset) => [preset.id, preset.name]))} onResize={setVideoTimelineHeight} onSelectElement={(elementId) => { setVideoPlaying(false); setSelectedElementId(elementId); setInspectorOpen(true); if (elementId.startsWith('video:')) { setActiveTool(null); setInspectorTab('editor') } }} onSeek={seekVideoFrame} onTogglePlayback={() => { if (videoPlaying) seekVideoFrame(videoPlayheadFrame); else { editHistoryRef.current.cancelPending(); setVideoPlaying(true) } }} onSaveFrame={saveVideoFrame} onSplitCharacter={splitVideoCharacterTrack} onSplitTextClip={splitVideoTextClip} onSplitVideoClip={splitVideoMediaClip} onUpdateVideoClip={updateVideoMediaClip} onChangeVideoAudio={updateVideoAudio} onBeginAudioEdit={recordHistory} onDuplicateVideoClip={duplicateVideoMediaClip} onUpdateTextClip={updateVideoTextClip} onDeleteTextClip={deleteVideoTextClip} onDeleteVideoClip={deleteVideoMediaClip} onDeleteTextElement={deleteVideoTextElement} onDeleteCharacterSegment={deleteVideoCharacterSegment} onDuplicateTextClip={duplicateVideoTextClip} onMoveCharacterBoundary={moveVideoCharacterBoundary} onAddText={(kind) => addTextElement(kind)} onAddVideo={() => void openVideoLibrary()} onChangeTrackSettings={(id, settings) => changeScene((studio) => ({ ...studio, videoTimeline: { ...videoTimelineFor(studio), trackSettings: { ...videoTimelineFor(studio).trackSettings, [id]: settings } }, updatedAt: new Date().toISOString() }))} onMoveCharacterTrack={moveVideoCharacterTrack} onSetCharacterPositionsLocked={(locked) => changeScene((studio) => ({ ...studio, elements: studio.elements.map((element) => element.kind === 'character' ? { ...element, positionLocked: locked } : element), updatedAt: new Date().toISOString() }))} onChangeDuration={(durationFrames) => changeScene((studio) => ({ ...studio, videoTimeline: { ...videoTimelineFor(studio), durationFrames, playheadFrame: Math.min(videoPlayheadFrame, durationFrames) }, updatedAt: new Date().toISOString() }))} />}
         {videoLibraryOpen && <VideoLibraryModal studioTitle={activeStudio.title} locked={videoTimelineFor(activeStudio).trackSettings?.video?.locked === true} onClose={() => setVideoLibraryOpen(false)} onAdd={addLibraryVideos} />}
         {castPickerOpen && <div className="video-studio-cast-modal-backdrop" onPointerDown={(event) => { if (event.target === event.currentTarget && !savingCast) setCastPickerOpen(false) }}>
           <section className="video-studio-cast-modal" role="dialog" aria-modal="true" aria-labelledby="video-studio-cast-modal-title">

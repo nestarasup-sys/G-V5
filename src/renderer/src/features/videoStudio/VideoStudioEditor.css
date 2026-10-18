@@ -398,3 +398,7 @@
 .video-studio-editor-rail :is(button,small,span,p,label,strong,i,kbd),
 .video-studio-inspector :is(button,small,span,p,label,strong,i,kbd),
 .video-studio-cast-modal :is(button,small,span,p,label,strong,i,kbd) { font-size:max(12px,.8em);line-height:1.25; }
+
+.video-timeline-heading .video-history-button { width:30px;min-width:30px;padding:0;color:#d5d9e6; }
+.video-timeline-heading .video-history-button svg { width:17px;height:17px; }
+.video-timeline-heading .video-history-button:disabled { opacity:.3;cursor:default;border-color:#363c4d;background:#1b1f2b;color:#8f96aa; }
