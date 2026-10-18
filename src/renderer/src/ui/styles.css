@@ -669,8 +669,6 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .customizer-clothes-adjust-axis button,.customizer-clothes-adjust-rotation button { min-width:0;height:25px;border:1px solid #5d4a82;border-radius:4px;background:linear-gradient(180deg,#4a3e77,#31234e);color:#fff;font-size:17px;font-weight:800;cursor:pointer; }
 .customizer-clothes-adjust-rotation { grid-template-columns:minmax(0,1fr) 34px 34px; }
 .customizer-clothes-adjust-rotation button { font-size:21px; }
-.customizer-clothes-adjust-reset-piece { min-height:28px;display:flex;align-items:center;justify-content:center;gap:5px;padding:3px 5px;border:1px solid #ac8bc8;border-radius:5px;background:#50316e;color:#fff;font-size:9px;font-weight:750;cursor:pointer; }
-.customizer-clothes-adjust-reset-piece svg { width:13px;height:13px; }
 .customizer-clothes-adjust-empty,.customizer-clothes-adjust-empty-controls { margin:0;padding:10px;border:1px dashed #a58abb;border-radius:5px;color:#eadcf8;font-size:10px;line-height:1.45; }
 .customizer-clothes-adjust-empty { grid-column:1/-1; }
 .customizer-clothes-adjust-empty-controls { align-self:center; }

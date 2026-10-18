@@ -3454,7 +3454,6 @@ export function CustomizerPage() {
               </div>)}
             </div>
             <div className="customizer-clothes-adjust-rotation"><strong>Rotação <output>{Math.round(transform.rotation)}°</output></strong><button type="button" aria-label="Girar para a esquerda" onClick={() => changeTransform({ rotation: transform.rotation - 1 })}>↶</button><button type="button" aria-label="Girar para a direita" onClick={() => changeTransform({ rotation: transform.rotation + 1 })}>↷</button></div>
-            <button className="customizer-clothes-adjust-reset-piece" type="button" onClick={() => changeTransform({ offsetX: 0, offsetY: 0, scaleX: 1, scaleY: 1, rotation: 0 })}><Icon name="reset" /> Restaurar peça</button>
           </section> : <div className="customizer-clothes-adjust-empty-controls">Selecione uma peça na lista para ajustar.</div>}
         </div>}
         <p className="customizer-adjust-scope">Cada transformação e transparência fica salva somente neste personagem.</p>
