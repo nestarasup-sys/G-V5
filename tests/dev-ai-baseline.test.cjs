@@ -49,6 +49,8 @@ test('child environment strips inherited tokens and points userData to sandbox',
     assert.equal(env.GACHA_FAKE_SECRET_FOR_TEST, undefined)
     assert.equal(env.APPDATA, '/tmp/gacha-sandbox/AppData/Roaming')
     assert.equal(env.HOME, '/tmp/gacha-sandbox')
+    assert.equal(env.TMPDIR, '/tmp/gacha-sandbox/tmp')
+    assert.equal(env.TEMP, env.TMPDIR)
     assert.match(cleanOutput('password=my-password token=abc', '/tmp/gacha-sandbox'), /password=<redacted> token=<redacted>/)
     assert.equal(cleanOutput('data:image/png;base64,SGVsbG8=', '/tmp/gacha-sandbox'), '<redacted-data-url>')
     assert.equal(cleanOutput('/home/example/private-file.json', '/tmp/gacha-sandbox'), '<redacted-user-path>')
