@@ -12,6 +12,7 @@ import { PreviewTransport } from './PreviewTransport'
 import { usePreviewFullscreen } from './usePreviewFullscreen'
 import { EditHistory, equalHistoryValue } from './editHistory'
 import { VideoLibraryModal } from './VideoLibraryModal'
+import { BackgroundLibraryModal } from './BackgroundLibraryModal'
 import { VideoStudioClipPreview } from './VideoClipPreview'
 import { isValidVideoAudioSettings } from '../../../../shared/videoAudio'
 import { VideoTimeline, videoTimelineFor } from './VideoTimeline'
@@ -237,6 +238,7 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
   const [castSelection, setCastSelection] = useState<string[]>([])
   const [savingCast, setSavingCast] = useState(false)
   const [videoLibraryOpen, setVideoLibraryOpen] = useState(false)
+  const [backgroundLibraryOpen, setBackgroundLibraryOpen] = useState(false)
   const [inspectorTab, setInspectorTab] = useState<'editor' | 'custom'>('editor')
   const [inspectorCustomView, setInspectorCustomView] = useState<'face' | 'presets'>('face')
   const characterInspectorViewRef = useRef<{ tab: 'editor' | 'custom'; customView: 'face' | 'presets' }>({ tab: 'editor', customView: 'face' })
@@ -1028,6 +1030,12 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
     if (await saveStudio(activeStudio)) setVideoLibraryOpen(true)
   }
 
+  const openBackgroundLibrary = async () => {
+    if (!activeStudio) return
+    setVideoPlaying(false)
+    if (await saveStudio(activeStudio)) setBackgroundLibraryOpen(true)
+  }
+
   const addLibraryVideos = async (ids: string[]) => {
     if (!activeStudio || videoTimelineFor(activeStudio).trackSettings?.video?.locked) throw new Error('Desbloqueie a faixa de vídeo para adicionar clipes.')
     const assets = await window.desktop.attachVideoLibraryItems(activeStudio.id, ids)
@@ -1054,6 +1062,18 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
   const selectBackground = (asset: StudioAsset) => {
     changeScene((studio) => ({ ...studio, backgroundAssetId: asset.id, backgroundX: 0, backgroundY: 0, backgroundWidth: 100, backgroundHeight: 100, backgroundRotation: 0, updatedAt: new Date().toISOString() }))
     setSelectedElementId('background')
+    setInspectorOpen(true)
+    setInspectorTab('editor')
+  }
+
+  const addLibraryBackground = async (id: string) => {
+    if (!activeStudio) throw new Error('Abra um roteiro antes de selecionar um fundo.')
+    const studioId = activeStudio.id
+    const asset = await window.desktop.attachVideoBackground(studioId, id)
+    if (activeStudioId !== studioId) throw new Error('O roteiro mudou enquanto o fundo era copiado. Abra a biblioteca novamente.')
+    changeScene((studio) => ({ ...studio, assets: [...studio.assets.filter((entry) => entry.id !== asset.id), asset], backgroundAssetId: asset.id, backgroundX: 0, backgroundY: 0, backgroundWidth: 100, backgroundHeight: 100, backgroundRotation: 0, updatedAt: new Date().toISOString() }))
+    setSelectedElementId('background')
+    setActiveTool('background')
     setInspectorOpen(true)
     setInspectorTab('editor')
   }
@@ -1825,7 +1845,7 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (videoLibraryOpen) return
+      if (videoLibraryOpen || backgroundLibraryOpen) return
       const target = event.target
       if (target instanceof HTMLElement && (target.isContentEditable || target.closest('input:not([type="range"]), textarea, select, [role="dialog"]'))) return
       if (event.key === 'Escape' && castPickerOpen && !savingCast) setCastPickerOpen(false)
@@ -1841,7 +1861,7 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [castPickerOpen, savingCast, studioFaceBusy, studioExpressionBusy, fullView, activeStudio, videoPlayheadFrame, videoPlaying, animationPreparing, historyVersion, videoLibraryOpen, exitFullView])
+  }, [castPickerOpen, savingCast, studioFaceBusy, studioExpressionBusy, fullView, activeStudio, videoPlayheadFrame, videoPlaying, animationPreparing, historyVersion, videoLibraryOpen, backgroundLibraryOpen, exitFullView])
 
   const imageStyle = (x: number, y: number, width: number, height: number, rotation: number, flipX = false) => ({
     left: `calc(50% + ${x}%)`, top: `calc(50% + ${y}%)`, width: `${width}%`, height: `${height}%`,
@@ -1875,7 +1895,7 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
     if (activeTool === 'background') return <div className="video-studio-side-content">
       <h2>Fundos</h2><p>Escolha um fundo salvo ou adicione uma imagem.</p>
       <label className="video-studio-color-control">Cor sólida<input type="color" value={activeStudio.backgroundColor} onChange={(event) => updateBackground({ backgroundColor: event.target.value })} /></label>
-      <button className="video-studio-side-primary" type="button" onClick={() => void importImage('background')}><Icon name="plus" />Adicionar imagem</button>
+      <div className="video-background-actions"><button className="video-studio-side-primary" type="button" onClick={() => void importImage('background')}><Icon name="plus" />Adicionar imagem</button><button className="video-studio-side-secondary" type="button" onClick={() => void openBackgroundLibrary()}><Icon name="folder" />Biblioteca</button></div>
       <div className="video-studio-asset-grid">{activeStudio.assets.filter((asset) => asset.category === 'background').map((asset) => <button key={asset.id} className={`video-studio-asset-card${activeStudio.backgroundAssetId === asset.id ? ' active' : ''}`} type="button" onClick={() => selectBackground(asset)}><img src={asset.dataUrl} alt="" /><span>{asset.name}</span></button>)}</div>
       {selectedBackgroundAsset && selectedElementId === 'background' && <><div className="video-studio-controls-grid">{control('X', activeStudio.backgroundX, (value, record) => updateBackground({ backgroundX: value }, record), -100, 100)}{control('Y', activeStudio.backgroundY, (value, record) => updateBackground({ backgroundY: value }, record), -100, 100)}{control('Largura', activeStudio.backgroundWidth, (value, record) => updateBackground({ backgroundWidth: value }, record), 1, 300)}{control('Altura', activeStudio.backgroundHeight, (value, record) => updateBackground({ backgroundHeight: value }, record), 1, 300)}{control('Rotação', activeStudio.backgroundRotation, (value, record) => updateBackground({ backgroundRotation: value }, record), -180, 180, '°')}</div><button className="video-studio-side-danger" type="button" onClick={deleteSelected}><Icon name="trash" />Remover fundo da cena</button></>}
     </div>
@@ -2092,6 +2112,7 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
         {fullView && <PreviewTransport preparing={animationPreparing} frame={videoPlayheadFrame} duration={videoTimelineFor(activeStudio).durationFrames} playing={videoPlaying} audio={videoTimelineFor(activeStudio).videoAudio} onSeek={seekVideoFrame} onTogglePlayback={toggleVideoPlayback} onAudioChange={updateVideoAudio} onBeginAudioEdit={recordHistory} />}
         {!fullView && isVideoWorkspace && <VideoTimeline preparing={animationPreparing} canUndo={canUndo && !studioFaceBusy && !studioExpressionBusy && !savingCast} canRedo={canRedo && !studioFaceBusy && !studioExpressionBusy && !savingCast} onUndo={undo} onRedo={redo} selectedCanvasId={selectedElementId} studio={activeStudio} playheadFrame={videoPlayheadFrame} playing={videoPlaying} height={videoTimelineHeight} presetNames={Object.fromEntries(studioExpressionPresets.map((preset) => [preset.id, preset.name]))} onResize={setVideoTimelineHeight} onSelectElement={(elementId) => { setVideoPlaying(false); setSelectedElementId(elementId); setInspectorOpen(true); if (elementId.startsWith('video:')) { setActiveTool(null); setInspectorTab('editor') } }} onSeek={seekVideoFrame} onTogglePlayback={toggleVideoPlayback} onEnterFullscreen={enterFullView} onSaveFrame={saveVideoFrame} onSplitCharacter={splitVideoCharacterTrack} onSplitTextClip={splitVideoTextClip} onSplitVideoClip={splitVideoMediaClip} onUpdateVideoClip={updateVideoMediaClip} onChangeVideoAudio={updateVideoAudio} onBeginAudioEdit={recordHistory} onDuplicateVideoClip={duplicateVideoMediaClip} onUpdateTextClip={updateVideoTextClip} onDeleteTextClip={deleteVideoTextClip} onDeleteVideoClip={deleteVideoMediaClip} onDeleteTextElement={deleteVideoTextElement} onDeleteCharacterSegment={deleteVideoCharacterSegment} onDuplicateTextClip={duplicateVideoTextClip} onMoveCharacterBoundary={moveVideoCharacterBoundary} onAddText={(kind) => addTextElement(kind)} onAddVideo={() => void openVideoLibrary()} onChangeTrackSettings={(id, settings) => changeScene((studio) => ({ ...studio, videoTimeline: { ...videoTimelineFor(studio), trackSettings: { ...videoTimelineFor(studio).trackSettings, [id]: settings } }, updatedAt: new Date().toISOString() }))} onMoveCharacterTrack={moveVideoCharacterTrack} onSetCharacterPositionsLocked={(locked) => changeScene((studio) => ({ ...studio, elements: studio.elements.map((element) => element.kind === 'character' ? { ...element, positionLocked: locked } : element), updatedAt: new Date().toISOString() }))} onChangeDuration={(durationFrames) => changeScene((studio) => ({ ...studio, videoTimeline: { ...videoTimelineFor(studio), durationFrames, playheadFrame: Math.min(videoPlayheadFrame, durationFrames) }, updatedAt: new Date().toISOString() }))} />}
         {videoLibraryOpen && <VideoLibraryModal studioTitle={activeStudio.title} locked={videoTimelineFor(activeStudio).trackSettings?.video?.locked === true} onClose={() => setVideoLibraryOpen(false)} onAdd={addLibraryVideos} />}
+        {backgroundLibraryOpen && <BackgroundLibraryModal studioTitle={activeStudio.title} onClose={() => setBackgroundLibraryOpen(false)} onUse={addLibraryBackground} />}
         {castPickerOpen && <div className="video-studio-cast-modal-backdrop" onPointerDown={(event) => { if (event.target === event.currentTarget && !savingCast) setCastPickerOpen(false) }}>
           <section className="video-studio-cast-modal" role="dialog" aria-modal="true" aria-labelledby="video-studio-cast-modal-title">
             <header><span><small>EDITAR ELENCO</small><h2 id="video-studio-cast-modal-title">Personagens do {workspaceTitle}</h2></span><button className="video-studio-cast-modal-close" onClick={() => setCastPickerOpen(false)} aria-label="Fechar" disabled={savingCast} type="button">×</button></header>

@@ -16,9 +16,13 @@ import { isStudioExpressionEffects, isStudioFaceTransforms } from '../src/shared
 import { isValidVideoMediaClip } from '../src/shared/videoMedia'
 import { isValidVideoAudioSettings } from '../src/shared/videoAudio'
 import { VideoLibraryStore } from './videoLibrary'
+import { VideoBackgroundLibraryStore } from './backgroundLibrary'
 import { legacyStandardExpressionEffects } from '../src/shared/legacyExpressionEffects'
 
-protocol.registerSchemesAsPrivileged([{ scheme: 'gacha-video', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true } }])
+protocol.registerSchemesAsPrivileged([
+  { scheme: 'gacha-video', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true } },
+  { scheme: 'gacha-background', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true } }
+])
 
 const slotCount = 10
 const poseSlotCount = 12
@@ -51,6 +55,7 @@ type StudioWorkspaceStorage = 'studio' | 'video'
 const studioLibraryPath = (workspace: StudioWorkspaceStorage = 'studio') => join(app.getPath('userData'), 'studios', workspace === 'video' ? 'Video Studio' : 'Studio Principal')
 const studioPath = (id: string, workspace: StudioWorkspaceStorage = 'studio') => join(studioLibraryPath(workspace), `studio-${id}`)
 const videoLibrary = new VideoLibraryStore(() => studioLibraryPath('video'))
+const videoBackgroundLibrary = new VideoBackgroundLibraryStore(() => studioLibraryPath('video'))
 const studioSaveQueues: Record<StudioWorkspaceStorage, Promise<void>> = { studio: Promise.resolve(), video: Promise.resolve() }
 const characterManifestPath = () => join(characterLibraryPath(), 'characters.json')
 const fabricatorSaveQueues = new Map<number, Promise<void>>()
@@ -1523,6 +1528,15 @@ async function registerFabricatorHandlers(): Promise<void> {
       ipcMain.handle('video-studio:video-library:finish', async (event, id: string, durationFrames: number) => { assertTrustedSender(event); return videoLibrary.finishImport(id, durationFrames) })
       ipcMain.handle('video-studio:video-library:delete', async (event, id: string) => { assertTrustedSender(event); return videoLibrary.delete(id) })
       ipcMain.handle('video-studio:video-library:attach', async (event, studioId: string, ids: string[]) => { assertTrustedSender(event); return videoLibrary.attach(studioId, ids) })
+      ipcMain.handle('video-studio:background-library:list', async (event) => { assertTrustedSender(event); return videoBackgroundLibrary.list() })
+      ipcMain.handle('video-studio:background-library:import', async (event) => {
+        assertTrustedSender(event)
+        const result = await dialog.showOpenDialog({ title: 'Biblioteca de fundos: importar', properties: ['openFile'], filters: [{ name: 'Imagens', extensions: ['png', 'jpg', 'jpeg', 'webp'] }] })
+        if (result.canceled || !result.filePaths[0]) return null
+        return videoBackgroundLibrary.importFile(result.filePaths[0])
+      })
+      ipcMain.handle('video-studio:background-library:delete', async (event, id: string) => { assertTrustedSender(event); return videoBackgroundLibrary.delete(id) })
+      ipcMain.handle('video-studio:background-library:attach', async (event, studioId: string, id: string) => { assertTrustedSender(event); return videoBackgroundLibrary.attach(studioId, id) })
 
     }
     ipcMain.handle(`${channel}:save-print`, async (event, id: string, dataUrl: string): Promise<string | null> => {
@@ -2235,8 +2249,23 @@ function registerVideoAssetProtocol(): void {
   })
 }
 
+function registerVideoBackgroundProtocol(): void {
+  protocol.handle('gacha-background', async (request) => {
+    try {
+      const url = new URL(request.url)
+      const parts = url.pathname.split('/').filter(Boolean)
+      const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+      if (url.hostname !== 'library' || parts.length !== 1 || !uuid.test(parts[0])) return new Response('Not found', { status: 404 })
+      const image = await videoBackgroundLibrary.resolve(parts[0])
+      const bytes = await readFile(image.path)
+      return new Response(bytes, { headers: { 'content-type': image.mimeType, 'cache-control': 'no-store' } })
+    } catch { return new Response('Not found', { status: 404 }) }
+  })
+}
+
 app.whenReady().then(async () => {
   registerVideoAssetProtocol()
+  registerVideoBackgroundProtocol()
   await registerFabricatorHandlers()
   createMainWindow()
 
