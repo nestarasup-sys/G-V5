@@ -1074,7 +1074,16 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
 
   const addTextElement = (kind: 'narrator' | 'speech' | 'thought') => {
     if (!activeStudio) return
-    const element = makeElement(kind, Math.max(0, ...activeStudio.elements.map((item) => item.zIndex)) + 1)
+    const selectedSpeaker = kind === 'narrator' ? null : activeStudio.elements.find((item) => item.id === selectedElementId && item.kind === 'character') ?? null
+    if (kind !== 'narrator' && !selectedSpeaker) return
+    const element: StudioElement = {
+      ...makeElement(kind, Math.max(0, ...activeStudio.elements.map((item) => item.zIndex)) + 1),
+      ...(selectedSpeaker ? {
+        speakerCharacterId: selectedSpeaker.id,
+        speakerName: selectedSpeaker.text,
+        speakerColor: videoCharacterTrackColor(selectedSpeaker.id, selectedSpeaker.timelineColor)
+      } : {})
+    }
     changeScene((studio) => ({ ...studio, elements: [...studio.elements, element], ...(isVideoWorkspace && kind !== 'narrator' ? { videoTimeline: { ...videoTimelineFor(studio), textClips: [...videoTimelineFor(studio).textClips, { id: crypto.randomUUID(), elementId: element.id, kind, startFrame: Math.min(videoPlayheadFrame, videoTimelineFor(studio).durationFrames - 1), endFrame: Math.min(videoTimelineFor(studio).durationFrames, Math.min(videoPlayheadFrame, videoTimelineFor(studio).durationFrames - 1) + 300), state: structuredClone(element) }] } } : {}), updatedAt: new Date().toISOString() }))
     setSelectedElementId(element.id)
     setInspectorOpen(true)
@@ -2060,8 +2069,8 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
               setActiveTool(tool.id); setInspectorOpen(true); setInspectorTab('editor')
             }} type="button"><Icon name={tool.icon} /><span>{tool.label}</span><i aria-hidden="true">✦</i></button>)}
             <button className="video-studio-tool-button" onClick={() => addTextElement('narrator')} type="button"><Icon name="message" /><span>Narrador</span><i aria-hidden="true">✦</i></button>
-            <button className="video-studio-tool-button" onClick={() => addTextElement('speech')} type="button"><Icon name="message" /><span>Fala</span><i aria-hidden="true">✦</i></button>
-            <button className="video-studio-tool-button" onClick={() => addTextElement('thought')} type="button"><Icon name="face" /><span>Pensamento</span><i aria-hidden="true">✦</i></button>
+            <button className="video-studio-tool-button" onClick={() => addTextElement('speech')} disabled={selectedElement?.kind !== 'character'} title={selectedElement?.kind === 'character' ? `Criar fala de ${selectedElement.text}` : 'Selecione um personagem para criar uma fala'} type="button"><Icon name="message" /><span>Fala</span><i aria-hidden="true">✦</i></button>
+            <button className="video-studio-tool-button" onClick={() => addTextElement('thought')} disabled={selectedElement?.kind !== 'character'} title={selectedElement?.kind === 'character' ? `Criar pensamento de ${selectedElement.text}` : 'Selecione um personagem para criar um pensamento'} type="button"><Icon name="face" /><span>Pensamento</span><i aria-hidden="true">✦</i></button>
             <span className="video-studio-tool-separator" />
             <button className="video-studio-tool-button" onClick={() => void exportPrint()} type="button"><Icon name="download" /><span>Print</span><i aria-hidden="true">✦</i></button>
             <button className="video-studio-tool-button" onClick={() => void openPrints()} type="button"><Icon name="folder" /><span>Pasta</span><i aria-hidden="true">✦</i></button>
@@ -2090,10 +2099,13 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
               const blinkedElement = blinkState && playbackElement.kind === 'character' ? { ...playbackElement, ...blinkState.geometry } : playbackElement
               const element = isVideoWorkspace ? videoCharacterStageElement(videoTimelineFor(activeStudio), blinkedElement) : blinkedElement
               const asset = element.assetId ? activeStudio.assets.find((item) => item.id === element.assetId) : undefined
+              const speaker = element.speakerCharacterId ? activeStudio.elements.find((item) => item.id === element.speakerCharacterId && item.kind === 'character') : undefined
+              const speakerName = speaker?.text || element.speakerName
+              const speakerColor = videoCharacterTrackColor(element.speakerCharacterId ?? element.id, speaker?.timelineColor ?? element.speakerColor)
               const imageDataUrl = blinkState?.dataUrl ?? playbackState?.imageDataUrl ?? asset?.dataUrl
               const size = studioElementSize(element)
-              return <div key={element.id} className={`video-studio-canvas-element video-studio-element-${element.kind}${selectedElementId === element.id && !fullView ? ' selected' : ''}`} style={{ ...imageStyle(element.x, element.y, size.width, size.height, element.rotation, element.kind === 'character' && element.flipX === true), zIndex: Math.max(0, element.zIndex) + 2 }} onPointerDown={(event) => startDrag(event, element.id)} onPointerMove={moveDrag} onPointerUp={endDrag} onPointerCancel={endDrag}>
-                {(element.kind === 'image' || element.kind === 'character') && imageDataUrl ? <img src={imageDataUrl} alt={asset?.name ?? element.text} draggable={false} /> : <span>{element.text}</span>}
+              return <div key={element.id} className={`video-studio-canvas-element video-studio-element-${element.kind}${selectedElementId === element.id && !fullView ? ' selected' : ''}`} style={{ ...imageStyle(element.x, element.y, size.width, size.height, element.rotation, element.kind === 'character' && element.flipX === true), zIndex: Math.max(0, element.zIndex) + 2, ...(speakerName ? { '--speaker-color': speakerColor } as CSSProperties : {}) }} onPointerDown={(event) => startDrag(event, element.id)} onPointerMove={moveDrag} onPointerUp={endDrag} onPointerCancel={endDrag}>
+                {(element.kind === 'image' || element.kind === 'character') && imageDataUrl ? <img src={imageDataUrl} alt={asset?.name ?? element.text} draggable={false} /> : element.kind === 'speech' || element.kind === 'thought' ? <span>{speakerName && <strong className="video-studio-balloon-speaker">{speakerName}</strong>}<span className="video-studio-balloon-text">{element.text}</span></span> : <span>{element.text}</span>}
               </div>
             })}
             {isVideoWorkspace && (() => {

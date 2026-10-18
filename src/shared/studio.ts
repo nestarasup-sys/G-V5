@@ -79,6 +79,10 @@ export type StudioElement = {
   characterId?: string
   /** Video Studio lane color; stored with this scene instance, not the saved character. */
   timelineColor?: string
+  /** Video Studio speech/thought bubbles belong to the actor selected at creation. */
+  speakerCharacterId?: string
+  speakerName?: string
+  speakerColor?: string
   /** Customizer revision used to compose this actor's stored image. */
   characterSourceUpdatedAt?: string
   flipX?: boolean
