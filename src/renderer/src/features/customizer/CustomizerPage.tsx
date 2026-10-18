@@ -3440,9 +3440,7 @@ export function CustomizerPage() {
             </div> : <p className="customizer-clothes-adjust-empty">Nenhuma peça de roupa {adjustmentScope === 'Superior' ? 'superior' : 'inferior'} está aplicada neste personagem. Aplique um conjunto na categoria correspondente para ajustar cada componente.</p>}
           </section>
           {selectedAdjustmentComponent ? <section className="customizer-clothes-adjust-controls" aria-label="Controles da peça selecionada">
-            <header><span><strong>{selectedAdjustmentComponent.component.name}</strong><small>{selectedAdjustmentComponent.set.name}</small></span></header>
             <div className="customizer-clothes-adjust-position">
-              <span className="customizer-clothes-adjust-readout">X {transform.offsetX >= 0 ? '+' : ''}{Math.round(transform.offsetX)}<br />Y {transform.offsetY >= 0 ? '+' : ''}{Math.round(transform.offsetY)}</span>
               <div className="customizer-clothes-adjust-pad" aria-label="Mover a peça">
                 <button type="button" aria-label="Mover para cima" onClick={() => moveBy(0, -1)}>↑</button>
                 <button type="button" aria-label="Mover para a esquerda" onClick={() => moveBy(-1, 0)}>←</button>
@@ -3529,9 +3527,7 @@ export function CustomizerPage() {
             </div> : <p className="customizer-clothes-adjust-empty">Nenhum item de cabeça está aplicado. Escolha cabelo, olhos, rosto ou extras nas categorias acima para ajustar cada item separadamente.</p>}
           </section>
           {selectedItem && hasHeadAdjustmentItem(selectedItem.id) ? <section className="customizer-clothes-adjust-controls" aria-label="Controles do item de cabeça selecionado">
-            <header><span><strong>{selectedItem.label}</strong><small>{selectedCharacter.name}</small></span></header>
             <div className="customizer-clothes-adjust-position">
-              <span className="customizer-clothes-adjust-readout">X {transform.x >= 0 ? '+' : ''}{Math.round(transform.x)}<br />Y {transform.y >= 0 ? '+' : ''}{Math.round(transform.y)}</span>
               <div className="customizer-clothes-adjust-pad" aria-label="Mover o item">
                 <button type="button" aria-label="Mover para cima" onClick={() => moveBy(0, -1)}>↑</button><button type="button" aria-label="Mover para a esquerda" onClick={() => moveBy(-1, 0)}>←</button><span><Icon name="move" /></span><button type="button" aria-label="Mover para a direita" onClick={() => moveBy(1, 0)}>→</button><button type="button" aria-label="Mover para baixo" onClick={() => moveBy(0, 1)}>↓</button>
               </div>
