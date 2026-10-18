@@ -1,6 +1,6 @@
 # Isolamento Studio ↔ Video Studio e especificação DEV AI
 
-**Status:** especificação futura. O projeto possui `scripts/audit-studio-isolation.cjs` como ponto de partida, mas **a suíte completa aqui descrita não existe e não foi executada**. Evidências: E-03–E-06, E-09–E-10, E-17 e E-24 em [inventário](INVENTARIO_E_EVIDENCIAS.md). Implementação rastreada por R-05/R-10–R-14/R-25–R-27 do [roadmap](ROADMAP_EXECUTAVEL.md).
+**Status:** especificação futura. O projeto possui `scripts/audit-studio-isolation.cjs` como ponto de partida, mas **a suíte completa aqui descrita não existe e não foi executada**. A branch de baseline acrescentou uma repetição de quatro percursos visual/mockados e separação de saída DEV AI; **isso não constitui aprovação da matriz ISO-01–ISO-15 nem de IPC real**. Consulte [a auditoria parcial](AUDITORIAS/BASELINE_DEV_AI_2026-10-18.md). Evidências: E-03–E-06, E-09–E-10, E-17 e E-24 em [inventário](INVENTARIO_E_EVIDENCIAS.md). Implementação rastreada por R-05/R-10–R-14/R-25–R-27 do [roadmap](ROADMAP_EXECUTAVEL.md).
 
 ## 1. Contrato de independência
 
