@@ -77,6 +77,8 @@ export type StudioElement = {
   kind: 'image' | 'character' | 'narrator' | 'speech' | 'thought'
   assetId?: string
   characterId?: string
+  /** Video Studio lane color; stored with this scene instance, not the saved character. */
+  timelineColor?: string
   /** Customizer revision used to compose this actor's stored image. */
   characterSourceUpdatedAt?: string
   flipX?: boolean
@@ -113,6 +115,15 @@ export type StudioElement = {
   height: number
   rotation: number
   zIndex: number
+}
+
+export const VIDEO_CHARACTER_TRACK_COLORS = ['#7768c8', '#5277b8', '#aa8264', '#478f83', '#b47a43', '#bd6386', '#4b91ad', '#8b6c9c'] as const
+
+export function videoCharacterTrackColor(id: string, selected?: string): string {
+  if (selected && /^#[0-9a-f]{6}$/i.test(selected)) return selected
+  let hash = 0
+  for (let index = 0; index < id.length; index += 1) hash = (hash * 31 + id.charCodeAt(index)) | 0
+  return VIDEO_CHARACTER_TRACK_COLORS[Math.abs(hash) % VIDEO_CHARACTER_TRACK_COLORS.length]
 }
 
 export type StudioDocument = {

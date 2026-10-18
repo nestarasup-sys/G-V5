@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, 
 import { buildStudioExpressionAppearance, buildStudioExpressionTransforms, resolveStudioExpressionBase, studioExpressionCollection } from './expressionTransforms'
 import { Icon } from '../../ui/components/Icon'
 import { CharacterPortrait } from '../../ui/components/CharacterPortrait'
-import { resolveStudioTalkMouthId } from '../../../../shared/studio'
+import { resolveStudioTalkMouthId, videoCharacterTrackColor } from '../../../../shared/studio'
 import type { StudioAsset, StudioDocument, StudioElement, StudioFaceMode, StudioFaceTransform, StudioFaceTransforms } from '../../../../shared/studio'
 import { VideoTimeline, videoTimelineFor } from '../videoStudio/VideoTimeline'
 import type { CustomizerCharacter } from '../../../../shared/customizer'
@@ -1397,6 +1397,7 @@ export function StudioPage({ workspace = 'studio' }: { workspace?: StudioWorkspa
     </div>
     if (selectedElement && activeStudio) return <div className="studio-side-content">
       <h2>{selectedElement.kind === 'character' ? selectedElement.text : selectedElement.kind === 'image' ? 'Objeto selecionado' : selectedElement.kind === 'narrator' ? 'Narrador' : selectedElement.kind === 'speech' ? 'Balão de fala' : 'Balão de pensamento'}</h2>
+      {isVideoWorkspace && selectedElement.kind === 'character' && <label className="studio-color-control video-track-color-control">Cor da faixa<input aria-label={`Cor da faixa de ${selectedElement.text}`} type="color" value={videoCharacterTrackColor(selectedElement.id, selectedElement.timelineColor)} onChange={(event) => updateElement(selectedElement.id, { timelineColor: event.currentTarget.value })} /></label>}
       {selectedElement.kind !== 'image' && selectedElement.kind !== 'character' && <label className="studio-text-control">Texto<textarea value={selectedElement.text} onChange={(event) => updateElement(selectedElement.id, { text: event.target.value })} rows={3} /></label>}
       <ElementControls element={selectedElement} update={(values, record) => updateElement(selectedElement.id, values, record)} remove={deleteSelected} control={control} />
     </div>
@@ -1604,7 +1605,7 @@ export function StudioPage({ workspace = 'studio' }: { workspace?: StudioWorkspa
           </div>
         </section>
         {!fullView && <aside className="studio-editor-rail studio-editor-right" aria-label="Elenco do Studio">{castPanel()}</aside>}
-        {!fullView && isVideoWorkspace && <VideoTimeline studio={activeStudio} playheadFrame={videoPlayheadFrame} playing={videoPlaying} height={videoTimelineHeight} onResize={setVideoTimelineHeight} onSeek={(frame) => { const clamped = Math.max(0, Math.min(videoTimelineFor(activeStudio).durationFrames, frame)); videoPlaybackAnchorRef.current = { frame: clamped, time: performance.now() }; setVideoPlayheadFrame(clamped) }} onTogglePlayback={() => setVideoPlaying((value) => !value)} onSaveFrame={saveVideoFrame} onChangeDuration={(durationFrames) => changeScene((studio) => ({ ...studio, videoTimeline: { ...videoTimelineFor(studio), durationFrames, playheadFrame: Math.min(videoPlayheadFrame, durationFrames) }, updatedAt: new Date().toISOString() }))} />}
+        {!fullView && isVideoWorkspace && <VideoTimeline studio={activeStudio} playheadFrame={videoPlayheadFrame} playing={videoPlaying} height={videoTimelineHeight} presetNames={Object.fromEntries(studioExpressionPresets.map((preset) => [preset.id, preset.name]))} onResize={setVideoTimelineHeight} onSeek={(frame) => { const clamped = Math.max(0, Math.min(videoTimelineFor(activeStudio).durationFrames, frame)); videoPlaybackAnchorRef.current = { frame: clamped, time: performance.now() }; setVideoPlayheadFrame(clamped) }} onTogglePlayback={() => setVideoPlaying((value) => !value)} onSaveFrame={saveVideoFrame} onAddText={(kind) => addTextElement(kind)} onChangeDuration={(durationFrames) => changeScene((studio) => ({ ...studio, videoTimeline: { ...videoTimelineFor(studio), durationFrames, playheadFrame: Math.min(videoPlayheadFrame, durationFrames) }, updatedAt: new Date().toISOString() }))} />}
         {castPickerOpen && <div className="studio-cast-modal-backdrop" onPointerDown={(event) => { if (event.target === event.currentTarget && !savingCast) setCastPickerOpen(false) }}>
           <section className="studio-cast-modal" role="dialog" aria-modal="true" aria-labelledby="studio-cast-modal-title">
             <header><span><small>EDITAR ELENCO</small><h2 id="studio-cast-modal-title">Personagens do {workspaceTitle}</h2></span><button className="studio-cast-modal-close" onClick={() => setCastPickerOpen(false)} aria-label="Fechar" disabled={savingCast} type="button">×</button></header>

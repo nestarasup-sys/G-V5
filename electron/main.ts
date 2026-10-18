@@ -918,6 +918,7 @@ function isStudioDocument(value: unknown): value is StudioDocument {
     && (studio.backgroundAssetId === null || assets.some((asset) => asset.id === studio.backgroundAssetId && asset.category === 'background'))
     && elements.every((element) => Boolean(element && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(element.id) && typeof element.text === 'string'
       && ['image', 'character', 'narrator', 'speech', 'thought'].includes(element.kind)
+      && (element.timelineColor === undefined || typeof element.timelineColor === 'string' && /^#[0-9a-f]{6}$/i.test(element.timelineColor))
       && isStudioFaceTransforms(element.faceTransforms)
       && (element.expressionBase === undefined || Boolean(element.expressionBase && element.expressionBase.appearance && isValidCustomizerFaceAppearance(element.expressionBase.appearance)
         && element.expressionBase.transforms && isStudioFaceTransforms(element.expressionBase.transforms)))
