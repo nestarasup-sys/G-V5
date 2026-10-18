@@ -272,14 +272,14 @@ export function VideoTimeline({ studio, playheadFrame, playing, height, presetNa
       </div>
     </header>
     {trackMenuOpen && <div className="video-track-settings" aria-label="Configuração das faixas">
-      {([{ id: 'speech', name: 'Falas' }, { id: 'thought', name: 'Pensamentos' }, ...characters.map((character) => ({ id: character.id, name: character.text || 'Personagem' }))]).map(({ id, name }) => {
+      {([{ id: 'video', name: 'Vídeo' }, { id: 'speech', name: 'Falas' }, { id: 'thought', name: 'Pensamentos' }, ...characters.map((character) => ({ id: character.id, name: character.text || 'Personagem' }))]).map(({ id, name }) => {
         const settings = trackSettings[id] ?? {}
         return <div className="video-track-settings-row" key={id}>
           <input aria-label={`Nome da faixa ${name}`} value={settings.label ?? name} onChange={(event) => onChangeTrackSettings(id, { ...settings, label: event.currentTarget.value })} />
           <button type="button" aria-label={`${settings.visible === false ? 'Mostrar' : 'Ocultar'} faixa ${name}`} aria-pressed={settings.visible !== false} onClick={() => onChangeTrackSettings(id, { ...settings, visible: settings.visible === false })}>{settings.visible === false ? '◌' : '◉'}</button>
-          <button type="button" aria-label={`${settings.locked ? 'Desbloquear' : 'Bloquear'} faixa ${name}`} aria-pressed={settings.locked === true} onClick={() => onChangeTrackSettings(id, { ...settings, locked: !settings.locked })}>{settings.locked ? '🔒' : '🔓'}</button>
+          {id !== 'video' && <button type="button" aria-label={`${settings.locked ? 'Desbloquear' : 'Bloquear'} faixa ${name}`} aria-pressed={settings.locked === true} onClick={() => onChangeTrackSettings(id, { ...settings, locked: !settings.locked })}>{settings.locked ? '🔒' : '🔓'}</button>}
           <button type="button" aria-label={`${settings.collapsed ? 'Expandir' : 'Recolher'} faixa ${name}`} onClick={() => onChangeTrackSettings(id, { ...settings, collapsed: !settings.collapsed })}>{settings.collapsed ? '▸' : '▾'}</button>
-          {id !== 'speech' && id !== 'thought' && <><button type="button" aria-label={`Mover faixa ${name} para cima`} onClick={() => onMoveCharacterTrack(id, -1)}>↑</button><button type="button" aria-label={`Mover faixa ${name} para baixo`} onClick={() => onMoveCharacterTrack(id, 1)}>↓</button></>}
+          {id !== 'video' && id !== 'speech' && id !== 'thought' && <><button type="button" aria-label={`Mover faixa ${name} para cima`} onClick={() => onMoveCharacterTrack(id, -1)}>↑</button><button type="button" aria-label={`Mover faixa ${name} para baixo`} onClick={() => onMoveCharacterTrack(id, 1)}>↓</button></>}
         </div>
       })}
     </div>}
@@ -293,6 +293,13 @@ export function VideoTimeline({ studio, playheadFrame, playing, height, presetNa
           </div>
         </div>
         <div className="video-timeline-tracks">
+          {trackSettings.video?.visible !== false && <div className={`video-track-row video-master-track${trackSettings.video?.collapsed ? ' collapsed' : ''}`}>
+            <span className="video-track-label"><i className="video-track-badge video">V</i><span>{trackSettings.video?.label ?? 'Vídeo'}</span></span>
+            <div className="video-track-lane video-master-lane" style={{ backgroundSize: `${tickSeconds * pixelsPerSecond}px 100%` }} aria-label="Faixa de vídeo do projeto" onClick={seekToLanePosition}>
+              <span className="video-master-span">Vídeo completo · {studio.title}</span>
+              <i className="video-lane-playhead" style={{ left: `${playheadFrame / 60 * pixelsPerSecond}px` }} />
+            </div>
+          </div>}
           {textTracks.filter(({ kind }) => trackSettings[kind]?.visible !== false).map(({ kind, label, clips }) => <div className={`video-track-row${trackSettings[kind]?.collapsed ? ' collapsed' : ''}`} key={kind}>
             <button type="button" className={`video-track-label video-track-selectable${selection?.kind === 'textTrack' && selection.trackKind === kind ? ' selected' : ''}`} onClick={() => setSelection({ kind: 'textTrack', trackKind: kind })} title={`Selecionar faixa ${label} para excluir seus itens`}><i className={`video-track-badge ${kind}`}>{kind === 'speech' ? 'F' : 'P'}</i><span>{trackSettings[kind]?.label ?? label}</span></button>
             <div className={`video-track-lane ${kind}-lane`} style={{ backgroundSize: `${tickSeconds * pixelsPerSecond}px 100%` }} aria-label={`Faixa de ${label.toLowerCase()}`} onClick={seekToLanePosition}>
