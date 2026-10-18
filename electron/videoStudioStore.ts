@@ -1,5 +1,5 @@
 import { app, dialog } from 'electron'
-import { mkdir, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { access, mkdir, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { basename, dirname, extname, join, resolve } from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
 import type { VideoAsset, VideoProject } from '../src/shared/videoStudio'
@@ -105,7 +105,12 @@ export async function saveVideoProject(project: VideoProject): Promise<void> {
     if (bytes.length > MAX_IMAGE_BYTES) throw new Error('Imagem excede 50 MB.')
     const hash = createHash('sha256').update(bytes).digest('hex')
     const fileName = hash + '.' + imageExtension(asset.mimeType)
-    await writeFile(join(assetsFolder, fileName), bytes)
+    const assetPath = join(assetsFolder, fileName)
+    try { await access(assetPath) }
+    catch (reason) {
+      if ((reason as NodeJS.ErrnoException).code !== 'ENOENT') throw reason
+      await writeFile(assetPath, bytes)
+    }
     const { dataUrl: _dataUrl, ...metadata } = asset
     manifest.push({ ...metadata, fileName })
   }
@@ -117,10 +122,15 @@ export async function saveVideoProject(project: VideoProject): Promise<void> {
 }
 
 async function readVideoProject(id: string): Promise<VideoProject | null> {
-  try {
-    const folder = projectFolder(id)
-    const stored = JSON.parse(await readFile(join(folder, 'video-project.json'), 'utf8')) as StoredProject
-    if (!Array.isArray(stored.assets) || stored.assets.length > 250) throw new Error('Assets inválidos.')
+  const folder = projectFolder(id)
+  let manifest: string
+  try { manifest = await readFile(join(folder, 'video-project.json'), 'utf8') }
+  catch (reason) {
+    if ((reason as NodeJS.ErrnoException).code === 'ENOENT') return null
+    throw reason
+  }
+  const stored = JSON.parse(manifest) as StoredProject
+  if (!Array.isArray(stored.assets) || stored.assets.length > 250) throw new Error('Assets inválidos.')
     const assets: VideoAsset[] = await Promise.all(stored.assets.map(async asset => {
       if (!hashFilePattern.test(asset.fileName) || !uuidPattern.test(asset.id)
         || !validMime.has(asset.mimeType) || !validCategories.has(asset.category)
@@ -135,10 +145,6 @@ async function readVideoProject(id: string): Promise<VideoProject | null> {
     const project = { ...stored, assets, id } as VideoProject
     if (!validProject(project)) throw new Error('Projeto de vídeo inválido.')
     return project
-  } catch (reason) {
-    if ((reason as NodeJS.ErrnoException).code === 'ENOENT') return null
-    throw reason
-  }
 }
 
 export async function listVideoProjects(): Promise<VideoProject[]> {
