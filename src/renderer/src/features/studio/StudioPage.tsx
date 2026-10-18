@@ -913,15 +913,30 @@ export function StudioPage({ workspace = 'studio', onEditorActiveChange }: { wor
     try {
       const asset = await persistence.importImage(category)
       if (!asset) return
-      const nextAssets = [...activeStudio.assets, asset]
-      recordHistory()
+      const studioAtImport = activeStudio
+      const nextStudio: StudioDocument = category === 'background'
+        ? { ...studioAtImport, assets: [...studioAtImport.assets, asset], backgroundAssetId: asset.id, backgroundX: 0, backgroundY: 0, backgroundWidth: 100, backgroundHeight: 100, backgroundRotation: 0, updatedAt: new Date().toISOString() }
+        : {
+            ...studioAtImport,
+            assets: [...studioAtImport.assets, asset],
+            elements: [...studioAtImport.elements, {
+              id: crypto.randomUUID(), kind: 'image', assetId: asset.id, text: '', x: 0, y: 0, width: 25, height: 25, rotation: 0,
+              zIndex: Math.max(0, ...studioAtImport.elements.map((item) => item.zIndex)) + 1
+            }],
+            updatedAt: new Date().toISOString()
+          }
+
+      // Persist imported image bytes and their manifest before showing the asset as saved.
+      await persistence.save(nextStudio)
+      if (activeStudioId === studioAtImport.id) {
+        recordHistory()
+        setStudios((current) => current.map((studio) => studio.id === studioAtImport.id ? nextStudio : studio))
+        setSaved(true)
+      }
       if (category === 'background') {
-        patchStudio((studio) => ({ ...studio, assets: nextAssets, backgroundAssetId: asset.id, backgroundX: 0, backgroundY: 0, backgroundWidth: 100, backgroundHeight: 100, backgroundRotation: 0, updatedAt: new Date().toISOString() }))
         setSelectedElementId('background')
       } else {
-        const element: StudioElement = { id: crypto.randomUUID(), kind: 'image', assetId: asset.id, text: '', x: 0, y: 0, width: 25, height: 25, rotation: 0, zIndex: Math.max(0, ...activeStudio.elements.map((item) => item.zIndex)) + 1 }
-        patchStudio((studio) => ({ ...studio, assets: nextAssets, elements: [...studio.elements, element], updatedAt: new Date().toISOString() }))
-        setSelectedElementId(element.id)
+        setSelectedElementId(nextStudio.elements.at(-1)?.id ?? null)
       }
       setActiveTool(category === 'background' ? 'background' : 'objects')
       setInspectorOpen(true)
