@@ -535,7 +535,7 @@ export function StudioPage({ videoStudioProject, onVideoStudioChange, onVideoStu
   }, [activeStudioId])
 
   useEffect(() => {
-    if (!activeStudio || normalizedStudioIdsRef.current.has(activeStudio.id)) return
+    if (!activeStudio || isVideoStudio || normalizedStudioIdsRef.current.has(activeStudio.id)) return
     let cancelled = false
     const studioId = activeStudio.id
     void (async () => {
@@ -564,7 +564,7 @@ export function StudioPage({ videoStudioProject, onVideoStudioChange, onVideoStu
   }, [activeStudio])
 
   useEffect(() => {
-    if (!activeStudio || !normalizedStudioIdsRef.current.has(activeStudio.id) || !availableCharacters.length) return
+    if (!activeStudio || isVideoStudio || !normalizedStudioIdsRef.current.has(activeStudio.id) || !availableCharacters.length) return
     const characters = new Map(availableCharacters.map((character) => [character.id, character]))
     const pending = activeStudio.elements.flatMap((element) => {
       if (element.kind !== 'character' || !element.characterId || !element.assetId) return []
