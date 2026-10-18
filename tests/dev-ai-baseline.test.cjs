@@ -50,6 +50,8 @@ test('child environment strips inherited tokens and points userData to sandbox',
     assert.equal(env.APPDATA, '/tmp/gacha-sandbox/AppData/Roaming')
     assert.equal(env.HOME, '/tmp/gacha-sandbox')
     assert.match(cleanOutput('password=my-password token=abc', '/tmp/gacha-sandbox'), /password=<redacted> token=<redacted>/)
+    assert.equal(cleanOutput('data:image/png;base64,SGVsbG8=', '/tmp/gacha-sandbox'), '<redacted-data-url>')
+    assert.equal(cleanOutput('/home/example/private-file.json', '/tmp/gacha-sandbox'), '<redacted-user-path>')
   } finally {
     if (before === undefined) delete process.env.GACHA_FAKE_SECRET_FOR_TEST
     else process.env.GACHA_FAKE_SECRET_FOR_TEST = before
@@ -74,7 +76,7 @@ test('out/ symlink is rejected rather than following a user-controlled directory
   try {
     try { symlinkSync(dir, out, 'dir') }
     catch (error) {
-      if (['EPERM', 'EACCES', 'ENOSYS'].includes(error.code)) return t.skip('SO impede criar symlink') t.skip('SO impede criar symlink')
+      if (['EPERM', 'EACCES', 'ENOSYS'].includes(error.code)) return t.skip('SO impede criar symlink')
       throw error
     }
     assert.throws(() => assertSafeOutputRoot(), /symlink/)
@@ -112,7 +114,7 @@ test('boundary scanner is non-destructive and ignores linked source trees', (t) 
     writeFileSync(join(outside, 'secret.ts'), "export const privateValue='PRIVATE'\\n")
     try { symlinkSync(outside, join(root, 'src', 'external'), 'dir') }
     catch (error) {
-      if (['EPERM', 'EACCES', 'ENOSYS'].includes(error.code)) return
+      if (['EPERM', 'EACCES', 'ENOSYS'].includes(error.code)) return t.skip('SO impede criar symlink')
       throw error
     }
     const report = scan(root)
