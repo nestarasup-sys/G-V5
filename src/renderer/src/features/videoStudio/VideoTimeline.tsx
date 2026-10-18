@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
+import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from 'react'
 import { Icon } from '../../ui/components/Icon'
 import { videoCharacterTrackColor } from '../../../../shared/studio'
 import type { StudioDocument, VideoTimelineDocument } from '../../../../shared/studio'
@@ -114,6 +114,12 @@ export function VideoTimeline({ studio, playheadFrame, playing, height, presetNa
     const availableWidth = Math.max(180, (timelineScrollRef.current?.clientWidth ?? 1000) - 96)
     setZoom(availableWidth / timelineSeconds)
     if (timelineScrollRef.current) timelineScrollRef.current.scrollLeft = 0
+  }
+  const seekToLanePosition = (event: ReactMouseEvent<HTMLDivElement>) => {
+    if ((event.target as HTMLElement).closest('button')) return
+    const laneBounds = event.currentTarget.getBoundingClientRect()
+    const laneFrame = Math.floor(((event.clientX - laneBounds.left) / pixelsPerSecond) * 60)
+    onSeek(Math.max(0, Math.min(duration - 1, laneFrame)))
   }
   const snapFrame = (frame: number, excludedClipId?: string) => {
     if (!snapEnabled) return frame
@@ -258,7 +264,7 @@ export function VideoTimeline({ studio, playheadFrame, playing, height, presetNa
         <div className="video-timeline-tracks">
           {textTracks.filter(({ kind }) => trackSettings[kind]?.visible !== false).map(({ kind, label, clips }) => <div className={`video-track-row${trackSettings[kind]?.collapsed ? ' collapsed' : ''}`} key={kind}>
             <span className="video-track-label"><i className={`video-track-badge ${kind}`}>{kind === 'speech' ? 'F' : 'P'}</i><span>{trackSettings[kind]?.label ?? label}</span></span>
-            <div className={`video-track-lane ${kind}-lane`} style={{ backgroundSize: `${tickSeconds * pixelsPerSecond}px 100%` }} aria-label={`Faixa de ${label.toLowerCase()}`}>
+            <div className={`video-track-lane ${kind}-lane`} style={{ backgroundSize: `${tickSeconds * pixelsPerSecond}px 100%` }} aria-label={`Faixa de ${label.toLowerCase()}`} onClick={seekToLanePosition}>
               {timeline.saveMarkers.map((marker) => <i className="video-saved-marker" key={marker.id} style={{ left: `${marker.frame / 60 * pixelsPerSecond}px` }} title={`Frame salvo · ${formatTime(marker.frame)}`} />)}
               {clips.map(({ element, clip }) => {
                 const selected = selection?.kind === 'text' && selection.clipId === clip.id
@@ -292,7 +298,7 @@ export function VideoTimeline({ studio, playheadFrame, playing, height, presetNa
               : [{ id: `base:${character.id}`, start: 0, end: duration, label: baseLabel }]
             return <div className={`video-track-row${trackSettings[character.id]?.collapsed ? ' collapsed' : ''}`} key={character.id}>
               <span className="video-track-label" title={name}><i className="video-track-badge" style={{ backgroundColor: color }}>{name.slice(0, 1).toUpperCase()}</i><span>{trackSettings[character.id]?.label ?? name}</span></span>
-              <div className="video-track-lane character-lane" style={{ backgroundSize: `${tickSeconds * pixelsPerSecond}px 100%` }} aria-label={`Faixa de ${name}`}>
+              <div className="video-track-lane character-lane" style={{ backgroundSize: `${tickSeconds * pixelsPerSecond}px 100%` }} aria-label={`Faixa de ${name}`} onClick={seekToLanePosition}>
                 {states.map((state) => {
                   const selected = selection?.kind === 'character' && selection.elementId === character.id && selection.startFrame === state.start
                   return <button type="button" key={state.id} className={`video-character-span ${selected ? 'selected' : ''}`} style={{ left: `${state.start / 60 * pixelsPerSecond}px`, width: `${Math.max(3, (state.end - state.start) / 60 * pixelsPerSecond)}px`, background: `linear-gradient(180deg, ${color} 0%, ${color}cc 48%, ${color}8c 100%)` }} onClick={(event) => {
