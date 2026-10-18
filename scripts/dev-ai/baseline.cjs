@@ -267,9 +267,10 @@ async function main(argv = process.argv.slice(2)) {
           const artifacts = join(runRoot, `${audit.id}-artifacts`)
           await mkdir(artifacts, { recursive: true })
           const electronEnv = { ...env, GACHA_DEV_AI_AUDIT_OUTPUT: artifacts }
+          const ipcTimeoutMs = 900_000
           report.cases.push(await runCommand(audit.id, process.execPath,
             [join(ROOT, audit.file), binary, sandbox, env.GACHA_AUDIT_OUTPUT_DIR, artifacts], {
-            env: electronEnv, sandbox, timeoutMs: 240_000, adapter: 'controller + production Electron/preload/IPC; synthetic userData'
+            env: electronEnv, sandbox, timeoutMs: ipcTimeoutMs, adapter: 'controller + production Electron/preload/IPC; synthetic userData'
           }))
         } else {
           report.cases.push(await runCommand(audit.id, binary, [join(ROOT, audit.file)], {

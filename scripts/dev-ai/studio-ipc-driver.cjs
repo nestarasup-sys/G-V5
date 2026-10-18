@@ -4,6 +4,8 @@ const assert = require('node:assert/strict')
 const { createHash } = require('node:crypto')
 const { existsSync, lstatSync, readdirSync, readFileSync } = require('node:fs')
 const { mkdir, rm, writeFile } = require('node:fs/promises')
+const { performance } = require('node:perf_hooks')
+const os = require('node:os')
 const { basename, dirname, join, relative, resolve, sep } = require('node:path')
 const { pathToFileURL } = require('node:url')
 const { app, BrowserWindow } = require('electron')
@@ -48,6 +50,23 @@ function treeHash(folder) {
   }
   visit(folder)
   return digest.digest('hex')
+}
+
+function summarizeSamples(values) {
+  assert.ok(values.length > 0, 'Medição precisa conter amostras')
+  const sorted = [...values].sort((a, b) => a - b)
+  const at = fraction => sorted[Math.max(0, Math.ceil(sorted.length * fraction) - 1)]
+  return { sampleCount: sorted.length, unit: 'ms', p50: at(0.5), p95: at(0.95), min: sorted[0], max: sorted.at(-1) }
+}
+
+function runtimeEnvironment() {
+  return {
+    platform: process.platform, arch: process.arch, osRelease: os.release(),
+    cpu: os.cpus()[0]?.model ?? 'unknown', logicalCpus: os.cpus().length,
+    totalMemoryBytes: os.totalmem(), electron: process.versions.electron,
+    chromium: process.versions.chrome, node: process.versions.node,
+    gpu: 'not measured; hidden BrowserWindow software/GPU mode not controlled'
+  }
 }
 
 function syntheticStudio(title, video = false) {
@@ -144,6 +163,28 @@ async function seed(window) {
     assert.equal((await api('window.desktop.listVideoStudios()')).length, 1)
   }
 
+  const measuredSaveCount = 20
+  const saveLatency = { studio: [], videoStudio: [] }
+  for (let index = 0; index < measuredSaveCount; index += 1) {
+    const videoBeforeNormalSave = treeHash(videoFolder)
+    const normalDocument = syntheticStudio(`Measured normal save ${index + 1}`)
+    let started = performance.now()
+    await api(`window.desktop.saveStudio(${JSON.stringify(normalDocument)})`)
+    saveLatency.studio.push(performance.now() - started)
+    normalMutations += 1
+    assert.equal(treeHash(videoFolder), videoBeforeNormalSave, 'Medição de save Studio alterou Video Studio')
+    assert.equal(JSON.parse(readFileSync(join(normalPath, 'studio.json'), 'utf8')).title, normalDocument.title)
+
+    const normalBeforeVideoSave = treeHash(normalFolder)
+    const videoDocument = syntheticStudio(`Measured video save ${index + 1}`, true)
+    started = performance.now()
+    await api(`window.desktop.saveVideoStudio(${JSON.stringify(videoDocument)})`)
+    saveLatency.videoStudio.push(performance.now() - started)
+    videoMutations += 1
+    assert.equal(treeHash(normalFolder), normalBeforeVideoSave, 'Medição de save Video Studio alterou Studio normal')
+    assert.equal(JSON.parse(readFileSync(join(videoPath, 'studio.json'), 'utf8')).title, videoDocument.title)
+  }
+
   // Concurrent renderer calls exercise the per-namespace save queues while
   // keeping the same document ID intentionally colliding across namespaces.
   const concurrentNormal = Array.from({ length: 10 }, (_, index) => syntheticStudio(`IPC concorrente ${index + 1}`))
@@ -217,6 +258,8 @@ async function seed(window) {
     concurrentOperations: { simultaneousCrossNamespace: concurrentNormal.length + concurrentVideo.length,
       isolatedStudioWrites: 10, isolatedVideoStudioWrites: 10 },
     malformedCallsRejected: 5, ioFailuresSimulated: { read: 1, write: 1 },
+    saveLatencyMs: { studio: summarizeSamples(saveLatency.studio), videoStudio: summarizeSamples(saveLatency.videoStudio),
+      fixture: 'documento sintético sem assets, 1 elemento de dados; IPC real + escrita local confirmada' },
     deleteOperations: 0, outsideSandboxWritesObserved: 0,
     sandboxRoot: 'out/dev-ai/runs/<run-id>/sandbox',
     relativeNamespaces: ['electron-user-data/studios/Studio Principal', 'electron-user-data/studios/Video Studio'] }
@@ -370,11 +413,103 @@ async function areaSmoke(window) {
   const slots = await window.webContents.executeJavaScript('window.desktop.listFabricatorSlots()')
   assert.ok(Array.isArray(slots) && slots.length === 10)
   const modelWorkspace = await route('/fabricador-dev', '.fabricator-model-editor', 'Fabricador modelos')
+  const openEditor = async (normal) => {
+    const hash = normal ? '/estudio' : '/video-studio'
+    const cardSelector = normal ? '.studio-card-open' : '.video-studio-card-open'
+    const editorSelector = normal ? '.studio-editor' : '.video-studio-editor'
+    const started = performance.now()
+    try {
+      const snapshot = await window.webContents.executeJavaScript(`(async () => {
+        const waitFor = selector => new Promise((resolve, reject) => {
+          let settled = false
+          const observer = new MutationObserver(check)
+          const timer = setTimeout(() => finish(new Error('Timed out esperando ' + selector)), 20000)
+          function finish(error, element) {
+            if (settled) return
+            settled = true
+            clearTimeout(timer)
+            observer.disconnect()
+            if (error) reject(error)
+            else resolve(element)
+          }
+          function check() {
+            const element = document.querySelector(selector)
+            if (element) finish(null, element)
+          }
+          observer.observe(document.documentElement, { childList: true, subtree: true })
+          check()
+        })
+        location.hash = ${JSON.stringify(hash)}
+        const card = await waitFor(${JSON.stringify(cardSelector)})
+        card.click()
+        const editor = await waitFor(${JSON.stringify(editorSelector)})
+        await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+        const prefix = ${JSON.stringify(normal ? 'studio' : 'video-studio')}
+        const canvas = document.querySelector('.' + prefix + '-scene-canvas')
+        const style = getComputedStyle(editor)
+        const rect = canvas?.getBoundingClientRect()
+        return { missingEditor: !editor, missingCanvas: !canvas, hash: location.hash,
+          columns: style.gridTemplateColumns, rows: style.gridTemplateRows,
+          canvas: rect ? [Math.round(rect.width * 100) / 100, Math.round(rect.height * 100) / 100] : null,
+          topBar: Boolean(document.querySelector('.top-bar')),
+          timeline: Boolean(document.querySelector('.video-timeline')),
+          toolbarButtonCount: document.querySelectorAll('.' + prefix + '-tool-button').length }
+      })()`)
+      assert.equal(snapshot.missingEditor, false, `${hash}: editor ausente no snapshot`)
+      assert.equal(snapshot.missingCanvas, false, `${hash}: canvas ausente no snapshot`)
+      assert.equal(snapshot.hash, `#${hash}`)
+      assert.equal(snapshot.topBar, normal, `Topbar incorreta em ${hash}`)
+      assert.equal(snapshot.timeline, !normal, `Timeline incorreta em ${hash}`)
+      return { durationMs: performance.now() - started, snapshot }
+    } catch (error) {
+      throw new Error(`Editor ${hash} falhou ao navegar/abrir/inspecionar: ${error?.stack ?? error}`)
+    }
+  }
+  const studioBefore = await openEditor(true)
+  const navigationDurations = []
+  // One alternation is one route change. 50 Studio↔Video pairs = 100
+  // direction changes, matching ISO-01's 100 alternations requirement.
+  const roundTrips = 50
+  let videoBefore = null
+  const studioScreenshotBefore = await window.webContents.capturePage()
+  await writeFile(join(output, 'real-ipc-studio-before-roundtrips.png'), studioScreenshotBefore.toPNG())
+  for (let cycle = 0; cycle < roundTrips; cycle += 1) {
+    const videoOpen = await openEditor(false)
+    navigationDurations.push(videoOpen.durationMs)
+    if (videoBefore === null) videoBefore = videoOpen.snapshot
+    else assert.deepEqual(videoOpen.snapshot, videoBefore, `Video Studio mudou na rodada ${cycle + 1}`)
+    const studioOpen = await openEditor(true)
+    navigationDurations.push(studioOpen.durationMs)
+    assert.deepEqual(studioOpen.snapshot, studioBefore.snapshot, `Studio normal mudou após a rodada ${cycle + 1}`)
+    if ((cycle + 1) % 5 === 0) {
+      await writeFile(join(output, 'real-ipc-navigation-progress.json'), JSON.stringify({
+        completedRoundTrips: cycle + 1, totalRoundTrips: roundTrips, status: 'running'
+      }, null, 2))
+    }
+  }
+  const studioScreenshotAfter = await window.webContents.capturePage()
+  const beforePng = studioScreenshotBefore.toPNG()
+  const afterPng = studioScreenshotAfter.toPNG()
+  const beforeScreenshotSha256 = createHash('sha256').update(beforePng).digest('hex')
+  const afterScreenshotSha256 = createHash('sha256').update(afterPng).digest('hex')
+  assert.equal(afterScreenshotSha256, beforeScreenshotSha256, 'Captura do Studio mudou depois das 100 transições')
+  await writeFile(join(output, 'real-ipc-studio-after-roundtrips.png'), afterPng)
+  await writeFile(join(output, 'real-ipc-navigation-progress.json'), JSON.stringify({
+    completedRoundTrips: roundTrips, totalRoundTrips: roundTrips,
+    routeTransitions: navigationDurations.length, status: 'passed'
+  }, null, 2))
   const result = { mode, status: 'passed', adapter: 'production-preload-real-ipc', realIpcCovered: true,
     smokeAreas: [customizer, fabricator, modelWorkspace], customizerSyntheticCharacters: characters.length,
     fabricatorSlots: slots.length, navigationWhileSaving: { savesDispatched: navigationDocuments.length,
       pendingAtRouteChange: navigationPendingAtRouteChange, finalTitlePersisted: 'Navigation save 40',
-      oppositeNamespaceHashUnchanged: true }, rendererErrors: diagnostics }
+      oppositeNamespaceHashUnchanged: true },
+    realWorkspaceNavigation: { roundTrips, routeTransitions: navigationDurations.length,
+      openLatencyMs: summarizeSamples(navigationDurations),
+      studioSnapshotStable: true, videoSnapshotStable: true,
+      screenshots: ['real-ipc-studio-before-roundtrips.png', 'real-ipc-studio-after-roundtrips.png'],
+      screenshotSha256: { before: beforeScreenshotSha256, after: afterScreenshotSha256, identical: true },
+      screenshotBackend: 'BrowserWindow show:false + webContents.capturePage; not Electron offscreen:true' },
+    environment: runtimeEnvironment(), rendererErrors: diagnostics }
   await writeFile(join(output, 'area-smoke-result.json'), JSON.stringify(result, null, 2))
   console.log(JSON.stringify(result))
 }

@@ -1,6 +1,6 @@
 'use strict'
 
-const { spawn } = require('node:child_process')
+const { spawn, execFileSync } = require('node:child_process')
 const { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, writeFileSync } = require('node:fs')
 const { dirname, join, relative, resolve, sep } = require('node:path')
 
@@ -49,6 +49,7 @@ function runElectron(mode, sandboxOverride = sandbox) {
     const finish = (result) => { if (done) return; done = true; clearTimeout(timer); resolveRun(result) }
     child.stdout.on('data', (data) => { stdout = (stdout + data.toString('utf8')).slice(-50_000) })
     child.stderr.on('data', (data) => { stderr = (stderr + data.toString('utf8')).slice(-50_000) })
+    const timeoutMs = mode === 'area-smoke' ? 480_000 : 90_000
     const timer = setTimeout(() => {
       if (process.platform === 'win32' && child.pid) {
         const killer = spawn('taskkill.exe', ['/PID', String(child.pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' })
@@ -56,7 +57,7 @@ function runElectron(mode, sandboxOverride = sandbox) {
       } else if (child.pid) {
         try { process.kill(-child.pid, 'SIGKILL') } catch {}
       }
-    }, 90_000)
+    }, timeoutMs)
     child.on('error', (error) => finish({ mode, exitCode: null, stdout, stderr: `${stderr}\n${error.message}` }))
     child.on('close', (code, signal) => finish({ mode, exitCode: code, signal, stdout, stderr }))
   })
@@ -90,6 +91,22 @@ async function main() {
   const closePendingResult = JSON.parse(readFileSync(join(artifacts, 'close-pending-result.json'), 'utf8'))
   const verifyClosePendingResult = JSON.parse(readFileSync(join(artifacts, 'verify-close-pending-result.json'), 'utf8'))
   const deleted = JSON.parse(readFileSync(join(artifacts, 'delete-result.json'), 'utf8'))
+  const measuredMetrics = {
+    schemaVersion: 1, status: 'partial', adapter: 'production-preload-real-ipc', realIpcCovered: true,
+    commit: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: ROOT, encoding: 'utf8' }).trim(),
+    environment: smoke.environment,
+    fixture: { type: 'synthetic Studio documents', assets: 0, perDocumentElements: 0,
+      repeatedSaveSamples: 20, repeatedRouteTransitions: smoke.realWorkspaceNavigation.routeTransitions },
+    measurements: { studioSaveCommitLatencyMs: seeds.saveLatencyMs.studio,
+      videoStudioSaveCommitLatencyMs: seeds.saveLatencyMs.videoStudio,
+      studioVideoEditorOpenLatencyMs: smoke.realWorkspaceNavigation.openLatencyMs },
+    visualComparison: smoke.realWorkspaceNavigation.screenshotSha256,
+    limitations: ['Nenhum cold start foi medido nesta série.', 'CPU, RSS, heap, GPU e uso ocioso não foram medidos.',
+      'A janela Electron estava oculta; backgroundThrottling foi desativado somente no modo DEV AI.',
+      'As medições usam documentos sintéticos pequenos, sem assets nem personagens.',
+      'O PNG usa webContents.capturePage e não é Electron offscreen:true.']
+  }
+  writeFileSync(join(output, 'metrics.json'), JSON.stringify(measuredMetrics, null, 2))
   const report = { schemaVersion: 1, adapter: 'production-preload-real-ipc', realIpcCovered: true,
     status: 'passed', phases: [
       { id: 'seed', status: 'passed', exitCode: seed.exitCode },
@@ -102,6 +119,7 @@ async function main() {
     ], results: { seed: seeds, areaSmoke: smoke, restart: restarted,
       closePending: closePendingResult, verifyClosePending: verifyClosePendingResult,
       deletion: deleted, invalidRootRejected: true },
+    metricsArtifact: 'metrics.json',
     userDataRoot: 'out/dev-ai/runs/<run-id>/sandbox/electron-user-data',
     limitations: ['outsideSandboxWritesObserved=0 significa que as APIs testadas só resolveram os diretórios validados; não é monitoramento global do filesystem.', 'O smoke de Customizer/Fabricador valida montagem e leitura de bibliotecas sintéticas, não edição e persistência de projetos dessas áreas.'] }
   writeFileSync(join(output, 'report.json'), JSON.stringify(report, null, 2))

@@ -2251,7 +2251,10 @@ function createMainWindow(): void {
       preload: join(__dirname, '../preload/preload.cjs'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: true
+      sandbox: true,
+      // Deterministic paint and requestAnimationFrame behavior for the hidden
+      // DEV AI Electron window; normal user windows retain Chromium throttling.
+      backgroundThrottling: process.env.GACHA_DEV_AI_TEST === '1' ? false : true
     }
   })
   window.removeMenu()
