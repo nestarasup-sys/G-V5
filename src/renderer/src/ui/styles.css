@@ -107,6 +107,10 @@ button:focus-visible, input:focus-visible { outline: 3px solid #ed8caf; outline-
 .video-timeline-heading .video-split-button { margin-left:0;border-color:#8c6ca3;background:#30263e;color:#e1cafa; }
 .video-timeline-heading .video-split-button:hover { border-color:#bc94d5;background:#453456;color:#fff; }
 .video-timeline-heading .video-split-button:disabled { opacity:.35;cursor:default; }
+.video-timeline-heading .video-position-lock-button { width:27px;min-width:27px;padding:0;color:#aeb5c8; }
+.video-timeline-heading .video-position-lock-button svg { width:14px;height:14px; }
+.video-timeline-heading .video-position-lock-button:hover:not(:disabled),.video-timeline-heading .video-position-lock-button.active { border-color:#d6ad61;background:#3d3421;color:#f4d58b; }
+.video-timeline-heading .video-position-lock-button:disabled { opacity:.35;cursor:default; }
 .video-timeline-scroll { min-width:0;min-height:0;flex:1;overflow:auto;scrollbar-color:#41485b #171b25;scrollbar-width:thin; }
 .video-timeline-content { min-width:100%;min-height:100%;display:flex;flex-direction:column; }
 .video-timeline-ruler-row { min-height:22px; }
