@@ -79,7 +79,14 @@ export interface VideoProject {
   updatedAt: string
   frameRate: number
   durationFrames: number
-  canvas: { width: number; height: number; backgroundColor: string; backgroundAssetId: string | null }
+  canvas: {
+    width: number
+    height: number
+    backgroundColor: string
+    backgroundAssetId: string | null
+    /** Position/size in Studio percentages; x/y are offsets from canvas center. */
+    backgroundPlacement?: { x: number; y: number; width: number; height: number; rotation: number }
+  }
   assets: VideoAsset[]
   elements: VideoSceneElement[]
   characterTracks: VideoCharacterTrack[]
