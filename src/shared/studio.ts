@@ -192,6 +192,13 @@ export type VideoStudioAsset = {
   durationFrames: number
 }
 
+export type VideoLibraryItem = Omit<VideoStudioAsset, 'durationFrames'> & {
+  durationFrames: number | null
+  createdAt: string
+  available: boolean
+  studios: Array<{ id: string; title: string }>
+}
+
 /** A segment owns both its editable Studio properties and its composed artwork. */
 export type VideoCharacterState = { element: StudioElement; imageDataUrl: string }
 
@@ -212,7 +219,11 @@ export type VideoStudioDesktopApi = {
   deleteVideoStudio: (id: string) => Promise<void>
   getVideoStudioFolder: () => Promise<string>
   importVideoStudioImage: (category: StudioAsset['category']) => Promise<StudioAsset | null>
-  importVideoStudioVideo: (studioId: string) => Promise<Omit<VideoStudioAsset, 'durationFrames'> | null>
+  listVideoLibrary: () => Promise<VideoLibraryItem[]>
+  importVideoLibrary: () => Promise<VideoLibraryItem | null>
+  finishVideoLibraryImport: (id: string, durationFrames: number) => Promise<VideoLibraryItem>
+  deleteVideoLibraryItem: (id: string) => Promise<void>
+  attachVideoLibraryItems: (studioId: string, ids: string[]) => Promise<VideoStudioAsset[]>
   saveVideoStudioPrint: (studioId: string, dataUrl: string) => Promise<string | null>
   openVideoStudioPrints: (studioId: string) => Promise<void>
 }

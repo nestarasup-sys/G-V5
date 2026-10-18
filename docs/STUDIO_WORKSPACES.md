@@ -73,3 +73,39 @@ de reprodução são exibidas e só são tentadas novamente com uma nova ação 
 corridas entre Play/Pause. Com um MP4 de teste contendo áudio, adicionar `--audio`
 à auditoria do Electron também verifica saída audível, controles, herança dos
 ajustes, limpeza ao sair e reabertura, usando apenas documentos de teste.
+
+## Biblioteca de vídeos
+
+**+ Vídeo** abre `VideoLibraryModal.tsx`. O modal lista uploads de todos os
+roteiros, busca por arquivo/roteiro, mostra uma prévia, importa, exclui da
+biblioteca e adiciona vários selecionados ao roteiro atual. Os clipes entram em
+sequência a partir do playhead. Importar apenas registra o vídeo na biblioteca;
+o botão **Adicionar ao roteiro** insere a seleção na timeline.
+
+`electron/videoLibrary.ts` controla a biblioteca em
+`studios/Video Studio/media-library/catalog.json` e `media-library/videos/`.
+Os arquivos existentes nos roteiros são copiados para o catálogo no primeiro
+acesso. A identidade do asset evita duplicar uma entrada reutilizada por vários
+roteiros. A lista registra em quais roteiros cada item está salvo.
+
+Cada roteiro continua tendo seu próprio arquivo em `studio-<id>/videos/`.
+Adicionar copia o arquivo da biblioteca antes de criar o clipe. Excluir da
+biblioteca remove somente seu original e registra a exclusão no catálogo para
+que a migração dos roteiros antigos não o recoloque na lista. Os clipes e arquivos
+dos roteiros existentes permanecem independentes. Excluir um roteiro arquiva
+seus vídeos na biblioteca antes de remover sua pasta, respeitando os itens já
+excluídos da biblioteca.
+
+Operações do catálogo são serializadas; cópias são preparadas em arquivos
+temporários, verificadas pelo tamanho e publicadas por rename. O catálogo também
+usa gravação temporária e rename. Uma importação com duração ainda pendente fica
+registrada e pode ser reconhecida novamente após reabrir o app. O protocolo
+`gacha-video://library/<id>` serve apenas IDs registrados, incluindo leitura por
+intervalos para a prévia; os roteiros usam `gacha-video://studio/<id>/<asset-id>`.
+
+`node scripts/audit-video-library.mjs` cobre migração, cópia independente,
+exclusão persistente, conflitos e validação de caminhos. Após compilar,
+`electron scripts/audit-video-library-ui.cjs <MP4 de 20 segundos>` verifica o modal
+com arquivos reais e catálogo em disco: importação, seleção múltipla, exclusão,
+reabertura e preservação dos vídeos dos roteiros. Os testes usam `out/`, sem
+acessar a biblioteca real do usuário.

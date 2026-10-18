@@ -15,6 +15,7 @@ import { applyModelHeadShape } from '../src/shared/headShape'
 import { isStudioExpressionEffects, isStudioFaceTransforms } from '../src/shared/studio'
 import { isValidVideoMediaClip } from '../src/shared/videoMedia'
 import { isValidVideoAudioSettings } from '../src/shared/videoAudio'
+import { VideoLibraryStore } from './videoLibrary'
 import { legacyStandardExpressionEffects } from '../src/shared/legacyExpressionEffects'
 
 protocol.registerSchemesAsPrivileged([{ scheme: 'gacha-video', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true } }])
@@ -49,6 +50,7 @@ const characterLibraryPath = () => join(app.getPath('userData'), 'customizer', '
 type StudioWorkspaceStorage = 'studio' | 'video'
 const studioLibraryPath = (workspace: StudioWorkspaceStorage = 'studio') => join(app.getPath('userData'), 'studios', workspace === 'video' ? 'Video Studio' : 'Studio Principal')
 const studioPath = (id: string, workspace: StudioWorkspaceStorage = 'studio') => join(studioLibraryPath(workspace), `studio-${id}`)
+const videoLibrary = new VideoLibraryStore(() => studioLibraryPath('video'))
 const studioSaveQueues: Record<StudioWorkspaceStorage, Promise<void>> = { studio: Promise.resolve(), video: Promise.resolve() }
 const characterManifestPath = () => join(characterLibraryPath(), 'characters.json')
 const fabricatorSaveQueues = new Map<number, Promise<void>>()
@@ -1046,6 +1048,7 @@ async function writeStudio(studio: StudioDocument, workspace: StudioWorkspaceSto
     mkdir(join(folder, 'assets', 'characters'), { recursive: true }),
     mkdir(join(folder, 'prints'), { recursive: true })
   ])
+  if (workspace === 'video' && studio.videoTimeline?.videoAssets?.length) await videoLibrary.ensureProjectAssets(studio.id, studio.videoTimeline.videoAssets)
   const assetManifest: Array<Omit<StudioAsset, 'dataUrl'>> = []
   for (const asset of studio.assets) {
     const extension = asset.mimeType === 'image/jpeg' ? 'jpg' : asset.mimeType.slice('image/'.length)
@@ -1477,6 +1480,7 @@ async function registerFabricatorHandlers(): Promise<void> {
       const next = studioSaveQueues[workspace].catch(() => undefined).then(async () => {
         const folder = resolve(studioPath(id, workspace))
         if (dirname(folder) !== resolve(studioLibraryPath(workspace)) || basename(folder) !== `studio-${id}`) throw new Error('Pasta do Studio inválida.')
+        if (workspace === 'video') await videoLibrary.list()
         await rm(folder, { recursive: true, force: true })
       })
       studioSaveQueues[workspace] = next
@@ -1508,27 +1512,16 @@ async function registerFabricatorHandlers(): Promise<void> {
     })
 
     if (workspace === 'video') {
-      ipcMain.handle('video-studio:import-video', async (event, id: string) => {
+      ipcMain.handle('video-studio:video-library:list', async (event) => { assertTrustedSender(event); return videoLibrary.list() })
+      ipcMain.handle('video-studio:video-library:import', async (event) => {
         assertTrustedSender(event)
-        if (typeof id !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)) throw new Error('Identificador de Video Studio inválido.')
-        const result = await dialog.showOpenDialog({
-          title: 'Video Studio: adicionar vídeo',
-          properties: ['openFile'],
-          filters: [{ name: 'Vídeos', extensions: ['mp4', 'webm', 'mov', 'm4v'] }]
-        })
+        const result = await dialog.showOpenDialog({ title: 'Biblioteca de vídeos: importar', properties: ['openFile'], filters: [{ name: 'Vídeos', extensions: ['mp4', 'webm', 'mov', 'm4v'] }] })
         if (result.canceled || !result.filePaths[0]) return null
-        const sourcePath = result.filePaths[0]
-        const extension = extname(sourcePath).slice(1).toLowerCase()
-        const mimeType = ({ mp4: 'video/mp4', webm: 'video/webm', mov: 'video/quicktime', m4v: 'video/x-m4v' } as const)[extension as 'mp4' | 'webm' | 'mov' | 'm4v']
-        if (!mimeType) throw new Error('Formato não compatível. Use MP4, WebM, MOV ou M4V.')
-        const fileStat = await stat(sourcePath)
-        if (!fileStat.isFile() || fileStat.size <= 0 || fileStat.size > 5 * 1024 * 1024 * 1024) throw new Error('O vídeo deve ter até 5 GB.')
-        const assetId = randomUUID()
-        const videoFolder = join(studioPath(id, 'video'), 'videos')
-        await mkdir(videoFolder, { recursive: true })
-        await copyFile(sourcePath, join(videoFolder, `${assetId}.${extension}`))
-        return { id: assetId, name: basename(sourcePath), mimeType, extension, size: fileStat.size }
+        return videoLibrary.importFile(result.filePaths[0])
       })
+      ipcMain.handle('video-studio:video-library:finish', async (event, id: string, durationFrames: number) => { assertTrustedSender(event); return videoLibrary.finishImport(id, durationFrames) })
+      ipcMain.handle('video-studio:video-library:delete', async (event, id: string) => { assertTrustedSender(event); return videoLibrary.delete(id) })
+      ipcMain.handle('video-studio:video-library:attach', async (event, studioId: string, ids: string[]) => { assertTrustedSender(event); return videoLibrary.attach(studioId, ids) })
 
     }
     ipcMain.handle(`${channel}:save-print`, async (event, id: string, dataUrl: string): Promise<string | null> => {
@@ -2198,16 +2191,21 @@ function registerVideoAssetProtocol(): void {
   protocol.handle('gacha-video', async (request) => {
     try {
       const url = new URL(request.url)
-      const [studioId, assetId, extra] = url.pathname.split('/').filter(Boolean)
+      const parts = url.pathname.split('/').filter(Boolean)
       const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
-      if (url.hostname !== 'studio' || extra !== undefined || !uuid.test(studioId ?? '') || !uuid.test(assetId ?? '')) return new Response('Not found', { status: 404 })
-      const folder = join(studioPath(studioId, 'video'), 'videos')
       const candidates = ['mp4', 'webm', 'mov', 'm4v'] as const
       let path: string | undefined
       let extension: typeof candidates[number] | undefined
-      for (const candidate of candidates) {
-        const candidatePath = join(folder, `${assetId}.${candidate}`)
-        try { await access(candidatePath); path = candidatePath; extension = candidate; break } catch { /* try next extension */ }
+      if (url.hostname === 'library' && parts.length === 1 && uuid.test(parts[0])) {
+        const media = await videoLibrary.resolveMedia(parts[0])
+        path = media.path
+        extension = media.extension
+      } else if (url.hostname === 'studio' && parts.length === 2 && parts.every((part) => uuid.test(part))) {
+        const folder = join(studioPath(parts[0], 'video'), 'videos')
+        for (const candidate of candidates) {
+          const candidatePath = join(folder, `${parts[1]}.${candidate}`)
+          try { await access(candidatePath); path = candidatePath; extension = candidate; break } catch { /* try next extension */ }
+        }
       }
       if (!path || !extension) return new Response('Not found', { status: 404 })
       const file = await stat(path)

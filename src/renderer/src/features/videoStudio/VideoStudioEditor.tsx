@@ -4,8 +4,9 @@ import { buildStudioExpressionAppearance, buildStudioExpressionTransforms, resol
 import { Icon } from '../../ui/components/Icon'
 import { CharacterPortrait } from '../../ui/components/CharacterPortrait'
 import { resolveStudioTalkMouthId, videoCharacterTrackColor } from '../../../../shared/studio'
-import type { StudioAsset, StudioDocument, StudioElement, StudioFaceMode, StudioFaceTransform, StudioFaceTransforms, VideoAudioSettings, VideoMediaClip, VideoStudioAsset, VideoTimelineDocument } from '../../../../shared/studio'
+import type { StudioAsset, StudioDocument, StudioElement, StudioFaceMode, StudioFaceTransform, StudioFaceTransforms, VideoAudioSettings, VideoMediaClip, VideoTimelineDocument } from '../../../../shared/studio'
 import { editVideoMediaClip, isValidVideoMediaClip, splitVideoMediaClip as splitMediaClip } from '../../../../shared/videoMedia'
+import { VideoLibraryModal } from './VideoLibraryModal'
 import { VideoStudioClipPreview } from './VideoClipPreview'
 import { isValidVideoAudioSettings } from '../../../../shared/videoAudio'
 import { VideoTimeline, videoTimelineFor } from './VideoTimeline'
@@ -230,7 +231,6 @@ type VideoStudioPersistence = {
   delete: (id: string) => Promise<void>
   getFolder: () => Promise<string>
   importImage: (category: StudioAsset['category']) => Promise<StudioAsset | null>
-  importVideo: (studioId: string) => Promise<Omit<VideoStudioAsset, 'durationFrames'> | null>
   savePrint: (id: string, dataUrl: string) => Promise<string | null>
   openPrints: (id: string) => Promise<void>
 }
@@ -243,7 +243,6 @@ function videoStudioPersistence(): VideoStudioPersistence {
     delete: desktop.deleteVideoStudio,
     getFolder: desktop.getVideoStudioFolder,
     importImage: desktop.importVideoStudioImage,
-    importVideo: desktop.importVideoStudioVideo,
     savePrint: desktop.saveVideoStudioPrint,
     openPrints: desktop.openVideoStudioPrints
   }
@@ -271,6 +270,7 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
   const [castPickerOpen, setCastPickerOpen] = useState(false)
   const [castSelection, setCastSelection] = useState<string[]>([])
   const [savingCast, setSavingCast] = useState(false)
+  const [videoLibraryOpen, setVideoLibraryOpen] = useState(false)
   const [inspectorTab, setInspectorTab] = useState<'editor' | 'custom'>('editor')
   const [inspectorCustomView, setInspectorCustomView] = useState<'face' | 'presets'>('face')
   const characterInspectorViewRef = useRef<{ tab: 'editor' | 'custom'; customView: 'face' | 'presets' }>({ tab: 'editor', customView: 'face' })
@@ -1024,51 +1024,33 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível importar a imagem.') }
   }
 
-  const addVideoClip = async () => {
-    const studioAtImport = activeStudio
-    if (!isVideoWorkspace || !studioAtImport || videoTimelineFor(studioAtImport).trackSettings?.video?.locked) return
-    let metadataVideo: HTMLVideoElement | null = null
-    try {
-      const imported = await persistence.importVideo(studioAtImport.id)
-      if (!imported) return
-      metadataVideo = document.createElement('video')
-      metadataVideo.preload = 'metadata'
-      metadataVideo.src = `gacha-video://studio/${studioAtImport.id}/${imported.id}`
-      await new Promise<void>((resolve, reject) => {
-        metadataVideo!.onloadedmetadata = () => resolve()
-        metadataVideo!.onerror = () => reject(new Error('Não foi possível ler a duração deste vídeo.'))
-        metadataVideo!.load()
+  const openVideoLibrary = async () => {
+    if (!activeStudio) return
+    setVideoPlaying(false)
+    if (await saveStudio(activeStudio)) setVideoLibraryOpen(true)
+  }
+
+  const addLibraryVideos = async (ids: string[]) => {
+    if (!activeStudio || videoTimelineFor(activeStudio).trackSettings?.video?.locked) throw new Error('Desbloqueie a faixa de vídeo para adicionar clipes.')
+    const assets = await window.desktop.attachVideoLibraryItems(activeStudio.id, ids)
+    const totalFrames = assets.reduce((sum, item) => sum + item.durationFrames, 0)
+    if (videoPlayheadFrame + totalFrames > 60 * 60 * 60 * 24) throw new Error('Os vídeos selecionados ultrapassam a duração máxima de 24 horas do roteiro.')
+    const assetIds = new Set([...(videoTimelineFor(activeStudio).videoAssets ?? []).map((item) => item.id), ...assets.map((item) => item.id)])
+    if (assetIds.size > 1000) throw new Error('O roteiro atingiu o limite de 1.000 arquivos de vídeo.')
+    const studioId = activeStudio.id
+    changeScene((studio) => {
+      if (studio.id !== studioId) return studio
+      const timeline = videoTimelineFor(studio)
+      let cursor = videoPlayheadFrame
+      const clips = assets.map((asset) => {
+        const clip: VideoMediaClip = { id: crypto.randomUUID(), assetId: asset.id, startFrame: cursor, endFrame: cursor + asset.durationFrames, sourceStartFrame: 0, sourceEndFrame: asset.durationFrames }
+        cursor = clip.endFrame
+        return clip
       })
-      if (!Number.isFinite(metadataVideo.duration) || metadataVideo.duration <= 0) throw new Error('A duração do vídeo não pôde ser lida.')
-      const durationFrames = Math.max(1, Math.min(60 * 60 * 60 * 24, Math.ceil(metadataVideo.duration * 60)))
-      const asset: VideoStudioAsset = { ...imported, durationFrames }
-      if (activeStudioId !== studioAtImport.id) return
-      const videoClipId = crypto.randomUUID()
-      changeScene((studio) => {
-        const timeline = videoTimelineFor(studio)
-        const startFrame = Math.min(videoPlayheadFrame, Math.max(0, 60 * 60 * 60 * 24 - durationFrames))
-        const endFrame = startFrame + durationFrames
-        return {
-          ...studio,
-          videoTimeline: {
-            ...timeline,
-            durationFrames: Math.max(timeline.durationFrames, endFrame),
-            videoAssets: [...(timeline.videoAssets ?? []), asset],
-            videoClips: [...(timeline.videoClips ?? []), { id: videoClipId, assetId: asset.id, startFrame, endFrame, sourceStartFrame: 0, sourceEndFrame: durationFrames }]
-          },
-          updatedAt: new Date().toISOString()
-        }
-      })
-      setError(null)
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'Não foi possível adicionar este vídeo.')
-    } finally {
-      if (metadataVideo) {
-        metadataVideo.pause()
-        metadataVideo.removeAttribute('src')
-        metadataVideo.load()
-      }
-    }
+      const videoAssets = [...(timeline.videoAssets ?? [])]
+      for (const asset of assets) if (!videoAssets.some((item) => item.id === asset.id)) videoAssets.push(asset)
+      return { ...studio, videoTimeline: { ...timeline, durationFrames: Math.max(timeline.durationFrames, cursor), videoAssets, videoClips: [...(timeline.videoClips ?? []), ...clips] }, updatedAt: new Date().toISOString() }
+    })
   }
 
   const selectBackground = (asset: StudioAsset) => {
@@ -1807,6 +1789,7 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      if (videoLibraryOpen) return
       if (event.key === 'Escape' && castPickerOpen && !savingCast) setCastPickerOpen(false)
       else if (event.key === 'Escape' && fullView) setFullView(false)
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z') { event.preventDefault(); event.shiftKey ? redo() : undo() }
@@ -1814,7 +1797,7 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [castPickerOpen, savingCast, fullView, activeStudio, historyVersion])
+  }, [castPickerOpen, savingCast, fullView, activeStudio, historyVersion, videoLibraryOpen])
 
   const imageStyle = (x: number, y: number, width: number, height: number, rotation: number, flipX = false) => ({
     left: `calc(50% + ${x}%)`, top: `calc(50% + ${y}%)`, width: `${width}%`, height: `${height}%`,
@@ -2042,7 +2025,8 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
             {!fullView && <span className="video-studio-scene-title">{activeStudio.title}</span>}
           </div>
         </section>
-        {!fullView && isVideoWorkspace && <VideoTimeline studio={activeStudio} playheadFrame={videoPlayheadFrame} playing={videoPlaying} height={videoTimelineHeight} presetNames={Object.fromEntries(studioExpressionPresets.map((preset) => [preset.id, preset.name]))} onResize={setVideoTimelineHeight} onSelectElement={(elementId) => { setVideoPlaying(false); setSelectedElementId(elementId); setInspectorOpen(true) }} onSeek={seekVideoFrame} onTogglePlayback={() => { if (videoPlaying) seekVideoFrame(videoPlayheadFrame); else setVideoPlaying(true) }} onSaveFrame={saveVideoFrame} onSplitCharacter={splitVideoCharacterTrack} onSplitTextClip={splitVideoTextClip} onSplitVideoClip={splitVideoMediaClip} onUpdateVideoClip={updateVideoMediaClip} onChangeVideoAudio={updateVideoAudio} onBeginAudioEdit={recordHistory} onDuplicateVideoClip={duplicateVideoMediaClip} onUpdateTextClip={updateVideoTextClip} onDeleteTextClip={deleteVideoTextClip} onDeleteVideoClip={deleteVideoMediaClip} onDeleteTextElement={deleteVideoTextElement} onDeleteCharacterSegment={deleteVideoCharacterSegment} onDuplicateTextClip={duplicateVideoTextClip} onMoveCharacterBoundary={moveVideoCharacterBoundary} onAddText={(kind) => addTextElement(kind)} onAddVideo={() => void addVideoClip()} onChangeTrackSettings={(id, settings) => changeScene((studio) => ({ ...studio, videoTimeline: { ...videoTimelineFor(studio), trackSettings: { ...videoTimelineFor(studio).trackSettings, [id]: settings } }, updatedAt: new Date().toISOString() }))} onMoveCharacterTrack={moveVideoCharacterTrack} onSetCharacterPositionsLocked={(locked) => changeScene((studio) => ({ ...studio, elements: studio.elements.map((element) => element.kind === 'character' ? { ...element, positionLocked: locked } : element), updatedAt: new Date().toISOString() }))} onChangeDuration={(durationFrames) => changeScene((studio) => ({ ...studio, videoTimeline: { ...videoTimelineFor(studio), durationFrames, playheadFrame: Math.min(videoPlayheadFrame, durationFrames) }, updatedAt: new Date().toISOString() }))} />}
+        {!fullView && isVideoWorkspace && <VideoTimeline studio={activeStudio} playheadFrame={videoPlayheadFrame} playing={videoPlaying} height={videoTimelineHeight} presetNames={Object.fromEntries(studioExpressionPresets.map((preset) => [preset.id, preset.name]))} onResize={setVideoTimelineHeight} onSelectElement={(elementId) => { setVideoPlaying(false); setSelectedElementId(elementId); setInspectorOpen(true) }} onSeek={seekVideoFrame} onTogglePlayback={() => { if (videoPlaying) seekVideoFrame(videoPlayheadFrame); else setVideoPlaying(true) }} onSaveFrame={saveVideoFrame} onSplitCharacter={splitVideoCharacterTrack} onSplitTextClip={splitVideoTextClip} onSplitVideoClip={splitVideoMediaClip} onUpdateVideoClip={updateVideoMediaClip} onChangeVideoAudio={updateVideoAudio} onBeginAudioEdit={recordHistory} onDuplicateVideoClip={duplicateVideoMediaClip} onUpdateTextClip={updateVideoTextClip} onDeleteTextClip={deleteVideoTextClip} onDeleteVideoClip={deleteVideoMediaClip} onDeleteTextElement={deleteVideoTextElement} onDeleteCharacterSegment={deleteVideoCharacterSegment} onDuplicateTextClip={duplicateVideoTextClip} onMoveCharacterBoundary={moveVideoCharacterBoundary} onAddText={(kind) => addTextElement(kind)} onAddVideo={() => void openVideoLibrary()} onChangeTrackSettings={(id, settings) => changeScene((studio) => ({ ...studio, videoTimeline: { ...videoTimelineFor(studio), trackSettings: { ...videoTimelineFor(studio).trackSettings, [id]: settings } }, updatedAt: new Date().toISOString() }))} onMoveCharacterTrack={moveVideoCharacterTrack} onSetCharacterPositionsLocked={(locked) => changeScene((studio) => ({ ...studio, elements: studio.elements.map((element) => element.kind === 'character' ? { ...element, positionLocked: locked } : element), updatedAt: new Date().toISOString() }))} onChangeDuration={(durationFrames) => changeScene((studio) => ({ ...studio, videoTimeline: { ...videoTimelineFor(studio), durationFrames, playheadFrame: Math.min(videoPlayheadFrame, durationFrames) }, updatedAt: new Date().toISOString() }))} />}
+        {videoLibraryOpen && <VideoLibraryModal studioTitle={activeStudio.title} locked={videoTimelineFor(activeStudio).trackSettings?.video?.locked === true} onClose={() => setVideoLibraryOpen(false)} onAdd={addLibraryVideos} />}
         {castPickerOpen && <div className="video-studio-cast-modal-backdrop" onPointerDown={(event) => { if (event.target === event.currentTarget && !savingCast) setCastPickerOpen(false) }}>
           <section className="video-studio-cast-modal" role="dialog" aria-modal="true" aria-labelledby="video-studio-cast-modal-title">
             <header><span><small>EDITAR ELENCO</small><h2 id="video-studio-cast-modal-title">Personagens do {workspaceTitle}</h2></span><button className="video-studio-cast-modal-close" onClick={() => setCastPickerOpen(false)} aria-label="Fechar" disabled={savingCast} type="button">×</button></header>
