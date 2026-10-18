@@ -427,6 +427,11 @@ export function VideoStudioPage() {
                 const state = element.id === selectedElementId && !playing && drafts[element.id] ? drafts[element.id] : visual?.state
                 const roleAssetId = element.kind === 'character' && state ? element.faceAssets?.[state.faceMode] : undefined
                 const asset = assetById(activeProject, roleAssetId ?? element.assetId)
+                const transition = element.id === selectedElementId && !playing && drafts[element.id] ? 1 : visual?.transitionProgress ?? 1
+                const previousRoleId = element.kind === 'character' && visual?.previousState
+                  ? element.faceAssets?.[visual.previousState.faceMode] : undefined
+                const previousAsset = transition < 1 && visual?.previousState
+                  ? assetById(activeProject, previousRoleId ?? element.assetId) : undefined
                 return <button className={'video-studio-stage-element' + (selectedElementId === element.id ? ' selected' : '')}
                   type="button" key={element.id} onClick={() => setSelectedElementId(element.id)}
                   style={{
@@ -435,7 +440,10 @@ export function VideoStudioPage() {
                     transform: 'translate(-50%, -50%) rotate(' + element.rotation + 'deg) scaleX(' + (element.flipX ? -1 : 1) + ')',
                     zIndex: 10 + element.zIndex
                   }}>
-                  {asset && <img alt={element.name} src={asset.dataUrl} draggable={false} />}
+                  {asset && <img alt={element.name} src={asset.dataUrl} draggable={false}
+                    style={previousAsset ? { opacity: transition } : undefined} />}
+                  {previousAsset && <img className="video-studio-transition-previous" alt="" src={previousAsset.dataUrl} draggable={false}
+                    style={{ opacity: 1 - transition }} />}
                   {!asset && <span>{element.name}</span>}
                 </button>
               })}
