@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import { buildStudioExpressionAppearance, buildStudioExpressionTransforms, resolveStudioExpressionBase, studioExpressionCollection } from './expressionTransforms'
 import { Icon } from '../../ui/components/Icon'
 import { CharacterPortrait } from '../../ui/components/CharacterPortrait'
@@ -268,6 +268,13 @@ export function StudioPage({ workspace = 'studio' }: { workspace?: StudioWorkspa
   const isVideoWorkspace = workspace === 'video'
   const workspaceTitle = isVideoWorkspace ? 'Video Studio' : 'Studio'
   const workspacePlural = isVideoWorkspace ? 'Video Studios' : 'Studios'
+  const [videoTimelineHeight, setVideoTimelineHeight] = useState(() => {
+    try {
+      const stored = Number(window.localStorage.getItem('gacha-nymi-video-timeline-height'))
+      return Number.isFinite(stored) && stored >= 150 ? Math.min(stored, Math.floor(window.innerHeight * 0.65)) : 218
+    } catch { return 218 }
+  })
+  const videoEditorStyle = isVideoWorkspace ? { '--video-timeline-height': `${videoTimelineHeight}px` } as CSSProperties : undefined
   const persistence = useMemo(() => studioWorkspacePersistence(workspace), [workspace])
   const [studios, setStudios] = useState<StudioCard[]>([])
   const [loading, setLoading] = useState(true)
@@ -344,6 +351,18 @@ export function StudioPage({ workspace = 'studio' }: { workspace?: StudioWorkspa
   const selectedStudioTalkAvailable = Boolean(selectedStudioOpenMouth?.pieces.some((piece) => piece.sheet === 'mouth-open' && piece.index === selectedStudioFaceAppearance?.expressionIndex))
   const selectedBackgroundAsset = activeStudio?.assets.find((asset) => asset.id === activeStudio.backgroundAssetId) ?? null
   const stageCharacters = activeStudio?.elements.filter((element) => element.kind === 'character') ?? []
+  useEffect(() => {
+    if (!isVideoWorkspace) return
+    const timer = window.setTimeout(() => {
+      try { window.localStorage.setItem('gacha-nymi-video-timeline-height', String(videoTimelineHeight)) } catch { /* Keep the resize usable when local storage is unavailable. */ }
+    }, 250)
+    return () => window.clearTimeout(timer)
+  }, [isVideoWorkspace, videoTimelineHeight])
+  useEffect(() => {
+    const clampHeight = () => setVideoTimelineHeight((height) => Math.min(height, Math.max(220, Math.floor(window.innerHeight * 0.65))))
+    window.addEventListener('resize', clampHeight)
+    return () => window.removeEventListener('resize', clampHeight)
+  }, [])
   useEffect(() => {
     setVideoPlaying(false)
     setVideoPlayheadFrame(activeStudio?.videoTimeline?.playheadFrame ?? 0)
@@ -1541,7 +1560,7 @@ export function StudioPage({ workspace = 'studio' }: { workspace?: StudioWorkspa
       ? 'left'
       : selectedBounds?.left !== undefined && selectedBounds.left < inspectorWidth ? 'right' : 'right'
     return (
-      <main className={`studio-editor${isVideoWorkspace ? ' video-workspace' : ''}${fullView ? ' full-view' : ''}`} aria-label={`Editor do ${activeStudio.title}`}>
+      <main className={`studio-editor${isVideoWorkspace ? ' video-workspace' : ''}${fullView ? ' full-view' : ''}`} aria-label={`Editor do ${activeStudio.title}`} style={videoEditorStyle}>
         {!fullView && <aside className="studio-editor-rail studio-editor-left" aria-label={`Ferramentas do ${workspaceTitle}`}>
           <div className="studio-editor-quick-actions">
             <button className="studio-round-action" onClick={() => void leaveStudio()} title="Salvar automaticamente e voltar" aria-label={`Voltar para Seus ${workspacePlural}`} type="button"><span>←</span></button>
@@ -1585,7 +1604,7 @@ export function StudioPage({ workspace = 'studio' }: { workspace?: StudioWorkspa
           </div>
         </section>
         {!fullView && <aside className="studio-editor-rail studio-editor-right" aria-label="Elenco do Studio">{castPanel()}</aside>}
-        {!fullView && isVideoWorkspace && <VideoTimeline studio={activeStudio} playheadFrame={videoPlayheadFrame} playing={videoPlaying} onSeek={(frame) => { const clamped = Math.max(0, Math.min(videoTimelineFor(activeStudio).durationFrames, frame)); videoPlaybackAnchorRef.current = { frame: clamped, time: performance.now() }; setVideoPlayheadFrame(clamped) }} onTogglePlayback={() => setVideoPlaying((value) => !value)} onSaveFrame={saveVideoFrame} onChangeDuration={(durationFrames) => changeScene((studio) => ({ ...studio, videoTimeline: { ...videoTimelineFor(studio), durationFrames, playheadFrame: Math.min(videoPlayheadFrame, durationFrames) }, updatedAt: new Date().toISOString() }))} />}
+        {!fullView && isVideoWorkspace && <VideoTimeline studio={activeStudio} playheadFrame={videoPlayheadFrame} playing={videoPlaying} height={videoTimelineHeight} onResize={setVideoTimelineHeight} onSeek={(frame) => { const clamped = Math.max(0, Math.min(videoTimelineFor(activeStudio).durationFrames, frame)); videoPlaybackAnchorRef.current = { frame: clamped, time: performance.now() }; setVideoPlayheadFrame(clamped) }} onTogglePlayback={() => setVideoPlaying((value) => !value)} onSaveFrame={saveVideoFrame} onChangeDuration={(durationFrames) => changeScene((studio) => ({ ...studio, videoTimeline: { ...videoTimelineFor(studio), durationFrames, playheadFrame: Math.min(videoPlayheadFrame, durationFrames) }, updatedAt: new Date().toISOString() }))} />}
         {castPickerOpen && <div className="studio-cast-modal-backdrop" onPointerDown={(event) => { if (event.target === event.currentTarget && !savingCast) setCastPickerOpen(false) }}>
           <section className="studio-cast-modal" role="dialog" aria-modal="true" aria-labelledby="studio-cast-modal-title">
             <header><span><small>EDITAR ELENCO</small><h2 id="studio-cast-modal-title">Personagens do {workspaceTitle}</h2></span><button className="studio-cast-modal-close" onClick={() => setCastPickerOpen(false)} aria-label="Fechar" disabled={savingCast} type="button">×</button></header>

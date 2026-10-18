@@ -1,3 +1,4 @@
+import { useRef, type PointerEvent as ReactPointerEvent } from 'react'
 import type { StudioDocument, VideoTimelineDocument } from '../../../../shared/studio'
 
 const DEFAULT_DURATION_FRAMES = 10 * 60 * 60
@@ -22,15 +23,18 @@ function formatTime(frame: number): string {
   return `${String(minutes).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}:${String(frame % 60).padStart(2, '0')}`
 }
 
-export function VideoTimeline({ studio, playheadFrame, playing, onSeek, onTogglePlayback, onSaveFrame, onChangeDuration }: {
+export function VideoTimeline({ studio, playheadFrame, playing, height, onSeek, onTogglePlayback, onSaveFrame, onChangeDuration, onResize }: {
   studio: StudioDocument
   playheadFrame: number
   playing: boolean
+  height: number
   onSeek: (frame: number) => void
   onTogglePlayback: () => void
   onSaveFrame: () => void
   onChangeDuration: (durationFrames: number) => void
+  onResize: (height: number) => void
 }) {
+  const resizePointer = useRef<{ id: number; startY: number; startHeight: number } | null>(null)
   const timeline = videoTimelineFor(studio)
   const duration = Math.max(1, timeline.durationFrames)
   const characters = studio.elements.filter((element) => element.kind === 'character')
@@ -43,8 +47,24 @@ export function VideoTimeline({ studio, playheadFrame, playing, onSeek, onToggle
     }))
   }))
   const setPlayheadFromInput = (value: string) => onSeek(Number(value))
+  const resizeTimeline = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const drag = resizePointer.current
+    if (!drag || drag.id !== event.pointerId) return
+    const maximum = Math.max(220, Math.floor(window.innerHeight * 0.65))
+    onResize(Math.max(150, Math.min(maximum, drag.startHeight + drag.startY - event.clientY)))
+  }
+  const finishResize = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (resizePointer.current?.id !== event.pointerId) return
+    resizePointer.current = null
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
+  }
 
   return <section className="video-timeline" aria-label="Timeline do Video Studio">
+    <div className="video-timeline-resize" role="separator" aria-label="Redimensionar altura da timeline" aria-orientation="horizontal" aria-valuemin={150} aria-valuemax={Math.max(220, Math.floor(window.innerHeight * 0.65))} aria-valuenow={height} tabIndex={0}
+      onKeyDown={(event) => { if (event.key === 'ArrowUp' || event.key === 'ArrowDown') { event.preventDefault(); onResize(Math.max(150, Math.min(Math.floor(window.innerHeight * 0.65), height + (event.key === 'ArrowUp' ? 24 : -24)))) } }}
+      onPointerDown={(event) => { event.preventDefault(); resizePointer.current = { id: event.pointerId, startY: event.clientY, startHeight: height }; event.currentTarget.setPointerCapture(event.pointerId) }} onPointerMove={resizeTimeline} onPointerUp={finishResize} onPointerCancel={finishResize}>
+      <span /><span /><span />
+    </div>
     <header className="video-timeline-toolbar">
       <div className="video-timeline-heading"><strong>Timeline</strong><span>{formatTime(playheadFrame)} / {formatTime(duration)}</span></div>
       <div className="video-timeline-actions">
