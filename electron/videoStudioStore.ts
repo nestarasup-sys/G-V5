@@ -34,6 +34,13 @@ function validProject(project: VideoProject): boolean {
     || project.canvas.width < 64 || project.canvas.height < 64 || project.canvas.width > 8192 || project.canvas.height > 8192
     || typeof project.canvas.backgroundColor !== 'string' || !/^#[0-9a-f]{6}$/i.test(project.canvas.backgroundColor)
     || (project.canvas.backgroundAssetId !== null && typeof project.canvas.backgroundAssetId !== 'string')
+    || (project.canvas.backgroundPlacement !== undefined && (
+      !project.canvas.backgroundPlacement ||
+      ![project.canvas.backgroundPlacement.x, project.canvas.backgroundPlacement.y,
+        project.canvas.backgroundPlacement.width, project.canvas.backgroundPlacement.height,
+        project.canvas.backgroundPlacement.rotation].every(Number.isFinite)
+      || project.canvas.backgroundPlacement.width <= 0 || project.canvas.backgroundPlacement.height <= 0
+    ))
     || !Array.isArray(project.assets) || project.assets.length > 250
     || !Array.isArray(project.elements) || project.elements.length > 250
     || !Array.isArray(project.characterTracks) || project.characterTracks.length > 250
