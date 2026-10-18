@@ -3306,6 +3306,11 @@ export function CustomizerPage() {
     const reset = isHead ? restoreHeadAdjustments : restoreClothesAdjustments
     const selectedGroups = !isHead && selectedId ? (selectedCharacter?.customization.wardrobeGroups ?? []).filter((group) => group.category === selectedId) : []
     const sourceCategories: WardrobeCategory[] = !isHead && selectedId ? clothingCategories.Inferior.concat(clothingCategories.Superior).find((item) => item.id === selectedId)?.source ?? [] : []
+    const setOrder = new Map<string, number>()
+    selectedGroups.forEach((group) => {
+      const key = `${group.modelSlot}:${group.setId}`
+      if (!setOrder.has(key)) setOrder.set(key, setOrder.size)
+    })
     const adjustmentComponents = selectedGroups.flatMap((group) => {
       const set = wardrobeDetails[`${group.modelSlot}:${group.setId}`]
       if (!set) return []
@@ -3314,6 +3319,21 @@ export function CustomizerPage() {
         : set.components.filter((component) => sourceCategories.includes(component.category))
       return parts.map((component) => ({ group: { ...group, componentId: component.id }, component, set }))
     }).filter((entry, index, list) => list.findIndex((candidate) => candidate.group.modelSlot === entry.group.modelSlot && candidate.group.setId === entry.group.setId && candidate.group.category === entry.group.category && candidate.component.id === entry.component.id) === index)
+      .sort((a, b) => {
+        const setKeyA = `${a.group.modelSlot}:${a.group.setId}`
+        const setKeyB = `${b.group.modelSlot}:${b.group.setId}`
+        const setOrderDifference = (setOrder.get(setKeyA) ?? 0) - (setOrder.get(setKeyB) ?? 0)
+        if (setOrderDifference) return setOrderDifference
+        const categoryOrderDifference = sourceCategories.indexOf(a.component.category) - sourceCategories.indexOf(b.component.category)
+        if (categoryOrderDifference) return categoryOrderDifference
+        const sideOrder = (component: WardrobeSet['components'][number]) => {
+          const side = `${component.name} ${component.attachedPartId}`.toLocaleLowerCase()
+          const isLeft = /\besquerd[oa]\b|\bleft\b/.test(side)
+          const isRight = /\bdireit[oa]\b|\bright\b/.test(side)
+          return isLeft && !isRight ? 0 : isRight && !isLeft ? 1 : 2
+        }
+        return sideOrder(a.component) - sideOrder(b.component)
+      })
     const selectedAdjustmentComponent = !isHead && selectedClothing
       ? adjustmentComponents.find((entry) => entry.group.modelSlot === selectedClothing.modelSlot && entry.group.setId === selectedClothing.setId && entry.group.category === selectedClothing.category && entry.component.id === selectedClothing.componentId)
       : undefined
