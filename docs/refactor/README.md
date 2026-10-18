@@ -35,7 +35,7 @@ Antes de modificar runtime: criar baseline e sandbox de testes, registrar fluxos
 
 ## Fundação de testes e CI DEV AI (incremento 2026-10-18)
 
-A implementação mais recente está na branch `ci/dev-ai-foundation-hardening-2026-10-18`, derivada da validação Windows do Codex. Ela adiciona comparação visual por bitmap com diff e estabilização do compositor, guardas adicionais no encerramento e workflow Linux + Windows com fixtures sintéticas. Consulte [guia e aceite de CI](AUDITORIAS/CI_DEV_AI_2026-10-18.md). Nenhum workflow verde isolado substitui a matriz ISO, o benchmark ou o gate de recuperação de dados.
+A implementação mais recente está na branch `ci/dev-ai-foundation-hardening-2026-10-18`, derivada da validação Windows do Codex. O inventário AST identificou 22 ocorrências runtime entre features (10 pares únicos) e o gate de arquitetura bloqueia novos acoplamentos sem mascarar a dívida existente; consultar [classificação e plano de extração](AUDITORIAS/DEPENDENCIAS_AST_2026-10-18.md). Ela adiciona comparação visual por bitmap com diff e estabilização do compositor, guardas adicionais no encerramento e workflow Linux + Windows com fixtures sintéticas. Consulte [guia e aceite de CI](AUDITORIAS/CI_DEV_AI_2026-10-18.md). Nenhum workflow verde isolado substitui a matriz ISO, o benchmark ou o gate de recuperação de dados.
 
 ## Estado desta revisão
 
