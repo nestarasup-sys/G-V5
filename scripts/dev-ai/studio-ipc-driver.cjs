@@ -420,6 +420,7 @@ async function areaSmoke(window) {
     const started = performance.now()
     try {
       const snapshot = await window.webContents.executeJavaScript(`(async () => {
+        const navigationStartedAt = performance.now()
         const waitFor = selector => new Promise((resolve, reject) => {
           let settled = false
           const observer = new MutationObserver(check)
@@ -441,14 +442,20 @@ async function areaSmoke(window) {
         })
         location.hash = ${JSON.stringify(hash)}
         const card = await waitFor(${JSON.stringify(cardSelector)})
+        const libraryReadyAt = performance.now()
         card.click()
         const editor = await waitFor(${JSON.stringify(editorSelector)})
+        const editorReadyAt = performance.now()
         await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+        const paintReadyAt = performance.now()
         const prefix = ${JSON.stringify(normal ? 'studio' : 'video-studio')}
         const canvas = document.querySelector('.' + prefix + '-scene-canvas')
         const style = getComputedStyle(editor)
         const rect = canvas?.getBoundingClientRect()
         return { missingEditor: !editor, missingCanvas: !canvas, hash: location.hash,
+          rendererTimingsMs: { routeToLibrary: libraryReadyAt - navigationStartedAt,
+            libraryToEditor: editorReadyAt - libraryReadyAt, editorToPaint: paintReadyAt - editorReadyAt,
+            total: paintReadyAt - navigationStartedAt },
           columns: style.gridTemplateColumns, rows: style.gridTemplateRows,
           canvas: rect ? [Math.round(rect.width * 100) / 100, Math.round(rect.height * 100) / 100] : null,
           topBar: Boolean(document.querySelector('.top-bar')),
@@ -460,13 +467,15 @@ async function areaSmoke(window) {
       assert.equal(snapshot.hash, `#${hash}`)
       assert.equal(snapshot.topBar, normal, `Topbar incorreta em ${hash}`)
       assert.equal(snapshot.timeline, !normal, `Timeline incorreta em ${hash}`)
-      return { durationMs: performance.now() - started, snapshot }
+      const { rendererTimingsMs, ...stableSnapshot } = snapshot
+      return { durationMs: performance.now() - started, snapshot: stableSnapshot, rendererTimingsMs }
     } catch (error) {
       throw new Error(`Editor ${hash} falhou ao navegar/abrir/inspecionar: ${error?.stack ?? error}`)
     }
   }
   const studioBefore = await openEditor(true)
   const navigationDurations = []
+  const navigationPhaseDurations = { routeToLibrary: [], libraryToEditor: [], editorToPaint: [], totalRenderer: [] }
   // One alternation is one route change. 50 Studio↔Video pairs = 100
   // direction changes, matching ISO-01's 100 alternations requirement.
   const roundTrips = 50
@@ -476,10 +485,12 @@ async function areaSmoke(window) {
   for (let cycle = 0; cycle < roundTrips; cycle += 1) {
     const videoOpen = await openEditor(false)
     navigationDurations.push(videoOpen.durationMs)
+    for (const [phase, duration] of Object.entries(videoOpen.rendererTimingsMs)) navigationPhaseDurations[phase === 'total' ? 'totalRenderer' : phase].push(duration)
     if (videoBefore === null) videoBefore = videoOpen.snapshot
     else assert.deepEqual(videoOpen.snapshot, videoBefore, `Video Studio mudou na rodada ${cycle + 1}`)
     const studioOpen = await openEditor(true)
     navigationDurations.push(studioOpen.durationMs)
+    for (const [phase, duration] of Object.entries(studioOpen.rendererTimingsMs)) navigationPhaseDurations[phase === 'total' ? 'totalRenderer' : phase].push(duration)
     assert.deepEqual(studioOpen.snapshot, studioBefore.snapshot, `Studio normal mudou após a rodada ${cycle + 1}`)
     if ((cycle + 1) % 5 === 0) {
       await writeFile(join(output, 'real-ipc-navigation-progress.json'), JSON.stringify({
@@ -505,6 +516,8 @@ async function areaSmoke(window) {
       oppositeNamespaceHashUnchanged: true },
     realWorkspaceNavigation: { roundTrips, routeTransitions: navigationDurations.length,
       openLatencyMs: summarizeSamples(navigationDurations),
+      rendererPhaseLatencyMs: Object.fromEntries(Object.entries(navigationPhaseDurations)
+        .map(([phase, samples]) => [phase, summarizeSamples(samples)])),
       studioSnapshotStable: true, videoSnapshotStable: true,
       screenshots: ['real-ipc-studio-before-roundtrips.png', 'real-ipc-studio-after-roundtrips.png'],
       screenshotSha256: { before: beforeScreenshotSha256, after: afterScreenshotSha256, identical: true },
