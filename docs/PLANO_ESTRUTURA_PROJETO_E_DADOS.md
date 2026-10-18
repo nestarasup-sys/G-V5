@@ -1,8 +1,8 @@
 # Plano de estruturação do projeto e dos dados do Gacha Nymi
 
-> **Estado:** plano inicial expandido com arquitetura extensível e logging estruturado. Este documento não moveu código nem dados. O mapa descreve o repositório observado e separa os trabalhos futuros.
+> **Estado:** plano de arquitetura extensível, desempenho, isolamento entre áreas, logs e ambiente DEV AI. Este documento não moveu código nem dados; implementações descritas abaixo continuam como etapas futuras.
 >
-> **Objetivo do usuário:** manter o código, recursos e todos os dados gerados ou importados pelo app organizados dentro de uma única pasta de projeto, com subpastas claras para personagens, imagens, roteiros, vídeos, fundos, salvamentos e demais dados. A refatoração deve melhorar comportamento e operação do produto — desempenho, consumo de recursos, estabilidade, segurança, qualidade e capacidade de evolução — e não apenas a aparência do código.
+> **Objetivo do usuário:** manter o código, recursos e todos os dados gerados ou importados pelo app organizados dentro de uma única pasta de projeto, com subpastas claras para personagens, imagens, roteiros, vídeos, fundos, salvamentos e demais dados. A refatoração deve melhorar comportamento e operação do produto — desempenho, consumo de recursos, estabilidade, segurança, qualidade e capacidade de evolução — e não apenas a aparência do código. O agente responsável, seja este ou outro, deve avaliar, instalar e usar por conta própria as melhores ferramentas compatíveis, testar as mudanças e aplicá-las com segurança. O app também deve ter uma área DEV AI estruturada para validar o produto offscreen, sem depender de janelas visíveis no PC.
 
 ## 1. Resumo executivo
 
@@ -14,6 +14,7 @@ O app já tem uma divisão útil entre interface React, processo principal do El
 4. Parte das preferências e rascunhos é salva em `localStorage`, separado dos dados gerenciados pelo Electron.
 5. Não há um serviço central de logs. A busca atual encontrou `console.error` no Error Boundary, mas não um formato, arquivo, correlação ou tela de logs comuns.
 6. A navegação e vários fluxos são registrados diretamente nos componentes. Não há um manifesto único de feature que conecte rota, APIs, dados, capabilities e migrações.
+7. O projeto não declara hoje um comando `test` nem um ambiente DEV AI integrado. Há scripts de auditoria específicos, mas eles não são um runner unificado para cada área.
 
 O plano recomenda criar uma raiz interna única para dados, contratos de extensibilidade e logs estruturados. Depois migrar por cópia verificada, mantendo os dados antigos como fallback até a validação. A extração de módulos de código deve acontecer em mudanças pequenas, com testes e builds entre etapas. Cada mudança também precisa medir o efeito no app: identificar um problema real, registrar a linha de base, corrigir, comparar e evitar regressões nas demais áreas.
 
@@ -111,6 +112,10 @@ Arquivos escolhidos em diálogos externos são copiados para a biblioteca do app
 
 Não foi localizado um logger central, armazenamento estruturado de logs, IDs de correlação, rotação/retenção ou visualizador de logs. O Error Boundary usa `console.error`; os demais fluxos não passam por um serviço comum. Portanto, centralizar logs é uma fundação nova do plano, não uma capacidade já existente.
 
+### 2.7 Ferramentas de desenvolvimento e testes atuais
+
+O `package.json` declara `dev`, `build`, `preview` e `typecheck`, mas não declara runner geral de testes. Existem auditorias pontuais em `scripts/`; algumas usam Electron, build compilado, arquivos de mídia fornecidos ou inspeção de UI. Ainda não existe um runner de suítes offscreen integrado ao app, isolamento comum de dados de teste, captura padronizada de artefatos ou dashboard DEV AI.
+
 ## 3. Diagnóstico dos módulos
 
 ### 3.1 Módulos com escopo amplo
@@ -178,12 +183,18 @@ Gacha Nymi Workspace/                 # pasta única que o usuário pode mover/g
 │   │   │   ├── fabricator/{models,poses,wardrobe,face,hair,animation}/
 │   │   │   ├── studio/
 │   │   │   ├── videoStudio/{timeline,preview,audio,media}/
+│   │   │   ├── devAi/                # painel e relatórios DEV AI, apenas no build de desenvolvimento
 │   │   │   └── options/
 │   │   └── ui/{components,styles}/
 │   └── shared/                       # contratos, eventos e regras puras compartilhadas
 ├── assets/                           # recursos fixos do app, não conteúdo de usuário
 ├── scripts/{audit,migration,generation}/
 ├── tests/{unit,integration,e2e,performance}/
+├── dev-ai/                           # runner e testes offscreen, com fixtures sintéticas
+│   ├── runner/
+│   ├── adapters/{renderer,electron,storage}/
+│   ├── suites/{smoke,ipc,e2e,visual,performance,a11y,migration}/
+│   └── fixtures/
 ├── docs/
 ├── package.json, electron.vite.config.ts, tsconfig.json, README.md
 ├── .gitignore
@@ -198,6 +209,7 @@ Gacha Nymi Workspace/                 # pasta única que o usuário pode mover/g
     ├── libraries/{videos,backgrounds}/
     ├── settings/                     # preferências persistentes e guias
     ├── logs/                          # logs operacionais e trilha de atividade JSONL
+    ├── dev-ai/runs/<run-id>/          # traces, capturas e resultados offscreen, ignorados pelo Git
     ├── backups/                      # cópias locais de segurança/migração
     └── migration-state/               # marcadores e relatórios, sem assets
 ```
@@ -422,6 +434,76 @@ O resultado de cada alteração registra: comportamento preservado, áreas tocad
 
 Esses sistemas não precisam ser criados todos de uma vez. Devem evoluir como fundações compartilhadas pequenas, com um consumidor real, critério de aceite e implementação antes de serem adotadas por todas as features.
 
+### 4.8 Autonomia do agente e ferramentas do projeto
+
+O plano é independente de quem o executa: pode ser este agente ou outro agente de programação. O agente deve investigar o problema, escolher as melhores ferramentas compatíveis com o repositório, instalá-las como dependências locais e versionadas quando necessário, executar os testes apropriados, interpretar os resultados e aplicar correções sem depender de instruções passo a passo do usuário.
+
+Procedimento recomendado para escolher/instalar uma ferramenta:
+
+1. Identificar a lacuna concreta (por exemplo, cobertura de UI, profiling de CPU ou validação de schemas); não adicionar ferramenta só por popularidade.
+2. Conferir compatibilidade com Electron, React, TypeScript, Windows e o lockfile; avaliar manutenção, licença, requisitos, acessos e tamanho/custo operacional.
+3. Preferir dependência de desenvolvimento local, versão registrada e comandos reproduzíveis. Evitar instalação global quando a dependência local for suficiente.
+4. Registrar no repositório o motivo, o comando de uso, os dados acessados e o resultado esperado.
+5. Usar sandbox e fixtures sintéticas; executar a ferramenta, corrigir o que encontrar e repetir a validação.
+6. Informar limitações quando um recurso não puder ser verificado offscreen ou depender de hardware/serviço externo.
+
+O agente pode adicionar dependências e código de ferramenta dentro do projeto, rodar checks e aplicar as correções autorizadas pelo escopo da tarefa. Antes de operação destrutiva em dados reais, deve criar backup verificável e manter caminho de recuperação. Nenhuma ferramenta deve enviar código, imagens, logs ou projetos para terceiros por padrão; integração externa precisa de configuração e escopo explícitos.
+
+### 4.9 Área DEV AI para validação offscreen
+
+**DEV AI** será o centro interno de execução e inspeção do app para agentes de programação. Ela deve permitir testar fluxos de interface, APIs, persistência, migração, acessibilidade, captura visual e desempenho sem depender de uma janela visível ou de alguém operar o PC. A área pode ser exibida dentro do app em build de desenvolvimento, mas o motor de testes deve funcionar por CLI/headless e nunca depender da própria tela para executar sua validação.
+
+Componentes propostos:
+
+| Componente | Responsabilidade |
+| --- | --- |
+| Registry de suítes | Descobrir casos por feature e verificar contratos, dados sintéticos, duração, recursos e artefatos esperados. |
+| Orquestrador/queue | Planejar execução, paralelismo, timeout, cancelamento, progresso e limpeza do sandbox. |
+| Adaptadores | Iniciar renderer headless, processo Electron/IPC em modo de teste, repositórios contra diretório temporário e workers. |
+| Fixtures e fábricas | Gerar personagens, assets, projetos, roteiros e bibliotecas sintéticos de vários tamanhos. |
+| Assertions de UI | Verificar DOM, acessibilidade, navegação, foco, estado, console, erros e interações automatizadas. |
+| Captura visual | Criar screenshots offscreen em tamanhos definidos, comparar com baseline e realçar diferenças. |
+| Profiling | Medir tempo, renderizações, memória, CPU, jobs/worker e IO em cenários reprodutíveis. |
+| Relatórios | Consolidar pass/fail, regressões, métricas antes/depois, logs correlacionados e links para artefatos. |
+| Painel DEV AI | Deixar o agente ou desenvolvedor iniciar cenários, acompanhar execução, inspecionar logs/capturas e exportar relatório. |
+
+Cada `DevAiSuiteDefinition` declara `id`, feature, cenário, pré-condições, fixtures, comandos, timeout, política de rede, limites de recursos, expectativa de resultado e artefatos. O FeatureRegistry pode validar a declaração, mas a execução é feita por um processo runner separado.
+
+Tipos de execução previstos:
+
+1. **Rápida por alteração:** lint/typecheck, testes unitários relacionados, teste de contrato e build direcionado.
+2. **Integração por área:** renderer + preload/IPC + repositório em sandbox, sem abrir janela visível.
+3. **Regressão cross-workspace:** Studio normal ↔ Video Studio, Customizer ↔ Fabricador e contratos compartilhados.
+4. **Visual offscreen:** renderização de rotas e cenários com viewport definido, screenshots, console/errors e comparação visual.
+5. **Estresse/performance:** bibliotecas grandes, muitos clipes/assets, importações em lote, trocas rápidas de área, cancelamento e salvamentos concorrentes.
+6. **Migração/recuperação:** cópias de projetos sintéticos, conflito, interrupção e restore; nunca usar o diretório real do usuário.
+
+Estrutura de resultados:
+
+```text
+app-data/dev-ai/runs/<run-id>/
+├── report.json                 # resumo, commit, versões de ferramentas e status
+├── logs/                       # eventos correlacionados da execução
+├── screenshots/                # imagens capturadas offscreen
+├── traces/                      # traces/perfil quando habilitados
+├── diffs/                       # diferenças de screenshot e métricas
+└── sandbox/                     # fixture e estado isolado, removível após retenção
+```
+
+O runner deve criar perfil Electron, raiz de dados, diretório temporário, portas e identificadores exclusivos por execução. A política de rede padrão é bloqueada; fixtures de teste não contêm dados pessoais. A sandbox não lê nem grava `app-data/` real, `%APPDATA%` real, documentos do usuário, saves ou mídia pessoal. Só remove a sua pasta de run depois de verificar que ela está dentro do root gerenciado pelo DEV AI.
+
+O runner aceita uma lista de comandos conhecida (build, typecheck, suítes registradas, inspeção de artefatos). Não oferece shell irrestrito pela UI nem permite que uma feature execute código arbitrário. Timeouts, limite de memória/CPU, cancelamento, isolamento de processos e allowlist de arquivos protegem o app. A ferramenta/agent pode analisar diffs e relatórios pelo workspace local; conteúdo não é enviado à nuvem por padrão.
+
+Critérios de aceite do DEV AI:
+
+- uma suíte de UI abre e interage com cada rota sem janela visível, produzindo screenshot e relatório;
+- uma suíte verifica que Studio normal e Video Studio não compartilham estado, CSS, atalhos ou persistência de documento;
+- testes de storage/IPC rodam contra uma raiz temporária e provam que dados reais não foram acessados;
+- falhas mostram etapa, feature, request/operation ID, log redigido e artefato reproduzível;
+- uma alteração pode executar apenas as suítes relacionadas e em seguida a regressão cross-workspace;
+- comparações de imagem e desempenho usam baseline identificada por commit/configuração, sem aprovar regressões automaticamente por diferenças não revisadas;
+- o runner funciona por comando sem abrir a tela DEV AI e deixa os resultados dentro do workspace.
+
 ## 5. Plano de trabalho por etapas
 
 ### Etapa 0 — Fechar o inventário e a especificação
@@ -435,6 +517,8 @@ Esses sistemas não precisam ser criados todos de uma vez. Devem evoluir como fu
 - [ ] Mapear comandos de criação/importação/duplicação/arquivo/restauração/exclusão de cada domínio.
 - [ ] Fazer um mapa de dependências de features, estilos globais, estado, atalhos e APIs IPC, com foco no vazamento Studio ↔ Video Studio.
 - [ ] Capturar uma linha de base dos fluxos críticos (inicialização, trocar de área, abrir/salvar projeto, preview e timeline) antes de otimizações.
+- [ ] Escolher ferramentas por lacuna comprovada, registrar versões/licenças e definir quais podem ser instaladas localmente pelo agente.
+- [ ] Especificar contratos do runner DEV AI, sandbox de dados, execução headless, formatos de relatório e matriz inicial de regressão.
 
 **Saída:** mapa de migração com origem, destino, formato e procedimento de recuperação para cada domínio.
 
@@ -450,6 +534,8 @@ Esses sistemas não precisam ser criados todos de uma vez. Devem evoluir como fu
 - [ ] Adicionar diagnósticos da raiz efetiva, permissões, espaço disponível e estado dos módulos.
 - [ ] Criar contratos de erro/código estáveis e um fluxo de notificações recuperáveis conectado ao Error Boundary.
 - [ ] Tornar os caminhos dos repositórios relativos à raiz, sem alterar ainda os dados atuais.
+- [ ] Instalar dependências locais necessárias para testes, automação offscreen, acessibilidade ou profiling, com lockfile atualizado e justificativa registrada.
+- [ ] Criar o esqueleto do runner DEV AI com execução por CLI, registro de suítes, sandbox temporário e relatório JSON.
 
 **Critério de aceite:** features e workspaces aparecem nos registros; uma chamada recebe IDs correlacionáveis em renderer, IPC, serviço e armazenamento; os logs não contêm conteúdo privado; o app continua salvando se o serviço de logs falhar; cada workspace libera recursos ao sair; a raiz interna é gravável e não aparece como alteração Git.
 
@@ -493,7 +579,21 @@ Esses sistemas não precisam ser criados todos de uma vez. Devem evoluir como fu
 
 **Critério de aceite:** Studio normal e Video Studio passam pela matriz de regressão acima; alterações de layout, estado e atalhos ficam na área selecionada; documentos são salvos somente no namespace correto; componentes de feature não importam arquivos privados de outra feature.
 
-### Etapa 5 — Ferramentas operacionais e validação final
+### Etapa 5 — Construir a área DEV AI e as suítes offscreen
+
+- [ ] Implementar o runner independente da interface, executável por comando e adequado a CI local.
+- [ ] Criar adaptadores headless para renderer, Electron/IPC, repositórios e workers, evitando depender de janelas visíveis ou interação manual no PC.
+- [ ] Criar dados sintéticos e suites por feature, integração, migração, acessibilidade, comparação visual e desempenho.
+- [ ] Isolar perfil Electron, `app-data`, arquivos temporários, portas e processos por execução; bloquear acesso a dados reais.
+- [ ] Produzir relatórios correlacionados com commit, versões de ferramentas, logs redigidos, screenshots, traces, métricas e instruções de reprodução.
+- [ ] Criar a tela DEV AI apenas como painel de controle/inspeção do runner, sem permitir execução de shell irrestrito.
+- [ ] Começar pela regressão Studio normal ↔ Video Studio, incluindo seleção, timeline, preview, atalhos, CSS, histórico e persistência.
+- [ ] Adicionar suites para Customizer ↔ Fabricator e fluxos de personagem/assets conforme os módulos forem extraídos.
+- [ ] Demonstrar execução completa offscreen em comando limpo: preparar fixture, iniciar, validar, capturar artefatos, finalizar processos e limpar somente o sandbox próprio.
+
+**Critério de aceite:** o agente inicia as suítes registradas sem abrir janelas visíveis, inspeciona resultados e artefatos localmente, reproduz falhas e comprova que o runner não tocou nos dados do usuário.
+
+### Etapa 6 — Ferramentas operacionais e validação final
 
 - [ ] Continuar executando `npm run typecheck` e `npm run build` a cada mudança estrutural.
 - [ ] Organizar auditorias existentes em subpastas por domínio e documentar pré-requisitos/saídas.
@@ -507,6 +607,8 @@ Esses sistemas não precisam ser criados todos de uma vez. Devem evoluir como fu
 - [ ] Rodar regressão visual e funcional nas áreas não editadas quando houver mudança em `shared/`, UI global, tokens de design, IPC ou domínio compartilhado.
 - [ ] Verificar acessibilidade, liberação de recursos, limites de memória e cancelamento de tarefas demoradas.
 - [ ] Fazer busca final por caminhos antigos, chaves legacy, dependências circulares e handlers órfãos.
+- [ ] Rodar as suítes DEV AI relevantes e a regressão cross-workspace depois de cada alteração estrutural; corrigir falhas encontradas antes de avançar.
+- [ ] Registrar ferramentas instaladas, motivo, comandos, resultados e limitações no documento do módulo e no relatório final.
 - [ ] Manter backup até a aprovação da verificação dos dados migrados.
 
 ## 6. Riscos e proteções
@@ -526,6 +628,9 @@ Esses sistemas não precisam ser criados todos de uma vez. Devem evoluir como fu
 | Falha ou volume excessivo de logs prejudicar o app | Rotacionar, limitar retenção, agregar gestos e nunca bloquear gravações por falha do logger. |
 | Logs vazarem informação pessoal ou conteúdo de mídia | Allowlist de campos, sanitização de erros e redaction testada; proibir payloads e data URLs. |
 | Remoção de área deixar dados órfãos ou destruir referências | Arquivar/ocultar feature sem apagar namespace; remoção física requer relatório de dependências e ação explícita. |
+| Ferramenta nova quebrar compatibilidade ou trazer risco de cadeia de suprimentos | Preferir dependências locais, fixar versões no lockfile, revisar licença/manutenção e limitar permissões e rede. |
+| Runner offscreen acessar ou alterar dados reais | Usar perfil e raiz exclusivos por execução, fixtures sintéticas, caminhos permitidos e testes que provem a separação do `app-data/` real. |
+| Execução autônoma do agente rodar comandos fora do escopo | Runner DEV AI expõe somente suítes/comandos registrados, com limites, timeout, isolamento e relatório; operações sobre dados reais exigem backup e recuperação. |
 | Evento de domínio ser processado duas vezes | `eventId`/`operationId`, schema versionado e consumidores idempotentes. |
 | Mudança de uma área afetar outra pela topbar | WorkspaceRegistry, estado/estilos/canais com namespace próprio e matriz de navegação cruzada obrigatória. |
 | “Otimização” tornar preview ou edição menos precisa | Comparar saída funcional/visual e tempo no mesmo projeto de referência; manter resultado determinístico onde requerido. |
