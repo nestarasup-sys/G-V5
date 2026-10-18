@@ -158,6 +158,8 @@ export type VideoTimelineDocument = {
   characterBases?: Record<string, VideoCharacterState>
   /** One authoritative stage position per actor, shared by every segment and transition. */
   characterPositions?: Record<string, { x: number; y: number }>
+  /** Global stage transforms; pose and expression remain authored per segment. */
+  characterTransforms?: Record<string, Pick<StudioElement, 'x' | 'y' | 'width' | 'height' | 'rotation' | 'flipX' | 'characterScale' | 'characterWidthScale' | 'characterHeightScale' | 'zIndex'>>
   /** Empty intervals created by deleting a character segment, preserving adjacent states. */
   characterGaps?: Array<{ id: string; elementId: string; startFrame: number; endFrame: number }>
   /** Imported media files live in this Studio project's dedicated videos folder. */

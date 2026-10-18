@@ -204,18 +204,19 @@ transição de corpo/rosto/efeitos e verificar a preparação sob React StrictMo
 Os artefatos ficam em `out/audit-character-transitions-ui/`; nenhum roteiro ou
 asset real do usuário é alterado pelos testes.
 
-## Posição única por personagem
+## Transformação única por personagem
 
-Cada personagem tem um único X/Y autoritativo em `videoTimeline.characterPositions`.
-Ao carregar roteiros antigos, o dado é migrado do estado no frame zero; se não
-existir, usa a Base, o primeiro estado salvo e, por último, a posição do elemento
-da cena. O salvamento automático persiste essa migração.
+Cada personagem tem uma transformação de palco autoritativa em
+`videoTimeline.characterTransforms`: X, Y, largura, altura, escala uniforme,
+escala horizontal e vertical, rotação, espelhamento e ordem de camada. O campo
+anterior `characterPositions` continua sendo mantido para compatibilidade. Ao
+carregar roteiros antigos, os valores são migrados do elemento atual da cena
+(com X/Y priorizados pelo registro global já existente) e salvos automaticamente.
 
-Mover o personagem pela prévia ou pelo inspetor atualiza essa posição global,
-independentemente da faixa e do instante selecionados. A posição é aplicada ao
-elemento da cena, à Base, aos estados salvos e novamente sobre os quadros de
-transição e blink no momento da composição. Assim, estados antigos ou amostras
-interpoladas não podem deslocar o personagem. Dividir, salvar e restaurar faixas
-mantém o X/Y único; pose, expressão, tamanho e demais propriedades por faixa
-continuam locais. Ao remover ou duplicar personagens, o registro global também é
-removido ou remapeado. O Studio normal e o Fabricador Dev não usam esse campo.
+Editar qualquer controle de transformação pela prévia ou pelo inspetor atualiza
+essa transformação para todas as faixas do personagem, sem depender do trecho
+selecionado. A mesma transformação é aplicada à Base, aos estados salvos, aos
+quadros de transição e ao blink na composição; estados antigos ou amostras
+interpoladas não conseguem revertê-la. Pose, expressão e arte continuam locais
+por faixa. Ao remover ou duplicar personagens, os registros globais também são
+removidos ou remapeados. O Studio normal e o Fabricador Dev não usam esses campos.

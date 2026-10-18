@@ -1,82 +1,112 @@
 import type { StudioDocument, StudioElement, VideoCharacterState, VideoTimelineDocument } from '../../../../shared/studio'
 
-type CharacterPosition = Pick<StudioElement, 'x' | 'y'>
+type CharacterTransform = Pick<StudioElement, 'x' | 'y' | 'width' | 'height' | 'rotation' | 'flipX' | 'characterScale' | 'characterWidthScale' | 'characterHeightScale' | 'zIndex'>
+const transformFields = ['x', 'y', 'width', 'height', 'rotation', 'flipX', 'characterScale', 'characterWidthScale', 'characterHeightScale', 'zIndex'] as const
 
-/** Prefer the script-level placement; legacy scripts are migrated from their first saved state. */
-function firstCharacterPosition(timeline: VideoTimelineDocument, elementId: string, fallback?: CharacterPosition): CharacterPosition | undefined {
-  const global = timeline.characterPositions?.[elementId]
-  if (global && Number.isFinite(global.x) && Number.isFinite(global.y)) return global
+function pickTransform(element: StudioElement): CharacterTransform {
+  return Object.fromEntries(transformFields.filter((field) => element[field] !== undefined).map((field) => [field, element[field]])) as CharacterTransform
+}
+
+function equalTransform(left: CharacterTransform | undefined, right: CharacterTransform | undefined): boolean {
+  return Boolean(left && right && transformFields.every((field) => left[field] === right[field]))
+}
+
+/** Prefer the script-level transform; legacy scripts are migrated from their first authored state. */
+function firstCharacterTransform(timeline: VideoTimelineDocument, elementId: string, fallback?: StudioElement): CharacterTransform | undefined {
+  const global = timeline.characterTransforms?.[elementId]
+  if (global && [global.x, global.y, global.width, global.height, global.rotation, global.zIndex].every(Number.isFinite)) return global
   let first: VideoTimelineDocument['characterKeys'][number] | undefined
   for (const key of timeline.characterKeys) {
     if (key.elementId === elementId && key.state && (!first || key.frame <= first.frame)) first = key
   }
-  return first?.frame === 0 ? first.state!.element : timeline.characterBases?.[elementId]?.element ?? first?.state?.element ?? fallback
+  const source = fallback ?? (first?.frame === 0 ? first.state!.element : timeline.characterBases?.[elementId]?.element ?? first?.state?.element)
+  if (!source) return undefined
+  const transform = pickTransform(source)
+  const legacyPosition = timeline.characterPositions?.[elementId]
+  return legacyPosition ? { ...transform, x: legacyPosition.x, y: legacyPosition.y } : transform
 }
 
-function positionedState(state: VideoCharacterState, position: CharacterPosition): VideoCharacterState {
-  return state.element.x === position.x && state.element.y === position.y ? state : { ...state, element: { ...state.element, x: position.x, y: position.y } }
+function transformedElement(element: StudioElement, transform: CharacterTransform): StudioElement {
+  return transformFields.every((field) => element[field] === transform[field]) ? element : { ...element, ...transform }
 }
 
-function applyCharacterPositions(studio: StudioDocument, positions: Map<string, CharacterPosition>): StudioDocument {
+function transformedState(state: VideoCharacterState, transform: CharacterTransform): VideoCharacterState {
+  const element = transformedElement(state.element, transform)
+  return element === state.element ? state : { ...state, element }
+}
+
+function applyCharacterTransforms(studio: StudioDocument, transforms: Map<string, CharacterTransform>): StudioDocument {
   const timeline = studio.videoTimeline
-  if (!timeline || !positions.size) return studio
+  if (!timeline || !transforms.size) return studio
   let changed = false
   const elements = studio.elements.map((element) => {
-    const position = positions.get(element.id)
-    if (!position || element.x === position.x && element.y === position.y) return element
+    const transform = transforms.get(element.id)
+    if (!transform) return element
+    const next = transformedElement(element, transform)
+    if (next === element) return element
     changed = true
-    return { ...element, x: position.x, y: position.y }
+    return next
   })
   const characterBases = Object.fromEntries(Object.entries(timeline.characterBases ?? {}).map(([id, state]) => {
-    const position = positions.get(id), next = position ? positionedState(state, position) : state
+    const transform = transforms.get(id), next = transform ? transformedState(state, transform) : state
     if (next !== state) changed = true
     return [id, next]
   }))
   const characterKeys = timeline.characterKeys.map((key) => {
-    const position = positions.get(key.elementId)
-    if (!position || !key.state) return key
-    const state = positionedState(key.state, position)
+    const transform = transforms.get(key.elementId)
+    if (!transform || !key.state) return key
+    const state = transformedState(key.state, transform)
     if (state === key.state) return key
     changed = true
     return { ...key, state }
   })
+  const characterTransforms = { ...(timeline.characterTransforms ?? {}) }
   const characterPositions = { ...(timeline.characterPositions ?? {}) }
-  for (const [id, position] of positions) {
-    if (characterPositions[id]?.x === position.x && characterPositions[id]?.y === position.y) continue
-    characterPositions[id] = { x: position.x, y: position.y }
-    changed = true
+  for (const [id, transform] of transforms) {
+    if (!equalTransform(characterTransforms[id], transform)) {
+      characterTransforms[id] = transform
+      changed = true
+    }
+    if (characterPositions[id]?.x !== transform.x || characterPositions[id]?.y !== transform.y) {
+      characterPositions[id] = { x: transform.x, y: transform.y }
+      changed = true
+    }
   }
-  return changed ? { ...studio, elements, videoTimeline: { ...timeline, characterPositions, ...(timeline.characterBases ? { characterBases } : {}), characterKeys } } : studio
+  return changed ? { ...studio, elements, videoTimeline: { ...timeline, characterTransforms, characterPositions, ...(timeline.characterBases ? { characterBases } : {}), characterKeys } } : studio
 }
 
-/** Normalize legacy scripts once and persist the authoritative position without changing acting states. */
-export function normalizeVideoCharacterPositions(studio: StudioDocument): StudioDocument {
+/** Migrate older scripts once while preserving segment-local pose, expression and artwork. */
+export function normalizeVideoCharacterTransforms(studio: StudioDocument): StudioDocument {
   if (!studio.videoTimeline) return studio
-  const positions = new Map<string, CharacterPosition>()
+  const transforms = new Map<string, CharacterTransform>()
   for (const element of studio.elements) {
-    if (element.kind === 'character') positions.set(element.id, firstCharacterPosition(studio.videoTimeline, element.id, element)!)
+    if (element.kind !== 'character') continue
+    const transform = firstCharacterTransform(studio.videoTimeline, element.id, element)
+    if (transform) transforms.set(element.id, transform)
   }
-  return applyCharacterPositions(studio, positions)
+  return applyCharacterTransforms(studio, transforms)
 }
 
-/** A stage/inspector move changes the script-level position for that actor alone. */
-export function synchronizeVideoCharacterPositions(before: StudioDocument, after: StudioDocument): StudioDocument {
+/** Any stage/inspector transform edit changes the actor's single script-wide placement. */
+export function synchronizeVideoCharacterTransforms(before: StudioDocument, after: StudioDocument): StudioDocument {
   if (before === after || !after.videoTimeline) return after
   const previous = new Map(before.elements.filter((element) => element.kind === 'character').map((element) => [element.id, element]))
-  const edited = new Map<string, CharacterPosition>()
+  const edited = new Map<string, CharacterTransform>()
   for (const element of after.elements) {
     const original = previous.get(element.id)
-    if (element.kind === 'character' && original && (element.x !== original.x || element.y !== original.y)) edited.set(element.id, element)
+    if (element.kind !== 'character' || !original) continue
+    const transform = pickTransform(element)
+    if (transformFields.some((field) => element[field] !== original[field])) edited.set(element.id, transform)
   }
-  if (edited.size) return applyCharacterPositions(after, edited)
-  return normalizeVideoCharacterPositions(after)
+  if (edited.size) return applyCharacterTransforms(after, edited)
+  return normalizeVideoCharacterTransforms(after)
 }
 
-/** Apply the fixed stage position after any sampled transition or blink geometry. */
+/** Apply the fixed transform after any sampled transition or blink geometry. */
 export function videoCharacterStageElement(timeline: VideoTimelineDocument, element: StudioElement): StudioElement {
   if (element.kind !== 'character') return element
-  const position = firstCharacterPosition(timeline, element.id)
-  return position && (element.x !== position.x || element.y !== position.y) ? { ...element, x: position.x, y: position.y } : element
+  const transform = firstCharacterTransform(timeline, element.id)
+  return transform ? transformedElement(element, transform) : element
 }
 
 export function captureVideoCharacter(studio: StudioDocument, element: StudioElement): VideoCharacterState | null {
@@ -90,12 +120,12 @@ export function characterStateAt(timeline: VideoTimelineDocument, elementId: str
     if (key.frame > frame) break
     if (key.state) current = key.state
   }
-  const position = firstCharacterPosition(timeline, elementId)
-  return current && position ? positionedState(current, position) : current
+  const transform = firstCharacterTransform(timeline, elementId)
+  return current && transform ? transformedState(current, transform) : current
 }
 
 export function restoreVideoTracks(studio: StudioDocument, frame: number): StudioDocument {
-  studio = normalizeVideoCharacterPositions(studio)
+  studio = normalizeVideoCharacterTransforms(studio)
   const timeline = studio.videoTimeline
   if (!timeline) return studio
   const states = new Map(studio.elements.filter((element) => element.kind === 'character').map((element) => [element.id, characterStateAt(timeline, element.id, frame)]))
