@@ -33,6 +33,10 @@
 
 Antes de modificar runtime: criar baseline e sandbox de testes, registrar fluxos de risco, confirmar perfil de produção e regras de portabilidade. Nunca testar migração destrutiva com `userData` real. A ordem e os bloqueios são definidos no roadmap. Uma alteração em `shared/`, `electron/preload.ts`, `electron/main.ts`, `src/renderer/src/ui/styles.css` ou shell de rotas exige regressão dos **dois** Studios e das demais áreas afetadas, não apenas da feature alterada.
 
+## Fundação de testes e CI DEV AI (incremento 2026-10-18)
+
+A implementação mais recente está na branch `ci/dev-ai-foundation-hardening-2026-10-18`, derivada da validação Windows do Codex. Ela adiciona comparação visual por bitmap com diff e estabilização do compositor, guardas adicionais no encerramento e workflow Linux + Windows com fixtures sintéticas. Consulte [guia e aceite de CI](AUDITORIAS/CI_DEV_AI_2026-10-18.md). Nenhum workflow verde isolado substitui a matriz ISO, o benchmark ou o gate de recuperação de dados.
+
 ## Estado desta revisão
 
 - [x] Leitura integral do plano original via GitHub e levantamento da árvore versionada da branch base.
