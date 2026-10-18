@@ -3,7 +3,7 @@
 const assert = require('node:assert/strict')
 const { createHash } = require('node:crypto')
 const { existsSync, lstatSync, readdirSync, readFileSync } = require('node:fs')
-const { writeFile } = require('node:fs/promises')
+const { mkdir, rm, writeFile } = require('node:fs/promises')
 const { basename, dirname, join, relative, resolve, sep } = require('node:path')
 const { pathToFileURL } = require('node:url')
 const { app, BrowserWindow } = require('electron')
@@ -183,13 +183,40 @@ async function seed(window) {
   assert.equal(treeHash(normalFolder), normalBeforeNegative)
   assert.equal(treeHash(videoFolder), videoBeforeNegative)
 
+  // Force filesystem failures only inside uniquely named synthetic documents.
+  const ioFailureIds = {
+    write: '2f50a2e4-7da4-4e28-9566-63dbf9403002',
+    read: '3f50a2e4-7da4-4e28-9566-63dbf9403003'
+  }
+  const failedWriteFolder = join(normalFolder, `studio-${ioFailureIds.write}`)
+  const failedReadFolder = join(normalFolder, `studio-${ioFailureIds.read}`)
+  assert.equal(existsSync(failedWriteFolder), false)
+  assert.equal(existsSync(failedReadFolder), false)
+  const videoBeforeIoFailure = treeHash(videoFolder)
+  await mkdir(join(failedWriteFolder, 'studio.json.tmp'), { recursive: true })
+  const writeFailure = await rejectedError(api(`window.desktop.saveStudio(${JSON.stringify({ ...syntheticStudio('simulated write failure'), id: ioFailureIds.write })})`))
+  assert.ok(writeFailure, 'A falha de gravação simulada deveria rejeitar o IPC')
+  assert.equal(existsSync(join(failedWriteFolder, 'studio.json')), false, 'Falha de escrita deixou documento parcial publicado')
+  await mkdir(join(failedReadFolder, 'studio.json'), { recursive: true })
+  const readFailure = await rejectedError(api('window.desktop.listStudios()'))
+  assert.ok(readFailure, 'A falha de leitura simulada deveria rejeitar o IPC')
+  assert.equal(treeHash(videoFolder), videoBeforeIoFailure, 'Falhas de I/O no Studio normal alteraram namespace de vídeo')
+  const canonicalNormalRoot = resolve(normalFolder)
+  for (const path of [failedWriteFolder, failedReadFolder]) {
+    assert.equal(lstatSync(path).isSymbolicLink(), false)
+    assert.equal(resolve(path), join(canonicalNormalRoot, basename(path)))
+  }
+  await rm(failedWriteFolder, { recursive: true, force: true })
+  await rm(failedReadFolder, { recursive: true, force: true })
+
   // Test the real delete handlers with colliding IDs; only the selected
   // workspace directory may be removed. Then reopen verifies absence/presence.
   const result = { schemaVersion: 1, adapter: 'production-preload-real-ipc', realIpcCovered: true,
     sameDocumentIdBothNamespaces: true, validMutations: { studio: normalMutations, videoStudio: videoMutations },
     concurrentOperations: { simultaneousCrossNamespace: concurrentNormal.length + concurrentVideo.length,
       isolatedStudioWrites: 10, isolatedVideoStudioWrites: 10 },
-    malformedCallsRejected: 5, deleteOperations: 0, outsideSandboxWritesObserved: 0,
+    malformedCallsRejected: 5, ioFailuresSimulated: { read: 1, write: 1 },
+    deleteOperations: 0, outsideSandboxWritesObserved: 0,
     sandboxRoot: 'out/dev-ai/runs/<run-id>/sandbox',
     relativeNamespaces: ['electron-user-data/studios/Studio Principal', 'electron-user-data/studios/Video Studio'] }
   await writeFile(join(output, 'seed-result.json'), JSON.stringify(result, null, 2))
