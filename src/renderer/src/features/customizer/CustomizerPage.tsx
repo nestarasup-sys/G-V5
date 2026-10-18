@@ -1502,6 +1502,7 @@ export function CustomizerPage() {
   const [selectedCustomizerTopTab, setSelectedCustomizerTopTab] = useState('corpo')
   const [previewBackground, setPreviewBackground] = usePreviewBackground()
   const [customizerPreviewZoom, setCustomizerPreviewZoom] = useState(1.15)
+  const [customizerPreviewPan, setCustomizerPreviewPan] = useState({ x: 0, y: 0 })
   const [previewExtent, setPreviewExtent] = useState({ width: 0, height: 0, density: window.devicePixelRatio || 1 })
   useEffect(() => {
     const update = () => {
@@ -1584,6 +1585,7 @@ export function CustomizerPage() {
   const previewLoadRequest = useRef(0)
   const customizerPreviewStageRef = useRef<HTMLDivElement>(null)
   const mainPreviewStageRef = useRef<HTMLDivElement>(null)
+  const customizerPreviewPanDragRef = useRef<{ pointerId: number; startX: number; startY: number; originX: number; originY: number } | null>(null)
   const clothingDragRef = useRef<{ pointerId: number; clientX: number; clientY: number; scaleX: number; scaleY: number; startX: number; startY: number; groupKey: string; characterId: string; beforeGroups: CustomizerWardrobeGroup[]; latest: CustomizerCharacter | null } | null>(null)
   const wardrobeTransformDirty = useRef(false)
   const selectedCharacter = characters.find((character) => character.id === selectedCharacterId) ?? characters[0] ?? null
@@ -1597,10 +1599,64 @@ export function CustomizerPage() {
   const activeShapeScale = characterShapeScale(activeProportions)
   const displayArtworkProject = useMemo(() => selectedArtworkProject ? applyCharacterBodyShape(withCharacterHeadSize(selectedArtworkProject, activeProportions), activeBodyDimensions) : null, [selectedArtworkProject, activeProportions.head, activeProportions.headWidth, activeProportions.headHeight, activeBodyDimensions])
   const previewStyle = { '--preview-background': previewBackground, '--character-scale-x': activeShapeScale.x, '--character-scale-y': activeShapeScale.y } as import('react').CSSProperties
-  const customizerPreviewStyle = { ...previewStyle, '--preview-zoom': customizerPreviewZoom } as import('react').CSSProperties
+  const customizerPreviewStyle = { ...previewStyle, '--preview-zoom': customizerPreviewZoom, '--preview-pan-x': `${customizerPreviewPan.x}px`, '--preview-pan-y': `${customizerPreviewPan.y}px` } as import('react').CSSProperties
   const characterWardrobeGroups = selectedCharacter?.customization.wardrobeGroups ?? []
   const characterFaceAppearance = selectedCharacter?.customization.faceAppearance
   const characterHairAppearance = selectedCharacter?.customization.hairAppearance
+
+  useEffect(() => {
+    setCustomizerPreviewPan({ x: 0, y: 0 })
+    customizerPreviewPanDragRef.current = null
+  }, [selectedCharacter?.id])
+
+  function beginCustomizerPreviewPan(event: import('react').PointerEvent<HTMLDivElement>) {
+    if (event.button !== 0 || event.target !== event.currentTarget || !selectedArtworkUrl) return
+    const artwork = displayArtworkProject
+    if (artwork) {
+      const stage = event.currentTarget
+      const bounds = stage.getBoundingClientRect()
+      const boxWidth = Math.max(1, bounds.width - 136)
+      const boxHeight = Math.max(1, bounds.height - 130)
+      const fit = Math.min(boxWidth / artwork.width, boxHeight / artwork.height)
+      const zoom = document.fullscreenElement === stage.parentElement ? customizerPreviewZoom : 1
+      const contentX = event.clientX - bounds.left - 68 - (boxWidth - artwork.width * fit) / 2 - customizerPreviewPan.x
+      const contentY = event.clientY - bounds.top - 72 - (boxHeight - artwork.height * fit) / 2 - customizerPreviewPan.y
+      const artworkX = (contentX - artwork.width * fit / 2) / (fit * zoom * activeShapeScale.x) + artwork.width / 2
+      const artworkY = (contentY - artwork.height * fit / 2) / (fit * zoom * activeShapeScale.y) + artwork.height / 2
+      const hidden = new Set(artwork.hiddenPartIds ?? [])
+      const hitsCharacter = artwork.parts.some((part) => {
+        if (hidden.has(part.id)) return false
+        const radians = part.rotation * Math.PI / 180
+        const dx = artworkX - (part.x + part.width / 2)
+        const dy = artworkY - (part.y + part.height / 2)
+        const localX = dx * Math.cos(radians) + dy * Math.sin(radians)
+        const localY = -dx * Math.sin(radians) + dy * Math.cos(radians)
+        return Math.abs(localX) <= part.width / 2 && Math.abs(localY) <= part.height / 2
+      })
+      if (hitsCharacter) return
+    }
+    event.preventDefault()
+    event.currentTarget.setPointerCapture(event.pointerId)
+    customizerPreviewPanDragRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      originX: customizerPreviewPan.x,
+      originY: customizerPreviewPan.y
+    }
+  }
+
+  function moveCustomizerPreviewPan(event: import('react').PointerEvent<HTMLDivElement>) {
+    const drag = customizerPreviewPanDragRef.current
+    if (!drag || drag.pointerId !== event.pointerId) return
+    setCustomizerPreviewPan({ x: drag.originX + event.clientX - drag.startX, y: drag.originY + event.clientY - drag.startY })
+  }
+
+  function finishCustomizerPreviewPan(event: import('react').PointerEvent<HTMLDivElement>) {
+    if (customizerPreviewPanDragRef.current?.pointerId !== event.pointerId) return
+    customizerPreviewPanDragRef.current = null
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -3464,7 +3520,7 @@ export function CustomizerPage() {
         <div className="customizer-models-columns">
           <section className="customizer-model-preview" aria-label="Prévia do personagem">
             <div className="stage-wrap customizer-preview-stage-wrap" ref={customizerPreviewStageRef}>
-              <div className="stage-scene" style={customizerPreviewStyle}>
+              <div className="stage-scene customizer-preview-pan-surface" style={customizerPreviewStyle} onPointerDown={beginCustomizerPreviewPan} onPointerMove={moveCustomizerPreviewPan} onPointerUp={finishCustomizerPreviewPan} onPointerCancel={finishCustomizerPreviewPan}>
                 <button className="customizer-back-button customizer-preview-back" onClick={() => setActiveModule(null)} aria-label="Voltar ao Customizar" title="Voltar ao Customizar" type="button"><Icon name="close" /></button>
                 <div className="customizer-preview-controls" aria-label="Controles da prévia">
                   <label className="preview-scene-color" title="Mudar a cor do fundo da prévia">
@@ -3728,7 +3784,7 @@ export function CustomizerPage() {
 
         <section className="preview-column" aria-label="Preview do personagem">
           <div className="stage-wrap customizer-preview-stage-wrap" ref={mainPreviewStageRef}>
-            <div className="stage-scene" style={customizerPreviewStyle}>
+            <div className="stage-scene customizer-preview-pan-surface" style={customizerPreviewStyle} onPointerDown={beginCustomizerPreviewPan} onPointerMove={moveCustomizerPreviewPan} onPointerUp={finishCustomizerPreviewPan} onPointerCancel={finishCustomizerPreviewPan}>
               <div className="preview-title customizer-preview-identity">
                 <p className="eyebrow">CUSTOMIZAR <span>/</span> PERSONAGEM</p>
                 <h1><span className="customizer-preview-character-name">{selectedCharacter?.name ?? (charactersLoading ? 'Carregando personagens…' : 'Crie um personagem')}</span><button className="rename-button" aria-label="Editar nome do personagem" disabled={!selectedCharacter} onClick={() => { setNameDraft(selectedCharacter?.name ?? ''); setDialogMode('rename') }} type="button"><Icon name="edit" /></button></h1>
