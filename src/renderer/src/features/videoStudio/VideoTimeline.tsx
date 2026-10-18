@@ -13,7 +13,6 @@ type TextClip = VideoTimelineDocument['textClips'][number]
 type TrackSelection =
   | { kind: 'character'; elementId: string; startFrame: number; endFrame: number }
   | { kind: 'text'; elementId: string; clipId: string; startFrame: number; endFrame: number }
-  | { kind: 'textTrack'; trackKind: 'speech' | 'thought' }
   | null
 type TextClipDrag = { pointerId: number; clip: TextClip; mode: 'move' | 'start' | 'end'; originX: number; startFrame: number; endFrame: number; latestStartFrame: number; latestEndFrame: number }
 type BoundaryDrag = { pointerId: number; elementId: string; keyId: string; originX: number; startFrame: number; minFrame: number; maxFrame: number; latestFrame: number }
@@ -28,7 +27,18 @@ function formatTime(frame: number): string {
   return `${String(minutes).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}:${String(frame % 60).padStart(2, '0')}`
 }
 
-export function VideoTimeline({ studio, playheadFrame, playing, height, presetNames, onSeek, onSelectElement, onTogglePlayback, onSaveFrame, onSplitCharacter, onSplitTextClip, onUpdateTextClip, onDeleteTextClip, onDeleteTextElement, onDeleteTextTrack, onDuplicateTextClip, onMoveCharacterBoundary, onChangeDuration, onResize, onAddText, onChangeTrackSettings, onMoveCharacterTrack, onSetCharacterPositionsLocked, onDeleteCharacterTrack }: {
+function characterSegmentAtFrame(timeline: VideoTimelineDocument, elementId: string, frame: number, duration: number): { startFrame: number; endFrame: number } | null {
+  const starts = timeline.characterKeys.filter((key) => key.elementId === elementId).map((key) => key.frame).sort((a, b) => a - b)
+  const stateStart = starts.filter((start) => start <= frame).at(-1) ?? 0
+  const stateEnd = starts.find((start) => start > stateStart) ?? duration
+  const gaps = timeline.characterGaps?.filter((gap) => gap.elementId === elementId) ?? []
+  if (gaps.some((gap) => gap.startFrame <= frame && frame < gap.endFrame)) return null
+  const precedingGap = gaps.filter((gap) => gap.endFrame <= frame && gap.endFrame > stateStart).sort((a, b) => b.endFrame - a.endFrame)[0]
+  const followingGap = gaps.filter((gap) => gap.startFrame > frame && gap.startFrame < stateEnd).sort((a, b) => a.startFrame - b.startFrame)[0]
+  return { startFrame: precedingGap?.endFrame ?? stateStart, endFrame: followingGap?.startFrame ?? stateEnd }
+}
+
+export function VideoTimeline({ studio, playheadFrame, playing, height, presetNames, onSeek, onSelectElement, onTogglePlayback, onSaveFrame, onSplitCharacter, onSplitTextClip, onUpdateTextClip, onDeleteTextClip, onDeleteTextElement, onDeleteCharacterSegment, onDuplicateTextClip, onMoveCharacterBoundary, onChangeDuration, onResize, onAddText, onChangeTrackSettings, onMoveCharacterTrack, onSetCharacterPositionsLocked }: {
   studio: StudioDocument
   playheadFrame: number
   playing: boolean
@@ -43,7 +53,7 @@ export function VideoTimeline({ studio, playheadFrame, playing, height, presetNa
   onUpdateTextClip: (clip: TextClip) => void
   onDeleteTextClip: (id: string) => void
   onDeleteTextElement: (elementId: string) => void
-  onDeleteTextTrack: (kind: 'speech' | 'thought') => void
+  onDeleteCharacterSegment: (elementId: string, startFrame: number, endFrame: number) => void
   onDuplicateTextClip: (clip: TextClip) => void
   onMoveCharacterBoundary: (elementId: string, keyId: string, frame: number) => void
   onChangeDuration: (durationFrames: number) => void
@@ -52,7 +62,6 @@ export function VideoTimeline({ studio, playheadFrame, playing, height, presetNa
   onChangeTrackSettings: (id: string, settings: NonNullable<VideoTimelineDocument['trackSettings']>[string]) => void
   onMoveCharacterTrack: (id: string, direction: -1 | 1) => void
   onSetCharacterPositionsLocked: (locked: boolean) => void
-  onDeleteCharacterTrack: (elementId: string) => void
 }) {
   const resizePointer = useRef<{ id: number; startY: number; startHeight: number } | null>(null)
   const textClipDragRef = useRef<TextClipDrag | null>(null)
@@ -87,11 +96,10 @@ export function VideoTimeline({ studio, playheadFrame, playing, height, presetNa
     : selection?.kind === 'text'
       ? !isLocked(selectedTextClip?.kind ?? studio.elements.find((element) => element.id === selection.elementId)?.kind ?? 'speech')
         && Boolean(selectedTextClip || studio.elements.some((element) => element.id === selection.elementId && (element.kind === 'speech' || element.kind === 'thought')))
-      : selection?.kind === 'textTrack' && !isLocked(selection.trackKind) && studio.elements.some((element) => element.kind === selection.trackKind)
+      : false
   const deleteSelection = () => {
     if (!selection || !canDeleteSelection) return
-    if (selection.kind === 'character') onDeleteCharacterTrack(selection.elementId)
-    else if (selection.kind === 'textTrack') onDeleteTextTrack(selection.trackKind)
+    if (selection.kind === 'character') onDeleteCharacterSegment(selection.elementId, selection.startFrame, selection.endFrame)
     else if (!selectedTextClip) onDeleteTextElement(selection.elementId)
     else if (!timeline.textClips.some((clip) => clip.elementId === selection.elementId && clip.id !== selection.clipId)) onDeleteTextElement(selection.elementId)
     else onDeleteTextClip(selection.clipId)
@@ -111,11 +119,9 @@ export function VideoTimeline({ studio, playheadFrame, playing, height, presetNa
   useEffect(() => {
     const sampledFrame = Math.min(playheadFrame, duration - 1)
     if (selection?.kind !== 'character' || selection.startFrame <= sampledFrame && sampledFrame < selection.endFrame) return
-    const starts = timeline.characterKeys.filter((key) => key.elementId === selection.elementId).map((key) => key.frame).sort((a, b) => a - b)
-    const startFrame = starts.filter((frame) => frame <= sampledFrame).at(-1) ?? 0
-    const endFrame = starts.find((frame) => frame > startFrame) ?? duration
-    setSelection({ kind: 'character', elementId: selection.elementId, startFrame, endFrame })
-  }, [playheadFrame, selection, timeline.characterKeys, duration])
+    const segment = characterSegmentAtFrame(timeline, selection.elementId, sampledFrame, duration)
+    setSelection(segment ? { kind: 'character', elementId: selection.elementId, ...segment } : null)
+  }, [playheadFrame, selection, timeline.characterKeys, timeline.characterGaps, duration])
   const textTracks = (['speech', 'thought'] as const).map((kind) => ({
     kind,
     label: kind === 'speech' ? 'Falas' : 'Pensamentos',
@@ -160,9 +166,9 @@ export function VideoTimeline({ studio, playheadFrame, playing, height, presetNa
     const nearest = candidates.reduce((best, candidate) => Math.abs(candidate - frame) < Math.abs(best - frame) ? candidate : best, frame)
     return Math.abs(nearest - frame) / 60 * pixelsPerSecond <= 8 ? nearest : frame
   }
-  const canSplitSelection = Boolean(selection && selection.kind !== 'textTrack' && playheadFrame > selection.startFrame && playheadFrame < selection.endFrame)
+  const canSplitSelection = Boolean(selection && playheadFrame > selection.startFrame && playheadFrame < selection.endFrame)
   const splitSelection = () => {
-    if (!selection || selection.kind === 'textTrack' || !canSplitSelection || isLocked(selection.kind === 'character' ? selection.elementId : timeline.textClips.find((clip) => clip.id === selection.clipId)?.kind ?? 'speech')) return
+    if (!selection || !canSplitSelection || isLocked(selection.kind === 'character' ? selection.elementId : timeline.textClips.find((clip) => clip.id === selection.clipId)?.kind ?? 'speech')) return
     if (selection.kind === 'character') onSplitCharacter(selection.elementId, playheadFrame)
     else {
       const rightClipId = crypto.randomUUID()
@@ -253,7 +259,7 @@ export function VideoTimeline({ studio, playheadFrame, playing, height, presetNa
   return <section className="video-timeline" aria-label="Timeline do Video Studio">
     <header className="video-timeline-toolbar">
       <div className="video-timeline-create-actions"><button type="button" onClick={() => onAddText('speech')}>+ Fala</button><button type="button" onClick={() => onAddText('thought')}>+ Pensamento</button><button type="button" onClick={onSaveFrame}>+ Corte</button></div>
-      <div className="video-timeline-heading"><strong>{formatTime(playheadFrame)}</strong><span>/ {formatTime(duration)}</span><small>{timeline.characterKeys.length + timeline.textClips.length} eventos</small><button type="button" className="video-play-button" aria-label={playing ? 'Pausar reprodução' : 'Reproduzir'} onClick={onTogglePlayback}>{playing ? '❚❚' : '▶'}<span>{playing ? 'Pausar' : 'Play'}</span></button><button type="button" className="video-split-button" onClick={splitSelection} disabled={!canSplitSelection} title={selection && selection.kind !== 'textTrack' ? 'Dividir o trecho selecionado na posição do playhead' : 'Selecione um trecho para dividir'}>✂ Dividir</button><button type="button" className={`video-position-lock-button${characterPositionsLocked ? ' active' : ''}`} onClick={() => onSetCharacterPositionsLocked(!characterPositionsLocked)} disabled={!characters.length} aria-pressed={characterPositionsLocked} aria-label={characterPositionsLocked ? 'Destrancar posições dos personagens' : 'Trancar posições dos personagens'} title={characterPositionsLocked ? 'Destrancar posições dos personagens' : 'Trancar posições dos personagens'}><Icon name={characterPositionsLocked ? 'lock' : 'unlock'} /></button>{selection?.kind === 'text' && !isLocked(selectedTextClip?.kind ?? 'speech') && selectedTextClip && <button type="button" onClick={() => onDuplicateTextClip(selectedTextClip)} title="Duplicar trecho selecionado">Duplicar</button>}{canDeleteSelection && <button type="button" className="video-delete-selection-button" onClick={deleteSelection} aria-label={selection?.kind === 'character' ? 'Excluir faixa e personagem da cena' : selection?.kind === 'textTrack' ? `Excluir todos os itens da faixa ${selection.trackKind === 'speech' ? 'Falas' : 'Pensamentos'}` : 'Excluir trecho selecionado'} title={selection?.kind === 'character' ? 'Excluir faixa e personagem da cena (Backspace)' : selection?.kind === 'textTrack' ? `Excluir todos os itens da faixa ${selection.trackKind === 'speech' ? 'Falas' : 'Pensamentos'} (Backspace)` : 'Excluir trecho selecionado (Backspace)'}><Icon name="trash" /></button>}</div>
+      <div className="video-timeline-heading"><strong>{formatTime(playheadFrame)}</strong><span>/ {formatTime(duration)}</span><small>{timeline.characterKeys.length + timeline.textClips.length} eventos</small><button type="button" className="video-play-button" aria-label={playing ? 'Pausar reprodução' : 'Reproduzir'} onClick={onTogglePlayback}>{playing ? '❚❚' : '▶'}<span>{playing ? 'Pausar' : 'Play'}</span></button><button type="button" className="video-split-button" onClick={splitSelection} disabled={!canSplitSelection} title={selection ? 'Dividir o trecho selecionado na posição do playhead' : 'Selecione um trecho para dividir'}>✂ Dividir</button><button type="button" className={`video-position-lock-button${characterPositionsLocked ? ' active' : ''}`} onClick={() => onSetCharacterPositionsLocked(!characterPositionsLocked)} disabled={!characters.length} aria-pressed={characterPositionsLocked} aria-label={characterPositionsLocked ? 'Destrancar posições dos personagens' : 'Trancar posições dos personagens'} title={characterPositionsLocked ? 'Destrancar posições dos personagens' : 'Trancar posições dos personagens'}><Icon name={characterPositionsLocked ? 'lock' : 'unlock'} /></button>{selection?.kind === 'text' && !isLocked(selectedTextClip?.kind ?? 'speech') && selectedTextClip && <button type="button" onClick={() => onDuplicateTextClip(selectedTextClip)} title="Duplicar trecho selecionado">Duplicar</button>}{canDeleteSelection && <button type="button" className="video-delete-selection-button" onClick={deleteSelection} aria-label="Excluir somente o bloco selecionado" title="Excluir somente o bloco selecionado (Backspace)"><Icon name="trash" /></button>}</div>
       <div className="video-timeline-actions">
         <button type="button" className={snapEnabled ? 'active' : ''} aria-pressed={snapEnabled} onClick={() => setSnapEnabled((value) => !value)} title="Magnetismo das bordas">⌁ Snap</button>
         <button type="button" className={trackMenuOpen ? 'active' : ''} aria-expanded={trackMenuOpen} onClick={() => setTrackMenuOpen((value) => !value)}>Faixas</button>
@@ -301,7 +307,7 @@ export function VideoTimeline({ studio, playheadFrame, playing, height, presetNa
             </div>
           </div>}
           {textTracks.filter(({ kind }) => trackSettings[kind]?.visible !== false).map(({ kind, label, clips }) => <div className={`video-track-row${trackSettings[kind]?.collapsed ? ' collapsed' : ''}`} key={kind}>
-            <button type="button" className={`video-track-label video-track-selectable${selection?.kind === 'textTrack' && selection.trackKind === kind ? ' selected' : ''}`} onClick={() => setSelection({ kind: 'textTrack', trackKind: kind })} title={`Selecionar faixa ${label} para excluir seus itens`}><i className={`video-track-badge ${kind}`}>{kind === 'speech' ? 'F' : 'P'}</i><span>{trackSettings[kind]?.label ?? label}</span></button>
+            <span className="video-track-label"><i className={`video-track-badge ${kind}`}>{kind === 'speech' ? 'F' : 'P'}</i><span>{trackSettings[kind]?.label ?? label}</span></span>
             <div className={`video-track-lane ${kind}-lane`} style={{ backgroundSize: `${tickSeconds * pixelsPerSecond}px 100%` }} aria-label={`Faixa de ${label.toLowerCase()}`} onClick={seekToLanePosition}>
               {timeline.saveMarkers.map((marker) => <i className="video-saved-marker" key={marker.id} style={{ left: `${marker.frame / 60 * pixelsPerSecond}px` }} title={`Frame salvo · ${formatTime(marker.frame)}`} />)}
               {clips.map(({ element, clip }) => {
@@ -334,12 +340,24 @@ export function VideoTimeline({ studio, playheadFrame, playing, height, presetNa
             const states = keys.length
               ? [...(keys[0].frame > 0 ? [{ id: `base:${character.id}`, start: 0, end: keys[0].frame, label: baseLabel }] : []), ...keys.map((key, index) => ({ id: key.id, start: key.frame, end: keys[index + 1]?.frame ?? duration, label: key.expressionPresetId ? presetNames[key.expressionPresetId] ?? 'Expressão' : key.faceMode === 'idle' ? 'Base' : key.faceMode === 'blink' ? 'Blink' : 'Talk' }))]
               : [{ id: `base:${character.id}`, start: 0, end: duration, label: baseLabel }]
+            const gaps = (timeline.characterGaps ?? []).filter((gap) => gap.elementId === character.id).sort((a, b) => a.startFrame - b.startFrame)
+            const visibleStates = states.flatMap((state) => {
+              let parts = [{ start: state.start, end: state.end }]
+              for (const gap of gaps) parts = parts.flatMap((part) => {
+                if (gap.endFrame <= part.start || gap.startFrame >= part.end) return [part]
+                return [
+                  ...(gap.startFrame > part.start ? [{ start: part.start, end: gap.startFrame }] : []),
+                  ...(gap.endFrame < part.end ? [{ start: gap.endFrame, end: part.end }] : [])
+                ]
+              })
+              return parts.map((part) => ({ ...state, start: part.start, end: part.end, renderId: `${state.id}:${part.start}` }))
+            })
             return <div className={`video-track-row${trackSettings[character.id]?.collapsed ? ' collapsed' : ''}`} key={character.id}>
               <span className="video-track-label" title={name}><i className="video-track-badge" style={{ backgroundColor: color }}>{name.slice(0, 1).toUpperCase()}</i><span>{trackSettings[character.id]?.label ?? name}</span></span>
               <div className="video-track-lane character-lane" style={{ backgroundSize: `${tickSeconds * pixelsPerSecond}px 100%` }} aria-label={`Faixa de ${name}`} onClick={seekToLanePosition}>
-                {states.map((state) => {
-                  const selected = selection?.kind === 'character' && selection.elementId === character.id && selection.startFrame === state.start
-                  return <button type="button" key={state.id} className={`video-character-span ${selected ? 'selected' : ''}`} style={{ left: `${state.start / 60 * pixelsPerSecond}px`, width: `${Math.max(3, (state.end - state.start) / 60 * pixelsPerSecond)}px`, background: `linear-gradient(180deg, ${color} 0%, ${color}cc 48%, ${color}8c 100%)` }} onClick={(event) => {
+                {visibleStates.map((state) => {
+                  const selected = selection?.kind === 'character' && selection.elementId === character.id && selection.startFrame === state.start && selection.endFrame === state.end
+                  return <button type="button" key={state.renderId} className={`video-character-span ${selected ? 'selected' : ''}`} style={{ left: `${state.start / 60 * pixelsPerSecond}px`, width: `${Math.max(3, (state.end - state.start) / 60 * pixelsPerSecond)}px`, background: `linear-gradient(180deg, ${color} 0%, ${color}cc 48%, ${color}8c 100%)` }} onClick={(event) => {
                     const rect = event.currentTarget.getBoundingClientRect()
                     const ratio = rect.width > 0 ? Math.max(0, Math.min(0.999999, (event.clientX - rect.left) / rect.width)) : 0
                     const frame = Math.min(state.end - 1, state.start + Math.floor((state.end - state.start) * ratio))
@@ -350,7 +368,7 @@ export function VideoTimeline({ studio, playheadFrame, playing, height, presetNa
                 })}
                 {keys.map((key, index) => key.frame > 0 && <button type="button" key={`boundary:${key.id}`} className="video-character-boundary" style={{ left: `${key.frame / 60 * pixelsPerSecond}px` }} aria-label={`Mover divisão de ${name}`} title="Arraste para ajustar a duração deste estado" onPointerDown={(event) => beginBoundaryDrag(event, character.id, key.id, key.frame, (keys[index - 1]?.frame ?? 0) + 1, (keys[index + 1]?.frame ?? duration) - 1)} onPointerMove={moveBoundaryDrag} onPointerUp={finishBoundaryDrag} onPointerCancel={finishBoundaryDrag} />)}
                 {timeline.saveMarkers.map((marker) => <i className="video-saved-marker" key={marker.id} style={{ left: `${marker.frame / 60 * pixelsPerSecond}px` }} title={`Frame salvo · ${formatTime(marker.frame)}`} />)}
-                {keys.map((key, index) => <button type="button" className="video-keyframe" key={key.id} style={{ left: `${key.frame / 60 * pixelsPerSecond}px` }} title={`${formatTime(key.frame)} · ${key.faceMode}`} onClick={() => { setSelection({ kind: 'character', elementId: character.id, startFrame: key.frame, endFrame: keys[index + 1]?.frame ?? duration }); onSelectElement(character.id); onSeek(key.frame) }} aria-label={`Ir ao frame ${formatTime(key.frame)} de ${name}`} />)}
+                {keys.map((key) => <button type="button" className="video-keyframe" key={key.id} style={{ left: `${key.frame / 60 * pixelsPerSecond}px` }} title={`${formatTime(key.frame)} · ${key.faceMode}`} onClick={() => { const segment = characterSegmentAtFrame(timeline, character.id, key.frame, duration); setSelection(segment ? { kind: 'character', elementId: character.id, ...segment } : null); onSelectElement(character.id); onSeek(key.frame) }} aria-label={`Ir ao frame ${formatTime(key.frame)} de ${name}`} />)}
                 <i className="video-lane-playhead" style={{ left: `${playheadFrame / 60 * pixelsPerSecond}px` }} />
               </div>
             </div>

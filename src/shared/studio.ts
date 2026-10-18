@@ -156,6 +156,8 @@ export type VideoTimelineDocument = {
   trackSettings?: Record<string, { visible?: boolean; locked?: boolean; label?: string; collapsed?: boolean; order?: number }>
   /** Original state of each actor, retained when returning to the first segment. */
   characterBases?: Record<string, VideoCharacterState>
+  /** Empty intervals created by deleting a character segment, preserving adjacent states. */
+  characterGaps?: Array<{ id: string; elementId: string; startFrame: number; endFrame: number }>
   characterKeys: Array<{ id: string; elementId: string; frame: number; poseSlot: number | null; expressionCollectionId: string | null; expressionPresetId: string | null; faceMode: StudioFaceMode; state?: VideoCharacterState }>
   textClips: Array<{ id: string; elementId: string; kind: 'speech' | 'thought'; startFrame: number; endFrame: number; state?: StudioElement }>
   saveMarkers: Array<{ id: string; frame: number; affectedTrackIds: string[] }>
