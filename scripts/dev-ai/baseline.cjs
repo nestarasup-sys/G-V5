@@ -58,6 +58,7 @@ function safeEnvironment(sandbox) {
     LOCALAPPDATA: join(sandbox, 'AppData', 'Local'),
     XDG_CONFIG_HOME: join(sandbox, 'config'),
     XDG_CACHE_HOME: join(sandbox, 'cache'),
+    TMP: join(sandbox, 'tmp'), TEMP: join(sandbox, 'tmp'), TMPDIR: join(sandbox, 'tmp'),
     npm_config_cache: join(sandbox, 'npm-cache'),
     CI: '1', GACHA_DEV_AI_SANDBOX: sandbox
   }
@@ -150,7 +151,7 @@ async function main(argv = process.argv.slice(2)) {
   await mkdir(runRoot, { recursive: true })
   await writeFile(join(runRoot, '.dev-ai-sandbox.json'), JSON.stringify({ schemaVersion: 1, runId, syntheticOnly: true }), { flag: 'wx' })
   const sandbox = join(runRoot, 'sandbox')
-  await Promise.all(['AppData/Roaming', 'AppData/Local', 'config', 'cache', 'npm-cache']
+  await Promise.all(['AppData/Roaming', 'AppData/Local', 'config', 'cache', 'npm-cache', 'tmp']
     .map(p => mkdir(join(sandbox, p), { recursive: true })))
   const env = safeEnvironment(sandbox)
   const report = {
