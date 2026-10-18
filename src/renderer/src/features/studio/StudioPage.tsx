@@ -3,7 +3,7 @@ import { buildStudioExpressionAppearance, buildStudioExpressionTransforms, resol
 import { Icon } from '../../ui/components/Icon'
 import { CharacterPortrait } from '../../ui/components/CharacterPortrait'
 import { resolveStudioTalkMouthId, videoCharacterTrackColor } from '../../../../shared/studio'
-import type { StudioAsset, StudioDocument, StudioElement, StudioFaceMode, StudioFaceTransform, StudioFaceTransforms } from '../../../../shared/studio'
+import type { StudioAsset, StudioDocument, StudioElement, StudioFaceMode, StudioFaceTransform, StudioFaceTransforms, VideoTimelineDocument } from '../../../../shared/studio'
 import { VideoTimeline, videoTimelineFor } from '../videoStudio/VideoTimeline'
 import type { CustomizerCharacter } from '../../../../shared/customizer'
 import type { CustomizerFaceAppearance } from '../../../../shared/customizer'
@@ -928,6 +928,78 @@ export function StudioPage({ workspace = 'studio' }: { workspace?: StudioWorkspa
     })
   }
 
+  const splitVideoCharacterTrack = (elementId: string, frame: number) => {
+    if (!activeStudio) return
+    const character = activeStudio.elements.find((element) => element.id === elementId && element.kind === 'character')
+    if (!character) return
+    changeScene((studio) => {
+      const current = videoTimelineFor(studio)
+      const keys = [...current.characterKeys]
+      if (keys.some((key) => key.elementId === elementId && key.frame === frame)) return studio
+      const previous = keys.filter((key) => key.elementId === elementId && key.frame < frame).sort((a, b) => b.frame - a.frame)[0]
+      const state = previous ? {
+        poseSlot: previous.poseSlot,
+        expressionCollectionId: previous.expressionCollectionId,
+        expressionPresetId: previous.expressionPresetId,
+        faceMode: previous.faceMode
+      } : {
+        poseSlot: character.poseSlot ?? null,
+        expressionCollectionId: character.activeExpressionCollectionId ?? 'standard',
+        expressionPresetId: character.activeExpressionPresetId ?? null,
+        faceMode: studioFaceModeForElement(character, character.faceAppearance)
+      }
+      keys.push({ id: crypto.randomUUID(), elementId, frame, ...state })
+      keys.sort((a, b) => a.frame - b.frame)
+      const existingMarker = current.saveMarkers.find((item) => item.frame === frame)
+      const marker = { id: existingMarker?.id ?? crypto.randomUUID(), frame, affectedTrackIds: [...new Set([...(existingMarker?.affectedTrackIds ?? []), elementId])] }
+      const saveMarkers = existingMarker
+        ? current.saveMarkers.map((item) => item.frame === frame ? marker : item)
+        : [...current.saveMarkers, marker]
+      return { ...studio, videoTimeline: { ...current, characterKeys: keys, saveMarkers }, updatedAt: new Date().toISOString() }
+    })
+    setVideoPlayheadFrame(frame)
+  }
+
+  const splitVideoTextClip = (selected: { elementId: string; clipId: string; startFrame: number; endFrame: number }, frame: number, rightClipId: string) => {
+    if (!activeStudio) return
+    const element = activeStudio.elements.find((item) => item.id === selected.elementId)
+    if (!element || (element.kind !== 'speech' && element.kind !== 'thought')) return
+    changeScene((studio) => {
+      const current = videoTimelineFor(studio)
+      const original = current.textClips.find((clip) => clip.id === selected.clipId)
+      const kind = original?.kind ?? element.kind as 'speech' | 'thought'
+      const leftClipId = original ? original.id : crypto.randomUUID()
+      const remaining = current.textClips.filter((clip) => clip.id !== original?.id)
+      const left: VideoTimelineDocument['textClips'][number] = { id: leftClipId, elementId: selected.elementId, kind, startFrame: selected.startFrame, endFrame: frame }
+      const right: VideoTimelineDocument['textClips'][number] = { id: rightClipId, elementId: selected.elementId, kind, startFrame: frame, endFrame: selected.endFrame }
+      return { ...studio, videoTimeline: { ...current, textClips: [...remaining, left, right] }, updatedAt: new Date().toISOString() }
+    })
+    setVideoPlayheadFrame(frame)
+  }
+
+  const updateVideoTextClip = (clip: VideoTimelineDocument['textClips'][number]) => {
+    changeScene((studio) => {
+      const current = videoTimelineFor(studio)
+      const exists = current.textClips.some((item) => item.id === clip.id)
+      return { ...studio, videoTimeline: { ...current, textClips: exists ? current.textClips.map((item) => item.id === clip.id ? clip : item) : [...current.textClips, clip] }, updatedAt: new Date().toISOString() }
+    })
+  }
+
+  const moveVideoCharacterBoundary = (elementId: string, keyId: string, frame: number) => {
+    changeScene((studio) => {
+      const current = videoTimelineFor(studio)
+      const keys = current.characterKeys.filter((key) => key.elementId === elementId).sort((a, b) => a.frame - b.frame)
+      const index = keys.findIndex((key) => key.id === keyId)
+      if (index < 0 || keys[index].frame <= 0) return studio
+      const minFrame = (keys[index - 1]?.frame ?? 0) + 1
+      const maxFrame = (keys[index + 1]?.frame ?? current.durationFrames) - 1
+      const nextFrame = Math.max(minFrame, Math.min(maxFrame, Math.round(frame)))
+      if (nextFrame === keys[index].frame) return studio
+      return { ...studio, videoTimeline: { ...current, characterKeys: current.characterKeys.map((key) => key.id === keyId ? { ...key, frame: nextFrame } : key) }, updatedAt: new Date().toISOString() }
+    })
+    setVideoPlayheadFrame(frame)
+  }
+
   const openCastPicker = () => {
     setCastSelection(stageCharacters.map((element) => element.characterId).filter((id): id is string => Boolean(id)))
     setCastPickerOpen(true)
@@ -1605,7 +1677,7 @@ export function StudioPage({ workspace = 'studio' }: { workspace?: StudioWorkspa
           </div>
         </section>
         {!fullView && <aside className="studio-editor-rail studio-editor-right" aria-label="Elenco do Studio">{castPanel()}</aside>}
-        {!fullView && isVideoWorkspace && <VideoTimeline studio={activeStudio} playheadFrame={videoPlayheadFrame} playing={videoPlaying} height={videoTimelineHeight} presetNames={Object.fromEntries(studioExpressionPresets.map((preset) => [preset.id, preset.name]))} onResize={setVideoTimelineHeight} onSeek={(frame) => { const clamped = Math.max(0, Math.min(videoTimelineFor(activeStudio).durationFrames, frame)); videoPlaybackAnchorRef.current = { frame: clamped, time: performance.now() }; setVideoPlayheadFrame(clamped) }} onTogglePlayback={() => setVideoPlaying((value) => !value)} onSaveFrame={saveVideoFrame} onAddText={(kind) => addTextElement(kind)} onChangeDuration={(durationFrames) => changeScene((studio) => ({ ...studio, videoTimeline: { ...videoTimelineFor(studio), durationFrames, playheadFrame: Math.min(videoPlayheadFrame, durationFrames) }, updatedAt: new Date().toISOString() }))} />}
+        {!fullView && isVideoWorkspace && <VideoTimeline studio={activeStudio} playheadFrame={videoPlayheadFrame} playing={videoPlaying} height={videoTimelineHeight} presetNames={Object.fromEntries(studioExpressionPresets.map((preset) => [preset.id, preset.name]))} onResize={setVideoTimelineHeight} onSelectElement={(elementId) => { setVideoPlaying(false); setSelectedElementId(elementId); setInspectorOpen(true); setInspectorTab('editor') }} onSeek={(frame) => { const clamped = Math.max(0, Math.min(videoTimelineFor(activeStudio).durationFrames, frame)); videoPlaybackAnchorRef.current = { frame: clamped, time: performance.now() }; setVideoPlayheadFrame(clamped) }} onTogglePlayback={() => setVideoPlaying((value) => !value)} onSaveFrame={saveVideoFrame} onSplitCharacter={splitVideoCharacterTrack} onSplitTextClip={splitVideoTextClip} onUpdateTextClip={updateVideoTextClip} onMoveCharacterBoundary={moveVideoCharacterBoundary} onAddText={(kind) => addTextElement(kind)} onChangeDuration={(durationFrames) => changeScene((studio) => ({ ...studio, videoTimeline: { ...videoTimelineFor(studio), durationFrames, playheadFrame: Math.min(videoPlayheadFrame, durationFrames) }, updatedAt: new Date().toISOString() }))} />}
         {castPickerOpen && <div className="studio-cast-modal-backdrop" onPointerDown={(event) => { if (event.target === event.currentTarget && !savingCast) setCastPickerOpen(false) }}>
           <section className="studio-cast-modal" role="dialog" aria-modal="true" aria-labelledby="studio-cast-modal-title">
             <header><span><small>EDITAR ELENCO</small><h2 id="studio-cast-modal-title">Personagens do {workspaceTitle}</h2></span><button className="studio-cast-modal-close" onClick={() => setCastPickerOpen(false)} aria-label="Fechar" disabled={savingCast} type="button">×</button></header>
