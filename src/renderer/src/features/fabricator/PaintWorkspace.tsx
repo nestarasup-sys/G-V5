@@ -6,21 +6,24 @@ import './paint.css'
 type Tool = 'brush' | 'eraser' | 'edge' | 'picker' | 'magic'
 const labels: Record<string, string> = { models: 'Modelos', poses: 'Poses', wardrobe: 'Roupas', faces: 'Rosto', 'face-components': 'Olhos e extras', hair: 'Cabelos', animations: 'Animações' }
 const loadImage = (url: string) => new Promise<HTMLImageElement>((resolve, reject) => { const image = new Image(); image.onload = () => resolve(image); image.onerror = reject; image.src = url })
-function trimTransparentEdge(canvas: HTMLCanvasElement, width: number, center?: { x: number; y: number; radius: number }): void {
+function trimTransparentEdge(canvas: HTMLCanvasElement, center: { x: number; y: number; radius: number }): void {
   const context = canvas.getContext('2d', { willReadFrequently: true })!
-  const image = context.getImageData(0, 0, canvas.width, canvas.height)
+  const left = Math.max(0, Math.floor(center.x - center.radius - 1))
+  const top = Math.max(0, Math.floor(center.y - center.radius - 1))
+  const right = Math.min(canvas.width, Math.ceil(center.x + center.radius + 1))
+  const bottom = Math.min(canvas.height, Math.ceil(center.y + center.radius + 1))
+  const image = context.getImageData(left, top, right - left, bottom - top)
   const { data } = image
   const w = image.width; const h = image.height
-  for (let pass = 0; pass < width; pass += 1) {
-    const previous = new Uint8ClampedArray(data)
-    for (let y = 0; y < h; y += 1) for (let x = 0; x < w; x += 1) {
-      if (center && (x - center.x) ** 2 + (y - center.y) ** 2 > center.radius ** 2) continue
-      const offset = (y * w + x) * 4 + 3
-      if (!previous[offset]) continue
-      if (x === 0 || y === 0 || x === w - 1 || y === h - 1 || !previous[offset - 4] || !previous[offset + 4] || !previous[offset - w * 4] || !previous[offset + w * 4]) data[offset] = 0
-    }
+  const previous = new Uint8ClampedArray(data)
+  for (let y = 0; y < h; y += 1) for (let x = 0; x < w; x += 1) {
+    const imageX = left + x; const imageY = top + y
+    if ((imageX - center.x) ** 2 + (imageY - center.y) ** 2 > center.radius ** 2) continue
+    const offset = (y * w + x) * 4 + 3
+    if (!previous[offset]) continue
+    if (imageX === 0 || imageY === 0 || imageX === canvas.width - 1 || imageY === canvas.height - 1 || !previous[offset - 4] || !previous[offset + 4] || !previous[offset - w * 4] || !previous[offset + w * 4]) data[offset] = 0
   }
-  context.putImageData(image, 0, 0)
+  context.putImageData(image, left, top)
 }
 
 function magicErase(canvas: HTMLCanvasElement, x: number, y: number, tolerance: number): void {
@@ -133,7 +136,7 @@ export function PaintWorkspace() {
     const canvas = canvasRef.current!; const context = canvas.getContext('2d')!
     if (tool === 'edge') {
       const steps = Math.max(1, Math.ceil(Math.hypot(x - fromX, y - fromY) / Math.max(1, size / 3)))
-      for (let index = 0; index <= steps; index += 1) trimTransparentEdge(canvas, 1, { x: fromX + (x - fromX) * index / steps, y: fromY + (y - fromY) * index / steps, radius: size / 2 })
+      for (let index = 0; index <= steps; index += 1) trimTransparentEdge(canvas, { x: fromX + (x - fromX) * index / steps, y: fromY + (y - fromY) * index / steps, radius: size / 2 })
       return
     }
     context.save(); context.globalCompositeOperation = tool === 'eraser' ? 'destination-out' : 'source-over'
@@ -169,7 +172,6 @@ export function PaintWorkspace() {
       window.dispatchEvent(new Event('fabricator:assets-updated')); setMessage('Edição removida. Original restaurado.')
     } catch (error) { setMessage(String(error)) } finally { setBusy(false) }
   }
-  const trim = () => { if (!canvasRef.current) return; checkpoint(); trimTransparentEdge(canvasRef.current, Math.min(8, Math.max(1, Math.round(size / 8)))); setDirty(true) }
 
   return <section className="fabricator-workspace paint-workspace" aria-label="Paint Nymi">
     <header className="paint-heading"><span><strong>Paint Nymi</strong><small>Edite pixels sem alterar a imagem original</small></span><div><button disabled={!selected || !dirty || busy} onClick={() => void save()}><Icon name="save" /> Salvar edição</button><button disabled={!selected || (!edited && !dirty) || busy} onClick={() => void remove()}><Icon name="reset" /> Remover edição</button></div></header>
@@ -180,7 +182,7 @@ export function PaintWorkspace() {
         <div className="paint-group-list">{groups.map((group) => <button key={group.id} className={selectedGroup === group.id ? 'active' : ''} onClick={() => selectGroup(group.id)}><span className="paint-group-icon"><Icon name={group.category === 'models' || group.category === 'animations' ? 'body' : group.category === 'wardrobe' ? 'shirt' : group.category === 'hair' ? 'bow' : 'face'} /></span><span><strong title={group.name}>{group.name}</strong><small>{group.items.length} peça(s)</small></span><Icon name="chevronRight" /></button>)}{!groups.length && <p>Nenhum conjunto encontrado.</p>}</div>
       </aside>
       <aside className="paint-catalog-panel"><header><strong>{groups.find((group) => group.id === selectedGroup)?.name ?? 'Catálogo'}</strong><small>{groupItems.length} peça(s)</small></header><div className="paint-piece-grid">{groupItems.map((asset) => <button key={asset.id} className={selected === asset.id ? 'active' : ''} onClick={() => void select(asset.id)} title={`${asset.name} · ${asset.location}`}><span className="paint-piece-image">{thumbnails[asset.id] ? <img src={thumbnails[asset.id]} alt="" /> : <Icon name="frame" />}</span><strong>{asset.name}</strong><small>{asset.edited ? 'Edição salva' : 'Original'}</small></button>)}{!groupItems.length && <p>Escolha um conjunto para ver as peças.</p>}</div></aside>
-    <div className="paint-editor"><div className="paint-toolbar"><div className="paint-tool-row"><button className={tool === 'brush' ? 'active' : ''} onClick={() => setTool('brush')} title="Pincel"><Icon name="brush" /> Pincel</button><button className={tool === 'eraser' ? 'active' : ''} onClick={() => setTool('eraser')} title="Borracha"><Icon name="eraser" /> Borracha</button><button className={tool === 'edge' ? 'active' : ''} onClick={() => setTool('edge')} title="Apaga apenas pixels no contorno"><Icon name="eraser" /> Borda</button><button className={tool === 'magic' ? 'active' : ''} onClick={() => setTool('magic')} title="Remove a região de cor parecida conectada ao clique">Borracha mágica</button><button className={tool === 'picker' ? 'active' : ''} onClick={() => setTool('picker')} title="Escolher cor da imagem">Conta-gotas</button><button disabled={!selected} onClick={trim} title="Remove uma faixa fina em todo o contorno">Limpar bordas</button><button disabled={!undoRef.current.length} onClick={() => void undo()} title="Desfazer"><Icon name="undo" /></button><button disabled={!redoRef.current.length} onClick={() => void redo()} title="Refazer"><Icon name="redo" /></button></div><div className="paint-tool-row"><label>Cor <input type="color" value={color} onChange={(event) => setColor(event.target.value)} /></label><label>Tamanho {size}px <input type="range" min="1" max="100" value={size} onChange={(event) => setSize(Number(event.target.value))} /></label><label>Opacidade {opacity}% <input type="range" min="1" max="100" value={opacity} onChange={(event) => setOpacity(Number(event.target.value))} /></label><label>Tolerância {tolerance} <input type="range" min="0" max="100" value={tolerance} onChange={(event) => setTolerance(Number(event.target.value))} /></label><label>Zoom {Math.round(zoom * 100)}% <input type="range" min="0.25" max="6" step="0.25" value={zoom} onChange={(event) => setZoom(Number(event.target.value))} /></label><button disabled={!selected} onPointerDown={() => setCompare(true)} onPointerUp={() => setCompare(false)} onPointerLeave={() => setCompare(false)}>Ver original</button></div></div>
+    <div className="paint-editor"><div className="paint-toolbar"><div className="paint-tool-row"><button className={tool === 'brush' ? 'active' : ''} onClick={() => setTool('brush')} title="Pincel"><Icon name="brush" /> Pincel</button><button className={tool === 'eraser' ? 'active' : ''} onClick={() => setTool('eraser')} title="Borracha"><Icon name="eraser" /> Borracha</button><button className={tool === 'edge' ? 'active' : ''} onClick={() => setTool('edge')} title="Arraste sobre as bordas da imagem para limpar o contorno"><Icon name="eraser" /> Remover bordas</button><button className={tool === 'magic' ? 'active' : ''} onClick={() => setTool('magic')} title="Remove a região de cor parecida conectada ao clique">Borracha mágica</button><button className={tool === 'picker' ? 'active' : ''} onClick={() => setTool('picker')} title="Escolher cor da imagem">Conta-gotas</button><button disabled={!undoRef.current.length} onClick={() => void undo()} title="Desfazer"><Icon name="undo" /></button><button disabled={!redoRef.current.length} onClick={() => void redo()} title="Refazer"><Icon name="redo" /></button></div><div className="paint-tool-row"><label>Cor <input type="color" value={color} onChange={(event) => setColor(event.target.value)} /></label><label>Tamanho {size}px <input type="range" min="1" max="100" value={size} onChange={(event) => setSize(Number(event.target.value))} /></label><label>Opacidade {opacity}% <input type="range" min="1" max="100" value={opacity} onChange={(event) => setOpacity(Number(event.target.value))} /></label><label>Tolerância {tolerance} <input type="range" min="0" max="100" value={tolerance} onChange={(event) => setTolerance(Number(event.target.value))} /></label><label>Zoom {Math.round(zoom * 100)}% <input type="range" min="0.25" max="6" step="0.25" value={zoom} onChange={(event) => setZoom(Number(event.target.value))} /></label><button disabled={!selected} onPointerDown={() => setCompare(true)} onPointerUp={() => setCompare(false)} onPointerLeave={() => setCompare(false)}>Ver original</button></div></div>
     <div className="paint-stage"><div className="paint-canvas-wrap" style={{ display: selected ? undefined : 'none', width: canvasRef.current?.width ? canvasRef.current.width * zoom : undefined, height: canvasRef.current?.height ? canvasRef.current.height * zoom : undefined }}><canvas ref={canvasRef} style={{ visibility: compare ? 'hidden' : 'visible' }} onPointerDown={start} onPointerMove={move} onPointerUp={stop} onPointerCancel={stop} />{compare && <img src={original} alt="Imagem original" />}</div>{!selected && <p>Selecione uma peça à esquerda para começar.</p>}</div><footer className="paint-status"><span>{selected ? `${canvasRef.current?.width ?? 0} × ${canvasRef.current?.height ?? 0} px${dirty ? ' · alterações não salvas' : edited ? ' · edição salva' : ' · original'}` : 'O original permanece intacto.'}</span><span role="status">{message}</span></footer></div></div>
   </section>
 }
