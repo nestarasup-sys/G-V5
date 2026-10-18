@@ -3,6 +3,7 @@ import type {
   VideoActorState, VideoAsset, VideoCharacterTrack, VideoFaceMode, VideoProject, VideoSceneElement, VideoTextClip
 } from '../../../../shared/videoStudio'
 import { createVideoProject } from '../../../../shared/videoStudio'
+import type { StudioDocument } from '../../../../shared/studio'
 import {
   evaluateVideoProject, equalActorState, moveCharacterBoundary, recordVideoFrame,
   stateAtFrame, updateVideoDuration
@@ -43,6 +44,8 @@ export function VideoStudioPage() {
   const [boundaryPreview, setBoundaryPreview] = useState<BoundaryDrag | null>(null)
   const [dragPreview, setDragPreview] = useState<{ id: string; x: number; y: number } | null>(null)
   const [selectedClip, setSelectedClip] = useState<{ trackId: string; id: string } | null>(null)
+  const [studioSources, setStudioSources] = useState<StudioDocument[] | null>(null)
+  const [sourceCharacterNames, setSourceCharacterNames] = useState<Record<string, string>>({})
 
   const undoStack = useRef<VideoProject[]>([])
   const redoStack = useRef<VideoProject[]>([])
@@ -252,6 +255,81 @@ export function VideoStudioPage() {
     } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) }
   }
 
+  /**
+   * A Studio normal is a SOURCE, never the destination: read the existing scene
+   * through IPC, clone its rendered PNG assets into a separate VideoProject and
+   * give every actor a fresh canonical full-duration track.
+   */
+  const browseStudios = async () => {
+    try {
+      setError(null)
+      const [studios, characters] = await Promise.all([
+        window.desktop.listStudios(),
+        window.desktop.listCustomizerCharacters()
+      ])
+      setSourceCharacterNames(Object.fromEntries(characters.map(character => [character.id, character.name])))
+      setStudioSources(studios)
+      if (!studios.length) setError('Não há cenas no Studio normal para importar.')
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason))
+    }
+  }
+
+  const importStudioScene = (source: StudioDocument) => {
+    if (!activeProject) return
+    const hasContent = activeProject.elements.length > 0 || activeProject.assets.length > 0
+      || activeProject.saveMarkers.length > 0 || activeProject.textTracks.some(track => track.clips.length > 0)
+    if (hasContent && !window.confirm('Substituir a composição, as faixas de personagens e os textos deste vídeo por uma cópia de "' + source.title + '"?')) return
+    const availableIds = new Set(source.assets.map(asset => asset.id))
+    const visualElements = source.elements.filter(element =>
+      (element.kind === 'character' || element.kind === 'image') && !!element.assetId && availableIds.has(element.assetId))
+    const usedIds = new Set<string>()
+    for (const item of visualElements) if (item.assetId) usedIds.add(item.assetId)
+    if (source.backgroundAssetId && availableIds.has(source.backgroundAssetId)) usedIds.add(source.backgroundAssetId)
+    const assets = source.assets.filter(asset => usedIds.has(asset.id)).map(asset => ({ ...asset }))
+    const sceneElements: VideoSceneElement[] = visualElements.map(item => {
+      const size = item.kind === 'character' ? (item.characterScale ?? 100) / 100 : 1
+      const widthScale = item.kind === 'character' ? (item.characterWidthScale ?? 100) / 100 : 1
+      const heightScale = item.kind === 'character' ? (item.characterHeightScale ?? 100) / 100 : 1
+      return {
+        id: crypto.randomUUID(), kind: item.kind,
+        name: item.kind === 'character' && item.characterId
+          ? sourceCharacterNames[item.characterId] ?? 'Personagem' : item.kind === 'character' ? 'Personagem' : 'Objeto',
+        assetId: item.assetId!, x: item.x, y: item.y,
+        width: Math.max(1, item.width * size * widthScale),
+        height: Math.max(1, item.height * size * heightScale),
+        rotation: item.rotation, zIndex: item.zIndex, flipX: item.flipX === true
+      }
+    })
+    const tracks: VideoCharacterTrack[] = sceneElements.filter(item => item.kind === 'character').map((item, index) => ({
+      id: crypto.randomUUID(), elementId: item.id, name: item.name,
+      order: index, locked: false, collapsed: false,
+      segments: [{
+        id: crypto.randomUUID(), startFrame: 0, endFrameExclusive: activeProject.durationFrames,
+        state: { ...initialState }, transitionInMs: 20
+      }]
+    }))
+    commit(project => ({
+      ...project,
+      canvas: {
+        ...project.canvas, backgroundColor: source.backgroundColor,
+        backgroundAssetId: source.backgroundAssetId && usedIds.has(source.backgroundAssetId) ? source.backgroundAssetId : null,
+        backgroundPlacement: {
+          x: source.backgroundX, y: source.backgroundY, width: source.backgroundWidth,
+          height: source.backgroundHeight, rotation: source.backgroundRotation
+        }
+      },
+      assets, elements: sceneElements, characterTracks: tracks, saveMarkers: [],
+      textTracks: project.textTracks.map(track => ({ ...track, clips: [] }))
+    }))
+    setSelectedElementId(null)
+    setSelectedClip(null)
+    setStudioSources(null)
+    setDrafts({})
+    if (source.elements.length !== visualElements.length)
+      setError('Cena copiada. Os blocos de texto do Studio normal não foram importados nesta etapa.')
+  }
+
   const attachFaceRole = async (element: VideoSceneElement, role: VideoFaceMode) => {
     try {
       const asset = await window.desktop.importVideoImage('character')
@@ -448,6 +526,12 @@ export function VideoStudioPage() {
           }))}>Remover fundo</button>}
           <button type="button" onClick={() => void importImage('character')}>+ Personagem (PNG)</button>
           <button type="button" onClick={() => void importImage('object')}>+ Objeto</button>
+          <button type="button" onClick={() => void browseStudios()}>↗ Importar cena do Studio</button>
+          {studioSources !== null && <div className="video-studio-import-picker">
+            <strong>Cenas do Studio</strong>
+            {studioSources.map(studio => <button type="button" key={studio.id} onClick={() => importStudioScene(studio)}>{studio.title} · {studio.elements.length} itens</button>)}
+            <button type="button" onClick={() => setStudioSources(null)}>Cancelar</button>
+          </div>}
           <p>Assets são copiados para a pasta do projeto. A ponte de personagens renderizados do Fabricador será integrada depois.</p>
           <label>Cor de fundo <input type="color" value={activeProject.canvas.backgroundColor}
             onChange={event => commit(project => ({ ...project, canvas: { ...project.canvas, backgroundColor: event.target.value } }))} /></label>
