@@ -468,6 +468,13 @@ async function areaSmoke(window) {
   const slots = await window.webContents.executeJavaScript('window.desktop.listFabricatorSlots()')
   assert.ok(Array.isArray(slots) && slots.length === 10)
   const modelWorkspace = await route('/fabricador-dev', '.fabricator-model-editor', 'Fabricador modelos')
+  // Options is intentionally a placeholder today. Verify its route mounts
+  // without a renderer error, but don't call this an editing/persistence test.
+  const options = await route('/opcoes', '[aria-label="Opções"]', 'Opções')
+  const optionsPlaceholder = await window.webContents.executeJavaScript(
+    'Boolean(document.querySelector("main.blank-page[aria-label=\\\"Opções\\\"]"))'
+  )
+  assert.equal(optionsPlaceholder, true, 'A área Opções deixou de montar o placeholder esperado')
   const openEditor = async (normal) => {
     const hash = normal ? '/estudio' : '/video-studio'
     const cardSelector = normal ? '.studio-card-open' : '.video-studio-card-open'
@@ -549,6 +556,9 @@ async function areaSmoke(window) {
     }
   }
   const studioBefore = await openEditor(true)
+  const memoryBeforeNavigation = app.getAppMetrics().map(metric => ({
+    processType: metric.type, workingSetSizeKb: metric.memory?.workingSetSize ?? null
+  }))
   const navigationDurations = []
   const navigationPhaseDurations = { routeToLibrary: [], libraryToEditor: [], routeToEditorReady: [] }
   // One alternation is one route change. 50 Studio↔Video pairs = 100
@@ -575,6 +585,9 @@ async function areaSmoke(window) {
       }, null, 2))
     }
   }
+  const memoryAfterNavigation = app.getAppMetrics().map(metric => ({
+    processType: metric.type, workingSetSizeKb: metric.memory?.workingSetSize ?? null
+  }))
   const stableAfter = await captureSettled(window, 'studio-after')
   const beforePng = stableBefore.png
   const afterPng = stableAfter.png
@@ -606,7 +619,8 @@ async function areaSmoke(window) {
     routeTransitions: navigationDurations.length, status: 'passed'
   }, null, 2))
   const result = { mode, status: 'passed', adapter: 'production-preload-real-ipc', realIpcCovered: true,
-    smokeAreas: [customizer, fabricator, modelWorkspace], customizerSyntheticCharacters: characters.length,
+    smokeAreas: [customizer, fabricator, modelWorkspace, options],
+    optionsPlaceholderOnly: true, customizerSyntheticCharacters: characters.length,
     fabricatorSlots: slots.length, navigationWhileSaving: { savesDispatched: navigationDocuments.length,
       pendingAtRouteChange: navigationPendingAtRouteChange, finalTitlePersisted: 'Navigation save 40',
       oppositeNamespaceHashUnchanged: true },
@@ -622,6 +636,9 @@ async function areaSmoke(window) {
       visualComparison: visual.metrics,
       visualComparisonArtifact: 'real-ipc-visual-comparison.json',
       screenshotBackend: 'BrowserWindow show:false + webContents.capturePage; not Electron offscreen:true' },
+    memorySamples: { unit: 'KB', source: 'Electron app.getAppMetrics().memory.workingSetSize',
+      beforeNavigation: memoryBeforeNavigation, afterNavigation: memoryAfterNavigation,
+      samples: 2, leakConclusion: 'not determined; two samples cannot establish a leak' },
     environment: runtimeEnvironment(), rendererErrors: diagnostics }
   await writeFile(join(output, 'area-smoke-result.json'), JSON.stringify(result, null, 2))
   console.log(JSON.stringify(result))
