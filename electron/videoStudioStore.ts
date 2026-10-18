@@ -105,7 +105,18 @@ export async function saveVideoProject(project: VideoProject): Promise<void> {
     if (bytes.length > MAX_IMAGE_BYTES) throw new Error('Imagem excede 50 MB.')
     const hash = createHash('sha256').update(bytes).digest('hex')
     const fileName = hash + '.' + imageExtension(asset.mimeType)
-    await writeFile(join(assetsFolder, fileName), bytes)
+    const target = join(assetsFolder, fileName)
+    // Most edits only change a few JSON bytes. Avoid rewriting megabytes of
+    // unchanged immutable assets on every autosave.
+    const existing = await stat(target).catch(error => {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
+      throw error
+    })
+    if (!existing?.isFile() || existing.size !== bytes.length) {
+      const temporaryAsset = target + '.tmp-' + randomUUID()
+      await writeFile(temporaryAsset, bytes)
+      await rename(temporaryAsset, target)
+    }
     const { dataUrl: _dataUrl, ...metadata } = asset
     manifest.push({ ...metadata, fileName })
   }
