@@ -39,7 +39,8 @@
 .video-studio-stage-element { position:absolute; padding:0; border:2px solid transparent; background:transparent; display:grid; place-items:center; }
 .video-studio-stage-element:hover { border-color:#ffe9aa; }
 .video-studio-stage-element.selected { border:2px dashed #ffd370; }
-.video-studio-stage-element img { width:100%; height:100%; object-fit:contain; pointer-events:none; }
+.video-studio-stage-element img { position:absolute; inset:0; width:100%; height:100%; object-fit:contain; pointer-events:none; }
+.video-studio-stage-element img.video-studio-transition-previous { z-index:1; }
 .video-studio-stage-element span { color:#4c3947; font-size:11px; }
 .video-studio-stage-empty { position:absolute; inset:0; display:grid; place-items:center; color:#8e667f; font-size:12px; pointer-events:none; }
 .video-studio-stage-text { position:absolute; left:50%; bottom:6%; z-index:500; transform:translateX(-50%); width:max-content; max-width:78%; white-space:pre-wrap; overflow-wrap:anywhere; background:#fff9; color:#392f39; padding:7px 13px; border:1px solid #ffffff77; border-radius:9px; text-align:center; font-weight:750; }
