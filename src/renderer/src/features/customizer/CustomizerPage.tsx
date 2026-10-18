@@ -1539,6 +1539,7 @@ export function CustomizerPage() {
   const [poseThumbnails, setPoseThumbnails] = useState<Record<string, string>>({})
   const [clothingSection, setClothingSection] = useState<'Customizar' | 'Superior' | 'Inferior'>('Superior')
   const [clothesPanelTab, setClothesPanelTab] = useState<(typeof customizerClothesTabs)[number]['id']>('upper')
+  const [clothesCategorySelection, setClothesCategorySelection] = useState<Exclude<(typeof customizerClothesTabs)[number]['id'], 'adjust'>>('upper')
   const [upperWardrobePage, setUpperWardrobePage] = useState<1 | 2>(1)
   const [lowerWardrobePage, setLowerWardrobePage] = useState<1 | 2>(1)
   const [otherPanelTab, setOtherPanelTab] = useState<(typeof customizerOtherTabs)[number]['id']>('extra')
@@ -1567,6 +1568,7 @@ export function CustomizerPage() {
   const [faceCatalogLibraryPart, setFaceCatalogLibraryPart] = useState<'nose' | 'eye-highlight-left' | 'mouth' | 'eye-highlight-right' | 'blush' | 'facial-shadow' | null>(null)
   const [faceCatalogLibraryPage, setFaceCatalogLibraryPage] = useState(0)
   const [headPanelTab, setHeadPanelTab] = useState<'hair' | 'eyes' | 'face' | 'extra' | 'adjust'>('hair')
+  const [headCategorySelection, setHeadCategorySelection] = useState<'hair' | 'eyes' | 'face' | 'extra'>('hair')
   const [headAdjustSelection, setHeadAdjustSelection] = useState<string | null>(null)
   const [activeHairColorRole, setActiveHairColorRole] = useState<HairColorRole>('base')
   const [selectedClothing, setSelectedClothing] = useState<SelectedWardrobeComponent | null>(null)
@@ -2200,8 +2202,10 @@ export function CustomizerPage() {
     }
     if (item.category === 'eyes' || item.category === 'eyebrows') {
       setHeadPanelTab('eyes')
+      setHeadCategorySelection('eyes')
     } else {
       setHeadPanelTab('face')
+      setHeadCategorySelection('face')
     }
     await saveCharacterCustomization({ faceAppearance: appearance })
   }
@@ -3518,20 +3522,24 @@ export function CustomizerPage() {
               ><CustomizerCategoryIcon category={tab.id} /><span>{tab.label}</span></button>)}
             </nav>
             {selectedCustomizerTopTab === 'cabeca' && <nav className="customizer-head-category-tabs" aria-label="Categorias de cabeça" role="tablist">
-              {customizerHeadTabs.map((tab) => <button key={tab.id} className={headPanelTab === tab.id ? 'active' : ''} onClick={() => {
-                setHeadPanelTab(tab.id)
+              {customizerHeadTabs.map((tab) => <button key={tab.id} className={headPanelTab === tab.id || headPanelTab === 'adjust' && headCategorySelection === tab.id ? 'active' : ''} onClick={() => {
+                const nextTab = tab.id === 'adjust' && headPanelTab === 'adjust' ? headCategorySelection : tab.id
+                setHeadPanelTab(nextTab)
+                if (nextTab !== 'adjust') setHeadCategorySelection(nextTab)
               }} aria-selected={headPanelTab === tab.id} role="tab" type="button"><Icon name={tab.icon} /><span>{tab.label}</span></button>)}
             </nav>}
             {selectedCustomizerTopTab === 'roupas' && <nav className="customizer-clothes-category-tabs" aria-label="Categorias de roupas" role="tablist">
-              {customizerClothesTabs.map((tab) => <button key={tab.id} className={clothesPanelTab === tab.id ? 'active' : ''} onClick={() => {
+              {customizerClothesTabs.map((tab) => <button key={tab.id} className={clothesPanelTab === tab.id || clothesPanelTab === 'adjust' && clothesCategorySelection === tab.id ? 'active' : ''} onClick={() => {
                 if (tab.id === clothesPanelTab && (tab.id === 'upper' || tab.id === 'lower')) {
                   if (tab.id === 'upper') setUpperWardrobePage((page) => page === 1 ? 2 : 1)
                   else setLowerWardrobePage((page) => page === 1 ? 2 : 1)
                   setWardrobeLibraryPanel(null)
                 }
-                setClothesPanelTab(tab.id)
-                if (tab.id === 'upper') setClothingSection('Superior')
-                else if (tab.id === 'lower') setClothingSection('Inferior')
+                const nextTab = tab.id === 'adjust' && clothesPanelTab === 'adjust' ? clothesCategorySelection : tab.id
+                setClothesPanelTab(nextTab)
+                if (nextTab !== 'adjust') setClothesCategorySelection(nextTab)
+                if (nextTab === 'upper') setClothingSection('Superior')
+                else if (nextTab === 'lower') setClothingSection('Inferior')
               }} aria-selected={clothesPanelTab === tab.id} role="tab" type="button"><Icon name={tab.icon} />{tab.id === 'upper' || tab.id === 'lower' ? <span className="customizer-upper-tab-label"><span>{tab.label}</span><small>{tab.id === 'upper' ? upperWardrobePage : lowerWardrobePage}/2</small></span> : <span>{tab.label}</span>}</button>)}
             </nav>}
             {selectedCustomizerTopTab === 'outros' && <nav className="customizer-other-category-tabs" aria-label="Categorias de outros itens" role="tablist">
@@ -3676,8 +3684,10 @@ export function CustomizerPage() {
               )}
               {activeModule === 'Cabeça' && <div className="customizer-head-workspace">
                 <nav className="customizer-head-tabs" aria-label="Categorias da cabeça" role="tablist">
-                  {customizerHeadTabs.map((tab) => <button key={tab.id} className={headPanelTab === tab.id ? 'active' : ''} onClick={() => {
-                    setHeadPanelTab(tab.id)
+                  {customizerHeadTabs.map((tab) => <button key={tab.id} className={headPanelTab === tab.id || headPanelTab === 'adjust' && headCategorySelection === tab.id ? 'active' : ''} onClick={() => {
+                    const nextTab = tab.id === 'adjust' && headPanelTab === 'adjust' ? headCategorySelection : tab.id
+                    setHeadPanelTab(nextTab)
+                    if (nextTab !== 'adjust') setHeadCategorySelection(nextTab)
                   }} aria-selected={headPanelTab === tab.id} role="tab" type="button"><Icon name={tab.icon} /><span>{tab.label}</span></button>)}
                 </nav>
                 {headPanelTab === 'hair' && renderHairCatalog()}
