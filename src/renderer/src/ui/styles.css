@@ -674,8 +674,8 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .customizer-clothes-adjust-position { min-height:0;height:100%;grid-template-columns:minmax(0,1fr);gap:clamp(8px,1.2vw,16px); }
 .customizer-clothes-adjust-controls { grid-template-rows:minmax(0,1fr) auto auto; }
 .customizer-clothes-adjust-readout { font-size:clamp(15px,1.5vw,22px);line-height:1.8; }
-.customizer-clothes-adjust-pad { width:100%;height:100%;min-height:156px;max-width:420px;justify-self:center;grid-template-rows:repeat(3,minmax(42px,1fr));gap:clamp(4px,.65vw,8px); }
-.customizer-clothes-adjust-pad button { min-height:42px;border-radius:7px;font-size:clamp(23px,2.4vw,34px); }
+.customizer-clothes-adjust-pad { width:100%;height:100%;min-height:156px;max-width:none;justify-self:center;grid-template-columns:minmax(0,1.15fr) minmax(0,.7fr) minmax(0,1.15fr);grid-template-rows:repeat(3,minmax(42px,1fr));gap:clamp(3px,.45vw,6px); }
+.customizer-clothes-adjust-pad button { min-height:48px;border-radius:7px;font-size:clamp(27px,2.8vw,40px); }
 .customizer-clothes-adjust-pad span svg { width:clamp(23px,2.1vw,31px);height:clamp(23px,2.1vw,31px); }
 .customizer-clothes-adjust-axis-grid { gap:clamp(6px,.8vw,10px); }
 .customizer-clothes-adjust-axis { grid-template-columns:minmax(0,1fr) 42px 42px;gap:6px;padding:8px; }
