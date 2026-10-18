@@ -15,7 +15,7 @@ import { VideoLibraryModal } from './VideoLibraryModal'
 import { VideoStudioClipPreview } from './VideoClipPreview'
 import { isValidVideoAudioSettings } from '../../../../shared/videoAudio'
 import { VideoTimeline, videoTimelineFor } from './VideoTimeline'
-import { captureVideoCharacter, characterStateAt, normalizeVideoCharacterPositions, restoreVideoTracks, synchronizeVideoCharacterPositions, videoCharacterStateEquals } from './characterTrack'
+import { captureVideoCharacter, characterStateAt, normalizeVideoCharacterPositions, restoreVideoTracks, synchronizeVideoCharacterPositions, videoCharacterStateEquals, videoCharacterStageElement } from './characterTrack'
 import type { CustomizerCharacter } from '../../../../shared/customizer'
 import type { CustomizerFaceAppearance } from '../../../../shared/customizer'
 import type { FaceCatalogItem, FaceCatalogItemSummary, FaceExpressionCollection, FaceExpressionEffects, FaceExpressionPreset, FaceExpressionPresetSummary, FaceSheetKind, FabricatorPoseSummary } from '../../../../shared/fabricator'
@@ -847,6 +847,7 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
       duplicate.videoTimeline = { ...source.videoTimeline,
         trackSettings: Object.fromEntries(Object.entries(source.videoTimeline.trackSettings ?? {}).map(([id, settings]) => [elementIds.get(id) ?? id, settings])),
         characterBases: Object.fromEntries(Object.entries(source.videoTimeline.characterBases ?? {}).map(([id, state]) => [elementIds.get(id) ?? id, remapState(state)])),
+        characterPositions: Object.fromEntries(Object.entries(source.videoTimeline.characterPositions ?? {}).map(([id, position]) => [elementIds.get(id) ?? id, position])),
         characterGaps: source.videoTimeline.characterGaps?.map((gap) => ({ ...gap, id: crypto.randomUUID(), elementId: elementIds.get(gap.elementId) ?? gap.elementId })),
         characterKeys: source.videoTimeline.characterKeys.map((key) => ({ ...key, id: crypto.randomUUID(), elementId: elementIds.get(key.elementId) ?? key.elementId, state: key.state ? remapState(key.state) : undefined })),
         textClips: source.videoTimeline.textClips.map((clip) => ({ ...clip, id: crypto.randomUUID(), elementId: elementIds.get(clip.elementId) ?? clip.elementId, state: clip.state ? { ...clip.state, id: elementIds.get(clip.state.id) ?? clip.state.id } : undefined }))
@@ -1425,6 +1426,10 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
               return asset ? [[element.id, { element: structuredClone(element), imageDataUrl: asset.dataUrl }]] : []
             }))
           },
+          characterPositions: {
+            ...Object.fromEntries(Object.entries(studio.videoTimeline.characterPositions ?? {}).filter(([id]) => retainedElementIds.has(id))),
+            ...Object.fromEntries(elements.map((element) => [element.id, { x: element.x, y: element.y }]))
+          },
           characterKeys: studio.videoTimeline.characterKeys.filter((key) => retainedElementIds.has(key.elementId)), textClips: studio.videoTimeline.textClips.filter((clip) => retainedElementIds.has(clip.elementId)) } } : {}),
         updatedAt: new Date().toISOString()
       }))
@@ -1697,7 +1702,7 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
       return {
         ...studio, elements,
         assets: studio.assets.filter((asset) => asset.id !== element.assetId || stillUsed.has(asset.id)),
-        ...(studio.videoTimeline ? { videoTimeline: { ...studio.videoTimeline, trackSettings: Object.fromEntries(Object.entries(studio.videoTimeline.trackSettings ?? {}).filter(([id]) => id !== element.id)), characterBases: Object.fromEntries(Object.entries(studio.videoTimeline.characterBases ?? {}).filter(([id]) => id !== element.id)), characterGaps: studio.videoTimeline.characterGaps?.filter((gap) => gap.elementId !== element.id), characterKeys: studio.videoTimeline.characterKeys.filter((key) => key.elementId !== element.id), textClips: studio.videoTimeline.textClips.filter((clip) => clip.elementId !== element.id) } } : {}),
+        ...(studio.videoTimeline ? { videoTimeline: { ...studio.videoTimeline, trackSettings: Object.fromEntries(Object.entries(studio.videoTimeline.trackSettings ?? {}).filter(([id]) => id !== element.id)), characterBases: Object.fromEntries(Object.entries(studio.videoTimeline.characterBases ?? {}).filter(([id]) => id !== element.id)), characterPositions: Object.fromEntries(Object.entries(studio.videoTimeline.characterPositions ?? {}).filter(([id]) => id !== element.id)), characterGaps: studio.videoTimeline.characterGaps?.filter((gap) => gap.elementId !== element.id), characterKeys: studio.videoTimeline.characterKeys.filter((key) => key.elementId !== element.id), textClips: studio.videoTimeline.textClips.filter((clip) => clip.elementId !== element.id) } } : {}),
         updatedAt: new Date().toISOString()
       }
     })
@@ -1776,7 +1781,7 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
     } else if (selectedElementId) {
       const current = activeStudio.elements.find((element) => element.id === selectedElementId)
       if (current?.kind === 'character') removeStageCharacter(current)
-      else changeScene((studio) => ({ ...studio, elements: studio.elements.filter((element) => element.id !== selectedElementId), ...(studio.videoTimeline ? { videoTimeline: { ...studio.videoTimeline, trackSettings: Object.fromEntries(Object.entries(studio.videoTimeline.trackSettings ?? {}).filter(([id]) => id !== selectedElementId)), characterBases: Object.fromEntries(Object.entries(studio.videoTimeline.characterBases ?? {}).filter(([id]) => id !== selectedElementId)), characterGaps: studio.videoTimeline.characterGaps?.filter((gap) => gap.elementId !== selectedElementId), characterKeys: studio.videoTimeline.characterKeys.filter((key) => key.elementId !== selectedElementId), textClips: studio.videoTimeline.textClips.filter((clip) => clip.elementId !== selectedElementId) } } : {}), updatedAt: new Date().toISOString() }))
+      else changeScene((studio) => ({ ...studio, elements: studio.elements.filter((element) => element.id !== selectedElementId), ...(studio.videoTimeline ? { videoTimeline: { ...studio.videoTimeline, trackSettings: Object.fromEntries(Object.entries(studio.videoTimeline.trackSettings ?? {}).filter(([id]) => id !== selectedElementId)), characterBases: Object.fromEntries(Object.entries(studio.videoTimeline.characterBases ?? {}).filter(([id]) => id !== selectedElementId)), characterPositions: Object.fromEntries(Object.entries(studio.videoTimeline.characterPositions ?? {}).filter(([id]) => id !== selectedElementId)), characterGaps: studio.videoTimeline.characterGaps?.filter((gap) => gap.elementId !== selectedElementId), characterKeys: studio.videoTimeline.characterKeys.filter((key) => key.elementId !== selectedElementId), textClips: studio.videoTimeline.textClips.filter((clip) => clip.elementId !== selectedElementId) } } : {}), updatedAt: new Date().toISOString() }))
       setSelectedElementId(null)
     }
   }
@@ -2067,7 +2072,8 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
               const blinkState = sourceElement.kind === 'character' && !transitionState ? automaticBlinkPreview[sourceElement.id] : undefined
               const activeTextClip = isVideoWorkspace && videoPlaying ? videoTimelineFor(activeStudio).textClips.find((clip) => clip.elementId === sourceElement.id && clip.startFrame <= videoPreviewFrame && videoPreviewFrame < clip.endFrame) : undefined
               const playbackElement = playbackState?.element ?? activeTextClip?.state ?? sourceElement
-              const element = blinkState && playbackElement.kind === 'character' ? { ...playbackElement, ...blinkState.geometry } : playbackElement
+              const positionedElement = isVideoWorkspace ? videoCharacterStageElement(videoTimelineFor(activeStudio), playbackElement) : playbackElement
+              const element = blinkState && positionedElement.kind === 'character' ? { ...positionedElement, ...blinkState.geometry } : positionedElement
               const asset = element.assetId ? activeStudio.assets.find((item) => item.id === element.assetId) : undefined
               const imageDataUrl = blinkState?.dataUrl ?? playbackState?.imageDataUrl ?? asset?.dataUrl
               const size = studioElementSize(element)

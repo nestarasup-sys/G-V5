@@ -156,6 +156,8 @@ export type VideoTimelineDocument = {
   trackSettings?: Record<string, { visible?: boolean; locked?: boolean; label?: string; collapsed?: boolean; order?: number }>
   /** Original state of each actor, retained when returning to the first segment. */
   characterBases?: Record<string, VideoCharacterState>
+  /** One authoritative stage position per actor, shared by every segment and transition. */
+  characterPositions?: Record<string, { x: number; y: number }>
   /** Empty intervals created by deleting a character segment, preserving adjacent states. */
   characterGaps?: Array<{ id: string; elementId: string; startFrame: number; endFrame: number }>
   /** Imported media files live in this Studio project's dedicated videos folder. */

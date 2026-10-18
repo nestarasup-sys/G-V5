@@ -206,16 +206,16 @@ asset real do usuário é alterado pelos testes.
 
 ## Posição única por personagem
 
-X e Y são globais para cada personagem no roteiro. Ao carregar, a posição vem do
-estado no frame zero; se não existir, da Base e depois do primeiro estado salvo,
-com a posição atual como fallback. Roteiros antigos com trechos em posições
-diferentes são normalizados em memória e seguem o salvamento automático normal.
+Cada personagem tem um único X/Y autoritativo em `videoTimeline.characterPositions`.
+Ao carregar roteiros antigos, o dado é migrado do estado no frame zero; se não
+existir, usa a Base, o primeiro estado salvo e, por último, a posição do elemento
+da cena. O salvamento automático persiste essa migração.
 
-`characterTrack.ts` aplica a mesma posição ao elemento da cena, à Base e a todos
-os estados desse personagem. `synchronizeVideoCharacterPositions` detecta
-movimentos em qualquer trecho, inclusive no último, e propaga X/Y antes da
-captura do estado local. A leitura na reprodução e a restauração no seek/undo
-também respeitam a referência inicial. Criar ou dividir trechos mantém essa
-posição. As imagens e os estados de pose, expressão, rotação e tamanho continuam
-individuais; outros personagens não são reposicionados. Não há novo schema nem
-alteração no armazenamento do Studio normal ou do Fabricador Dev.
+Mover o personagem pela prévia ou pelo inspetor atualiza essa posição global,
+independentemente da faixa e do instante selecionados. A posição é aplicada ao
+elemento da cena, à Base, aos estados salvos e novamente sobre os quadros de
+transição e blink no momento da composição. Assim, estados antigos ou amostras
+interpoladas não podem deslocar o personagem. Dividir, salvar e restaurar faixas
+mantém o X/Y único; pose, expressão, tamanho e demais propriedades por faixa
+continuam locais. Ao remover ou duplicar personagens, o registro global também é
+removido ou remapeado. O Studio normal e o Fabricador Dev não usam esse campo.

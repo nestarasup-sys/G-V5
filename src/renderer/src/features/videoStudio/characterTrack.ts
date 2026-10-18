@@ -2,8 +2,10 @@ import type { StudioDocument, StudioElement, VideoCharacterState, VideoTimelineD
 
 type CharacterPosition = Pick<StudioElement, 'x' | 'y'>
 
-/** The first segment owns stage placement; acting remains local to each segment. */
+/** Prefer the script-level placement; legacy scripts are migrated from their first saved state. */
 function firstCharacterPosition(timeline: VideoTimelineDocument, elementId: string, fallback?: CharacterPosition): CharacterPosition | undefined {
+  const global = timeline.characterPositions?.[elementId]
+  if (global && Number.isFinite(global.x) && Number.isFinite(global.y)) return global
   let first: VideoTimelineDocument['characterKeys'][number] | undefined
   for (const key of timeline.characterKeys) {
     if (key.elementId === elementId && key.state && (!first || key.frame <= first.frame)) first = key
@@ -38,10 +40,16 @@ function applyCharacterPositions(studio: StudioDocument, positions: Map<string, 
     changed = true
     return { ...key, state }
   })
-  return changed ? { ...studio, elements, videoTimeline: { ...timeline, ...(timeline.characterBases ? { characterBases } : {}), characterKeys } } : studio
+  const characterPositions = { ...(timeline.characterPositions ?? {}) }
+  for (const [id, position] of positions) {
+    if (characterPositions[id]?.x === position.x && characterPositions[id]?.y === position.y) continue
+    characterPositions[id] = { x: position.x, y: position.y }
+    changed = true
+  }
+  return changed ? { ...studio, elements, videoTimeline: { ...timeline, characterPositions, ...(timeline.characterBases ? { characterBases } : {}), characterKeys } } : studio
 }
 
-/** Normalize legacy scripts once, preserving every pose, face, bitmap and clip boundary. */
+/** Normalize legacy scripts once and persist the authoritative position without changing acting states. */
 export function normalizeVideoCharacterPositions(studio: StudioDocument): StudioDocument {
   if (!studio.videoTimeline) return studio
   const positions = new Map<string, CharacterPosition>()
@@ -51,7 +59,7 @@ export function normalizeVideoCharacterPositions(studio: StudioDocument): Studio
   return applyCharacterPositions(studio, positions)
 }
 
-/** Any stage/inspector move is a global position edit for that actor alone. */
+/** A stage/inspector move changes the script-level position for that actor alone. */
 export function synchronizeVideoCharacterPositions(before: StudioDocument, after: StudioDocument): StudioDocument {
   if (before === after || !after.videoTimeline) return after
   const previous = new Map(before.elements.filter((element) => element.kind === 'character').map((element) => [element.id, element]))
@@ -60,7 +68,15 @@ export function synchronizeVideoCharacterPositions(before: StudioDocument, after
     const original = previous.get(element.id)
     if (element.kind === 'character' && original && (element.x !== original.x || element.y !== original.y)) edited.set(element.id, element)
   }
-  return normalizeVideoCharacterPositions(applyCharacterPositions(after, edited))
+  if (edited.size) return applyCharacterPositions(after, edited)
+  return normalizeVideoCharacterPositions(after)
+}
+
+/** Apply the fixed stage position after any sampled transition or blink geometry. */
+export function videoCharacterStageElement(timeline: VideoTimelineDocument, element: StudioElement): StudioElement {
+  if (element.kind !== 'character') return element
+  const position = firstCharacterPosition(timeline, element.id)
+  return position && (element.x !== position.x || element.y !== position.y) ? { ...element, x: position.x, y: position.y } : element
 }
 
 export function captureVideoCharacter(studio: StudioDocument, element: StudioElement): VideoCharacterState | null {
