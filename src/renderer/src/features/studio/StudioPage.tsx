@@ -1205,6 +1205,31 @@ export function StudioPage({ workspace = 'studio', onEditorActiveChange }: { wor
     })
   }
 
+  const deleteVideoTextElements = (elementIds: string[]) => {
+    if (!activeStudio || !elementIds.length) return
+    const removedIds = new Set(elementIds)
+    if (removedIds.has(selectedElementId ?? '')) setSelectedElementId(null)
+    changeScene((studio) => {
+      const removedAssetIds = new Set(studio.elements.filter((element) => removedIds.has(element.id)).map((element) => element.assetId).filter((id): id is string => Boolean(id)))
+      const elements = studio.elements.filter((element) => !removedIds.has(element.id))
+      const usedAssetIds = new Set(elements.map((element) => element.assetId).filter((id): id is string => Boolean(id)))
+      const timeline = videoTimelineFor(studio)
+      return {
+        ...studio,
+        elements,
+        assets: studio.assets.filter((asset) => !removedAssetIds.has(asset.id) || usedAssetIds.has(asset.id)),
+        videoTimeline: { ...timeline, textClips: timeline.textClips.filter((clip) => !removedIds.has(clip.elementId)) },
+        updatedAt: new Date().toISOString()
+      }
+    })
+  }
+
+  const deleteVideoTextElement = (elementId: string) => deleteVideoTextElements([elementId])
+  const deleteVideoTextTrack = (kind: 'speech' | 'thought') => {
+    if (!activeStudio || videoTimelineFor(activeStudio).trackSettings?.[kind]?.locked) return
+    deleteVideoTextElements(activeStudio.elements.filter((element) => element.kind === kind).map((element) => element.id))
+  }
+
   const duplicateVideoTextClip = (clip: VideoTimelineDocument['textClips'][number]) => {
     changeScene((studio) => {
       const timeline = videoTimelineFor(studio)
@@ -1917,7 +1942,7 @@ export function StudioPage({ workspace = 'studio', onEditorActiveChange }: { wor
             {!fullView && <span className="studio-scene-title">{activeStudio.title}</span>}
           </div>
         </section>
-        {!fullView && isVideoWorkspace && <VideoTimeline studio={activeStudio} playheadFrame={videoPlayheadFrame} playing={videoPlaying} height={videoTimelineHeight} presetNames={Object.fromEntries(studioExpressionPresets.map((preset) => [preset.id, preset.name]))} onResize={setVideoTimelineHeight} onSelectElement={(elementId) => { setVideoPlaying(false); setSelectedElementId(elementId); setInspectorOpen(true) }} onSeek={seekVideoFrame} onTogglePlayback={() => { if (videoPlaying) seekVideoFrame(videoPlayheadFrame); else setVideoPlaying(true) }} onSaveFrame={saveVideoFrame} onSplitCharacter={splitVideoCharacterTrack} onSplitTextClip={splitVideoTextClip} onUpdateTextClip={updateVideoTextClip} onDeleteTextClip={deleteVideoTextClip} onDuplicateTextClip={duplicateVideoTextClip} onMoveCharacterBoundary={moveVideoCharacterBoundary} onAddText={(kind) => addTextElement(kind)} onChangeTrackSettings={(id, settings) => changeScene((studio) => ({ ...studio, videoTimeline: { ...videoTimelineFor(studio), trackSettings: { ...videoTimelineFor(studio).trackSettings, [id]: settings } }, updatedAt: new Date().toISOString() }))} onMoveCharacterTrack={moveVideoCharacterTrack} onSetCharacterPositionsLocked={(locked) => changeScene((studio) => ({ ...studio, elements: studio.elements.map((element) => element.kind === 'character' ? { ...element, positionLocked: locked } : element), updatedAt: new Date().toISOString() }))} onChangeDuration={(durationFrames) => changeScene((studio) => ({ ...studio, videoTimeline: { ...videoTimelineFor(studio), durationFrames, playheadFrame: Math.min(videoPlayheadFrame, durationFrames) }, updatedAt: new Date().toISOString() }))} onDeleteCharacterTrack={(elementId) => { const character = activeStudio.elements.find((element) => element.id === elementId && element.kind === 'character'); if (character?.kind === 'character') removeStageCharacter(character) }} />}
+        {!fullView && isVideoWorkspace && <VideoTimeline studio={activeStudio} playheadFrame={videoPlayheadFrame} playing={videoPlaying} height={videoTimelineHeight} presetNames={Object.fromEntries(studioExpressionPresets.map((preset) => [preset.id, preset.name]))} onResize={setVideoTimelineHeight} onSelectElement={(elementId) => { setVideoPlaying(false); setSelectedElementId(elementId); setInspectorOpen(true) }} onSeek={seekVideoFrame} onTogglePlayback={() => { if (videoPlaying) seekVideoFrame(videoPlayheadFrame); else setVideoPlaying(true) }} onSaveFrame={saveVideoFrame} onSplitCharacter={splitVideoCharacterTrack} onSplitTextClip={splitVideoTextClip} onUpdateTextClip={updateVideoTextClip} onDeleteTextClip={deleteVideoTextClip} onDeleteTextElement={deleteVideoTextElement} onDeleteTextTrack={deleteVideoTextTrack} onDuplicateTextClip={duplicateVideoTextClip} onMoveCharacterBoundary={moveVideoCharacterBoundary} onAddText={(kind) => addTextElement(kind)} onChangeTrackSettings={(id, settings) => changeScene((studio) => ({ ...studio, videoTimeline: { ...videoTimelineFor(studio), trackSettings: { ...videoTimelineFor(studio).trackSettings, [id]: settings } }, updatedAt: new Date().toISOString() }))} onMoveCharacterTrack={moveVideoCharacterTrack} onSetCharacterPositionsLocked={(locked) => changeScene((studio) => ({ ...studio, elements: studio.elements.map((element) => element.kind === 'character' ? { ...element, positionLocked: locked } : element), updatedAt: new Date().toISOString() }))} onChangeDuration={(durationFrames) => changeScene((studio) => ({ ...studio, videoTimeline: { ...videoTimelineFor(studio), durationFrames, playheadFrame: Math.min(videoPlayheadFrame, durationFrames) }, updatedAt: new Date().toISOString() }))} onDeleteCharacterTrack={(elementId) => { const character = activeStudio.elements.find((element) => element.id === elementId && element.kind === 'character'); if (character?.kind === 'character') removeStageCharacter(character) }} />}
         {castPickerOpen && <div className="studio-cast-modal-backdrop" onPointerDown={(event) => { if (event.target === event.currentTarget && !savingCast) setCastPickerOpen(false) }}>
           <section className="studio-cast-modal" role="dialog" aria-modal="true" aria-labelledby="studio-cast-modal-title">
             <header><span><small>EDITAR ELENCO</small><h2 id="studio-cast-modal-title">Personagens do {workspaceTitle}</h2></span><button className="studio-cast-modal-close" onClick={() => setCastPickerOpen(false)} aria-label="Fechar" disabled={savingCast} type="button">×</button></header>
