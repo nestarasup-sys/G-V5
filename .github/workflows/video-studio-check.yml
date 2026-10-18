@@ -5,6 +5,7 @@ on:
     branches: [master]
     paths:
       - 'src/**'
+      - 'scripts/test-video-studio.cjs'
       - 'electron/**'
       - 'electron.vite.config.ts'
       - 'tsconfig.json'
@@ -30,5 +31,7 @@ jobs:
         run: npm ci --ignore-scripts
       - name: Typecheck
         run: npm run typecheck
+      - name: Canonical Video Studio runtime tests
+        run: npm run test:video-studio
       - name: Build all Electron bundles
         run: npm run build
