@@ -30,7 +30,6 @@ export function StudioVideoTimeline({ project, frame, playing, unsavedDraft, onS
   const seconds = project.durationFrames / fps
   const pixels = Math.max(450, Math.ceil(seconds * zoom))
   const lanes = useMemo(() => characterLanesFromScenes(project), [project])
-  const labelWidth = 160
   const tickSeconds = zoom >= 42 ? 2 : zoom >= 15 ? 5 : zoom >= 5 ? 15 : 60
   const tickCount = Math.ceil(seconds / tickSeconds)
 
