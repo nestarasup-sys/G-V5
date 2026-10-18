@@ -5,7 +5,7 @@ const { spawn, execFileSync } = require('node:child_process')
 const { randomUUID } = require('node:crypto')
 const { existsSync, lstatSync, realpathSync } = require('node:fs')
 const { mkdir, writeFile } = require('node:fs/promises')
-const { isAbsolute, join, relative, resolve, sep } = require('node:path')
+const { dirname, isAbsolute, join, relative, resolve, sep } = require('node:path')
 const { performance } = require('node:perf_hooks')
 const { audits, selected } = require('./catalog.cjs')
 
@@ -93,7 +93,7 @@ function executableElectron() {
 function runCommand(label, executable, args, options) {
   return new Promise(resolveCase => {
     const started = performance.now()
-    let stdout = '', stderr = '', killed = false, finished = false
+    let stdout = '', stderr = '', killed = false, finished = false, termination = null
     let child
     const complete = (status, exitCode, signal) => {
       if (finished) return
@@ -102,6 +102,7 @@ function runCommand(label, executable, args, options) {
       resolveCase({
         id: label, status, exitCode, signal: signal ?? null,
         durationMs: Math.round(performance.now() - started),
+        ...(termination ? { termination } : {}),
         ...(options.adapter ? { adapter: options.adapter } : {}),
         stdout: cleanOutput(stdout, options.sandbox),
         stderr: cleanOutput(stderr, options.sandbox)
@@ -121,25 +122,77 @@ function runCommand(label, executable, args, options) {
     child.stderr.on('data', data => { stderr = append(stderr, data.toString('utf8')) })
     const timer = setTimeout(() => {
       killed = true
-      // On Unix kill the process group. Windows process-tree cleanup is a
-      // separately tracked DEV AI gate, NOT claimed as solved here.
-      try {
-        if (process.platform !== 'win32') process.kill(-child.pid, 'SIGKILL')
-        else child.kill('SIGKILL')
-      } catch {}
+      termination = terminateProcessTree(child).then(result => { termination = result })
     }, options.timeoutMs ?? TIMEOUT_MS)
     child.on('error', error => complete('failed', null, cleanOutput(error.message, options.sandbox)))
-    child.on('close', (code, signal) => complete(killed ? 'failed' : code === 0 ? 'passed' : 'failed', code, signal))
+    child.on('close', async (code, signal) => {
+      if (termination instanceof Promise) await termination
+      complete(killed ? 'failed' : code === 0 ? 'passed' : 'failed', code, signal)
+    })
+  })
+}
+
+function terminateProcessTree(child) {
+  if (!child?.pid) return Promise.resolve({ method: 'unavailable', status: 'unsupported' })
+  if (process.platform !== 'win32') {
+    try {
+      process.kill(-child.pid, 'SIGKILL')
+      return Promise.resolve({ method: 'process-group', status: 'requested' })
+    } catch (error) {
+      try { child.kill('SIGKILL') } catch {}
+      return Promise.resolve({ method: 'process-group', status: 'failed', code: error.code ?? 'UNKNOWN' })
+    }
+  }
+
+  return new Promise(resolveResult => {
+    let killer
+    try {
+      killer = spawn('taskkill.exe', ['/PID', String(child.pid), '/T', '/F'], {
+        windowsHide: true, stdio: ['ignore', 'ignore', 'ignore'], shell: false
+      })
+    } catch (error) {
+      try { child.kill('SIGKILL') } catch {}
+      resolveResult({ method: 'taskkill-tree', status: 'failed', code: error.code ?? 'SPAWN_FAILED' })
+      return
+    }
+    let settled = false
+    const finish = result => {
+      if (settled) return
+      settled = true
+      clearTimeout(fallbackTimer)
+      resolveResult(result)
+    }
+    const fallbackTimer = setTimeout(() => {
+      try { child.kill('SIGKILL') } catch {}
+      finish({ method: 'taskkill-tree', status: 'timeout-fallback' })
+    }, 10_000)
+    killer.once('error', error => {
+      try { child.kill('SIGKILL') } catch {}
+      finish({ method: 'taskkill-tree', status: 'failed', code: error.code ?? 'SPAWN_FAILED' })
+    })
+    killer.once('close', code => {
+      if (code !== 0) {
+        try { child.kill('SIGKILL') } catch {}
+        finish({ method: 'taskkill-tree', status: 'failed', exitCode: code })
+      } else finish({ method: 'taskkill-tree', status: 'requested' })
+    })
   })
 }
 
 function npmCommand(script) {
   // Fixed allowlist; no arbitrary commands from renderer or CLI.
   if (!['typecheck', 'build'].includes(script)) throw new Error('Comando npm não permitido')
-  return {
-    executable: process.platform === 'win32' ? 'npm.cmd' : 'npm',
-    args: ['run', script], shell: process.platform === 'win32'
-  }
+  if (process.platform !== 'win32') return { executable: 'npm', args: ['run', script], shell: false }
+
+  // Invoke the trusted npm JavaScript entry point through Node. This avoids
+  // shell parsing of npm.cmd while keeping the command allowlist above.
+  const candidates = [
+    process.env.npm_execpath,
+    join(dirname(process.execPath), 'node_modules', 'npm', 'bin', 'npm-cli.js')
+  ].filter(Boolean)
+  const npmCli = candidates.find(candidate => existsSync(candidate) && /\.m?js$/i.test(candidate))
+  if (!npmCli) throw new Error('npm-cli.js não encontrado; recusando fallback para shell no Windows')
+  return { executable: process.execPath, args: [npmCli, 'run', script], shell: false }
 }
 
 async function main(argv = process.argv.slice(2)) {
@@ -250,4 +303,4 @@ if (require.main === module) {
     .catch(error => { console.error('DEV AI baseline:', error.message); process.exitCode = 1 })
 }
 
-module.exports = { ROOT, parseArgs, within, assertSafeOutputRoot, safeEnvironment, cleanOutput, npmCommand, main }
+module.exports = { ROOT, parseArgs, within, assertSafeOutputRoot, safeEnvironment, cleanOutput, npmCommand, runCommand, main }

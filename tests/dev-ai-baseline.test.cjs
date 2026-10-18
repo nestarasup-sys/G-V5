@@ -35,6 +35,12 @@ test('CLI only accepts fixed suites and commands', () => {
   assert.throws(() => parseArgs(['--suite', 'private-path']), /fast\|isolation\|ipc\|all/)
   assert.throws(() => parseArgs(['--exec', 'rm -rf']), /não reconhecido/)
   assert.throws(() => npmCommand('arbitrary-command'), /não permitido/)
+  const npm = npmCommand('build')
+  assert.equal(npm.shell, false, 'O runner não deve usar shell para chamar npm')
+  if (process.platform === 'win32') {
+    assert.equal(npm.executable, process.execPath)
+    assert.match(npm.args[0], /npm-cli\.js$/i)
+  }
 })
 
 test('path containment handles prefix collisions and traversal', () => {
@@ -62,6 +68,39 @@ test('child environment strips inherited tokens and points userData to sandbox',
     if (before === undefined) delete process.env.GACHA_FAKE_SECRET_FOR_TEST
     else process.env.GACHA_FAKE_SECRET_FOR_TEST = before
   }
+})
+
+test('runner timeout terminates the spawned process tree', async (t) => {
+  const { runCommand } = require('../scripts/dev-ai/baseline.cjs')
+  const dir = mkdtempSync(join(tmpdir(), 'gacha-audit-process-tree-'))
+  const pidFile = join(dir, 'pids.json')
+  const script = [
+    "const fs=require('node:fs')",
+    "const {spawn}=require('node:child_process')",
+    "const child=spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{stdio:'ignore',windowsHide:true})",
+    "fs.writeFileSync(process.env.DEV_AI_PID_FILE,JSON.stringify({parent:process.pid,child:child.pid}))",
+    "setInterval(()=>{},1000)"
+  ].join(';')
+  try {
+    const result = await runCommand('tree-timeout', process.execPath, ['-e', script], {
+      env: { ...process.env, DEV_AI_PID_FILE: pidFile }, sandbox: dir, timeoutMs: 750
+    })
+    assert.equal(result.status, 'failed', 'Timeout deve falhar a suite, não reportar sucesso')
+    assert.ok(result.termination, 'Relatório deve registrar o método usado para encerrar processos')
+    if (process.platform === 'win32') assert.equal(result.termination.status, 'requested')
+    assert.ok(existsSync(pidFile), 'Fixture precisa registrar os PIDs antes do timeout')
+    const pids = JSON.parse(require('node:fs').readFileSync(pidFile, 'utf8'))
+    const isRunning = pid => {
+      try { process.kill(pid, 0); return true }
+      catch (error) { if (error.code === 'ESRCH') return false; throw error }
+    }
+    const deadline = Date.now() + 5000
+    while (Date.now() < deadline && (isRunning(pids.parent) || isRunning(pids.child))) {
+      await new Promise(resolve => setTimeout(resolve, 50))
+    }
+    assert.equal(isRunning(pids.parent), false, 'Processo pai continuou vivo após o timeout')
+    assert.equal(isRunning(pids.child), false, 'Processo descendente ficou órfão após o timeout')
+  } finally { rmSync(dir, { recursive: true, force: true }) }
 })
 
 test('runner lists audits without npm dependencies or Electron', () => {
