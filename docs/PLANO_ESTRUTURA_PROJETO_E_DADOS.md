@@ -2,7 +2,7 @@
 
 > **Estado:** plano inicial expandido com arquitetura extensível e logging estruturado. Este documento não moveu código nem dados. O mapa descreve o repositório observado e separa os trabalhos futuros.
 >
-> **Objetivo do usuário:** manter o código, recursos e todos os dados gerados ou importados pelo app organizados dentro de uma única pasta de projeto, com subpastas claras para personagens, imagens, roteiros, vídeos, fundos, salvamentos e demais dados.
+> **Objetivo do usuário:** manter o código, recursos e todos os dados gerados ou importados pelo app organizados dentro de uma única pasta de projeto, com subpastas claras para personagens, imagens, roteiros, vídeos, fundos, salvamentos e demais dados. A refatoração deve melhorar comportamento e operação do produto — desempenho, consumo de recursos, estabilidade, segurança, qualidade e capacidade de evolução — e não apenas a aparência do código.
 
 ## 1. Resumo executivo
 
@@ -15,7 +15,7 @@ O app já tem uma divisão útil entre interface React, processo principal do El
 5. Não há um serviço central de logs. A busca atual encontrou `console.error` no Error Boundary, mas não um formato, arquivo, correlação ou tela de logs comuns.
 6. A navegação e vários fluxos são registrados diretamente nos componentes. Não há um manifesto único de feature que conecte rota, APIs, dados, capabilities e migrações.
 
-O plano recomenda criar uma raiz interna única para dados, contratos de extensibilidade e logs estruturados. Depois migrar por cópia verificada, mantendo os dados antigos como fallback até a validação. A extração de módulos de código deve acontecer em mudanças pequenas, com testes e builds entre etapas.
+O plano recomenda criar uma raiz interna única para dados, contratos de extensibilidade e logs estruturados. Depois migrar por cópia verificada, mantendo os dados antigos como fallback até a validação. A extração de módulos de código deve acontecer em mudanças pequenas, com testes e builds entre etapas. Cada mudança também precisa medir o efeito no app: identificar um problema real, registrar a linha de base, corrigir, comparar e evitar regressões nas demais áreas.
 
 **Não é recomendável começar movendo centenas de arquivos de uma vez.** Primeiro estabelecemos caminhos, contratos e validação; depois movemos uma área por vez.
 
@@ -73,6 +73,8 @@ A base pode receber adições mediante alterações no código, mas não tem um 
 
 Subáreas já separadas no Fabricador incluem `models/`, `wardrobe/` e `face/`. O Video Studio também tem módulos independentes como `VideoTimeline.tsx`, `VideoAudioControls.tsx`, `VideoClipPreview.tsx`, `editHistory.ts`, `characterTransitions.ts`, `transitionRenderer.ts`, `characterGeometry.ts` e `videoMediaPlayback.ts`.
 
+As áreas abertas pela topbar devem se comportar como workspaces independentes, não apenas como rotas com diretórios diferentes. Studio normal e Video Studio podem consumir personagens/assets compartilhados intencionalmente; não podem compartilhar acidentalmente estado de edição, layout, inspector, histórico, atalhos, playhead, seleção, controles de preview nem persistência do documento. O usuário já relatou uma regressão em que mudanças de Video Studio refletiam no Studio normal. A causa específica ainda precisa ser auditada; o plano trata esse caso como requisito de isolamento e cria verificações de ida e volta entre as áreas.
+
 ### 2.5 Integrações de dados atuais
 
 As funções abaixo são resolvidas a partir de `app.getPath('userData')`, não de uma pasta interna do repositório:
@@ -126,13 +128,31 @@ As contagens são aproximações do estado do código consultado para este levan
 
 O tamanho por si só não prova defeito. O sinal importante é quando uma alteração simples exige tocar várias áreas sem uma interface clara, ou quando UI, regra de negócio e acesso ao disco ficam misturados.
 
-### 3.2 Persistência no processo principal
+### 3.2 Limites entre áreas e regressões conhecidas
+
+Separar arquivos em pastas não basta para impedir interferência. A auditoria precisa verificar estado React, stores/hooks globais, contextos, CSS, atalhos, listeners, timers, canais IPC, repositórios e dados persistidos. No caso do Studio e Video Studio, compartilhar compositores de personagem pode ser correto; compartilhar estado de edição ou gravar no namespace do outro workspace é defeito.
+
+O histórico do produto inclui uma regressão reportada pelo usuário: enquanto o Video Studio estava sendo alterado, comportamento/layout também mudou no Studio normal. A documentação anterior confirma que há páginas, documentos e pastas de persistência separadas, mas essa separação não provou que todas as dependências visuais e estados fossem isolados. A investigação deve identificar o caminho de interferência antes de reorganizar essas áreas.
+
+### 3.3 Refatoração como melhoria mensurável
+
+Refatorar para reduzir linhas ou criar mais pastas não é um resultado suficiente. Cada alteração estrutural deve declarar o problema de produto que resolve e verificar, conforme o caso:
+
+- **Velocidade:** inicialização, abertura de áreas/documentos, atualização da prévia, resposta a arrastes/controles, tempo de salvamento e operações de importação/exportação.
+- **Otimização:** CPU, memória, decodificação de imagens, trabalho repetido de composição, renderizações React, leituras/escritas redundantes e tamanho do bundle.
+- **Estabilidade:** perda de estado, salvamentos concorrentes, corrupção de manifest, referências quebradas, falhas na troca de rotas e recuperação após erro/interrupção.
+- **Qualidade:** validação de dados, consistência de interações, acessibilidade, clareza dos erros, compatibilidade dos projetos antigos e ausência de regressão visual/funcional.
+- **Evolução:** custo para adicionar/remove features ou tipos de conteúdo, quantidade de arquivos fora do domínio tocados e possibilidade de testar a área sem iniciar o app inteiro.
+
+Primeiro se coleta uma linha de base reproduzível. Depois se define uma meta adequada ao gargalo observado, compara o mesmo fluxo após a mudança e registra o resultado. Não atribuir ganhos de velocidade sem medição; quando não houver gargalo, a prioridade é manter desempenho e reduzir risco de regressão.
+
+### 3.4 Persistência no processo principal
 
 `electron/main.ts` contém funções de leitura/escrita e validação para várias entidades, além dos handlers IPC. Há stores dedicados para a biblioteca de vídeos e fundos (`electron/videoLibrary.ts` e `electron/backgroundLibrary.ts`), mas muitos outros repositórios permanecem como funções no arquivo principal.
 
 O objetivo é separar armazenamento por domínio, não criar uma camada genérica excessivamente complexa. Cada repositório deve validar seus dados, conhecer seus caminhos relativos à raiz de dados e oferecer operações explícitas de leitura, gravação, lista e remoção.
 
-### 3.3 Estilos e recursos
+### 3.5 Estilos e recursos
 
 - `src/renderer/src/ui/styles.css` contém estilos globais e regras de várias telas. Devemos mapear os seletores antes de mover qualquer bloco.
 - Algumas áreas já têm folhas próprias, como `VideoStudioEditor.css`, `face-components.css` e `head-extras.css`.
@@ -163,6 +183,7 @@ Gacha Nymi Workspace/                 # pasta única que o usuário pode mover/g
 │   └── shared/                       # contratos, eventos e regras puras compartilhadas
 ├── assets/                           # recursos fixos do app, não conteúdo de usuário
 ├── scripts/{audit,migration,generation}/
+├── tests/{unit,integration,e2e,performance}/
 ├── docs/
 ├── package.json, electron.vite.config.ts, tsconfig.json, README.md
 ├── .gitignore
@@ -320,6 +341,87 @@ flowchart LR
   LOG --> FILES[(app-data/logs)]
 ```
 
+### 4.5 Isolamento real dos workspaces da topbar
+
+Cada área de edição da topbar deverá declarar uma `WorkspaceDefinition` com `workspaceId`, feature proprietária, rota, chave de estado, namespace de persistência, atalhos habilitados, estilos, canais/commands IPC, capabilities compartilhadas e rotina de desmontagem. Studio normal e Video Studio têm definições distintas, APIs de documento distintas e pastas distintas.
+
+Regras de isolamento:
+
+1. Estado de editor (documento aberto, seleção, inspector, zoom, playhead, playback, histórico, modais e ferramentas) pertence ao workspace e é limpo/restaurado por ele.
+2. Estado compartilhável precisa ser declarado como recurso de domínio (por exemplo, biblioteca de personagens). Não compartilhar stores de edição por conveniência.
+3. Documento e assets de um workspace só podem ser gravados no namespace do workspace informado pelo command. O backend valida o destino; não confia em strings do renderer.
+4. CSS de Studio e Video Studio fica sob escopo próprio (`.studio-*` e `.video-studio-*`, CSS Modules ou equivalente). Seletores globais de feature e regras de layout compartilhadas são proibidos sem contrato visual explícito.
+5. Atalhos, listeners globais, timers, RAF, playback e áudio são ativados apenas enquanto a área os possui e devem ser liberados ao trocar de rota.
+6. Componentes podem compartilhar primitives visuais e regras puras estáveis, mas não um editor composto que imponha estrutura/layout de uma área à outra.
+7. Mudanças em `shared/`, UI global, contratos ou capabilities que possam afetar mais de uma área exigem verificação de todas as consumidoras.
+
+Matriz mínima de regressão para cada mudança de workspace:
+
+| Ação | Studio normal | Video Studio | Resultado esperado |
+| --- | --- | --- | --- |
+| Abrir e trocar documentos | Abre seu próprio documento | Abre seu próprio roteiro | Seleções e histórico não atravessam áreas |
+| Alterar layout/inspector/atalho | Afeta apenas Studio normal | Afeta apenas Video Studio | Sem vazamento de CSS ou listener |
+| Salvar e reabrir | Usa `studios/normal/` | Usa `studios/video/` | Documento e assets permanecem independentes |
+| Navegar Studio → Video Studio → Studio | Restaura estado permitido do Studio | Monta estado isolado do Video Studio | Sem playhead, seleção ou controles residuais |
+| Atualizar recurso compartilhado explicitamente | Recebe o dado comum atualizado | Recebe o dado comum atualizado | Compartilha apenas o recurso declarado |
+
+Uma alteração em uma área não deve exigir mudanças em outra. Quando existir uma dependência legítima, ela deve passar por contrato compartilhado pequeno e teste de compatibilidade, não por import direto de estado privado.
+
+### 4.6 Qualidade, desempenho e operação como metas
+
+O plano mede o app pelo efeito no uso, não pela quantidade de módulos ou pela redução de linhas. Para cada fluxo crítico será criado um benchmark leve com ambiente, tamanho dos dados, repetição e métrica documentados.
+
+Métricas para estabelecer linha de base:
+
+| Dimensão | Exemplos de medição |
+| --- | --- |
+| Inicialização | Tempo até primeira tela utilizável e tempo até primeira interação. |
+| Navegação | Tempo até workspace ficar pronto e custo de desmontar a área anterior. |
+| Edição | Atraso de drag/control, taxa de frames de preview, renderizações por gesto e avaliação da timeline. |
+| Memória/CPU | Pico de memória ao abrir projeto grande, decodificação simultânea, workers ativos e custo de composição. |
+| Armazenamento | Latência de salvar documento/assets, tamanho do pacote, uso de espaço e recuperação após interrupção. |
+| Confiabilidade | Sucesso de reabertura, integridade de referências, erros não tratados e salvamentos perdidos/corrompidos. |
+
+Práticas de otimização planejadas:
+
+- carregar áreas e ferramentas sob demanda; preservar divisão lazy já existente;
+- mover processamento de imagem, mídia ou cálculo pesado para workers quando a medição apontar bloqueio da interface;
+- limitar renderizações e cálculos repetidos com profiling, memoização seletiva, debounce/throttle e virtualização de listas grandes;
+- liberar URL de objeto, buffers, workers, timers e mídia ao sair da área;
+- evitar cópias/base64 repetidos de imagens grandes; preferir IDs/arquivos e previews reduzidas nos fluxos internos;
+- serializar salvamentos concorrentes por entidade e usar temporários + rename onde o formato e o filesystem permitem;
+- manter limites de entrada, tamanho e concorrência para importações.
+
+Essas técnicas só entram quando fizerem sentido para o gargalo observado. O critério é resultado comprovado, ausência de regressões e uso menor ou igual de recursos nos fluxos não relacionados.
+
+Estratégia de qualidade:
+
+1. Testes unitários para regras puras, validações, transições, transformações e schemas.
+2. Testes de integração de repositório em diretório temporário, incluindo conflitos, falhas de escrita, migração e recuperação.
+3. Testes IPC/preload para contratos, autorização e validação dos argumentos.
+4. Testes de UI/E2E para navegação, isolamento de topbar, edição e persistência entre reinícios.
+5. Capturas/inspeção visual para mudanças de layout; medição de performance para mudanças que afirmem ganho de velocidade.
+6. Verificações de acessibilidade de teclado, foco, nomes de controles, contraste e mensagens de erro.
+7. Build, typecheck, análise de dependências e busca de imports/canais cruzados como gates antes de integrar.
+
+O resultado de cada alteração registra: comportamento preservado, áreas tocadas, áreas verificadas, métrica antes/depois quando aplicável, limitações conhecidas e caminho de rollback.
+
+### 4.7 Outras fundações transversais
+
+| Sistema | Estrutura proposta | Benefício esperado |
+| --- | --- | --- |
+| Estado e lifecycle de telas | Estado local por feature; estado de navegação na rota; estado persistente no repositório de settings; teardown obrigatório ao desmontar workspace. | Evitar estado “fantasma” e vazamento entre áreas. |
+| Erros e notificações | Tipos/códigos de erro estáveis no backend; mensagens claras na UI; retry apenas para falhas recuperáveis; Error Boundary conectado ao logger. | Tornar falhas recuperáveis e diagnosticáveis sem esconder detalhes do usuário. |
+| Tarefas demoradas | Serviço de jobs com ID, progresso, cancelamento, limites de concorrência e resultado logado; workers para operações CPU-bound. | Evitar congelamento da UI em processamento de folhas, imagens, vídeos e migrações. |
+| Pipeline de mídia/assets | Importação, validação de tipo/tamanho, cópia interna, hash, miniatura, referência por ID e remoção com checagem de uso. | Evitar duplicatas acidentais e referências quebradas; diminuir memória e leitura repetida. |
+| Backup, restore e exportação | Snapshots com manifest e schema versionado; verificação de hashes; preview do conteúdo; restore para staging antes de substituir dados atuais. | Permitir mover o workspace e recuperar dados após falha sem sobrescrita cega. |
+| Segurança | Preload com APIs mínimas; autorização/capabilities no main; validação de caminhos/IDs; lista permitida de formatos; limites contra arquivos malformados ou grandes. | Reduzir risco de leitura/gravação fora da pasta e de payloads inválidos. |
+| Acessibilidade e consistência visual | Design system pequeno para controles comuns, teclado/foco, estados disabled/loading/error e padrões de tamanho/contraste. | Melhorar operabilidade sem unificar layouts que precisam continuar independentes. |
+| Build e release portátil | Diagnóstico do local de dados, checagem de espaço/permissões, pacote portátil e instrução de atualizar o código sem tocar em `app-data/`. | Evitar que atualização ou reinstalação remova conteúdo do usuário. |
+| Documentação de feature | Cada módulo registra propósito, dono dos dados, commands/events, schema, migrações, limitações e como validar. | Novas adições ficam previsíveis para manutenção futura. |
+
+Esses sistemas não precisam ser criados todos de uma vez. Devem evoluir como fundações compartilhadas pequenas, com um consumidor real, critério de aceite e implementação antes de serem adotadas por todas as features.
+
 ## 5. Plano de trabalho por etapas
 
 ### Etapa 0 — Fechar o inventário e a especificação
@@ -331,6 +433,8 @@ flowchart LR
 - [ ] Definir o contrato `FeatureDefinition`, o registro central e a validação de colisões/dependências.
 - [ ] Definir schema de logs, eventos de domínio, retenção, redaction e operação em caso de disco cheio.
 - [ ] Mapear comandos de criação/importação/duplicação/arquivo/restauração/exclusão de cada domínio.
+- [ ] Fazer um mapa de dependências de features, estilos globais, estado, atalhos e APIs IPC, com foco no vazamento Studio ↔ Video Studio.
+- [ ] Capturar uma linha de base dos fluxos críticos (inicialização, trocar de área, abrir/salvar projeto, preview e timeline) antes de otimizações.
 
 **Saída:** mapa de migração com origem, destino, formato e procedimento de recuperação para cada domínio.
 
@@ -339,13 +443,15 @@ flowchart LR
 - [ ] Adicionar `app-data/` ao `.gitignore` e confirmar que nenhum arquivo do usuário entra no Git.
 - [ ] Criar `electron/platform/storage/dataRoot.ts` como única origem dos caminhos. Não espalhar `app.getPath('userData')` por handlers.
 - [ ] Criar o registro estático de features e validar IDs, rotas, dependências, capabilities e versões na inicialização.
+- [ ] Criar `WorkspaceRegistry` para estado, storage namespace, CSS, atalhos e lifecycle de cada área da topbar.
 - [ ] Criar `electron/platform/logging/` com logger JSONL, correlação, sanitização, rotação, retenção e fallback.
 - [ ] Instrumentar IPC e comandos de domínio para logar ação, resultado e duração uma vez por operação.
 - [ ] Adicionar contrato compartilhado de conteúdo/command e operações recuperáveis sem apagar silenciosamente.
 - [ ] Adicionar diagnósticos da raiz efetiva, permissões, espaço disponível e estado dos módulos.
+- [ ] Criar contratos de erro/código estáveis e um fluxo de notificações recuperáveis conectado ao Error Boundary.
 - [ ] Tornar os caminhos dos repositórios relativos à raiz, sem alterar ainda os dados atuais.
 
-**Critério de aceite:** features e APIs aparecem no registro; uma chamada de teste recebe IDs correlacionáveis em renderer, IPC, serviço e armazenamento; os logs não contêm conteúdo privado; o app continua salvando se o serviço de logs falhar; a raiz interna é gravável e não aparece como alteração Git.
+**Critério de aceite:** features e workspaces aparecem nos registros; uma chamada recebe IDs correlacionáveis em renderer, IPC, serviço e armazenamento; os logs não contêm conteúdo privado; o app continua salvando se o serviço de logs falhar; cada workspace libera recursos ao sair; a raiz interna é gravável e não aparece como alteração Git.
 
 ### Etapa 2 — Migrar dados com cópia verificável
 
@@ -367,6 +473,7 @@ flowchart LR
 - [ ] Extrair `studio` e `video-studio` mantendo APIs, layouts, pastas e documentos independentes.
 - [ ] Extrair handlers em `electron/ipc/<domínio>.ts`; `main.ts` fica responsável por iniciar módulos e compor dependências.
 - [ ] Manter canais IPC pequenos, tipados e validados no processo principal.
+- [ ] Separar comandos e destinos de persistência de Studio normal e Video Studio; validar o `workspaceId` no backend.
 - [ ] Criar migrações de schema versionadas e testáveis para documentos que evoluem.
 - [ ] Emitir eventos de domínio após commit bem-sucedido; consumidores devem ser idempotentes e declarar dependências.
 - [ ] Implementar lixeira/arquivo e restauração antes de habilitar exclusão permanente genérica.
@@ -379,10 +486,12 @@ flowchart LR
 - [ ] Organizar cada feature pelas responsabilidades existentes: página/composição, componentes, hooks, serviços puros e estilos próprios.
 - [ ] Começar por telas grandes usando extrações pequenas sem alterar comportamento ou layout.
 - [ ] Mover CSS global para estilos de feature apenas após confirmar quem usa cada seletor.
+- [ ] Isolar estado, seleção, histórico, inspector, atalhos, timers, áudio, playhead e gestos por workspace.
+- [ ] Substituir dependências privadas entre features por capabilities/contratos explícitos quando forem realmente compartilhadas.
 - [ ] Preservar helpers existentes e evitar duplicar composição facial, timeline, renderização ou transformações.
 - [ ] Manter `shared/` pequeno: código só vai para lá quando houver mais de um consumidor e contrato estável.
 
-**Critério de aceite:** as rotas visuais se comportam como antes; Studio normal e Video Studio permanecem independentes; componentes de feature não importam arquivos privados de outra feature.
+**Critério de aceite:** Studio normal e Video Studio passam pela matriz de regressão acima; alterações de layout, estado e atalhos ficam na área selecionada; documentos são salvos somente no namespace correto; componentes de feature não importam arquivos privados de outra feature.
 
 ### Etapa 5 — Ferramentas operacionais e validação final
 
@@ -394,6 +503,9 @@ flowchart LR
 - [ ] Criar pacote de diagnóstico exportável sem conteúdo privado nem arquivos de usuário.
 - [ ] Validar criação, edição, importação, exportação, arquivamento, restauração e remoção em cada domínio.
 - [ ] Executar os fluxos de abertura, gravação, reinicialização e recuperação para cada tipo de dados.
+- [ ] Repetir as medições de desempenho da linha de base e registrar diferença por fluxo; não declarar melhora sem dado comparável.
+- [ ] Rodar regressão visual e funcional nas áreas não editadas quando houver mudança em `shared/`, UI global, tokens de design, IPC ou domínio compartilhado.
+- [ ] Verificar acessibilidade, liberação de recursos, limites de memória e cancelamento de tarefas demoradas.
 - [ ] Fazer busca final por caminhos antigos, chaves legacy, dependências circulares e handlers órfãos.
 - [ ] Manter backup até a aprovação da verificação dos dados migrados.
 
@@ -415,6 +527,11 @@ flowchart LR
 | Logs vazarem informação pessoal ou conteúdo de mídia | Allowlist de campos, sanitização de erros e redaction testada; proibir payloads e data URLs. |
 | Remoção de área deixar dados órfãos ou destruir referências | Arquivar/ocultar feature sem apagar namespace; remoção física requer relatório de dependências e ação explícita. |
 | Evento de domínio ser processado duas vezes | `eventId`/`operationId`, schema versionado e consumidores idempotentes. |
+| Mudança de uma área afetar outra pela topbar | WorkspaceRegistry, estado/estilos/canais com namespace próprio e matriz de navegação cruzada obrigatória. |
+| “Otimização” tornar preview ou edição menos precisa | Comparar saída funcional/visual e tempo no mesmo projeto de referência; manter resultado determinístico onde requerido. |
+| Worker, timer ou áudio sobreviver à troca de área | Lifecycle explícito com cancelamento e verificação de recursos ativos após desmontagem. |
+| Código mais modular ficar mais lento ou mais difícil de seguir | Evitar camadas sem consumidor; medir custo e documentar fronteira/benefício de cada módulo novo. |
+| Atualização do app sobrescrever dados | Separar rigorosamente código/build de `app-data/`; atualizar código sem migrar/apagar dados sem versão e backup. |
 
 ## 7. Convenções de arquitetura propostas
 
@@ -430,6 +547,10 @@ flowchart LR
 10. **Logs descrevem operações, não conteúdo privado.** Todo comando importante é rastreável por IDs, mas nunca precisa registrar os bytes ou o texto que o usuário editou.
 11. **Falhas têm código estável e contexto.** A UI mostra uma mensagem compreensível; o log guarda detalhes sanitizados e a cadeia de correlação.
 12. **Não usar um sistema de plugins irrestrito como atalho.** Extensibilidade segura começa por módulos internos declarados e APIs versionadas.
+13. **Refatoração deve melhorar o produto.** Legibilidade ajuda, mas também se medem velocidade, CPU/memória, salvamento, confiabilidade e consistência.
+14. **Uma área não controla outra.** Compartilhamento acontece por API/capability explícita; layout, estado de edição e lifecycle são locais à área.
+15. **Otimizar com evidência.** Coletar linha de base e comparar o mesmo fluxo e volume de dados; evitar otimização especulativa.
+16. **Qualidade inclui aparência e uso.** Mudanças de UI exigem inspeção visual; mudanças de fluxo exigem teste de interação/persistência; alterações em contratos exigem teste de consumidores.
 
 ## 8. Pontos em aberto para a próxima etapa
 
@@ -442,6 +563,8 @@ Este documento registra o plano inicial; estes detalhes precisam ser definidos d
 - Qual retenção inicial atende o uso local dos logs, mantendo um limite de espaço e opção de exportar antes da limpeza?
 - Quais operações precisam de trilha de auditoria permanente e quais só exigem log operacional rotacionado?
 - Quais capabilities de backend serão oferecidas na primeira versão do registro, e quais dados podem ser referenciados por mais de uma feature?
+- Quais tamanhos de projeto representam os cenários reais de desempenho (ex.: quantidade de personagens, peças, imagens e clipes) para os benchmarks?
+- Qual deve ser o comportamento ao trocar de área: restaurar estado local recente ou iniciar limpo? A regra precisa ser definida separadamente para cada workspace.
 
 ## 9. Referências do repositório
 
