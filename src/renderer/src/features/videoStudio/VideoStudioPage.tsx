@@ -292,7 +292,7 @@ export function VideoStudioPage() {
       const widthScale = item.kind === 'character' ? (item.characterWidthScale ?? 100) / 100 : 1
       const heightScale = item.kind === 'character' ? (item.characterHeightScale ?? 100) / 100 : 1
       return {
-        id: crypto.randomUUID(), kind: item.kind,
+        id: crypto.randomUUID(), kind: item.kind === 'character' ? 'character' : 'image',
         name: item.kind === 'character' && item.characterId
           ? sourceCharacterNames[item.characterId] ?? 'Personagem' : item.kind === 'character' ? 'Personagem' : 'Objeto',
         assetId: item.assetId!, x: item.x, y: item.y,
