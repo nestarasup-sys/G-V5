@@ -8,7 +8,7 @@ import { resolvePoseCategory } from '../src/shared/fabricator'
 import { hairCategories } from '../src/shared/hairCategories'
 import type { CustomizerCharacter, CustomizerFaceAppearance, CustomizerWardrobePaletteKey, HairColorOverrides } from '../src/shared/customizer'
 import { characterBodyDimensionLimits, characterProportionLimits } from '../src/shared/customizer'
-import type { StudioAsset, StudioDocument } from '../src/shared/studio'
+import type { StudioAsset, StudioDocument, VideoTimelineDocument } from '../src/shared/studio'
 import { applyModelHeadShape } from '../src/shared/headShape'
 import { isStudioExpressionEffects, isStudioFaceTransforms } from '../src/shared/studio'
 import { legacyStandardExpressionEffects } from '../src/shared/legacyExpressionEffects'
@@ -914,6 +914,7 @@ function isStudioDocument(value: unknown): value is StudioDocument {
     && Array.isArray(assets) && assets.length <= 500
     && assets.every((asset) => isStudioAsset(asset))
     && Array.isArray(elements) && elements.length <= 1000
+    && (studio.videoTimeline === undefined || isVideoTimelineDocument(studio.videoTimeline, elements))
     && (studio.backgroundAssetId === null || assets.some((asset) => asset.id === studio.backgroundAssetId && asset.category === 'background'))
     && elements.every((element) => Boolean(element && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(element.id) && typeof element.text === 'string'
       && ['image', 'character', 'narrator', 'speech', 'thought'].includes(element.kind)
@@ -929,6 +930,23 @@ function isStudioDocument(value: unknown): value is StudioDocument {
       && [element.x, element.y, element.width, element.height, element.rotation, element.zIndex].every(Number.isFinite)))
 }
 
+function isVideoTimelineDocument(value: unknown, elements: StudioDocument['elements']): value is VideoTimelineDocument {
+  if (!value || typeof value !== 'object') return false
+  const timeline = value as Partial<VideoTimelineDocument>
+  const characterIds = new Set(elements.filter((element) => element?.kind === 'character').map((element) => element.id))
+  const textIds = new Set(elements.filter((element) => element?.kind === 'speech' || element?.kind === 'thought').map((element) => element.id))
+  return timeline.schemaVersion === 1 && timeline.frameRate === 60
+    && typeof timeline.playing === 'boolean'
+    && Number.isInteger(timeline.durationFrames) && timeline.durationFrames! >= 60 && timeline.durationFrames! <= 60 * 60 * 60 * 24
+    && Number.isInteger(timeline.playheadFrame) && timeline.playheadFrame! >= 0 && timeline.playheadFrame! <= timeline.durationFrames!
+    && Array.isArray(timeline.characterKeys) && timeline.characterKeys.length <= 100_000
+    && timeline.characterKeys.every((key) => Boolean(key && typeof key.id === 'string' && characterIds.has(key.elementId) && Number.isInteger(key.frame) && key.frame >= 0 && key.frame <= timeline.durationFrames! && (key.poseSlot === null || Number.isInteger(key.poseSlot)) && (key.expressionCollectionId === null || typeof key.expressionCollectionId === 'string') && (key.expressionPresetId === null || typeof key.expressionPresetId === 'string') && ['idle', 'blink', 'talk'].includes(key.faceMode)))
+    && Array.isArray(timeline.textClips) && timeline.textClips.length <= 100_000
+    && timeline.textClips.every((clip) => Boolean(clip && typeof clip.id === 'string' && textIds.has(clip.elementId) && (clip.kind === 'speech' || clip.kind === 'thought') && Number.isInteger(clip.startFrame) && Number.isInteger(clip.endFrame) && clip.startFrame >= 0 && clip.endFrame > clip.startFrame && clip.endFrame <= timeline.durationFrames!))
+    && Array.isArray(timeline.saveMarkers) && timeline.saveMarkers.length <= 100_000
+    && timeline.saveMarkers.every((marker) => Boolean(marker && typeof marker.id === 'string' && Number.isInteger(marker.frame) && marker.frame >= 0 && marker.frame <= timeline.durationFrames! && Array.isArray(marker.affectedTrackIds) && marker.affectedTrackIds.every((id) => typeof id === 'string')))
+}
+
 function isStudioAsset(value: unknown): value is StudioAsset {
   if (!value || typeof value !== 'object') return false
   const asset = value as Partial<StudioAsset>
@@ -939,7 +957,7 @@ function isStudioAsset(value: unknown): value is StudioAsset {
     && typeof asset.dataUrl === 'string' && asset.dataUrl.startsWith(`data:${asset.mimeType};base64,`) && asset.dataUrl.length <= 70_000_000
 }
 
-function normalizeStudio(value: Record<string, unknown>, id: string): StudioDocument {
+function normalizeStudio(value: Record<string, unknown>, id: string, workspace: StudioWorkspaceStorage = 'studio'): StudioDocument {
   return {
     schemaVersion: 1,
     id,
@@ -955,7 +973,8 @@ function normalizeStudio(value: Record<string, unknown>, id: string): StudioDocu
     backgroundHeight: typeof value.backgroundHeight === 'number' && Number.isFinite(value.backgroundHeight) ? value.backgroundHeight : 100,
     backgroundRotation: typeof value.backgroundRotation === 'number' && Number.isFinite(value.backgroundRotation) ? value.backgroundRotation : 0,
     assets: Array.isArray(value.assets) ? value.assets as StudioAsset[] : [],
-    elements: Array.isArray(value.elements) ? value.elements as StudioDocument['elements'] : []
+    elements: Array.isArray(value.elements) ? value.elements as StudioDocument['elements'] : [],
+    ...(workspace === 'video' && value.videoTimeline && typeof value.videoTimeline === 'object' ? { videoTimeline: value.videoTimeline as VideoTimelineDocument } : {})
   }
 }
 
@@ -963,7 +982,7 @@ async function readStudio(id: string, workspace: StudioWorkspaceStorage = 'studi
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)) throw new Error('Identificador de Studio inválido.')
   try {
     const raw = JSON.parse(await readFile(join(studioPath(id, workspace), 'studio.json'), 'utf8')) as Record<string, unknown>
-    const normalized = normalizeStudio(raw, id)
+    const normalized = normalizeStudio(raw, id, workspace)
     const folder = studioPath(id, workspace)
     const assets = await Promise.all(normalized.assets.map(async (asset) => {
       if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(asset.id)

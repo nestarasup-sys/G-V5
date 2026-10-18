@@ -4,12 +4,13 @@ import { Icon } from '../../ui/components/Icon'
 import { CharacterPortrait } from '../../ui/components/CharacterPortrait'
 import { resolveStudioTalkMouthId } from '../../../../shared/studio'
 import type { StudioAsset, StudioDocument, StudioElement, StudioFaceMode, StudioFaceTransform, StudioFaceTransforms } from '../../../../shared/studio'
+import { VideoTimeline, videoTimelineFor } from '../videoStudio/VideoTimeline'
 import type { CustomizerCharacter } from '../../../../shared/customizer'
 import type { CustomizerFaceAppearance } from '../../../../shared/customizer'
 import type { FaceCatalogItem, FaceCatalogItemSummary, FaceExpressionCollection, FaceExpressionEffects, FaceExpressionPreset, FaceExpressionPresetSummary, FaceSheetKind, FabricatorPoseSummary } from '../../../../shared/fabricator'
 
 type StudioCard = StudioDocument
-type StudioSnapshot = Pick<StudioDocument, 'backgroundColor' | 'backgroundAssetId' | 'backgroundX' | 'backgroundY' | 'backgroundWidth' | 'backgroundHeight' | 'backgroundRotation' | 'assets' | 'elements'>
+type StudioSnapshot = Pick<StudioDocument, 'backgroundColor' | 'backgroundAssetId' | 'backgroundX' | 'backgroundY' | 'backgroundWidth' | 'backgroundHeight' | 'backgroundRotation' | 'assets' | 'elements' | 'videoTimeline'>
 type Tool = 'background' | 'objects' | null
 type DragState = { id: string; pointerId: number; startX: number; startY: number; originalX: number; originalY: number; width: number; height: number }
 
@@ -100,7 +101,8 @@ function snapshot(studio: StudioDocument): StudioSnapshot {
     backgroundHeight: studio.backgroundHeight,
     backgroundRotation: studio.backgroundRotation,
     assets: studio.assets,
-    elements: studio.elements
+    elements: studio.elements,
+    videoTimeline: studio.videoTimeline
   }
 }
 
@@ -302,11 +304,14 @@ export function StudioPage({ workspace = 'studio' }: { workspace?: StudioWorkspa
   const [fullView, setFullView] = useState(false)
   const [saved, setSaved] = useState(true)
   const [selectedElementId, setSelectedElementId] = useState<string | null>(null)
+  const [videoPlayheadFrame, setVideoPlayheadFrame] = useState(0)
+  const [videoPlaying, setVideoPlaying] = useState(false)
   const [historyVersion, setHistoryVersion] = useState(0)
   const [canUndo, setCanUndo] = useState(false)
   const [canRedo, setCanRedo] = useState(false)
   const sceneRef = useRef<HTMLDivElement>(null)
   const dragRef = useRef<DragState | null>(null)
+  const videoPlaybackAnchorRef = useRef({ frame: 0, time: 0 })
   const undoRef = useRef<StudioSnapshot[]>([])
   const redoRef = useRef<StudioSnapshot[]>([])
   const studioFaceTransformsRef = useRef<Record<string, StudioFaceTransforms>>({})
@@ -339,6 +344,25 @@ export function StudioPage({ workspace = 'studio' }: { workspace?: StudioWorkspa
   const selectedStudioTalkAvailable = Boolean(selectedStudioOpenMouth?.pieces.some((piece) => piece.sheet === 'mouth-open' && piece.index === selectedStudioFaceAppearance?.expressionIndex))
   const selectedBackgroundAsset = activeStudio?.assets.find((asset) => asset.id === activeStudio.backgroundAssetId) ?? null
   const stageCharacters = activeStudio?.elements.filter((element) => element.kind === 'character') ?? []
+  useEffect(() => {
+    setVideoPlaying(false)
+    setVideoPlayheadFrame(activeStudio?.videoTimeline?.playheadFrame ?? 0)
+  }, [activeStudioId])
+  useEffect(() => {
+    if (!isVideoWorkspace || !videoPlaying || !activeStudio) return
+    const duration = videoTimelineFor(activeStudio).durationFrames
+    videoPlaybackAnchorRef.current = { frame: videoPlayheadFrame, time: performance.now() }
+    let raf = 0
+    const tick = (now: number) => {
+      const anchor = videoPlaybackAnchorRef.current
+      const next = Math.min(duration, anchor.frame + Math.floor((now - anchor.time) * 60 / 1000))
+      setVideoPlayheadFrame(next)
+      if (next >= duration) setVideoPlaying(false)
+      else raf = requestAnimationFrame(tick)
+    }
+    raf = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(raf)
+  }, [isVideoWorkspace, videoPlaying, activeStudioId, activeStudio?.videoTimeline?.durationFrames])
   const allStageCharactersLocked = stageCharacters.length > 0 && stageCharacters.every((element) => element.positionLocked === true)
   const toggleStageCharacterPositionLock = () => {
     if (!activeStudio || !stageCharacters.length) return
@@ -696,7 +720,8 @@ export function StudioPage({ workspace = 'studio' }: { workspace?: StudioWorkspa
       schemaVersion: 1, id: crypto.randomUUID(), title: `${workspaceTitle} ${String(number).padStart(2, '0')}`,
       color: studioColor(number), createdAt: now, updatedAt: now, backgroundColor: '#d7b5cd',
       backgroundAssetId: null, backgroundX: 0, backgroundY: 0, backgroundWidth: 100, backgroundHeight: 100,
-      backgroundRotation: 0, assets: [], elements: []
+      backgroundRotation: 0, assets: [], elements: [],
+      ...(isVideoWorkspace ? { videoTimeline: { schemaVersion: 1, frameRate: 60, durationFrames: 36000, playheadFrame: 0, playing: false, characterKeys: [], textClips: [], saveMarkers: [] } } : {})
     }
     try {
       setError(null)
@@ -725,6 +750,13 @@ export function StudioPage({ workspace = 'studio' }: { workspace?: StudioWorkspa
     duplicate.elements = source.elements.map((element, index) => ({
       ...duplicate.elements[index], assetId: element.assetId ? oldToNew.get(element.assetId) : undefined
     }))
+    if (source.videoTimeline) {
+      const elementIds = new Map(source.elements.map((element, index) => [element.id, duplicate.elements[index].id]))
+      duplicate.videoTimeline = { ...source.videoTimeline,
+        characterKeys: source.videoTimeline.characterKeys.map((key) => ({ ...key, id: crypto.randomUUID(), elementId: elementIds.get(key.elementId) ?? key.elementId })),
+        textClips: source.videoTimeline.textClips.map((clip) => ({ ...clip, id: crypto.randomUUID(), elementId: elementIds.get(clip.elementId) ?? clip.elementId }))
+      }
+    }
     duplicate.backgroundAssetId = source.backgroundAssetId ? oldToNew.get(source.backgroundAssetId) ?? null : null
     try {
       setError(null)
@@ -840,10 +872,41 @@ export function StudioPage({ workspace = 'studio' }: { workspace?: StudioWorkspa
   const addTextElement = (kind: 'narrator' | 'speech' | 'thought') => {
     if (!activeStudio) return
     const element = makeElement(kind, Math.max(0, ...activeStudio.elements.map((item) => item.zIndex)) + 1)
-    changeScene((studio) => ({ ...studio, elements: [...studio.elements, element], updatedAt: new Date().toISOString() }))
+    changeScene((studio) => ({ ...studio, elements: [...studio.elements, element], ...(isVideoWorkspace && kind !== 'narrator' ? { videoTimeline: { ...videoTimelineFor(studio), textClips: [...videoTimelineFor(studio).textClips, { id: crypto.randomUUID(), elementId: element.id, kind, startFrame: Math.min(videoPlayheadFrame, videoTimelineFor(studio).durationFrames - 1), endFrame: Math.min(videoTimelineFor(studio).durationFrames, Math.min(videoPlayheadFrame, videoTimelineFor(studio).durationFrames - 1) + 300) }] } } : {}), updatedAt: new Date().toISOString() }))
     setSelectedElementId(element.id)
     setInspectorOpen(true)
     setInspectorTab('editor')
+  }
+
+  const saveVideoFrame = () => {
+    if (!activeStudio || !isVideoWorkspace) return
+    const timeline = videoTimelineFor(activeStudio)
+    const keys = [...timeline.characterKeys]
+    const affectedTrackIds: string[] = []
+    for (const character of activeStudio.elements.filter((element) => element.kind === 'character')) {
+      const previous = [...keys].filter((key) => key.elementId === character.id && key.frame < videoPlayheadFrame).sort((a, b) => b.frame - a.frame)[0]
+      const state = {
+        poseSlot: character.poseSlot ?? null,
+        expressionCollectionId: character.activeExpressionCollectionId ?? 'standard',
+        expressionPresetId: character.activeExpressionPresetId ?? null,
+        faceMode: studioFaceModeForElement(character, character.faceAppearance)
+      }
+      if (previous && previous.poseSlot === state.poseSlot && previous.expressionCollectionId === state.expressionCollectionId && previous.expressionPresetId === state.expressionPresetId && previous.faceMode === state.faceMode) continue
+      const existingIndex = keys.findIndex((key) => key.elementId === character.id && key.frame === videoPlayheadFrame)
+      const key = { id: existingIndex >= 0 ? keys[existingIndex].id : crypto.randomUUID(), elementId: character.id, frame: videoPlayheadFrame, ...state }
+      if (existingIndex >= 0) keys[existingIndex] = key
+      else keys.push(key)
+      affectedTrackIds.push(character.id)
+    }
+    changeScene((studio) => {
+      const current = videoTimelineFor(studio)
+      const markerIndex = current.saveMarkers.findIndex((marker) => marker.frame === videoPlayheadFrame)
+      const marker = { id: markerIndex >= 0 ? current.saveMarkers[markerIndex].id : crypto.randomUUID(), frame: videoPlayheadFrame, affectedTrackIds }
+      const saveMarkers = [...current.saveMarkers]
+      if (markerIndex >= 0) saveMarkers[markerIndex] = marker
+      else saveMarkers.push(marker)
+      return { ...studio, videoTimeline: { ...current, playheadFrame: videoPlayheadFrame, characterKeys: keys, saveMarkers }, updatedAt: new Date().toISOString() }
+    })
   }
 
   const openCastPicker = () => {
@@ -878,11 +941,13 @@ export function StudioPage({ workspace = 'studio' }: { workspace?: StudioWorkspa
         elements.push({ id: crypto.randomUUID(), kind: 'character', assetId: asset.id, characterId: character.id, characterSourceUpdatedAt: character.updatedAt, faceRendererVersion: STUDIO_FACE_RENDER_VERSION, activeExpressionCollectionId: 'standard', activeExpressionPresetId: null, activeFaceMode: 'idle', characterScale: 100, characterWidthScale: 100, characterHeightScale: 100, ...(character.customization.faceAppearance ? { expressionBase: { appearance: structuredClone(character.customization.faceAppearance), transforms: {} } } : {}), characterCanvasWidth, text: character.name, x: 0, y: 0, width, height, rotation: 0, zIndex: ++zIndex })
       }
       const nextElements = [...retained, ...elements]
+      const retainedElementIds = new Set(nextElements.map((element) => element.id))
       const retainedAssetIds = new Set(retained.map((element) => element.assetId).filter((id): id is string => Boolean(id)))
       changeScene((studio) => ({
         ...studio,
         elements: nextElements,
         assets: [...studio.assets.filter((asset) => !removedCharacterAssetIds.has(asset.id) || retainedAssetIds.has(asset.id)), ...assets],
+        ...(studio.videoTimeline ? { videoTimeline: { ...studio.videoTimeline, characterKeys: studio.videoTimeline.characterKeys.filter((key) => retainedElementIds.has(key.elementId)), textClips: studio.videoTimeline.textClips.filter((clip) => retainedElementIds.has(clip.elementId)) } } : {}),
         updatedAt: new Date().toISOString()
       }))
       setCastPickerOpen(false)
@@ -1154,6 +1219,7 @@ export function StudioPage({ workspace = 'studio' }: { workspace?: StudioWorkspa
       return {
         ...studio, elements,
         assets: studio.assets.filter((asset) => asset.id !== element.assetId || stillUsed.has(asset.id)),
+        ...(studio.videoTimeline ? { videoTimeline: { ...studio.videoTimeline, characterKeys: studio.videoTimeline.characterKeys.filter((key) => key.elementId !== element.id), textClips: studio.videoTimeline.textClips.filter((clip) => clip.elementId !== element.id) } } : {}),
         updatedAt: new Date().toISOString()
       }
     })
@@ -1229,7 +1295,7 @@ export function StudioPage({ workspace = 'studio' }: { workspace?: StudioWorkspa
     } else if (selectedElementId) {
       const current = activeStudio.elements.find((element) => element.id === selectedElementId)
       if (current?.kind === 'character') removeStageCharacter(current)
-      else changeScene((studio) => ({ ...studio, elements: studio.elements.filter((element) => element.id !== selectedElementId), updatedAt: new Date().toISOString() }))
+      else changeScene((studio) => ({ ...studio, elements: studio.elements.filter((element) => element.id !== selectedElementId), ...(studio.videoTimeline ? { videoTimeline: { ...studio.videoTimeline, characterKeys: studio.videoTimeline.characterKeys.filter((key) => key.elementId !== selectedElementId), textClips: studio.videoTimeline.textClips.filter((clip) => clip.elementId !== selectedElementId) } } : {}), updatedAt: new Date().toISOString() }))
       setSelectedElementId(null)
     }
   }
@@ -1475,7 +1541,7 @@ export function StudioPage({ workspace = 'studio' }: { workspace?: StudioWorkspa
       ? 'left'
       : selectedBounds?.left !== undefined && selectedBounds.left < inspectorWidth ? 'right' : 'right'
     return (
-      <main className={`studio-editor${fullView ? ' full-view' : ''}`} aria-label={`Editor do ${activeStudio.title}`}>
+      <main className={`studio-editor${isVideoWorkspace ? ' video-workspace' : ''}${fullView ? ' full-view' : ''}`} aria-label={`Editor do ${activeStudio.title}`}>
         {!fullView && <aside className="studio-editor-rail studio-editor-left" aria-label={`Ferramentas do ${workspaceTitle}`}>
           <div className="studio-editor-quick-actions">
             <button className="studio-round-action" onClick={() => void leaveStudio()} title="Salvar automaticamente e voltar" aria-label={`Voltar para Seus ${workspacePlural}`} type="button"><span>←</span></button>
@@ -1519,6 +1585,7 @@ export function StudioPage({ workspace = 'studio' }: { workspace?: StudioWorkspa
           </div>
         </section>
         {!fullView && <aside className="studio-editor-rail studio-editor-right" aria-label="Elenco do Studio">{castPanel()}</aside>}
+        {!fullView && isVideoWorkspace && <VideoTimeline studio={activeStudio} playheadFrame={videoPlayheadFrame} playing={videoPlaying} onSeek={(frame) => { const clamped = Math.max(0, Math.min(videoTimelineFor(activeStudio).durationFrames, frame)); videoPlaybackAnchorRef.current = { frame: clamped, time: performance.now() }; setVideoPlayheadFrame(clamped) }} onTogglePlayback={() => setVideoPlaying((value) => !value)} onSaveFrame={saveVideoFrame} onChangeDuration={(durationFrames) => changeScene((studio) => ({ ...studio, videoTimeline: { ...videoTimelineFor(studio), durationFrames, playheadFrame: Math.min(videoPlayheadFrame, durationFrames) }, updatedAt: new Date().toISOString() }))} />}
         {castPickerOpen && <div className="studio-cast-modal-backdrop" onPointerDown={(event) => { if (event.target === event.currentTarget && !savingCast) setCastPickerOpen(false) }}>
           <section className="studio-cast-modal" role="dialog" aria-modal="true" aria-labelledby="studio-cast-modal-title">
             <header><span><small>EDITAR ELENCO</small><h2 id="studio-cast-modal-title">Personagens do {workspaceTitle}</h2></span><button className="studio-cast-modal-close" onClick={() => setCastPickerOpen(false)} aria-label="Fechar" disabled={savingCast} type="button">×</button></header>

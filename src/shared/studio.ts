@@ -131,6 +131,19 @@ export type StudioDocument = {
   backgroundRotation: number
   assets: StudioAsset[]
   elements: StudioElement[]
+  /** Present only in the independent Video Studio workspace. */
+  videoTimeline?: VideoTimelineDocument
+}
+
+export type VideoTimelineDocument = {
+  schemaVersion: 1
+  frameRate: 60
+  durationFrames: number
+  playheadFrame: number
+  playing: boolean
+  characterKeys: Array<{ id: string; elementId: string; frame: number; poseSlot: number | null; expressionCollectionId: string | null; expressionPresetId: string | null; faceMode: StudioFaceMode }>
+  textClips: Array<{ id: string; elementId: string; kind: 'speech' | 'thought'; startFrame: number; endFrame: number }>
+  saveMarkers: Array<{ id: string; frame: number; affectedTrackIds: string[] }>
 }
 
 export type StudioDesktopApi = {
