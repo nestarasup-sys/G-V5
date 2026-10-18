@@ -1,0 +1,98 @@
+{
+  "schemaVersion": 1,
+  "owner": "G-V5 architecture review",
+  "baselineCommit": "b705884551dabca15387db6e8ea7ffa585eb85f2",
+  "policy": "Existing debt is recorded, NOT approved. No new unique edge or greater occurrence count is permitted without explicit review.",
+  "edges": [
+    {
+      "from": "src/renderer/src/features/customizer/CustomizerPage.tsx",
+      "to": "src/renderer/src/features/fabricator/usePreviewBackground.ts",
+      "importKind": "import",
+      "typeOnly": false,
+      "maxOccurrences": 1,
+      "classification": "extract-shared-hook",
+      "rationale": "Move preview-background hook behind a capability or shared render utility."
+    },
+    {
+      "from": "src/renderer/src/features/customizer/CustomizerPage.tsx",
+      "to": "src/renderer/src/features/fabricator/DesignWorkspace.tsx",
+      "importKind": "import",
+      "typeOnly": false,
+      "maxOccurrences": 1,
+      "classification": "prohibited-private-ui",
+      "rationale": "Customizer renders a Fabricator-owned workspace UI; extract a public composition contract."
+    },
+    {
+      "from": "src/renderer/src/features/customizer/CustomizerPage.tsx",
+      "to": "src/renderer/src/features/fabricator/wardrobe/poseTransform.ts",
+      "importKind": "import",
+      "typeOnly": false,
+      "maxOccurrences": 1,
+      "classification": "extract-pure-transform",
+      "rationale": "Move pose transforms into a shared pure adapter."
+    },
+    {
+      "from": "src/renderer/src/features/customizer/CustomizerPage.tsx",
+      "to": "src/renderer/src/features/fabricator/face/eyeInteriorMask.ts",
+      "importKind": "import",
+      "typeOnly": false,
+      "maxOccurrences": 1,
+      "classification": "extract-pure-image",
+      "rationale": "Move image mask logic into a shared pure image service."
+    },
+    {
+      "from": "src/renderer/src/features/customizer/bodyShape.ts",
+      "to": "src/renderer/src/features/fabricator/models/rig.ts",
+      "importKind": "import",
+      "typeOnly": false,
+      "maxOccurrences": 1,
+      "classification": "extract-pure-rig",
+      "rationale": "Separate body geometry from Fabricator-specific modeling."
+    },
+    {
+      "from": "src/renderer/src/features/fabricator/AnimatorWorkspace.tsx",
+      "to": "src/renderer/src/features/customizer/bodyShape.ts",
+      "importKind": "import",
+      "typeOnly": false,
+      "maxOccurrences": 1,
+      "classification": "extract-pure-shape",
+      "rationale": "Extract shared geometry utilities with an explicit API."
+    },
+    {
+      "from": "src/renderer/src/features/studio/StudioPage.tsx",
+      "to": "src/renderer/src/features/customizer/CustomizerPage.tsx",
+      "importKind": "dynamic-import",
+      "typeOnly": false,
+      "maxOccurrences": 6,
+      "classification": "prohibited-feature-page-import",
+      "rationale": "Dynamic import of entire Customizer page to reuse rendering; extract dedicated render service."
+    },
+    {
+      "from": "src/renderer/src/features/videoStudio/VideoStudioEditor.tsx",
+      "to": "src/renderer/src/features/studio/expressionTransforms.ts",
+      "importKind": "import",
+      "typeOnly": false,
+      "maxOccurrences": 1,
+      "classification": "extract-pure-expression",
+      "rationale": "Promote expression transforms to shared capability without Studio editor state."
+    },
+    {
+      "from": "src/renderer/src/features/videoStudio/VideoStudioEditor.tsx",
+      "to": "src/renderer/src/features/customizer/CustomizerPage.tsx",
+      "importKind": "dynamic-import",
+      "typeOnly": false,
+      "maxOccurrences": 8,
+      "classification": "prohibited-feature-page-import",
+      "rationale": "Dynamic import of entire Customizer page; promote export to dedicated render service."
+    },
+    {
+      "from": "src/renderer/src/features/videoStudio/transitionRenderer.ts",
+      "to": "src/renderer/src/features/customizer/CustomizerPage.tsx",
+      "importKind": "dynamic-import",
+      "typeOnly": false,
+      "maxOccurrences": 1,
+      "classification": "prohibited-feature-page-import",
+      "rationale": "Rendering utility imports a UI page at runtime; isolate pure rendering contract."
+    }
+  ]
+}
