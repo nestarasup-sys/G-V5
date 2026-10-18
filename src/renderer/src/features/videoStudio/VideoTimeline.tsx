@@ -83,16 +83,16 @@ export function VideoTimeline({ studio, playheadFrame, playing, height, presetNa
       <span /><span /><span />
     </div>
     <header className="video-timeline-toolbar">
-      <div className="video-timeline-create-actions"><button type="button" onClick={() => onAddText('speech')}>+ Fala</button><button type="button" onClick={() => onAddText('thought')}>+ Pensamento</button><button type="button" onClick={onSaveFrame}>+ Corte</button></div>
-      <div className="video-timeline-heading"><strong>{formatTime(playheadFrame)}</strong><span>/ {formatTime(duration)}</span><small>{timeline.characterKeys.length + timeline.textClips.length} eventos</small></div>
+      <div className="video-timeline-create-actions"><button type="button" onClick={() => onAddText('speech')}>+ Fala</button><button type="button" onClick={() => onAddText('thought')}>+ Pensamento</button></div>
+      <div className="video-timeline-heading"><strong>{formatTime(playheadFrame)}</strong><span>/ {formatTime(duration)}</span><small>{timeline.characterKeys.length + timeline.textClips.length} eventos</small><button type="button" className="video-play-button" aria-label={playing ? 'Pausar reprodução' : 'Reproduzir'} onClick={onTogglePlayback}>{playing ? '❚❚' : '▶'}<span>{playing ? 'Pausar' : 'Play'}</span></button></div>
       <div className="video-timeline-actions">
         <button type="button" onClick={() => onChangeDuration(Math.max(60, duration - 3600))} disabled={duration <= 3600 || timeline.characterKeys.some((key) => key.frame >= duration - 3600) || timeline.textClips.some((clip) => clip.endFrame > duration - 3600)} title="Reduzir duração em um minuto">− 1 min</button>
         <button type="button" onClick={() => onChangeDuration(duration + 3600)} title="Aumentar duração em um minuto">+ 1 min</button>
-        <button type="button" aria-label={playing ? 'Pausar reprodução' : 'Reproduzir'} onClick={onTogglePlayback}>{playing ? '❚❚' : '▶'}<span>{playing ? 'Pausar' : 'Play'}</span></button>
         <button type="button" onClick={fitTimeline}>Fit</button>
         <button type="button" className="video-zoom-button" onClick={() => setZoom(pixelsPerSecond / 1.25)} title="Diminuir zoom">−</button>
         <label className="video-zoom-control"><span>{pixelsPerSecond.toFixed(0)} px/s</span><input aria-label="Zoom horizontal da timeline" type="range" min={1} max={120} step={1} value={pixelsPerSecond} onChange={(event) => setZoom(Number(event.currentTarget.value))} /></label>
         <button type="button" className="video-zoom-button" onClick={() => setZoom(pixelsPerSecond * 1.25)} title="Aumentar zoom">+</button>
+        <button type="button" className="video-split-button" onClick={onSaveFrame} title="Dividir a faixa no playhead">✂ Dividir</button>
       </div>
     </header>
     <div className="video-timeline-scroll" ref={timelineScrollRef}>
