@@ -1444,6 +1444,22 @@ const customizerClothesTabs = [
   { id: 'adjust', label: 'Ajustar', icon: 'sliders' }
 ] as const
 
+function clothesAdjustmentDefinitions(tab: Exclude<(typeof customizerClothesTabs)[number]['id'], 'adjust'>) {
+  if (tab === 'upper') return clothingCategories.Superior
+  if (tab === 'lower') return clothingCategories.Inferior
+  if (tab === 'accessories') return clothingCategories.Superior.filter((item) => item.id === 'oculos' || item.id === 'acessorio-cabeca')
+  if (tab === 'other') return clothingCategories.Superior.filter((item) => item.id === 'luvas' || item.id === 'capa' || item.id === 'cinto' || item.id === 'saia-superior')
+  return []
+}
+
+function headAdjustmentItemsFor(tab: Exclude<(typeof customizerHeadTabs)[number]['id'], 'adjust'>) {
+  const ids = tab === 'hair' ? new Set(['backHair', 'rearHair', 'ponytail', 'frontHair', 'ahoge'])
+    : tab === 'eyes' ? new Set(['eye-left', 'eye-right', 'pupil-left', 'pupil-right', 'brow-left', 'brow-right', 'eye-highlight-left', 'eye-highlight-right'])
+      : tab === 'face' ? new Set(['nose', 'mouth', 'blush', 'facial-shadow'])
+        : new Set(['oculos', 'acessorio-cabeca'])
+  return headAdjustmentItems.filter((item) => ids.has(item.id))
+}
+
 const customizerOtherTabs = [
   { id: 'extra', label: 'Extra', icon: 'brush' },
   { id: 'extra2', label: 'Extra 2', icon: 'flower' },
@@ -1808,8 +1824,8 @@ export function CustomizerPage() {
 
   useEffect(() => {
     if (!selectedCharacter || activeModule !== 'Roupas' || clothesPanelTab !== 'adjust') return
-    const scope = clothingSection === 'Inferior' ? 'Inferior' : 'Superior'
-    const categoryIds = new Set(clothingCategories[scope].map((item) => item.id))
+    const definitions = clothesAdjustmentDefinitions(clothesCategorySelection)
+    const categoryIds = new Set(definitions.map((item) => item.id))
     const groups = (selectedCharacter.customization.wardrobeGroups ?? []).filter((group) => categoryIds.has(group.category))
     if (!groups.length) {
       setSelectedClothing(null)
@@ -1821,14 +1837,14 @@ export function CustomizerPage() {
     }
     const firstGroup = groups[0]
     const set = wardrobeDetails[`${firstGroup.modelSlot}:${firstGroup.setId}`]
-    const definition = clothingCategories[scope].find((item) => item.id === firstGroup.category)
+    const definition = definitions.find((item) => item.id === firstGroup.category)
     const component = set && (firstGroup.componentId
       ? set.components.find((piece) => piece.id === firstGroup.componentId)
       : set.components.find((piece) => definition?.source.includes(piece.category)))
     if (firstGroup.componentId || component) {
       setSelectedClothing({ modelSlot: firstGroup.modelSlot, setId: firstGroup.setId, category: firstGroup.category, componentId: component?.id ?? firstGroup.componentId! })
     }
-  }, [activeModule, clothesPanelTab, clothingSection, selectedCharacter?.id, selectedCharacter?.customization.wardrobeGroups, selectedClothing?.modelSlot, selectedClothing?.setId, selectedClothing?.category, selectedClothing?.componentId, wardrobeDetails])
+  }, [activeModule, clothesPanelTab, clothesCategorySelection, selectedCharacter?.id, selectedCharacter?.customization.wardrobeGroups, selectedClothing?.modelSlot, selectedClothing?.setId, selectedClothing?.category, selectedClothing?.componentId, wardrobeDetails])
 
   useEffect(() => {
     const group = selectedClothing
@@ -3363,9 +3379,9 @@ export function CustomizerPage() {
 
   const renderAdjustmentPicker = (area: 'head' | 'clothes') => {
     const isHead = area === 'head'
-    const adjustmentScope = clothingSection === 'Inferior' ? 'Inferior' : 'Superior'
-    const scopeDefinitions = clothingCategories[adjustmentScope]
+    const scopeDefinitions = isHead ? [] : clothesAdjustmentDefinitions(clothesCategorySelection)
     const scopeCategoryIds = new Set(scopeDefinitions.map((item) => item.id))
+    const adjustmentLabel = customizerClothesTabs.find((tab) => tab.id === clothesCategorySelection)?.label ?? 'categoria selecionada'
     const selectedGroups = !isHead ? (selectedCharacter?.customization.wardrobeGroups ?? []).filter((group) => scopeCategoryIds.has(group.category)) : []
     const setOrder = new Map<string, number>()
     selectedGroups.forEach((group) => {
@@ -3417,15 +3433,15 @@ export function CustomizerPage() {
         void updateClothesAdjustComponent('transform', next)
       }
       const moveBy = (x: number, y: number) => changeTransform({ offsetX: transform.offsetX + x, offsetY: transform.offsetY + y })
-      return <section className="customizer-adjust-picker customizer-clothes-adjust-detail" aria-label={`Ajustes de roupas ${adjustmentScope.toLowerCase()}`}>
+      return <section className="customizer-adjust-picker customizer-clothes-adjust-detail" aria-label={`Ajustes de roupas ${adjustmentLabel.toLowerCase()}`}>
         <header className="customizer-adjust-heading customizer-clothes-adjust-detail-heading">
           <button className={`customizer-adjust-reset ${selectedAdjustmentPieceIsDimmed ? 'is-restore' : 'is-delete'}`} type="button" onClick={() => void updateClothesAdjustComponent('toggle-hidden')} disabled={!selectedCharacter || !selectedAdjustmentComponent} title={selectedAdjustmentPieceIsDimmed ? `Restaurar ${selectedAdjustmentComponent?.component.name || 'peça selecionada'}` : `Excluir ${selectedAdjustmentComponent?.component.name || 'peça selecionada'}`} aria-label={selectedAdjustmentPieceIsDimmed ? `Restaurar ${selectedAdjustmentComponent?.component.name || 'peça selecionada'}` : `Excluir ${selectedAdjustmentComponent?.component.name || 'peça selecionada'}`}><Icon name={selectedAdjustmentPieceIsDimmed ? 'undo' : 'trash'} /><span>{selectedAdjustmentPieceIsDimmed ? 'RESTAURAR' : 'EXCLUIR'}</span></button>
-          <h2>Ajustar roupas · {adjustmentScope === 'Superior' ? 'Superior' : 'Inferior'}</h2>
+          <h2>Ajustar roupas · {adjustmentLabel}</h2>
         </header>
         {!selectedCharacter && <p className="customizer-adjust-hint">Selecione um personagem para ver as peças dele.</p>}
         {selectedCharacter && <div className="customizer-clothes-adjust-workspace">
-          <section className="customizer-clothes-adjust-parts" aria-label={`Peças de roupas ${adjustmentScope.toLowerCase()}`}>
-            <header><strong>Roupas {adjustmentScope.toLowerCase()}</strong><small>{adjustmentComponents.length} peça(s)</small></header>
+          <section className="customizer-clothes-adjust-parts" aria-label={`Peças de roupas ${adjustmentLabel.toLowerCase()}`}>
+            <header><strong>Roupas · {adjustmentLabel}</strong><small>{adjustmentComponents.length} peça(s)</small></header>
             {adjustmentComponents.length ? <div className="customizer-clothes-adjust-part-grid">
               {adjustmentComponents.map(({ group, component, set, pairStart }) => {
                 const isSelected = selectedClothing?.modelSlot === group.modelSlot && selectedClothing.setId === group.setId && selectedClothing.category === group.category && selectedClothing.componentId === component.id
@@ -3440,7 +3456,7 @@ export function CustomizerPage() {
                   </button>
                 </div>
               })}
-            </div> : <p className="customizer-clothes-adjust-empty">Nenhuma peça de roupa {adjustmentScope === 'Superior' ? 'superior' : 'inferior'} está aplicada neste personagem. Aplique um conjunto na categoria correspondente para ajustar cada componente.</p>}
+            </div> : <p className="customizer-clothes-adjust-empty">Nenhuma peça aplicada em <strong>{adjustmentLabel}</strong> neste personagem. Escolha uma peça nesta categoria para ajustar seus componentes.</p>}
           </section>
           {selectedAdjustmentComponent ? <section className="customizer-clothes-adjust-controls" aria-label="Controles da peça selecionada">
             <div className="customizer-clothes-adjust-position">
@@ -3464,7 +3480,7 @@ export function CustomizerPage() {
         </div>}
       </section>
     }
-    const items = headAdjustmentItems
+      const items = headAdjustmentItemsFor(headCategorySelection)
     const selectedId = headAdjustSelection
     const reset = restoreHeadAdjustments
     const previewFor = (id: string): string | null => {
@@ -3506,10 +3522,11 @@ export function CustomizerPage() {
       const selectedDimmed = Boolean(selectedWardrobeGroup?.hidden ?? selectedOverride?.hidden)
       const changeTransform = (patch: Partial<typeof transform>) => void updateHeadAdjustment('transform', { ...transform, ...patch })
       const moveBy = (x: number, y: number) => changeTransform({ x: transform.x + x, y: transform.y + y })
-      return <section className="customizer-adjust-picker customizer-clothes-adjust-detail" aria-label="Ajustes de cabeça">
+      const headLabel = customizerHeadTabs.find((tab) => tab.id === headCategorySelection)?.label ?? 'categoria selecionada'
+      return <section className="customizer-adjust-picker customizer-clothes-adjust-detail" aria-label={`Ajustes de cabeça · ${headLabel}`}>
         <header className="customizer-adjust-heading customizer-clothes-adjust-detail-heading">
           <button className={`customizer-adjust-reset ${selectedDimmed ? 'is-restore' : 'is-delete'}`} type="button" onClick={() => void updateHeadAdjustment('toggle-hidden')} disabled={!selectedCharacter || !selectedId || !hasHeadAdjustmentItem(selectedId)} title={selectedDimmed ? 'Restaurar item selecionado' : 'Excluir item selecionado'} aria-label={selectedDimmed ? 'Restaurar item selecionado' : 'Excluir item selecionado'}><Icon name={selectedDimmed ? 'undo' : 'trash'} /><span>{selectedDimmed ? 'RESTAURAR' : 'EXCLUIR'}</span></button>
-          <h2>Ajustar cabeça</h2>
+          <h2>Ajustar cabeça · {headLabel}</h2>
         </header>
         {!selectedCharacter && <p className="customizer-adjust-hint">Selecione um personagem para ver os itens de cabeça.</p>}
         {selectedCharacter && <div className="customizer-clothes-adjust-workspace">
@@ -3527,7 +3544,7 @@ export function CustomizerPage() {
                   </button>
                 </div>
               })}
-            </div> : <p className="customizer-clothes-adjust-empty">Nenhum item de cabeça está aplicado. Escolha cabelo, olhos, rosto ou extras nas categorias acima para ajustar cada item separadamente.</p>}
+            </div> : <p className="customizer-clothes-adjust-empty">Nenhum item aplicado em <strong>{headLabel}</strong> neste personagem. Escolha um item nesta categoria para ajustar separadamente.</p>}
           </section>
           {selectedItem && hasHeadAdjustmentItem(selectedItem.id) ? <section className="customizer-clothes-adjust-controls" aria-label="Controles do item de cabeça selecionado">
             <div className="customizer-clothes-adjust-position">
