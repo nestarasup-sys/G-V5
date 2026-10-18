@@ -333,7 +333,37 @@ async function areaSmoke(window) {
     const state = await window.webContents.executeJavaScript(`({route: location.hash, body: (document.body?.innerText ?? '').slice(0,1000), error: document.querySelector('[role="alert"]')?.innerText ?? null})`)
     throw new Error(`${label} não montou: ${JSON.stringify(state)}; diagnostics=${JSON.stringify(diagnostics.slice(-8))}`)
   }
+  const navigationSaveId = '4f50a2e4-7da4-4e28-9566-63dbf9403004'
+  const navigationDocuments = Array.from({ length: 40 }, (_, index) => ({
+    ...syntheticStudio(`Navigation save ${index + 1}`), id: navigationSaveId
+  }))
+  const videoFolder = await window.webContents.executeJavaScript('window.desktop.getVideoStudioFolder()')
+  const videoBeforeNavigationSaves = treeHash(videoFolder)
+  const launchedNavigationSaves = await window.webContents.executeJavaScript(`(() => {
+    window.__devAiNavigationSaves = ${JSON.stringify(navigationDocuments)}.map(document => {
+      const tracked = { settled: false, error: null }
+      tracked.promise = window.desktop.saveStudio(document).then(
+        () => { tracked.settled = true },
+        error => { tracked.error = String(error?.message ?? error); tracked.settled = true }
+      )
+      return tracked
+    })
+    return true
+  })()`)
+  assert.equal(launchedNavigationSaves, true)
+  await window.webContents.executeJavaScript('Promise.all(window.__devAiNavigationSaves.slice(0, 3).map(entry => entry.promise))')
+  const navigationPendingAtRouteChange = await window.webContents.executeJavaScript('window.__devAiNavigationSaves.filter(entry => !entry.settled).length')
+  assert.ok(navigationPendingAtRouteChange > 0, 'O teste de navegação precisa iniciar com salvamentos pendentes')
   const customizer = await route('/customizar', '.home-layout', 'Customizer')
+  await window.webContents.executeJavaScript('Promise.all(window.__devAiNavigationSaves.map(entry => entry.promise))')
+  const navigationSaveErrors = await window.webContents.executeJavaScript('window.__devAiNavigationSaves.filter(entry => entry.error).map(entry => entry.error)')
+  assert.deepEqual(navigationSaveErrors, [])
+  const normalAfterNavigationSaves = await window.webContents.executeJavaScript('window.desktop.listStudios()')
+  assert.equal(normalAfterNavigationSaves.length, 2)
+  assert.equal(normalAfterNavigationSaves.find(document => document.id === '4f50a2e4-7da4-4e28-9566-63dbf9403004')?.title,
+    'Navigation save 40', 'A navegação cancelou ou perdeu salvamentos pendentes do Studio')
+  await window.webContents.executeJavaScript("window.desktop.deleteStudio('4f50a2e4-7da4-4e28-9566-63dbf9403004')")
+  assert.equal(treeHash(videoFolder), videoBeforeNavigationSaves, 'Navegar/salvar no Studio contaminou o Video Studio')
   const characters = await window.webContents.executeJavaScript('window.desktop.listCustomizerCharacters()')
   assert.ok(Array.isArray(characters))
   const fabricator = await route('/fabricador-dev', '.fabricator-layout', 'Fabricador Dev')
@@ -342,7 +372,9 @@ async function areaSmoke(window) {
   const modelWorkspace = await route('/fabricador-dev', '.fabricator-model-editor', 'Fabricador modelos')
   const result = { mode, status: 'passed', adapter: 'production-preload-real-ipc', realIpcCovered: true,
     smokeAreas: [customizer, fabricator, modelWorkspace], customizerSyntheticCharacters: characters.length,
-    fabricatorSlots: slots.length, rendererErrors: diagnostics }
+    fabricatorSlots: slots.length, navigationWhileSaving: { savesDispatched: navigationDocuments.length,
+      pendingAtRouteChange: navigationPendingAtRouteChange, finalTitlePersisted: 'Navigation save 40',
+      oppositeNamespaceHashUnchanged: true }, rendererErrors: diagnostics }
   await writeFile(join(output, 'area-smoke-result.json'), JSON.stringify(result, null, 2))
   console.log(JSON.stringify(result))
 }
