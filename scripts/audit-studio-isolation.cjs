@@ -2,11 +2,15 @@
 // Uses in-memory documents and a separate userData directory, never the real library.
 const { app, BrowserWindow } = require('electron')
 const assert = require('node:assert/strict')
-const { mkdir, writeFile } = require('node:fs/promises')
+const { mkdirSync } = require('node:fs')
+const { writeFile } = require('node:fs/promises')
 const { join, resolve } = require('node:path')
 
 const root = resolve(__dirname, '..')
 const output = join(root, 'out', 'audit-studio-isolation')
+mkdirSync(join(output, 'user-data'), { recursive: true })
+app.setPath('userData', join(output, 'user-data'))
+app.setPath('sessionData', join(output, 'user-data'))
 
 async function waitFor(window, selector) {
   for (let attempt = 0; attempt < 100; attempt += 1) {
@@ -60,8 +64,6 @@ function checkNormal(state) {
 }
 
 async function run() {
-  await mkdir(join(output, 'user-data'), { recursive: true })
-  app.setPath('userData', join(output, 'user-data'))
   const preload = join(output, 'fixture-preload.cjs')
   await writeFile(preload, `
     const { contextBridge } = require('electron')

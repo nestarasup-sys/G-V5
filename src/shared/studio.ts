@@ -161,10 +161,20 @@ export type VideoTimelineDocument = {
   /** Imported media files live in this Studio project's dedicated videos folder. */
   videoAssets?: VideoStudioAsset[]
   /** Video clips use source duration in frames and are placed on the top timeline lane. */
-  videoClips?: Array<{ id: string; assetId: string; startFrame: number; endFrame: number; sourceStartFrame: number; sourceEndFrame: number }>
+  videoClips?: VideoMediaClip[]
   characterKeys: Array<{ id: string; elementId: string; frame: number; poseSlot: number | null; expressionCollectionId: string | null; expressionPresetId: string | null; faceMode: StudioFaceMode; state?: VideoCharacterState }>
   textClips: Array<{ id: string; elementId: string; kind: 'speech' | 'thought'; startFrame: number; endFrame: number; state?: StudioElement }>
   saveMarkers: Array<{ id: string; frame: number; affectedTrackIds: string[] }>
+}
+
+/** Timeline placement and the corresponding window inside the original video. */
+export type VideoMediaClip = {
+  id: string
+  assetId: string
+  startFrame: number
+  endFrame: number
+  sourceStartFrame: number
+  sourceEndFrame: number
 }
 
 export type VideoStudioAsset = {

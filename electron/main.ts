@@ -13,6 +13,7 @@ import { characterBodyDimensionLimits, characterProportionLimits } from '../src/
 import type { StudioAsset, StudioDocument, VideoTimelineDocument } from '../src/shared/studio'
 import { applyModelHeadShape } from '../src/shared/headShape'
 import { isStudioExpressionEffects, isStudioFaceTransforms } from '../src/shared/studio'
+import { isValidVideoMediaClip } from '../src/shared/videoMedia'
 import { legacyStandardExpressionEffects } from '../src/shared/legacyExpressionEffects'
 
 protocol.registerSchemesAsPrivileged([{ scheme: 'gacha-video', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true } }])
@@ -957,7 +958,10 @@ function isVideoTimelineDocument(value: unknown, elements: StudioDocument['eleme
     && Array.isArray(timeline.textClips) && timeline.textClips.length <= 100_000
     && timeline.textClips.every((clip) => Boolean(clip && typeof clip.id === 'string' && textIds.has(clip.elementId) && (clip.kind === 'speech' || clip.kind === 'thought') && Number.isInteger(clip.startFrame) && Number.isInteger(clip.endFrame) && clip.startFrame >= 0 && clip.endFrame > clip.startFrame && clip.endFrame <= timeline.durationFrames! && (clip.state === undefined || clip.state.id === clip.elementId && clip.state.kind === clip.kind && typeof clip.state.text === 'string' && [clip.state.x, clip.state.y, clip.state.width, clip.state.height, clip.state.rotation, clip.state.zIndex].every(Number.isFinite))))
     && (timeline.videoAssets === undefined || Array.isArray(timeline.videoAssets) && timeline.videoAssets.length <= 1000 && timeline.videoAssets.every((asset) => Boolean(asset && typeof asset.id === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(asset.id) && typeof asset.name === 'string' && asset.name.length <= 255 && (asset.extension === 'mp4' && asset.mimeType === 'video/mp4' || asset.extension === 'webm' && asset.mimeType === 'video/webm' || asset.extension === 'mov' && asset.mimeType === 'video/quicktime' || asset.extension === 'm4v' && asset.mimeType === 'video/x-m4v') && Number.isInteger(asset.size) && asset.size > 0 && asset.size <= 5 * 1024 * 1024 * 1024 && Number.isInteger(asset.durationFrames) && asset.durationFrames > 0 && asset.durationFrames <= 60 * 60 * 60 * 24)))
-    && (timeline.videoClips === undefined || Array.isArray(timeline.videoClips) && timeline.videoClips.length <= 100_000 && timeline.videoClips.every((clip) => Boolean(clip && typeof clip.id === 'string' && (timeline.videoAssets ?? []).some((asset) => asset.id === clip.assetId) && Number.isInteger(clip.startFrame) && Number.isInteger(clip.endFrame) && clip.startFrame >= 0 && clip.endFrame > clip.startFrame && clip.endFrame <= timeline.durationFrames! && Number.isInteger(clip.sourceStartFrame) && Number.isInteger(clip.sourceEndFrame) && clip.sourceStartFrame >= 0 && clip.sourceEndFrame > clip.sourceStartFrame && clip.sourceEndFrame <= (timeline.videoAssets ?? []).find((asset) => asset.id === clip.assetId)!.durationFrames && clip.endFrame - clip.startFrame === clip.sourceEndFrame - clip.sourceStartFrame)))
+    && (timeline.videoClips === undefined || Array.isArray(timeline.videoClips) && timeline.videoClips.length <= 100_000 && timeline.videoClips.every((clip) => {
+      const asset = timeline.videoAssets?.find((item) => item.id === clip?.assetId)
+      return Boolean(asset && isValidVideoMediaClip(clip, asset.durationFrames, timeline.durationFrames!))
+    }))
     && Array.isArray(timeline.saveMarkers) && timeline.saveMarkers.length <= 100_000
     && timeline.saveMarkers.every((marker) => Boolean(marker && typeof marker.id === 'string' && Number.isInteger(marker.frame) && marker.frame >= 0 && marker.frame <= timeline.durationFrames! && Array.isArray(marker.affectedTrackIds) && marker.affectedTrackIds.every((id) => typeof id === 'string')))
 }

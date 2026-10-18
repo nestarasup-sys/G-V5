@@ -29,3 +29,22 @@ A auditoria `electron scripts/audit-studio-isolation.cjs`, executada após
 `npm run build`, abre o renderer compilado com documentos em memória. Ela confere
 as posições dos painéis e a navegação Studio → Video Studio → Studio, sem acessar
 a biblioteca real, e salva capturas e o resultado em `out/audit-studio-isolation`.
+
+## Vídeos na composição
+
+O vídeo ocupa inicialmente uma área central de 50% da prévia, conservando sua
+proporção. A composição reserva a camada 0 para o fundo, 1 para vídeos e 2 em
+diante para personagens e demais elementos. A ordem das linhas da timeline não
+altera essa regra de composição.
+
+Os clipes de vídeo suportam mover, recortar pelas pontas, dividir, duplicar,
+excluir somente o selecionado, desfazer/refazer e os controles da linha em
+Faixas (nome, visibilidade, bloqueio e recolhimento). Recortar atualiza tanto o
+intervalo na timeline quanto o trecho correspondente do arquivo original;
+mover mantém o trecho original. As pontas não ultrapassam a mídia disponível.
+`shared/videoMedia.ts` centraliza essas operações e a validação usada ao salvar.
+
+`node scripts/audit-video-media.mjs` verifica as operações e a continuidade da
+mídia. Após compilar, `electron scripts/audit-video-timeline.cjs <arquivo.mp4>`
+confere a composição e os gestos reais usando um MP4 de teste de 20 segundos e
+documentos em memória. As capturas ficam em `out/audit-video-timeline`.
