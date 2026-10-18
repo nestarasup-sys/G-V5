@@ -1,0 +1,81 @@
+'use strict'
+const test = require('node:test')
+const assert = require('node:assert/strict')
+const { spawnSync } = require('node:child_process')
+const { mkdtempSync, symlinkSync, rmSync, existsSync } = require('node:fs')
+const { tmpdir } = require('node:os')
+const { join } = require('node:path')
+const { audits, selected } = require('../scripts/dev-ai/catalog.cjs')
+const {
+  ROOT, parseArgs, within, safeEnvironment, cleanOutput,
+  assertSafeOutputRoot, npmCommand
+} = require('../scripts/dev-ai/baseline.cjs')
+
+test('catalog: every audit is registered and unsafe audits excluded from unattended suites', () => {
+  assert.equal(audits.length, 12)
+  assert.equal(new Set(audits.map(a => a.id)).size, audits.length)
+  for (const entry of audits) {
+    assert.match(entry.file, /^scripts\/audit-[\w-]+\.(mjs|cjs)$/)
+    assert.ok(entry.requires.length > 0)
+    if (['fast', 'isolation'].includes(entry.suite)) assert.equal(entry.data, 'synthetic')
+  }
+  assert.equal(selected('fast').length, 7)
+  assert.deepEqual(selected('isolation').map(a => a.id), ['studio-isolation'])
+  assert.equal(selected('all').length, 8)
+  assert.ok(audits.some(a => a.id === 'animator-rig' && a.data === 'real-by-default' && a.suite === 'manual'))
+})
+
+test('CLI only accepts fixed suites and commands', () => {
+  assert.equal(parseArgs([]).suite, 'fast')
+  assert.equal(parseArgs(['--suite', 'isolation']).suite, 'isolation')
+  assert.equal(parseArgs(['--list']).list, true)
+  assert.throws(() => parseArgs(['--suite', 'private-path']), /fast\|isolation\|all/)
+  assert.throws(() => parseArgs(['--exec', 'rm -rf']), /não reconhecido/)
+  assert.throws(() => npmCommand('arbitrary-command'), /não permitido/)
+})
+
+test('path containment handles prefix collisions and traversal', () => {
+  assert.equal(within('/repo/out', '/repo/out/a'), true)
+  assert.equal(within('/repo/out', '/repo/out-private/a'), false)
+  assert.equal(within('/repo/out', '/repo/out/../secret'), false)
+  assert.equal(within('/repo/out', '/repo/out'), false)
+})
+
+test('child environment strips inherited tokens and points userData to sandbox', () => {
+  const before = process.env.GACHA_FAKE_SECRET_FOR_TEST
+  process.env.GACHA_FAKE_SECRET_FOR_TEST = 'DO_NOT_INHERIT'
+  try {
+    const env = safeEnvironment('/tmp/gacha-sandbox')
+    assert.equal(env.GACHA_FAKE_SECRET_FOR_TEST, undefined)
+    assert.equal(env.APPDATA, '/tmp/gacha-sandbox/AppData/Roaming')
+    assert.equal(env.HOME, '/tmp/gacha-sandbox')
+    assert.match(cleanOutput('password=my-password token=abc', '/tmp/gacha-sandbox'), /password=<redacted> token=<redacted>/)
+  } finally {
+    if (before === undefined) delete process.env.GACHA_FAKE_SECRET_FOR_TEST
+    else process.env.GACHA_FAKE_SECRET_FOR_TEST = before
+  }
+})
+
+test('runner lists audits without npm dependencies or Electron', () => {
+  const child = spawnSync(process.execPath, [join(ROOT, 'scripts/dev-ai/baseline.cjs'), '--list'], {
+    encoding: 'utf8', timeout: 10_000
+  })
+  assert.equal(child.status, 0, child.stderr)
+  const listing = JSON.parse(child.stdout)
+  assert.equal(listing.audits.length, 12)
+  assert.equal(listing.schemaVersion, 1)
+})
+
+test('out/ symlink is rejected rather than following a user-controlled directory', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'gacha-audit-symlink-'))
+  const out = join(ROOT, 'out')
+  // Never replace a real build/output folder.
+  if (existsSync(out)) { rmSync(dir, { recursive: true, force: true }); return }
+  try {
+    symlinkSync(dir, out, 'dir')
+    assert.throws(() => assertSafeOutputRoot(), /symlink/)
+  } finally {
+    try { rmSync(out) } catch {}
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
