@@ -1060,13 +1060,6 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
     })
   }
 
-  const selectBackground = (asset: StudioAsset) => {
-    changeScene((studio) => ({ ...studio, backgroundAssetId: asset.id, backgroundX: 0, backgroundY: 0, backgroundWidth: 100, backgroundHeight: 100, backgroundRotation: 0, updatedAt: new Date().toISOString() }))
-    setSelectedElementId('background')
-    setInspectorOpen(true)
-    setInspectorTab('editor')
-  }
-
   const addLibraryBackground = async (id: string) => {
     if (!activeStudio) throw new Error('Abra um roteiro antes de selecionar um fundo.')
     const studioId = activeStudio.id
@@ -1897,13 +1890,6 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
         <button type="button" className="video-studio-side-danger" disabled={locked} onClick={() => deleteVideoMediaClip(selectedVideoClip.id)}><Icon name="trash" />Excluir este trecho</button>
       </div>
     }
-    if (activeTool === 'background') return <div className="video-studio-side-content">
-      <h2>Fundos</h2><p>Escolha um fundo salvo ou adicione uma imagem.</p>
-      <label className="video-studio-color-control">Cor sólida<input type="color" value={activeStudio.backgroundColor} onChange={(event) => updateBackground({ backgroundColor: event.target.value })} /></label>
-      <div className="video-background-actions"><button className="video-studio-side-primary" type="button" onClick={() => void importImage('background')}><Icon name="plus" />Adicionar imagem</button><button className="video-studio-side-secondary" type="button" onClick={() => void openBackgroundLibrary()}><Icon name="folder" />Biblioteca</button></div>
-      <div className="video-studio-asset-grid">{activeStudio.assets.filter((asset) => asset.category === 'background').map((asset) => <button key={asset.id} className={`video-studio-asset-card${activeStudio.backgroundAssetId === asset.id ? ' active' : ''}`} type="button" onClick={() => selectBackground(asset)}><img src={asset.dataUrl} alt="" /><span>{asset.name}</span></button>)}</div>
-      {selectedBackgroundAsset && selectedElementId === 'background' && <><div className="video-studio-controls-grid">{control('X', activeStudio.backgroundX, (value, record) => updateBackground({ backgroundX: value }, record), -100, 100)}{control('Y', activeStudio.backgroundY, (value, record) => updateBackground({ backgroundY: value }, record), -100, 100)}{control('Largura', activeStudio.backgroundWidth, (value, record) => updateBackground({ backgroundWidth: value }, record), 1, 300)}{control('Altura', activeStudio.backgroundHeight, (value, record) => updateBackground({ backgroundHeight: value }, record), 1, 300)}{control('Rotação', activeStudio.backgroundRotation, (value, record) => updateBackground({ backgroundRotation: value }, record), -180, 180, '°')}</div><button className="video-studio-side-danger" type="button" onClick={deleteSelected}><Icon name="trash" />Remover fundo da cena</button></>}
-    </div>
     if (activeTool === 'objects') return <div className="video-studio-side-content">
       <h2>Objetos</h2><p>Imagens importadas ficam disponíveis neste Studio.</p>
       <button className="video-studio-side-primary" type="button" onClick={() => void importImage('object')}><Icon name="plus" />Importar imagem</button>
@@ -1924,6 +1910,7 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
     </div>
     if (selectedElementId === 'background' && selectedBackgroundAsset) return <div className="video-studio-side-content">
       <h2>Imagem de fundo</h2><p>{selectedBackgroundAsset.name}</p>
+      <label className="video-studio-color-control">Cor sólida<input type="color" value={activeStudio.backgroundColor} onChange={(event) => updateBackground({ backgroundColor: event.target.value })} /></label>
       <div className="video-studio-controls-grid">{control('X', activeStudio.backgroundX, (value, record) => updateBackground({ backgroundX: value }, record), -100, 100)}{control('Y', activeStudio.backgroundY, (value, record) => updateBackground({ backgroundY: value }, record), -100, 100)}{control('Largura', activeStudio.backgroundWidth, (value, record) => updateBackground({ backgroundWidth: value }, record), 1, 300)}{control('Altura', activeStudio.backgroundHeight, (value, record) => updateBackground({ backgroundHeight: value }, record), 1, 300)}{control('Rotação', activeStudio.backgroundRotation, (value, record) => updateBackground({ backgroundRotation: value }, record), -180, 180, '°')}</div>
       <button className="video-studio-side-danger" type="button" onClick={deleteSelected}><Icon name="trash" />Remover fundo</button>
     </div>
@@ -2068,7 +2055,10 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
           </div>
           <nav className="video-studio-tool-list" aria-label="Ferramentas da cena">
             <button className="video-studio-tool-button video-studio-cast-tool-button" onClick={openCastPicker} type="button" aria-haspopup="dialog" aria-expanded={castPickerOpen}><Icon name="user" /><span>Elenco</span><i aria-hidden="true">{stageCharacters.length}</i></button>
-            {studioTools.map((tool) => <button className={`video-studio-tool-button${activeTool === tool.id ? ' active' : ''}`} key={tool.id} onClick={() => { setActiveTool(tool.id); setInspectorOpen(true); setInspectorTab('editor') }} type="button"><Icon name={tool.icon} /><span>{tool.label}</span><i aria-hidden="true">✦</i></button>)}
+            {studioTools.map((tool) => <button className={`video-studio-tool-button${activeTool === tool.id ? ' active' : ''}`} key={tool.id} onClick={() => {
+              if (tool.id === 'background') { setActiveTool(null); void openBackgroundLibrary(); return }
+              setActiveTool(tool.id); setInspectorOpen(true); setInspectorTab('editor')
+            }} type="button"><Icon name={tool.icon} /><span>{tool.label}</span><i aria-hidden="true">✦</i></button>)}
             <button className="video-studio-tool-button" onClick={() => addTextElement('narrator')} type="button"><Icon name="message" /><span>Narrador</span><i aria-hidden="true">✦</i></button>
             <button className="video-studio-tool-button" onClick={() => addTextElement('speech')} type="button"><Icon name="message" /><span>Fala</span><i aria-hidden="true">✦</i></button>
             <button className="video-studio-tool-button" onClick={() => addTextElement('thought')} type="button"><Icon name="face" /><span>Pensamento</span><i aria-hidden="true">✦</i></button>
