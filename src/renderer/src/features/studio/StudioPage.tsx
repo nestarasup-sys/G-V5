@@ -414,16 +414,34 @@ export function StudioPage({ workspace = 'studio', onEditorActiveChange }: { wor
           automaticBlinkFrameCacheRef.current = { signature: automaticBlinkSignature, frames }
         }
         if (cancelled || !frames.length) return
+        const shuffleFrames = (source: typeof frames) => {
+          const shuffled = [...source]
+          for (let index = shuffled.length - 1; index > 0; index--) {
+            const swapIndex = Math.floor(Math.random() * (index + 1))
+            ;[shuffled[index], shuffled[swapIndex]] = [shuffled[swapIndex], shuffled[index]]
+          }
+          return shuffled
+        }
+        const countForCadence = Math.min(frames.length, 10)
+        const nextBlinkGap = () => Math.max(40, (3200 + Math.random() * 1800) / countForCadence - 120)
+        let blinkOrder = shuffleFrames(frames)
+        let nextCharacterIndex = 0
+        let blinkGap = nextBlinkGap()
         const blink = () => {
           if (cancelled) return
-          const frame = frames![Math.floor(Math.random() * frames!.length)]
+          if (nextCharacterIndex >= blinkOrder.length) {
+            blinkOrder = shuffleFrames(frames!)
+            nextCharacterIndex = 0
+            blinkGap = nextBlinkGap()
+          }
+          const frame = blinkOrder[nextCharacterIndex++]
           setAutomaticBlinkPreview({ [frame.elementId]: { dataUrl: frame.dataUrl, geometry: frame.geometry } })
           blinkEndTimer = window.setTimeout(() => {
             setAutomaticBlinkPreview({})
-            nextBlinkTimer = window.setTimeout(blink, 3200 + Math.random() * 1800)
+            nextBlinkTimer = window.setTimeout(blink, blinkGap)
           }, 120)
         }
-        nextBlinkTimer = window.setTimeout(blink, 3200 + Math.random() * 1800)
+        nextBlinkTimer = window.setTimeout(blink, blinkGap)
       } catch {
         // Auto blink is an optional preview effect and must not interrupt Studio editing.
       }
