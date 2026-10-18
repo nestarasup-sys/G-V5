@@ -72,7 +72,7 @@ export function VideoTimeline({ studio, playheadFrame, playing, height, presetNa
     clips: studio.elements.filter((element) => element.kind === kind).flatMap((element) => {
       const savedClips = timeline.textClips.filter((item) => item.elementId === element.id)
       return (savedClips.length ? savedClips : [{ id: `legacy:${element.id}`, elementId: element.id, kind, startFrame: 0, endFrame: Math.min(duration, 300) }])
-        .map((clip) => ({ element, clip: previewTextClip?.id === clip.id ? previewTextClip : clip, persisted: !clip.id.startsWith('legacy:') }))
+        .map((clip) => ({ element, clip: previewTextClip?.id === clip.id ? previewTextClip : clip }))
     })
   }))
   const resizeTimeline = (event: ReactPointerEvent<HTMLDivElement>) => {
