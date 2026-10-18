@@ -280,6 +280,7 @@ export function HairWorkspace() {
     setSaving(true); setError(''); setNotice('')
     try {
       await persistWorkspace()
+      window.dispatchEvent(new Event('fabricator:assets-updated'))
       setDirty(false); setNotice('Rascunho, folha original e ajustes salvos para este modelo.')
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível salvar os cabelos.') }
     finally { setSaving(false) }
@@ -304,6 +305,7 @@ export function HairWorkspace() {
       await persistWorkspace()
       saved.transforms = normalizeHairTransforms(saved)
       await window.desktop.saveHairStyle(modelSlot, saved, assets)
+      window.dispatchEvent(new Event('fabricator:assets-updated'))
       const detail: HairStyle = { ...saved, front: saved.front && front ? { ...front } : null, back: saved.back && back ? { ...back } : null, fringe: saved.fringe && fringe ? { ...fringe } : null }
       setHairStyles((current) => [detail, ...current.filter((style) => style.id !== id)])
       setActiveStyleId(id); setDirty(false); setNotice('Cabelo salvo no catálogo deste modelo e disponível em Customizar.')

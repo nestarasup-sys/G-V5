@@ -365,6 +365,7 @@ export function PoseWorkspace() {
       })
       const saved: FabricatorPose = { ...snapshot, slot, category: resolvePoseCategory({ ...snapshot, slot }), updatedAt: new Date().toISOString() }
       await window.desktop.saveFabricatorPose(snapshot.sourceModelSlot, slot, toSavedPose(saved, slot), assets)
+      window.dispatchEvent(new Event('fabricator:assets-updated'))
       for (const asset of assets) if (pendingAssets.current.get(asset.id) === asset.dataUrl) pendingAssets.current.delete(asset.id)
       await window.desktop.deleteFabricatorPoseDraft(snapshot.sourceModelSlot)
       setRecoveredDraft(null)

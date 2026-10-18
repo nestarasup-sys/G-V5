@@ -230,6 +230,8 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [availableCharacters, setAvailableCharacters] = useState<CustomizerCharacter[]>([])
+  const [assetLibraryRevision, setAssetLibraryRevision] = useState(0)
+  const appliedAssetRevisionRef = useRef(new Map<string, number>())
   const [normalizedStudioVersion, setNormalizedStudioVersion] = useState(0)
   const [castPickerOpen, setCastPickerOpen] = useState(false)
   const [castSelection, setCastSelection] = useState<string[]>([])
@@ -702,12 +704,17 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
       })
     }
     const refreshVisibleCharacters = () => { if (!document.hidden) refreshCharacters() }
+    const refreshAfterAssetSave = () => { setAssetLibraryRevision((revision) => revision + 1); refreshCharacters() }
     refreshCharacters()
     window.addEventListener('focus', refreshCharacters)
+    window.addEventListener('customizer:characters-updated', refreshCharacters)
+    window.addEventListener('fabricator:assets-updated', refreshAfterAssetSave)
     document.addEventListener('visibilitychange', refreshVisibleCharacters)
     return () => {
       cancelled = true
       window.removeEventListener('focus', refreshCharacters)
+      window.removeEventListener('customizer:characters-updated', refreshCharacters)
+      window.removeEventListener('fabricator:assets-updated', refreshAfterAssetSave)
       document.removeEventListener('visibilitychange', refreshVisibleCharacters)
     }
   }, [])
@@ -813,7 +820,7 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
   }, [activeStudio])
 
   useEffect(() => {
-    if (!activeStudio || isVideoWorkspace || !normalizedStudioIdsRef.current.has(activeStudio.id) || !availableCharacters.length) return
+    if (!activeStudio || !normalizedStudioIdsRef.current.has(activeStudio.id) || !availableCharacters.length) return
     const characters = new Map(availableCharacters.map((character) => [character.id, character]))
     const pending = activeStudio.elements.flatMap((element) => {
       if (element.kind !== 'character' || !element.characterId || !element.assetId) return []
@@ -823,8 +830,10 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
       const presetChanged = Boolean(latestPresetVersion && latestPresetVersion !== element.activeExpressionPresetUpdatedAt)
       const characterChanged = Boolean(character && element.characterSourceUpdatedAt !== character.updatedAt)
       const rendererChanged = element.faceRendererVersion !== STUDIO_FACE_RENDER_VERSION
-      return character && (characterChanged || presetChanged || rendererChanged)
-        ? [{ element, character, shouldRecomposeExpression: characterChanged || presetChanged }] : []
+      const assetRevisionKey = `${activeStudio.id}:${element.id}`
+      const assetsChanged = assetLibraryRevision > (appliedAssetRevisionRef.current.get(assetRevisionKey) ?? 0)
+      return character && (characterChanged || presetChanged || rendererChanged || assetsChanged)
+        ? [{ element, character, shouldRecomposeExpression: characterChanged || presetChanged, assetRevisionKey, assetsChanged }] : []
     })
     if (!pending.length) return
     let cancelled = false
@@ -835,59 +844,86 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
       try {
         const { renderSavedCharacter } = await import('../customizer/CustomizerPage')
         const updates: Array<{ previous: StudioElement; next: StudioElement; asset: StudioAsset }> = []
-        for (const { element, character, shouldRecomposeExpression } of pending) {
-          const savedPreset = element.activeExpressionPresetId
-            ? await window.desktop.loadFaceExpressionPreset(character.customization.modelSlot ?? 1, element.activeExpressionPresetId)
-            : null
-          if (element.activeExpressionPresetId && !savedPreset) continue
-          const sourceAppearance = character.customization.faceAppearance
-          const appearanceFallback = sourceAppearance ?? element.faceAppearance ?? element.expressionBase?.appearance
-          if (!appearanceFallback) continue
-          const previousBase = resolveStudioExpressionBase(element, appearanceFallback)
-          const sceneTransforms = Object.fromEntries(Object.entries(element.faceTransforms ?? {}).filter(([key]) => !key.startsWith('expression-component:') && !key.startsWith('expression:')))
-          const characterChanged = element.characterSourceUpdatedAt !== character.updatedAt
-          const expressionBase = characterChanged && sourceAppearance
-            ? { appearance: structuredClone(sourceAppearance), transforms: sceneTransforms }
-            : previousBase
-          const appearance = shouldRecomposeExpression
-            ? savedPreset && expressionBase
-              ? await buildStudioExpressionAppearance(savedPreset, expressionBase.appearance, (id) => window.desktop.loadFaceCatalogItem(savedPreset.modelSlot, id))
-              : expressionBase?.appearance ?? element.faceAppearance
-            : element.faceAppearance ?? expressionBase?.appearance
-          const faceMode = studioFaceModeForElement(element, element.faceAppearance ?? expressionBase?.appearance)
-          const faceTransforms = shouldRecomposeExpression
-            ? savedPreset && appearance && expressionBase
-              ? await buildStudioExpressionTransforms(savedPreset, appearance, expressionBase.transforms,
-                (id) => window.desktop.loadFaceComponentAsset(savedPreset.modelSlot, id),
-                (id) => window.desktop.loadFaceCatalogItem(savedPreset.modelSlot, id))
-              : expressionBase?.transforms ?? element.faceTransforms
-            : element.faceTransforms ?? expressionBase?.transforms
-          const expressionEffects = shouldRecomposeExpression ? savedPreset?.effects : element.activeExpressionEffects
-          const customization = {
-            ...character.customization,
-            poseSlot: element.poseSlot === undefined ? character.customization.poseSlot : element.poseSlot,
-            faceAppearance: appearance
+        const timelineStates = new Map<string, Map<string, NonNullable<VideoTimelineDocument['characterBases']>[string]>>()
+        const refreshedStates = new Map<string, NonNullable<VideoTimelineDocument['characterBases']>[string]>()
+        for (const { element, character, shouldRecomposeExpression, assetRevisionKey, assetsChanged } of pending) {
+          const timeline = videoTimelineFor(activeStudio)
+          const states = new Map<string, NonNullable<VideoTimelineDocument['characterBases']>[string]>()
+          const base = timeline.characterBases?.[element.id]
+          if (base) states.set(`base:${element.id}`, base)
+          for (const key of timeline.characterKeys) if (key.elementId === element.id && key.state) states.set(`key:${element.id}:${key.id}`, key.state)
+          const current = captureVideoCharacter(activeStudio, element)
+          if (current) states.set(`current:${element.id}`, current)
+          const renderedCache = new Map<string, Promise<NonNullable<VideoTimelineDocument['characterBases']>[string]>>()
+          const refreshState = (state: NonNullable<VideoTimelineDocument['characterBases']>[string]) => {
+            const stateElement = state.element
+            const signature = JSON.stringify({ element: stateElement, source: character.updatedAt })
+            let rendering = renderedCache.get(signature)
+            if (!rendering) {
+              rendering = (async () => {
+                const modelSlot = character.customization.modelSlot ?? 1
+                const presetId = stateElement.activeExpressionPresetId
+                const savedPreset = presetId ? await window.desktop.loadFaceExpressionPreset(modelSlot, presetId) : null
+                if (presetId && !savedPreset) return state
+                const sourceAppearance = character.customization.faceAppearance
+                const appearanceFallback = sourceAppearance ?? stateElement.faceAppearance ?? stateElement.expressionBase?.appearance
+                const previousBase = appearanceFallback ? resolveStudioExpressionBase(stateElement, appearanceFallback) : undefined
+                const sceneTransforms = Object.fromEntries(Object.entries(stateElement.faceTransforms ?? {}).filter(([key]) => !key.startsWith('expression-component:') && !key.startsWith('expression:')))
+                const expressionBase = shouldRecomposeExpression
+                  ? sourceAppearance ? { appearance: structuredClone(sourceAppearance), transforms: sceneTransforms } : previousBase
+                  : previousBase
+                const appearance = shouldRecomposeExpression
+                  ? savedPreset && expressionBase
+                    ? await buildStudioExpressionAppearance(savedPreset, expressionBase.appearance, (id) => window.desktop.loadFaceCatalogItem(modelSlot, id))
+                    : expressionBase?.appearance ?? sourceAppearance
+                  : stateElement.faceAppearance ?? expressionBase?.appearance ?? sourceAppearance
+                const faceMode = stateElement.activeFaceMode ?? studioFaceModeForElement(stateElement, appearance)
+                const faceTransforms = shouldRecomposeExpression
+                  ? savedPreset && appearance && expressionBase
+                    ? await buildStudioExpressionTransforms(savedPreset, appearance, expressionBase.transforms,
+                      (id) => window.desktop.loadFaceComponentAsset(modelSlot, id),
+                      (id) => window.desktop.loadFaceCatalogItem(modelSlot, id))
+                    : expressionBase?.transforms ?? stateElement.faceTransforms
+                  : stateElement.faceTransforms ?? expressionBase?.transforms
+                const expressionEffects = shouldRecomposeExpression ? savedPreset?.effects : stateElement.activeExpressionEffects
+                const customization = { ...character.customization, poseSlot: stateElement.poseSlot === undefined ? character.customization.poseSlot : stateElement.poseSlot, faceAppearance: appearance }
+                const rendered = await renderSavedCharacter({ ...character, customization }, faceTransforms, expressionEffects, faceMode)
+                const crop = await trimTransparentImage(rendered.dataUrl)
+                const cropWidth = crop?.width ?? rendered.width
+                const cropHeight = crop?.height ?? rendered.height
+                const characterCanvasWidth = stateElement.characterCanvasWidth ?? stateElement.width * rendered.width / cropWidth
+                const nextElement: StudioElement = {
+                  ...stateElement, characterSourceUpdatedAt: character.updatedAt, faceRendererVersion: STUDIO_FACE_RENDER_VERSION,
+                  expressionBase, faceAppearance: appearance, faceTransforms, activeExpressionEffects: expressionEffects, activeFaceMode: faceMode,
+                  ...(savedPreset ? { activeExpressionPresetUpdatedAt: savedPreset.updatedAt } : {}), characterCanvasWidth,
+                  width: characterCanvasWidth * cropWidth / rendered.width,
+                  height: characterCanvasWidth * stageWidth / stageHeight * cropHeight / rendered.width
+                }
+                return { element: nextElement, imageDataUrl: crop?.dataUrl ?? rendered.dataUrl }
+              })()
+              renderedCache.set(signature, rendering)
+            }
+            return rendering
           }
-          const rendered = await renderSavedCharacter({ ...character, customization }, faceTransforms, expressionEffects, faceMode)
-          if (cancelled) return
-          const crop = await trimTransparentImage(rendered.dataUrl)
-          if (cancelled) return
-          const cropWidth = crop?.width ?? rendered.width
-          const cropHeight = crop?.height ?? rendered.height
-          const characterCanvasWidth = element.characterCanvasWidth ?? element.width * rendered.width / cropWidth
+          for (const [stateId, state] of states) {
+            const fresh = await refreshState(state)
+            if (cancelled) return
+            refreshedStates.set(stateId, fresh)
+          }
+          const currentState = refreshedStates.get(`current:${element.id}`) ?? (current ? await refreshState(current) : undefined)
+          if (!currentState) continue
           const asset = activeStudio.assets.find((item) => item.id === element.assetId)
           if (!asset) continue
           updates.push({
             previous: element,
-            next: {
-              ...element, characterSourceUpdatedAt: character.updatedAt, faceRendererVersion: STUDIO_FACE_RENDER_VERSION, expressionBase, faceAppearance: appearance, faceTransforms, activeExpressionEffects: expressionEffects, activeFaceMode: faceMode,
-              ...(savedPreset ? { activeExpressionPresetUpdatedAt: savedPreset.updatedAt } : {}), characterCanvasWidth,
-              width: characterCanvasWidth * cropWidth / rendered.width,
-              height: characterCanvasWidth * stageWidth / stageHeight * cropHeight / rendered.width,
-              text: element.text === asset.name ? character.name : element.text
-            },
-            asset: { ...asset, name: character.name, mimeType: 'image/png', dataUrl: crop?.dataUrl ?? rendered.dataUrl }
+            next: { ...currentState.element, text: element.text === asset.name ? character.name : currentState.element.text },
+            asset: { ...asset, name: character.name, mimeType: 'image/png', dataUrl: currentState.imageDataUrl }
           })
+          const perCharacter = new Map<string, NonNullable<VideoTimelineDocument['characterBases']>[string]>()
+          for (const [stateId, state] of refreshedStates) if (stateId === `base:${element.id}` || stateId.startsWith(`key:${element.id}:`)) perCharacter.set(stateId, state)
+          timelineStates.set(element.id, perCharacter)
+          if (assetsChanged) appliedAssetRevisionRef.current.set(assetRevisionKey, assetLibraryRevision)
+          refreshedStates.clear()
         }
         if (cancelled || !updates.length) return
         setStudios((current) => current.map((studio) => {
@@ -896,12 +932,24 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
           if (!valid.length) return studio
           const elements = new Map(valid.map(({ next }) => [next.id, next]))
           const assets = new Map(valid.map(({ asset }) => [asset.id, asset]))
-          return {
+          const nextStudio = {
             ...studio,
             elements: studio.elements.map((element) => elements.get(element.id) ?? element),
             assets: studio.assets.map((asset) => assets.get(asset.id) ?? asset),
             updatedAt: new Date().toISOString()
           }
+          const timeline = nextStudio.videoTimeline
+          if (!timeline) return nextStudio
+          const nextBases = { ...(timeline.characterBases ?? {}) }
+          for (const [elementId, states] of timelineStates) {
+            const base = states.get(`base:${elementId}`)
+            if (base) nextBases[elementId] = base
+          }
+          const nextKeys = timeline.characterKeys.map((key) => {
+            if (!key.state) return key
+            return { ...key, state: timelineStates.get(key.elementId)?.get(`key:${key.elementId}:${key.id}`) ?? key.state }
+          })
+          return { ...nextStudio, videoTimeline: { ...timeline, characterBases: nextBases, characterKeys: nextKeys } }
         }))
         setSaved(false)
       } catch (reason) {
@@ -909,7 +957,7 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
       }
     })()
     return () => { cancelled = true }
-  }, [activeStudio, availableCharacters, normalizedStudioVersion, sceneExpressionPresetVersions])
+  }, [activeStudio, availableCharacters, normalizedStudioVersion, sceneExpressionPresetVersions, assetLibraryRevision])
 
   const allocateNumber = () => {
     const highest = studios.reduce((max, studio) => Math.max(max, Number(studio.title.match(/Studio\s+(\d+)$/i)?.[1] ?? 0)), 0)

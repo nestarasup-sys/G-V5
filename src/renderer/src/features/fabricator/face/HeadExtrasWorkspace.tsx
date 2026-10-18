@@ -164,6 +164,7 @@ export function HeadExtrasWorkspace() {
       const transform = initialExtraTransform(head, image.width, image.height)
       const asset: FaceComponentAssetSave = { schemaVersion: 1, id, modelSlot, kind: 'head-extra', name: file.name.replace(/\.[^.]+$/, '') || 'Óculos', width: image.width, height: image.height, defaultTransform: transform, updatedAt: now }
       await window.desktop.saveFaceComponentAsset(modelSlot, asset, image.dataUrl)
+      window.dispatchEvent(new Event('fabricator:assets-updated'))
       const saved: FaceComponentAsset = { ...asset, dataUrl: image.dataUrl }
       setAssets((current) => [{ schemaVersion: 1, id, modelSlot, kind: 'head-extra', name: asset.name, width: image.width, height: image.height, updatedAt: now }, ...current])
       detailsRef.current = { ...detailsRef.current, [id]: saved }
@@ -192,6 +193,7 @@ export function HeadExtrasWorkspace() {
       const queuedSave = saveQueueRef.current.catch(() => undefined).then(() => window.desktop.saveFaceComponentAsset(next.modelSlot, save, dataUrl))
       saveQueueRef.current = queuedSave
       await queuedSave
+      window.dispatchEvent(new Event('fabricator:assets-updated'))
     } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) }
   }
 

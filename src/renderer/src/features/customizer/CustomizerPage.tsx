@@ -2202,6 +2202,7 @@ export function CustomizerPage() {
     try {
       await write
       setCharacterSaveState('saved')
+      window.dispatchEvent(new Event('customizer:characters-updated'))
     } catch (reason) {
       setCharacterSaveState('error')
       setCharactersError(reason instanceof Error ? reason.message : 'Não foi possível salvar o personagem.')

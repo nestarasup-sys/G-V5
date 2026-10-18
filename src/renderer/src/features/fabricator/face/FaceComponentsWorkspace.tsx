@@ -356,7 +356,7 @@ export function FaceComponentsWorkspace({ mode }: { mode: FaceWorkspaceMode }) {
       pendingSaves.current.delete(key)
       const next = (saveChains.current.get(key) ?? Promise.resolve()).catch(() => undefined).then(run)
       saveChains.current.set(key, next)
-      void next.catch((reason) => setError(reason instanceof Error ? reason.message : String(reason)))
+      void next.then(() => window.dispatchEvent(new Event('fabricator:assets-updated'))).catch((reason) => setError(reason instanceof Error ? reason.message : String(reason)))
     }, 180)
     pendingSaves.current.set(key, { timer, run })
   }

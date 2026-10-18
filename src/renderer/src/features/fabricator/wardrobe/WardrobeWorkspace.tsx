@@ -519,6 +519,7 @@ export function WardrobeWorkspace({ edition = 1 }: { edition?: WardrobeEdition }
       const set: WardrobeSet = { ...draft, edition, modelSlot, modelName: model?.name ?? draft.modelName, updatedAt: new Date().toISOString() }
       const serialized: WardrobeSetSave = { ...set, components: set.components.map(({ dataUrl: _dataUrl, ...component }) => ({ ...component, renderAboveHair: (component.category === 'oculos' || component.category === 'acessorio-cabeca') && component.renderAboveHair === true })) }
       await window.desktop.saveWardrobeSet(modelSlot, serialized, set.components.map(({ id, dataUrl: image }) => ({ id, dataUrl: image })))
+      window.dispatchEvent(new Event('fabricator:assets-updated'))
       setDraft(set); setActiveSetId(set.id); setDirty(false); setSets((await window.desktop.listWardrobeSets(modelSlot)).filter((item) => item.edition === edition))
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível salvar o conjunto.') }
     finally { setSaving(false) }

@@ -235,6 +235,8 @@ export function StudioPage() {
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [availableCharacters, setAvailableCharacters] = useState<CustomizerCharacter[]>([])
+  const [assetLibraryRevision, setAssetLibraryRevision] = useState(0)
+  const appliedAssetRevisionRef = useRef(new Map<string, number>())
   const [normalizedStudioVersion, setNormalizedStudioVersion] = useState(0)
   const [castPickerOpen, setCastPickerOpen] = useState(false)
   const [castSelection, setCastSelection] = useState<string[]>([])
@@ -442,12 +444,17 @@ export function StudioPage() {
       })
     }
     const refreshVisibleCharacters = () => { if (!document.hidden) refreshCharacters() }
+    const refreshAfterFabricatorSave = () => { setAssetLibraryRevision((revision) => revision + 1); refreshCharacters() }
     refreshCharacters()
     window.addEventListener('focus', refreshCharacters)
+    window.addEventListener('customizer:characters-updated', refreshCharacters)
+    window.addEventListener('fabricator:assets-updated', refreshAfterFabricatorSave)
     document.addEventListener('visibilitychange', refreshVisibleCharacters)
     return () => {
       cancelled = true
       window.removeEventListener('focus', refreshCharacters)
+      window.removeEventListener('customizer:characters-updated', refreshCharacters)
+      window.removeEventListener('fabricator:assets-updated', refreshAfterFabricatorSave)
       document.removeEventListener('visibilitychange', refreshVisibleCharacters)
     }
   }, [])
@@ -557,8 +564,10 @@ export function StudioPage() {
       const presetChanged = Boolean(latestPresetVersion && latestPresetVersion !== element.activeExpressionPresetUpdatedAt)
       const characterChanged = Boolean(character && element.characterSourceUpdatedAt !== character.updatedAt)
       const rendererChanged = element.faceRendererVersion !== STUDIO_FACE_RENDER_VERSION
-      return character && (characterChanged || presetChanged || rendererChanged)
-        ? [{ element, character, shouldRecomposeExpression: characterChanged || presetChanged }] : []
+      const assetRevisionKey = `${activeStudio.id}:${element.id}`
+      const assetsChanged = assetLibraryRevision > (appliedAssetRevisionRef.current.get(assetRevisionKey) ?? 0)
+      return character && (characterChanged || presetChanged || rendererChanged || assetsChanged)
+        ? [{ element, character, shouldRecomposeExpression: characterChanged || presetChanged, assetRevisionKey, assetsChanged }] : []
     })
     if (!pending.length) return
     let cancelled = false
@@ -569,7 +578,7 @@ export function StudioPage() {
       try {
         const { renderSavedCharacter } = await import('../customizer/CustomizerPage')
         const updates: Array<{ previous: StudioElement; next: StudioElement; asset: StudioAsset }> = []
-        for (const { element, character, shouldRecomposeExpression } of pending) {
+        for (const { element, character, shouldRecomposeExpression, assetRevisionKey, assetsChanged } of pending) {
           const savedPreset = element.activeExpressionPresetId
             ? await window.desktop.loadFaceExpressionPreset(character.customization.modelSlot ?? 1, element.activeExpressionPresetId)
             : null
@@ -622,6 +631,7 @@ export function StudioPage() {
             },
             asset: { ...asset, name: character.name, mimeType: 'image/png', dataUrl: crop?.dataUrl ?? rendered.dataUrl }
           })
+          if (assetsChanged) appliedAssetRevisionRef.current.set(assetRevisionKey, assetLibraryRevision)
         }
         if (cancelled || !updates.length) return
         setStudios((current) => current.map((studio) => {
@@ -643,7 +653,7 @@ export function StudioPage() {
       }
     })()
     return () => { cancelled = true }
-  }, [activeStudio, availableCharacters, normalizedStudioVersion, sceneExpressionPresetVersions])
+  }, [activeStudio, availableCharacters, normalizedStudioVersion, sceneExpressionPresetVersions, assetLibraryRevision])
 
   const allocateNumber = () => {
     const highest = studios.reduce((max, studio) => Math.max(max, Number(studio.title.match(/^Studio\s+(\d+)/i)?.[1] ?? 0)), 0)

@@ -226,6 +226,7 @@ export function FabricatorPage() {
       if (asset.chromaBaseDataUrl && dirtyChromaBases.current.get(asset.id) === asset.chromaBaseDataUrl) dirtyChromaBases.current.delete(asset.id)
     }
     setSaveState('saved')
+    window.dispatchEvent(new Event('fabricator:assets-updated'))
     setSlots((current) => current.map((item, index) => index + 1 === snapshot.slot ? { slot: snapshot.slot, name: snapshot.name, sourceName: snapshot.sourceName, partCount: snapshot.parts.length, updatedAt: snapshot.updatedAt } : item))
   }, [])
 
