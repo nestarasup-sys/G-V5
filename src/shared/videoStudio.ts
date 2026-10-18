@@ -1,4 +1,4 @@
-import type { StudioAsset } from './studio'
+import type { StudioAsset, StudioDocument } from './studio'
 
 /**
  * Independent Video Studio project. No StudioDocument or Fabricator document is
@@ -70,6 +70,14 @@ export interface VideoSaveMarker {
   affectedTrackIds: string[]
 }
 
+/** Full Studio UI state, without media bytes: media lives in VideoProject.assets. */
+export type VideoStudioScene = Omit<StudioDocument, 'assets'>
+
+export interface VideoSceneFrame {
+  frame: number
+  scene: VideoStudioScene
+}
+
 export interface VideoProject {
   schemaVersion: 1
   id: string
@@ -92,6 +100,10 @@ export interface VideoProject {
   characterTracks: VideoCharacterTrack[]
   textTracks: VideoTextTrack[]
   saveMarkers: VideoSaveMarker[]
+  /** Editable scene used by the complete existing Studio UI. */
+  studioScene?: VideoStudioScene
+  /** Frame-addressed captured full scene states; Studio editor is the compositor. */
+  sceneFrames?: VideoSceneFrame[]
 }
 
 export interface VideoStudioDesktopApi {
@@ -115,6 +127,13 @@ export function createVideoProject(id: string, title: string, now: string): Vide
       { id: 'dialogue', kind: 'dialogue', name: 'Falas', clips: [], locked: false, collapsed: false },
       { id: 'thought', kind: 'thought', name: 'Pensamentos', clips: [], locked: false, collapsed: false }
     ],
-    saveMarkers: []
+    saveMarkers: [],
+    studioScene: {
+      schemaVersion: 1, id, title, color: '#d8a1ca', createdAt: now, updatedAt: now,
+      backgroundColor: '#d7b5cd', backgroundAssetId: null,
+      backgroundX: 0, backgroundY: 0, backgroundWidth: 100,
+      backgroundHeight: 100, backgroundRotation: 0, elements: []
+    },
+    sceneFrames: []
   }
 }
