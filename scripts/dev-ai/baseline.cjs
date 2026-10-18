@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict'
 
-const { spawn } = require('node:child_process')
+const { spawn, execFileSync } = require('node:child_process')
 const { randomUUID } = require('node:crypto')
 const { existsSync, lstatSync, realpathSync } = require('node:fs')
 const { mkdir, writeFile } = require('node:fs/promises')
@@ -73,6 +73,14 @@ function cleanOutput(value, sandbox) {
   text = text.replace(/data:[a-z0-9.+-]+[/][a-z0-9.+-]+;base64,[a-z0-9+/=]+/gi, '<redacted-data-url>')
   text = text.replace(/(?:[a-z]:[\\]Users[\\]|[/]Users[/]|[/]home[/])[^\s"'<>]+/gi, '<redacted-user-path>')
   return text.slice(0, MAX_OUTPUT_BYTES)
+}
+
+function currentCommit() {
+  try {
+    return execFileSync('git', ['rev-parse', 'HEAD'], {
+      cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000
+    }).trim()
+  } catch { return 'unresolved' }
 }
 
 function executableElectron() {
@@ -155,7 +163,7 @@ async function main(argv = process.argv.slice(2)) {
     .map(p => mkdir(join(sandbox, p), { recursive: true })))
   const env = safeEnvironment(sandbox)
   const report = {
-    schemaVersion: VERSION, runId, suite: opts.suite, commit: process.env.GACHA_COMMIT_SHA ?? 'unresolved',
+    schemaVersion: VERSION, runId, suite: opts.suite, commit: currentCommit(),
     platform: process.platform, node: process.version, startedAt: new Date().toISOString(),
     policies: {
       network: 'not-invoked-by-runner; NOT OS-level blocked',
