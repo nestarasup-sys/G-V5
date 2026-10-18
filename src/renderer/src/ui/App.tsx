@@ -1,4 +1,4 @@
-import { lazy, Suspense } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import { Navigate, Route, Routes, useLocation } from 'react-router'
 import { TopBar } from './components/TopBar'
 import { AppErrorBoundary } from './components/AppErrorBoundary'
@@ -11,10 +11,15 @@ const LazyFabricatorPage = lazy(async () => ({ default: (await import('../featur
 
 export function App() {
   const location = useLocation()
+  const [videoEditorActive, setVideoEditorActive] = useState(false)
+
+  useEffect(() => {
+    if (location.pathname !== '/video-studio') setVideoEditorActive(false)
+  }, [location.pathname])
 
   return (
     <main className="app-shell">
-      <TopBar />
+      {!videoEditorActive && <TopBar />}
       <div className="route-content">
         <AppErrorBoundary key={location.pathname}>
           <Suspense fallback={<div className="blank-page" aria-busy="true">Carregando área…</div>}>
@@ -22,7 +27,7 @@ export function App() {
               <Route path="/" element={<Navigate to="/customizar" replace />} />
               <Route path="/customizar" element={<LazyCustomizerPage />} />
               <Route path="/estudio" element={<LazyStudioPage />} />
-              <Route path="/video-studio" element={<LazyVideoStudioPage />} />
+              <Route path="/video-studio" element={<LazyVideoStudioPage onEditorActiveChange={setVideoEditorActive} />} />
               <Route path="/opcoes" element={<LazyOptionsPage />} />
               <Route path="/fabricador-dev" element={<LazyFabricatorPage />} />
               <Route path="*" element={<Navigate to="/customizar" replace />} />

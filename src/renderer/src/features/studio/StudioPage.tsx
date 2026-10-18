@@ -265,7 +265,7 @@ function studioWorkspacePersistence(workspace: StudioWorkspace): StudioWorkspace
       }
 }
 
-export function StudioPage({ workspace = 'studio' }: { workspace?: StudioWorkspace }) {
+export function StudioPage({ workspace = 'studio', onEditorActiveChange }: { workspace?: StudioWorkspace; onEditorActiveChange?: (active: boolean) => void }) {
   const isVideoWorkspace = workspace === 'video'
   const workspaceTitle = isVideoWorkspace ? 'Video Studio' : 'Studio'
   const workspacePlural = isVideoWorkspace ? 'Video Studios' : 'Studios'
@@ -335,6 +335,9 @@ export function StudioPage({ workspace = 'studio' }: { workspace?: StudioWorkspa
   const nextStudioNumber = useRef(1)
   const selectedStudio = studios.find((studio) => studio.id === selectedId) ?? null
   const activeStudio = studios.find((studio) => studio.id === activeStudioId) ?? null
+  useEffect(() => {
+    onEditorActiveChange?.(isVideoWorkspace && Boolean(activeStudio))
+  }, [isVideoWorkspace, activeStudioId, Boolean(activeStudio), onEditorActiveChange])
   const videoPlaybackStates = isVideoWorkspace && videoPlaying && activeStudio
     ? new Map(activeStudio.elements.filter((element) => element.kind === 'character').map((element) => [element.id, characterStateAt(videoTimelineFor(activeStudio), element.id, videoPlayheadFrame)]))
     : null
