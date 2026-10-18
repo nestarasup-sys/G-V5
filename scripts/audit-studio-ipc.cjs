@@ -101,12 +101,17 @@ async function main() {
       videoStudioSaveCommitLatencyMs: seeds.saveLatencyMs.videoStudio,
       studioVideoEditorDomReadyWallLatencyMs: smoke.realWorkspaceNavigation.openLatencyMs,
       rendererNavigationPhasesMs: smoke.realWorkspaceNavigation.rendererPhaseLatencyMs },
-    visualComparison: smoke.realWorkspaceNavigation.screenshotSha256,
-    limitations: ['Nenhum cold start foi medido nesta série.', 'CPU, RSS, heap, GPU e uso ocioso não foram medidos.',
+    visualComparison: { ...smoke.realWorkspaceNavigation.visualComparison,
+      screenshotSha256: smoke.realWorkspaceNavigation.screenshotSha256,
+      artifact: smoke.realWorkspaceNavigation.visualComparisonArtifact },
+    memorySamples: smoke.memorySamples,
+    limitations: ['Nenhum cold start foi medido nesta série.',
+      'Dois snapshots de working set (KB) antes e depois de alternâncias não comprovam vazamento, pico RSS ou estabilidade em idle.',
+      'CPU, heap e GPU não foram medidos; perfis de memória dependem do Chromium e dos processos ativos.',
       'A janela Electron estava oculta; backgroundThrottling foi desativado somente no modo DEV AI.',
-      'A latência de navegação termina na montagem do editor no DOM; tempo de paint não foi medido porque RAF em janela oculta não foi confiável.',
+      'A latência de navegação termina na montagem do editor no DOM, não em first meaningful paint.',
       'As medições usam documentos sintéticos pequenos, sem assets nem personagens.',
-      'O PNG usa webContents.capturePage e não é Electron offscreen:true.']
+      'Capturas exigem estabilização visual, mas usam webContents.capturePage, não Electron offscreen:true.']
   }
   writeFileSync(join(output, 'metrics.json'), JSON.stringify(measuredMetrics, null, 2))
   const report = { schemaVersion: 1, adapter: 'production-preload-real-ipc', realIpcCovered: true,
