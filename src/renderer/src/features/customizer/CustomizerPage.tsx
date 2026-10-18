@@ -1610,31 +1610,10 @@ export function CustomizerPage() {
   }, [selectedCharacter?.id])
 
   function beginCustomizerPreviewPan(event: import('react').PointerEvent<HTMLDivElement>) {
-    if (event.button !== 0 || event.target !== event.currentTarget || !selectedArtworkUrl) return
-    const artwork = displayArtworkProject
-    if (artwork) {
-      const stage = event.currentTarget
-      const bounds = stage.getBoundingClientRect()
-      const boxWidth = Math.max(1, bounds.width - 136)
-      const boxHeight = Math.max(1, bounds.height - 130)
-      const fit = Math.min(boxWidth / artwork.width, boxHeight / artwork.height)
-      const zoom = document.fullscreenElement === stage.parentElement ? customizerPreviewZoom : 1
-      const contentX = event.clientX - bounds.left - 68 - (boxWidth - artwork.width * fit) / 2 - customizerPreviewPan.x
-      const contentY = event.clientY - bounds.top - 72 - (boxHeight - artwork.height * fit) / 2 - customizerPreviewPan.y
-      const artworkX = (contentX - artwork.width * fit / 2) / (fit * zoom * activeShapeScale.x) + artwork.width / 2
-      const artworkY = (contentY - artwork.height * fit / 2) / (fit * zoom * activeShapeScale.y) + artwork.height / 2
-      const hidden = new Set(artwork.hiddenPartIds ?? [])
-      const hitsCharacter = artwork.parts.some((part) => {
-        if (hidden.has(part.id)) return false
-        const radians = part.rotation * Math.PI / 180
-        const dx = artworkX - (part.x + part.width / 2)
-        const dy = artworkY - (part.y + part.height / 2)
-        const localX = dx * Math.cos(radians) + dy * Math.sin(radians)
-        const localY = -dx * Math.sin(radians) + dy * Math.cos(radians)
-        return Math.abs(localX) <= part.width / 2 && Math.abs(localY) <= part.height / 2
-      })
-      if (hitsCharacter) return
-    }
+    if (event.button !== 0 || !selectedArtworkUrl) return
+    const target = event.target
+    if (target instanceof Element && target.closest('.customizer-preview-controls, .customizer-preview-identity, .customizer-preview-back')) return
+    if (wardrobePreviewDraggable && target instanceof Element && target.closest('.customizer-wardrobe-overlay.draggable')) return
     event.preventDefault()
     event.currentTarget.setPointerCapture(event.pointerId)
     customizerPreviewPanDragRef.current = {
@@ -3522,7 +3501,7 @@ export function CustomizerPage() {
                     else void stage.requestFullscreen()
                   }} type="button"><Icon name="expand" /></button>
                   <button aria-label="Afastar" title="Afastar" onClick={() => setCustomizerPreviewZoom((zoom) => Math.max(.75, Number((zoom - .1).toFixed(2))))} type="button"><Icon name="zoomOut" /></button>
-                  <button aria-label="Aproximar" title="Aproximar" onClick={() => setCustomizerPreviewZoom((zoom) => Math.min(2, Number((zoom + .1).toFixed(2))))} type="button"><Icon name="zoomIn" /></button>
+                  <button aria-label="Aproximar" title="Aproximar" onClick={() => setCustomizerPreviewZoom((zoom) => Math.min(4, Number((zoom + .1).toFixed(2))))} type="button"><Icon name="zoomIn" /></button>
                   <button aria-label="Restaurar zoom" title="Restaurar zoom" onClick={() => setCustomizerPreviewZoom(1.15)} type="button"><Icon name="reset" /></button>
                 </div>
                 {selectedArtworkUrl ? <img className="customizer-selected-artwork" src={selectedArtworkUrl} alt={selectedArtworkLabel} /> : !previewLoading && <div className="customizer-no-artwork"><Icon name="body" /><span>Nenhum modelo salvo para mostrar.</span></div>}
@@ -3790,7 +3769,7 @@ export function CustomizerPage() {
                   else void stage.requestFullscreen()
                 }} type="button"><Icon name="expand" /></button>
                 <button aria-label="Afastar" title="Afastar" onClick={() => setCustomizerPreviewZoom((zoom) => Math.max(.75, Number((zoom - .1).toFixed(2))))} type="button"><Icon name="zoomOut" /></button>
-                <button aria-label="Aproximar" title="Aproximar" onClick={() => setCustomizerPreviewZoom((zoom) => Math.min(2, Number((zoom + .1).toFixed(2))))} type="button"><Icon name="zoomIn" /></button>
+                <button aria-label="Aproximar" title="Aproximar" onClick={() => setCustomizerPreviewZoom((zoom) => Math.min(4, Number((zoom + .1).toFixed(2))))} type="button"><Icon name="zoomIn" /></button>
                 <button aria-label="Restaurar zoom" title="Restaurar zoom" onClick={() => setCustomizerPreviewZoom(1.15)} type="button"><Icon name="reset" /></button>
               </div>
               {selectedArtworkUrl ? <img className="customizer-selected-artwork" src={selectedArtworkUrl} alt={selectedArtworkLabel} /> : !previewLoading && <div className="customizer-no-artwork"><Icon name="body" /><span>{selectedCharacter ? 'Importe um modelo no Fabricador Dev para começar.' : 'Crie um personagem para começar a personalizar.'}</span></div>}
