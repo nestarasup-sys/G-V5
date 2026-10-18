@@ -179,7 +179,11 @@ export type VideoMediaClip = {
   sourceEndFrame: number
   /** Absent in older projects: original sound at full volume. */
   audio?: VideoAudioSettings
+  /** Per-segment composition; omitted by older documents for the centered default. */
+  transform?: VideoClipTransform
 }
+
+export type VideoClipTransform = { x: number; y: number; width: number; height: number; rotation: number }
 
 export type VideoAudioSettings = { volume: number; muted: boolean }
 

@@ -5,7 +5,7 @@ import { Icon } from '../../ui/components/Icon'
 import { CharacterPortrait } from '../../ui/components/CharacterPortrait'
 import { resolveStudioTalkMouthId, videoCharacterTrackColor } from '../../../../shared/studio'
 import type { StudioAsset, StudioDocument, StudioElement, StudioFaceMode, StudioFaceTransform, StudioFaceTransforms, VideoAudioSettings, VideoMediaClip, VideoTimelineDocument } from '../../../../shared/studio'
-import { editVideoMediaClip, isValidVideoMediaClip, splitVideoMediaClip as splitMediaClip } from '../../../../shared/videoMedia'
+import { defaultVideoTransform, editVideoMediaClip, isValidVideoMediaClip, splitVideoMediaClip as splitMediaClip } from '../../../../shared/videoMedia'
 import { VideoLibraryModal } from './VideoLibraryModal'
 import { VideoStudioClipPreview } from './VideoClipPreview'
 import { isValidVideoAudioSettings } from '../../../../shared/videoAudio'
@@ -328,6 +328,7 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
   const videoPlaybackStates = isVideoWorkspace && videoPlaying && activeStudio
     ? new Map(activeStudio.elements.filter((element) => element.kind === 'character').map((element) => [element.id, characterStateAt(videoTimelineFor(activeStudio), element.id, videoPlayheadFrame)]))
     : null
+  const selectedVideoClip = selectedElementId?.startsWith('video:') ? activeStudio?.videoTimeline?.videoClips?.find((clip) => `video:${clip.id}` === selectedElementId) : undefined
   const selectedElement = activeStudio?.elements.find((element) => element.id === selectedElementId) ?? null
   const selectedVideoTrackLocked = Boolean(isVideoWorkspace && activeStudio && selectedElement && videoTimelineFor(activeStudio).trackSettings?.[selectedElement.kind === 'character' ? selectedElement.id : selectedElement.kind]?.locked)
   const selectedStudioCharacter = selectedElement?.kind === 'character' ? availableCharacters.find((character) => character.id === selectedElement.characterId) ?? null : null
@@ -1810,6 +1811,24 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
 
   const propertyPanel = (): ReactNode => {
     if (!activeStudio) return null
+    if (selectedVideoClip) {
+      const transform = selectedVideoClip.transform ?? defaultVideoTransform
+      const locked = videoTimelineFor(activeStudio).trackSettings?.video?.locked === true
+      const update = (values: Partial<typeof transform>, record = true) => updateVideoMediaClip({ ...selectedVideoClip, transform: { ...transform, ...values } }, record)
+      return <div className="video-studio-side-content">
+        <h2>Vídeo selecionado</h2><p>{videoTimelineFor(activeStudio).videoAssets?.find((asset) => asset.id === selectedVideoClip.assetId)?.name}</p>
+        {locked && <small>Desbloqueie a faixa de vídeo para editar.</small>}
+        <div className="video-studio-controls-grid">
+          {control('X', transform.x, (value, record) => update({ x: value }, record), -300, 300, '%', undefined, locked)}
+          {control('Y', transform.y, (value, record) => update({ y: value }, record), -300, 300, '%', undefined, locked)}
+          {control('Largura', transform.width, (value, record) => update({ width: value }, record), 1, 300, '%', undefined, locked)}
+          {control('Altura', transform.height, (value, record) => update({ height: value }, record), 1, 300, '%', undefined, locked)}
+          {control('Rotação', transform.rotation, (value, record) => update({ rotation: value }, record), -180, 180, '°', undefined, locked)}
+        </div>
+        <button type="button" className="video-studio-side-primary" disabled={locked} onClick={() => updateVideoMediaClip({ ...selectedVideoClip, transform: { ...defaultVideoTransform } })}>Restaurar enquadramento</button>
+        <button type="button" className="video-studio-side-danger" disabled={locked} onClick={() => deleteVideoMediaClip(selectedVideoClip.id)}><Icon name="trash" />Excluir este trecho</button>
+      </div>
+    }
     if (activeTool === 'background') return <div className="video-studio-side-content">
       <h2>Fundos</h2><p>Escolha um fundo salvo ou adicione uma imagem.</p>
       <label className="video-studio-color-control">Cor sólida<input type="color" value={activeStudio.backgroundColor} onChange={(event) => updateBackground({ backgroundColor: event.target.value })} /></label>
@@ -2019,13 +2038,13 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
             {isVideoWorkspace && (() => {
               const timeline = videoTimelineFor(activeStudio)
               return (timeline.videoClips ?? []).filter((item) => item.startFrame <= videoPlayheadFrame && videoPlayheadFrame < item.endFrame)
-                .map((clip) => <VideoStudioClipPreview key={clip.id} studioId={activeStudio.id} clip={clip} playheadFrame={videoPlayheadFrame} playing={videoPlaying} masterAudio={timeline.videoAudio} onPlaybackError={setError} />)
+                .map((clip) => <VideoStudioClipPreview key={clip.id} studioId={activeStudio.id} clip={clip} playheadFrame={videoPlayheadFrame} playing={videoPlaying} masterAudio={timeline.videoAudio} onPlaybackError={setError} selected={!fullView && selectedElementId === `video:${clip.id}`} editable={!fullView && !timeline.trackSettings?.video?.locked} onSelect={() => { if (fullView) return; setVideoPlaying(false); setSelectedElementId(`video:${clip.id}`); setActiveTool(null); setInspectorOpen(true); setInspectorTab('editor') }} onBeginEdit={recordHistory} onTransform={(transform) => updateVideoMediaClip({ ...clip, transform }, false)} />)
             })()}
             {fullView && <button className="video-studio-exit-view" onClick={() => setFullView(false)} type="button">Sair da visualização <kbd>Esc</kbd></button>}
             {!fullView && <span className="video-studio-scene-title">{activeStudio.title}</span>}
           </div>
         </section>
-        {!fullView && isVideoWorkspace && <VideoTimeline studio={activeStudio} playheadFrame={videoPlayheadFrame} playing={videoPlaying} height={videoTimelineHeight} presetNames={Object.fromEntries(studioExpressionPresets.map((preset) => [preset.id, preset.name]))} onResize={setVideoTimelineHeight} onSelectElement={(elementId) => { setVideoPlaying(false); setSelectedElementId(elementId); setInspectorOpen(true) }} onSeek={seekVideoFrame} onTogglePlayback={() => { if (videoPlaying) seekVideoFrame(videoPlayheadFrame); else setVideoPlaying(true) }} onSaveFrame={saveVideoFrame} onSplitCharacter={splitVideoCharacterTrack} onSplitTextClip={splitVideoTextClip} onSplitVideoClip={splitVideoMediaClip} onUpdateVideoClip={updateVideoMediaClip} onChangeVideoAudio={updateVideoAudio} onBeginAudioEdit={recordHistory} onDuplicateVideoClip={duplicateVideoMediaClip} onUpdateTextClip={updateVideoTextClip} onDeleteTextClip={deleteVideoTextClip} onDeleteVideoClip={deleteVideoMediaClip} onDeleteTextElement={deleteVideoTextElement} onDeleteCharacterSegment={deleteVideoCharacterSegment} onDuplicateTextClip={duplicateVideoTextClip} onMoveCharacterBoundary={moveVideoCharacterBoundary} onAddText={(kind) => addTextElement(kind)} onAddVideo={() => void openVideoLibrary()} onChangeTrackSettings={(id, settings) => changeScene((studio) => ({ ...studio, videoTimeline: { ...videoTimelineFor(studio), trackSettings: { ...videoTimelineFor(studio).trackSettings, [id]: settings } }, updatedAt: new Date().toISOString() }))} onMoveCharacterTrack={moveVideoCharacterTrack} onSetCharacterPositionsLocked={(locked) => changeScene((studio) => ({ ...studio, elements: studio.elements.map((element) => element.kind === 'character' ? { ...element, positionLocked: locked } : element), updatedAt: new Date().toISOString() }))} onChangeDuration={(durationFrames) => changeScene((studio) => ({ ...studio, videoTimeline: { ...videoTimelineFor(studio), durationFrames, playheadFrame: Math.min(videoPlayheadFrame, durationFrames) }, updatedAt: new Date().toISOString() }))} />}
+        {!fullView && isVideoWorkspace && <VideoTimeline selectedCanvasId={selectedElementId} studio={activeStudio} playheadFrame={videoPlayheadFrame} playing={videoPlaying} height={videoTimelineHeight} presetNames={Object.fromEntries(studioExpressionPresets.map((preset) => [preset.id, preset.name]))} onResize={setVideoTimelineHeight} onSelectElement={(elementId) => { setVideoPlaying(false); setSelectedElementId(elementId); setInspectorOpen(true); if (elementId.startsWith('video:')) { setActiveTool(null); setInspectorTab('editor') } }} onSeek={seekVideoFrame} onTogglePlayback={() => { if (videoPlaying) seekVideoFrame(videoPlayheadFrame); else setVideoPlaying(true) }} onSaveFrame={saveVideoFrame} onSplitCharacter={splitVideoCharacterTrack} onSplitTextClip={splitVideoTextClip} onSplitVideoClip={splitVideoMediaClip} onUpdateVideoClip={updateVideoMediaClip} onChangeVideoAudio={updateVideoAudio} onBeginAudioEdit={recordHistory} onDuplicateVideoClip={duplicateVideoMediaClip} onUpdateTextClip={updateVideoTextClip} onDeleteTextClip={deleteVideoTextClip} onDeleteVideoClip={deleteVideoMediaClip} onDeleteTextElement={deleteVideoTextElement} onDeleteCharacterSegment={deleteVideoCharacterSegment} onDuplicateTextClip={duplicateVideoTextClip} onMoveCharacterBoundary={moveVideoCharacterBoundary} onAddText={(kind) => addTextElement(kind)} onAddVideo={() => void openVideoLibrary()} onChangeTrackSettings={(id, settings) => changeScene((studio) => ({ ...studio, videoTimeline: { ...videoTimelineFor(studio), trackSettings: { ...videoTimelineFor(studio).trackSettings, [id]: settings } }, updatedAt: new Date().toISOString() }))} onMoveCharacterTrack={moveVideoCharacterTrack} onSetCharacterPositionsLocked={(locked) => changeScene((studio) => ({ ...studio, elements: studio.elements.map((element) => element.kind === 'character' ? { ...element, positionLocked: locked } : element), updatedAt: new Date().toISOString() }))} onChangeDuration={(durationFrames) => changeScene((studio) => ({ ...studio, videoTimeline: { ...videoTimelineFor(studio), durationFrames, playheadFrame: Math.min(videoPlayheadFrame, durationFrames) }, updatedAt: new Date().toISOString() }))} />}
         {videoLibraryOpen && <VideoLibraryModal studioTitle={activeStudio.title} locked={videoTimelineFor(activeStudio).trackSettings?.video?.locked === true} onClose={() => setVideoLibraryOpen(false)} onAdd={addLibraryVideos} />}
         {castPickerOpen && <div className="video-studio-cast-modal-backdrop" onPointerDown={(event) => { if (event.target === event.currentTarget && !savingCast) setCastPickerOpen(false) }}>
           <section className="video-studio-cast-modal" role="dialog" aria-modal="true" aria-labelledby="video-studio-cast-modal-title">

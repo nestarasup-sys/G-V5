@@ -43,7 +43,8 @@ function characterSegmentAtFrame(timeline: VideoTimelineDocument, elementId: str
   return { startFrame: precedingGap?.endFrame ?? stateStart, endFrame: followingGap?.startFrame ?? stateEnd }
 }
 
-export function VideoTimeline({ studio, playheadFrame, playing, height, presetNames, onSeek, onSelectElement, onTogglePlayback, onSaveFrame, onSplitCharacter, onSplitTextClip, onSplitVideoClip, onUpdateTextClip, onUpdateVideoClip, onChangeVideoAudio, onBeginAudioEdit, onDuplicateVideoClip, onDeleteTextClip, onDeleteVideoClip, onDeleteTextElement, onDeleteCharacterSegment, onDuplicateTextClip, onMoveCharacterBoundary, onChangeDuration, onResize, onAddText, onAddVideo, onChangeTrackSettings, onMoveCharacterTrack, onSetCharacterPositionsLocked }: {
+export function VideoTimeline({ selectedCanvasId, studio, playheadFrame, playing, height, presetNames, onSeek, onSelectElement, onTogglePlayback, onSaveFrame, onSplitCharacter, onSplitTextClip, onSplitVideoClip, onUpdateTextClip, onUpdateVideoClip, onChangeVideoAudio, onBeginAudioEdit, onDuplicateVideoClip, onDeleteTextClip, onDeleteVideoClip, onDeleteTextElement, onDeleteCharacterSegment, onDuplicateTextClip, onMoveCharacterBoundary, onChangeDuration, onResize, onAddText, onAddVideo, onChangeTrackSettings, onMoveCharacterTrack, onSetCharacterPositionsLocked }: {
+  selectedCanvasId?: string | null
   studio: StudioDocument
   playheadFrame: number
   playing: boolean
@@ -94,6 +95,14 @@ export function VideoTimeline({ studio, playheadFrame, playing, height, presetNa
     } catch { return 37 }
   })
   const timeline = videoTimelineFor(studio)
+  useEffect(() => {
+    if (selectedCanvasId === undefined) return
+    const clipId = selectedCanvasId?.startsWith('video:') ? selectedCanvasId.slice(6) : null
+    const clip = timeline.videoClips?.find((item) => item.id === clipId)
+    setSelection((current) => clip
+      ? { kind: 'video', clipId: clip.id, startFrame: clip.startFrame, endFrame: clip.endFrame }
+      : current?.kind === 'video' ? null : current)
+  }, [selectedCanvasId, timeline.videoClips])
   const trackSettings = timeline.trackSettings ?? {}
   const isLocked = (id: string) => trackSettings[id]?.locked === true
   const duration = Math.max(1, timeline.durationFrames)
@@ -193,6 +202,7 @@ export function VideoTimeline({ studio, playheadFrame, playing, height, presetNa
     else if (selection.kind === 'video') {
       const rightClipId = crypto.randomUUID()
       onSplitVideoClip(selection.clipId, playheadFrame, rightClipId)
+      onSelectElement(`video:${rightClipId}`)
       setSelection({ ...selection, clipId: rightClipId, startFrame: playheadFrame })
     } else {
       const rightClipId = crypto.randomUUID()
@@ -222,6 +232,7 @@ export function VideoTimeline({ studio, playheadFrame, playing, height, presetNa
     event.stopPropagation()
     const edge = (event.target as HTMLElement).closest<HTMLElement>('[data-clip-edge]')?.dataset.clipEdge
     const mode = edge === 'start' || edge === 'end' ? edge : 'move'
+    onSelectElement(`video:${clip.id}`)
     setSelection({ kind: 'video', clipId: clip.id, startFrame: clip.startFrame, endFrame: clip.endFrame })
     if (!edge) {
       const bounds = event.currentTarget.getBoundingClientRect()
@@ -374,6 +385,7 @@ export function VideoTimeline({ studio, playheadFrame, playing, height, presetNa
                   onClick={(event) => {
                     event.stopPropagation()
                     if (suppressClipClickRef.current) return
+                    onSelectElement(`video:${clip.id}`)
                     setSelection({ kind: 'video', clipId: clip.id, startFrame: clip.startFrame, endFrame: clip.endFrame })
                     if (event.detail === 0) onSeek(clip.startFrame)
                   }}>

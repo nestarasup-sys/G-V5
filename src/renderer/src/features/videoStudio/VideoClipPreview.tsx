@@ -1,17 +1,28 @@
-import { useEffect, useRef } from 'react'
-import type { VideoAudioSettings, VideoMediaClip } from '../../../../shared/studio'
+import { useEffect, useRef, type PointerEvent as ReactPointerEvent } from 'react'
+import type { VideoAudioSettings, VideoClipTransform, VideoMediaClip } from '../../../../shared/studio'
+import { defaultVideoTransform } from '../../../../shared/videoMedia'
 import { videoAudioOutput } from '../../../../shared/videoAudio'
 import { VideoMediaPlayback } from './videoMediaPlayback'
 
-export function VideoStudioClipPreview({ studioId, clip, playheadFrame, playing, masterAudio, onPlaybackError }: {
+type CompositionDrag = { pointerId: number; clientX: number; clientY: number; stageWidth: number; stageHeight: number; original: VideoClipTransform; corner?: { x: number; y: number }; started: boolean }
+const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value))
+
+export function VideoStudioClipPreview({ studioId, clip, playheadFrame, playing, masterAudio, onPlaybackError, selected, editable, onSelect, onBeginEdit, onTransform }: {
   studioId: string
   clip: VideoMediaClip
   playheadFrame: number
   playing: boolean
   masterAudio?: VideoAudioSettings
   onPlaybackError: (message: string) => void
+  selected: boolean
+  editable: boolean
+  onSelect: () => void
+  onBeginEdit: () => void
+  onTransform: (transform: VideoClipTransform) => void
 }) {
   const mediaRef = useRef<HTMLVideoElement>(null)
+  const wrapperRef = useRef<HTMLDivElement>(null)
+  const dragRef = useRef<CompositionDrag | null>(null)
   const playbackRef = useRef<VideoMediaPlayback | null>(null)
   const sourceUrl = `gacha-video://studio/${studioId}/${clip.assetId}`
   useEffect(() => {
@@ -23,5 +34,50 @@ export function VideoStudioClipPreview({ studioId, clip, playheadFrame, playing,
   useEffect(() => {
     playbackRef.current?.update({ clip, frame: playheadFrame, playing, masterAudio })
   }, [clip, playheadFrame, playing, masterAudio, sourceUrl, onPlaybackError])
-  return <video ref={mediaRef} className="video-studio-video-clip-preview" src={sourceUrl} muted={videoAudioOutput(masterAudio, clip.audio, playing).muted} playsInline preload="auto" onLoadedMetadata={() => playbackRef.current?.refresh()} onError={() => playbackRef.current?.reportMediaError()} aria-hidden="true" />
+  const transform = clip.transform ?? defaultVideoTransform
+  const beginDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0) return
+    event.preventDefault()
+    event.stopPropagation()
+    onSelect()
+    if (!editable) return
+    const stage = wrapperRef.current?.parentElement?.getBoundingClientRect()
+    if (!stage?.width || !stage.height) return
+    const handle = (event.target as HTMLElement).closest<HTMLElement>('[data-video-corner]')?.dataset.videoCorner
+    dragRef.current = { pointerId: event.pointerId, clientX: event.clientX, clientY: event.clientY, stageWidth: stage.width, stageHeight: stage.height, original: { ...transform }, started: false,
+      corner: handle ? { x: handle.includes('w') ? -1 : 1, y: handle.includes('n') ? -1 : 1 } : undefined }
+    event.currentTarget.setPointerCapture(event.pointerId)
+  }
+  const moveDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const drag = dragRef.current
+    if (!drag || drag.pointerId !== event.pointerId || !editable) return
+    const dx = event.clientX - drag.clientX, dy = event.clientY - drag.clientY
+    if (!drag.started) {
+      if (Math.hypot(dx, dy) < 2) return
+      onBeginEdit()
+      drag.started = true
+    }
+    const original = drag.original
+    if (!drag.corner) {
+      onTransform({ ...original, x: clamp(original.x + dx / drag.stageWidth * 100, -300, 300), y: clamp(original.y + dy / drag.stageHeight * 100, -300, 300) })
+      return
+    }
+    // Work in the rotated video's local axes and keep the opposite corner anchored.
+    const angle = original.rotation * Math.PI / 180, cos = Math.cos(angle), sin = Math.sin(angle)
+    const localX = dx * cos + dy * sin, localY = -dx * sin + dy * cos
+    const width = clamp(original.width + drag.corner.x * localX / drag.stageWidth * 100, 1, 300)
+    const height = clamp(original.height + drag.corner.y * localY / drag.stageHeight * 100, 1, 300)
+    const shiftX = (width - original.width) * drag.stageWidth / 100 * drag.corner.x / 2
+    const shiftY = (height - original.height) * drag.stageHeight / 100 * drag.corner.y / 2
+    onTransform({ ...original, width, height, x: clamp(original.x + (shiftX * cos - shiftY * sin) / drag.stageWidth * 100, -300, 300), y: clamp(original.y + (shiftX * sin + shiftY * cos) / drag.stageHeight * 100, -300, 300) })
+  }
+  const endDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (dragRef.current?.pointerId !== event.pointerId) return
+    dragRef.current = null
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
+  }
+  return <div ref={wrapperRef} className={`video-studio-video-composition${selected ? ' selected' : ''}${editable ? '' : ' locked'}`} style={{ left: `${50 + transform.x}%`, top: `${50 + transform.y}%`, width: `${transform.width}%`, height: `${transform.height}%`, transform: `translate(-50%, -50%) rotate(${transform.rotation}deg)` }} onPointerDown={beginDrag} onPointerMove={moveDrag} onPointerUp={endDrag} onPointerCancel={endDrag} onLostPointerCapture={() => { dragRef.current = null }}>
+    <video ref={mediaRef} className="video-studio-video-clip-preview" src={sourceUrl} muted={videoAudioOutput(masterAudio, clip.audio, playing).muted} playsInline preload="auto" onLoadedMetadata={() => playbackRef.current?.refresh()} onError={() => playbackRef.current?.reportMediaError()} aria-hidden="true" />
+    {selected && editable && ['nw', 'ne', 'sw', 'se'].map((corner) => <span key={corner} className={`video-studio-video-resize ${corner}`} data-video-corner={corner} aria-hidden="true" />)}
+  </div>
 }

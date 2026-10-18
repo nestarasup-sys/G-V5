@@ -1,12 +1,23 @@
-import type { VideoMediaClip } from './studio'
+import type { VideoClipTransform, VideoMediaClip } from './studio'
 import { isValidVideoAudioSettings } from './videoAudio'
 
 export type VideoClipEditMode = 'move' | 'start' | 'end'
 const clampFrame = (frame: number, min: number, max: number) => Math.max(min, Math.min(max, Math.round(frame)))
 
+export const defaultVideoTransform: Readonly<VideoClipTransform> = { x: 0, y: 0, width: 50, height: 50, rotation: 0 }
+export function isValidVideoTransform(value: unknown): value is VideoClipTransform {
+  if (!value || typeof value !== 'object') return false
+  const transform = value as VideoClipTransform
+  return [transform.x, transform.y, transform.width, transform.height, transform.rotation].every(Number.isFinite)
+    && Math.abs(transform.x) <= 300 && Math.abs(transform.y) <= 300
+    && transform.width >= 1 && transform.width <= 300 && transform.height >= 1 && transform.height <= 300
+    && Math.abs(transform.rotation) <= 180
+}
+
 export function isValidVideoMediaClip(clip: VideoMediaClip, sourceDuration: number, timelineDuration: number): boolean {
   return Boolean(clip && typeof clip.id === 'string' && typeof clip.assetId === 'string'
     && isValidVideoAudioSettings(clip.audio)
+    && (clip.transform === undefined || isValidVideoTransform(clip.transform))
     && [clip.startFrame, clip.endFrame, clip.sourceStartFrame, clip.sourceEndFrame].every(Number.isSafeInteger)
     && clip.startFrame >= 0 && clip.endFrame > clip.startFrame && clip.endFrame <= timelineDuration
     && clip.sourceStartFrame >= 0 && clip.sourceEndFrame > clip.sourceStartFrame && clip.sourceEndFrame <= sourceDuration

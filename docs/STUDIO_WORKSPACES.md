@@ -109,3 +109,19 @@ exclusão persistente, conflitos e validação de caminhos. Após compilar,
 com arquivos reais e catálogo em disco: importação, seleção múltipla, exclusão,
 reabertura e preservação dos vídeos dos roteiros. Os testes usam `out/`, sem
 acessar a biblioteca real do usuário.
+
+## Composição de vídeos na prévia
+
+Cada `VideoMediaClip` pode salvar `transform` com X/Y relativos ao centro,
+largura/altura em porcentagem do enquadramento e rotação em graus. Documentos
+antigos mantêm o padrão centralizado de 50% sem migração destrutiva. O validador
+compartilhado também valida os limites desses dados antes de salvar no Electron.
+Dividir e duplicar preservam a composição inicial, e cada trecho passa a poder
+ser editado separadamente.
+
+Clicar no vídeo abre o inspector Editor e sincroniza a seleção com a timeline.
+Arrastar move; as quatro alças redimensionam mantendo o canto oposto ancorado,
+inclusive com rotação. O inspector oferece X, Y, largura, altura, rotação e
+restaurar enquadramento. Uma interação de arraste gera uma entrada no histórico;
+os ajustes usam o salvamento automático do roteiro e respeitam o bloqueio da
+faixa. O vídeo permanece atrás dos personagens e na frente do fundo.
