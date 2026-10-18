@@ -3328,7 +3328,13 @@ export function CustomizerPage() {
       const key = `${group.modelSlot}:${group.setId}`
       if (!setOrder.has(key)) setOrder.set(key, setOrder.size)
     })
-    const adjustmentComponents = selectedGroups.flatMap((group) => {
+    const sideOrder = (component: WardrobeSet['components'][number]) => {
+      const side = `${component.name} ${component.attachedPartId}`.toLocaleLowerCase()
+      const isLeft = /\besquerd[oa]\b|\bleft\b/.test(side)
+      const isRight = /\bdireit[oa]\b|\bright\b/.test(side)
+      return isLeft && !isRight ? 0 : isRight && !isLeft ? 1 : 2
+    }
+    const sortedAdjustmentComponents = selectedGroups.flatMap((group) => {
       const set = wardrobeDetails[`${group.modelSlot}:${group.setId}`]
       if (!set) return []
       const definition = scopeDefinitions.find((item) => item.id === group.category)
@@ -3347,14 +3353,14 @@ export function CustomizerPage() {
         if (categoryOrderDifference) return categoryOrderDifference
         const sourceOrderDifference = a.sourceOrder - b.sourceOrder
         if (sourceOrderDifference) return sourceOrderDifference
-        const sideOrder = (component: WardrobeSet['components'][number]) => {
-          const side = `${component.name} ${component.attachedPartId}`.toLocaleLowerCase()
-          const isLeft = /\besquerd[oa]\b|\bleft\b/.test(side)
-          const isRight = /\bdireit[oa]\b|\bright\b/.test(side)
-          return isLeft && !isRight ? 0 : isRight && !isLeft ? 1 : 2
-        }
         return sideOrder(a.component) - sideOrder(b.component)
       })
+    const arePairSiblings = (a: (typeof sortedAdjustmentComponents)[number], b: (typeof sortedAdjustmentComponents)[number]) =>
+      a.group.modelSlot === b.group.modelSlot && a.group.setId === b.group.setId && a.group.category === b.group.category && sideOrder(a.component) === 0 && sideOrder(b.component) === 1
+    const adjustmentComponents = sortedAdjustmentComponents.map((entry, index, entries) => ({
+      ...entry,
+      pairStart: sideOrder(entry.component) === 0 && entries.slice(index + 1).some((candidate) => arePairSiblings(entry, candidate))
+    }))
     const selectedAdjustmentComponent = !isHead && selectedClothing
       ? adjustmentComponents.find((entry) => entry.group.modelSlot === selectedClothing.modelSlot && entry.group.setId === selectedClothing.setId && entry.group.category === selectedClothing.category && entry.component.id === selectedClothing.componentId)
       : undefined
@@ -3376,10 +3382,10 @@ export function CustomizerPage() {
           <section className="customizer-clothes-adjust-parts" aria-label={`Peças de roupas ${adjustmentScope.toLowerCase()}`}>
             <header><strong>Roupas {adjustmentScope.toLowerCase()}</strong><small>{adjustmentComponents.length} peça(s)</small></header>
             {adjustmentComponents.length ? <div className="customizer-clothes-adjust-part-grid">
-              {adjustmentComponents.map(({ group, component, set }) => {
+              {adjustmentComponents.map(({ group, component, set, pairStart }) => {
                 const isSelected = selectedClothing?.modelSlot === group.modelSlot && selectedClothing.setId === group.setId && selectedClothing.category === group.category && selectedClothing.componentId === component.id
                 const isDimmed = (group.opacity ?? 1) < 1
-                return <div key={`${group.modelSlot}:${group.setId}:${component.id}`} className={`customizer-clothes-adjust-part${isSelected ? ' selected' : ''}${isDimmed ? ' dimmed' : ''}`}>
+                return <div key={`${group.modelSlot}:${group.setId}:${component.id}`} className={`customizer-clothes-adjust-part${isSelected ? ' selected' : ''}${isDimmed ? ' dimmed' : ''}${pairStart ? ' pair-start' : ''}`}>
                   <button type="button" className="customizer-clothes-adjust-part-select" aria-pressed={isSelected} onClick={() => {
                     setSelectedClothing({ modelSlot: group.modelSlot, setId: group.setId, category: group.category, componentId: component.id })
                     setWardrobeHighlightVisible(true)
