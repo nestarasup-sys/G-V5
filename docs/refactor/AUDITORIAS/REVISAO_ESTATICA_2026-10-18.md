@@ -13,8 +13,8 @@
 | Árvore do GitHub `master` | GET da árvore recursiva Git e confirmação `truncated:false` | 128 entradas; `docs/STUDIO_WORKSPACES.md` ausente |
 | Referências históricas | Commit Git `192245e`, `e352f04`, `5b84834` e pesquisa de commits recentes | remoção da doc antiga, commit de correção histórica e base da revisão confirmados |
 | Permissão e isolamento de branch | Metadados do repositório e ação `create_branch` pelo GitHub | branch criada; nenhuma alteração aplicada a `master`, nenhuma PR/merge |
-| Documentos e links relativos | Leitura integral dos **9** arquivos Markdown versionados na branch, extração de Markdown links e normalização de caminhos relativos contra a árvore Git | **30 links relativos, 0 destinos inexistentes** |
-| Fences e estrutura simples de Markdown | Contagem de início/fim de blocos ``` e headings vazios nos 9 arquivos Markdown | 0 fences desbalanceados; 0 headings vazios |
+| Documentos e links relativos | Leitura integral dos **10** arquivos Markdown versionados na branch, extração de Markdown links e normalização de caminhos relativos contra a árvore Git | **31 links relativos, 0 destinos inexistentes** |
+| Fences e estrutura simples de Markdown | Contagem de início/fim de blocos ``` e headings vazios nos 10 arquivos Markdown | 0 fences desbalanceados; 0 headings vazios |
 | Completude de IDs do roadmap | Extração das declarações `**R-xx` no roadmap | **28 IDs únicos R-01…R-28; 0 lacunas/duplicatas** |
 | Completude da matriz DEV AI | Extração de `ISO-xx` da tabela de casos | **15 casos únicos ISO-01…ISO-15; 0 lacunas** |
 | Estado dos checklists | Contagem de checkboxes Markdown em 9 documentos | 3 fechados (somente leitura/revisão/criação de documentação); 64 abertos, incluindo todas tarefas de runtime/migração/tests |
@@ -33,6 +33,6 @@
 
 ## Como repetir as checagens
 
-Consultar árvore GitHub `GET /repos/nestarasup-sys/G-V5/git/trees/<ref>?recursive=1`; em seguida obter os nove arquivos Markdown dessa árvore. Para cada link relativo `[label](target)`, resolver `target` contra o diretório do arquivo que contém o link e testar existência exata na árvore. Validar quantidade par de fences de Markdown `^````, ausência de headings vazios, IDs R-01…R-28 únicos nas declarações do roadmap e ISO-01…ISO-15 na tabela de cenários. Anotar commit de HEAD, pois qualquer edição invalida os números anteriores. Repetir as verificações após mudar documentação.
+Consultar árvore GitHub `GET /repos/nestarasup-sys/G-V5/git/trees/<ref>?recursive=1`; em seguida obter os dez arquivos Markdown dessa árvore. Para cada link relativo `[label](target)`, resolver `target` contra o diretório do arquivo que contém o link e testar existência exata na árvore. Validar quantidade par de fences de Markdown `^````, ausência de headings vazios, IDs R-01…R-28 únicos nas declarações do roadmap e ISO-01…ISO-15 na tabela de cenários. Anotar commit de HEAD, pois qualquer edição invalida os números anteriores. Repetir as verificações após mudar documentação.
 
 A revisão documental pode ser considerada concluída independentemente de os gates de execução do produto estarem abertos; **não marcar funcionalidades implementadas somente porque suas especificações estão completas**.
