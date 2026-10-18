@@ -1749,17 +1749,8 @@ export function StudioPage({ workspace = 'studio', onEditorActiveChange }: { wor
 
   if (activeStudio) {
     const backgroundAsset = activeStudio.assets.find((asset) => asset.id === activeStudio.backgroundAssetId)
-    const inspectorWidth = sceneRef.current ? Math.min(38, 276 / sceneRef.current.clientWidth * 100) : 28
-    const selectedBounds = selectedElement
-      ? { left: 50 + selectedElement.x - studioElementSize(selectedElement).width / 2, right: 50 + selectedElement.x + studioElementSize(selectedElement).width / 2 }
-      : selectedElementId === 'background'
-        ? { left: 50 + activeStudio.backgroundX - activeStudio.backgroundWidth / 2, right: 50 + activeStudio.backgroundX + activeStudio.backgroundWidth / 2 }
-        : null
-    const inspectorSide = selectedBounds?.right !== undefined && selectedBounds.right > 100 - inspectorWidth
-      ? 'left'
-      : selectedBounds?.left !== undefined && selectedBounds.left < inspectorWidth ? 'right' : 'right'
     return (
-      <main className={`studio-editor${isVideoWorkspace ? ' video-workspace' : ''}${fullView ? ' full-view' : ''}`} aria-label={`Editor do ${activeStudio.title}`} style={videoEditorStyle}>
+      <main className={`studio-editor${isVideoWorkspace ? ' video-workspace' : ''}${inspectorOpen && !fullView ? ' inspector-open' : ''}${fullView ? ' full-view' : ''}`} aria-label={`Editor do ${activeStudio.title}`} style={videoEditorStyle}>
         {!fullView && <aside className="studio-editor-rail studio-editor-left" aria-label={`Ferramentas do ${workspaceTitle}`}>
           <div className="studio-editor-quick-actions">
             <button className="studio-round-action" onClick={() => void leaveStudio()} title="Salvar automaticamente e voltar" aria-label={`Voltar para Seus ${workspacePlural}`} type="button"><span>←</span></button>
@@ -1784,6 +1775,11 @@ export function StudioPage({ workspace = 'studio', onEditorActiveChange }: { wor
           {error && <small className="studio-error-message" role="alert">{error}</small>}
           {notice && <small className="studio-save-notice" role="status">{notice}</small>}
         </aside>}
+        {!fullView && inspectorOpen && <aside className="studio-inspector" aria-label="Inspector da cena" onPointerDown={(event) => event.stopPropagation()}>
+          <header className="studio-inspector-tabs"><button className={inspectorTab === 'editor' ? 'active' : ''} onClick={() => { setInspectorTab('editor'); rememberCharacterInspectorView('editor') }} type="button">Editor</button><button className={inspectorTab === 'custom' && inspectorCustomView === 'face' ? 'active' : ''} onClick={() => { setInspectorTab('custom'); setInspectorCustomView('face'); rememberCharacterInspectorView('custom', 'face') }} type="button">Custom</button><button className="studio-inspector-close" onClick={() => setInspectorOpen(false)} aria-label="Fechar inspector" title="Fechar" type="button">×</button></header>
+          <button className={`studio-inspector-presets${inspectorTab === 'custom' && inspectorCustomView === 'presets' ? ' active' : ''}`} onClick={() => { setStudioPresetCategory('expression'); setInspectorTab('custom'); setInspectorCustomView('presets'); rememberCharacterInspectorView('custom', 'presets') }} type="button"><Icon name="sparkles" />Presets</button>
+          {inspectorTab === 'editor' ? <div className="studio-inspector-content">{propertyPanel()}</div> : <div className="studio-inspector-content">{inspectorCustomView === 'presets' ? presetsPanel() : customPanel()}</div>}
+        </aside>}
         <section className="studio-scene-area" aria-label="Prévia da cena">
           <div className="studio-scene-canvas" ref={sceneRef} style={{ backgroundColor: activeStudio.backgroundColor }} onPointerDown={() => setSelectedElementId(null)}>
             {backgroundAsset && <img className={`studio-canvas-background${selectedElementId === 'background' && !fullView ? ' selected' : ''}`} src={backgroundAsset.dataUrl} alt="" style={imageStyle(activeStudio.backgroundX, activeStudio.backgroundY, activeStudio.backgroundWidth, activeStudio.backgroundHeight, activeStudio.backgroundRotation)} onPointerDown={(event) => startDrag(event, 'background')} onPointerMove={moveDrag} onPointerUp={endDrag} onPointerCancel={endDrag} />}
@@ -1801,11 +1797,6 @@ export function StudioPage({ workspace = 'studio', onEditorActiveChange }: { wor
             })}
             {fullView && <button className="studio-exit-view" onClick={() => setFullView(false)} type="button">Sair da visualização <kbd>Esc</kbd></button>}
             {!fullView && <span className="studio-scene-title">{activeStudio.title}</span>}
-            {!fullView && inspectorOpen && <aside className={`studio-inspector studio-inspector-${inspectorSide}`} aria-label="Inspector da cena" onPointerDown={(event) => event.stopPropagation()}>
-              <header className="studio-inspector-tabs"><button className={inspectorTab === 'editor' ? 'active' : ''} onClick={() => { setInspectorTab('editor'); rememberCharacterInspectorView('editor') }} type="button">Editor</button><button className={inspectorTab === 'custom' && inspectorCustomView === 'face' ? 'active' : ''} onClick={() => { setInspectorTab('custom'); setInspectorCustomView('face'); rememberCharacterInspectorView('custom', 'face') }} type="button">Custom</button><button className="studio-inspector-close" onClick={() => setInspectorOpen(false)} aria-label="Fechar inspector" title="Fechar" type="button">×</button></header>
-              <button className={`studio-inspector-presets${inspectorTab === 'custom' && inspectorCustomView === 'presets' ? ' active' : ''}`} onClick={() => { setStudioPresetCategory('expression'); setInspectorTab('custom'); setInspectorCustomView('presets'); rememberCharacterInspectorView('custom', 'presets') }} type="button"><Icon name="sparkles" />Presets</button>
-              {inspectorTab === 'editor' ? <div className="studio-inspector-content">{propertyPanel()}</div> : <div className="studio-inspector-content">{inspectorCustomView === 'presets' ? presetsPanel() : customPanel()}</div>}
-            </aside>}
           </div>
         </section>
         {!fullView && isVideoWorkspace && <VideoTimeline studio={activeStudio} playheadFrame={videoPlayheadFrame} playing={videoPlaying} height={videoTimelineHeight} presetNames={Object.fromEntries(studioExpressionPresets.map((preset) => [preset.id, preset.name]))} onResize={setVideoTimelineHeight} onSelectElement={(elementId) => { setVideoPlaying(false); setSelectedElementId(elementId); setInspectorOpen(true); setInspectorTab('editor') }} onSeek={seekVideoFrame} onTogglePlayback={() => { if (videoPlaying) seekVideoFrame(videoPlayheadFrame); else setVideoPlaying(true) }} onSaveFrame={saveVideoFrame} onSplitCharacter={splitVideoCharacterTrack} onSplitTextClip={splitVideoTextClip} onUpdateTextClip={updateVideoTextClip} onDeleteTextClip={deleteVideoTextClip} onDuplicateTextClip={duplicateVideoTextClip} onMoveCharacterBoundary={moveVideoCharacterBoundary} onAddText={(kind) => addTextElement(kind)} onChangeTrackSettings={(id, settings) => changeScene((studio) => ({ ...studio, videoTimeline: { ...videoTimelineFor(studio), trackSettings: { ...videoTimelineFor(studio).trackSettings, [id]: settings } }, updatedAt: new Date().toISOString() }))} onMoveCharacterTrack={moveVideoCharacterTrack} onChangeDuration={(durationFrames) => changeScene((studio) => ({ ...studio, videoTimeline: { ...videoTimelineFor(studio), durationFrames, playheadFrame: Math.min(videoPlayheadFrame, durationFrames) }, updatedAt: new Date().toISOString() }))} />}
