@@ -612,6 +612,8 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .customizer-adjust-heading { min-width:0;display:grid;grid-template-columns:minmax(105px,20%) minmax(0,1fr);align-items:center;gap:10px; }
 .customizer-adjust-heading h2 { margin:0;color:#fff;font-size:clamp(14px,1.35vw,22px);font-weight:600;line-height:1.12; }
 .customizer-adjust-reset { min-width:0;min-height:36px;display:flex;align-items:center;justify-content:center;gap:5px;padding:4px 7px;border:2px solid #fff;border-radius:5px;background:linear-gradient(180deg,#16a7ff,#0877df);box-shadow:inset 0 2px 0 #93dcff,0 2px 0 #073f9a;color:#fff;font-size:clamp(8px,.75vw,12px);font-weight:850;cursor:pointer; }
+.customizer-adjust-reset.is-delete { background:linear-gradient(180deg,#ff555f,#d51e38);box-shadow:inset 0 2px 0 #ffb2b6,0 2px 0 #871026; }
+.customizer-adjust-reset.is-restore { background:linear-gradient(180deg,#16a7ff,#0877df);box-shadow:inset 0 2px 0 #93dcff,0 2px 0 #073f9a; }
 .customizer-adjust-reset svg { width:16px;height:16px;flex:0 0 auto; }
 .customizer-adjust-reset:disabled { opacity:.5;cursor:not-allowed; }
 .customizer-adjust-grid { min-width:0;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));grid-auto-rows:minmax(96px,1fr);gap:5px;align-content:start; }
