@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, shell, type IpcMainInvokeEvent } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, Menu, shell, type IpcMainInvokeEvent } from 'electron'
 import { mkdir, readFile, writeFile, readdir, unlink, rename, stat, access, rm, copyFile } from 'node:fs/promises'
 import { basename, dirname, extname, join, resolve } from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
@@ -2133,6 +2133,7 @@ async function registerFabricatorHandlers(): Promise<void> {
 }
 
 function createMainWindow(): void {
+  Menu.setApplicationMenu(null)
   const window = new BrowserWindow({
     width: 1440,
     height: 900,
@@ -2148,6 +2149,7 @@ function createMainWindow(): void {
       sandbox: true
     }
   })
+  window.removeMenu()
 
   if (process.env.ELECTRON_RENDERER_URL) {
     void window.loadURL(process.env.ELECTRON_RENDERER_URL)
