@@ -645,9 +645,9 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .customizer-clothes-adjust-part.pair-start { grid-column:1; }
 .customizer-clothes-adjust-part.selected { border-color:#ff9dc9;box-shadow:0 0 0 1px #ff9dc9; }
 .customizer-clothes-adjust-part.dimmed .customizer-clothes-adjust-part-preview img { opacity:.35; }
-.customizer-clothes-adjust-part-select { width:100%;height:100%;min-width:0;min-height:76px;display:grid;grid-template-rows:minmax(32px,1fr) auto auto;gap:2px;justify-items:center;overflow:hidden;padding:4px 3px;border:0;background:transparent;color:#fff;cursor:pointer; }
-.customizer-clothes-adjust-part-preview { width:100%;min-height:30px;display:grid;place-items:center;overflow:hidden;border-radius:3px;background:#f0eef2; }
-.customizer-clothes-adjust-part-preview img { width:100%;height:100%;min-height:30px;object-fit:contain; }
+.customizer-clothes-adjust-part-select { width:100%;height:auto;min-width:0;min-height:76px;display:grid;grid-template-rows:auto auto auto;align-content:start;gap:2px;justify-items:center;overflow:hidden;padding:4px 3px;border:0;background:transparent;color:#fff;cursor:pointer; }
+.customizer-clothes-adjust-part-preview { width:min(100%,150px);aspect-ratio:1;min-height:0;display:grid;place-items:center;overflow:hidden;border-radius:3px;background:#f0eef2; }
+.customizer-clothes-adjust-part-preview img { width:100%;height:100%;min-height:0;object-fit:contain; }
 .customizer-clothes-adjust-part-select strong { width:100%;overflow:hidden;font-size:9px;text-align:center;text-overflow:ellipsis;white-space:nowrap; }
 .customizer-clothes-adjust-part-select small { width:100%;overflow:hidden;color:#d2c1e1;font-size:7px;text-align:center;text-overflow:ellipsis;white-space:nowrap; }
 .customizer-clothes-adjust-controls>header span { min-width:0;display:grid;gap:2px; }
