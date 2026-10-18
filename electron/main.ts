@@ -835,6 +835,7 @@ async function readWardrobeSet(modelSlot: number, id: string): Promise<WardrobeS
     const components = await Promise.all(set.components.map(async (component) => ({
       ...component,
       category: (component.category as string) === 'cinto-saia-1' ? 'cinto' as const : (component.category as string) === 'cinto-saia-2' ? 'saia' as const : component.category,
+      renderAboveHair: (component.category === 'oculos' || component.category === 'acessorio-cabeca') && component.renderAboveHair === true,
       dataUrl: `data:image/png;base64,${(await readFile(join(folder, 'parts', `${component.id}.png`))).toString('base64')}`
     })))
     return { ...set, components }

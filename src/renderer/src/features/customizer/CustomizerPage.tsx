@@ -706,15 +706,17 @@ async function renderWardrobeOverlay(
           context.drawImage(image, -garment.transform.renderWidth / 2, -garment.transform.renderHeight / 2, garment.transform.renderWidth, garment.transform.renderHeight)
           context.restore()
         }
-        if (garment.component.renderAboveHair && !aboveHairContext) {
+        const renderAboveHair = garment.component.renderAboveHair === true
+          && (garment.component.category === 'oculos' || garment.component.category === 'acessorio-cabeca')
+        if (renderAboveHair && !aboveHairContext) {
           aboveHairCanvas = document.createElement('canvas')
           aboveHairCanvas.width = output.width
           aboveHairCanvas.height = output.height
           aboveHairContext = aboveHairCanvas.getContext('2d')
           if (aboveHairContext) { configureCharacterSampling(aboveHairContext); aboveHairContext.scale(pixelScale, pixelScale) }
         }
-        if (garment.component.renderAboveHair && aboveHairContext) hasAboveHairAccessories = true
-        drawGarment(garment.component.renderAboveHair && aboveHairContext ? aboveHairContext : outputContext)
+        if (renderAboveHair && aboveHairContext) hasAboveHairAccessories = true
+        drawGarment(renderAboveHair && aboveHairContext ? aboveHairContext : outputContext)
         if (selectionContext && selected && garment.group.setId === selected.setId && garment.group.category === selected.category && garment.component.id === selected.componentId) drawGarment(selectionContext)
       } catch { /* Keep rendering the remaining layers when one image is unavailable. */ }
     }
@@ -1546,6 +1548,7 @@ export function CustomizerPage() {
   const [selectedClothing, setSelectedClothing] = useState<SelectedWardrobeComponent | null>(null)
   const [wardrobeTransformDraft, setWardrobeTransformDraft] = useState<Pick<CustomizerWardrobeGroup, 'offsetX' | 'offsetY' | 'scaleX' | 'scaleY' | 'rotation'> | null>(null)
   const [selectedWardrobeUrl, setSelectedWardrobeUrl] = useState<string | null>(null)
+  const [selectedWardrobeAboveHairUrl, setSelectedWardrobeAboveHairUrl] = useState<string | null>(null)
   const [selectedWardrobeHighlightUrl, setSelectedWardrobeHighlightUrl] = useState<string | null>(null)
   const [wardrobeHighlightVisible, setWardrobeHighlightVisible] = useState(false)
   const [selectedArtworkProject, setSelectedArtworkProject] = useState<CatalogArtwork | null>(null)
@@ -1651,6 +1654,7 @@ export function CustomizerPage() {
       setSelectedArtworkProject(null)
       setSelectedSourceModelProject(null)
       setSelectedWardrobeUrl(null)
+      setSelectedWardrobeAboveHairUrl(null)
       setPreviewLoading(false)
       return
     }
@@ -1667,6 +1671,7 @@ export function CustomizerPage() {
       setSelectedArtworkProject(null)
       setSelectedSourceModelProject(null)
       setSelectedWardrobeUrl(null)
+      setSelectedWardrobeAboveHairUrl(null)
       setPreviewLoading(false)
       return
     }
@@ -2007,13 +2012,18 @@ export function CustomizerPage() {
     const groups = selectedCharacter?.customization.wardrobeGroups ?? []
     if (!displayArtworkProject || !groups.length) {
       setSelectedWardrobeUrl(null)
+      setSelectedWardrobeAboveHairUrl(null)
       return
     }
     const previewGroups = wardrobeTransformDraft && selectedClothing
       ? groups.map((group) => group.setId === selectedClothing.setId && group.category === selectedClothing.category && (group.componentId === selectedClothing.componentId || !group.componentId) ? { ...group, componentId: selectedClothing.componentId, ...wardrobeTransformDraft } : group)
       : groups
     void renderWardrobeOverlay(previewGroups, wardrobeDetails, displayArtworkProject, selectedCatalogModelSlot, selectedSourceModelProject, wardrobeHighlightVisible ? selectedClothing : null, selectedCharacter?.customization.modelSkinTone, characterRenderSize(displayArtworkProject.width, displayArtworkProject.height, previewExtent.width, previewExtent.height, customizerPreviewZoom, previewExtent.density)).then((result) => {
-      if (!cancelled) { setSelectedWardrobeUrl(result.imageUrl); setSelectedWardrobeHighlightUrl(result.selectedUrl) }
+      if (!cancelled) {
+        setSelectedWardrobeUrl(result.imageUrl)
+        setSelectedWardrobeAboveHairUrl(result.aboveHairImageUrl)
+        setSelectedWardrobeHighlightUrl(result.selectedUrl)
+      }
     }).catch((reason: unknown) => {
       if (!cancelled) setCatalogError(reason instanceof Error ? reason.message : 'Não foi possível compor as roupas do personagem.')
     })
@@ -3205,6 +3215,7 @@ export function CustomizerPage() {
               {selectedFaceUrl && selectedArtworkUrl && <img className="customizer-face-overlay" src={selectedFaceUrl} alt="Rosto do personagem" draggable={false} />}
               {activeModule === 'Roupas' && clothingSection === 'Customizar' && wardrobeHighlightVisible && selectedWardrobeHighlightUrl && <img className="customizer-wardrobe-selection-halo" src={selectedWardrobeHighlightUrl} alt="Peça de roupa selecionada" draggable={false} />}
               {selectedFrontHairUrl && selectedArtworkUrl && <img className="customizer-front-hair-overlay" src={selectedFrontHairUrl} alt="Cabelo posterior e franja frontal" draggable={false} />}
+              {selectedWardrobeAboveHairUrl && selectedArtworkUrl && <img className="customizer-wardrobe-above-hair-overlay" src={selectedWardrobeAboveHairUrl} alt="Óculos e acessórios de cabeça por cima dos cabelos" draggable={false} />}
                 {previewLoading && <div className="customizer-preview-loading">Carregando prévia…</div>}
               </div>
             </div>
@@ -3467,6 +3478,7 @@ export function CustomizerPage() {
                 {selectedFaceUrl && selectedArtworkUrl && <img className="customizer-face-overlay" src={selectedFaceUrl} alt="Rosto do personagem" draggable={false} />}
                 {activeModule === 'Roupas' && clothingSection === 'Customizar' && wardrobeHighlightVisible && selectedWardrobeHighlightUrl && <img className="customizer-wardrobe-selection-halo" src={selectedWardrobeHighlightUrl} alt="Peça de roupa selecionada" draggable={false} />}
                 {selectedFrontHairUrl && selectedArtworkUrl && <img className="customizer-front-hair-overlay" src={selectedFrontHairUrl} alt="Cabelo posterior e franja frontal" draggable={false} />}
+                {selectedWardrobeAboveHairUrl && selectedArtworkUrl && <img className="customizer-wardrobe-above-hair-overlay" src={selectedWardrobeAboveHairUrl} alt="Óculos e acessórios de cabeça por cima dos cabelos" draggable={false} />}
               {previewLoading && <div className="customizer-preview-loading">Carregando prévia…</div>}
             </div>
             <div className="stage-underbar customizer-preview-underbar">
