@@ -218,17 +218,37 @@ function centerProjectOnCanvas(project: FabricatorProject, width: number, height
 
 async function makeBreathingAnimation(source: FabricatorProject, pose: FabricatorPose, slot: number, characterId: string | null, variation: typeof breathingVariations[number]): Promise<AnimatorAnimation> {
   const poseProject = makePoseProject(source, pose)
-  if (!poseProject.parts.some((part) => /tronco|torso|peito|chest/i.test(part.name))) throw new Error(`A pose ${pose.name} não possui uma peça de tronco identificável.`)
+  const torso = poseProject.parts.find((part) => /tronco|torso|peito|chest/i.test(part.name))
+  if (!torso) throw new Error(`A pose ${pose.name} não possui uma peça de tronco identificável.`)
   const inhaleRaw = applyCharacterBodyShape(poseProject, {
     ...defaultCharacterBodyDimensions,
     torsoWidth: variation.torsoWidth,
     torsoHeight: variation.torsoHeight,
     balance: 0
   })
+  // Respiração deve animar apenas a metade superior. Keep leg branches anchored
+  // to the hips, while explicitly retaining a visible head/shoulder follow-through.
+  const lowerRoots = poseProject.joints.filter((joint) => joint.fixed && joint.parentPartId === torso.id).map((joint) => poseProject.parts.find((part) => part.id === joint.childPartId)).filter((part): part is PosePart => Boolean(part && (/(coxa|perna|canela|panturrilha|joelho|thigh|shin|calf)/i.test(part.name) || part.y + part.height / 2 > torso.y + torso.height * .8)))
+  const lowerIds = new Set(lowerRoots.map((part) => part.id))
+  let changed = true
+  while (changed) {
+    changed = false
+    for (const joint of poseProject.joints) if (joint.fixed && lowerIds.has(joint.parentPartId) && !lowerIds.has(joint.childPartId)) { lowerIds.add(joint.childPartId); changed = true }
+  }
+  const expandedTorso = inhaleRaw.parts.find((part) => part.id === torso.id)!
+  const breathHeight = Math.max(0, expandedTorso.height - torso.height)
+  const inhaleParts = inhaleRaw.parts.map((part) => {
+    const original = poseProject.parts.find((candidate) => candidate.id === part.id)!
+    if (lowerIds.has(part.id)) return original
+    if (/cabe[çc]a|head/i.test(part.name)) return { ...part, y: original.y + Math.min(0, expandedTorso.y - torso.y) }
+    if (/bra[cç]o|arm/i.test(part.name)) return { ...part, y: original.y - breathHeight * .25 }
+    return part
+  })
+  const inhaleProject = { ...inhaleRaw, parts: inhaleParts }
   const canvasWidth = Math.max(poseProject.width, inhaleRaw.width)
   const canvasHeight = Math.max(poseProject.height, inhaleRaw.height)
   const base = centerProjectOnCanvas(poseProject, canvasWidth, canvasHeight)
-  const inhale = centerProjectOnCanvas(inhaleRaw, canvasWidth, canvasHeight)
+  const inhale = centerProjectOnCanvas(inhaleProject, canvasWidth, canvasHeight)
   const makeFrame = async (project: FabricatorProject, durationMs: number): Promise<AnimatorFrame> => {
     const transforms = transformsFromProject(project)
     return { id: crypto.randomUUID(), durationMs, transforms, joints: structuredClone(project.joints), thumbnailDataUrl: await renderThumbnail(base, transforms) }
@@ -644,11 +664,19 @@ export function AnimatorWorkspace() {
     if (!source || modelSlot === null || breathingSaving || saving) return
     setBreathingSaving(true); setError('')
     const createdSlots: number[] = []
+    let previousBreathing: AnimatorAnimation[] = []
+    let replacementStarted = false
     try {
-      const [poseSummaries, existing] = await Promise.all([
+      const [poseSummaries, summariesBefore] = await Promise.all([
         window.desktop.listFabricatorPoseSlots(modelSlot),
         window.desktop.listAnimatorAnimations(modelSlot)
       ])
+      const oldBreathing = await Promise.all(summariesBefore.filter((item) => item.name.startsWith('Respiração ·')).map(async (item) => {
+        const saved = await window.desktop.loadAnimatorAnimation(modelSlot, item.slot)
+        if (!saved) throw new Error(`Não consegui ler a animação de respiração no slot ${item.slot}; não alterei nenhum slot.`)
+        return saved
+      }))
+      previousBreathing = oldBreathing
       const poses = await Promise.all(poseSummaries.map(async (summary) => {
         if (!summary) return null
         const pose = await window.desktop.loadFabricatorPose(modelSlot, summary.slot)
@@ -657,7 +685,8 @@ export function AnimatorWorkspace() {
       const standing = poses.find((entry) => entry?.category.toLocaleLowerCase('pt-BR').includes('parad'))
       const sitting = poses.find((entry) => entry?.category.toLocaleLowerCase('pt-BR').includes('sentad'))
       if (!standing || !sitting) throw new Error('Salve pelo menos uma pose “Parado” e uma “Sentado” em Poses Dev para criar as variações.')
-      const occupied = new Set(existing.map((item) => item.slot))
+      const replaceable = new Set(oldBreathing.map((item) => item.slot))
+      const occupied = new Set(summariesBefore.filter((item) => !replaceable.has(item.slot)).map((item) => item.slot))
       const freeSlots = Array.from({ length: SLOT_COUNT }, (_, index) => index + 1).filter((slot) => !occupied.has(slot))
       const needed = breathingVariations.length * 2
       if (freeSlots.length < needed) throw new Error(`São necessários ${needed} slots livres; este modelo tem ${freeSlots.length}. Libere slots sem animação para continuar.`)
@@ -665,8 +694,10 @@ export function AnimatorWorkspace() {
         ...breathingVariations.map((variation) => ({ pose: standing.pose, variation })),
         ...breathingVariations.map((variation) => ({ pose: sitting.pose, variation }))
       ]
-      for (const [index, plan] of plans.entries()) {
-        const animation = await makeBreathingAnimation(source, plan.pose, freeSlots[index], characterId || null, plan.variation)
+      const newAnimations = await Promise.all(plans.map((plan, index) => makeBreathingAnimation(source, plan.pose, freeSlots[index], characterId || null, plan.variation)))
+      replacementStarted = true
+      for (const old of oldBreathing) await window.desktop.deleteAnimatorAnimation(modelSlot, old.slot)
+      for (const animation of newAnimations) {
         const assets: AnimatorAnimationAsset[] = animation.parts.map((part) => ({ id: part.id, dataUrl: part.dataUrl }))
         await window.desktop.saveAnimatorAnimation(modelSlot, animation.slot, serializeAnimation(animation), assets)
         createdSlots.push(animation.slot)
@@ -678,6 +709,12 @@ export function AnimatorWorkspace() {
     } catch (reason) {
       // This batch owns only the empty slots reserved above; roll back its partial writes.
       await Promise.all(createdSlots.map((slot) => window.desktop.deleteAnimatorAnimation(modelSlot, slot).catch(() => undefined)))
+      // If a write failed after replacement began, restore the old breathing set.
+      if (replacementStarted) for (const old of previousBreathing) {
+        const assets: AnimatorAnimationAsset[] = old.parts.map((part) => ({ id: part.id, dataUrl: part.dataUrl }))
+        await window.desktop.saveAnimatorAnimation(modelSlot, old.slot, serializeAnimation(old), assets).catch(() => undefined)
+      }
+      if (replacementStarted) setSummaries(await window.desktop.listAnimatorAnimations(modelSlot).catch(() => summaries))
       setError(reason instanceof Error ? reason.message : 'Não foi possível criar as animações de respiração.')
     } finally { setBreathingSaving(false) }
   }
@@ -1076,7 +1113,7 @@ export function AnimatorWorkspace() {
       {animation && <><button className="pose-button secondary" onClick={renameAnimation} disabled={saving} type="button">Renomear</button><button className="pose-button secondary" onClick={() => setNameDialog({ mode: 'duplicate', value: `${animation.name} — cópia` })} disabled={saving} type="button">Duplicar</button><button className="pose-button danger" onClick={() => void deleteAnimation()} disabled={saving} type="button"><Icon name="trash" /></button><button className="pose-button primary" onClick={() => void saveAnimation()} disabled={saving} type="button"><Icon name="check" />{saving ? 'Salvando…' : 'Salvar animação'}</button></>}
       <span className={`pose-save-state${dirtyFrame ? ' pending' : ''}`}><i />{saveMessage || (animation ? 'Animação aberta' : 'Biblioteca vazia')}</span>
     </header>
-    {breathingDialog && <div className="animator-dialog-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !breathingSaving) setBreathingDialog(false) }}><section className="animator-breathing-dialog" role="dialog" aria-modal="true" aria-labelledby="animator-breathing-title"><header><span><strong id="animator-breathing-title">Animações de respiração</strong><small>Cria quatro estilos para cada pose, sem substituir os slots existentes.</small></span><button className="pose-icon-button" onClick={() => setBreathingDialog(false)} disabled={breathingSaving} type="button" aria-label="Fechar">×</button></header><div className="animator-breathing-groups">{(['Parado', 'Sentado'] as const).map((category) => <article key={category}><strong>{category}</strong><div>{breathingVariations.map((variation, index) => <div className="animator-breathing-variation" key={variation.key}><span><b>{index + 1}</b>{variation.name}</span><small>{(variation.cycleMs / 1000).toFixed(1)} s · loop suave</small></div>)}</div></article>)}</div><p>As oito animações serão salvas nos próximos slots livres deste modelo. O corpo inspira e expira com uma expansão sutil do tronco, acompanhando as juntas do rig.</p><footer><button className="pose-button secondary" onClick={() => setBreathingDialog(false)} disabled={breathingSaving} type="button">Cancelar</button><button className="pose-button primary" onClick={() => void createBreathingSet()} disabled={breathingSaving || loading || !source} type="button"><Icon name={breathingSaving ? 'sparkles' : 'check'} />{breathingSaving ? 'Criando…' : 'Criar 8 animações'}</button></footer></section></div>}
+    {breathingDialog && <div className="animator-dialog-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !breathingSaving) setBreathingDialog(false) }}><section className="animator-breathing-dialog" role="dialog" aria-modal="true" aria-labelledby="animator-breathing-title"><header><span><strong id="animator-breathing-title">Animações de respiração</strong><small>Quatro estilos para cada pose. Substitui somente as respirações anteriores.</small></span><button className="pose-icon-button" onClick={() => setBreathingDialog(false)} disabled={breathingSaving} type="button" aria-label="Fechar">×</button></header><div className="animator-breathing-groups">{(['Parado', 'Sentado'] as const).map((category) => <article key={category}><strong>{category}</strong><div>{breathingVariations.map((variation, index) => <div className="animator-breathing-variation" key={variation.key}><span><b>{index + 1}</b>{variation.name}</span><small>{(variation.cycleMs / 1000).toFixed(1)} s · loop suave</small></div>)}</div></article>)}</div><p>O movimento anima o tronco, os braços e um leve balanço da cabeça. Quadris e pernas ficam ancorados; sua animação manual e outros slots são preservados.</p><footer><button className="pose-button secondary" onClick={() => setBreathingDialog(false)} disabled={breathingSaving} type="button">Cancelar</button><button className="pose-button primary" onClick={() => void createBreathingSet()} disabled={breathingSaving || loading || !source} type="button"><Icon name={breathingSaving ? 'sparkles' : 'check'} />{breathingSaving ? 'Atualizando…' : 'Substituir respirações'}</button></footer></section></div>}
     {nameDialog && <div className="animator-dialog-backdrop"><form className="animator-name-dialog" onSubmit={submitNameDialog} role="dialog" aria-modal="true" aria-labelledby="animator-name-title"><strong id="animator-name-title">{nameDialog.mode === 'rename' ? 'Renomear animação' : 'Duplicar animação'}</strong><input autoFocus maxLength={80} value={nameDialog.value} onChange={(event) => setNameDialog((current) => current ? { ...current, value: event.target.value } : current)} aria-label="Nome da animação" /><div><button className="pose-button secondary" onClick={() => setNameDialog(null)} type="button">Cancelar</button><button className="pose-button primary" disabled={!nameDialog.value.trim() || saving} type="submit">{nameDialog.mode === 'rename' ? 'Renomear' : 'Duplicar'}</button></div></form></div>}
     {error && <div className="animator-error" role="alert"><span>{error}</span><button onClick={() => setError('')} type="button">Fechar</button></div>}
     {draft && !animation && <div className="pose-recovery"><span><strong>Rascunho de animação recuperável</strong><small>{draft.animation.name} · {draft.animation.frames.length} frames</small></span><div><button onClick={() => { void window.desktop.deleteAnimatorDraft(modelSlot!).then(() => setDraft(null)) }} type="button">Descartar</button><button className="pose-recover-button" onClick={() => {
