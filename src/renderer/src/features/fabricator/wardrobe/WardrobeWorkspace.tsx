@@ -57,7 +57,7 @@ function rebindComponents(components: WardrobeComponent[], reference: Fabricator
     if (!bone) return component
     const expected = bindWardrobeComponent(component, bone)
     const current = component.binding
-    if (current?.boneId === expected.boneId && Math.abs((current.referenceX ?? Number.NaN) - (expected.referenceX ?? Number.NaN)) < 0.00001 && Math.abs((current.referenceY ?? Number.NaN) - (expected.referenceY ?? Number.NaN)) < 0.00001 && Math.abs(current.localCenterX - expected.localCenterX) < 0.00001 && Math.abs(current.localCenterY - expected.localCenterY) < 0.00001 && Math.abs(current.widthRatio - expected.widthRatio) < 0.00001 && Math.abs(current.heightRatio - expected.heightRatio) < 0.00001 && Math.abs(current.relativeRotation - expected.relativeRotation) < 0.00001) return component
+    if (current?.boneId === expected.boneId && Math.abs(current.localCenterX - expected.localCenterX) < 0.00001 && Math.abs(current.localCenterY - expected.localCenterY) < 0.00001 && Math.abs(current.widthRatio - expected.widthRatio) < 0.00001 && Math.abs(current.heightRatio - expected.heightRatio) < 0.00001 && Math.abs(current.relativeRotation - expected.relativeRotation) < 0.00001) return component
     changed = true
     return { ...component, binding: expected }
   })

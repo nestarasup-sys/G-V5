@@ -24,8 +24,6 @@ export function bindWardrobeComponent(component: WardrobeComponent, bone: ModelP
   return {
     version: 1,
     boneId: bone.id,
-    referenceX: frame.x,
-    referenceY: frame.y,
     boneWidth: frame.width,
     boneHeight: frame.height,
     boneRotation: frame.rotation,
@@ -61,21 +59,7 @@ export function mapWardrobeComponentToPose(
   kneeOverlap = 0,
   edgePadding = 0
 ): WardrobePoseTransform {
-  const storedBinding = component.binding?.boneId === sourceBone.id ? component.binding : null
-  const frame = referenceFrame(sourceBone)
-  // Bindings written before the source-frame coordinates were recorded can
-  // silently drift when a model part is resized or moved in Model Dev. Rebuild
-  // those bindings from the saved garment geometry so Customizer and the
-  // wardrobe editor agree on the current model.
-  const bindingMatchesSource = storedBinding
-    && storedBinding.referenceX !== undefined
-    && storedBinding.referenceY !== undefined
-    && Math.abs(storedBinding.referenceX - frame.x) < 0.01
-    && Math.abs(storedBinding.referenceY - frame.y) < 0.01
-    && Math.abs(storedBinding.boneWidth - frame.width) < 0.01
-    && Math.abs(storedBinding.boneHeight - frame.height) < 0.01
-    && Math.abs(storedBinding.boneRotation - frame.rotation) < 0.01
-  const binding = bindingMatchesSource ? storedBinding : bindWardrobeComponent(component, sourceBone)
+  const binding = component.binding?.boneId === sourceBone.id ? component.binding : null
   if (binding) return mapBoundWardrobeComponentToPose(binding, poseBone, kneeOverlap, edgePadding)
   const source = sourceBone.sourceTransform
   const sourceWidth = Math.max(1, source?.width ?? sourceBone.width)
