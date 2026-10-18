@@ -10,6 +10,7 @@ const audits = Object.freeze([
   { id: 'video-audio', file: 'scripts/audit-video-audio.mjs', mode: 'node', suite: 'fast', data: 'synthetic', requires: ['typescript'] },
   { id: 'video-media', file: 'scripts/audit-video-media.mjs', mode: 'node', suite: 'fast', data: 'synthetic', requires: ['typescript'] },
   { id: 'video-library', file: 'scripts/audit-video-library.mjs', mode: 'node', suite: 'fast', data: 'synthetic', requires: ['typescript'], writes: 'out/audit-video-library/<uuid>' },
+  { id: 'wardrobe-flow', file: 'scripts/audit-wardrobe-flow.mjs', mode: 'node', suite: 'fast', data: 'synthetic', requires: ['typescript'], note: 'Fabricator source -> pose -> Customizer character-only placement contracts' },
   { id: 'studio-isolation', file: 'scripts/audit-studio-isolation.cjs', mode: 'electron', suite: 'isolation', data: 'synthetic', requires: ['build', 'electron'], output: 'out/dev-ai/runs/<run-id>/studio-isolation' },
   { id: 'studio-ipc-real', file: 'scripts/audit-studio-ipc.cjs', mode: 'electron-controller', suite: 'ipc', data: 'synthetic', requires: ['build', 'electron'], output: 'out/dev-ai/runs/<run-id>/studio-ipc-real' },
   { id: 'character-transitions-ui', file: 'scripts/audit-character-transitions-ui.cjs', mode: 'electron', suite: 'manual', data: 'synthetic', requires: ['build', 'electron'], note: 'UI fixture; legacy output under out/' },
