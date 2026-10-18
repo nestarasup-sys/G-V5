@@ -936,14 +936,22 @@ function isVideoTimelineDocument(value: unknown, elements: StudioDocument['eleme
   const timeline = value as Partial<VideoTimelineDocument>
   const characterIds = new Set(elements.filter((element) => element?.kind === 'character').map((element) => element.id))
   const textIds = new Set(elements.filter((element) => element?.kind === 'speech' || element?.kind === 'thought').map((element) => element.id))
+  const validState = (state: VideoTimelineDocument['characterKeys'][number]['state'], id: string) => Boolean(state
+    && state.element?.kind === 'character' && state.element.id === id
+    && typeof state.element.characterId === 'string' && typeof state.element.assetId === 'string'
+    && [state.element.x, state.element.y, state.element.width, state.element.height, state.element.rotation, state.element.zIndex].every(Number.isFinite)
+    && isStudioFaceTransforms(state.element.faceTransforms) && isStudioExpressionEffects(state.element.activeExpressionEffects)
+    && typeof state.imageDataUrl === 'string' && state.imageDataUrl.startsWith('data:image/png;base64,') && state.imageDataUrl.length <= 70_000_000)
   return timeline.schemaVersion === 1 && timeline.frameRate === 60
     && typeof timeline.playing === 'boolean'
+    && (timeline.trackSettings === undefined || Object.keys(timeline.trackSettings).length <= 1002 && Object.entries(timeline.trackSettings).every(([id, settings]) => (characterIds.has(id) || id === 'speech' || id === 'thought') && settings && (settings.visible === undefined || typeof settings.visible === 'boolean') && (settings.locked === undefined || typeof settings.locked === 'boolean') && (settings.collapsed === undefined || typeof settings.collapsed === 'boolean') && (settings.order === undefined || Number.isInteger(settings.order) && settings.order >= 0 && settings.order <= 1002) && (settings.label === undefined || typeof settings.label === 'string' && settings.label.length <= 80)))
     && Number.isInteger(timeline.durationFrames) && timeline.durationFrames! >= 60 && timeline.durationFrames! <= 60 * 60 * 60 * 24
     && Number.isInteger(timeline.playheadFrame) && timeline.playheadFrame! >= 0 && timeline.playheadFrame! <= timeline.durationFrames!
     && Array.isArray(timeline.characterKeys) && timeline.characterKeys.length <= 100_000
-    && timeline.characterKeys.every((key) => Boolean(key && typeof key.id === 'string' && characterIds.has(key.elementId) && Number.isInteger(key.frame) && key.frame >= 0 && key.frame <= timeline.durationFrames! && (key.poseSlot === null || Number.isInteger(key.poseSlot)) && (key.expressionCollectionId === null || typeof key.expressionCollectionId === 'string') && (key.expressionPresetId === null || typeof key.expressionPresetId === 'string') && ['idle', 'blink', 'talk'].includes(key.faceMode)))
+    && (timeline.characterBases === undefined || Object.entries(timeline.characterBases).every(([id, state]) => characterIds.has(id) && validState(state, id)))
+    && timeline.characterKeys.every((key) => Boolean(key && typeof key.id === 'string' && characterIds.has(key.elementId) && Number.isInteger(key.frame) && key.frame >= 0 && key.frame <= timeline.durationFrames! && (key.poseSlot === null || Number.isInteger(key.poseSlot)) && (key.expressionCollectionId === null || typeof key.expressionCollectionId === 'string') && (key.expressionPresetId === null || typeof key.expressionPresetId === 'string') && ['idle', 'blink', 'talk'].includes(key.faceMode) && (key.state === undefined || validState(key.state, key.elementId))))
     && Array.isArray(timeline.textClips) && timeline.textClips.length <= 100_000
-    && timeline.textClips.every((clip) => Boolean(clip && typeof clip.id === 'string' && textIds.has(clip.elementId) && (clip.kind === 'speech' || clip.kind === 'thought') && Number.isInteger(clip.startFrame) && Number.isInteger(clip.endFrame) && clip.startFrame >= 0 && clip.endFrame > clip.startFrame && clip.endFrame <= timeline.durationFrames!))
+    && timeline.textClips.every((clip) => Boolean(clip && typeof clip.id === 'string' && textIds.has(clip.elementId) && (clip.kind === 'speech' || clip.kind === 'thought') && Number.isInteger(clip.startFrame) && Number.isInteger(clip.endFrame) && clip.startFrame >= 0 && clip.endFrame > clip.startFrame && clip.endFrame <= timeline.durationFrames! && (clip.state === undefined || clip.state.id === clip.elementId && clip.state.kind === clip.kind && typeof clip.state.text === 'string' && [clip.state.x, clip.state.y, clip.state.width, clip.state.height, clip.state.rotation, clip.state.zIndex].every(Number.isFinite))))
     && Array.isArray(timeline.saveMarkers) && timeline.saveMarkers.length <= 100_000
     && timeline.saveMarkers.every((marker) => Boolean(marker && typeof marker.id === 'string' && Number.isInteger(marker.frame) && marker.frame >= 0 && marker.frame <= timeline.durationFrames! && Array.isArray(marker.affectedTrackIds) && marker.affectedTrackIds.every((id) => typeof id === 'string')))
 }
@@ -994,6 +1002,20 @@ async function readStudio(id: string, workspace: StudioWorkspaceStorage = 'studi
       const data = await readFile(join(folder, 'assets', categoryFolder, `${asset.id}.${extension}`))
       return { ...asset, dataUrl: `data:${asset.mimeType};base64,${data.toString('base64')}` }
     }))
+    if (workspace === 'video' && normalized.videoTimeline) {
+      const restoreImage = async (state: VideoTimelineDocument['characterKeys'][number]['state']) => {
+        if (!state?.imageDataUrl.startsWith('@video-frame:')) return
+        const hash = state.imageDataUrl.slice('@video-frame:'.length)
+        if (!/^[0-9a-f]{64}$/.test(hash)) throw new Error('Quadro de vídeo inválido.')
+        const bytes = await readFile(join(folder, 'assets', 'video-frames', `${hash}.png`))
+        if (createHash('sha256').update(bytes).digest('hex') !== hash) throw new Error('Quadro de vídeo corrompido.')
+        state.imageDataUrl = `data:image/png;base64,${bytes.toString('base64')}`
+      }
+      await Promise.all([
+        ...Object.values(normalized.videoTimeline.characterBases ?? {}).map(restoreImage),
+        ...normalized.videoTimeline.characterKeys.map((key) => restoreImage(key.state))
+      ])
+    }
     const document = { ...normalized, assets }
     if (!isStudioDocument(document)) throw new Error(`Os dados do Studio ${id} estão inválidos.`)
     return document
@@ -1023,7 +1045,24 @@ async function writeStudio(studio: StudioDocument, workspace: StudioWorkspaceSto
   }
   const temporary = join(folder, 'studio.json.tmp')
   const { assets: _assets, ...metadata } = studio
-  await writeFile(temporary, JSON.stringify({ ...metadata, title: studio.title.trim(), assets: assetManifest }, null, 2), 'utf8')
+  const savedMetadata = { ...metadata, videoTimeline: studio.videoTimeline ? structuredClone(studio.videoTimeline) : undefined }
+  if (workspace === 'video' && savedMetadata.videoTimeline) {
+    const frameFolder = join(folder, 'assets', 'video-frames')
+    await mkdir(frameFolder, { recursive: true })
+    const storeImage = async (state: VideoTimelineDocument['characterKeys'][number]['state']) => {
+      if (!state) return
+      const bytes = Buffer.from(state.imageDataUrl.slice(state.imageDataUrl.indexOf(',') + 1), 'base64')
+      const hash = createHash('sha256').update(bytes).digest('hex')
+      const path = join(frameFolder, `${hash}.png`)
+      try { await access(path) } catch { await writeFile(path, bytes) }
+      state.imageDataUrl = `@video-frame:${hash}`
+    }
+    await Promise.all([
+      ...Object.values(savedMetadata.videoTimeline.characterBases ?? {}).map(storeImage),
+      ...savedMetadata.videoTimeline.characterKeys.map((key) => storeImage(key.state))
+    ])
+  }
+  await writeFile(temporary, JSON.stringify({ ...savedMetadata, title: studio.title.trim(), assets: assetManifest }, null, 2), 'utf8')
   await rename(temporary, join(folder, 'studio.json'))
 }
 
