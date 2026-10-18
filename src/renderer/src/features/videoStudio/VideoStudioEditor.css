@@ -1,4 +1,20 @@
 /* Video Studio owns these styles; normal Studio uses ui/styles.css. */
+.video-audio-popover { width:280px;max-width:calc(100vw - 16px);max-height:calc(100vh - 16px);position:fixed;z-index:1300;overflow:auto;padding:12px;border:1px solid #59637b;border-radius:9px;background:#1b2030;color:#e8eaf2;box-shadow:0 12px 36px #05070d80;font-size:12px; }
+.video-audio-popover header { display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px; }
+.video-audio-popover button { min-height:27px;display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:3px 8px;border:1px solid #46516a;border-radius:5px;background:#252c3e;color:#e8eaf2;font:inherit;cursor:pointer; }
+.video-audio-popover button:disabled,.video-audio-popover input:disabled { opacity:.4;cursor:default; }
+.video-audio-popover button[aria-pressed="true"] { border-color:#be778c;background:#412936;color:#ffd2df; }
+.video-audio-popover header button { width:27px;padding:0;font-size:19px; }
+.video-audio-level { display:grid;gap:8px; }
+.video-audio-level>div { display:flex;align-items:center;justify-content:space-between;gap:8px; }
+.video-audio-level input { width:100%;margin:0;accent-color:#8aa4e6; }
+.video-audio-level output { color:#bfccec;font-variant-numeric:tabular-nums; }
+.video-audio-popover section { display:grid;gap:8px;margin-top:14px;padding-top:12px;border-top:1px solid #3b4356; }
+.video-audio-popover small { overflow:hidden;color:#a7b4cf;text-overflow:ellipsis;white-space:nowrap; }
+.video-audio-popover p { margin:14px 0 0;color:#a7b4cf;font-size:11px;line-height:1.4; }
+@media (max-width:1600px) {
+  .video-timeline-heading>small,.video-timeline-heading .video-play-button>span { display:none; }
+}
 .video-studio-page { min-width:0;min-height:0;flex:1;display:flex;flex-direction:column;overflow:auto;padding:22px 28px 30px;background:#f5f3f4; }
 .video-studio-page-header { flex:0 0 auto;display:flex;flex-direction:column;align-items:center;gap:4px;margin:2px 0 16px; }
 .video-studio-page-header h1 { margin:0;color:#342e36;font:800 22px/1.25 Manrope,sans-serif;letter-spacing:-.45px; }

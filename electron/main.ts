@@ -14,6 +14,7 @@ import type { StudioAsset, StudioDocument, VideoTimelineDocument } from '../src/
 import { applyModelHeadShape } from '../src/shared/headShape'
 import { isStudioExpressionEffects, isStudioFaceTransforms } from '../src/shared/studio'
 import { isValidVideoMediaClip } from '../src/shared/videoMedia'
+import { isValidVideoAudioSettings } from '../src/shared/videoAudio'
 import { legacyStandardExpressionEffects } from '../src/shared/legacyExpressionEffects'
 
 protocol.registerSchemesAsPrivileged([{ scheme: 'gacha-video', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true } }])
@@ -949,6 +950,7 @@ function isVideoTimelineDocument(value: unknown, elements: StudioDocument['eleme
     && typeof state.imageDataUrl === 'string' && state.imageDataUrl.startsWith('data:image/png;base64,') && state.imageDataUrl.length <= 70_000_000)
   return timeline.schemaVersion === 1 && timeline.frameRate === 60
     && typeof timeline.playing === 'boolean'
+    && isValidVideoAudioSettings(timeline.videoAudio)
     && (timeline.trackSettings === undefined || Object.keys(timeline.trackSettings).length <= 1002 && Object.entries(timeline.trackSettings).every(([id, settings]) => (characterIds.has(id) || id === 'speech' || id === 'thought' || id === 'video') && settings && (settings.visible === undefined || typeof settings.visible === 'boolean') && (settings.locked === undefined || typeof settings.locked === 'boolean') && (settings.collapsed === undefined || typeof settings.collapsed === 'boolean') && (settings.order === undefined || Number.isInteger(settings.order) && settings.order >= 0 && settings.order <= 1002) && (settings.label === undefined || typeof settings.label === 'string' && settings.label.length <= 80)))
     && Number.isInteger(timeline.durationFrames) && timeline.durationFrames! >= 60 && timeline.durationFrames! <= 60 * 60 * 60 * 24
     && Number.isInteger(timeline.playheadFrame) && timeline.playheadFrame! >= 0 && timeline.playheadFrame! <= timeline.durationFrames!

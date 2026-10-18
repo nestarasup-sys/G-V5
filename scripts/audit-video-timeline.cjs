@@ -37,6 +37,46 @@ async function drag(window, selector, delta, fraction = 0.5) {
   await pause(50)
 }
 
+async function auditAudio(window) {
+  await drag(window, '.video-play-button', 0)
+  await until(window, "(() => { const v = document.querySelector('video'); return v && !v.paused && !v.muted })()")
+  let audible = false
+  for (let attempt = 0; attempt < 60; attempt += 1) {
+    if (window.webContents.isCurrentlyAudible()) { audible = true; break }
+    await pause(50)
+  }
+  assert.equal(audible, true, 'The MP4 soundtrack must reach Chromium audio output')
+  window.webContents.setAudioMuted(true) // Output detection succeeded; keep the remaining fixture checks quiet.
+  await drag(window, '.video-play-button', 0)
+  await until(window, "document.querySelector('video').paused && document.querySelector('video').muted")
+  await drag(window, '.video-master-span', 0)
+  await window.webContents.executeJavaScript("document.querySelector('button[aria-label=\"Áudio dos vídeos\"]').click()")
+  const setRange = async (label, value) => window.webContents.executeJavaScript(`(() => {
+    const input = document.querySelector('input[aria-label=' + ${JSON.stringify(JSON.stringify(label))} + ']')
+    input.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }))
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, ${value})
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    input.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }))
+  })()`)
+  await setRange('Volume Projeto', 50)
+  await until(window, 'window.desktop.auditDocument().then(d => d.videoTimeline.videoAudio?.volume === 0.5)')
+  await setRange('Volume Clipe selecionado', 40)
+  await until(window, 'window.desktop.auditDocument().then(d => d.videoTimeline.videoClips[0].audio?.volume === 0.4)')
+  await window.webContents.executeJavaScript('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
+  await pause(150)
+  await writeFile(join(output, 'audio-controls.png'), (await window.webContents.capturePage()).toPNG())
+  await drag(window, '.video-play-button', 0)
+  await until(window, "(() => { const v = document.querySelector('video'); return !v.paused && !v.muted && Math.abs(v.volume - 0.2) < 0.001 })()")
+  await window.webContents.executeJavaScript("document.querySelector('button[aria-label=\"Áudio dos vídeos\"]').click()")
+  await window.webContents.executeJavaScript("document.querySelector('[aria-label=\"Silenciar Clipe selecionado\"]').click()")
+  await until(window, "!document.querySelector('video').paused && document.querySelector('video').muted")
+  await window.webContents.executeJavaScript("document.querySelector('[aria-label=\"Ativar Clipe selecionado\"]').click()")
+  await until(window, "!document.querySelector('video').paused && !document.querySelector('video').muted")
+  await drag(window, '.video-play-button', 0)
+  await until(window, "document.querySelector('video').paused && document.querySelector('video').muted")
+  return { audible, masterVolume: 0.5, clipVolume: 0.4, effectiveVolume: 0.2, pauseSilent: true }
+}
+
 async function run() {
   if (!process.argv[2]) throw new Error('Pass a 20-second MP4 fixture path.')
   const bytes = await readFile(resolve(process.argv[2]))
@@ -77,6 +117,8 @@ async function run() {
   await pause(200)
   await writeFile(join(output, 'layers.png'), (await window.webContents.capturePage()).toPNG())
 
+  const audio = process.argv.includes('--audio') ? await auditAudio(window) : undefined
+
   await drag(window, '.video-master-span', 74)
   await until(window, 'window.desktop.auditDocument().then(d => d.videoTimeline.videoClips[0].startFrame === 120)')
   await drag(window, '.video-master-span .video-clip-edge-start', 37)
@@ -89,6 +131,7 @@ async function run() {
   await window.webContents.executeJavaScript("document.querySelector('.video-split-button').click()")
   const parts = await until(window, 'window.desktop.auditDocument().then(d => d.videoTimeline.videoClips.length === 2 && d.videoTimeline.videoClips)')
   assert.equal(parts[0].sourceEndFrame, parts[1].sourceStartFrame)
+  if (audio) assert.deepEqual(parts.map((clip) => clip.audio), [{ volume: 0.4, muted: false }, { volume: 0.4, muted: false }], 'Split clips inherit their audio settings')
   await window.webContents.executeJavaScript("document.querySelector('[title=\"Duplicar vídeo selecionado\"]').click()")
   await until(window, 'window.desktop.auditDocument().then(d => d.videoTimeline.videoClips.length === 3)')
   window.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Backspace' })
@@ -103,7 +146,16 @@ async function run() {
   await drag(window, '.video-master-span', 74)
   await pause(750)
   assert.equal(await window.webContents.executeJavaScript('window.desktop.auditDocument().then(d => JSON.stringify(d.videoTimeline.videoClips))'), beforeLock)
-  await writeFile(join(output, 'result.json'), JSON.stringify({ layers, trimmed, parts, gestures: ['move', 'trim-start', 'trim-end', 'split', 'duplicate', 'Backspace', 'undo', 'lock'] }, null, 2))
+  if (audio) {
+    await window.webContents.executeJavaScript("window.auditMedia = document.querySelector('video'); document.querySelector('.video-studio-exit-action').click()")
+    await until(window, "!document.querySelector('video') && window.auditMedia.paused && window.auditMedia.muted")
+    await until(window, "Boolean(document.querySelector('.video-studio-card-open'))")
+    await window.webContents.executeJavaScript("document.querySelector('.video-studio-card-open').click()")
+    await until(window, "Boolean(document.querySelector('.video-timeline'))")
+    await until(window, 'window.desktop.auditDocument().then(d => d.videoTimeline.videoAudio?.volume === 0.5 && d.videoTimeline.videoClips.every(c => c.audio?.volume === 0.4))')
+  }
+  await writeFile(join(output, 'result.json'), JSON.stringify({ layers, audio, trimmed, parts, gestures: ['move', 'trim-start', 'trim-end', 'split', 'duplicate', 'Backspace', 'undo', 'lock'] }, null, 2))
+  if (audio) console.log('Video audio renderer audit passed: audible soundtrack, pause/mute, per-project and per-clip gain, split inheritance, exit cleanup, and reopening.')
   console.log('Video timeline audit passed: actual video decoding, size/layers, native pointer gestures, split, duplication, selected deletion, undo, and locking.')
   window.destroy()
   app.exit(0)

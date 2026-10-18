@@ -162,6 +162,8 @@ export type VideoTimelineDocument = {
   videoAssets?: VideoStudioAsset[]
   /** Video clips use source duration in frames and are placed on the top timeline lane. */
   videoClips?: VideoMediaClip[]
+  /** Project-wide video sound mix, restored with the timeline. */
+  videoAudio?: VideoAudioSettings
   characterKeys: Array<{ id: string; elementId: string; frame: number; poseSlot: number | null; expressionCollectionId: string | null; expressionPresetId: string | null; faceMode: StudioFaceMode; state?: VideoCharacterState }>
   textClips: Array<{ id: string; elementId: string; kind: 'speech' | 'thought'; startFrame: number; endFrame: number; state?: StudioElement }>
   saveMarkers: Array<{ id: string; frame: number; affectedTrackIds: string[] }>
@@ -175,7 +177,11 @@ export type VideoMediaClip = {
   endFrame: number
   sourceStartFrame: number
   sourceEndFrame: number
+  /** Absent in older projects: original sound at full volume. */
+  audio?: VideoAudioSettings
 }
+
+export type VideoAudioSettings = { volume: number; muted: boolean }
 
 export type VideoStudioAsset = {
   id: string

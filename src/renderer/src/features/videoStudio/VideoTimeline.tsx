@@ -1,9 +1,10 @@
 import { useEffect, useEffectEvent, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from 'react'
+import { VideoAudioControls } from './VideoAudioControls'
 import { Icon } from '../../ui/components/Icon'
 import { videoCharacterTrackColor } from '../../../../shared/studio'
 import type { StudioDocument, VideoTimelineDocument } from '../../../../shared/studio'
 import { editVideoMediaClip, type VideoClipEditMode } from '../../../../shared/videoMedia'
-import type { VideoMediaClip } from '../../../../shared/studio'
+import type { VideoAudioSettings, VideoMediaClip } from '../../../../shared/studio'
 
 const DEFAULT_DURATION_FRAMES = 10 * 60 * 60
 const DEFAULT_TIMELINE: VideoTimelineDocument = {
@@ -42,7 +43,7 @@ function characterSegmentAtFrame(timeline: VideoTimelineDocument, elementId: str
   return { startFrame: precedingGap?.endFrame ?? stateStart, endFrame: followingGap?.startFrame ?? stateEnd }
 }
 
-export function VideoTimeline({ studio, playheadFrame, playing, height, presetNames, onSeek, onSelectElement, onTogglePlayback, onSaveFrame, onSplitCharacter, onSplitTextClip, onSplitVideoClip, onUpdateTextClip, onUpdateVideoClip, onDuplicateVideoClip, onDeleteTextClip, onDeleteVideoClip, onDeleteTextElement, onDeleteCharacterSegment, onDuplicateTextClip, onMoveCharacterBoundary, onChangeDuration, onResize, onAddText, onAddVideo, onChangeTrackSettings, onMoveCharacterTrack, onSetCharacterPositionsLocked }: {
+export function VideoTimeline({ studio, playheadFrame, playing, height, presetNames, onSeek, onSelectElement, onTogglePlayback, onSaveFrame, onSplitCharacter, onSplitTextClip, onSplitVideoClip, onUpdateTextClip, onUpdateVideoClip, onChangeVideoAudio, onBeginAudioEdit, onDuplicateVideoClip, onDeleteTextClip, onDeleteVideoClip, onDeleteTextElement, onDeleteCharacterSegment, onDuplicateTextClip, onMoveCharacterBoundary, onChangeDuration, onResize, onAddText, onAddVideo, onChangeTrackSettings, onMoveCharacterTrack, onSetCharacterPositionsLocked }: {
   studio: StudioDocument
   playheadFrame: number
   playing: boolean
@@ -56,7 +57,9 @@ export function VideoTimeline({ studio, playheadFrame, playing, height, presetNa
   onSplitTextClip: (clip: { elementId: string; clipId: string; startFrame: number; endFrame: number }, frame: number, rightClipId: string) => void
   onSplitVideoClip: (clipId: string, frame: number, rightClipId: string) => void
   onUpdateTextClip: (clip: TextClip) => void
-  onUpdateVideoClip: (clip: VideoMediaClip) => void
+  onUpdateVideoClip: (clip: VideoMediaClip, record?: boolean) => void
+  onChangeVideoAudio: (settings: VideoAudioSettings, record?: boolean) => void
+  onBeginAudioEdit: () => void
   onDuplicateVideoClip: (clip: VideoMediaClip) => void
   onDeleteTextClip: (id: string) => void
   onDeleteVideoClip: (id: string) => void
@@ -320,6 +323,7 @@ export function VideoTimeline({ studio, playheadFrame, playing, height, presetNa
       <div className="video-timeline-create-actions"><button type="button" onClick={() => onAddText('speech')}>+ Fala</button><button type="button" onClick={() => onAddText('thought')}>+ Pensamento</button><button type="button" onClick={onSaveFrame}>+ Corte</button></div>
       <div className="video-timeline-heading"><strong>{formatTime(playheadFrame)}</strong><span>/ {formatTime(duration)}</span><small>{timeline.characterKeys.length + timeline.textClips.length + (timeline.videoClips?.length ?? 0)} eventos</small><button type="button" className="video-play-button" aria-label={playing ? 'Pausar reprodução' : 'Reproduzir'} onClick={onTogglePlayback}>{playing ? '❚❚' : '▶'}<span>{playing ? 'Pausar' : 'Play'}</span></button><button type="button" className="video-split-button" onClick={splitSelection} disabled={!canSplitSelection} title={selection ? 'Dividir o trecho selecionado na posição do playhead' : 'Selecione um trecho para dividir'}>✂ Dividir</button><button type="button" className={`video-position-lock-button${characterPositionsLocked ? ' active' : ''}`} onClick={() => onSetCharacterPositionsLocked(!characterPositionsLocked)} disabled={!characters.length} aria-pressed={characterPositionsLocked} aria-label={characterPositionsLocked ? 'Destrancar posições dos personagens' : 'Trancar posições dos personagens'} title={characterPositionsLocked ? 'Destrancar posições dos personagens' : 'Trancar posições dos personagens'}><Icon name={characterPositionsLocked ? 'lock' : 'unlock'} /></button><button type="button" className="video-add-video-button" onClick={onAddVideo} disabled={isLocked('video')} title="Importar vídeo para este projeto">+ Vídeo</button>{selectedVideoClip && !isLocked('video') && <button type="button" onClick={() => onDuplicateVideoClip(selectedVideoClip)} disabled={selectedVideoClip.endFrame * 2 - selectedVideoClip.startFrame > duration} title="Duplicar vídeo selecionado">Duplicar</button>}{selection?.kind === 'text' && !isLocked(selectedTextClip?.kind ?? 'speech') && selectedTextClip && <button type="button" onClick={() => onDuplicateTextClip(selectedTextClip)} title="Duplicar trecho selecionado">Duplicar</button>}{canDeleteSelection && <button type="button" className="video-delete-selection-button" onClick={deleteSelection} aria-label="Excluir somente o bloco selecionado" title="Excluir somente o bloco selecionado (Backspace)"><Icon name="trash" /></button>}</div>
       <div className="video-timeline-actions">
+        <VideoAudioControls master={timeline.videoAudio} selectedClip={selectedVideoClip} clipName={timeline.videoAssets?.find((asset) => asset.id === selectedVideoClip?.assetId)?.name} locked={isLocked('video')} onChangeMaster={onChangeVideoAudio} onChangeClip={onUpdateVideoClip} onBeginEdit={onBeginAudioEdit} />
         <button type="button" className={snapEnabled ? 'active' : ''} aria-pressed={snapEnabled} onClick={() => setSnapEnabled((value) => !value)} title="Magnetismo das bordas">⌁ Snap</button>
         <button type="button" className={trackMenuOpen ? 'active' : ''} aria-expanded={trackMenuOpen} onClick={() => setTrackMenuOpen((value) => !value)}>Faixas</button>
         <label className="video-jump-control">Ir para<input aria-label="Ir para segundo da timeline" type="number" min={0} max={Math.floor(duration / 60)} value={Math.floor(playheadFrame / 60)} onChange={(event) => onSeek(Math.min(duration, Math.max(0, Number(event.currentTarget.value) || 0) * 60))} />s</label>

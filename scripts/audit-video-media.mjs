@@ -3,7 +3,10 @@ import { readFile } from 'node:fs/promises'
 import ts from 'typescript'
 
 const source = await readFile(new URL('../src/shared/videoMedia.ts', import.meta.url), 'utf8')
-const compiled = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText
+const audioSource = await readFile(new URL('../src/shared/videoAudio.ts', import.meta.url), 'utf8')
+const audioCompiled = ts.transpileModule(audioSource, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText
+const audioUrl = `data:text/javascript;base64,${Buffer.from(audioCompiled).toString('base64')}`
+const compiled = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText.replace("'./videoAudio'", JSON.stringify(audioUrl))
 const { editVideoMediaClip, isValidVideoMediaClip, splitVideoMediaClip } = await import(`data:text/javascript;base64,${Buffer.from(compiled).toString('base64')}`)
 const clip = { id: 'clip', assetId: 'asset', startFrame: 180, endFrame: 780, sourceStartFrame: 120, sourceEndFrame: 720 }
 const original = JSON.stringify(clip)

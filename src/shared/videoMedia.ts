@@ -1,10 +1,12 @@
 import type { VideoMediaClip } from './studio'
+import { isValidVideoAudioSettings } from './videoAudio'
 
 export type VideoClipEditMode = 'move' | 'start' | 'end'
 const clampFrame = (frame: number, min: number, max: number) => Math.max(min, Math.min(max, Math.round(frame)))
 
 export function isValidVideoMediaClip(clip: VideoMediaClip, sourceDuration: number, timelineDuration: number): boolean {
   return Boolean(clip && typeof clip.id === 'string' && typeof clip.assetId === 'string'
+    && isValidVideoAudioSettings(clip.audio)
     && [clip.startFrame, clip.endFrame, clip.sourceStartFrame, clip.sourceEndFrame].every(Number.isSafeInteger)
     && clip.startFrame >= 0 && clip.endFrame > clip.startFrame && clip.endFrame <= timelineDuration
     && clip.sourceStartFrame >= 0 && clip.sourceEndFrame > clip.sourceStartFrame && clip.sourceEndFrame <= sourceDuration

@@ -4,8 +4,10 @@ import { buildStudioExpressionAppearance, buildStudioExpressionTransforms, resol
 import { Icon } from '../../ui/components/Icon'
 import { CharacterPortrait } from '../../ui/components/CharacterPortrait'
 import { resolveStudioTalkMouthId, videoCharacterTrackColor } from '../../../../shared/studio'
-import type { StudioAsset, StudioDocument, StudioElement, StudioFaceMode, StudioFaceTransform, StudioFaceTransforms, VideoMediaClip, VideoStudioAsset, VideoTimelineDocument } from '../../../../shared/studio'
+import type { StudioAsset, StudioDocument, StudioElement, StudioFaceMode, StudioFaceTransform, StudioFaceTransforms, VideoAudioSettings, VideoMediaClip, VideoStudioAsset, VideoTimelineDocument } from '../../../../shared/studio'
 import { editVideoMediaClip, isValidVideoMediaClip, splitVideoMediaClip as splitMediaClip } from '../../../../shared/videoMedia'
+import { VideoStudioClipPreview } from './VideoClipPreview'
+import { isValidVideoAudioSettings } from '../../../../shared/videoAudio'
 import { VideoTimeline, videoTimelineFor } from './VideoTimeline'
 import { captureVideoCharacter, characterStateAt, restoreVideoTracks, videoCharacterStateEquals } from './characterTrack'
 import type { CustomizerCharacter } from '../../../../shared/customizer'
@@ -220,26 +222,6 @@ function makeCanvasPrint(studio: StudioDocument): Promise<string> {
       } catch (reason) { reject(reason) }
     })()
   })
-}
-
-function VideoStudioClipPreview({ studioId, clip, playheadFrame, playing }: {
-  studioId: string
-  clip: NonNullable<VideoTimelineDocument['videoClips']>[number]
-  playheadFrame: number
-  playing: boolean
-}) {
-  const mediaRef = useRef<HTMLVideoElement>(null)
-  const sourceUrl = `gacha-video://studio/${studioId}/${clip.assetId}`
-  const synchronize = () => {
-    const media = mediaRef.current
-    if (!media || !Number.isFinite(media.duration)) return
-    const target = Math.max(0, (clip.sourceStartFrame + playheadFrame - clip.startFrame) / 60)
-    if (Math.abs(media.currentTime - target) > (playing ? 0.35 : 0.02)) media.currentTime = Math.min(target, Math.max(0, media.duration - 0.001))
-    if (playing) void media.play().catch(() => undefined)
-    else media.pause()
-  }
-  useEffect(synchronize, [clip.id, clip.sourceStartFrame, clip.startFrame, playheadFrame, playing])
-  return <video ref={mediaRef} className="video-studio-video-clip-preview" src={sourceUrl} muted playsInline preload="auto" onLoadedMetadata={synchronize} aria-hidden="true" />
 }
 
 type VideoStudioPersistence = {
@@ -512,6 +494,11 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
     raf = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(raf)
   }, [isVideoWorkspace, videoPlaying, activeStudioId, activeStudio?.videoTimeline?.durationFrames])
+  useEffect(() => {
+    const pauseWhenHidden = () => { if (document.visibilityState === 'hidden') setVideoPlaying(false) }
+    document.addEventListener('visibilitychange', pauseWhenHidden)
+    return () => document.removeEventListener('visibilitychange', pauseWhenHidden)
+  }, [])
   const rememberCharacterInspectorView = (tab: 'editor' | 'custom', customView: 'face' | 'presets' = inspectorCustomView) => {
     if (selectedElement?.kind === 'character') characterInspectorViewRef.current = { tab, customView }
   }
@@ -1263,8 +1250,9 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
     setVideoPlayheadFrame(frame)
   }
 
-  const updateVideoMediaClip = (clip: VideoMediaClip) => {
-    changeScene((studio) => {
+  const updateVideoMediaClip = (clip: VideoMediaClip, record = true) => {
+    const apply = record ? changeScene : patchStudio
+    apply((studio) => {
       const timeline = videoTimelineFor(studio)
       const previous = timeline.videoClips?.find((item) => item.id === clip.id)
       const asset = timeline.videoAssets?.find((item) => item.id === clip.assetId)
@@ -1272,6 +1260,12 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
         || !isValidVideoMediaClip(clip, asset.durationFrames, timeline.durationFrames)) return studio
       return { ...studio, videoTimeline: { ...timeline, videoClips: timeline.videoClips!.map((item) => item.id === clip.id ? clip : item) }, updatedAt: new Date().toISOString() }
     })
+  }
+
+  const updateVideoAudio = (audio: VideoAudioSettings, record = true) => {
+    if (!isValidVideoAudioSettings(audio)) return
+    const apply = record ? changeScene : patchStudio
+    apply((studio) => ({ ...studio, videoTimeline: { ...videoTimelineFor(studio), videoAudio: audio }, updatedAt: new Date().toISOString() }))
   }
 
   const duplicateVideoMediaClip = (selected: VideoMediaClip) => {
@@ -2042,13 +2036,13 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
             {isVideoWorkspace && (() => {
               const timeline = videoTimelineFor(activeStudio)
               return (timeline.videoClips ?? []).filter((item) => item.startFrame <= videoPlayheadFrame && videoPlayheadFrame < item.endFrame)
-                .map((clip) => <VideoStudioClipPreview key={clip.id} studioId={activeStudio.id} clip={clip} playheadFrame={videoPlayheadFrame} playing={videoPlaying} />)
+                .map((clip) => <VideoStudioClipPreview key={clip.id} studioId={activeStudio.id} clip={clip} playheadFrame={videoPlayheadFrame} playing={videoPlaying} masterAudio={timeline.videoAudio} onPlaybackError={setError} />)
             })()}
             {fullView && <button className="video-studio-exit-view" onClick={() => setFullView(false)} type="button">Sair da visualização <kbd>Esc</kbd></button>}
             {!fullView && <span className="video-studio-scene-title">{activeStudio.title}</span>}
           </div>
         </section>
-        {!fullView && isVideoWorkspace && <VideoTimeline studio={activeStudio} playheadFrame={videoPlayheadFrame} playing={videoPlaying} height={videoTimelineHeight} presetNames={Object.fromEntries(studioExpressionPresets.map((preset) => [preset.id, preset.name]))} onResize={setVideoTimelineHeight} onSelectElement={(elementId) => { setVideoPlaying(false); setSelectedElementId(elementId); setInspectorOpen(true) }} onSeek={seekVideoFrame} onTogglePlayback={() => { if (videoPlaying) seekVideoFrame(videoPlayheadFrame); else setVideoPlaying(true) }} onSaveFrame={saveVideoFrame} onSplitCharacter={splitVideoCharacterTrack} onSplitTextClip={splitVideoTextClip} onSplitVideoClip={splitVideoMediaClip} onUpdateVideoClip={updateVideoMediaClip} onDuplicateVideoClip={duplicateVideoMediaClip} onUpdateTextClip={updateVideoTextClip} onDeleteTextClip={deleteVideoTextClip} onDeleteVideoClip={deleteVideoMediaClip} onDeleteTextElement={deleteVideoTextElement} onDeleteCharacterSegment={deleteVideoCharacterSegment} onDuplicateTextClip={duplicateVideoTextClip} onMoveCharacterBoundary={moveVideoCharacterBoundary} onAddText={(kind) => addTextElement(kind)} onAddVideo={() => void addVideoClip()} onChangeTrackSettings={(id, settings) => changeScene((studio) => ({ ...studio, videoTimeline: { ...videoTimelineFor(studio), trackSettings: { ...videoTimelineFor(studio).trackSettings, [id]: settings } }, updatedAt: new Date().toISOString() }))} onMoveCharacterTrack={moveVideoCharacterTrack} onSetCharacterPositionsLocked={(locked) => changeScene((studio) => ({ ...studio, elements: studio.elements.map((element) => element.kind === 'character' ? { ...element, positionLocked: locked } : element), updatedAt: new Date().toISOString() }))} onChangeDuration={(durationFrames) => changeScene((studio) => ({ ...studio, videoTimeline: { ...videoTimelineFor(studio), durationFrames, playheadFrame: Math.min(videoPlayheadFrame, durationFrames) }, updatedAt: new Date().toISOString() }))} />}
+        {!fullView && isVideoWorkspace && <VideoTimeline studio={activeStudio} playheadFrame={videoPlayheadFrame} playing={videoPlaying} height={videoTimelineHeight} presetNames={Object.fromEntries(studioExpressionPresets.map((preset) => [preset.id, preset.name]))} onResize={setVideoTimelineHeight} onSelectElement={(elementId) => { setVideoPlaying(false); setSelectedElementId(elementId); setInspectorOpen(true) }} onSeek={seekVideoFrame} onTogglePlayback={() => { if (videoPlaying) seekVideoFrame(videoPlayheadFrame); else setVideoPlaying(true) }} onSaveFrame={saveVideoFrame} onSplitCharacter={splitVideoCharacterTrack} onSplitTextClip={splitVideoTextClip} onSplitVideoClip={splitVideoMediaClip} onUpdateVideoClip={updateVideoMediaClip} onChangeVideoAudio={updateVideoAudio} onBeginAudioEdit={recordHistory} onDuplicateVideoClip={duplicateVideoMediaClip} onUpdateTextClip={updateVideoTextClip} onDeleteTextClip={deleteVideoTextClip} onDeleteVideoClip={deleteVideoMediaClip} onDeleteTextElement={deleteVideoTextElement} onDeleteCharacterSegment={deleteVideoCharacterSegment} onDuplicateTextClip={duplicateVideoTextClip} onMoveCharacterBoundary={moveVideoCharacterBoundary} onAddText={(kind) => addTextElement(kind)} onAddVideo={() => void addVideoClip()} onChangeTrackSettings={(id, settings) => changeScene((studio) => ({ ...studio, videoTimeline: { ...videoTimelineFor(studio), trackSettings: { ...videoTimelineFor(studio).trackSettings, [id]: settings } }, updatedAt: new Date().toISOString() }))} onMoveCharacterTrack={moveVideoCharacterTrack} onSetCharacterPositionsLocked={(locked) => changeScene((studio) => ({ ...studio, elements: studio.elements.map((element) => element.kind === 'character' ? { ...element, positionLocked: locked } : element), updatedAt: new Date().toISOString() }))} onChangeDuration={(durationFrames) => changeScene((studio) => ({ ...studio, videoTimeline: { ...videoTimelineFor(studio), durationFrames, playheadFrame: Math.min(videoPlayheadFrame, durationFrames) }, updatedAt: new Date().toISOString() }))} />}
         {castPickerOpen && <div className="video-studio-cast-modal-backdrop" onPointerDown={(event) => { if (event.target === event.currentTarget && !savingCast) setCastPickerOpen(false) }}>
           <section className="video-studio-cast-modal" role="dialog" aria-modal="true" aria-labelledby="video-studio-cast-modal-title">
             <header><span><small>EDITAR ELENCO</small><h2 id="video-studio-cast-modal-title">Personagens do {workspaceTitle}</h2></span><button className="video-studio-cast-modal-close" onClick={() => setCastPickerOpen(false)} aria-label="Fechar" disabled={savingCast} type="button">×</button></header>

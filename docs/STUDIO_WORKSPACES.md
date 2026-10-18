@@ -48,3 +48,28 @@ mover mantém o trecho original. As pontas não ultrapassam a mídia disponível
 mídia. Após compilar, `electron scripts/audit-video-timeline.cjs <arquivo.mp4>`
 confere a composição e os gestos reais usando um MP4 de teste de 20 segundos e
 documentos em memória. As capturas ficam em `out/audit-video-timeline`.
+
+## Áudio dos vídeos
+
+O player nativo de cada vídeo reproduz imagem e som com o mesmo relógio. O áudio
+não é extraído nem copiado novamente: acompanha o arquivo em `videos/`. O projeto
+salva o volume geral em `videoTimeline.videoAudio`, e cada clipe salva seu volume
+e silêncio em `clip.audio`. Campos ausentes em projetos antigos significam volume
+100% e som ativado. Divisão, duplicação e recorte preservam esses ajustes.
+
+O botão **Áudio** na timeline abre controles flutuantes para o projeto e o vídeo
+selecionado. O volume efetivo é o volume geral multiplicado pelo volume do clipe;
+silenciar qualquer um interrompe o som, mantendo a imagem. Clipes sobrepostos
+tocam seus áudios juntos. A faixa bloqueada impede alterar o áudio de seus clipes.
+O ajuste de volume em um gesto corresponde a uma operação de desfazer.
+
+`shared/videoAudio.ts` define os padrões, validação e ganho. O controlador
+`videoMediaPlayback.ts` aplica esse ganho ao mesmo elemento de vídeo e acompanha
+o playhead, corrigindo desvios sem solicitar Play a cada frame. Pausa, busca com a
+timeline parada, saída do editor e ocultação da janela interrompem o som. Falhas
+de reprodução são exibidas e só são tentadas novamente com uma nova ação Play.
+
+`node scripts/audit-video-audio.mjs` cobre sincronização, volume, silêncio e as
+corridas entre Play/Pause. Com um MP4 de teste contendo áudio, adicionar `--audio`
+à auditoria do Electron também verifica saída audível, controles, herança dos
+ajustes, limpeza ao sair e reabertura, usando apenas documentos de teste.
