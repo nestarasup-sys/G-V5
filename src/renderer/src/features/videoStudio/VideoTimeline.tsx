@@ -105,6 +105,19 @@ export function VideoTimeline({ studio, playheadFrame, playing, height, presetNa
           </div>
         </div>
         <div className="video-timeline-tracks">
+          {textTracks.map(({ kind, label, clips }) => <div className="video-track-row" key={kind}>
+            <span className="video-track-label"><i className={`video-track-badge ${kind}`}>{kind === 'speech' ? 'F' : 'P'}</i><span>{label}</span></span>
+            <div className={`video-track-lane ${kind}-lane`} style={{ backgroundSize: `${tickSeconds * pixelsPerSecond}px 100%` }} aria-label={`Faixa de ${label.toLowerCase()}`}>
+              {timeline.saveMarkers.map((marker) => <i className="video-saved-marker" key={marker.id} style={{ left: `${marker.frame / 60 * pixelsPerSecond}px` }} title={`Frame salvo · ${formatTime(marker.frame)}`} />)}
+              {clips.map(({ element, clip }) => {
+                const start = clip?.startFrame ?? 0
+                const end = clip?.endFrame ?? Math.min(duration, start + 300)
+                return <button type="button" className={`video-text-clip ${kind}-clip`} key={element.id} style={{ left: `${start / 60 * pixelsPerSecond}px`, width: `${Math.max(3, (end - start) / 60 * pixelsPerSecond)}px` }} title={element.text || (kind === 'speech' ? 'Fala' : 'Pensamento')} onClick={() => onSeek(start)}>{element.text || (kind === 'speech' ? 'Fala' : 'Pensamento')}</button>
+              })}
+              <i className="video-lane-playhead" style={{ left: `${playheadFrame / 60 * pixelsPerSecond}px` }} />
+              {!clips.length && <span className="video-track-empty">Adicione {kind === 'speech' ? 'uma fala' : 'um pensamento'} pela barra de ferramentas</span>}
+            </div>
+          </div>)}
           {characters.map((character) => {
             const keys = timeline.characterKeys.filter((key) => key.elementId === character.id).sort((a, b) => a.frame - b.frame)
             const name = character.text || studio.assets.find((asset) => asset.id === character.assetId)?.name || 'Personagem'
@@ -122,19 +135,6 @@ export function VideoTimeline({ studio, playheadFrame, playing, height, presetNa
               </div>
             </div>
           })}
-          {textTracks.map(({ kind, label, clips }) => <div className="video-track-row" key={kind}>
-            <span className="video-track-label"><i className={`video-track-badge ${kind}`}>{kind === 'speech' ? 'F' : 'P'}</i><span>{label}</span></span>
-            <div className={`video-track-lane ${kind}-lane`} style={{ backgroundSize: `${tickSeconds * pixelsPerSecond}px 100%` }} aria-label={`Faixa de ${label.toLowerCase()}`}>
-              {timeline.saveMarkers.map((marker) => <i className="video-saved-marker" key={marker.id} style={{ left: `${marker.frame / 60 * pixelsPerSecond}px` }} title={`Frame salvo · ${formatTime(marker.frame)}`} />)}
-              {clips.map(({ element, clip }) => {
-                const start = clip?.startFrame ?? 0
-                const end = clip?.endFrame ?? Math.min(duration, start + 300)
-                return <button type="button" className={`video-text-clip ${kind}-clip`} key={element.id} style={{ left: `${start / 60 * pixelsPerSecond}px`, width: `${Math.max(3, (end - start) / 60 * pixelsPerSecond)}px` }} title={element.text || (kind === 'speech' ? 'Fala' : 'Pensamento')} onClick={() => onSeek(start)}>{element.text || (kind === 'speech' ? 'Fala' : 'Pensamento')}</button>
-              })}
-              <i className="video-lane-playhead" style={{ left: `${playheadFrame / 60 * pixelsPerSecond}px` }} />
-              {!clips.length && <span className="video-track-empty">Adicione {kind === 'speech' ? 'uma fala' : 'um pensamento'} pela barra de ferramentas</span>}
-            </div>
-          </div>)}
         </div>
       </div>
     </div>
