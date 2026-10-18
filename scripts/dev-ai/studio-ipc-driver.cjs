@@ -305,6 +305,12 @@ async function seed(window) {
   }
   await rm(failedWriteFolder, { recursive: true, force: true })
   await rm(failedReadFolder, { recursive: true, force: true })
+  // A rejected save should block shutdown until a subsequent successful
+  // save confirms recovery. Restore both queue tails after negative probes.
+  await api(`window.desktop.saveStudio(${JSON.stringify(syntheticStudio(normalFinalDoc.title))})`)
+  await api(`window.desktop.saveVideoStudio(${JSON.stringify(syntheticStudio(videoFinalDoc.title, true))})`)
+  assert.equal(JSON.parse(readFileSync(join(normalPath, 'studio.json'), 'utf8')).title, normalFinalDoc.title)
+  assert.equal(JSON.parse(readFileSync(join(videoPath, 'studio.json'), 'utf8')).title, videoFinalDoc.title)
 
   // Test the real delete handlers with colliding IDs; only the selected
   // workspace directory may be removed. Then reopen verifies absence/presence.
