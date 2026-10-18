@@ -8,7 +8,8 @@ const { performance } = require('node:perf_hooks')
 const os = require('node:os')
 const { basename, dirname, join, relative, resolve, sep } = require('node:path')
 const { pathToFileURL } = require('node:url')
-const { app, BrowserWindow } = require('electron')
+const { app, BrowserWindow, nativeImage } = require('electron')
+const { compareBitmaps, evaluateVisualComparison } = require('./visual-regression.cjs')
 
 const ROOT = resolve(__dirname, '../..')
 const mode = process.argv[2]
@@ -50,6 +51,59 @@ function treeHash(folder) {
   }
   visit(folder)
   return digest.digest('hex')
+}
+
+function screenshotPixels(buffer) {
+  const image = nativeImage.createFromBuffer(buffer)
+  const size = image.getSize()
+  const bitmap = image.toBitmap()
+  assert.equal(bitmap.length, size.width * size.height * 4, 'Bitmap inválido da captura')
+  return { width: size.width, height: size.height, bitmap }
+}
+
+function screenshotComparison(beforePng, afterPng, policy = {}) {
+  const before = screenshotPixels(beforePng)
+  const after = screenshotPixels(afterPng)
+  if (before.width !== after.width || before.height !== after.height) {
+    return { metrics: { passed: false, reason: 'dimensions-changed',
+      before: { width: before.width, height: before.height },
+      after: { width: after.width, height: after.height } }, diffPng: null }
+  }
+  const compared = compareBitmaps(before.bitmap, after.bitmap, before.width, before.height, policy)
+  const metrics = evaluateVisualComparison(compared, policy)
+  const diffPng = nativeImage.createFromBitmap(compared.diffBitmap,
+    { width: before.width, height: before.height }).toPNG()
+  return { metrics: { ...metrics, width: before.width, height: before.height,
+    channelTolerance: compared.channelTolerance }, diffPng }
+}
+
+async function captureSettled(window, label) {
+  // DOM readiness is not compositor readiness. Fonts, two paint frames and
+  // two visually stable captures are required; no fixed sleep alone is proof.
+  let previous = null
+  let lastComparison = null
+  const maxAttempts = 12
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    await window.webContents.executeJavaScript(`(async () => {
+      await document.fonts.ready
+      await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+    })()`)
+    await new Promise(resolve => setTimeout(resolve, 120))
+    const screenshot = (await window.webContents.capturePage()).toPNG()
+    if (previous) {
+      const probe = screenshotComparison(previous, screenshot,
+        { channelTolerance: 2, maxChangedPixelRatio: 0.0002 })
+      lastComparison = probe.metrics
+      if (probe.metrics.passed) {
+        return { png: screenshot, attempts: attempt, settled: true, temporalComparison: probe.metrics }
+      }
+    }
+    previous = screenshot
+  }
+  // Preserve evidence. Caller decides failure; never promote unstable paint
+  // to a passing visual assertion.
+  return { png: previous, attempts: maxAttempts, settled: false,
+    temporalComparison: lastComparison, label }
 }
 
 function summarizeSamples(values) {
@@ -501,8 +555,10 @@ async function areaSmoke(window) {
   // direction changes, matching ISO-01's 100 alternations requirement.
   const roundTrips = 50
   let videoBefore = null
-  const studioScreenshotBefore = await window.webContents.capturePage()
-  await writeFile(join(output, 'real-ipc-studio-before-roundtrips.png'), studioScreenshotBefore.toPNG())
+  const stableBefore = await captureSettled(window, 'studio-before')
+  await writeFile(join(output, 'real-ipc-studio-before-roundtrips.png'), stableBefore.png)
+  assert.equal(stableBefore.settled, true,
+    `A captura inicial não estabilizou: ${JSON.stringify(stableBefore.temporalComparison)}`)
   for (let cycle = 0; cycle < roundTrips; cycle += 1) {
     const videoOpen = await openEditor(false)
     navigationDurations.push(videoOpen.durationMs)
@@ -519,13 +575,32 @@ async function areaSmoke(window) {
       }, null, 2))
     }
   }
-  const studioScreenshotAfter = await window.webContents.capturePage()
-  const beforePng = studioScreenshotBefore.toPNG()
-  const afterPng = studioScreenshotAfter.toPNG()
+  const stableAfter = await captureSettled(window, 'studio-after')
+  const beforePng = stableBefore.png
+  const afterPng = stableAfter.png
+  await writeFile(join(output, 'real-ipc-studio-after-roundtrips.png'), afterPng)
   const beforeScreenshotSha256 = createHash('sha256').update(beforePng).digest('hex')
   const afterScreenshotSha256 = createHash('sha256').update(afterPng).digest('hex')
-  assert.equal(afterScreenshotSha256, beforeScreenshotSha256, 'Captura do Studio mudou depois das 100 transições')
-  await writeFile(join(output, 'real-ipc-studio-after-roundtrips.png'), afterPng)
+  const visual = screenshotComparison(beforePng, afterPng,
+    { channelTolerance: 3, maxChangedPixelRatio: 0.001 })
+  const visualReport = {
+    schemaVersion: 1, baseline: 'real Electron IPC synthetic fixtures',
+    policy: { channelTolerance: 3, maxChangedPixelRatio: 0.001 },
+    stableBefore: { settled: stableBefore.settled, attempts: stableBefore.attempts,
+      temporalComparison: stableBefore.temporalComparison },
+    stableAfter: { settled: stableAfter.settled, attempts: stableAfter.attempts,
+      temporalComparison: stableAfter.temporalComparison },
+    screenshotSha256: { before: beforeScreenshotSha256, after: afterScreenshotSha256,
+      exactMatch: beforeScreenshotSha256 === afterScreenshotSha256 },
+    comparison: visual.metrics
+  }
+  if (visual.diffPng) await writeFile(join(output, 'real-ipc-studio-visual-diff.png'), visual.diffPng)
+  // Diagnostics precede assertions, so failing Actions runs remain debuggable.
+  await writeFile(join(output, 'real-ipc-visual-comparison.json'), JSON.stringify(visualReport, null, 2))
+  assert.equal(stableAfter.settled, true,
+    `Captura final não estabilizou: ${JSON.stringify(stableAfter.temporalComparison)}`)
+  assert.equal(visual.metrics.passed, true,
+    `Regressão visual após 100 transições: ${JSON.stringify(visual.metrics)}`)
   await writeFile(join(output, 'real-ipc-navigation-progress.json'), JSON.stringify({
     completedRoundTrips: roundTrips, totalRoundTrips: roundTrips,
     routeTransitions: navigationDurations.length, status: 'passed'
@@ -542,7 +617,10 @@ async function areaSmoke(window) {
         .map(([phase, samples]) => [phase, summarizeSamples(samples)])),
       studioSnapshotStable: true, videoSnapshotStable: true,
       screenshots: ['real-ipc-studio-before-roundtrips.png', 'real-ipc-studio-after-roundtrips.png'],
-      screenshotSha256: { before: beforeScreenshotSha256, after: afterScreenshotSha256, identical: true },
+      screenshotSha256: { before: beforeScreenshotSha256, after: afterScreenshotSha256,
+        exactMatch: beforeScreenshotSha256 === afterScreenshotSha256 },
+      visualComparison: visual.metrics,
+      visualComparisonArtifact: 'real-ipc-visual-comparison.json',
       screenshotBackend: 'BrowserWindow show:false + webContents.capturePage; not Electron offscreen:true' },
     environment: runtimeEnvironment(), rendererErrors: diagnostics }
   await writeFile(join(output, 'area-smoke-result.json'), JSON.stringify(result, null, 2))
