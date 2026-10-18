@@ -52,10 +52,10 @@ Executados em workspace **sintético local de desenvolvimento do runner** (`/mnt
 ## D. Pendências e bloqueios (não marcar concluído)
 
 - [x] Executar `npm ci`, testes, typecheck/build, audit:fast/isolation/ipc/all e scanner no checkout completo em Windows; evidências e SHA base no [relatório Windows](VALIDACAO_WINDOWS_2026-10-18.md).
-- [x] Repetir a suíte completa no commit `a8dc31689192d634fae2c0650051e21624f451d5` em Windows — último run 11/11 passou; tentativa anterior falhou em rename `EPERM` e não se reproduziu em duas execuções seguintes.
+- [x] Repetir a suíte completa no commit `a68a374dd1260877c4ab5ce54c73410010ae7269` em Windows — 11/11 passaram, incluindo IPC com fechamento pendente.
 - [ ] Repetir validação em outra plataforma suportada.
 - [x] Capturar regressão de layout Studio normal ↔ Video Studio em janela oculta fixture por 20 ciclos; semântica de storage foi exercitada separadamente com IPC real.
-- [x] Adapter IPC/preload real para persistência concorrente, namespaces, exclusão, restart, root inválido e smoke sintético de montagem/leitura de Customizer/Fabricador; lifecycle, escrita nessas áreas e vetores da matriz ISO seguem abertos.
+- [x] Adapter IPC/preload real para persistência concorrente, namespaces, exclusão, restart, root inválido, smoke sintético de montagem/leitura de Customizer/Fabricador e fechamento com salvamentos pendentes; lifecycle geral, escrita nessas áreas e vetores da matriz ISO seguem abertos.
 - [ ] Runner que bloqueie rede por política de SO/container e limpe process tree no Windows; atualmente só isola variáveis de ambiente, usa timeout e logs locais.
 - [ ] Fuzz de paths/symlinks e monitoramento OS-level que prove nenhuma leitura/escrita fora da sandbox.
 - [ ] Suite de estado, atalhos, CSS, recursos, timers/RAF e persistência coberta por testes reais; os ciclos atuais testam layout e mocks.
