@@ -12,16 +12,16 @@ const {
 } = require('../scripts/dev-ai/baseline.cjs')
 
 test('catalog: every audit is registered and unsafe audits excluded from unattended suites', () => {
-  assert.equal(audits.length, 13)
+  assert.equal(audits.length, 14)
   assert.equal(new Set(audits.map(a => a.id)).size, audits.length)
   for (const entry of audits) {
     assert.match(entry.file, /^scripts\/audit-[\w-]+\.(mjs|cjs)$/)
     assert.ok(entry.requires.length > 0)
     if (['fast', 'isolation', 'ipc'].includes(entry.suite)) assert.equal(entry.data, 'synthetic')
   }
-  assert.equal(selected('fast').length, 7)
+  assert.equal(selected('fast').length, 8)
   assert.deepEqual(selected('isolation').map(a => a.id), ['studio-isolation'])
-  assert.equal(selected('all').length, 9)
+  assert.equal(selected('all').length, 10)
   assert.deepEqual(selected('ipc').map(a => a.id), ['studio-ipc-real'])
   assert.equal(audits.find(a => a.id === 'studio-ipc-real').mode, 'electron-controller')
   assert.ok(audits.some(a => a.id === 'animator-rig' && a.data === 'real-by-default' && a.suite === 'manual'))
@@ -109,7 +109,7 @@ test('runner lists audits without npm dependencies or Electron', () => {
   })
   assert.equal(child.status, 0, child.stderr)
   const listing = JSON.parse(child.stdout)
-  assert.equal(listing.audits.length, 13)
+  assert.equal(listing.audits.length, 14)
   assert.equal(listing.schemaVersion, 1)
 })
 
