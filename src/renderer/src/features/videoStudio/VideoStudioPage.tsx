@@ -44,6 +44,7 @@ export function VideoStudioPage() {
   const [boundaryPreview, setBoundaryPreview] = useState<BoundaryDrag | null>(null)
   const [dragPreview, setDragPreview] = useState<{ id: string; x: number; y: number } | null>(null)
   const [selectedClip, setSelectedClip] = useState<{ trackId: string; id: string } | null>(null)
+  const [textGesture, setTextGesture] = useState<{ trackId: string; id: string; startFrame: number; endFrameExclusive: number } | null>(null)
   const [studioSources, setStudioSources] = useState<StudioDocument[] | null>(null)
   const [sourceCharacterNames, setSourceCharacterNames] = useState<Record<string, string>>({})
 
@@ -418,11 +419,16 @@ export function VideoStudioPage() {
   }
 
   const patchText = (trackId: string, id: string, patch: Partial<VideoTextClip>) => {
-    commit(project => ({
-      ...project, textTracks: project.textTracks.map(track => track.id !== trackId || track.locked ? track : {
-        ...track, clips: track.clips.map(clip => clip.id !== id ? clip : { ...clip, ...patch })
-      })
-    }))
+    commit(project => {
+      const track = project.textTracks.find(item => item.id === trackId)
+      const clip = track?.clips.find(item => item.id === id)
+      if (!track || track.locked || !clip || Object.entries(patch).every(([key, value]) => clip[key as keyof VideoTextClip] === value)) return project
+      return {
+        ...project, textTracks: project.textTracks.map(item => item.id !== trackId ? item : {
+          ...item, clips: item.clips.map(candidate => candidate.id !== id ? candidate : { ...candidate, ...patch })
+        })
+      }
+    })
   }
 
   const changeDuration = (deltaSeconds: number) => {
@@ -432,6 +438,50 @@ export function VideoStudioPage() {
     setError(null)
     commit(() => next)
     seek(playheadRef.current)
+  }
+
+  const beginTextGesture = (
+    event: ReactPointerEvent<HTMLElement>, trackId: string, clip: VideoTextClip,
+    action: 'move' | 'start' | 'end'
+  ) => {
+    if (!activeProject?.textTracks.some(track => track.id === trackId && !track.locked)) return
+    if (event.button !== 0) return
+    event.preventDefault()
+    event.stopPropagation()
+    setPlaying(false)
+    setSelectedClip({ trackId, id: clip.id })
+    setSelectedElementId(null)
+    const clientX = event.clientX
+    const length = clip.endFrameExclusive - clip.startFrame
+    const duration = activeProject.durationFrames
+    const proposed = (clientPosition: number) => {
+      const delta = Math.round((clientPosition - clientX) * activeProject.frameRate / zoom)
+      if (action === 'move') {
+        const startFrame = Math.max(0, Math.min(duration - length, clip.startFrame + delta))
+        return { startFrame, endFrameExclusive: startFrame + length }
+      }
+      if (action === 'start') return {
+        startFrame: Math.max(0, Math.min(clip.endFrameExclusive - 1, clip.startFrame + delta)),
+        endFrameExclusive: clip.endFrameExclusive
+      }
+      return {
+        startFrame: clip.startFrame,
+        endFrameExclusive: Math.max(clip.startFrame + 1, Math.min(duration, clip.endFrameExclusive + delta))
+      }
+    }
+    const onMove = (next: PointerEvent) => {
+      setTextGesture({ trackId, id: clip.id, ...proposed(next.clientX) })
+    }
+    const onEnd = (next: PointerEvent) => {
+      const final = proposed(next.clientX)
+      setTextGesture(null)
+      if (final.startFrame !== clip.startFrame || final.endFrameExclusive !== clip.endFrameExclusive)
+        patchText(trackId, clip.id, final)
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onEnd)
+    }
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onEnd, { once: true })
   }
 
   const beginBoundaryDrag = (event: ReactPointerEvent<HTMLButtonElement>, track: VideoCharacterTrack, index: number) => {
@@ -692,11 +742,22 @@ export function VideoStudioPage() {
             {activeProject.textTracks.map(track => <div className="video-studio-lane" key={track.id}>
               <div className="video-studio-lane-label">{track.name}</div>
               <div className="video-studio-lane-body" style={{ width: timelineWidth }}>
-                {track.clips.map(clip => <button type="button" key={clip.id}
-                  className={'video-studio-text-block ' + track.kind + (selectedClip?.id === clip.id ? ' selected' : '')}
-                  style={{ left: clip.startFrame / activeProject.frameRate * zoom, width: Math.max(10, (clip.endFrameExclusive - clip.startFrame) / activeProject.frameRate * zoom) }}
-                  onClick={() => { setSelectedClip({ trackId: track.id, id: clip.id }); setSelectedElementId(null); seek(clip.startFrame) }}
-                  title={clip.text}>{clip.text}</button>)}
+                {track.clips.map(clip => {
+                  const rendered = textGesture?.trackId === track.id && textGesture.id === clip.id ? textGesture : clip
+                  return <button type="button" key={clip.id}
+                    className={'video-studio-text-block ' + track.kind + (selectedClip?.id === clip.id ? ' selected' : '')}
+                    disabled={track.locked}
+                    style={{ left: rendered.startFrame / activeProject.frameRate * zoom, width: Math.max(10, (rendered.endFrameExclusive - rendered.startFrame) / activeProject.frameRate * zoom) }}
+                    onPointerDown={event => beginTextGesture(event, track.id, clip, 'move')}
+                    onClick={() => { setSelectedClip({ trackId: track.id, id: clip.id }); setSelectedElementId(null); seek(clip.startFrame) }}
+                    title={clip.text}>
+                    <span className="video-studio-text-resize start" role="presentation"
+                      onPointerDown={event => beginTextGesture(event, track.id, clip, 'start')} />
+                    <span className="video-studio-text-label">{clip.text}</span>
+                    <span className="video-studio-text-resize end" role="presentation"
+                      onPointerDown={event => beginTextGesture(event, track.id, clip, 'end')} />
+                  </button>
+                })}
               </div>
             </div>)}
             <div className="video-studio-marker-lane">
