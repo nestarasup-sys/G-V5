@@ -40,7 +40,7 @@ Antes de modificar runtime: criar baseline e sandbox de testes, registrar fluxos
 - [x] Proposição documental de fases, critérios mensuráveis e isolamento DEV AI.
 - [x] Rodar `npm ci`, `npm run typecheck`, `npm run build` e auditorias sintéticas/IPC em Windows — [resultados e limites](AUDITORIAS/VALIDACAO_WINDOWS_2026-10-18.md).
 - [ ] Inventário de todos os dados reais e `localStorage` instalado.
-- [ ] Teste cross-workspace completo ISO-01–ISO-15 e smoke de Customizer/Fabricador; validação parcial de layout dos Studios e IPC real documentada no relatório Windows.
+- [ ] Teste cross-workspace completo ISO-01–ISO-15; smoke sintético de montagem/leitura Customizer/Fabricador passou. Persistência/edição dessas áreas ainda aberta; 20 ciclos visuais Studio↔Video documentados no relatório Windows.
 - [ ] Benchmark reproduzível e comparação antes/depois.
 - [ ] Qualquer migração ou mudança de código de produção.
 

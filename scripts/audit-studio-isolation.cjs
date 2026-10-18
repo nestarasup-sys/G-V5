@@ -165,7 +165,8 @@ async function run() {
   assert.deepEqual(normalAfter, normalBefore, 'Os estilos do Video Studio não podem alterar o Studio após navegar')
   // Regression: multiple Studio -> Video -> Studio round trips must not leak
   // layout styles. This uses the existing synthetic fixture/preload.
-  for (let cycle = 0; cycle < 3; cycle += 1) {
+  const roundTrips = 20
+  for (let cycle = 0; cycle < roundTrips; cycle += 1) {
     await window.webContents.executeJavaScript("location.hash = '/video-studio'")
     const nextVideo = await inspect(window, true)
     assert.deepEqual(nextVideo, video, `Video layout mudou no ciclo ${cycle + 1}`)
@@ -188,7 +189,7 @@ async function run() {
   await capture(window, 'studio-normal-after-cycles.png')
   await writeFile(join(output, 'result.json'), JSON.stringify({
     schemaVersion: 1, adapter: 'fixture-preload', realIpcCovered: false,
-    cycles: 4, normalBefore, video, normalAfter,
+    cycles: roundTrips, normalBefore, video, normalAfter,
     mockedNamespaceProbe: { normalWrites: mockedAfter.normalWrites, videoWrites: mockedAfter.videoWrites }
   }, null, 2))
   console.log(JSON.stringify({ normalBefore, video, normalAfter }, null, 2))
