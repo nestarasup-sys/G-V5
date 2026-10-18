@@ -1132,18 +1132,28 @@ async function writeStudio(studio: StudioDocument, workspace: StudioWorkspaceSto
       ...savedMetadata.videoTimeline.characterKeys.map((key) => storeImage(key.state))
     ])
   }
-  await writeFile(temporary, JSON.stringify({ ...savedMetadata, title: studio.title.trim(), assets: assetManifest }, null, 2), 'utf8')
-  const target = join(folder, 'studio.json')
-  const maxAttempts = process.platform === 'win32' ? 5 : 1
-  for (let attempt = 1; ; attempt += 1) {
-    try {
-      await rename(temporary, target)
-      break
-    } catch (reason) {
-      const error = reason as NodeJS.ErrnoException
-      const retryable = process.platform === 'win32' && ['EPERM', 'EACCES', 'EBUSY'].includes(error.code ?? '')
-      if (!retryable || attempt >= maxAttempts) throw reason
-      await new Promise((resolveDelay) => setTimeout(resolveDelay, 20 * (2 ** (attempt - 1))))
+  try {
+    await writeFile(temporary, JSON.stringify({ ...savedMetadata, title: studio.title.trim(), assets: assetManifest }, null, 2), 'utf8')
+    const target = join(folder, 'studio.json')
+    const maxAttempts = process.platform === 'win32' ? 5 : 1
+    for (let attempt = 1; ; attempt += 1) {
+      try {
+        await rename(temporary, target)
+        break
+      } catch (reason) {
+        const error = reason as NodeJS.ErrnoException
+        const retryable = process.platform === 'win32' && ['EPERM', 'EACCES', 'EBUSY'].includes(error.code ?? '')
+        if (!retryable || attempt >= maxAttempts) throw reason
+        await new Promise((resolveDelay) => setTimeout(resolveDelay, 20 * (2 ** (attempt - 1))))
+      }
+    }
+  } finally {
+    // Only this save operation owns the UUID-named temporary manifest.
+    // Never touch the prior committed studio.json on a failed rename.
+    try { await unlink(temporary) } catch (reason) {
+      if ((reason as NodeJS.ErrnoException).code !== 'ENOENT') {
+        console.error('Não foi possível remover o manifesto temporário do Studio após gravar.')
+      }
     }
   }
 }
@@ -2380,20 +2390,29 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
 })
 
-let waitingForFabricatorWritesBeforeQuit = false
+let waitingForPersistenceWritesBeforeQuit = false
 let persistenceWritesDrainedForQuit = false
 app.on('before-quit', (event) => {
   if (persistenceWritesDrainedForQuit) return
-  const pendingWrites = [...fabricatorSaveQueues.values(), ...poseSaveWrites, ...hairSaveQueues.values(), studioSaveQueues.studio, studioSaveQueues.video]
-  if (pendingWrites.length === 0) {
-    persistenceWritesDrainedForQuit = true
-    return
-  }
-  if (waitingForFabricatorWritesBeforeQuit) return
+  // Always prevent quit while an asynchronous drain is in flight. A second
+  // before-quit must not bypass the first drain.
   event.preventDefault()
-  waitingForFabricatorWritesBeforeQuit = true
-  void Promise.allSettled(pendingWrites).then(() => {
-    waitingForFabricatorWritesBeforeQuit = false
+  if (waitingForPersistenceWritesBeforeQuit) return
+  waitingForPersistenceWritesBeforeQuit = true
+  const pendingWrites = [
+    ...fabricatorSaveQueues.values(), ...poseSaveWrites, ...hairSaveQueues.values(),
+    studioSaveQueues.studio, studioSaveQueues.video
+  ]
+  void Promise.allSettled(pendingWrites).then((results) => {
+    waitingForPersistenceWritesBeforeQuit = false
+    const failed = results.some((result) => result.status === 'rejected')
+    if (failed) {
+      // Do not report successful shutdown after a persistence failure.
+      // Keep the application available for retry/recovery instead.
+      if (!BrowserWindow.getAllWindows().some((window) => !window.isDestroyed())) createMainWindow()
+      dialog.showErrorBox('Falha no salvamento', 'Uma gravação pendente falhou. O aplicativo permanecerá aberto para proteger suas alterações.')
+      return
+    }
     persistenceWritesDrainedForQuit = true
     app.quit()
   })
