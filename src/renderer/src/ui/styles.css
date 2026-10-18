@@ -1030,7 +1030,8 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
   .modules-panel { display: none; }
   .top-bar { gap: 8px; padding-right: 12px; padding-left: 12px; }
   .top-brand-name span { display: none; }
-  .top-navigation { flex: 1 1 auto; justify-content: center; }
+  .top-navigation { min-width: 0; flex: 1 1 auto; justify-content: flex-start; overflow-x: auto; scrollbar-width: none; }
+  .top-navigation::-webkit-scrollbar { display: none; }
   .top-nav-link { gap: 5px; padding: 0 7px; font-size: 12px; }
   .save-status { display: none; }
 }

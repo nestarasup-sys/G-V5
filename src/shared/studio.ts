@@ -142,3 +142,14 @@ export type StudioDesktopApi = {
   saveStudioPrint: (studioId: string, dataUrl: string) => Promise<string | null>
   openStudioPrints: (studioId: string) => Promise<void>
 }
+
+/** Independent persistence boundary for the Video Studio workspace. */
+export type VideoStudioDesktopApi = {
+  listVideoStudios: () => Promise<StudioDocument[]>
+  saveVideoStudio: (studio: StudioDocument) => Promise<void>
+  deleteVideoStudio: (id: string) => Promise<void>
+  getVideoStudioFolder: () => Promise<string>
+  importVideoStudioImage: (category: StudioAsset['category']) => Promise<StudioAsset | null>
+  saveVideoStudioPrint: (studioId: string, dataUrl: string) => Promise<string | null>
+  openVideoStudioPrints: (studioId: string) => Promise<void>
+}

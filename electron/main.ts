@@ -40,9 +40,10 @@ const faceComponentItemPath = (modelSlot: number, id: string) => join(faceCompon
 const hairModelPath = (modelSlot: number) => join(app.getPath('userData'), 'fabricator', 'hair', `model-${modelSlot}`)
 const hairStylePath = (modelSlot: number, id: string) => join(hairModelPath(modelSlot), 'styles', `style-${id}`)
 const characterLibraryPath = () => join(app.getPath('userData'), 'customizer', 'characters')
-const studioLibraryPath = () => join(app.getPath('userData'), 'studios', 'Studio Principal')
-const studioPath = (id: string) => join(studioLibraryPath(), `studio-${id}`)
-let studioSaveQueue: Promise<void> = Promise.resolve()
+type StudioWorkspaceStorage = 'studio' | 'video'
+const studioLibraryPath = (workspace: StudioWorkspaceStorage = 'studio') => join(app.getPath('userData'), 'studios', workspace === 'video' ? 'Video Studio' : 'Studio Principal')
+const studioPath = (id: string, workspace: StudioWorkspaceStorage = 'studio') => join(studioLibraryPath(workspace), `studio-${id}`)
+const studioSaveQueues: Record<StudioWorkspaceStorage, Promise<void>> = { studio: Promise.resolve(), video: Promise.resolve() }
 const characterManifestPath = () => join(characterLibraryPath(), 'characters.json')
 const fabricatorSaveQueues = new Map<number, Promise<void>>()
 let poseSaveQueue: Promise<void> = Promise.resolve()
@@ -958,12 +959,12 @@ function normalizeStudio(value: Record<string, unknown>, id: string): StudioDocu
   }
 }
 
-async function readStudio(id: string): Promise<StudioDocument | null> {
+async function readStudio(id: string, workspace: StudioWorkspaceStorage = 'studio'): Promise<StudioDocument | null> {
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)) throw new Error('Identificador de Studio inválido.')
   try {
-    const raw = JSON.parse(await readFile(join(studioPath(id), 'studio.json'), 'utf8')) as Record<string, unknown>
+    const raw = JSON.parse(await readFile(join(studioPath(id, workspace), 'studio.json'), 'utf8')) as Record<string, unknown>
     const normalized = normalizeStudio(raw, id)
-    const folder = studioPath(id)
+    const folder = studioPath(id, workspace)
     const assets = await Promise.all(normalized.assets.map(async (asset) => {
       if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(asset.id)
         || !['background', 'object', 'character'].includes(asset.category)
@@ -982,9 +983,9 @@ async function readStudio(id: string): Promise<StudioDocument | null> {
   }
 }
 
-async function writeStudio(studio: StudioDocument): Promise<void> {
+async function writeStudio(studio: StudioDocument, workspace: StudioWorkspaceStorage = 'studio'): Promise<void> {
   if (!isStudioDocument(studio)) throw new Error('Dados do Studio inválidos.')
-  const folder = studioPath(studio.id)
+  const folder = studioPath(studio.id, workspace)
   await Promise.all([
     mkdir(join(folder, 'assets', 'backgrounds'), { recursive: true }),
     mkdir(join(folder, 'assets', 'objects'), { recursive: true }),
@@ -1006,12 +1007,13 @@ async function writeStudio(studio: StudioDocument): Promise<void> {
   await rename(temporary, join(folder, 'studio.json'))
 }
 
-async function listStudios(): Promise<StudioDocument[]> {
-  await mkdir(studioLibraryPath(), { recursive: true })
-  const entries = await readdir(studioLibraryPath(), { withFileTypes: true })
+async function listStudios(workspace: StudioWorkspaceStorage = 'studio'): Promise<StudioDocument[]> {
+  const libraryPath = studioLibraryPath(workspace)
+  await mkdir(libraryPath, { recursive: true })
+  const entries = await readdir(libraryPath, { withFileTypes: true })
   const documents = await Promise.all(entries
     .filter((entry) => entry.isDirectory() && /^studio-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(entry.name))
-    .map((entry) => readStudio(entry.name.slice('studio-'.length))))
+    .map((entry) => readStudio(entry.name.slice('studio-'.length), workspace)))
   return documents.filter((studio): studio is StudioDocument => studio !== null)
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.title.localeCompare(b.title))
 }
@@ -1385,74 +1387,81 @@ async function readAnimatorDraft(modelSlot: number): Promise<AnimatorAnimationDr
 }
 
 async function registerFabricatorHandlers(): Promise<void> {
-  ipcMain.handle('studio:list', async (event): Promise<StudioDocument[]> => {
-    assertTrustedSender(event)
-    return listStudios()
-  })
-
-  ipcMain.handle('studio:save', async (event, studio: StudioDocument): Promise<void> => {
-    assertTrustedSender(event)
-    const next = studioSaveQueue.catch(() => undefined).then(() => writeStudio(studio))
-    studioSaveQueue = next
-    await next
-  })
-
-  ipcMain.handle('studio:delete', async (event, id: string): Promise<void> => {
-    assertTrustedSender(event)
-    if (typeof id !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)) throw new Error('Identificador de Studio inválido.')
-    const next = studioSaveQueue.catch(() => undefined).then(async () => {
-      const folder = resolve(studioPath(id))
-      if (dirname(folder) !== resolve(studioLibraryPath()) || basename(folder) !== `studio-${id}`) throw new Error('Pasta do Studio inválida.')
-      await rm(folder, { recursive: true, force: true })
+  const registerStudioWorkspace = (workspace: StudioWorkspaceStorage, channel: 'studio' | 'video-studio') => {
+    ipcMain.handle(`${channel}:list`, async (event): Promise<StudioDocument[]> => {
+      assertTrustedSender(event)
+      return listStudios(workspace)
     })
-    studioSaveQueue = next
-    await next
-  })
 
-  ipcMain.handle('studio:folder', (event): string => {
-    assertTrustedSender(event)
-    return studioLibraryPath()
-  })
-
-  ipcMain.handle('studio:import-image', async (event, category: StudioAsset['category']): Promise<StudioAsset | null> => {
-    assertTrustedSender(event)
-    if (category !== 'background' && category !== 'object') throw new Error('Categoria de imagem inválida.')
-    const result = await dialog.showOpenDialog({
-      title: category === 'background' ? 'Adicionar imagem de fundo' : 'Adicionar objeto à cena',
-      properties: ['openFile'],
-      filters: [{ name: 'Imagens', extensions: ['png', 'jpg', 'jpeg', 'webp'] }]
+    ipcMain.handle(`${channel}:save`, async (event, studio: StudioDocument): Promise<void> => {
+      assertTrustedSender(event)
+      const next = studioSaveQueues[workspace].catch(() => undefined).then(() => writeStudio(studio, workspace))
+      studioSaveQueues[workspace] = next
+      await next
     })
-    if (result.canceled || !result.filePaths[0]) return null
-    const path = result.filePaths[0]
-    const extension = extname(path).toLowerCase()
-    const size = (await stat(path)).size
-    if (size > 50 * 1024 * 1024) throw new Error('A imagem excede o limite de 50 MB.')
-    const mimeType: StudioAsset['mimeType'] = extension === '.png' ? 'image/png' : extension === '.webp' ? 'image/webp' : 'image/jpeg'
-    const bytes = await readFile(path)
-    return { id: randomUUID(), category, name: basename(path), mimeType, dataUrl: `data:${mimeType};base64,${bytes.toString('base64')}` }
-  })
 
-  ipcMain.handle('studio:save-print', async (event, id: string, dataUrl: string): Promise<string | null> => {
-    assertTrustedSender(event)
-    if (typeof id !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)) throw new Error('Identificador de Studio inválido.')
-    const bytes = dataUrlBuffer(dataUrl)
-    if (bytes.length > 50 * 1024 * 1024) throw new Error('O print excede o limite de 50 MB.')
-    const printsFolder = join(studioPath(id), 'prints')
-    await mkdir(printsFolder, { recursive: true })
-    const printPath = join(printsFolder, `print-${new Date().toISOString().replace(/[:.]/g, '-')}-${randomUUID().slice(0, 8)}.png`)
-    await writeFile(printPath, bytes)
-    return printPath
-  })
+    ipcMain.handle(`${channel}:delete`, async (event, id: string): Promise<void> => {
+      assertTrustedSender(event)
+      if (typeof id !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)) throw new Error('Identificador de Studio inválido.')
+      const next = studioSaveQueues[workspace].catch(() => undefined).then(async () => {
+        const folder = resolve(studioPath(id, workspace))
+        if (dirname(folder) !== resolve(studioLibraryPath(workspace)) || basename(folder) !== `studio-${id}`) throw new Error('Pasta do Studio inválida.')
+        await rm(folder, { recursive: true, force: true })
+      })
+      studioSaveQueues[workspace] = next
+      await next
+    })
 
-  ipcMain.handle('studio:open-prints', async (event, id: string): Promise<void> => {
-    assertTrustedSender(event)
-    if (typeof id !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)) throw new Error('Identificador de Studio inválido.')
-    const printsFolder = resolve(studioPath(id), 'prints')
-    if (dirname(printsFolder) !== resolve(studioPath(id))) throw new Error('Pasta de prints inválida.')
-    await mkdir(printsFolder, { recursive: true })
-    const error = await shell.openPath(printsFolder)
-    if (error) throw new Error(`Não foi possível abrir a pasta de prints: ${error}`)
-  })
+    ipcMain.handle(`${channel}:folder`, (event): string => {
+      assertTrustedSender(event)
+      return studioLibraryPath(workspace)
+    })
+
+    ipcMain.handle(`${channel}:import-image`, async (event, category: StudioAsset['category']): Promise<StudioAsset | null> => {
+      assertTrustedSender(event)
+      if (category !== 'background' && category !== 'object') throw new Error('Categoria de imagem inválida.')
+      const label = workspace === 'video' ? 'Video Studio' : 'Studio'
+      const result = await dialog.showOpenDialog({
+        title: `${label}: ${category === 'background' ? 'adicionar imagem de fundo' : 'adicionar objeto à cena'}`,
+        properties: ['openFile'],
+        filters: [{ name: 'Imagens', extensions: ['png', 'jpg', 'jpeg', 'webp'] }]
+      })
+      if (result.canceled || !result.filePaths[0]) return null
+      const path = result.filePaths[0]
+      const extension = extname(path).toLowerCase()
+      const size = (await stat(path)).size
+      if (size > 50 * 1024 * 1024) throw new Error('A imagem excede o limite de 50 MB.')
+      const mimeType: StudioAsset['mimeType'] = extension === '.png' ? 'image/png' : extension === '.webp' ? 'image/webp' : 'image/jpeg'
+      const bytes = await readFile(path)
+      return { id: randomUUID(), category, name: basename(path), mimeType, dataUrl: `data:${mimeType};base64,${bytes.toString('base64')}` }
+    })
+
+    ipcMain.handle(`${channel}:save-print`, async (event, id: string, dataUrl: string): Promise<string | null> => {
+      assertTrustedSender(event)
+      if (typeof id !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)) throw new Error('Identificador de Studio inválido.')
+      const bytes = dataUrlBuffer(dataUrl)
+      if (bytes.length > 50 * 1024 * 1024) throw new Error('O print excede o limite de 50 MB.')
+      const printsFolder = join(studioPath(id, workspace), 'prints')
+      await mkdir(printsFolder, { recursive: true })
+      const printPath = join(printsFolder, `print-${new Date().toISOString().replace(/[:.]/g, '-')}-${randomUUID().slice(0, 8)}.png`)
+      await writeFile(printPath, bytes)
+      return printPath
+    })
+
+    ipcMain.handle(`${channel}:open-prints`, async (event, id: string): Promise<void> => {
+      assertTrustedSender(event)
+      if (typeof id !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)) throw new Error('Identificador de Studio inválido.')
+      const studioFolder = resolve(studioPath(id, workspace))
+      const printsFolder = resolve(studioFolder, 'prints')
+      if (dirname(printsFolder) !== studioFolder) throw new Error('Pasta de prints inválida.')
+      await mkdir(printsFolder, { recursive: true })
+      const error = await shell.openPath(printsFolder)
+      if (error) throw new Error(`Não foi possível abrir a pasta de prints: ${error}`)
+    })
+  }
+
+  registerStudioWorkspace('studio', 'studio')
+  registerStudioWorkspace('video', 'video-studio')
 
   ipcMain.handle('customizer:characters:list', async (event): Promise<CustomizerCharacter[]> => {
     assertTrustedSender(event)
@@ -2103,7 +2112,7 @@ app.on('window-all-closed', () => {
 
 let waitingForFabricatorWritesBeforeQuit = false
 app.on('before-quit', (event) => {
-  const pendingWrites = [...fabricatorSaveQueues.values(), ...poseSaveWrites, ...hairSaveQueues.values(), studioSaveQueue]
+  const pendingWrites = [...fabricatorSaveQueues.values(), ...poseSaveWrites, ...hairSaveQueues.values(), studioSaveQueues.studio, studioSaveQueues.video]
   if (pendingWrites.length === 0 || waitingForFabricatorWritesBeforeQuit) return
   event.preventDefault()
   waitingForFabricatorWritesBeforeQuit = true

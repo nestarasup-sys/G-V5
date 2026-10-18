@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { FabricatorDesktopApi } from '../src/shared/fabricator'
 import type { CustomizerDesktopApi } from '../src/shared/customizer'
-import type { StudioDesktopApi } from '../src/shared/studio'
+import type { StudioDesktopApi, VideoStudioDesktopApi } from '../src/shared/studio'
 
 const fabricatorApi: FabricatorDesktopApi = {
   listFabricatorSlots: () => ipcRenderer.invoke('fabricator:list-slots'),
@@ -78,10 +78,21 @@ const studioApi: StudioDesktopApi = {
   openStudioPrints: (studioId) => ipcRenderer.invoke('studio:open-prints', studioId)
 }
 
+const videoStudioApi: VideoStudioDesktopApi = {
+  listVideoStudios: () => ipcRenderer.invoke('video-studio:list'),
+  saveVideoStudio: (studio) => ipcRenderer.invoke('video-studio:save', studio),
+  deleteVideoStudio: (id) => ipcRenderer.invoke('video-studio:delete', id),
+  getVideoStudioFolder: () => ipcRenderer.invoke('video-studio:folder'),
+  importVideoStudioImage: (category) => ipcRenderer.invoke('video-studio:import-image', category),
+  saveVideoStudioPrint: (studioId, dataUrl) => ipcRenderer.invoke('video-studio:save-print', studioId, dataUrl),
+  openVideoStudioPrints: (studioId) => ipcRenderer.invoke('video-studio:open-prints', studioId)
+}
+
 contextBridge.exposeInMainWorld('desktop', {
   platform: process.platform,
   appName: 'Gacha Nymi',
   ...fabricatorApi,
   ...customizerApi,
-  ...studioApi
+  ...studioApi,
+  ...videoStudioApi
 })

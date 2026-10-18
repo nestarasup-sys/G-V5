@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import { buildStudioExpressionAppearance, buildStudioExpressionTransforms, resolveStudioExpressionBase, studioExpressionCollection } from './expressionTransforms'
 import { Icon } from '../../ui/components/Icon'
 import { CharacterPortrait } from '../../ui/components/CharacterPortrait'
@@ -13,7 +13,7 @@ type StudioSnapshot = Pick<StudioDocument, 'backgroundColor' | 'backgroundAssetI
 type Tool = 'background' | 'objects' | null
 type DragState = { id: string; pointerId: number; startX: number; startY: number; originalX: number; originalY: number; width: number; height: number }
 
-const STORAGE_KEY = 'gacha-nymi-studio-catalog-v1'
+const LEGACY_STUDIO_STORAGE_KEY = 'gacha-nymi-studio-catalog-v1'
 const STUDIO_FACE_RENDER_VERSION = 4
 const studioColor = (number: number) => `hsl(${(number * 137.508) % 360} 45% 78%)`
 const defaultStudioEyeTransform: StudioFaceTransform = { x: 0, y: 0, width: 100, height: 100, rotation: 0 }
@@ -81,9 +81,9 @@ function fitElementToTrim(element: StudioElement, crop: TrimmedImage): StudioEle
   }
 }
 
-function loadLegacyStudios(): Array<{ id: string; title: string; color: string }> {
+function loadLegacyStudios(storageKey = LEGACY_STUDIO_STORAGE_KEY): Array<{ id: string; title: string; color: string }> {
   try {
-    const saved: unknown = JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? '[]')
+    const saved: unknown = JSON.parse(window.localStorage.getItem(storageKey) ?? '[]')
     if (!Array.isArray(saved)) return []
     return saved.filter((item): item is { id: string; title: string; color: string } => Boolean(item && typeof item === 'object'
       && typeof item.id === 'string' && typeof item.title === 'string' && typeof item.color === 'string'))
@@ -228,7 +228,45 @@ function makeCanvasPrint(studio: StudioDocument): Promise<string> {
   })
 }
 
-export function StudioPage() {
+type StudioWorkspace = 'studio' | 'video'
+type StudioWorkspacePersistence = {
+  list: () => Promise<StudioDocument[]>
+  save: (studio: StudioDocument) => Promise<void>
+  delete: (id: string) => Promise<void>
+  getFolder: () => Promise<string>
+  importImage: (category: StudioAsset['category']) => Promise<StudioAsset | null>
+  savePrint: (id: string, dataUrl: string) => Promise<string | null>
+  openPrints: (id: string) => Promise<void>
+}
+
+function studioWorkspacePersistence(workspace: StudioWorkspace): StudioWorkspacePersistence {
+  const desktop = window.desktop
+  return workspace === 'video'
+    ? {
+        list: desktop.listVideoStudios,
+        save: desktop.saveVideoStudio,
+        delete: desktop.deleteVideoStudio,
+        getFolder: desktop.getVideoStudioFolder,
+        importImage: desktop.importVideoStudioImage,
+        savePrint: desktop.saveVideoStudioPrint,
+        openPrints: desktop.openVideoStudioPrints
+      }
+    : {
+        list: desktop.listStudios,
+        save: desktop.saveStudio,
+        delete: desktop.deleteStudio,
+        getFolder: desktop.getStudioFolder,
+        importImage: desktop.importStudioImage,
+        savePrint: desktop.saveStudioPrint,
+        openPrints: desktop.openStudioPrints
+      }
+}
+
+export function StudioPage({ workspace = 'studio' }: { workspace?: StudioWorkspace }) {
+  const isVideoWorkspace = workspace === 'video'
+  const workspaceTitle = isVideoWorkspace ? 'Video Studio' : 'Studio'
+  const workspacePlural = isVideoWorkspace ? 'Video Studios' : 'Studios'
+  const persistence = useMemo(() => studioWorkspacePersistence(workspace), [workspace])
   const [studios, setStudios] = useState<StudioCard[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -402,24 +440,24 @@ export function StudioPage() {
     let cancelled = false
     void (async () => {
       try {
-        const existing = await window.desktop.listStudios()
+        const existing = await persistence.list()
         const knownIds = new Set(existing.map((studio) => studio.id))
-        const legacy = loadLegacyStudios()
+        const legacy = isVideoWorkspace ? [] : loadLegacyStudios()
         const now = new Date().toISOString()
         for (const old of legacy) {
           if (knownIds.has(old.id) || !isUuid(old.id)) continue
-          await window.desktop.saveStudio({
+          await persistence.save({
             schemaVersion: 1, ...old, createdAt: now, updatedAt: now, backgroundColor: '#d7b5cd',
             backgroundAssetId: null, backgroundX: 0, backgroundY: 0, backgroundWidth: 100, backgroundHeight: 100,
             backgroundRotation: 0, assets: [], elements: []
           })
         }
-        const loaded = await window.desktop.listStudios()
-        const folder = await window.desktop.getStudioFolder()
+        const loaded = await persistence.list()
+        const folder = await persistence.getFolder()
         if (cancelled) return
         setStudios(loaded)
         setStudioFolder(folder)
-        if (legacy.length) window.localStorage.removeItem(STORAGE_KEY)
+        if (!isVideoWorkspace && legacy.length) window.localStorage.removeItem(LEGACY_STUDIO_STORAGE_KEY)
       } catch (reason) {
         if (!cancelled) setError(reason instanceof Error ? reason.message : 'Não foi possível carregar os Studios.')
       } finally {
@@ -427,7 +465,7 @@ export function StudioPage() {
       }
     })()
     return () => { cancelled = true }
-  }, [])
+  }, [isVideoWorkspace, persistence])
 
   useEffect(() => {
     let cancelled = false
@@ -645,7 +683,7 @@ export function StudioPage() {
   }, [activeStudio, availableCharacters, normalizedStudioVersion, sceneExpressionPresetVersions])
 
   const allocateNumber = () => {
-    const highest = studios.reduce((max, studio) => Math.max(max, Number(studio.title.match(/^Studio\s+(\d+)/i)?.[1] ?? 0)), 0)
+    const highest = studios.reduce((max, studio) => Math.max(max, Number(studio.title.match(/Studio\s+(\d+)$/i)?.[1] ?? 0)), 0)
     const number = Math.max(nextStudioNumber.current, highest + 1)
     nextStudioNumber.current = number + 1
     return number
@@ -655,14 +693,14 @@ export function StudioPage() {
     const number = allocateNumber()
     const now = new Date().toISOString()
     const studio: StudioCard = {
-      schemaVersion: 1, id: crypto.randomUUID(), title: `Studio ${String(number).padStart(2, '0')}`,
+      schemaVersion: 1, id: crypto.randomUUID(), title: `${workspaceTitle} ${String(number).padStart(2, '0')}`,
       color: studioColor(number), createdAt: now, updatedAt: now, backgroundColor: '#d7b5cd',
       backgroundAssetId: null, backgroundX: 0, backgroundY: 0, backgroundWidth: 100, backgroundHeight: 100,
       backgroundRotation: 0, assets: [], elements: []
     }
     try {
       setError(null)
-      await window.desktop.saveStudio(studio)
+      await persistence.save(studio)
       setStudios((current) => [...current, studio])
       setSelectedId(studio.id)
       setSaved(true)
@@ -674,7 +712,7 @@ export function StudioPage() {
     const number = allocateNumber()
     const now = new Date().toISOString()
     const duplicate: StudioCard = {
-      ...source, id: crypto.randomUUID(), title: `Studio ${String(number).padStart(2, '0')}`,
+      ...source, id: crypto.randomUUID(), title: `${workspaceTitle} ${String(number).padStart(2, '0')}`,
       color: studioColor(number), createdAt: now, updatedAt: now,
       assets: source.assets.map((asset) => ({ ...asset, id: crypto.randomUUID() })),
       elements: source.elements.map((element) => ({
@@ -690,7 +728,7 @@ export function StudioPage() {
     duplicate.backgroundAssetId = source.backgroundAssetId ? oldToNew.get(source.backgroundAssetId) ?? null : null
     try {
       setError(null)
-      await window.desktop.saveStudio(duplicate)
+      await persistence.save(duplicate)
       setStudios((current) => [...current, duplicate])
       setSelectedId(duplicate.id)
       setSaved(true)
@@ -701,7 +739,7 @@ export function StudioPage() {
     if (!document) return true
     const generation = ++saveGenerationRef.current
     try {
-      await window.desktop.saveStudio({ ...document, updatedAt: new Date().toISOString() })
+      await persistence.save({ ...document, updatedAt: new Date().toISOString() })
       if (generation === saveGenerationRef.current) {
         setSaved(true)
         setError(null)
@@ -711,7 +749,7 @@ export function StudioPage() {
       if (generation === saveGenerationRef.current) setError(reason instanceof Error ? reason.message : 'Não foi possível salvar o Studio neste dispositivo.')
       return false
     }
-  }, [activeStudio])
+  }, [activeStudio, persistence])
 
   useEffect(() => {
     if (!activeStudio) return
@@ -773,7 +811,7 @@ export function StudioPage() {
   const importImage = async (category: StudioAsset['category']) => {
     if (!activeStudio) return
     try {
-      const asset = await window.desktop.importStudioImage(category)
+      const asset = await persistence.importImage(category)
       if (!asset) return
       const nextAssets = [...activeStudio.assets, asset]
       recordHistory()
@@ -1199,7 +1237,7 @@ export function StudioPage() {
   const deleteStudio = async (target: StudioCard | null = selectedStudio) => {
     if (!target || !window.confirm(`Excluir ${target.title}?`)) return
     try {
-      await window.desktop.deleteStudio(target.id)
+      await persistence.delete(target.id)
       setStudios((current) => current.filter((studio) => studio.id !== target.id))
       setSelectedId((current) => current === target.id ? null : current)
       setSaved(true)
@@ -1220,14 +1258,14 @@ export function StudioPage() {
     try {
       if (!await saveStudio(activeStudio)) return
       const image = await makeCanvasPrint(activeStudio)
-      const path = await window.desktop.saveStudioPrint(activeStudio.id, image)
+      const path = await persistence.savePrint(activeStudio.id, image)
       if (path) { setError(null); setNotice(`Print salvo em ${path}`) }
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível gerar o print.') }
   }
 
   const openPrints = async () => {
     if (!activeStudio) return
-    try { await window.desktop.openStudioPrints(activeStudio.id) }
+    try { await persistence.openPrints(activeStudio.id) }
     catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível abrir a pasta de prints.') }
   }
 
@@ -1438,10 +1476,10 @@ export function StudioPage() {
       : selectedBounds?.left !== undefined && selectedBounds.left < inspectorWidth ? 'right' : 'right'
     return (
       <main className={`studio-editor${fullView ? ' full-view' : ''}`} aria-label={`Editor do ${activeStudio.title}`}>
-        {!fullView && <aside className="studio-editor-rail studio-editor-left" aria-label="Ferramentas do Studio">
+        {!fullView && <aside className="studio-editor-rail studio-editor-left" aria-label={`Ferramentas do ${workspaceTitle}`}>
           <div className="studio-editor-quick-actions">
-            <button className="studio-round-action" onClick={() => void leaveStudio()} title="Salvar automaticamente e voltar" aria-label="Voltar para Seus Studios" type="button"><span>←</span></button>
-            <button className="studio-round-action" onClick={() => void saveStudio(activeStudio)} title="Salvar agora no computador" aria-label="Salvar Studio" type="button"><Icon name="save" /></button>
+            <button className="studio-round-action" onClick={() => void leaveStudio()} title="Salvar automaticamente e voltar" aria-label={`Voltar para Seus ${workspacePlural}`} type="button"><span>←</span></button>
+            <button className="studio-round-action" onClick={() => void saveStudio(activeStudio)} title="Salvar agora no computador" aria-label={`Salvar ${workspaceTitle}`} type="button"><Icon name="save" /></button>
           </div>
           <div className="studio-editor-quick-actions studio-history-actions">
             <button className="studio-round-action" disabled={!canUndo} onClick={undo} title="Desfazer (Ctrl+Z)" aria-label="Desfazer" type="button"><Icon name="undo" /></button>
@@ -1483,7 +1521,7 @@ export function StudioPage() {
         {!fullView && <aside className="studio-editor-rail studio-editor-right" aria-label="Elenco do Studio">{castPanel()}</aside>}
         {castPickerOpen && <div className="studio-cast-modal-backdrop" onPointerDown={(event) => { if (event.target === event.currentTarget && !savingCast) setCastPickerOpen(false) }}>
           <section className="studio-cast-modal" role="dialog" aria-modal="true" aria-labelledby="studio-cast-modal-title">
-            <header><span><small>EDITAR ELENCO</small><h2 id="studio-cast-modal-title">Personagens do Studio</h2></span><button className="studio-cast-modal-close" onClick={() => setCastPickerOpen(false)} aria-label="Fechar" disabled={savingCast} type="button">×</button></header>
+            <header><span><small>EDITAR ELENCO</small><h2 id="studio-cast-modal-title">Personagens do {workspaceTitle}</h2></span><button className="studio-cast-modal-close" onClick={() => setCastPickerOpen(false)} aria-label="Fechar" disabled={savingCast} type="button">×</button></header>
             <div className="studio-cast-modal-summary"><strong>Escolha os personagens</strong><span>{castSelection.length} selecionado{castSelection.length === 1 ? '' : 's'}</span></div>
             <div className="studio-cast-modal-list">
               {availableCharacters.length ? availableCharacters.map((character) => {
@@ -1501,20 +1539,20 @@ export function StudioPage() {
   }
 
   return (
-    <main className="studio-page" aria-label="Studio">
-      <header className="studio-page-header"><h1>Seus Studios</h1>{studioFolder && <small>Dados locais: {studioFolder}</small>}</header>
-      <div className="studio-toolbar" aria-label="Ações dos Studios">
+    <main className="studio-page" aria-label={workspaceTitle}>
+      <header className="studio-page-header"><h1>Seus {workspacePlural}</h1>{studioFolder && <small>Dados locais: {studioFolder}</small>}</header>
+      <div className="studio-toolbar" aria-label={`Ações dos ${workspacePlural}`}>
         <button className="studio-action studio-action-primary" onClick={() => void createStudio()} disabled={loading} type="button"><Icon name="plus" />Criar</button>
       </div>
       {error && <p className="studio-error-message" role="alert">{error}</p>}
-      {loading ? <section className="studio-empty-state"><strong>Carregando Studios…</strong></section> : studios.length ? (
-        <section className="studio-grid" aria-label="Studios criados">
+      {loading ? <section className="studio-empty-state"><strong>Carregando {workspacePlural}…</strong></section> : studios.length ? (
+        <section className="studio-grid" aria-label={`${workspacePlural} criados`}>
           {studios.map((studio) => <article className={`studio-card${selectedId === studio.id ? ' selected' : ''}`} key={studio.id}>
             <header className="studio-card-heading"><button className="studio-card-open" onClick={() => { setSelectedId(studio.id); setActiveStudioId(studio.id) }} aria-label={`Abrir ${studio.title}`} type="button">{studio.title}</button><div className="studio-card-actions"><button className="studio-card-action" onClick={() => void duplicateStudio(studio)} aria-label={`Duplicar ${studio.title}`} title={`Duplicar ${studio.title}`} type="button"><span className="studio-duplicate-icon" aria-hidden="true">▢</span></button><button className="studio-card-action danger" onClick={() => void deleteStudio(studio)} aria-label={`Excluir ${studio.title}`} title={`Excluir ${studio.title}`} type="button"><Icon name="trash" /></button></div></header>
             <button className="studio-cover" style={{ backgroundColor: studio.color }} onClick={() => { setSelectedId(studio.id); setActiveStudioId(studio.id) }} aria-label={`Abrir ${studio.title}`} type="button" />
           </article>)}
         </section>
-      ) : <section className="studio-empty-state"><span><Icon name="camera" /></span><strong>Nenhum Studio criado</strong><small>Crie um Studio para começar sua coleção.</small></section>}
+      ) : <section className="studio-empty-state"><span><Icon name="camera" /></span><strong>Nenhum {workspaceTitle} criado</strong><small>Crie um {workspaceTitle} para começar sua coleção.</small></section>}
     </main>
   )
 }
