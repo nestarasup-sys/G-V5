@@ -1437,6 +1437,45 @@ const customizerOtherTabs = [
   { id: 'objects', label: 'Objetos', icon: 'box' }
 ] as const
 
+const headAdjustmentItems = [
+  { id: 'backHair', label: 'Cabelo traseiro', icon: 'bow' },
+  { id: 'rearHair', label: 'Cabelo posterior', icon: 'bow' },
+  { id: 'ponytail', label: 'Rabo de cavalo', icon: 'bow' },
+  { id: 'frontHair', label: 'Cabelo frontal', icon: 'bow' },
+  { id: 'ahoge', label: 'Ahoge', icon: 'bow' },
+  { id: 'eye-left', label: 'Olho esquerdo', icon: 'face' },
+  { id: 'eye-right', label: 'Olho direito', icon: 'face' },
+  { id: 'pupil-left', label: 'Pupila esquerda', icon: 'eye' },
+  { id: 'pupil-right', label: 'Pupila direita', icon: 'eye' },
+  { id: 'brow-left', label: 'Sobrancelha esquerda', icon: 'face' },
+  { id: 'brow-right', label: 'Sobrancelha direita', icon: 'face' },
+  { id: 'nose', label: 'Nariz', icon: 'face' },
+  { id: 'mouth', label: 'Boca', icon: 'message' },
+  { id: 'eye-highlight-left', label: 'Brilho do olho esquerdo', icon: 'sparkles' },
+  { id: 'eye-highlight-right', label: 'Brilho do olho direito', icon: 'sparkles' },
+  { id: 'blush', label: 'Blush', icon: 'flower' },
+  { id: 'facial-shadow', label: 'Sombra facial', icon: 'brush' },
+  { id: 'oculos', label: 'Óculos', icon: 'eye' },
+  { id: 'acessorio-cabeca', label: 'Acessório de cabeça', icon: 'sparkles' }
+] as const
+
+const clothesAdjustmentItems = [
+  { id: 'camisa', label: 'Camisas', icon: 'shirt' },
+  { id: 'jaqueta', label: 'Jaquetas', icon: 'shirt' },
+  { id: 'manga-superior', label: 'Mangas superiores', icon: 'body' },
+  { id: 'manga-inferior', label: 'Mangas inferiores', icon: 'body' },
+  { id: 'luvas', label: 'Luvas', icon: 'flower' },
+  { id: 'capa', label: 'Capa', icon: 'sparkles' },
+  { id: 'cinto', label: 'Cinto', icon: 'body' },
+  { id: 'oculos', label: 'Óculos', icon: 'eye' },
+  { id: 'acessorio-cabeca', label: 'Acessórios de cabeça', icon: 'sparkles' },
+  { id: 'saia-superior', label: 'Saia superior', icon: 'shirt' },
+  { id: 'calca', label: 'Calças e bermudas', icon: 'body' },
+  { id: 'meia', label: 'Meias', icon: 'body' },
+  { id: 'sapato', label: 'Sapatos', icon: 'body' },
+  { id: 'saia-inferior', label: 'Saia inferior', icon: 'shirt' }
+] as const
+
 function CustomizerCategoryIcon({ category }: { category: string }) {
   const common = { fill: 'none', stroke: 'currentColor', strokeWidth: 1.7, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const }
   return <svg viewBox="0 0 48 48" aria-hidden="true" {...common}>
@@ -1544,6 +1583,8 @@ export function CustomizerPage() {
   const [faceCatalogLibraryPart, setFaceCatalogLibraryPart] = useState<'nose' | 'eye-highlight-left' | 'mouth' | 'eye-highlight-right' | 'blush' | 'facial-shadow' | null>(null)
   const [faceCatalogLibraryPage, setFaceCatalogLibraryPage] = useState(0)
   const [headPanelTab, setHeadPanelTab] = useState<'hair' | 'eyes' | 'face' | 'extra' | 'adjust'>('hair')
+  const [headAdjustSelection, setHeadAdjustSelection] = useState<string | null>(null)
+  const [clothesAdjustSelection, setClothesAdjustSelection] = useState<string | null>(null)
   const [activeHairColorRole, setActiveHairColorRole] = useState<HairColorRole>('base')
   const [selectedClothing, setSelectedClothing] = useState<SelectedWardrobeComponent | null>(null)
   const [wardrobeTransformDraft, setWardrobeTransformDraft] = useState<Pick<CustomizerWardrobeGroup, 'offsetX' | 'offsetY' | 'scaleX' | 'scaleY' | 'rotation'> | null>(null)
@@ -3188,6 +3229,95 @@ export function CustomizerPage() {
     </div>
   )
 
+  const hasHeadAdjustmentItem = (id: string) => {
+    const appearance = selectedCharacter?.customization.faceAppearance
+    if (hairCategories.some((part) => part.id === id)) return Boolean(hairAppearancePartStyleId(selectedCharacter?.customization.hairAppearance, id as HairPartId))
+    if (id === 'eye-left' || id === 'eye-right' || id === 'pupil-left' || id === 'pupil-right' || id === 'brow-left' || id === 'brow-right') {
+      return Boolean(appearance?.components?.[id as FaceComponentPartId]?.assetId || (id.startsWith('eye') ? appearance?.eyeCatalogId || appearance?.eyeLeftCatalogId || appearance?.eyeRightCatalogId : id.startsWith('brow') ? appearance?.eyebrowCatalogId || appearance?.eyebrowLeftCatalogId || appearance?.eyebrowRightCatalogId : false))
+    }
+    if (id === 'nose') return Boolean(appearance?.noseCatalogId || appearance?.setId)
+    if (id === 'mouth') return Boolean(appearance?.mouthClosedCatalogId || appearance?.mouthOpenCatalogId || appearance?.setId)
+    if (id === 'oculos' || id === 'acessorio-cabeca') return Boolean(appearance?.headExtras?.[id === 'oculos' ? 'glasses' : 'head-accessory'] || selectedCharacter?.customization.wardrobeGroups?.some((group) => group.category === id))
+    return Boolean(appearance?.faceDetails?.[id as FaceDetailKind])
+  }
+
+  const restoreHeadAdjustments = () => {
+    setHeadAdjustSelection(null)
+    if (!selectedCharacter) return
+    void saveCharacterCustomization((current) => ({
+      partOverrides: {},
+      ...(current.faceAppearance ? {
+        faceAppearance: {
+          ...current.faceAppearance,
+          transforms: undefined,
+          components: Object.fromEntries(Object.entries(current.faceAppearance.components ?? {}).map(([id, component]) => [id, component ? { ...component, transform: undefined } : component]))
+        } as CustomizerFaceAppearance
+      } : {})
+    }))
+  }
+
+  const restoreClothesAdjustments = () => {
+    setClothesAdjustSelection(null)
+    if (!selectedCharacter) return
+    void saveCharacterCustomization({ wardrobeGroups: (selectedCharacter.customization.wardrobeGroups ?? []).map((group) => ({ ...group, offsetX: 0, offsetY: 0, scaleX: 1, scaleY: 1, rotation: 0 })) })
+  }
+
+  const renderAdjustmentPicker = (area: 'head' | 'clothes') => {
+    const isHead = area === 'head'
+    const items = isHead ? headAdjustmentItems : clothesAdjustmentItems
+    const selectedId = isHead ? headAdjustSelection : clothesAdjustSelection
+    const reset = isHead ? restoreHeadAdjustments : restoreClothesAdjustments
+    const previewFor = (id: string): string | null => {
+      if (!selectedCharacter) return null
+      if (isHead) {
+        const appearance = selectedCharacter.customization.faceAppearance
+        const hairPart = hairCategories.find((part) => part.id === id)
+        if (hairPart) {
+          const styleId = hairAppearancePartStyleId(selectedCharacter.customization.hairAppearance, hairPart.id)
+          const modelSlot = selectedCharacter.customization.hairAppearance?.modelSlot
+          return styleId && modelSlot ? hairDetails[`${modelSlot}:${styleId}`]?.[hairPart.side]?.dataUrl ?? null : null
+        }
+        const facePart = id as FaceComponentPartId
+        const componentId = appearance?.components?.[facePart]?.assetId
+        if (componentId) return faceComponentDetails[componentId]?.dataUrl ?? null
+        const detailId = appearance?.faceDetails?.[id as FaceDetailKind]
+        if (detailId) return faceComponentDetails[detailId]?.dataUrl ?? null
+        const extraId = appearance?.headExtras?.[id === 'oculos' ? 'glasses' : 'head-accessory']
+        if (extraId) return faceComponentDetails[extraId]?.dataUrl ?? null
+        const catalogId = id.startsWith('eye-') || id.startsWith('pupil-') ? appearance?.eyeLeftCatalogId ?? appearance?.eyeCatalogId
+          : id.startsWith('brow-') ? appearance?.eyebrowLeftCatalogId ?? appearance?.eyebrowCatalogId
+            : id === 'nose' ? appearance?.noseCatalogId : id === 'mouth' ? appearance?.mouthClosedCatalogId : undefined
+        const catalog = catalogId ? faceCatalogDetails[`${appearance?.modelSlot}:${catalogId}`] : undefined
+        return catalog?.pieces[0]?.dataUrl ?? null
+      }
+      const group = selectedCharacter.customization.wardrobeGroups?.find((entry) => entry.category === id)
+      if (!group) return null
+      const set = wardrobeDetails[`${group.modelSlot}:${group.setId}`]
+      return set?.components.find((component) => component.id === group.componentId)?.dataUrl ?? set?.components.find((component) => component.category === group.category)?.dataUrl ?? null
+    }
+    return <section className="customizer-adjust-picker" aria-label={isHead ? 'Ajustes de cabeça' : 'Ajustes de roupas'}>
+      <header className="customizer-adjust-heading">
+        <button className="customizer-adjust-reset" type="button" onClick={reset} disabled={!selectedCharacter} title="Restaurar ajustes deste personagem"><Icon name="reset" /><span>RESTAURAR</span></button>
+        <h2>Selecione um item para ajustar</h2>
+      </header>
+      {!selectedCharacter && <p className="customizer-adjust-hint">Selecione um personagem para ver as peças dele.</p>}
+      <div className="customizer-adjust-grid">
+        {items.map((item) => {
+          const applied = isHead ? hasHeadAdjustmentItem(item.id) : Boolean(selectedCharacter?.customization.wardrobeGroups?.some((group) => group.category === item.id))
+          const selected = selectedId === item.id
+          const preview = previewFor(item.id)
+          return <button key={item.id} className={`customizer-adjust-card${selected ? ' selected' : ''}${applied ? ' applied' : ''}`} type="button" disabled={!selectedCharacter} aria-pressed={selected} onClick={() => isHead ? setHeadAdjustSelection(item.id) : setClothesAdjustSelection(item.id)} title={`${item.label}${applied ? ' · aplicado neste personagem' : ' · sem peça aplicada'}`}>
+            <span className="customizer-adjust-card-label">{item.label}</span>
+            <span className="customizer-adjust-card-preview">{preview ? <img src={preview} alt="" /> : <Icon name={item.icon} />}{applied && <i><Icon name="check" /></i>}</span>
+            <small>{applied ? 'Aplicado' : 'Sem peça'}</small>
+          </button>
+        })}
+      </div>
+      {selectedId && <div className="customizer-adjust-selection" role="status">Categoria selecionada: <strong>{items.find((item) => item.id === selectedId)?.label}</strong>{!items.some((item) => item.id === selectedId && (isHead ? hasHeadAdjustmentItem(item.id) : selectedCharacter?.customization.wardrobeGroups?.some((group) => group.category === item.id))) && <span> · nenhuma peça aplicada neste personagem</span>}</div>}
+      <p className="customizer-adjust-scope">Os ajustes desta área pertencem somente ao personagem selecionado.</p>
+    </section>
+  }
+
   if (activeModule !== null && modules.some((module) => module.name === activeModule)) {
     return (
       <div className="customizer-models-view">
@@ -3264,7 +3394,7 @@ export function CustomizerPage() {
             {selectedCustomizerTopTab === 'cabeca' && headPanelTab === 'face' && renderFaceCatalogCustomizer()}
             {selectedCustomizerTopTab === 'cabeca' && headPanelTab === 'extra' && renderWardrobeCatalog()}
             {selectedCustomizerTopTab === 'roupas' && (clothesPanelTab === 'upper' || clothesPanelTab === 'lower') && renderWardrobeCatalog()}
-            {selectedCustomizerTopTab === 'roupas' && clothesPanelTab === 'adjust' && <div className="customizer-catalog-empty">Os ajustes de roupas ainda não estão disponíveis.</div>}
+            {selectedCustomizerTopTab === 'roupas' && clothesPanelTab === 'adjust' && renderAdjustmentPicker('clothes')}
             {selectedCustomizerTopTab === 'modelos' && <section className="customizer-model-skin-tones" aria-label="Cor de pele do modelo">
               <strong>Cor de pele</strong>
               <div className="customizer-model-skin-tone-row" role="group" aria-label="Escolher cor de pele">
@@ -3402,7 +3532,7 @@ export function CustomizerPage() {
                 </nav>
                 {headPanelTab === 'hair' && renderHairCatalog()}
                 {headPanelTab === 'extra' && <div className="customizer-head-placeholder"><Icon name="sparkles" /><strong>Extras da cabeça</strong><span>Escolha os óculos no painel lateral.</span></div>}
-                {headPanelTab === 'adjust' && <div className="customizer-head-placeholder"><Icon name="sliders" /><strong>Ajustes da cabeça</strong><span>Os controles de ajuste por peça serão organizados aqui.</span></div>}
+                {headPanelTab === 'adjust' && renderAdjustmentPicker('head')}
               </div>}
               {activeModule === 'Cabelos' && renderHairCatalog()}
               {/* O catálogo de roupas é renderizado no painel lateral visível. */}
