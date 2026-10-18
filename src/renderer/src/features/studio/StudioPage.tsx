@@ -394,7 +394,12 @@ export function StudioPage({ workspace = 'studio' }: { workspace?: StudioWorkspa
       const anchor = videoPlaybackAnchorRef.current
       const next = Math.min(duration, anchor.frame + Math.floor((now - anchor.time) * 60 / 1000))
       setVideoPlayheadFrame(next)
-      if (next >= duration) setVideoPlaying(false)
+      if (next >= duration) {
+        setVideoPlaying(false)
+        setStudios((current) => current.map((studio) => studio.id === activeStudioId
+          ? restoreVideoTracks({ ...studio, videoTimeline: { ...videoTimelineFor(studio), playheadFrame: duration } }, Math.max(0, duration - 1))
+          : studio))
+      }
       else raf = requestAnimationFrame(tick)
     }
     raf = requestAnimationFrame(tick)
@@ -976,7 +981,7 @@ export function StudioPage({ workspace = 'studio' }: { workspace?: StudioWorkspa
     setVideoPlaying(false)
     videoPlaybackAnchorRef.current = { frame: clamped, time: performance.now() }
     setVideoPlayheadFrame(clamped)
-    if (isVideoWorkspace && clamped !== videoPlayheadFrame) {
+    if (isVideoWorkspace && (clamped !== videoPlayheadFrame || videoPlaying)) {
       // A seek abandons uncommitted edits. Only Save Frame changes a segment's state.
       setStudios((current) => current.map((studio) => studio.id === activeStudio.id
         ? restoreVideoTracks({ ...studio, videoTimeline: { ...videoTimelineFor(studio), playheadFrame: clamped } }, clamped)
