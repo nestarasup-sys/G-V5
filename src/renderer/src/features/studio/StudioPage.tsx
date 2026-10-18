@@ -844,7 +844,37 @@ export function StudioPage({ workspace = 'studio' }: { workspace?: StudioWorkspa
 
   const patchStudio = (transform: (studio: StudioDocument) => StudioDocument) => {
     if (!activeStudioId) return
-    setStudios((current) => current.map((studio) => studio.id === activeStudioId ? transform(studio) : studio))
+    setStudios((current) => current.map((studio) => {
+      if (studio.id !== activeStudioId) return studio
+      const next = transform(studio)
+      if (!isVideoWorkspace || !selectedElementId || next === studio) return next
+      const previousElement = studio.elements.find((element) => element.id === selectedElementId && element.kind === 'character')
+      const editedElement = next.elements.find((element) => element.id === selectedElementId && element.kind === 'character')
+      if (!previousElement || !editedElement) return next
+      const previousState = captureVideoCharacter(studio, previousElement)
+      const editedState = captureVideoCharacter(next, editedElement)
+      if (!editedState || videoCharacterStateEquals(previousState ?? undefined, editedState)) return next
+
+      const timeline = videoTimelineFor(next)
+      const activeKey = timeline.characterKeys.filter((key) => key.elementId === selectedElementId && key.frame <= videoPlayheadFrame)
+        .sort((left, right) => right.frame - left.frame)[0]
+      const globalFields: Partial<StudioElement> = {}
+      if (previousElement.timelineColor !== editedElement.timelineColor) globalFields.timelineColor = editedElement.timelineColor
+      if (previousElement.positionLocked !== editedElement.positionLocked) globalFields.positionLocked = editedElement.positionLocked
+      const applyGlobalFields = (state: NonNullable<VideoTimelineDocument['characterKeys'][number]['state']>) => Object.keys(globalFields).length
+        ? { ...state, element: { ...state.element, ...globalFields } } : state
+      const characterBases = { ...timeline.characterBases }
+      if (characterBases[selectedElementId]) characterBases[selectedElementId] = applyGlobalFields(characterBases[selectedElementId])
+      const characterKeys = timeline.characterKeys.map((key) => {
+        if (key.elementId !== selectedElementId) return key
+        const state = key.id === activeKey?.id ? editedState : key.state ? applyGlobalFields(key.state) : undefined
+        return key.id === activeKey?.id
+          ? { ...key, poseSlot: editedElement.poseSlot ?? null, expressionCollectionId: editedElement.activeExpressionCollectionId ?? 'standard', expressionPresetId: editedElement.activeExpressionPresetId ?? null, faceMode: studioFaceModeForElement(editedElement, editedElement.faceAppearance), state }
+          : { ...key, state }
+      })
+      if (!activeKey) characterBases[selectedElementId] = editedState
+      return { ...next, videoTimeline: { ...timeline, characterBases, characterKeys } }
+    }))
     setSaved(false)
   }
 
@@ -982,7 +1012,7 @@ export function StudioPage({ workspace = 'studio' }: { workspace?: StudioWorkspa
     videoPlaybackAnchorRef.current = { frame: clamped, time: performance.now() }
     setVideoPlayheadFrame(clamped)
     if (isVideoWorkspace && (clamped !== videoPlayheadFrame || videoPlaying)) {
-      // A seek abandons uncommitted edits. Only Save Frame changes a segment's state.
+      // Every explicit segment edit is already stored; seeking loads that segment's state.
       setStudios((current) => current.map((studio) => studio.id === activeStudio.id
         ? restoreVideoTracks({ ...studio, videoTimeline: { ...videoTimelineFor(studio), playheadFrame: clamped } }, clamped)
         : studio))

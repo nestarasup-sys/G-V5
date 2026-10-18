@@ -1,4 +1,4 @@
-import { useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import { videoCharacterTrackColor } from '../../../../shared/studio'
 import type { StudioDocument, VideoTimelineDocument } from '../../../../shared/studio'
 
@@ -74,6 +74,14 @@ export function VideoTimeline({ studio, playheadFrame, playing, height, presetNa
   const tickSeconds = pixelsPerSecond >= 16 ? 5 : Math.max(1, Math.ceil(80 / pixelsPerSecond))
   const tickCount = Math.floor(timelineSeconds / tickSeconds)
   const characters = studio.elements.filter((element) => element.kind === 'character').sort((left, right) => (trackSettings[left.id]?.order ?? studio.elements.indexOf(left)) - (trackSettings[right.id]?.order ?? studio.elements.indexOf(right)))
+  useEffect(() => {
+    const sampledFrame = Math.min(playheadFrame, duration - 1)
+    if (selection?.kind !== 'character' || selection.startFrame <= sampledFrame && sampledFrame < selection.endFrame) return
+    const starts = timeline.characterKeys.filter((key) => key.elementId === selection.elementId).map((key) => key.frame).sort((a, b) => a - b)
+    const startFrame = starts.filter((frame) => frame <= sampledFrame).at(-1) ?? 0
+    const endFrame = starts.find((frame) => frame > startFrame) ?? duration
+    setSelection({ kind: 'character', elementId: selection.elementId, startFrame, endFrame })
+  }, [playheadFrame, selection, timeline.characterKeys, duration])
   const textTracks = (['speech', 'thought'] as const).map((kind) => ({
     kind,
     label: kind === 'speech' ? 'Falas' : 'Pensamentos',
@@ -274,9 +282,11 @@ export function VideoTimeline({ studio, playheadFrame, playing, height, presetNa
             const keys = timeline.characterKeys.filter((key) => key.elementId === character.id).map((key) => previewBoundary?.elementId === character.id && previewBoundary.keyId === key.id ? { ...key, frame: previewBoundary.frame } : key).sort((a, b) => a.frame - b.frame)
             const name = character.text || studio.assets.find((asset) => asset.id === character.assetId)?.name || 'Personagem'
             const color = videoCharacterTrackColor(character.id, character.timelineColor)
+            const basePresetId = timeline.characterBases?.[character.id]?.element.activeExpressionPresetId
+            const baseLabel = basePresetId ? presetNames[basePresetId] ?? 'Expressão' : 'Base'
             const states = keys.length
-              ? [...(keys[0].frame > 0 ? [{ id: `base:${character.id}`, start: 0, end: keys[0].frame, label: 'Base' }] : []), ...keys.map((key, index) => ({ id: key.id, start: key.frame, end: keys[index + 1]?.frame ?? duration, label: key.expressionPresetId ? presetNames[key.expressionPresetId] ?? 'Expressão' : key.faceMode === 'idle' ? 'Base' : key.faceMode === 'blink' ? 'Blink' : 'Talk' }))]
-              : [{ id: `base:${character.id}`, start: 0, end: duration, label: 'Base' }]
+              ? [...(keys[0].frame > 0 ? [{ id: `base:${character.id}`, start: 0, end: keys[0].frame, label: baseLabel }] : []), ...keys.map((key, index) => ({ id: key.id, start: key.frame, end: keys[index + 1]?.frame ?? duration, label: key.expressionPresetId ? presetNames[key.expressionPresetId] ?? 'Expressão' : key.faceMode === 'idle' ? 'Base' : key.faceMode === 'blink' ? 'Blink' : 'Talk' }))]
+              : [{ id: `base:${character.id}`, start: 0, end: duration, label: baseLabel }]
             return <div className={`video-track-row${trackSettings[character.id]?.collapsed ? ' collapsed' : ''}`} key={character.id}>
               <span className="video-track-label" title={name}><i className="video-track-badge" style={{ backgroundColor: color }}>{name.slice(0, 1).toUpperCase()}</i><span>{trackSettings[character.id]?.label ?? name}</span></span>
               <div className="video-track-lane character-lane" style={{ backgroundSize: `${tickSeconds * pixelsPerSecond}px 100%` }} aria-label={`Faixa de ${name}`}>
