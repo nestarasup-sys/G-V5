@@ -2,7 +2,7 @@
 
 > **Estado:** plano de arquitetura extensível, desempenho, isolamento entre áreas, logs e ambiente DEV AI. Este documento não moveu código nem dados; implementações descritas abaixo continuam como etapas futuras.
 >
-> **Objetivo do usuário:** manter o código, recursos e todos os dados gerados ou importados pelo app organizados dentro de uma única pasta de projeto, com subpastas claras para personagens, imagens, roteiros, vídeos, fundos, salvamentos e demais dados. A refatoração deve melhorar comportamento e operação do produto — desempenho, consumo de recursos, estabilidade, segurança, qualidade e capacidade de evolução — e não apenas a aparência do código. O agente responsável, seja este ou outro, deve avaliar, instalar e usar por conta própria as melhores ferramentas compatíveis, testar as mudanças e aplicá-las com segurança. O app também deve ter uma área DEV AI estruturada para validar o produto offscreen, sem depender de janelas visíveis no PC.
+> **Objetivo do usuário:** manter o código, recursos e todos os dados gerados ou importados pelo app organizados dentro de uma única pasta de projeto, com subpastas claras para personagens, imagens, roteiros, vídeos, fundos, salvamentos e demais dados. A refatoração deve melhorar comportamento e operação do produto — desempenho, consumo de recursos, estabilidade, segurança, qualidade e capacidade de evolução — e não apenas a aparência do código. O agente responsável, seja este ou outro, está autorizado a criar pastas, remover pastas obsoletas, reorganizar a estrutura e fazer a organização completa do projeto, preservando dados e funcionalidades. Ele deve avaliar, instalar e usar por conta própria as melhores ferramentas compatíveis, testar as mudanças e aplicá-las com segurança. Electron e app web são a base atual, não uma regra tecnológica: se outra tecnologia, linguagem, runtime, serviço local ou arquitetura for comprovadamente melhor para uma parte ou para o app, o agente pode propor e implementar a solução mais adequada. O app também deve ter uma área DEV AI estruturada para validar o produto offscreen, sem depender de janelas visíveis no PC.
 
 ## 1. Resumo executivo
 
@@ -436,18 +436,20 @@ Esses sistemas não precisam ser criados todos de uma vez. Devem evoluir como fu
 
 ### 4.8 Autonomia do agente e ferramentas do projeto
 
-O plano é independente de quem o executa: pode ser este agente ou outro agente de programação. O agente deve investigar o problema, escolher as melhores ferramentas compatíveis com o repositório, instalá-las como dependências locais e versionadas quando necessário, executar os testes apropriados, interpretar os resultados e aplicar correções sem depender de instruções passo a passo do usuário.
+O plano é independente de quem o executa: pode ser este agente ou outro agente de programação. O usuário autoriza explicitamente a criação de novas pastas, remoção de pastas obsoletas, movimentação de módulos e a reorganização completa da estrutura. O agente deve investigar dependências e referências antes de mover/remover, atualizar imports, scripts, documentação e configuração, e preservar dados e funcionalidades existentes.
+
+O agente deve investigar o problema, escolher as melhores ferramentas e tecnologias compatíveis com os requisitos, instalá-las no escopo apropriado, executar os testes adequados, interpretar os resultados e aplicar correções sem depender de instruções passo a passo do usuário. Electron e app web descrevem a implementação atual; não restringem a arquitetura futura. Se outra tecnologia for melhor para desempenho, experiência, segurança, manutenção, recursos locais ou operação offscreen, o agente pode implementá-la, incluindo serviços auxiliares, workers, ferramentas nativas ou outros runtimes, mantendo contratos claros com o restante do produto.
 
 Procedimento recomendado para escolher/instalar uma ferramenta:
 
 1. Identificar a lacuna concreta (por exemplo, cobertura de UI, profiling de CPU ou validação de schemas); não adicionar ferramenta só por popularidade.
-2. Conferir compatibilidade com Electron, React, TypeScript, Windows e o lockfile; avaliar manutenção, licença, requisitos, acessos e tamanho/custo operacional.
+2. Conferir compatibilidade com os requisitos e ambientes suportados — não assumir Electron/app web como única opção — e avaliar manutenção, licença, requisitos, acessos e tamanho/custo operacional.
 3. Preferir dependência de desenvolvimento local, versão registrada e comandos reproduzíveis. Evitar instalação global quando a dependência local for suficiente.
 4. Registrar no repositório o motivo, o comando de uso, os dados acessados e o resultado esperado.
 5. Usar sandbox e fixtures sintéticas; executar a ferramenta, corrigir o que encontrar e repetir a validação.
 6. Informar limitações quando um recurso não puder ser verificado offscreen ou depender de hardware/serviço externo.
 
-O agente pode adicionar dependências e código de ferramenta dentro do projeto, rodar checks e aplicar as correções autorizadas pelo escopo da tarefa. Antes de operação destrutiva em dados reais, deve criar backup verificável e manter caminho de recuperação. Nenhuma ferramenta deve enviar código, imagens, logs ou projetos para terceiros por padrão; integração externa precisa de configuração e escopo explícitos.
+O agente pode criar e reorganizar diretórios, adicionar dependências e código de ferramenta dentro do projeto, rodar checks e aplicar as correções autorizadas pelo escopo da tarefa. Antes de excluir código ou arquivos gerados que sejam a única cópia de dados reais, deve verificar referências e criar backup recuperável; pastas obsoletas vazias ou regeneráveis podem ser removidas após conferir os consumidores. Nenhuma ferramenta deve enviar código, imagens, logs ou projetos para terceiros por padrão; integração externa precisa de configuração e escopo explícitos.
 
 ### 4.9 Área DEV AI para validação offscreen
 
@@ -518,6 +520,8 @@ Critérios de aceite do DEV AI:
 - [ ] Fazer um mapa de dependências de features, estilos globais, estado, atalhos e APIs IPC, com foco no vazamento Studio ↔ Video Studio.
 - [ ] Capturar uma linha de base dos fluxos críticos (inicialização, trocar de área, abrir/salvar projeto, preview e timeline) antes de otimizações.
 - [ ] Escolher ferramentas por lacuna comprovada, registrar versões/licenças e definir quais podem ser instaladas localmente pelo agente.
+- [ ] Identificar diretórios obsoletos, duplicados ou mal posicionados e registrar dependências, referências e destino antes da reorganização autorizada.
+- [ ] Avaliar sem viés de stack se componentes devem permanecer em Electron/app web ou usar tecnologia complementar/substitutiva; comparar por critérios do produto.
 - [ ] Especificar contratos do runner DEV AI, sandbox de dados, execução headless, formatos de relatório e matriz inicial de regressão.
 
 **Saída:** mapa de migração com origem, destino, formato e procedimento de recuperação para cada domínio.
@@ -631,6 +635,8 @@ Critérios de aceite do DEV AI:
 | Ferramenta nova quebrar compatibilidade ou trazer risco de cadeia de suprimentos | Preferir dependências locais, fixar versões no lockfile, revisar licença/manutenção e limitar permissões e rede. |
 | Runner offscreen acessar ou alterar dados reais | Usar perfil e raiz exclusivos por execução, fixtures sintéticas, caminhos permitidos e testes que provem a separação do `app-data/` real. |
 | Execução autônoma do agente rodar comandos fora do escopo | Runner DEV AI expõe somente suítes/comandos registrados, com limites, timeout, isolamento e relatório; operações sobre dados reais exigem backup e recuperação. |
+| Reorganização de pastas quebrar imports, scripts ou referências de dados | Mapear consumidores antes de mover/remover; atualizar aliases/configuração/documentação; validar build, testes e caminhos de migração; preservar backup de dados reais. |
+| Manter Electron/app web por inércia impedir uma solução melhor | Avaliar tecnologias por requisitos, desempenho, segurança, manutenção e integração; registrar comparação e migrar por fronteiras/contratos verificáveis. |
 | Evento de domínio ser processado duas vezes | `eventId`/`operationId`, schema versionado e consumidores idempotentes. |
 | Mudança de uma área afetar outra pela topbar | WorkspaceRegistry, estado/estilos/canais com namespace próprio e matriz de navegação cruzada obrigatória. |
 | “Otimização” tornar preview ou edição menos precisa | Comparar saída funcional/visual e tempo no mesmo projeto de referência; manter resultado determinístico onde requerido. |
