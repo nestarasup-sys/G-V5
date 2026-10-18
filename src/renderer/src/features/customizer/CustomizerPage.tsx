@@ -613,26 +613,20 @@ async function renderWardrobeOverlay(
   artwork: CatalogArtwork,
   modelSlot: number | null,
   source: FabricatorProject | null,
-  selected: SelectedWardrobeComponent | null,
   skinTone?: string,
   maxSize = Math.max(artwork.width, artwork.height)
-): Promise<{ imageUrl: string | null; aboveHairImageUrl: string | null; selectedUrl: string | null }> {
-  if (!groups.length || modelSlot === null || !source) return { imageUrl: null, aboveHairImageUrl: null, selectedUrl: null }
+): Promise<{ imageUrl: string | null; aboveHairImageUrl: string | null }> {
+  if (!groups.length || modelSlot === null || !source) return { imageUrl: null, aboveHairImageUrl: null }
   const output = document.createElement('canvas')
   const pixelScale = Math.min(maxSize / Math.max(artwork.width, artwork.height), Math.sqrt(16_000_000 / (artwork.width * artwork.height)))
   output.width = Math.max(1, Math.ceil(artwork.width * pixelScale))
   output.height = Math.max(1, Math.ceil(artwork.height * pixelScale))
   const outputContext = output.getContext('2d')
-  if (!outputContext) return { imageUrl: null, aboveHairImageUrl: null, selectedUrl: null }
+  if (!outputContext) return { imageUrl: null, aboveHairImageUrl: null }
   configureCharacterSampling(outputContext)
   outputContext.scale(pixelScale, pixelScale)
   let aboveHairCanvas: HTMLCanvasElement | null = null
   let aboveHairContext: CanvasRenderingContext2D | null = null
-  const selectionCanvas = document.createElement('canvas')
-  selectionCanvas.width = output.width
-  selectionCanvas.height = output.height
-  const selectionContext = selectionCanvas.getContext('2d')
-  if (selectionContext) selectionContext.scale(pixelScale, pixelScale)
   const hidden = new Set(artwork.hiddenPartIds ?? [])
   const bodyOrder = (artwork.layerOrder ?? []).filter((id, index, order) => artwork.parts.some((part) => part.id === id) && order.indexOf(id) === index)
   for (const part of artwork.parts) if (!bodyOrder.includes(part.id)) bodyOrder.push(part.id)
@@ -718,12 +712,11 @@ async function renderWardrobeOverlay(
         }
         if (renderAboveHair && aboveHairContext) hasAboveHairAccessories = true
         drawGarment(renderAboveHair && aboveHairContext ? aboveHairContext : outputContext)
-        if (selectionContext && selected && garment.group.setId === selected.setId && garment.group.category === selected.category && garment.component.id === selected.componentId) drawGarment(selectionContext)
       } catch { /* Keep rendering the remaining layers when one image is unavailable. */ }
     }
   }
   const aboveHairImageUrl = hasAboveHairAccessories && aboveHairCanvas ? aboveHairCanvas.toDataURL('image/png') : null
-  return { imageUrl: output.toDataURL('image/png'), aboveHairImageUrl, selectedUrl: selectionContext && selected ? selectionCanvas.toDataURL('image/png') : null }
+  return { imageUrl: output.toDataURL('image/png'), aboveHairImageUrl }
 }
 
 export async function renderArtwork(artwork: CatalogArtwork, maxSize: number, skinTone?: string, trimTransparent = false): Promise<string | null> {
@@ -1265,7 +1258,7 @@ export async function prepareSavedCharacterRenderer(character: CustomizerCharact
     const set = await window.desktop.loadWardrobeSet(group.modelSlot, group.setId)
     if (set) details[key] = set
   }))
-  const wardrobe = await renderWardrobeOverlay(groups, details, artwork, modelSlot, source, null, character.customization.modelSkinTone)
+  const wardrobe = await renderWardrobeOverlay(groups, details, artwork, modelSlot, source, character.customization.modelSkinTone)
 
   const appearance = character.customization.faceAppearance
   const expressionEffectsByIndex = appearance?.modelSlot === modelSlot
@@ -1575,8 +1568,6 @@ export function CustomizerPage() {
   const [wardrobeTransformDraft, setWardrobeTransformDraft] = useState<Pick<CustomizerWardrobeGroup, 'offsetX' | 'offsetY' | 'scaleX' | 'scaleY' | 'rotation'> | null>(null)
   const [selectedWardrobeUrl, setSelectedWardrobeUrl] = useState<string | null>(null)
   const [selectedWardrobeAboveHairUrl, setSelectedWardrobeAboveHairUrl] = useState<string | null>(null)
-  const [selectedWardrobeHighlightUrl, setSelectedWardrobeHighlightUrl] = useState<string | null>(null)
-  const [wardrobeHighlightVisible, setWardrobeHighlightVisible] = useState(false)
   const [selectedArtworkProject, setSelectedArtworkProject] = useState<CatalogArtwork | null>(null)
   const [proportionEdit, setProportionEdit] = useState<{ characterId: string; values: CharacterProportions } | null>(null)
   const [bodyDimensionEdit, setBodyDimensionEdit] = useState<{ characterId: string; values: CharacterBodyDimensions } | null>(null)
@@ -1743,7 +1734,6 @@ export function CustomizerPage() {
 
   useEffect(() => {
     setSelectedClothing(null)
-    setWardrobeHighlightVisible(false)
   }, [selectedCharacter?.id])
 
   useEffect(() => {
@@ -1757,7 +1747,6 @@ export function CustomizerPage() {
         : firstSet.components.find((component) => firstDefinition?.source.includes(component.category))
       : undefined
     setSelectedClothing(firstGroup && firstComponent ? { modelSlot: firstGroup.modelSlot, setId: firstGroup.setId, category: firstGroup.category, componentId: firstComponent.id } : null)
-    setWardrobeHighlightVisible(Boolean(firstComponent))
   }, [activeModule, clothesPanelTab, selectedCharacter?.id, selectedCharacter?.customization.wardrobeGroups, selectedClothing, wardrobeDetails])
 
   useEffect(() => {
@@ -1767,12 +1756,10 @@ export function CustomizerPage() {
     const groups = (selectedCharacter.customization.wardrobeGroups ?? []).filter((group) => categoryIds.has(group.category))
     if (!groups.length) {
       setSelectedClothing(null)
-      setWardrobeHighlightVisible(false)
       return
     }
     const currentSelectionStillInScope = selectedClothing && groups.some((group) => group.modelSlot === selectedClothing.modelSlot && group.setId === selectedClothing.setId && group.category === selectedClothing.category && (group.componentId === selectedClothing.componentId || !group.componentId))
     if (currentSelectionStillInScope) {
-      setWardrobeHighlightVisible(true)
       return
     }
     const firstGroup = groups[0]
@@ -1783,7 +1770,6 @@ export function CustomizerPage() {
       : set.components.find((piece) => definition?.source.includes(piece.category)))
     if (firstGroup.componentId || component) {
       setSelectedClothing({ modelSlot: firstGroup.modelSlot, setId: firstGroup.setId, category: firstGroup.category, componentId: component?.id ?? firstGroup.componentId! })
-      setWardrobeHighlightVisible(true)
     }
   }, [activeModule, clothesPanelTab, clothingSection, selectedCharacter?.id, selectedCharacter?.customization.wardrobeGroups, selectedClothing?.modelSlot, selectedClothing?.setId, selectedClothing?.category, selectedClothing?.componentId, wardrobeDetails])
 
@@ -2071,17 +2057,16 @@ export function CustomizerPage() {
     const previewGroups = wardrobeTransformDraft && selectedClothing
       ? groups.map((group) => group.modelSlot === selectedClothing.modelSlot && group.setId === selectedClothing.setId && group.category === selectedClothing.category && (group.componentId === selectedClothing.componentId || !group.componentId) ? { ...group, componentId: selectedClothing.componentId, ...wardrobeTransformDraft } : group)
       : groups
-    void renderWardrobeOverlay(previewGroups, wardrobeDetails, displayArtworkProject, selectedCatalogModelSlot, selectedSourceModelProject, wardrobeHighlightVisible ? selectedClothing : null, selectedCharacter?.customization.modelSkinTone, characterRenderSize(displayArtworkProject.width, displayArtworkProject.height, previewExtent.width, previewExtent.height, customizerPreviewZoom, previewExtent.density)).then((result) => {
+    void renderWardrobeOverlay(previewGroups, wardrobeDetails, displayArtworkProject, selectedCatalogModelSlot, selectedSourceModelProject, selectedCharacter?.customization.modelSkinTone, characterRenderSize(displayArtworkProject.width, displayArtworkProject.height, previewExtent.width, previewExtent.height, customizerPreviewZoom, previewExtent.density)).then((result) => {
       if (!cancelled) {
         setSelectedWardrobeUrl(result.imageUrl)
         setSelectedWardrobeAboveHairUrl(result.aboveHairImageUrl)
-        setSelectedWardrobeHighlightUrl(result.selectedUrl)
       }
     }).catch((reason: unknown) => {
       if (!cancelled) setCatalogError(reason instanceof Error ? reason.message : 'Não foi possível compor as roupas do personagem.')
     })
     return () => { cancelled = true }
-  }, [selectedCharacter?.id, selectedCharacter?.customization.modelSkinTone, selectedCharacter?.customization.wardrobeGroups, wardrobeDetails, displayArtworkProject, selectedCatalogModelSlot, selectedSourceModelProject, selectedClothing?.modelSlot, selectedClothing?.setId, selectedClothing?.category, selectedClothing?.componentId, wardrobeTransformDraft, wardrobeHighlightVisible, previewExtent, customizerPreviewZoom])
+  }, [selectedCharacter?.id, selectedCharacter?.customization.modelSkinTone, selectedCharacter?.customization.wardrobeGroups, wardrobeDetails, displayArtworkProject, selectedCatalogModelSlot, selectedSourceModelProject, selectedClothing?.modelSlot, selectedClothing?.setId, selectedClothing?.category, selectedClothing?.componentId, wardrobeTransformDraft, previewExtent, customizerPreviewZoom])
 
   function selectCharacter(id: string) {
     setSelectedCharacterId(id)
@@ -2483,7 +2468,6 @@ export function CustomizerPage() {
         else delete headExtras.glasses
         const faceAppearance = { ...base, headExtras }
         setSelectedClothing(null)
-        setWardrobeHighlightVisible(false)
         await saveCharacterCustomization({ wardrobeGroups: after, faceAppearance: hasSelectedFaceAsset(faceAppearance) ? faceAppearance : undefined })
         return
       }
@@ -2492,7 +2476,6 @@ export function CustomizerPage() {
     const existingCandidate = candidate && !replacesSelectedHeadExtra && candidate.components.every((component) => before.some((group) => group.modelSlot === candidate.summary.modelSlot && group.setId === candidate.summary.id && group.category === panel.category && group.componentId === component.id))
     if (existingCandidate) {
       setSelectedClothing({ modelSlot: candidate.summary.modelSlot, setId: candidate.summary.id, category: panel.category, componentId: candidate.component.id })
-      setWardrobeHighlightVisible(true)
       return
     }
     const panelComponents = wardrobeSets.flatMap((summary) => {
@@ -2511,10 +2494,8 @@ export function CustomizerPage() {
       const palette = current.customization.wardrobePalettes?.[panel.id]
       after.push(...candidate.components.map((component) => ({ modelSlot: candidate.summary.modelSlot, setId: candidate.summary.id, category: panel.category, componentId: component.id, offsetX: 0, offsetY: 0, scaleX: 1, scaleY: 1, rotation: 0, ...(palette ? { colors: palette } : {}) })))
       setSelectedClothing({ modelSlot: candidate.summary.modelSlot, setId: candidate.summary.id, category: panel.category, componentId: candidate.component.id })
-      setWardrobeHighlightVisible(true)
     } else {
       if (selectedClothing?.category === panel.category && panelComponentKeys.has(`${selectedCatalogModelSlot}:${selectedClothing.setId}:${selectedClothing.componentId}`)) setSelectedClothing(null)
-      setWardrobeHighlightVisible(false)
     }
     if (panel.id === 'glasses') {
       const currentAppearance = current.customization.faceAppearance
@@ -2573,7 +2554,6 @@ export function CustomizerPage() {
     const current = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
     const beforeGroups = (current.customization.wardrobeGroups ?? []).map((item) => ({ ...item }))
     const group = beforeGroups.find((item) => item.setId === selectedClothing.setId && item.category === selectedClothing.category && (item.componentId === selectedClothing.componentId || !item.componentId))
-    setWardrobeHighlightVisible(false)
     if (!group) return
     const scene = event.currentTarget.closest('.stage-scene')
     const rect = scene?.getBoundingClientRect()
@@ -3388,7 +3368,6 @@ export function CustomizerPage() {
                 return <div key={`${group.modelSlot}:${group.setId}:${component.id}`} className={`customizer-clothes-adjust-part${isSelected ? ' selected' : ''}${isDimmed ? ' dimmed' : ''}${pairStart ? ' pair-start' : ''}`}>
                   <button type="button" className="customizer-clothes-adjust-part-select" aria-pressed={isSelected} onClick={() => {
                     setSelectedClothing({ modelSlot: group.modelSlot, setId: group.setId, category: group.category, componentId: component.id })
-                    setWardrobeHighlightVisible(true)
                   }}>
                     <span className="customizer-clothes-adjust-part-preview"><img src={component.dataUrl} alt="" /></span>
                     <strong title={component.name}>{component.name || component.attachedPartId}</strong>
@@ -3504,7 +3483,6 @@ export function CustomizerPage() {
                 {selectedArtworkUrl ? <img className="customizer-selected-artwork" src={selectedArtworkUrl} alt={selectedArtworkLabel} /> : !previewLoading && <div className="customizer-no-artwork"><Icon name="body" /><span>Nenhum modelo salvo para mostrar.</span></div>}
               {selectedWardrobeUrl && selectedArtworkUrl && <img className={'customizer-wardrobe-overlay' + (wardrobePreviewDraggable ? ' draggable' : '')} src={selectedWardrobeUrl} alt="Roupas do personagem" draggable={false} onPointerDown={wardrobePreviewDraggable ? beginWardrobeDrag : undefined} onPointerMove={wardrobePreviewDraggable ? moveWardrobeDrag : undefined} onPointerUp={wardrobePreviewDraggable ? finishWardrobeDrag : undefined} onPointerCancel={wardrobePreviewDraggable ? finishWardrobeDrag : undefined} />}
               {selectedFaceUrl && selectedArtworkUrl && <img className="customizer-face-overlay" src={selectedFaceUrl} alt="Rosto do personagem" draggable={false} />}
-              {activeModule === 'Roupas' && (clothingSection === 'Customizar' || clothesPanelTab === 'adjust') && wardrobeHighlightVisible && selectedWardrobeHighlightUrl && <img className="customizer-wardrobe-selection-halo" src={selectedWardrobeHighlightUrl} alt="Peça de roupa selecionada" draggable={false} />}
               {selectedFrontHairUrl && selectedArtworkUrl && <img className="customizer-front-hair-overlay" src={selectedFrontHairUrl} alt="Cabelo posterior e franja frontal" draggable={false} />}
               {selectedWardrobeAboveHairUrl && selectedArtworkUrl && <img className="customizer-wardrobe-above-hair-overlay" src={selectedWardrobeAboveHairUrl} alt="Óculos e acessórios de cabeça por cima dos cabelos" draggable={false} />}
                 {previewLoading && <div className="customizer-preview-loading">Carregando prévia…</div>}
@@ -3772,7 +3750,6 @@ export function CustomizerPage() {
               {selectedArtworkUrl ? <img className="customizer-selected-artwork" src={selectedArtworkUrl} alt={selectedArtworkLabel} /> : !previewLoading && <div className="customizer-no-artwork"><Icon name="body" /><span>{selectedCharacter ? 'Importe um modelo no Fabricador Dev para começar.' : 'Crie um personagem para começar a personalizar.'}</span></div>}
                 {selectedWardrobeUrl && selectedArtworkUrl && <img className={'customizer-wardrobe-overlay' + (wardrobePreviewDraggable ? ' draggable' : '')} src={selectedWardrobeUrl} alt="Roupas do personagem" draggable={false} onPointerDown={wardrobePreviewDraggable ? beginWardrobeDrag : undefined} onPointerMove={wardrobePreviewDraggable ? moveWardrobeDrag : undefined} onPointerUp={wardrobePreviewDraggable ? finishWardrobeDrag : undefined} onPointerCancel={wardrobePreviewDraggable ? finishWardrobeDrag : undefined} />}
                 {selectedFaceUrl && selectedArtworkUrl && <img className="customizer-face-overlay" src={selectedFaceUrl} alt="Rosto do personagem" draggable={false} />}
-                {activeModule === 'Roupas' && (clothingSection === 'Customizar' || clothesPanelTab === 'adjust') && wardrobeHighlightVisible && selectedWardrobeHighlightUrl && <img className="customizer-wardrobe-selection-halo" src={selectedWardrobeHighlightUrl} alt="Peça de roupa selecionada" draggable={false} />}
                 {selectedFrontHairUrl && selectedArtworkUrl && <img className="customizer-front-hair-overlay" src={selectedFrontHairUrl} alt="Cabelo posterior e franja frontal" draggable={false} />}
                 {selectedWardrobeAboveHairUrl && selectedArtworkUrl && <img className="customizer-wardrobe-above-hair-overlay" src={selectedWardrobeAboveHairUrl} alt="Óculos e acessórios de cabeça por cima dos cabelos" draggable={false} />}
               {previewLoading && <div className="customizer-preview-loading">Carregando prévia…</div>}
