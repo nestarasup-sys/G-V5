@@ -13,6 +13,7 @@ const mode = process.argv[2]
 const output = resolve(process.env.GACHA_DEV_AI_AUDIT_OUTPUT ?? process.env.GACHA_AUDIT_OUTPUT_DIR ?? '')
 const sandbox = resolve(process.env.GACHA_DEV_AI_AUDIT_SANDBOX ?? process.env.GACHA_DEV_AI_SANDBOX ?? '')
 let exitCode = 1
+let allowNaturalQuit = false
 
 function assertOutputSandbox() {
   const runsRoot = resolve(ROOT, 'out', 'dev-ai', 'runs')
@@ -268,6 +269,44 @@ async function verifyRestart(window) {
   console.log(JSON.stringify(result))
 }
 
+async function closeWithPendingSaves(window) {
+  const saveCount = 100
+  const documents = Array.from({ length: saveCount }, (_, index) => syntheticStudio(`Pending close save ${index + 1}`))
+  const launched = await window.webContents.executeJavaScript(`(() => {
+    window.__devAiPendingSaves = ${JSON.stringify(documents)}.map(document => {
+      const tracked = { settled: false, error: null }
+      tracked.promise = window.desktop.saveStudio(document).then(
+        () => { tracked.settled = true },
+        error => { tracked.error = String(error?.message ?? error); tracked.settled = true }
+      )
+      return tracked
+    })
+    return true
+  })()`)
+  assert.equal(launched, true)
+  await window.webContents.executeJavaScript('Promise.all(window.__devAiPendingSaves.slice(0, 5).map(entry => entry.promise))')
+  const pendingBeforeClose = await window.webContents.executeJavaScript('window.__devAiPendingSaves.filter(entry => !entry.settled).length')
+  assert.ok(pendingBeforeClose > 0, 'O teste precisa fechar o editor com IPCs de salvamento ainda pendentes')
+  await writeFile(join(output, 'close-pending-result.json'), JSON.stringify({ mode, status: 'passed',
+    adapter: 'production-preload-real-ipc', realIpcCovered: true, savesDispatched: saveCount,
+    pendingAtWindowClose: pendingBeforeClose, closedWindowBeforeAllAcks: true }, null, 2))
+  exitCode = 0
+  allowNaturalQuit = true
+  window.close()
+}
+
+async function verifyClosePending(window) {
+  const normal = await window.webContents.executeJavaScript('window.desktop.listStudios()')
+  const video = await window.webContents.executeJavaScript('window.desktop.listVideoStudios()')
+  assert.equal(normal.length, 1)
+  assert.equal(video.length, 1)
+  assert.equal(normal[0].title, 'Pending close save 100', 'A última gravação não terminou antes do fechamento do processo')
+  assert.equal(video[0].title, 'IPC video edit 10', 'Fechamento do editor alterou o namespace de vídeo')
+  await writeFile(join(output, 'verify-close-pending-result.json'), JSON.stringify({ mode, status: 'passed',
+    adapter: 'production-preload-real-ipc', realIpcCovered: true, restartedProcess: true,
+    normalTitlePersisted: normal[0].title, videoTitleUnchanged: video[0].title }, null, 2))
+}
+
 async function areaSmoke(window) {
   const diagnostics = []
   window.webContents.on('render-process-gone', (_event, details) => diagnostics.push({ type: 'gone', reason: details.reason, exitCode: details.exitCode }))
@@ -323,13 +362,15 @@ async function main() {
       return
     }
   }
-  if (!['seed', 'verify-restart', 'area-smoke', 'delete'].includes(mode)) throw new Error('Modo inválido.')
+  if (!['seed', 'verify-restart', 'area-smoke', 'close-pending', 'verify-close-pending', 'delete'].includes(mode)) throw new Error('Modo inválido.')
   await import(pathToFileURL(join(ROOT, 'out', 'main', 'main.js')).href)
   await app.whenReady()
   const window = await waitForWindow()
   if (mode === 'seed') await seed(window)
   else if (mode === 'verify-restart') await verifyRestart(window)
   else if (mode === 'area-smoke') await areaSmoke(window)
+  else if (mode === 'close-pending') await closeWithPendingSaves(window)
+  else if (mode === 'verify-close-pending') await verifyClosePending(window)
   else await deleteDocuments(window)
   exitCode = 0
 }
@@ -338,7 +379,9 @@ main().catch((error) => {
   console.error(`DEV AI IPC ${mode}: ${error?.stack ?? error}`)
   exitCode = 1
 }).finally(() => {
-  for (const window of BrowserWindow.getAllWindows()) if (!window.isDestroyed()) window.destroy()
+  if (!(mode === 'close-pending' && allowNaturalQuit)) {
+    for (const window of BrowserWindow.getAllWindows()) if (!window.isDestroyed()) window.destroy()
+  }
   app.once('will-quit', () => { process.exitCode = exitCode })
-  app.quit()
+  if (!(mode === 'close-pending' && allowNaturalQuit)) app.quit()
 })

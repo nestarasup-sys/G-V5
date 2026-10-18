@@ -1518,6 +1518,15 @@ async function readAnimatorDraft(modelSlot: number): Promise<AnimatorAnimationDr
 }
 
 async function registerFabricatorHandlers(): Promise<void> {
+  ipcMain.handle('app:flush-pending-writes', async (event): Promise<void> => {
+    assertTrustedSender(event)
+    const pendingWrites = [...fabricatorSaveQueues.values(), ...poseSaveWrites, ...hairSaveQueues.values(),
+      studioSaveQueues.studio, studioSaveQueues.video]
+    const results = await Promise.allSettled(pendingWrites)
+    const failedWrite = results.find((result): result is PromiseRejectedResult => result.status === 'rejected')
+    if (failedWrite) throw failedWrite.reason
+  })
+
   const registerStudioWorkspace = (workspace: StudioWorkspaceStorage, channel: 'studio' | 'video-studio') => {
     ipcMain.handle(`${channel}:list`, async (event): Promise<StudioDocument[]> => {
       assertTrustedSender(event)
@@ -2247,6 +2256,32 @@ function createMainWindow(): void {
   })
   window.removeMenu()
 
+  let closeAfterFlush = false
+  let flushingBeforeClose = false
+  window.on('close', (event) => {
+    if (closeAfterFlush) return
+    event.preventDefault()
+    if (flushingBeforeClose) return
+    flushingBeforeClose = true
+    const flushRendererWrites = window.webContents.isLoading()
+      ? Promise.resolve()
+      : window.webContents.executeJavaScript("window.desktop?.flushPendingWrites ? window.desktop.flushPendingWrites() : undefined")
+    void flushRendererWrites.then(() => {
+      closeAfterFlush = true
+      flushingBeforeClose = false
+      if (!window.isDestroyed()) window.close()
+    }).catch(async (reason: unknown) => {
+      flushingBeforeClose = false
+      console.error('Não foi possível concluir os salvamentos antes de fechar o editor:', reason)
+      if (!window.isDestroyed()) await dialog.showMessageBox(window, {
+        type: 'error',
+        title: 'Salvamento pendente',
+        message: 'Não foi possível concluir os salvamentos. O editor continuará aberto para proteger suas alterações.',
+        buttons: ['Voltar ao editor']
+      })
+    })
+  })
+
   if (process.env.ELECTRON_RENDERER_URL) {
     void window.loadURL(process.env.ELECTRON_RENDERER_URL)
   } else {
@@ -2331,13 +2366,20 @@ app.on('window-all-closed', () => {
 })
 
 let waitingForFabricatorWritesBeforeQuit = false
+let persistenceWritesDrainedForQuit = false
 app.on('before-quit', (event) => {
+  if (persistenceWritesDrainedForQuit) return
   const pendingWrites = [...fabricatorSaveQueues.values(), ...poseSaveWrites, ...hairSaveQueues.values(), studioSaveQueues.studio, studioSaveQueues.video]
-  if (pendingWrites.length === 0 || waitingForFabricatorWritesBeforeQuit) return
+  if (pendingWrites.length === 0) {
+    persistenceWritesDrainedForQuit = true
+    return
+  }
+  if (waitingForFabricatorWritesBeforeQuit) return
   event.preventDefault()
   waitingForFabricatorWritesBeforeQuit = true
   void Promise.allSettled(pendingWrites).then(() => {
     waitingForFabricatorWritesBeforeQuit = false
+    persistenceWritesDrainedForQuit = true
     app.quit()
   })
 })

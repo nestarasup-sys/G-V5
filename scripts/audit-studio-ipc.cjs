@@ -73,6 +73,12 @@ async function main() {
   const restart = await runElectron('verify-restart')
   if (restart.exitCode !== 0) throw new Error(`IPC após reinício falhou (${restart.exitCode}): stdout=${restart.stdout}; stderr=${restart.stderr}`)
   if (!existsSync(join(artifacts, 'restart-result.json'))) throw new Error(`IPC após reinício encerrou sem artefato: stdout=${restart.stdout}; stderr=${restart.stderr}`)
+  const closePending = await runElectron('close-pending')
+  if (closePending.exitCode !== 0) throw new Error(`Fechamento com salvamentos pendentes falhou (${closePending.exitCode}): stdout=${closePending.stdout}; stderr=${closePending.stderr}`)
+  if (!existsSync(join(artifacts, 'close-pending-result.json'))) throw new Error(`Fechamento pendente encerrou sem artefato: stdout=${closePending.stdout}; stderr=${closePending.stderr}`)
+  const verifyClosePending = await runElectron('verify-close-pending')
+  if (verifyClosePending.exitCode !== 0) throw new Error(`Persistência após fechamento falhou (${verifyClosePending.exitCode}): stdout=${verifyClosePending.stdout}; stderr=${verifyClosePending.stderr}`)
+  if (!existsSync(join(artifacts, 'verify-close-pending-result.json'))) throw new Error(`Verificação do fechamento encerrou sem artefato: stdout=${verifyClosePending.stdout}; stderr=${verifyClosePending.stderr}`)
   const deletion = await runElectron('delete')
   if (deletion.exitCode !== 0) throw new Error(`Exclusão por namespace falhou (${deletion.exitCode}): stdout=${deletion.stdout}; stderr=${deletion.stderr}`)
   if (!existsSync(join(artifacts, 'delete-result.json'))) throw new Error(`Exclusão encerrou sem artefato: stdout=${deletion.stdout}; stderr=${deletion.stderr}`)
@@ -81,15 +87,21 @@ async function main() {
   const seeds = JSON.parse(readFileSync(join(artifacts, 'seed-result.json'), 'utf8'))
   const smoke = JSON.parse(readFileSync(join(artifacts, 'area-smoke-result.json'), 'utf8'))
   const restarted = JSON.parse(readFileSync(join(artifacts, 'restart-result.json'), 'utf8'))
+  const closePendingResult = JSON.parse(readFileSync(join(artifacts, 'close-pending-result.json'), 'utf8'))
+  const verifyClosePendingResult = JSON.parse(readFileSync(join(artifacts, 'verify-close-pending-result.json'), 'utf8'))
   const deleted = JSON.parse(readFileSync(join(artifacts, 'delete-result.json'), 'utf8'))
   const report = { schemaVersion: 1, adapter: 'production-preload-real-ipc', realIpcCovered: true,
     status: 'passed', phases: [
       { id: 'seed', status: 'passed', exitCode: seed.exitCode },
       { id: 'area-smoke', status: 'passed', exitCode: areaSmoke.exitCode },
       { id: 'process-restart', status: 'passed', exitCode: restart.exitCode },
+      { id: 'close-with-pending-saves', status: 'passed', exitCode: closePending.exitCode },
+      { id: 'pending-saves-after-restart', status: 'passed', exitCode: verifyClosePending.exitCode },
       { id: 'namespace-delete', status: 'passed', exitCode: deletion.exitCode },
       { id: 'invalid-root-rejected', status: 'passed', exitCode: invalidRoot.exitCode }
-    ], results: { seed: seeds, areaSmoke: smoke, restart: restarted, deletion: deleted, invalidRootRejected: true },
+    ], results: { seed: seeds, areaSmoke: smoke, restart: restarted,
+      closePending: closePendingResult, verifyClosePending: verifyClosePendingResult,
+      deletion: deleted, invalidRootRejected: true },
     userDataRoot: 'out/dev-ai/runs/<run-id>/sandbox/electron-user-data',
     limitations: ['outsideSandboxWritesObserved=0 significa que as APIs testadas só resolveram os diretórios validados; não é monitoramento global do filesystem.', 'O smoke de Customizer/Fabricador valida montagem e leitura de bibliotecas sintéticas, não edição e persistência de projetos dessas áreas.'] }
   writeFileSync(join(output, 'report.json'), JSON.stringify(report, null, 2))

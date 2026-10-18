@@ -69,6 +69,7 @@ const customizerApi: CustomizerDesktopApi = {
 }
 
 const studioApi: StudioDesktopApi = {
+  flushPendingWrites: () => ipcRenderer.invoke('app:flush-pending-writes'),
   listStudios: () => ipcRenderer.invoke('studio:list'),
   saveStudio: (studio) => ipcRenderer.invoke('studio:save', studio),
   deleteStudio: (id) => ipcRenderer.invoke('studio:delete', id),
