@@ -41,6 +41,8 @@ jobs:
         run: npm run typecheck
       - name: Record architecture inventory without treating legacy edges as clean
         run: npm run audit:boundaries
+      - name: Classify runtime vs type-only imports using TypeScript AST
+        run: npm run audit:boundaries:ast
       - name: Seven existing synthetic audits
         run: npm run audit:fast
       - name: Check tracked data folders
