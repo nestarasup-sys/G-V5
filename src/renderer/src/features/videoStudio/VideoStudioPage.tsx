@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as
 import type {
   VideoActorState, VideoAsset, VideoCharacterTrack, VideoFaceMode, VideoProject, VideoSceneElement, VideoTextClip
 } from '../../../../shared/videoStudio'
+import type { CustomizerCharacter } from '../../../../shared/customizer'
 import { createVideoProject } from '../../../../shared/videoStudio'
 import {
   evaluateVideoProject, equalActorState, moveCharacterBoundary, recordVideoFrame,
@@ -43,6 +44,9 @@ export function VideoStudioPage() {
   const [boundaryPreview, setBoundaryPreview] = useState<BoundaryDrag | null>(null)
   const [dragPreview, setDragPreview] = useState<{ id: string; x: number; y: number } | null>(null)
   const [selectedClip, setSelectedClip] = useState<{ trackId: string; id: string } | null>(null)
+  const [savedCharacters, setSavedCharacters] = useState<CustomizerCharacter[]>([])
+  const [sourceCharacterId, setSourceCharacterId] = useState('')
+  const [renderingCharacter, setRenderingCharacter] = useState(false)
 
   const undoStack = useRef<VideoProject[]>([])
   const redoStack = useRef<VideoProject[]>([])
@@ -73,6 +77,20 @@ export function VideoStudioPage() {
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
   }, [])
+
+  useEffect(() => {
+    if (!activeId) return
+    let cancelled = false
+    void window.desktop.listCustomizerCharacters()
+      .then(characters => {
+        if (cancelled) return
+        setSavedCharacters(characters)
+        setSourceCharacterId(current => characters.some(character => character.id === current)
+          ? current : characters[0]?.id ?? '')
+      })
+      .catch(reason => { if (!cancelled) setError(reason instanceof Error ? reason.message : String(reason)) })
+    return () => { cancelled = true }
+  }, [activeId])
 
   // Saves are serialized by the main process. Keep the last document even
   // if the user leaves the area before the debounce timer fires.
@@ -250,6 +268,51 @@ export function VideoStudioPage() {
         }
       })
     } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) }
+  }
+
+  const addSavedCharacter = async () => {
+    const source = savedCharacters.find(character => character.id === sourceCharacterId)
+    if (!source || !latestRef.current) return
+    setRenderingCharacter(true)
+    try {
+      // The renderer reads a published Customizer character and freezes its
+      // pixels into the VideoProject. Never mutate the source character.
+      const { renderSavedCharacter } = await import('../customizer/CustomizerPage')
+      const result = await renderSavedCharacter(source, undefined, undefined, 'idle')
+      const asset: VideoAsset = {
+        id: crypto.randomUUID(), category: 'character', name: source.name,
+        mimeType: 'image/png', dataUrl: result.dataUrl
+      }
+      const elementId = crypto.randomUUID()
+      const sizeRatio = result.width / Math.max(1, result.height)
+      const element: VideoSceneElement = {
+        id: elementId, kind: 'character', name: source.name, assetId: asset.id,
+        sourceCharacterId: source.id,
+        x: 0, y: 0, width: Math.max(8, Math.min(55, 68 * 1080 / 1920 * sizeRatio)),
+        height: 68, rotation: 0, flipX: false,
+        zIndex: Math.max(0, ...latestRef.current.elements.map(item => item.zIndex)) + 1,
+        faceAssets: { idle: asset.id }
+      }
+      const track: VideoCharacterTrack = {
+        id: crypto.randomUUID(), elementId, name: source.name,
+        order: latestRef.current.characterTracks.length, locked: false, collapsed: false,
+        segments: [{
+          id: crypto.randomUUID(), startFrame: 0,
+          endFrameExclusive: latestRef.current.durationFrames,
+          state: { ...initialState }, transitionInMs: 20
+        }]
+      }
+      commit(project => ({
+        ...project,
+        assets: [...project.assets, asset],
+        elements: [...project.elements, element],
+        characterTracks: [...project.characterTracks, track]
+      }))
+      setSelectedElementId(elementId)
+      setError(null)
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Não foi possível criar um snapshot do personagem.')
+    } finally { setRenderingCharacter(false) }
   }
 
   const attachFaceRole = async (element: VideoSceneElement, role: VideoFaceMode) => {
@@ -447,6 +510,15 @@ export function VideoStudioPage() {
             ...project, canvas: { ...project.canvas, backgroundAssetId: null }
           }))}>Remover fundo</button>}
           <button type="button" onClick={() => void importImage('character')}>+ Personagem (PNG)</button>
+          <label>Elenco salvo do G-V5
+            <select value={sourceCharacterId} onChange={event => setSourceCharacterId(event.target.value)} disabled={!savedCharacters.length || renderingCharacter}>
+              {!savedCharacters.length && <option value="">Nenhum personagem salvo</option>}
+              {savedCharacters.map(character => <option value={character.id} key={character.id}>{character.name}</option>)}
+            </select>
+          </label>
+          <button type="button" onClick={() => void addSavedCharacter()} disabled={!sourceCharacterId || renderingCharacter}>
+            {renderingCharacter ? 'Preparando snapshot…' : '+ Adicionar do elenco G-V5'}
+          </button>
           <button type="button" onClick={() => void importImage('object')}>+ Objeto</button>
           <p>Assets são copiados para a pasta do projeto. A ponte de personagens renderizados do Fabricador será integrada depois.</p>
           <label>Cor de fundo <input type="color" value={activeProject.canvas.backgroundColor}
@@ -580,6 +652,8 @@ export function VideoStudioPage() {
                 <i className="video-studio-playhead" style={{ left: playhead / activeProject.frameRate * zoom }} />
               </div>
             </div>
+            {activeProject.saveMarkers.map(marker => <i key={marker.frame} aria-hidden="true"
+              className="video-studio-global-marker-line" style={{ left: 180 + marker.frame / activeProject.frameRate * zoom }} />)}
             {activeProject.characterTracks.map(track => <div className="video-studio-lane" key={track.id}>
               <div className="video-studio-lane-label">{track.locked ? '🔒 ' : '♟ '}{track.name}</div>
               <div className="video-studio-lane-body" style={{ width: timelineWidth }}>
