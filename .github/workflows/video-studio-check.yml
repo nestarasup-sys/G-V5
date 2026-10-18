@@ -1,0 +1,41 @@
+name: G-V5 Video Studio Check
+
+on:
+  push:
+    branches: [oai/video-studio-v2, master]
+    paths:
+      - 'src/**'
+      - 'scripts/test-video-studio.cjs'
+      - 'electron/**'
+      - 'electron.vite.config.ts'
+      - 'tsconfig.json'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/video-studio-check.yml'
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  typecheck-and-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci --ignore-scripts
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Canonical Video Studio runtime tests
+        run: npm run test:video-studio
+      - name: Test deterministic Video Studio runtime
+        run: npm run test:video-studio
+      - name: Build all Electron bundles
+        run: npm run build
