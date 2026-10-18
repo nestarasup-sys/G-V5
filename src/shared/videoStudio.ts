@@ -37,6 +37,8 @@ export interface VideoSceneElement {
   kind: 'character' | 'image'
   name: string
   assetId: string
+  /** Read-only origin pointer for attribution; pixels are snapshotted into assets. */
+  sourceCharacterId?: string
   x: number
   y: number
   width: number
