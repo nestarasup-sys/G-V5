@@ -616,16 +616,18 @@ async function renderWardrobeOverlay(
   selected: SelectedWardrobeComponent | null,
   skinTone?: string,
   maxSize = Math.max(artwork.width, artwork.height)
-): Promise<{ imageUrl: string | null; selectedUrl: string | null }> {
-  if (!groups.length || modelSlot === null || !source) return { imageUrl: null, selectedUrl: null }
+): Promise<{ imageUrl: string | null; aboveHairImageUrl: string | null; selectedUrl: string | null }> {
+  if (!groups.length || modelSlot === null || !source) return { imageUrl: null, aboveHairImageUrl: null, selectedUrl: null }
   const output = document.createElement('canvas')
   const pixelScale = Math.min(maxSize / Math.max(artwork.width, artwork.height), Math.sqrt(16_000_000 / (artwork.width * artwork.height)))
   output.width = Math.max(1, Math.ceil(artwork.width * pixelScale))
   output.height = Math.max(1, Math.ceil(artwork.height * pixelScale))
   const outputContext = output.getContext('2d')
-  if (!outputContext) return { imageUrl: null, selectedUrl: null }
+  if (!outputContext) return { imageUrl: null, aboveHairImageUrl: null, selectedUrl: null }
   configureCharacterSampling(outputContext)
   outputContext.scale(pixelScale, pixelScale)
+  let aboveHairCanvas: HTMLCanvasElement | null = null
+  let aboveHairContext: CanvasRenderingContext2D | null = null
   const selectionCanvas = document.createElement('canvas')
   selectionCanvas.width = output.width
   selectionCanvas.height = output.height
@@ -636,6 +638,7 @@ async function renderWardrobeOverlay(
   for (const part of artwork.parts) if (!bodyOrder.includes(part.id)) bodyOrder.push(part.id)
   const garmentLayers = new Map<string, Array<{ group: CustomizerWardrobeGroup; component: WardrobeSet['components'][number]; transform: ReturnType<typeof mapWardrobeComponentToPose>; center: { x: number; y: number }; sequence: number }>>()
   let sequence = 0
+  let hasAboveHairAccessories = false
 
   // Match the wardrobe pose test: each garment is inserted immediately above
   // the model layer it is attached to, before the next body layer is drawn.
@@ -703,12 +706,21 @@ async function renderWardrobeOverlay(
           context.drawImage(image, -garment.transform.renderWidth / 2, -garment.transform.renderHeight / 2, garment.transform.renderWidth, garment.transform.renderHeight)
           context.restore()
         }
-        drawGarment(outputContext)
+        if (garment.component.renderAboveHair && !aboveHairContext) {
+          aboveHairCanvas = document.createElement('canvas')
+          aboveHairCanvas.width = output.width
+          aboveHairCanvas.height = output.height
+          aboveHairContext = aboveHairCanvas.getContext('2d')
+          if (aboveHairContext) { configureCharacterSampling(aboveHairContext); aboveHairContext.scale(pixelScale, pixelScale) }
+        }
+        if (garment.component.renderAboveHair && aboveHairContext) hasAboveHairAccessories = true
+        drawGarment(garment.component.renderAboveHair && aboveHairContext ? aboveHairContext : outputContext)
         if (selectionContext && selected && garment.group.setId === selected.setId && garment.group.category === selected.category && garment.component.id === selected.componentId) drawGarment(selectionContext)
       } catch { /* Keep rendering the remaining layers when one image is unavailable. */ }
     }
   }
-  return { imageUrl: output.toDataURL('image/png'), selectedUrl: selectionContext && selected ? selectionCanvas.toDataURL('image/png') : null }
+  const aboveHairImageUrl = hasAboveHairAccessories && aboveHairCanvas ? aboveHairCanvas.toDataURL('image/png') : null
+  return { imageUrl: output.toDataURL('image/png'), aboveHairImageUrl, selectedUrl: selectionContext && selected ? selectionCanvas.toDataURL('image/png') : null }
 }
 
 export async function renderArtwork(artwork: CatalogArtwork, maxSize: number, skinTone?: string, trimTransparent = false): Promise<string | null> {
@@ -1299,6 +1311,7 @@ export async function prepareSavedCharacterRenderer(character: CustomizerCharact
     await renderFrontHairOverlay(artwork, source, frontStyles, Math.max(artwork.width, artwork.height), hairAppearance, frontContext)
   }
   const wardrobeImage = wardrobe.imageUrl ? await loadCachedImage(wardrobe.imageUrl) : null
+  const wardrobeAboveHairImage = wardrobe.aboveHairImageUrl ? await loadCachedImage(wardrobe.aboveHairImageUrl) : null
   const legacyFaceImage = legacyFaceUrl ? await loadCachedImage(legacyFaceUrl) : null
   const canvas = document.createElement('canvas')
   canvas.width = Math.max(1, artwork.width)
@@ -1355,6 +1368,7 @@ export async function prepareSavedCharacterRenderer(character: CustomizerCharact
       else if (legacyFaceImage && faceAppearance.setId === appearance?.setId) context.drawImage(legacyFaceImage, 0, 0, canvas.width, canvas.height)
     } else if (legacyFaceImage) context.drawImage(legacyFaceImage, 0, 0, canvas.width, canvas.height)
     if (frontHairImage) context.drawImage(frontHairImage, 0, 0, canvas.width, canvas.height)
+    if (wardrobeAboveHairImage) context.drawImage(wardrobeAboveHairImage, 0, 0, canvas.width, canvas.height)
     if (shapeScale.x === 1 && shapeScale.y === 1) return { dataUrl: canvas.toDataURL('image/png'), width: canvas.width, height: canvas.height }
     const output = document.createElement('canvas')
     output.width = outputWidth

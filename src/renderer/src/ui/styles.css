@@ -2093,6 +2093,9 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .wardrobe-field-title button { width:25px;height:25px;display:grid;place-items:center;border:1px solid #f0d6dd;border-radius:6px;background:#fff7f8;color:#b85b6b;cursor:pointer; }
 .wardrobe-field-title svg { width:13px;height:13px; }
 .wardrobe-fields>label { display:grid;gap:4px;color:#8c828e;font-size:10px; }
+.wardrobe-fields>label.wardrobe-option-toggle { grid-template-columns:16px minmax(0,1fr);align-items:center;gap:8px;padding:8px;border:1px solid #f0dbe3;border-radius:7px;background:#fff8fa;color:#685b66;font-size:10px; }
+.wardrobe-option-toggle input[type="checkbox"] { width:15px;height:15px;margin:0;accent-color:#c55d85; }
+.wardrobe-option-toggle span { line-height:1.35; }
 .wardrobe-fields input,.wardrobe-fields select { width:100%;height:28px; }
 .wardrobe-number-grid { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px; }
 .wardrobe-number-grid label { min-width:0;display:grid;gap:4px;color:#8c828e;font-size:9px; }

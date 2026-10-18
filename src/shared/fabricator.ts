@@ -108,6 +108,8 @@ export type WardrobeComponent = {
   originHeight?: number
   /** Relação congelada com o osso, atualizada junto com os ajustes manuais. */
   binding?: WardrobeBinding
+  /** Head accessories enabled here are composited above front and back hair. */
+  renderAboveHair?: boolean
   dataUrl: string
 }
 export type WardrobeSet = {
