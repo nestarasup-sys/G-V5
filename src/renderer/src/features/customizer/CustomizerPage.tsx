@@ -3306,17 +3306,6 @@ export function CustomizerPage() {
     }))
   }
 
-  const restoreClothesAdjustments = () => {
-    if (!selectedCharacter) return
-    const scope = clothingSection === 'Inferior' ? 'Inferior' : 'Superior'
-    const categoryIds = new Set(clothingCategories[scope].map((item) => item.id))
-    void saveCharacterCustomization({ wardrobeGroups: (selectedCharacter.customization.wardrobeGroups ?? []).map((group) => {
-      if (!categoryIds.has(group.category)) return group
-      const { opacity: _opacity, ...rest } = group
-      return { ...rest, offsetX: 0, offsetY: 0, scaleX: 1, scaleY: 1, rotation: 0 }
-    }) })
-  }
-
   const updateClothesAdjustComponent = async (operation: 'transform' | 'toggle-opacity', values?: Partial<Pick<CustomizerWardrobeGroup, 'offsetX' | 'offsetY' | 'scaleX' | 'scaleY' | 'rotation'>>) => {
     if (!selectedCharacter || !selectedClothing) return
     const current = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
@@ -3400,6 +3389,7 @@ export function CustomizerPage() {
     const selectedAdjustmentComponent = !isHead && selectedClothing
       ? adjustmentComponents.find((entry) => entry.group.modelSlot === selectedClothing.modelSlot && entry.group.setId === selectedClothing.setId && entry.group.category === selectedClothing.category && entry.component.id === selectedClothing.componentId)
       : undefined
+    const selectedAdjustmentPieceIsDimmed = (selectedAdjustmentComponent?.group.opacity ?? 1) < 1
 
     if (!isHead) {
       const transform = wardrobeTransformDraft ?? { offsetX: 0, offsetY: 0, scaleX: 1, scaleY: 1, rotation: 0 }
@@ -3410,7 +3400,7 @@ export function CustomizerPage() {
       const moveBy = (x: number, y: number) => changeTransform({ offsetX: transform.offsetX + x, offsetY: transform.offsetY + y })
       return <section className="customizer-adjust-picker customizer-clothes-adjust-detail" aria-label={`Ajustes de roupas ${adjustmentScope.toLowerCase()}`}>
         <header className="customizer-adjust-heading customizer-clothes-adjust-detail-heading">
-          <button className="customizer-adjust-reset" type="button" onClick={restoreClothesAdjustments} disabled={!selectedCharacter} title="Restaurar os ajustes das roupas deste personagem"><Icon name="reset" /><span>RESTAURAR</span></button>
+          <button className="customizer-adjust-reset" type="button" onClick={() => void updateClothesAdjustComponent('toggle-opacity')} disabled={!selectedCharacter || !selectedAdjustmentComponent} title={selectedAdjustmentPieceIsDimmed ? `Restaurar ${selectedAdjustmentComponent?.component.name || 'peça selecionada'}` : `Aplicar transparência em ${selectedAdjustmentComponent?.component.name || 'peça selecionada'}`} aria-label={selectedAdjustmentPieceIsDimmed ? `Restaurar ${selectedAdjustmentComponent?.component.name || 'peça selecionada'}` : `Excluir ${selectedAdjustmentComponent?.component.name || 'peça selecionada'}`}><Icon name={selectedAdjustmentPieceIsDimmed ? 'undo' : 'trash'} /><span>{selectedAdjustmentPieceIsDimmed ? 'RESTAURAR' : 'EXCLUIR'}</span></button>
           <h2>Ajustar roupas · {adjustmentScope === 'Superior' ? 'Superior' : 'Inferior'}</h2>
         </header>
         {!selectedCharacter && <p className="customizer-adjust-hint">Selecione um personagem para ver as peças dele.</p>}
@@ -3429,7 +3419,6 @@ export function CustomizerPage() {
                     <strong title={component.name}>{component.name || component.attachedPartId}</strong>
                     <small>{set.name}</small>
                   </button>
-                  {isSelected && <button type="button" className={`customizer-clothes-adjust-part-remove${isDimmed ? ' restore' : ''}`} title={isDimmed ? 'Restaurar a peça' : 'Aplicar transparência à peça'} aria-label={isDimmed ? `Restaurar ${component.name || component.attachedPartId}` : `Aplicar transparência em ${component.name || component.attachedPartId}`} onClick={() => void updateClothesAdjustComponent('toggle-opacity')}><Icon name={isDimmed ? 'undo' : 'trash'} /></button>}
                 </div>
               })}
             </div> : <p className="customizer-clothes-adjust-empty">Nenhuma peça de roupa {adjustmentScope === 'Superior' ? 'superior' : 'inferior'} está aplicada neste personagem. Aplique um conjunto na categoria correspondente para ajustar cada componente.</p>}
