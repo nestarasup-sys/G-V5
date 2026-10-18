@@ -314,6 +314,7 @@ export function StudioPage({ workspace = 'studio', onEditorActiveChange }: { wor
   const [selectedElementId, setSelectedElementId] = useState<string | null>(null)
   const [videoPlayheadFrame, setVideoPlayheadFrame] = useState(0)
   const [videoPlaying, setVideoPlaying] = useState(false)
+  const [automaticBlinkPreview, setAutomaticBlinkPreview] = useState<Record<string, { dataUrl: string; geometry: Pick<StudioElement, 'width' | 'height' | 'characterCanvasWidth'> }>>({})
   const [historyVersion, setHistoryVersion] = useState(0)
   const [canUndo, setCanUndo] = useState(false)
   const [canRedo, setCanRedo] = useState(false)
@@ -329,6 +330,7 @@ export function StudioPage({ workspace = 'studio', onEditorActiveChange }: { wor
   const studioFaceRenderPendingRef = useRef<{ studioId: string; elementId: string; assetId: string; character: CustomizerCharacter; transforms: StudioFaceTransforms } | null>(null)
   const studioFaceRenderRunningRef = useRef(false)
   const studioFaceRendererRef = useRef<{ key: string; render: (appearance?: CustomizerFaceAppearance, transforms?: StudioFaceTransforms, effects?: FaceExpressionEffects, mode?: StudioFaceMode) => Promise<{ dataUrl: string; width: number; height: number }> } | null>(null)
+  const automaticBlinkFrameCacheRef = useRef<{ signature: string; frames: Array<{ elementId: string; dataUrl: string; geometry: Pick<StudioElement, 'width' | 'height' | 'characterCanvasWidth'> }> } | null>(null)
   const saveGenerationRef = useRef(0)
   const expressionSaveSignatureRef = useRef<{ studioId: string; value: string } | null>(null)
   const normalizedStudioIdsRef = useRef(new Set<string>())
@@ -360,6 +362,81 @@ export function StudioPage({ workspace = 'studio', onEditorActiveChange }: { wor
   const selectedStudioTalkAvailable = Boolean(selectedStudioOpenMouth?.pieces.some((piece) => piece.sheet === 'mouth-open' && piece.index === selectedStudioFaceAppearance?.expressionIndex))
   const selectedBackgroundAsset = activeStudio?.assets.find((asset) => asset.id === activeStudio.backgroundAssetId) ?? null
   const stageCharacters = activeStudio?.elements.filter((element) => element.kind === 'character') ?? []
+  const automaticBlinkSignature = JSON.stringify({
+    characters: stageCharacters.map((element) => {
+      const character = availableCharacters.find((item) => item.id === element.characterId)
+      return [element.id, element.characterId, character?.updatedAt, element.poseSlot, element.faceAppearance, element.faceTransforms, element.activeExpressionEffects, element.activeFaceMode]
+    }),
+    renderer: STUDIO_FACE_RENDER_VERSION
+  })
+  useEffect(() => {
+    setAutomaticBlinkPreview({})
+    if (!activeStudio || isVideoWorkspace && videoPlaying || !stageCharacters.length) return
+    let cancelled = false
+    let nextBlinkTimer = 0
+    let blinkEndTimer = 0
+
+    const beginBlinkCycle = async () => {
+      try {
+        let frames = automaticBlinkFrameCacheRef.current?.signature === automaticBlinkSignature
+          ? automaticBlinkFrameCacheRef.current.frames
+          : null
+        if (!frames) {
+          const { renderSavedCharacter } = await import('../customizer/CustomizerPage')
+          const stageWidth = sceneRef.current?.clientWidth ?? 1000
+          const stageHeight = sceneRef.current?.clientHeight ?? 562
+          frames = []
+          for (const element of stageCharacters) {
+            const character = availableCharacters.find((item) => item.id === element.characterId)
+            const appearance = element.faceAppearance ?? character?.customization.faceAppearance
+            if (!character || !appearance || studioFaceModeForElement(element, appearance) !== 'idle') continue
+            try {
+              const characterCopy: CustomizerCharacter = {
+                ...character,
+                customization: {
+                  ...character.customization,
+                  poseSlot: element.poseSlot === undefined ? character.customization.poseSlot : element.poseSlot,
+                  faceAppearance: appearance
+                }
+              }
+              const rendered = await renderSavedCharacter(characterCopy, element.faceTransforms, element.activeExpressionEffects, 'blink')
+              const crop = await trimTransparentImage(rendered.dataUrl)
+              frames.push({
+                elementId: element.id,
+                dataUrl: crop?.dataUrl ?? rendered.dataUrl,
+                geometry: faceRenderGeometry(element, rendered, crop, stageWidth, stageHeight)
+              })
+            } catch {
+              // Characters without a matching closed-eye asset keep their normal preview.
+            }
+          }
+          if (cancelled) return
+          automaticBlinkFrameCacheRef.current = { signature: automaticBlinkSignature, frames }
+        }
+        if (cancelled || !frames.length) return
+        const blink = () => {
+          if (cancelled) return
+          const frame = frames![Math.floor(Math.random() * frames!.length)]
+          setAutomaticBlinkPreview({ [frame.elementId]: { dataUrl: frame.dataUrl, geometry: frame.geometry } })
+          blinkEndTimer = window.setTimeout(() => {
+            setAutomaticBlinkPreview({})
+            nextBlinkTimer = window.setTimeout(blink, 3200 + Math.random() * 1800)
+          }, 120)
+        }
+        nextBlinkTimer = window.setTimeout(blink, 3200 + Math.random() * 1800)
+      } catch {
+        // Auto blink is an optional preview effect and must not interrupt Studio editing.
+      }
+    }
+
+    void beginBlinkCycle()
+    return () => {
+      cancelled = true
+      window.clearTimeout(nextBlinkTimer)
+      window.clearTimeout(blinkEndTimer)
+      setAutomaticBlinkPreview({})
+    }
+  }, [activeStudio?.id, automaticBlinkSignature, availableCharacters, isVideoWorkspace, videoPlaying])
   useEffect(() => {
     if (!isVideoWorkspace) return
     const timer = window.setTimeout(() => {
@@ -1801,10 +1878,11 @@ export function StudioPage({ workspace = 'studio', onEditorActiveChange }: { wor
             {[...activeStudio.elements].sort((a, b) => a.zIndex - b.zIndex).map((sourceElement) => {
               if (isVideoWorkspace && (sourceElement.kind === 'speech' || sourceElement.kind === 'thought') && !videoTimelineFor(activeStudio).textClips.some((clip) => clip.elementId === sourceElement.id && clip.startFrame <= videoPlayheadFrame && videoPlayheadFrame < clip.endFrame)) return null
               const playbackState = videoPlaybackStates?.get(sourceElement.id)
+              const blinkState = !playbackState && sourceElement.kind === 'character' ? automaticBlinkPreview[sourceElement.id] : undefined
               const activeTextClip = isVideoWorkspace && videoPlaying ? videoTimelineFor(activeStudio).textClips.find((clip) => clip.elementId === sourceElement.id && clip.startFrame <= videoPlayheadFrame && videoPlayheadFrame < clip.endFrame) : undefined
-              const element = playbackState?.element ?? activeTextClip?.state ?? sourceElement
+              const element = playbackState?.element ?? (blinkState ? { ...sourceElement, ...blinkState.geometry } : activeTextClip?.state ?? sourceElement)
               const asset = element.assetId ? activeStudio.assets.find((item) => item.id === element.assetId) : undefined
-              const imageDataUrl = playbackState?.imageDataUrl ?? asset?.dataUrl
+              const imageDataUrl = playbackState?.imageDataUrl ?? blinkState?.dataUrl ?? asset?.dataUrl
               const size = studioElementSize(element)
               return <div key={element.id} className={`studio-canvas-element studio-element-${element.kind}${selectedElementId === element.id && !fullView ? ' selected' : ''}`} style={{ ...imageStyle(element.x, element.y, size.width, size.height, element.rotation, element.kind === 'character' && element.flipX === true), zIndex: element.zIndex + 1 }} onPointerDown={(event) => startDrag(event, element.id)} onPointerMove={moveDrag} onPointerUp={endDrag} onPointerCancel={endDrag}>
                 {(element.kind === 'image' || element.kind === 'character') && imageDataUrl ? <img src={imageDataUrl} alt={asset?.name ?? element.text} draggable={false} /> : <span>{element.text}</span>}
