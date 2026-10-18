@@ -69,7 +69,7 @@ export class PaintStore {
         if (entry.isDirectory()) { await visit(path); continue }
         if (!entry.isFile() || !entry.name.endsWith('.png') || entry.name.endsWith('.paint.png') || entry.name.endsWith('.base.png')) continue
         const id = relative(root, path).split(sep).join('/')
-        if (!/^(models|poses|wardrobe|faces|face-components|hair|animations)\//.test(id)) continue
+        if (!/^(models|wardrobe|faces|face-components|hair)\//.test(id)) continue
         let edited = false
         try { await readFile(metadata(path)); edited = await this.edited(path, await readFile(path)) } catch { /* Unedited asset. */ }
         const category = id.split('/')[0]
@@ -78,16 +78,19 @@ export class PaintStore {
         const collectionFolder = basename(assetFolder) === 'images' || basename(assetFolder) === 'parts' ? dirname(assetFolder) : assetFolder
         const manifestFile = category === 'models' ? 'project.json' : category === 'poses' ? basename(collectionFolder) === 'draft' ? 'draft.json' : 'pose.json' : category === 'wardrobe' ? 'wardrobe.json' : category === 'animations' ? 'animation.json' : category === 'face-components' ? 'asset.json' : category === 'faces' ? basename(collectionFolder).startsWith('item-') ? 'item.json' : 'face.json' : category === 'hair' ? basename(collectionFolder).startsWith('style-') ? 'hair-style.json' : 'hair.json' : ''
         const document = manifestFile ? await manifest(join(collectionFolder, manifestFile)) : null
+        if (category === 'wardrobe' && document?.edition !== 2) continue
         const parts = document?.parts ?? document?.components ?? document?.pieces
         const named = Array.isArray(parts) ? parts.find((part: { id?: string }) => part.id === assetId) as { name?: string; side?: string; index?: number; sheet?: string } | undefined : undefined
         const side = named?.side === 'left' ? 'esquerdo' : named?.side === 'right' ? 'direito' : ''
         const facialKind = ({ eyes: 'Olho', eyebrows: 'Sobrancelha', nose: 'Nariz', 'mouth-closed': 'Boca fechada', 'mouth-open': 'Boca aberta' } as Record<string, string>)[named?.sheet ?? '']
         const name = named?.name || (facialKind ? `${facialKind}${side ? ` ${side}` : ''} ${Number(named?.index ?? 0) + 1}` : assetId === 'asset' && typeof document?.name === 'string' ? document.name : assetId === 'source' ? 'Imagem de origem' : assetId.replace(/^sheet-/, 'Folha '))
         const pairId = category === 'face-components' && typeof document?.pairId === 'string' ? document.pairId : ''
-        const groupId = pairId ? `${category}/${id.split('/')[1]}/pair-${pairId}` : relative(root, collectionFolder).split(sep).join('/')
+        const faceKind = category === 'face-components' ? String(document?.kind ?? '') : String(named?.sheet ?? document?.category ?? assetId.replace(/^sheet-/, ''))
+        const section = category === 'models' ? 'Modelos Dev' : category === 'wardrobe' ? 'Roupas Dev 2.0' : category === 'hair' ? 'Cabelos Dev' : category === 'face-components' ? faceKind === 'head-extra' ? 'Cabeças extra Dev' : ['eye', 'pupil', 'eye-closed', 'eyebrow'].includes(faceKind) ? 'Olhos Dev' : 'Rosto Dev' : ['eyes', 'eyebrows'].includes(faceKind) ? 'Olhos Dev' : 'Rosto Dev'
+        const groupId = `${pairId ? `${category}/${id.split('/')[1]}/pair-${pairId}` : relative(root, collectionFolder).split(sep).join('/')}::${section}`
         const fallbackGroup = basename(collectionFolder).replace(/^(set-|style-|item-|slot-)/, '').replace(/-/g, ' ')
         const groupName = pairId && typeof document?.kind === 'string' ? `${document.kind} · par` : typeof document?.name === 'string' ? document.name : `${labelsFor(category)} ${fallbackGroup}`
-        result.push({ id, groupId, groupName, name, category, location: id.split('/').slice(1, -1).join(' / '), edited })
+        result.push({ id, groupId, groupName, name, category, section, location: id.split('/').slice(1, -1).join(' / '), edited })
       }
     }
     await visit(root)

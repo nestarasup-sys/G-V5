@@ -1,4 +1,4 @@
-export type PaintAsset = { id: string; groupId: string; groupName: string; name: string; category: string; location: string; edited: boolean }
+export type PaintAsset = { id: string; groupId: string; groupName: string; name: string; category: string; section: string; location: string; edited: boolean }
 export type PaintDocument = { originalDataUrl: string; currentDataUrl: string; sourceHash: string; edited: boolean }
 export type PaintDesktopApi = {
   listPaintAssets: () => Promise<PaintAsset[]>
