@@ -269,6 +269,7 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
   const [selectedElementId, setSelectedElementId] = useState<string | null>(null)
   const [videoPlayheadFrame, setVideoPlayheadFrame] = useState(0)
   const [videoPlaying, setVideoPlaying] = useState(false)
+  const [automaticBreathingCharacterId, setAutomaticBreathingCharacterId] = useState<string | null>(null)
   const [animationPreparing, setAnimationPreparing] = useState(false)
   const animationPlayRequestRef = useRef(0)
   const [automaticBlinkPreview, setAutomaticBlinkPreview] = useState<Record<string, { dataUrl: string; geometry: Pick<StudioElement, 'width' | 'height' | 'characterCanvasWidth'> }>>({})
@@ -323,6 +324,30 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
   const selectedStudioTalkAvailable = Boolean(selectedStudioOpenMouth?.pieces.some((piece) => piece.sheet === 'mouth-open' && piece.index === selectedStudioFaceAppearance?.expressionIndex))
   const selectedBackgroundAsset = activeStudio?.assets.find((asset) => asset.id === activeStudio.backgroundAssetId) ?? null
   const stageCharacters = activeStudio?.elements.filter((element) => element.kind === 'character') ?? []
+  const videoCharacterAnimationsEnabled = Boolean(isVideoWorkspace && activeStudio && videoTimelineFor(activeStudio).animateCharacterTransitions !== false)
+  const breathingCharacterSignature = JSON.stringify(stageCharacters.map((element) => element.id))
+  useEffect(() => {
+    setAutomaticBreathingCharacterId(null)
+    if (!activeStudio || !isVideoWorkspace || !videoPlaying || !videoCharacterAnimationsEnabled || !stageCharacters.length) return
+    let cancelled = false
+    let timer = 0
+    let previousId: string | null = null
+    const selectNextCharacter = () => {
+      if (cancelled) return
+      const candidates = stageCharacters.length > 1 ? stageCharacters.filter((element) => element.id !== previousId) : stageCharacters
+      const selected = candidates[Math.floor(Math.random() * candidates.length)]
+      if (!selected) return
+      previousId = selected.id
+      setAutomaticBreathingCharacterId(selected.id)
+      timer = window.setTimeout(selectNextCharacter, 6000)
+    }
+    selectNextCharacter()
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+      setAutomaticBreathingCharacterId(null)
+    }
+  }, [activeStudio?.id, breathingCharacterSignature, isVideoWorkspace, videoPlaying, videoCharacterAnimationsEnabled])
   const automaticBlinkTargets = isVideoWorkspace && videoPlaying && videoPlaybackStates
     ? stageCharacters.flatMap((element) => {
         const playbackState = videoPlaybackStates.get(element.id)
@@ -2250,8 +2275,9 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
               const speakerColor = videoCharacterTrackColor(element.speakerCharacterId ?? element.id, speaker?.timelineColor ?? element.speakerColor)
               const imageDataUrl = automaticMouthState?.dataUrl ?? blinkState?.dataUrl ?? playbackState?.imageDataUrl ?? asset?.dataUrl
               const size = studioElementSize(element)
-              return <div key={element.id} className={`video-studio-canvas-element video-studio-element-${element.kind}${selectedElementId === element.id && !fullView ? ' selected' : ''}`} style={{ ...imageStyle(element.x, element.y, size.width, size.height, element.rotation, element.kind === 'character' && element.flipX === true), zIndex: Math.max(0, element.zIndex) + 2, ...(speakerName ? { '--speaker-color': speakerColor } as CSSProperties : {}) }} onPointerDown={(event) => startDrag(event, element.id)} onPointerMove={moveDrag} onPointerUp={endDrag} onPointerCancel={endDrag}>
-                {(element.kind === 'image' || element.kind === 'character') && imageDataUrl ? <img src={imageDataUrl} alt={asset?.name ?? element.text} draggable={false} /> : element.kind === 'speech' || element.kind === 'thought' ? <span>{speakerName && <strong className="video-studio-balloon-speaker">{speakerName}</strong>}<span className="video-studio-balloon-text">{element.text}</span></span> : <span>{element.text}</span>}
+              const breathingActive = element.kind === 'character' && element.id === automaticBreathingCharacterId && videoPlaying && videoCharacterAnimationsEnabled
+              return <div key={element.id} className={`video-studio-canvas-element video-studio-element-${element.kind}${breathingActive ? ' breathing-active' : ''}${selectedElementId === element.id && !fullView ? ' selected' : ''}`} style={{ ...imageStyle(element.x, element.y, size.width, size.height, element.rotation, element.kind === 'character' && element.flipX === true), zIndex: Math.max(0, element.zIndex) + 2, ...(speakerName ? { '--speaker-color': speakerColor } as CSSProperties : {}) }} onPointerDown={(event) => startDrag(event, element.id)} onPointerMove={moveDrag} onPointerUp={endDrag} onPointerCancel={endDrag}>
+                {(element.kind === 'image' || element.kind === 'character') && imageDataUrl ? <><img src={imageDataUrl} alt={asset?.name ?? element.text} draggable={false} />{breathingActive && <img className="video-studio-breathing-overlay" src={imageDataUrl} alt="" aria-hidden="true" draggable={false} />}</> : element.kind === 'speech' || element.kind === 'thought' ? <span>{speakerName && <strong className="video-studio-balloon-speaker">{speakerName}</strong>}<span className="video-studio-balloon-text">{element.text}</span></span> : <span>{element.text}</span>}
               </div>
             })}
             {isVideoWorkspace && (() => {
