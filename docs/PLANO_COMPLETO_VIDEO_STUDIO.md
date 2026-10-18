@@ -1,5 +1,7 @@
 # Plano completo — Video Studio
 
+> **Plano original preservado (histórico e requisitos de produto).** A arquitetura técnica executável e o status atualizado estão em [VIDEO_STUDIO_ARQUITETURA_V2.md](./VIDEO_STUDIO_ARQUITETURA_V2.md). O texto abaixo registra decisões feitas na fase de planejamento e pode descrever fases que já avançaram.
+
 ## 1. Visão da área
 
 O **Video Studio** será uma nova área acessível pela barra superior principal, ao lado das áreas existentes. Sua entrada visual e seu espaço de trabalho partirão do Studio atual: cenário, personagens, objetos, preview e painel de edição continuam familiares. A diferença é que o Video Studio terá um projeto próprio, com tempo, faixas, cortes de estado, reprodução e exportação de vídeo. Um projeto novo abre com dez minutos de duração, ajustáveis pelos controles de duração da timeline.
