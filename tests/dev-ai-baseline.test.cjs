@@ -79,3 +79,43 @@ test('out/ symlink is rejected rather than following a user-controlled directory
     rmSync(dir, { recursive: true, force: true })
   }
 })
+
+test('static feature boundary scanner detects cross-feature imports on synthetic tree', () => {
+  const { scan } = require('../scripts/dev-ai/boundary-scan.cjs')
+  const { mkdirSync, writeFileSync } = require('node:fs')
+  const root = mkdtempSync(join(tmpdir(), 'gacha-boundaries-'))
+  try {
+    const studio = join(root, 'src/renderer/src/features/studio')
+    const video = join(root, 'src/renderer/src/features/videoStudio')
+    mkdirSync(studio, { recursive: true })
+    mkdirSync(video, { recursive: true })
+    writeFileSync(join(studio, 'helper.ts'), 'export const hello = 1')
+    writeFileSync(join(video, 'page.ts'), "import { hello } from '../studio/helper'\\n")
+    const report = scan(root)
+    assert.equal(report.crossFeature.length, 1)
+    assert.equal(report.crossFeature[0].fromFeature, 'videoStudio')
+    assert.equal(report.crossFeature[0].toFeature, 'studio')
+  } finally { rmSync(root, { recursive: true, force: true }) }
+})
+
+test('boundary scanner is non-destructive and ignores linked source trees', () => {
+  const { scan } = require('../scripts/dev-ai/boundary-scan.cjs')
+  const { mkdirSync, writeFileSync } = require('node:fs')
+  const root = mkdtempSync(join(tmpdir(), 'gacha-boundaries-safe-'))
+  const outside = mkdtempSync(join(tmpdir(), 'gacha-outside-'))
+  try {
+    mkdirSync(join(root, 'src'), { recursive: true })
+    writeFileSync(join(outside, 'secret.ts'), "export const privateValue='PRIVATE'\\n")
+    try { symlinkSync(outside, join(root, 'src', 'external'), 'dir') }
+    catch (error) {
+      if (['EPERM', 'EACCES', 'ENOSYS'].includes(error.code)) return
+      throw error
+    }
+    const report = scan(root)
+    assert.equal(report.scannedFiles, 0)
+    assert.equal(report.edges.length, 0)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+    rmSync(outside, { recursive: true, force: true })
+  }
+})
