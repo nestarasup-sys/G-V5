@@ -17,7 +17,7 @@ import { isValidVideoMediaClip } from '../src/shared/videoMedia'
 import { isValidVideoAudioSettings } from '../src/shared/videoAudio'
 import { VideoLibraryStore } from './videoLibrary'
 import { VideoBackgroundLibraryStore } from './backgroundLibrary'
-import { PaintStore } from './paintStore'
+import { readAssetImage, writeAssetImageSource } from './assetImageOverrides'
 import { legacyStandardExpressionEffects } from '../src/shared/legacyExpressionEffects'
 
 protocol.registerSchemesAsPrivileged([
@@ -41,7 +41,6 @@ const wardrobeLibraryPath = () => join(app.getPath('userData'), 'fabricator', 'w
 const wardrobeModelPath = (modelSlot: number) => join(wardrobeLibraryPath(), `model-${modelSlot}`)
 const wardrobeSetPath = (modelSlot: number, id: string) => join(wardrobeModelPath(modelSlot), `set-${id}`)
 const faceModelPath = (modelSlot: number) => join(app.getPath('userData'), 'fabricator', 'faces', `model-${modelSlot}`)
-const paintStore = new PaintStore(() => join(app.getPath('userData'), 'fabricator'))
 const faceSetPath = (modelSlot: number, id: string) => join(faceModelPath(modelSlot), `set-${id}`)
 const faceCatalogPath = (modelSlot: number) => join(faceModelPath(modelSlot), 'catalog')
 const faceCatalogItemPath = (modelSlot: number, id: string) => join(faceCatalogPath(modelSlot), `item-${id}`)
@@ -453,7 +452,7 @@ async function writeFaceSet(modelSlot: number, set: FaceSetSave, assets: FaceAss
   await mkdir(partsFolder, { recursive: true })
   const expected = new Set([...set.pieces.map((piece) => piece.id), ...Object.keys(set.sheets).map((kind) => `sheet-${kind}`)])
   if (assets.some((asset) => !expected.has(asset.id)) || new Set(assets.map((asset) => asset.id)).size !== assets.length) throw new Error('Imagens do rosto inválidas.')
-  for (const asset of assets) await paintStore.writeSource(join(partsFolder, `${asset.id}.png`), dataUrlBuffer(asset.dataUrl))
+  for (const asset of assets) await writeAssetImageSource(join(partsFolder, `${asset.id}.png`), dataUrlBuffer(asset.dataUrl))
   for (const id of expected) await access(join(partsFolder, `${id}.png`))
   const temporary = join(folder, 'face.json.tmp')
   await writeFile(temporary, JSON.stringify(set), 'utf8')
@@ -468,8 +467,8 @@ async function readFaceSet(modelSlot: number, id: string): Promise<FaceSet | nul
     const set = JSON.parse(await readFile(join(folder, 'face.json'), 'utf8')) as FaceSetSave
     if (!validFaceSet(modelSlot, set) || set.id !== id) return null
     const sheets = { ...set.sheets } as FaceSet['sheets']
-    for (const kind of faceSheetKinds) if (sheets[kind]) sheets[kind] = { ...sheets[kind], dataUrl: `data:image/png;base64,${(await paintStore.readEffective(join(folder, 'images', `sheet-${kind}.png`))).toString('base64')}` }
-    const pieces = await Promise.all(set.pieces.map(async (piece) => ({ ...piece, dataUrl: `data:image/png;base64,${(await paintStore.readEffective(join(folder, 'images', `${piece.id}.png`))).toString('base64')}` })))
+    for (const kind of faceSheetKinds) if (sheets[kind]) sheets[kind] = { ...sheets[kind], dataUrl: `data:image/png;base64,${(await readAssetImage(join(folder, 'images', `sheet-${kind}.png`))).toString('base64')}` }
+    const pieces = await Promise.all(set.pieces.map(async (piece) => ({ ...piece, dataUrl: `data:image/png;base64,${(await readAssetImage(join(folder, 'images', `${piece.id}.png`))).toString('base64')}` })))
     return { ...set, sheets, pieces }
   } catch (reason) {
     if ((reason as NodeJS.ErrnoException).code === 'ENOENT') return null
@@ -516,7 +515,7 @@ async function writeFaceCatalogItem(modelSlot: number, item: FaceCatalogItemSave
   const expected = new Set([`sheet-${item.category}`, ...item.pieces.map((piece) => piece.id)])
   if (assets.some((asset) => !expected.has(asset.id)) || new Set(assets.map((asset) => asset.id)).size !== assets.length) throw new Error('Imagens da peça facial inválidas.')
   await mkdir(images, { recursive: true })
-  for (const asset of assets) await paintStore.writeSource(join(images, `${asset.id}.png`), dataUrlBuffer(asset.dataUrl))
+  for (const asset of assets) await writeAssetImageSource(join(images, `${asset.id}.png`), dataUrlBuffer(asset.dataUrl))
   for (const id of expected) await access(join(images, `${id}.png`))
   await writeFile(join(folder, 'item.json.tmp'), JSON.stringify(item), 'utf8')
   await rename(join(folder, 'item.json.tmp'), join(folder, 'item.json'))
@@ -541,8 +540,8 @@ async function readFaceCatalogItem(modelSlot: number, id: string): Promise<FaceC
     const folder = faceCatalogItemPath(modelSlot, id)
     const item = JSON.parse(await readFile(join(folder, 'item.json'), 'utf8')) as FaceCatalogItemSave
     if (!validFaceCatalogItem(modelSlot, item) || item.id !== id) return null
-    const sheet = { ...item.sheet, dataUrl: `data:image/png;base64,${(await paintStore.readEffective(join(folder, 'images', `sheet-${item.category}.png`))).toString('base64')}` }
-    const pieces = await Promise.all(item.pieces.map(async (piece) => ({ ...piece, dataUrl: `data:image/png;base64,${(await paintStore.readEffective(join(folder, 'images', `${piece.id}.png`))).toString('base64')}` })))
+    const sheet = { ...item.sheet, dataUrl: `data:image/png;base64,${(await readAssetImage(join(folder, 'images', `sheet-${item.category}.png`))).toString('base64')}` }
+    const pieces = await Promise.all(item.pieces.map(async (piece) => ({ ...piece, dataUrl: `data:image/png;base64,${(await readAssetImage(join(folder, 'images', `${piece.id}.png`))).toString('base64')}` })))
     return { ...item, sheet, pieces }
   } catch (reason) {
     if ((reason as NodeJS.ErrnoException).code !== 'ENOENT') throw reason
@@ -673,7 +672,7 @@ async function readFaceComponentAsset(modelSlot: number, id: string): Promise<Fa
     const folder = faceComponentItemPath(modelSlot, id)
     const asset = JSON.parse(await readFile(join(folder, 'asset.json'), 'utf8')) as FaceComponentAssetSave
     if (!validFaceComponentAsset(modelSlot, asset) || asset.id !== id) return null
-    const dataUrl = `data:image/png;base64,${(await paintStore.readEffective(join(folder, 'asset.png'))).toString('base64')}`
+    const dataUrl = `data:image/png;base64,${(await readAssetImage(join(folder, 'asset.png'))).toString('base64')}`
     return { ...asset, dataUrl }
   } catch (reason) { if ((reason as NodeJS.ErrnoException).code === 'ENOENT') return null; throw reason }
 }
@@ -682,7 +681,7 @@ async function writeFaceComponentAsset(modelSlot: number, asset: FaceComponentAs
   if (!validFaceComponentAsset(modelSlot, asset) || typeof dataUrl !== 'string' || !dataUrl.startsWith('data:image/png;base64,')) throw new Error('Asset facial inválido; use uma imagem PNG.')
   const folder = faceComponentItemPath(modelSlot, asset.id)
   await mkdir(folder, { recursive: true })
-  await paintStore.writeSource(join(folder, 'asset.png'), dataUrlBuffer(dataUrl))
+  await writeAssetImageSource(join(folder, 'asset.png'), dataUrlBuffer(dataUrl))
   await writeFile(join(folder, 'asset.json.tmp'), JSON.stringify(asset), 'utf8')
   await rename(join(folder, 'asset.json.tmp'), join(folder, 'asset.json'))
 }
@@ -717,7 +716,7 @@ async function writeHairWorkspace(modelSlot: number, workspace: HairWorkspaceSav
   const expected = new Set<string>((['front', 'back', 'fringe'] as const).filter((side) => workspace[side] != null))
   if (workspace.sourceImageSaved) expected.add('source')
   if (assets.some((asset) => !expected.has(asset.id)) || new Set(assets.map((asset) => asset.id)).size !== assets.length) throw new Error('Imagens de cabelo inválidas.')
-  for (const asset of assets) await paintStore.writeSource(join(images, `${asset.id}.png`), dataUrlBuffer(asset.dataUrl))
+  for (const asset of assets) await writeAssetImageSource(join(images, `${asset.id}.png`), dataUrlBuffer(asset.dataUrl))
   for (const side of expected) {
     try { await access(join(images, `${side}.png`)) } catch (reason) {
       if ((reason as NodeJS.ErrnoException).code !== 'ENOENT') throw reason
@@ -737,7 +736,7 @@ async function readHairWorkspace(modelSlot: number): Promise<HairWorkspace | nul
     const saved = JSON.parse(await readFile(join(folder, 'hair.json'), 'utf8')) as HairWorkspaceSave
     if (!validHairWorkspace(modelSlot, saved)) return null
     const loadPart = async (side: 'front' | 'back' | 'fringe') => saved[side]
-      ? { ...saved[side]!, dataUrl: `data:image/png;base64,${(await paintStore.readEffective(join(folder, 'images', `${side}.png`))).toString('base64')}` }
+      ? { ...saved[side]!, dataUrl: `data:image/png;base64,${(await readAssetImage(join(folder, 'images', `${side}.png`))).toString('base64')}` }
       : null
     let sourceImageDataUrl: string | undefined
     if (saved.sourceImageSaved) {
@@ -778,7 +777,7 @@ async function writeHairStyle(modelSlot: number, style: HairStyleSave, assets: H
   await mkdir(images, { recursive: true })
   const expected = new Set((['front', 'back', 'fringe'] as const).filter((side) => style[side] != null))
   if (assets.some((asset) => !expected.has(asset.id)) || new Set(assets.map((asset) => asset.id)).size !== assets.length) throw new Error('Imagens do cabelo inválidas.')
-  for (const asset of assets) await paintStore.writeSource(join(images, `${asset.id}.png`), dataUrlBuffer(asset.dataUrl))
+  for (const asset of assets) await writeAssetImageSource(join(images, `${asset.id}.png`), dataUrlBuffer(asset.dataUrl))
   for (const side of expected) {
     try { await access(join(images, `${side}.png`)) } catch (reason) {
       if ((reason as NodeJS.ErrnoException).code !== 'ENOENT') throw reason
@@ -798,7 +797,7 @@ async function readHairStyle(modelSlot: number, id: string): Promise<HairStyle |
     const saved = JSON.parse(await readFile(join(folder, 'hair-style.json'), 'utf8')) as HairStyleSave
     if (!validHairStyle(modelSlot, saved) || saved.id !== id) return null
     const loadPart = async (side: 'front' | 'back' | 'fringe') => saved[side]
-      ? { ...saved[side]!, dataUrl: `data:image/png;base64,${(await paintStore.readEffective(join(folder, 'images', `${side}.png`))).toString('base64')}` }
+      ? { ...saved[side]!, dataUrl: `data:image/png;base64,${(await readAssetImage(join(folder, 'images', `${side}.png`))).toString('base64')}` }
       : null
     return { ...saved, front: await loadPart('front'), back: await loadPart('back'), fringe: await loadPart('fringe') }
   } catch (reason) {
@@ -814,7 +813,7 @@ async function writeWardrobeSet(modelSlot: number, set: WardrobeSetSave, assets:
   await mkdir(partsFolder, { recursive: true })
   const ids = new Set(set.components.map((component) => component.id))
   if (ids.size !== set.components.length || set.components.some((component) => !isValidWardrobeId(component.id) || !wardrobeCategories.includes(component.category) || !isValidWardrobeId(component.attachedPartId))) throw new Error('Peças do conjunto inválidas.')
-  for (const asset of assets) if (ids.has(asset.id)) await paintStore.writeSource(join(partsFolder, `${asset.id}.png`), dataUrlBuffer(asset.dataUrl))
+  for (const asset of assets) if (ids.has(asset.id)) await writeAssetImageSource(join(partsFolder, `${asset.id}.png`), dataUrlBuffer(asset.dataUrl))
   for (const component of set.components) {
     try { await access(join(partsFolder, `${component.id}.png`)) } catch (reason) {
       if ((reason as NodeJS.ErrnoException).code !== 'ENOENT') throw reason
@@ -838,7 +837,7 @@ async function readWardrobeSet(modelSlot: number, id: string): Promise<WardrobeS
       ...component,
       category: (component.category as string) === 'cinto-saia-1' ? 'cinto' as const : (component.category as string) === 'cinto-saia-2' ? 'saia' as const : component.category,
       renderAboveHair: (component.category === 'oculos' || component.category === 'acessorio-cabeca') && component.renderAboveHair === true,
-      dataUrl: `data:image/png;base64,${(await paintStore.readEffective(join(folder, 'parts', `${component.id}.png`))).toString('base64')}`
+      dataUrl: `data:image/png;base64,${(await readAssetImage(join(folder, 'parts', `${component.id}.png`))).toString('base64')}`
     })))
     return { ...set, components }
   } catch (reason) {
@@ -1219,7 +1218,7 @@ async function writeFabricatorProject(project: FabricatorProjectSave, changedAss
   const validPartIds = new Set(parts.map((part) => part.id))
   for (const asset of changedAssets) {
     if (!validPartIds.has(asset.id)) continue
-    await paintStore.writeSource(join(partsFolder, `${asset.id}.png`), dataUrlBuffer(asset.dataUrl))
+    await writeAssetImageSource(join(partsFolder, `${asset.id}.png`), dataUrlBuffer(asset.dataUrl))
     if (asset.chromaBaseDataUrl) await writeFile(join(partsFolder, `${asset.id}.base.png`), dataUrlBuffer(asset.chromaBaseDataUrl))
   }
   // Never publish a manifest until every referenced image exists. Serializing
@@ -1274,7 +1273,7 @@ async function writePoseAssets(folder: string, parts: Array<Omit<PosePart, 'data
   const partIds = new Set(parts.map((part) => part.id))
   for (const asset of assets) {
     if (!partIds.has(asset.id) || !/^[a-zA-Z0-9_-]{1,80}$/.test(asset.id)) continue
-    await paintStore.writeSource(join(partsFolder, `${asset.id}.png`), dataUrlBuffer(asset.dataUrl))
+    await writeAssetImageSource(join(partsFolder, `${asset.id}.png`), dataUrlBuffer(asset.dataUrl))
   }
   for (const part of parts) {
     if (!/^[a-zA-Z0-9_-]{1,80}$/.test(part.id)) throw new Error('Peça de pose inválida.')
@@ -1296,7 +1295,7 @@ async function readPoseAssets(folder: string, parts: Array<Omit<PosePart, 'dataU
   const partsFolder = join(folder, 'parts')
   return Promise.all(parts.map(async (part) => ({
     ...part,
-    dataUrl: `data:image/png;base64,${(await paintStore.readEffective(join(partsFolder, `${part.id}.png`))).toString('base64')}`
+    dataUrl: `data:image/png;base64,${(await readAssetImage(join(partsFolder, `${part.id}.png`))).toString('base64')}`
   })))
 }
 
@@ -1409,7 +1408,7 @@ async function writeAnimatorParts(folder: string, parts: Array<Omit<PosePart, 'd
   const partsFolder = join(folder, 'parts')
   await mkdir(partsFolder, { recursive: true })
   const validIds = new Set(parts.map((part) => part.id))
-  for (const asset of assets) if (validIds.has(asset.id)) await paintStore.writeSource(join(partsFolder, `${asset.id}.png`), dataUrlBuffer(asset.dataUrl))
+  for (const asset of assets) if (validIds.has(asset.id)) await writeAssetImageSource(join(partsFolder, `${asset.id}.png`), dataUrlBuffer(asset.dataUrl))
   for (const part of parts) {
     const target = join(partsFolder, `${part.id}.png`)
     try { await access(target) } catch (reason) {
@@ -1422,7 +1421,7 @@ async function writeAnimatorParts(folder: string, parts: Array<Omit<PosePart, 'd
 }
 
 async function readAnimatorParts(folder: string, parts: Array<Omit<PosePart, 'dataUrl'>>): Promise<PosePart[]> {
-  return Promise.all(parts.map(async (part) => ({ ...part, dataUrl: `data:image/png;base64,${(await paintStore.readEffective(join(folder, 'parts', `${part.id}.png`))).toString('base64')}` })))
+  return Promise.all(parts.map(async (part) => ({ ...part, dataUrl: `data:image/png;base64,${(await readAssetImage(join(folder, 'parts', `${part.id}.png`))).toString('base64')}` })))
 }
 
 async function writeAnimatorAnimation(modelSlot: number, slot: number, animation: AnimatorAnimationSave, assets: AnimatorAnimationAsset[]): Promise<void> {
@@ -1476,11 +1475,6 @@ async function readAnimatorDraft(modelSlot: number): Promise<AnimatorAnimationDr
 }
 
 async function registerFabricatorHandlers(): Promise<void> {
-  ipcMain.handle('fabricator:paint:list', async (event) => { assertTrustedSender(event); return paintStore.list() })
-  ipcMain.handle('fabricator:paint:thumbnail', async (event, id: string) => { assertTrustedSender(event); return paintStore.thumbnail(id) })
-  ipcMain.handle('fabricator:paint:load', async (event, id: string) => { assertTrustedSender(event); return paintStore.load(id) })
-  ipcMain.handle('fabricator:paint:save', async (event, id: string, sourceHash: string, dataUrl: string) => { assertTrustedSender(event); await paintStore.save(id, sourceHash, dataUrl) })
-  ipcMain.handle('fabricator:paint:remove', async (event, id: string) => { assertTrustedSender(event); await paintStore.remove(id) })
   const registerStudioWorkspace = (workspace: StudioWorkspaceStorage, channel: 'studio' | 'video-studio') => {
     ipcMain.handle(`${channel}:list`, async (event): Promise<StudioDocument[]> => {
       assertTrustedSender(event)
@@ -1686,7 +1680,7 @@ async function registerFabricatorHandlers(): Promise<void> {
       const sourceDataUrl = `data:${mime};base64,${sourceBytes.toString('base64')}`
       const parts = await Promise.all(manifest.parts.map(async (part) => ({
         ...part,
-        dataUrl: `data:image/png;base64,${(await paintStore.readEffective(join(folder, 'parts', `${part.id}.png`))).toString('base64')}`,
+        dataUrl: `data:image/png;base64,${(await readAssetImage(join(folder, 'parts', `${part.id}.png`))).toString('base64')}`,
         ...(part.chromaBaseSaved ? { chromaBaseDataUrl: `data:image/png;base64,${(await readFile(join(folder, 'parts', `${part.id}.base.png`))).toString('base64')}` } : {})
       })))
       return { ...manifest, sourceDataUrl, parts }
