@@ -47,13 +47,14 @@ A branch de fundação mantém um runner **CLI**, sem painel ou telemetria; a in
 npm test
 npm run audit:list
 npm run audit:boundaries
+npm run audit:boundaries:ast
 npm run audit:fast
 npm run audit:isolation
 npm run audit:ipc
 npm run audit:all
 ```
 
-`npm test` usa `node:test` e não depende de Electron. `audit:list` descreve as auditorias e seus pré-requisitos. `audit:boundaries` lista imports cruzados existentes, **sem falhar por eles**: é diagnóstico estático inicial, não uma barreira de segurança. `audit:fast` executa sete auditorias com fixtures sintéticas; precisa de `npm ci` previamente. `audit:isolation` executa `typecheck`, `build` e a auditoria visual Studio → Video Studio → Studio em janela Electron oculta, ainda com preload simulado. `audit:ipc` executa o app compilado com preload/IPC reais em `userData` sintético, validando mutações, namespaces, reinício de processo e root inválido. `audit:all` combina fast, isolation e IPC; não inclui auditorias que usam vídeo externo nem o script `audit-animator-rig` que, sem argumento, lê `APPDATA`. O runner não aplica bloqueio de rede em nível de SO. Consulte [resultados e limites do DEV AI em Windows](docs/refactor/AUDITORIAS/VALIDACAO_WINDOWS_2026-10-18.md).
+`npm test` usa `node:test` e não depende de Electron. `audit:list` descreve as auditorias e seus pré-requisitos. `audit:boundaries` lista imports cruzados com matcher legado; `audit:boundaries:ast` usa parser TypeScript para diferenciar imports apenas de tipo, runtime e reexports. **Ambos são diagnósticos**, não gates estritos nem autorização automática de acoplamento. `audit:fast` executa sete auditorias com fixtures sintéticas; precisa de `npm ci` previamente. `audit:isolation` executa `typecheck`, `build` e a auditoria visual Studio → Video Studio → Studio em janela Electron oculta, ainda com preload simulado. `audit:ipc` executa o app compilado com preload/IPC reais em `userData` sintético, validando mutações, namespaces, reinício de processo e root inválido. `audit:all` combina fast, isolation e IPC; não inclui auditorias que usam vídeo externo nem o script `audit-animator-rig` que, sem argumento, lê `APPDATA`. O runner não aplica bloqueio de rede em nível de SO. Consulte [resultados e limites do DEV AI em Windows](docs/refactor/AUDITORIAS/VALIDACAO_WINDOWS_2026-10-18.md).
 
 Relatórios da execução ficam em `out/dev-ai/runs/<run-id>/report.json` e são ignorados pelo Git. `passed` indica somente a cobertura da suite executada; `inconclusive` e código de saída 2 indicam ferramenta/dependência ausente ou etapa não executada. `audit:ipc` usa dados sintéticos e testa preload/IPC/storage reais com reinício. Antes de executar, consulte [runbook e limites](docs/refactor/AUDITORIAS/BASELINE_DEV_AI_2026-10-18.md) e [validação Windows](docs/refactor/AUDITORIAS/VALIDACAO_WINDOWS_2026-10-18.md). Não aponte essas auditorias para arquivos de usuário. Benchmark e suíte de isolamento completa permanecem abertos no roadmap.
 
