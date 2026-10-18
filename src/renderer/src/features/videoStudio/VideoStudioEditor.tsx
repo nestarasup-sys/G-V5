@@ -6,6 +6,8 @@ import { CharacterPortrait } from '../../ui/components/CharacterPortrait'
 import { resolveStudioTalkMouthId, videoCharacterTrackColor } from '../../../../shared/studio'
 import type { StudioAsset, StudioDocument, StudioElement, StudioFaceMode, StudioFaceTransform, StudioFaceTransforms, VideoAudioSettings, VideoMediaClip, VideoTimelineDocument } from '../../../../shared/studio'
 import { defaultVideoTransform, editVideoMediaClip, isValidVideoMediaClip, splitVideoMediaClip as splitMediaClip } from '../../../../shared/videoMedia'
+import { faceRenderGeometry, trimTransparentImage, type TrimmedImage } from './characterGeometry'
+import { useCharacterTransitions } from './useCharacterTransitions'
 import { PreviewTransport } from './PreviewTransport'
 import { usePreviewFullscreen } from './usePreviewFullscreen'
 import { EditHistory, equalHistoryValue } from './editHistory'
@@ -36,43 +38,6 @@ const studioTools = [
   { id: 'background', label: 'Fundo', icon: 'frame' },
   { id: 'objects', label: 'Objetos', icon: 'sparkles' }
 ] as const
-
-type TrimmedImage = { dataUrl: string; width: number; height: number; left: number; top: number; sourceWidth: number; sourceHeight: number }
-
-function trimTransparentImage(dataUrl: string): Promise<TrimmedImage | null> {
-  return new Promise((resolve) => {
-    const image = new Image()
-    image.onload = () => {
-      const canvas = document.createElement('canvas')
-      canvas.width = image.naturalWidth
-      canvas.height = image.naturalHeight
-      const context = canvas.getContext('2d', { willReadFrequently: true })
-      if (!context || !canvas.width || !canvas.height) return resolve(null)
-      context.drawImage(image, 0, 0)
-      let pixels: Uint8ClampedArray
-      try { pixels = context.getImageData(0, 0, canvas.width, canvas.height).data } catch { return resolve(null) }
-      let left = canvas.width, top = canvas.height, right = -1, bottom = -1
-      for (let y = 0; y < canvas.height; y++) for (let x = 0; x < canvas.width; x++) {
-        if (pixels[(y * canvas.width + x) * 4 + 3] <= 8) continue
-        if (x < left) left = x
-        if (x > right) right = x
-        if (y < top) top = y
-        if (y > bottom) bottom = y
-      }
-      if (right < left || bottom < top) return resolve(null)
-      const width = right - left + 1
-      const height = bottom - top + 1
-      if (left === 0 && top === 0 && width === canvas.width && height === canvas.height) return resolve(null)
-      const cropped = document.createElement('canvas')
-      cropped.width = width
-      cropped.height = height
-      cropped.getContext('2d')?.drawImage(image, left, top, width, height, 0, 0, width, height)
-      resolve({ dataUrl: cropped.toDataURL('image/png'), width, height, left, top, sourceWidth: canvas.width, sourceHeight: canvas.height })
-    }
-    image.onerror = () => resolve(null)
-    image.src = dataUrl
-  })
-}
 
 function fitElementToTrim(element: StudioElement, crop: TrimmedImage): StudioElement {
   const offsetX = ((crop.left + crop.width / 2) / crop.sourceWidth - 0.5) * element.width * (element.flipX ? -1 : 1)
@@ -143,17 +108,6 @@ function fitStudioCharacterToStage(rendered: { width: number; height: number }, 
   const width = characterCanvasWidth * safeCropWidth / safeRenderedWidth
   const height = characterCanvasWidth * stageWidth / Math.max(1, stageHeight) * safeCropHeight / safeRenderedWidth
   return { characterCanvasWidth, width, height }
-}
-
-function faceRenderGeometry(element: StudioElement, rendered: { width: number; height: number }, crop: { width: number; height: number } | null, stageWidth: number, stageHeight: number) {
-  const cropWidth = crop?.width ?? rendered.width
-  const cropHeight = crop?.height ?? rendered.height
-  const characterCanvasWidth = element.characterCanvasWidth ?? element.width * rendered.width / Math.max(1, cropWidth)
-  return {
-    characterCanvasWidth,
-    width: characterCanvasWidth * cropWidth / rendered.width,
-    height: characterCanvasWidth * stageWidth / Math.max(1, stageHeight) * cropHeight / rendered.width
-  }
 }
 
 function makeElement(kind: StudioElement['kind'], zIndex: number): StudioElement {
@@ -311,6 +265,8 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
   const [selectedElementId, setSelectedElementId] = useState<string | null>(null)
   const [videoPlayheadFrame, setVideoPlayheadFrame] = useState(0)
   const [videoPlaying, setVideoPlaying] = useState(false)
+  const [animationPreparing, setAnimationPreparing] = useState(false)
+  const animationPlayRequestRef = useRef(0)
   const [automaticBlinkPreview, setAutomaticBlinkPreview] = useState<Record<string, { dataUrl: string; geometry: Pick<StudioElement, 'width' | 'height' | 'characterCanvasWidth'> }>>({})
   const [historyVersion, setHistoryVersion] = useState(0)
   const [canUndo, setCanUndo] = useState(false)
@@ -337,6 +293,7 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
   useEffect(() => {
     onEditorActiveChange?.(isVideoWorkspace && Boolean(activeStudio))
   }, [isVideoWorkspace, activeStudioId, Boolean(activeStudio), onEditorActiveChange])
+  const characterAnimation = useCharacterTransitions(activeStudio, availableCharacters, videoPreviewFrame, videoPlaying, setError)
   const videoPlaybackStates = isVideoWorkspace && videoPlaying && activeStudio
     ? new Map(activeStudio.elements.filter((element) => element.kind === 'character').map((element) => [element.id, characterStateAt(videoTimelineFor(activeStudio), element.id, videoPlayheadFrame)]))
     : null
@@ -473,6 +430,8 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
   }, [])
   useEffect(() => {
     setVideoPlaying(false)
+    animationPlayRequestRef.current += 1
+    setAnimationPreparing(false)
     setVideoPlayheadFrame(activeStudio?.videoTimeline?.playheadFrame ?? 0)
   }, [activeStudioId])
   useEffect(() => {
@@ -989,6 +948,8 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
 
   const restoreHistorySnapshot = (next: StudioSnapshot) => {
     if (!activeStudio) return
+    animationPlayRequestRef.current += 1
+    setAnimationPreparing(false)
     setVideoPlaying(false)
     const frame = Math.max(0, Math.min(videoPlayheadFrame, (next.videoTimeline?.durationFrames ?? 1) - 1))
     setVideoPlayheadFrame(frame)
@@ -1160,6 +1121,8 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
   const seekVideoFrame = (frame: number) => {
     if (!activeStudio) return
     editHistoryRef.current.cancelPending()
+    animationPlayRequestRef.current += 1
+    setAnimationPreparing(false)
     const clamped = Math.max(0, Math.min(videoTimelineFor(activeStudio).durationFrames, Math.round(frame)))
     setVideoPlaying(false)
     videoPlaybackAnchorRef.current = { frame: clamped, time: performance.now() }
@@ -1172,15 +1135,34 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
     }
   }
 
-  const toggleVideoPlayback = () => {
-    if (!activeStudio) return
-    if (videoPlaying) seekVideoFrame(videoPlayheadFrame)
-    else {
-      editHistoryRef.current.cancelPending()
-      if (videoPlayheadFrame >= videoTimelineFor(activeStudio).durationFrames) seekVideoFrame(0)
-      setVideoPlaying(true)
-    }
+  const prepareVideoPlayback = async (startFrame: number) => {
+    const request = ++animationPlayRequestRef.current
+    setVideoPlaying(false)
+    setVideoPlayheadFrame(startFrame)
+    setAnimationPreparing(true)
+    try {
+      const currentSession = await characterAnimation.preparePlayback(startFrame)
+      if (currentSession && request === animationPlayRequestRef.current) { setError(null); setVideoPlaying(true) }
+    } catch (reason) {
+      if (request === animationPlayRequestRef.current) setError(reason instanceof Error ? reason.message : 'Não foi possível preparar as animações.')
+    } finally { if (request === animationPlayRequestRef.current) setAnimationPreparing(false) }
   }
+
+  const toggleVideoPlayback = async () => {
+    if (!activeStudio) return
+    if (animationPreparing) { animationPlayRequestRef.current += 1; setAnimationPreparing(false); return }
+    if (videoPlaying) { seekVideoFrame(videoPlayheadFrame); return }
+    editHistoryRef.current.cancelPending()
+    const startFrame = videoPlayheadFrame >= videoTimelineFor(activeStudio).durationFrames ? 0 : videoPlayheadFrame
+    if (startFrame !== videoPlayheadFrame) seekVideoFrame(startFrame)
+    await prepareVideoPlayback(startFrame)
+  }
+
+  useEffect(() => {
+    // If preparation cannot keep up on a slow machine, freeze the video clock
+    // at the required sample instead of silently replacing animation with a cut.
+    if (videoPlaying && characterAnimation.missing) void prepareVideoPlayback(videoPreviewFrame)
+  }, [videoPlaying, characterAnimation.missing, videoPreviewFrame])
 
   const splitVideoCharacterTrack = (elementId: string, frame: number) => {
     if (!activeStudio) return
@@ -1854,7 +1836,7 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [castPickerOpen, savingCast, studioFaceBusy, studioExpressionBusy, fullView, activeStudio, videoPlayheadFrame, videoPlaying, historyVersion, videoLibraryOpen, exitFullView])
+  }, [castPickerOpen, savingCast, studioFaceBusy, studioExpressionBusy, fullView, activeStudio, videoPlayheadFrame, videoPlaying, animationPreparing, historyVersion, videoLibraryOpen, exitFullView])
 
   const imageStyle = (x: number, y: number, width: number, height: number, rotation: number, flipX = false) => ({
     left: `calc(50% + ${x}%)`, top: `calc(50% + ${y}%)`, width: `${width}%`, height: `${height}%`,
@@ -2080,8 +2062,9 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
             {[...activeStudio.elements].sort((a, b) => a.zIndex - b.zIndex).map((sourceElement) => {
               if (isVideoWorkspace && sourceElement.kind === 'character' && videoTimelineFor(activeStudio).characterGaps?.some((gap) => gap.elementId === sourceElement.id && gap.startFrame <= videoPreviewFrame && videoPreviewFrame < gap.endFrame)) return null
               if (isVideoWorkspace && (sourceElement.kind === 'speech' || sourceElement.kind === 'thought') && !videoTimelineFor(activeStudio).textClips.some((clip) => clip.elementId === sourceElement.id && clip.startFrame <= videoPreviewFrame && videoPreviewFrame < clip.endFrame)) return null
-              const playbackState = videoPlaybackStates?.get(sourceElement.id)
-              const blinkState = sourceElement.kind === 'character' ? automaticBlinkPreview[sourceElement.id] : undefined
+              const transitionState = characterAnimation.samples.get(sourceElement.id)
+              const playbackState = transitionState ?? videoPlaybackStates?.get(sourceElement.id)
+              const blinkState = sourceElement.kind === 'character' && !transitionState ? automaticBlinkPreview[sourceElement.id] : undefined
               const activeTextClip = isVideoWorkspace && videoPlaying ? videoTimelineFor(activeStudio).textClips.find((clip) => clip.elementId === sourceElement.id && clip.startFrame <= videoPreviewFrame && videoPreviewFrame < clip.endFrame) : undefined
               const playbackElement = playbackState?.element ?? activeTextClip?.state ?? sourceElement
               const element = blinkState && playbackElement.kind === 'character' ? { ...playbackElement, ...blinkState.geometry } : playbackElement
@@ -2100,8 +2083,8 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
             {!fullView && <span className="video-studio-scene-title">{activeStudio.title}</span>}
           </div>
         </section>
-        {fullView && <PreviewTransport frame={videoPlayheadFrame} duration={videoTimelineFor(activeStudio).durationFrames} playing={videoPlaying} audio={videoTimelineFor(activeStudio).videoAudio} onSeek={seekVideoFrame} onTogglePlayback={toggleVideoPlayback} onAudioChange={updateVideoAudio} onBeginAudioEdit={recordHistory} />}
-        {!fullView && isVideoWorkspace && <VideoTimeline canUndo={canUndo && !studioFaceBusy && !studioExpressionBusy && !savingCast} canRedo={canRedo && !studioFaceBusy && !studioExpressionBusy && !savingCast} onUndo={undo} onRedo={redo} selectedCanvasId={selectedElementId} studio={activeStudio} playheadFrame={videoPlayheadFrame} playing={videoPlaying} height={videoTimelineHeight} presetNames={Object.fromEntries(studioExpressionPresets.map((preset) => [preset.id, preset.name]))} onResize={setVideoTimelineHeight} onSelectElement={(elementId) => { setVideoPlaying(false); setSelectedElementId(elementId); setInspectorOpen(true); if (elementId.startsWith('video:')) { setActiveTool(null); setInspectorTab('editor') } }} onSeek={seekVideoFrame} onTogglePlayback={toggleVideoPlayback} onEnterFullscreen={enterFullView} onSaveFrame={saveVideoFrame} onSplitCharacter={splitVideoCharacterTrack} onSplitTextClip={splitVideoTextClip} onSplitVideoClip={splitVideoMediaClip} onUpdateVideoClip={updateVideoMediaClip} onChangeVideoAudio={updateVideoAudio} onBeginAudioEdit={recordHistory} onDuplicateVideoClip={duplicateVideoMediaClip} onUpdateTextClip={updateVideoTextClip} onDeleteTextClip={deleteVideoTextClip} onDeleteVideoClip={deleteVideoMediaClip} onDeleteTextElement={deleteVideoTextElement} onDeleteCharacterSegment={deleteVideoCharacterSegment} onDuplicateTextClip={duplicateVideoTextClip} onMoveCharacterBoundary={moveVideoCharacterBoundary} onAddText={(kind) => addTextElement(kind)} onAddVideo={() => void openVideoLibrary()} onChangeTrackSettings={(id, settings) => changeScene((studio) => ({ ...studio, videoTimeline: { ...videoTimelineFor(studio), trackSettings: { ...videoTimelineFor(studio).trackSettings, [id]: settings } }, updatedAt: new Date().toISOString() }))} onMoveCharacterTrack={moveVideoCharacterTrack} onSetCharacterPositionsLocked={(locked) => changeScene((studio) => ({ ...studio, elements: studio.elements.map((element) => element.kind === 'character' ? { ...element, positionLocked: locked } : element), updatedAt: new Date().toISOString() }))} onChangeDuration={(durationFrames) => changeScene((studio) => ({ ...studio, videoTimeline: { ...videoTimelineFor(studio), durationFrames, playheadFrame: Math.min(videoPlayheadFrame, durationFrames) }, updatedAt: new Date().toISOString() }))} />}
+        {fullView && <PreviewTransport preparing={animationPreparing} frame={videoPlayheadFrame} duration={videoTimelineFor(activeStudio).durationFrames} playing={videoPlaying} audio={videoTimelineFor(activeStudio).videoAudio} onSeek={seekVideoFrame} onTogglePlayback={toggleVideoPlayback} onAudioChange={updateVideoAudio} onBeginAudioEdit={recordHistory} />}
+        {!fullView && isVideoWorkspace && <VideoTimeline preparing={animationPreparing} canUndo={canUndo && !studioFaceBusy && !studioExpressionBusy && !savingCast} canRedo={canRedo && !studioFaceBusy && !studioExpressionBusy && !savingCast} onUndo={undo} onRedo={redo} selectedCanvasId={selectedElementId} studio={activeStudio} playheadFrame={videoPlayheadFrame} playing={videoPlaying} height={videoTimelineHeight} presetNames={Object.fromEntries(studioExpressionPresets.map((preset) => [preset.id, preset.name]))} onResize={setVideoTimelineHeight} onSelectElement={(elementId) => { setVideoPlaying(false); setSelectedElementId(elementId); setInspectorOpen(true); if (elementId.startsWith('video:')) { setActiveTool(null); setInspectorTab('editor') } }} onSeek={seekVideoFrame} onTogglePlayback={toggleVideoPlayback} onEnterFullscreen={enterFullView} onSaveFrame={saveVideoFrame} onSplitCharacter={splitVideoCharacterTrack} onSplitTextClip={splitVideoTextClip} onSplitVideoClip={splitVideoMediaClip} onUpdateVideoClip={updateVideoMediaClip} onChangeVideoAudio={updateVideoAudio} onBeginAudioEdit={recordHistory} onDuplicateVideoClip={duplicateVideoMediaClip} onUpdateTextClip={updateVideoTextClip} onDeleteTextClip={deleteVideoTextClip} onDeleteVideoClip={deleteVideoMediaClip} onDeleteTextElement={deleteVideoTextElement} onDeleteCharacterSegment={deleteVideoCharacterSegment} onDuplicateTextClip={duplicateVideoTextClip} onMoveCharacterBoundary={moveVideoCharacterBoundary} onAddText={(kind) => addTextElement(kind)} onAddVideo={() => void openVideoLibrary()} onChangeTrackSettings={(id, settings) => changeScene((studio) => ({ ...studio, videoTimeline: { ...videoTimelineFor(studio), trackSettings: { ...videoTimelineFor(studio).trackSettings, [id]: settings } }, updatedAt: new Date().toISOString() }))} onMoveCharacterTrack={moveVideoCharacterTrack} onSetCharacterPositionsLocked={(locked) => changeScene((studio) => ({ ...studio, elements: studio.elements.map((element) => element.kind === 'character' ? { ...element, positionLocked: locked } : element), updatedAt: new Date().toISOString() }))} onChangeDuration={(durationFrames) => changeScene((studio) => ({ ...studio, videoTimeline: { ...videoTimelineFor(studio), durationFrames, playheadFrame: Math.min(videoPlayheadFrame, durationFrames) }, updatedAt: new Date().toISOString() }))} />}
         {videoLibraryOpen && <VideoLibraryModal studioTitle={activeStudio.title} locked={videoTimelineFor(activeStudio).trackSettings?.video?.locked === true} onClose={() => setVideoLibraryOpen(false)} onAdd={addLibraryVideos} />}
         {castPickerOpen && <div className="video-studio-cast-modal-backdrop" onPointerDown={(event) => { if (event.target === event.currentTarget && !savingCast) setCastPickerOpen(false) }}>
           <section className="video-studio-cast-modal" role="dialog" aria-modal="true" aria-labelledby="video-studio-cast-modal-title">

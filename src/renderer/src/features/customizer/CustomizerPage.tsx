@@ -17,7 +17,7 @@ import { characterRenderSize, configureCharacterSampling } from './renderResolut
 import { drawFaceExpressionEffects } from './expressionEffectRender'
 import { legacyStandardExpressionEffects } from '../../../../shared/legacyExpressionEffects'
 
-type CatalogArtwork = Pick<FabricatorProject, 'width' | 'height' | 'parts' | 'layerOrder' | 'hiddenPartIds'> & Partial<Pick<FabricatorProject, 'joints'>>
+export type CatalogArtwork = Pick<FabricatorProject, 'width' | 'height' | 'parts' | 'layerOrder' | 'hiddenPartIds'> & Partial<Pick<FabricatorProject, 'joints'>>
 function withCharacterHeadSize(artwork: CatalogArtwork, proportions: CharacterProportions): CatalogArtwork {
   const scaleX = proportions.head * proportions.headWidth / 10000
   const scaleY = proportions.head * proportions.headHeight / 10000
@@ -45,7 +45,7 @@ const hairTintImageCache = new Map<string, Promise<HTMLImageElement>>()
 const hairPreviewImageCache = new Map<string, Promise<string>>()
 type StandardExpressionEffects = Record<number, FaceExpressionEffects>
 
-async function loadStandardExpressionEffects(modelSlot: number): Promise<StandardExpressionEffects> {
+export async function loadStandardExpressionEffects(modelSlot: number): Promise<StandardExpressionEffects> {
   const summaries = await window.desktop.listFaceExpressionPresets(modelSlot)
   const standard = summaries.filter((preset) => (preset.collectionId ?? 'standard') === 'standard'
     && Number.isInteger(preset.expressionIndex) && preset.expressionIndex! >= 0 && preset.expressionIndex! < 21)
@@ -1221,11 +1221,11 @@ async function renderFaceCatalogOverlay(artwork: CatalogArtwork, source: Fabrica
 }
 
 /** Render the selected Customizer character as one self-contained Studio actor image. */
-export async function prepareSavedCharacterRenderer(character: CustomizerCharacter): Promise<{ width: number; height: number; render: (appearance?: CustomizerFaceAppearance, studioFaceTransforms?: StudioFaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: StudioFaceMode) => Promise<{ dataUrl: string; width: number; height: number }> }> {
+export async function prepareSavedCharacterRenderer(character: CustomizerCharacter, renderSource?: { artwork: CatalogArtwork; source: FabricatorProject }): Promise<{ width: number; height: number; render: (appearance?: CustomizerFaceAppearance, studioFaceTransforms?: StudioFaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: StudioFaceMode) => Promise<{ dataUrl: string; width: number; height: number }> }> {
   const modelSlot = character.customization.modelSlot ?? 1
-  const source = await window.desktop.loadFabricatorSlot(modelSlot)
+  const source = renderSource?.source ?? await window.desktop.loadFabricatorSlot(modelSlot)
   if (!source) throw new Error(`O modelo de ${character.name} não está disponível.`)
-  const pose = character.customization.poseSlot === null ? null : await window.desktop.loadFabricatorPose(modelSlot, character.customization.poseSlot)
+  const pose = renderSource?.artwork ?? (character.customization.poseSlot === null ? null : await window.desktop.loadFabricatorPose(modelSlot, character.customization.poseSlot))
   const proportions = getCharacterProportions(character.customization)
   const artwork = applyCharacterBodyShape(withCharacterHeadSize(pose ?? source, proportions), getCharacterBodyDimensions(character.customization))
   const hairAppearance = character.customization.hairAppearance

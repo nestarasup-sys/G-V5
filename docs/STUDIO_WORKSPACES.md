@@ -159,3 +159,47 @@ quadro escolhido. Play no fim reinicia a reprodução. O último frame permanece
 visível ao chegar ao final. Os controles de áudio usam o volume mestre existente
 do roteiro, incluindo o histórico de edição. Entrar e sair preservam o tempo e
 a reprodução; os elementos da composição não são editáveis nesse modo.
+
+## Transições próprias entre estados de personagens
+
+O Video Studio calcula automaticamente as transições de pose e expressão nos
+últimos **20 ms** anteriores a cada divisão de personagem. O intervalo termina
+exatamente no início do estado seguinte. A 60 FPS são 1,2 quadros: o cálculo não
+arredonda a duração para dois quadros. Há um quadro intermediário no grid de
+saída atual; por isso o movimento é intencionalmente muito rápido. Intervalos
+menores limitam a transição ao próprio trecho. Gaps e estados idênticos não
+produzem animações.
+
+- `characterTransitions.ts`: compilação dos limites, avaliação em tempo e
+  interpolação pura. Usa smoothstep, menor caminho angular, ancoragem de juntas
+  em coordenadas locais e separações intencionais de mãos/pés. Interpola ajustes
+  faciais, opacidade, cores, blush, shadow e blush da boca. Assets discretos e
+  ordem de camadas mudam no meio do intervalo; não há dissolve da imagem inteira.
+- `transitionRenderer.ts`: resolve a Base real do personagem e a calibração do
+  fornecedor antes de interpolar overrides. Carrega poses e assets apenas para
+  leitura. Reutiliza o compositor canônico de roupas, cabelos e rosto por uma
+  entrada opcional de artwork; as chamadas normais de Customizer/Studio seguem
+  o mesmo caminho anterior. A geometria usa o enquadramento fixo 1920x1080.
+- `useCharacterTransitions.ts`: fila assíncrona serial, preparação do próximo
+  limite e de dois segundos à frente, decode antecipado e cache LRU de até 40
+  imagens / 128 MiB estimados (permitindo uma imagem isolada maior). Mudanças de
+  estado ou revisão do personagem mudam a chave. Sair do roteiro libera o cache.
+
+Play prepara a janela inicial antes de iniciar o relógio e oferece cancelamento
+no mesmo botão enquanto prepara. Depois disso, o RAF só consulta quadros prontos. Se uma máquina lenta não
+conseguir preparar a janela a tempo, o relógio pausa no quadro necessário e
+retoma após o preparo, em vez de substituir a animação por um corte.
+As animações aparecem durante a reprodução, inclusive em tela cheia; a edição
+parada preserva o estado exato da faixa. O blink automático não substitui a
+imagem durante um quadro de transição. Nenhum quadro interpolado é escrito nas
+faixas, na Base, nos personagens ou no Fabricador Dev; o histórico continua
+operando sobre os estados autorais. O plano e o avaliador puro também podem ser
+usados para amostrar uma futura exportação sem depender do tempo do RAF.
+
+Validação: `node scripts/audit-character-transitions.mjs` verifica duração,
+limites, 1/2/10 personagens, gaps, articulações e imutabilidade. O teste Electron
+`scripts/audit-character-transitions-ui.cjs` usa assets sintéticos isolados e o
+compositor real para comparar a API padrão e a entrada opcional, renderizar a
+transição de corpo/rosto/efeitos e verificar a preparação sob React StrictMode.
+Os artefatos ficam em `out/audit-character-transitions-ui/`; nenhum roteiro ou
+asset real do usuário é alterado pelos testes.

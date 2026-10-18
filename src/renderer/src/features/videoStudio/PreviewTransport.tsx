@@ -8,7 +8,8 @@ function timecode(frame: number) {
   return `${hours ? `${String(hours).padStart(2, '0')}:` : ''}${String(Math.floor(seconds / 60) % 60).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}:${String(frame % 60).padStart(2, '0')}`
 }
 
-export function PreviewTransport({ frame, duration, playing, audio, onSeek, onTogglePlayback, onAudioChange, onBeginAudioEdit }: {
+export function PreviewTransport({ preparing, frame, duration, playing, audio, onSeek, onTogglePlayback, onAudioChange, onBeginAudioEdit }: {
+  preparing: boolean
   frame: number
   duration: number
   playing: boolean
@@ -26,7 +27,7 @@ export function PreviewTransport({ frame, duration, playing, audio, onSeek, onTo
     <div className="video-preview-transport-row">
       <button type="button" aria-label="Voltar ao início" title="Voltar ao início" onClick={() => onSeek(0)}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5v14M19 5 8 12l11 7V5Z" /></svg></button>
       <button type="button" title="Voltar 5 segundos" aria-label="Voltar 5 segundos" onClick={() => onSeek(current - 300)}>−5s</button>
-      <button className="video-preview-play" type="button" aria-label={playing ? 'Pausar reprodução' : 'Reproduzir'} title={playing ? 'Pausar' : 'Reproduzir'} onClick={onTogglePlayback}><svg viewBox="0 0 24 24" aria-hidden="true">{playing ? <path d="M6 4h4v16H6ZM14 4h4v16h-4Z" /> : <path d="m7 3 15 9-15 9V3Z" />}</svg></button>
+      <button className="video-preview-play" type="button" aria-label={preparing ? 'Cancelar preparação das animações' : playing ? 'Pausar reprodução' : 'Reproduzir'} aria-busy={preparing} title={preparing ? 'Preparando animações… Clique para cancelar' : playing ? 'Pausar' : 'Reproduzir'} onClick={onTogglePlayback}><svg viewBox="0 0 24 24" aria-hidden="true">{playing ? <path d="M6 4h4v16H6ZM14 4h4v16h-4Z" /> : <path d="m7 3 15 9-15 9V3Z" />}</svg></button>
       <button type="button" title="Avançar 5 segundos" aria-label="Avançar 5 segundos" onClick={() => onSeek(current + 300)}>+5s</button>
       <output className="video-preview-time" aria-label="Tempo atual e duração">{timecode(current)}<span> / {timecode(duration)}</span></output>
       <div className="video-preview-volume">
