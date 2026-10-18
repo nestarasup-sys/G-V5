@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { nativeImage } from 'electron'
 import type { Dirent } from 'node:fs'
 import { mkdir, readFile, readdir, rename, unlink, writeFile } from 'node:fs/promises'
 import { basename, dirname, join, relative, resolve, sep } from 'node:path'
@@ -8,6 +9,7 @@ const hash = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex')
 const dataUrl = (bytes: Buffer) => `data:image/png;base64,${bytes.toString('base64')}`
 const sidecar = (path: string) => `${path}.paint.png`
 const metadata = (path: string) => `${path}.paint.json`
+const labelsFor = (category: string) => ({ models: 'Modelo', poses: 'Pose', wardrobe: 'Roupa', faces: 'Rosto', 'face-components': 'Face', hair: 'Cabelo', animations: 'Animação' }[category] ?? 'Conjunto')
 
 export class PaintStore {
   constructor(private readonly root: () => string) {}
@@ -65,7 +67,7 @@ export class PaintStore {
       for (const entry of entries) {
         const path = join(folder, entry.name)
         if (entry.isDirectory()) { await visit(path); continue }
-        if (!entry.isFile() || !entry.name.endsWith('.png') || entry.name.endsWith('.paint.png') || entry.name.endsWith('.base.png') || entry.name === 'source.png') continue
+        if (!entry.isFile() || !entry.name.endsWith('.png') || entry.name.endsWith('.paint.png') || entry.name.endsWith('.base.png')) continue
         const id = relative(root, path).split(sep).join('/')
         if (!/^(models|poses|wardrobe|faces|face-components|hair|animations)\//.test(id)) continue
         let edited = false
@@ -74,12 +76,18 @@ export class PaintStore {
         const assetId = basename(entry.name, '.png')
         const assetFolder = dirname(path)
         const collectionFolder = basename(assetFolder) === 'images' || basename(assetFolder) === 'parts' ? dirname(assetFolder) : assetFolder
-        const manifestFile = category === 'models' ? 'project.json' : category === 'poses' ? basename(collectionFolder) === 'draft' ? 'draft.json' : 'pose.json' : category === 'wardrobe' ? 'wardrobe.json' : category === 'animations' ? 'animation.json' : category === 'face-components' ? 'asset.json' : category === 'faces' ? basename(collectionFolder).startsWith('item-') ? 'item.json' : 'face.json' : category === 'hair' ? basename(collectionFolder).startsWith('style-') ? 'style.json' : 'hair.json' : ''
+        const manifestFile = category === 'models' ? 'project.json' : category === 'poses' ? basename(collectionFolder) === 'draft' ? 'draft.json' : 'pose.json' : category === 'wardrobe' ? 'wardrobe.json' : category === 'animations' ? 'animation.json' : category === 'face-components' ? 'asset.json' : category === 'faces' ? basename(collectionFolder).startsWith('item-') ? 'item.json' : 'face.json' : category === 'hair' ? basename(collectionFolder).startsWith('style-') ? 'hair-style.json' : 'hair.json' : ''
         const document = manifestFile ? await manifest(join(collectionFolder, manifestFile)) : null
         const parts = document?.parts ?? document?.components ?? document?.pieces
-        const named = Array.isArray(parts) ? parts.find((part: { id?: string }) => part.id === assetId) as { name?: string } | undefined : undefined
-        const name = named?.name || (assetId === 'asset' && typeof document?.name === 'string' ? document.name : assetId.replace(/^sheet-/, 'Folha '))
-        result.push({ id, name, category, location: id.split('/').slice(1, -1).join(' / '), edited })
+        const named = Array.isArray(parts) ? parts.find((part: { id?: string }) => part.id === assetId) as { name?: string; side?: string; index?: number; sheet?: string } | undefined : undefined
+        const side = named?.side === 'left' ? 'esquerdo' : named?.side === 'right' ? 'direito' : ''
+        const facialKind = ({ eyes: 'Olho', eyebrows: 'Sobrancelha', nose: 'Nariz', 'mouth-closed': 'Boca fechada', 'mouth-open': 'Boca aberta' } as Record<string, string>)[named?.sheet ?? '']
+        const name = named?.name || (facialKind ? `${facialKind}${side ? ` ${side}` : ''} ${Number(named?.index ?? 0) + 1}` : assetId === 'asset' && typeof document?.name === 'string' ? document.name : assetId === 'source' ? 'Imagem de origem' : assetId.replace(/^sheet-/, 'Folha '))
+        const pairId = category === 'face-components' && typeof document?.pairId === 'string' ? document.pairId : ''
+        const groupId = pairId ? `${category}/${id.split('/')[1]}/pair-${pairId}` : relative(root, collectionFolder).split(sep).join('/')
+        const fallbackGroup = basename(collectionFolder).replace(/^(set-|style-|item-|slot-)/, '').replace(/-/g, ' ')
+        const groupName = pairId && typeof document?.kind === 'string' ? `${document.kind} · par` : typeof document?.name === 'string' ? document.name : `${labelsFor(category)} ${fallbackGroup}`
+        result.push({ id, groupId, groupName, name, category, location: id.split('/').slice(1, -1).join(' / '), edited })
       }
     }
     await visit(root)
@@ -90,6 +98,13 @@ export class PaintStore {
     const path = this.pathFor(id)
     const original = await readFile(path)
     return { originalDataUrl: dataUrl(original), currentDataUrl: dataUrl(await this.readEffective(path)), sourceHash: hash(original), edited: await this.edited(path, original) }
+  }
+
+  async thumbnail(id: string): Promise<string> {
+    const path = this.pathFor(id)
+    const image = nativeImage.createFromBuffer(await this.readEffective(path))
+    if (image.isEmpty()) throw new Error('Imagem inválida para miniatura.')
+    return image.resize({ width: 128, height: 104, quality: 'good' }).toDataURL()
   }
 
   async save(id: string, expectedSourceHash: string, editedDataUrl: string): Promise<void> {

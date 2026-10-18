@@ -1477,6 +1477,7 @@ async function readAnimatorDraft(modelSlot: number): Promise<AnimatorAnimationDr
 
 async function registerFabricatorHandlers(): Promise<void> {
   ipcMain.handle('fabricator:paint:list', async (event) => { assertTrustedSender(event); return paintStore.list() })
+  ipcMain.handle('fabricator:paint:thumbnail', async (event, id: string) => { assertTrustedSender(event); return paintStore.thumbnail(id) })
   ipcMain.handle('fabricator:paint:load', async (event, id: string) => { assertTrustedSender(event); return paintStore.load(id) })
   ipcMain.handle('fabricator:paint:save', async (event, id: string, sourceHash: string, dataUrl: string) => { assertTrustedSender(event); await paintStore.save(id, sourceHash, dataUrl) })
   ipcMain.handle('fabricator:paint:remove', async (event, id: string) => { assertTrustedSender(event); await paintStore.remove(id) })

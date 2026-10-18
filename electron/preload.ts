@@ -5,6 +5,7 @@ import type { StudioDesktopApi, VideoStudioDesktopApi } from '../src/shared/stud
 
 const fabricatorApi: FabricatorDesktopApi = {
   listPaintAssets: () => ipcRenderer.invoke('fabricator:paint:list'),
+  createPaintThumbnail: (id) => ipcRenderer.invoke('fabricator:paint:thumbnail', id),
   loadPaintAsset: (id) => ipcRenderer.invoke('fabricator:paint:load', id),
   savePaintAsset: (id, sourceHash, dataUrl) => ipcRenderer.invoke('fabricator:paint:save', id, sourceHash, dataUrl),
   removePaintEdit: (id) => ipcRenderer.invoke('fabricator:paint:remove', id),
