@@ -244,9 +244,12 @@ button:focus-visible, input:focus-visible { outline: 3px solid #ed8caf; outline-
 .studio-editor-quick-actions { display:grid;grid-template-columns:repeat(2,1fr);justify-items:center;gap:8px; }
 .studio-round-action { width:43px;height:43px;display:grid;place-items:center;border:1px solid #f1bbd0;border-radius:50%;background:#fffafd;color:#d84e87;cursor:pointer; }
 .studio-round-action:hover:not(:disabled) { background:#fff0f6;border-color:#e878a2; }
+.studio-round-action.studio-exit-action { border-color:#d83d50;background:#d83d50;color:#fff; }
+.studio-round-action.studio-exit-action:hover:not(:disabled) { border-color:#bd263b;background:#bd263b;color:#fff; }
 .studio-round-action:disabled { opacity:.4;cursor:default; }
 .studio-round-action svg { width:17px;height:17px; }
 .studio-round-action>span { font-size:26px;line-height:1; }
+.studio-round-action.studio-exit-action>span { font-size:25px;font-weight:700; }
 .studio-history-actions { margin-bottom:3px; }
 .studio-tool-list { display:grid;gap:8px; }
 .studio-tool-button { min-height:76px;position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;padding:9px 5px;border:1px solid #f1bad0;border-radius:17px;background:#fffafd;color:#d84e87;cursor:pointer;transition:background .14s ease,border-color .14s ease; }

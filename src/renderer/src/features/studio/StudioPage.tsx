@@ -1753,7 +1753,7 @@ export function StudioPage({ workspace = 'studio', onEditorActiveChange }: { wor
       <main className={`studio-editor${isVideoWorkspace ? ' video-workspace' : ''}${inspectorOpen && !fullView ? ' inspector-open' : ''}${fullView ? ' full-view' : ''}`} aria-label={`Editor do ${activeStudio.title}`} style={videoEditorStyle}>
         {!fullView && <aside className="studio-editor-rail studio-editor-left" aria-label={`Ferramentas do ${workspaceTitle}`}>
           <div className="studio-editor-quick-actions">
-            <button className="studio-round-action" onClick={() => void leaveStudio()} title="Salvar automaticamente e voltar" aria-label={`Voltar para Seus ${workspacePlural}`} type="button"><span>←</span></button>
+            <button className="studio-round-action studio-exit-action" onClick={() => void leaveStudio()} title="Salvar automaticamente e voltar" aria-label={`Voltar para Seus ${workspacePlural}`} type="button"><span>×</span></button>
             <button className="studio-round-action" onClick={() => void saveStudio(activeStudio)} title="Salvar agora no computador" aria-label={`Salvar ${workspaceTitle}`} type="button"><Icon name="save" /></button>
           </div>
           <div className="studio-editor-quick-actions studio-history-actions">
