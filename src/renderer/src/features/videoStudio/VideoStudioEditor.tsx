@@ -365,10 +365,11 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
   const animateMouthDuringSpeech = isVideoWorkspace && activeStudio?.videoTimeline?.animateCharacterTransitions !== false
   const automaticMouthSignature = JSON.stringify({
     animate: animateMouthDuringSpeech,
+    animationVersion: 2,
     mouthAssets: studioFaceItems.map((item) => `${item.modelSlot}:${item.id}`),
-    targets: automaticMouthTargets.map(({ element, mode }) => {
+    targets: automaticMouthTargets.map(({ element, mode, speechStartFrame }) => {
       const character = availableCharacters.find((item) => item.id === element.characterId)
-      return [element.id, mode, character?.updatedAt, element.poseSlot, element.faceAppearance, element.faceTransforms, element.activeExpressionEffects, element.activeExpressionPresetId, element.activeExpressionPresetUpdatedAt]
+      return [element.id, mode, speechStartFrame, character?.updatedAt, element.poseSlot, element.faceAppearance, element.faceTransforms, element.activeExpressionEffects, element.activeExpressionPresetId, element.activeExpressionPresetUpdatedAt]
     }),
     renderer: STUDIO_FACE_RENDER_VERSION
   })
@@ -475,7 +476,7 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
       const { renderSavedCharacter } = await import('../customizer/CustomizerPage')
       const stageWidth = sceneRef.current?.clientWidth ?? 1000
       const stageHeight = sceneRef.current?.clientHeight ?? 562
-      for (const { element, mode } of automaticMouthTargets) {
+      for (const { element, mode, speechStartFrame } of automaticMouthTargets) {
         const character = availableCharacters.find((item) => item.id === element.characterId)
         const appearance = element.faceAppearance ?? character?.customization.faceAppearance
         if (!character || !appearance) continue
@@ -491,11 +492,11 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
           const mouthScaleFrames = mode === 'talk' && animateMouthDuringSpeech
             ? [
                 { width: 1, height: 1 },
-                { width: 1.08, height: 1 },
-                { width: 1.08, height: 1.08 },
-                { width: 1.16, height: 1.08 },
-                { width: 1.08, height: 1.08 },
-                { width: 1.08, height: 1 },
+                { width: 1.14, height: 1 },
+                { width: 1.14, height: 1.12 },
+                { width: 1.28, height: 1.12 },
+                { width: 1.14, height: 1.12 },
+                { width: 1.14, height: 1 },
               ]
             : [{ width: 1, height: 1 }]
           const modelSlot = characterCopy.customization.modelSlot ?? 1
@@ -521,7 +522,7 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
           renderedStates[element.id] = {
             frames,
             cycleFrames: frames.length > 1 ? frames.length * 6 : 0,
-            speechStartFrame: automaticSpeechStartFrames.get(element.id) ?? videoPreviewFrame,
+            speechStartFrame,
           }
         } catch {
           // Keep the authored character face if this model has no matching open-mouth asset.
