@@ -1,6 +1,6 @@
-import { StudioPage } from '../studio/StudioPage'
+import { VideoStudioEditor } from './VideoStudioEditor'
 
-/** Studio workspace with a separate document library and persistence folder. */
+/** Independent editor, layout styles, and document library for Video Studio. */
 export function VideoStudioPage({ onEditorActiveChange }: { onEditorActiveChange?: (active: boolean) => void }) {
-  return <StudioPage workspace="video" onEditorActiveChange={onEditorActiveChange} />
+  return <VideoStudioEditor onEditorActiveChange={onEditorActiveChange} />
 }
