@@ -28,6 +28,11 @@ if (process.env.GACHA_AUDIT_OUTPUT_DIR || process.env.GACHA_AUDIT_RUN_ROOT) {
   if (realpathSync(runRoot) !== runRoot) throw new Error('DEV AI audit: root não canônico')
   output = requested
 }
+for (const part of [join(root, 'out'), output, join(output, 'user-data')]) {
+  if (existsSync(part) && lstatSync(part).isSymbolicLink()) {
+    throw new Error('Auditoria Studio: destino contém symlink, recusando escrita')
+  }
+}
 mkdirSync(join(output, 'user-data'), { recursive: true })
 app.setPath('userData', join(output, 'user-data'))
 app.setPath('sessionData', join(output, 'user-data'))
