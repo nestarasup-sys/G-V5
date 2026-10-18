@@ -144,6 +144,8 @@ export type StudioDocument = {
   backgroundWidth: number
   backgroundHeight: number
   backgroundRotation: number
+  /** Compressed snapshot of the latest saved composition, shown on the Studio card. */
+  thumbnailDataUrl?: string
   assets: StudioAsset[]
   elements: StudioElement[]
   /** Present only in the independent Video Studio workspace. */

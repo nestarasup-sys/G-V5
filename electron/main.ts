@@ -924,6 +924,7 @@ function isStudioDocument(value: unknown): value is StudioDocument {
     && typeof studio.updatedAt === 'string' && Number.isFinite(Date.parse(studio.updatedAt))
     && typeof studio.backgroundColor === 'string' && /^#[0-9a-f]{6}$/i.test(studio.backgroundColor)
     && (studio.backgroundAssetId === null || typeof studio.backgroundAssetId === 'string')
+    && (studio.thumbnailDataUrl === undefined || typeof studio.thumbnailDataUrl === 'string' && /^data:image\/(jpeg|png);base64,/.test(studio.thumbnailDataUrl) && studio.thumbnailDataUrl.length <= 1_500_000)
     && [studio.backgroundX, studio.backgroundY, studio.backgroundWidth, studio.backgroundHeight, studio.backgroundRotation].every(Number.isFinite)
     && Array.isArray(assets) && assets.length <= 500
     && assets.every((asset) => isStudioAsset(asset))
@@ -1004,6 +1005,7 @@ function normalizeStudio(value: Record<string, unknown>, id: string, workspace: 
     backgroundWidth: typeof value.backgroundWidth === 'number' && Number.isFinite(value.backgroundWidth) ? value.backgroundWidth : 100,
     backgroundHeight: typeof value.backgroundHeight === 'number' && Number.isFinite(value.backgroundHeight) ? value.backgroundHeight : 100,
     backgroundRotation: typeof value.backgroundRotation === 'number' && Number.isFinite(value.backgroundRotation) ? value.backgroundRotation : 0,
+    ...(typeof value.thumbnailDataUrl === 'string' && /^data:image\/(jpeg|png);base64,/.test(value.thumbnailDataUrl) && value.thumbnailDataUrl.length <= 1_500_000 ? { thumbnailDataUrl: value.thumbnailDataUrl } : {}),
     assets: Array.isArray(value.assets) ? value.assets as StudioAsset[] : [],
     elements: Array.isArray(value.elements) ? value.elements as StudioDocument['elements'] : [],
     ...(workspace === 'video' && value.videoTimeline && typeof value.videoTimeline === 'object' ? { videoTimeline: value.videoTimeline as VideoTimelineDocument } : {})

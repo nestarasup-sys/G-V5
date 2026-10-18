@@ -155,13 +155,14 @@ function makeElement(kind: StudioElement['kind'], zIndex: number): StudioElement
   }
 }
 
-function makeCanvasPrint(studio: StudioDocument): Promise<string> {
+function makeCanvasPrint(studio: StudioDocument, outputWidth = 1920, outputHeight = 1080, mimeType = 'image/png'): Promise<string> {
   return new Promise((resolve, reject) => {
     const canvas = document.createElement('canvas')
-    canvas.width = 1920
-    canvas.height = 1080
+    canvas.width = outputWidth
+    canvas.height = outputHeight
     const context = canvas.getContext('2d')
     if (!context) return reject(new Error('Não foi possível preparar a imagem do print.'))
+    context.scale(outputWidth / 1920, outputHeight / 1080)
     context.fillStyle = studio.backgroundColor
     context.fillRect(0, 0, canvas.width, canvas.height)
     const load = (src: string) => new Promise<HTMLImageElement>((ok, fail) => {
@@ -222,10 +223,14 @@ function makeCanvasPrint(studio: StudioDocument): Promise<string> {
             }
           } else drawText(element)
         }
-        resolve(canvas.toDataURL('image/png'))
+        resolve(canvas.toDataURL(mimeType, mimeType === 'image/jpeg' ? 0.78 : undefined))
       } catch (reason) { reject(reason) }
     })()
   })
+}
+
+function makeStudioThumbnail(studio: StudioDocument): Promise<string> {
+  return makeCanvasPrint(studio, 480, 270, 'image/jpeg')
 }
 
 /** Normal Studio owns this layout; Video Studio has its own editor and stylesheet. */
@@ -712,8 +717,15 @@ export function StudioPage() {
     if (!document) return true
     const generation = ++saveGenerationRef.current
     try {
-      await window.desktop.saveStudio({ ...document, updatedAt: new Date().toISOString() })
+      const thumbnailDataUrl = await makeStudioThumbnail(document).catch(() => document.thumbnailDataUrl)
+      const savedDocument = { ...document, ...(thumbnailDataUrl ? { thumbnailDataUrl } : {}), updatedAt: new Date().toISOString() }
+      await window.desktop.saveStudio(savedDocument)
       if (generation === saveGenerationRef.current) {
+        if (savedDocument.thumbnailDataUrl !== document.thumbnailDataUrl) {
+          setStudios((current) => current.map((studio) => studio.id === document.id && studio.updatedAt === document.updatedAt && studio.thumbnailDataUrl !== savedDocument.thumbnailDataUrl
+            ? { ...studio, thumbnailDataUrl: savedDocument.thumbnailDataUrl }
+            : studio))
+        }
         setSaved(true)
         setError(null)
       }
@@ -1537,7 +1549,7 @@ export function StudioPage() {
         <section className="studio-grid" aria-label="Studios criados">
           {studios.map((studio) => <article className={`studio-card${selectedId === studio.id ? ' selected' : ''}`} key={studio.id}>
             <header className="studio-card-heading"><button className="studio-card-open" onClick={() => { setSelectedId(studio.id); setActiveStudioId(studio.id) }} aria-label={`Abrir ${studio.title}`} type="button">{studio.title}</button><div className="studio-card-actions"><button className="studio-card-action" onClick={() => void duplicateStudio(studio)} aria-label={`Duplicar ${studio.title}`} title={`Duplicar ${studio.title}`} type="button"><span className="studio-duplicate-icon" aria-hidden="true">▢</span></button><button className="studio-card-action danger" onClick={() => void deleteStudio(studio)} aria-label={`Excluir ${studio.title}`} title={`Excluir ${studio.title}`} type="button"><Icon name="trash" /></button></div></header>
-            <button className="studio-cover" style={{ backgroundColor: studio.color }} onClick={() => { setSelectedId(studio.id); setActiveStudioId(studio.id) }} aria-label={`Abrir ${studio.title}`} type="button" />
+            <button className="studio-cover" style={{ backgroundColor: studio.color, ...(studio.thumbnailDataUrl ? { backgroundImage: `url(${studio.thumbnailDataUrl})` } : {}) }} onClick={() => { setSelectedId(studio.id); setActiveStudioId(studio.id) }} aria-label={`Abrir ${studio.title}`} type="button" />
           </article>)}
         </section>
       ) : <section className="studio-empty-state"><span><Icon name="camera" /></span><strong>Nenhum Studio criado</strong><small>Crie um Studio para começar sua coleção.</small></section>}
