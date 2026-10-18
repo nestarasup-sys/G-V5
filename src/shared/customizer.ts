@@ -17,7 +17,7 @@ export type CharacterCustomization = {
   /** Per-character body shaping for the Customizer model preview. */
   bodyDimensions?: CharacterBodyDimensions
   /** Character-only edits are stored here, never written to the Fabricator library. */
-  partOverrides: Record<string, { x?: number; y?: number; scaleX?: number; scaleY?: number; rotation?: number; hidden?: boolean }>
+  partOverrides: Record<string, { x?: number; y?: number; scaleX?: number; scaleY?: number; rotation?: number; opacity?: number; hidden?: boolean }>
   layerOrder: string[]
   /** Garments are character-owned placements; pants stay one group across thigh and calf pieces. */
   wardrobeGroups?: CustomizerWardrobeGroup[]

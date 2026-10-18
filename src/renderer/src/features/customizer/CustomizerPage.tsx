@@ -777,7 +777,7 @@ export async function renderArtwork(artwork: CatalogArtwork, maxSize: number, sk
   return trimmed.toDataURL('image/png')
 }
 
-async function renderArtworkWithHair(artwork: CatalogArtwork, source: FabricatorProject, backStyles: HairStyle | HairLayerReference[] | null, maxSize: number, skinTone?: string, hairAppearance?: CustomizerCharacter['customization']['hairAppearance'], targetContext?: CanvasRenderingContext2D): Promise<string | null> {
+async function renderArtworkWithHair(artwork: CatalogArtwork, source: FabricatorProject, backStyles: HairStyle | HairLayerReference[] | null, maxSize: number, skinTone?: string, hairAppearance?: CustomizerCharacter['customization']['hairAppearance'], targetContext?: CanvasRenderingContext2D, headOverrides: CustomizerCharacter['customization']['partOverrides'] = {}): Promise<string | null> {
   const hairLayers: HairLayerReference[] = Array.isArray(backStyles) ? backStyles : backStyles ? [{ style: backStyles, side: 'back', part: 'backHair' }] : []
   const validHairLayers = hairLayers.filter((layer) => layer.side === 'back' && layer.style.modelSlot === source.slot && Boolean(layer.style.back))
   if (!validHairLayers.length && !targetContext) return renderArtwork(artwork, maxSize, skinTone)
@@ -804,7 +804,9 @@ async function renderArtworkWithHair(artwork: CatalogArtwork, source: Fabricator
     const { style, side } = layer
     const asset = style[side]
     if (!asset) return
-      const transform = style.transforms[side]
+      const baseTransform = style.transforms[side]
+      const override = headOverrides[`head:${layer.part}`]
+      const transform = baseTransform && override ? { ...baseTransform, x: baseTransform.x + (override.x ?? 0), y: baseTransform.y + (override.y ?? 0), scaleX: baseTransform.scaleX * (override.scaleX ?? 1), scaleY: baseTransform.scaleY * (override.scaleY ?? 1), rotation: baseTransform.rotation + (override.rotation ?? 0) } : baseTransform
       if (!transform) return
     try {
       const localX = transform.x / sourceHead.width * targetHead.width
@@ -816,6 +818,7 @@ async function renderArtworkWithHair(artwork: CatalogArtwork, source: Fabricator
       const height = asset.height * transform.scaleY / sourceHead.height * targetHead.height
       const image = await loadHairTintedImage(asset.dataUrl, resolvedHairColors(hairAppearance, layer.part))
       context.save()
+      context.globalAlpha = Math.max(0, Math.min(1, override?.opacity ?? 1))
       context.translate(x * scale, y * scale)
       context.rotate((targetHead.rotation + transform.rotation) * Math.PI / 180)
       context.scale(transform.flipX ? -1 : 1, 1)
@@ -841,7 +844,7 @@ async function renderArtworkWithHair(artwork: CatalogArtwork, source: Fabricator
   return targetContext ? null : canvas.toDataURL('image/png')
 }
 
-async function renderFrontHairOverlay(artwork: CatalogArtwork, source: FabricatorProject, frontStyles: HairStyle | HairLayerReference[] | null, maxSize: number, hairAppearance?: CustomizerCharacter['customization']['hairAppearance'], targetContext?: CanvasRenderingContext2D): Promise<string | null> {
+async function renderFrontHairOverlay(artwork: CatalogArtwork, source: FabricatorProject, frontStyles: HairStyle | HairLayerReference[] | null, maxSize: number, hairAppearance?: CustomizerCharacter['customization']['hairAppearance'], targetContext?: CanvasRenderingContext2D, headOverrides: CustomizerCharacter['customization']['partOverrides'] = {}): Promise<string | null> {
   const hairLayers: HairLayerReference[] = Array.isArray(frontStyles) ? frontStyles : frontStyles ? [{ style: frontStyles, side: 'front', part: 'rearHair' }] : []
   const validHairLayers = hairLayers.filter((layer) => (layer.side === 'front' || layer.side === 'fringe') && layer.style[layer.side] && layer.style.modelSlot === source.slot)
   if (!validHairLayers.length && !targetContext) return null
@@ -858,7 +861,9 @@ async function renderFrontHairOverlay(artwork: CatalogArtwork, source: Fabricato
   for (const layer of validHairLayers) {
     const asset = layer.style[layer.side]
     if (!asset) continue
-    const transform = layer.style.transforms[layer.side]
+    const baseTransform = layer.style.transforms[layer.side]
+    const override = headOverrides[`head:${layer.part}`]
+    const transform = baseTransform && override ? { ...baseTransform, x: baseTransform.x + (override.x ?? 0), y: baseTransform.y + (override.y ?? 0), scaleX: baseTransform.scaleX * (override.scaleX ?? 1), scaleY: baseTransform.scaleY * (override.scaleY ?? 1), rotation: baseTransform.rotation + (override.rotation ?? 0) } : baseTransform
     if (!transform) continue
     const localX = transform.x / sourceHead.width * targetHead.width
     const localY = transform.y / sourceHead.height * targetHead.height
@@ -870,6 +875,7 @@ async function renderFrontHairOverlay(artwork: CatalogArtwork, source: Fabricato
     try {
       const image = await loadHairTintedImage(asset.dataUrl, resolvedHairColors(hairAppearance, layer.part))
       context.save()
+      context.globalAlpha = Math.max(0, Math.min(1, override?.opacity ?? 1))
       context.translate(x * scale, y * scale)
       context.rotate((targetHead.rotation + transform.rotation) * Math.PI / 180)
       context.scale(transform.flipX ? -1 : 1, 1)
@@ -880,7 +886,7 @@ async function renderFrontHairOverlay(artwork: CatalogArtwork, source: Fabricato
   return targetContext ? null : canvas.toDataURL('image/png')
 }
 
-async function renderFaceOverlay(artwork: CatalogArtwork, source: FabricatorProject | null, face: FaceSet | null, appearance: CustomizerFaceAppearance | undefined, maxSize = Math.max(artwork.width, artwork.height)): Promise<string | null> {
+async function renderFaceOverlay(artwork: CatalogArtwork, source: FabricatorProject | null, face: FaceSet | null, appearance: CustomizerFaceAppearance | undefined, maxSize = Math.max(artwork.width, artwork.height), headOverrides: CustomizerCharacter['customization']['partOverrides'] = {}): Promise<string | null> {
   if (!source || !face || !appearance || appearance.setId !== face.id || appearance.modelSlot !== source.slot) return null
   const sourceHead = source.parts.find((part) => /cabe[çc]a|head/i.test(part.name))
   const targetHead = artwork.parts.find((part) => /cabe[çc]a|head/i.test(part.name))
@@ -900,7 +906,9 @@ async function renderFaceOverlay(artwork: CatalogArtwork, source: FabricatorProj
     const side = element.endsWith('left') ? 'left' : element.endsWith('right') ? 'right' : undefined
     const piece = face.pieces.find((item) => item.sheet === sheet && item.index === index && item.side === side)
     if (!piece) continue
-    const transform = face.transforms[element]
+    const baseTransform = face.transforms[element]
+    const override = headOverrides[`head:${element}`]
+    const transform = override ? { ...baseTransform, x: baseTransform.x + (override.x ?? 0), y: baseTransform.y + (override.y ?? 0), scaleX: baseTransform.scaleX * (override.scaleX ?? 1), scaleY: baseTransform.scaleY * (override.scaleY ?? 1), rotation: baseTransform.rotation + (override.rotation ?? 0) } : baseTransform
     try {
       const image = await loadCachedImage(piece.dataUrl)
       const localX = transform.x / sourceHead.width * targetHead.width
@@ -910,6 +918,7 @@ async function renderFaceOverlay(artwork: CatalogArtwork, source: FabricatorProj
       const width = piece.width * transform.scaleX / sourceHead.width * targetHead.width
       const height = piece.height * transform.scaleY / sourceHead.height * targetHead.height
       context.save()
+      context.globalAlpha = Math.max(0, Math.min(1, override?.opacity ?? 1))
       context.translate(x, y)
       context.rotate((targetHead.rotation + transform.rotation) * Math.PI / 180)
       context.drawImage(image, -width / 2, -height / 2, width, height)
@@ -961,7 +970,7 @@ function alignMouthTransformToClosedBase(transform: FaceComponentAsset['defaultT
 
 type StudioClosedEyeResolver = (openEye: FaceComponentAsset, side: 'left' | 'right') => Promise<FaceComponentAsset | null>
 
-async function drawFaceCatalogOverlay(context: CanvasRenderingContext2D, artwork: CatalogArtwork, source: FabricatorProject, items: Partial<Record<FaceSheetKind | FaceElementKind, FaceCatalogItem>>, appearance: CustomizerFaceAppearance, skinTone?: string, studioFaceTransforms?: StudioFaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: StudioFaceMode, resolveClosedEye?: StudioClosedEyeResolver): Promise<void> {
+async function drawFaceCatalogOverlay(context: CanvasRenderingContext2D, artwork: CatalogArtwork, source: FabricatorProject, items: Partial<Record<FaceSheetKind | FaceElementKind, FaceCatalogItem>>, appearance: CustomizerFaceAppearance, skinTone?: string, studioFaceTransforms?: StudioFaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: StudioFaceMode, resolveClosedEye?: StudioClosedEyeResolver, headOverrides: CustomizerCharacter['customization']['partOverrides'] = {}): Promise<void> {
   const sourceHead = source.parts.find((part) => /cabe[çc]a|head/i.test(part.name))
   const targetHead = artwork.parts.find((part) => /cabe[çc]a|head/i.test(part.name))
   if (!sourceHead || !targetHead || sourceHead.width <= 0 || sourceHead.height <= 0) return
@@ -1020,9 +1029,11 @@ async function drawFaceCatalogOverlay(context: CanvasRenderingContext2D, artwork
       ? appearance.transforms?.mouth ?? items['mouth-closed']?.transforms.mouth ?? item.transforms.mouth
       : appearance.transforms?.[element] ?? item.transforms[element]
     const baseTransform = expressionTransform?.sourceTransformOverride ?? studioTransform?.sourceTransformOverride ?? sharedMouthBase
-    const transform = element === 'mouth' && baseTransform
+    const sourceTransform = element === 'mouth' && baseTransform
       ? alignMouthTransformToClosedBase(baseTransform, items['mouth-closed'], item)
       : baseTransform
+    const elementOverride = headOverrides[`head:${element}`]
+    const transform = sourceTransform && elementOverride ? { ...sourceTransform, x: sourceTransform.x + (elementOverride.x ?? 0), y: sourceTransform.y + (elementOverride.y ?? 0), scaleX: sourceTransform.scaleX * (elementOverride.scaleX ?? 1), scaleY: sourceTransform.scaleY * (elementOverride.scaleY ?? 1), rotation: sourceTransform.rotation + (elementOverride.rotation ?? 0) } : sourceTransform
     if (!transform) continue
     try {
       const catalogPalettePart: FacePalettePartId | undefined = sheet === 'nose' ? 'nose' : sheet.startsWith('mouth') ? 'mouth' : undefined
@@ -1039,6 +1050,7 @@ async function drawFaceCatalogOverlay(context: CanvasRenderingContext2D, artwork
       const width = piece.width * transform.scaleX / sourceHead.width * targetHead.width * (studioTransform?.width ?? 100) / 100
       const height = piece.height * transform.scaleY / sourceHead.height * targetHead.height * (studioTransform?.height ?? 100) / 100
       context.save()
+      context.globalAlpha = Math.max(0, Math.min(1, elementOverride?.opacity ?? 1))
       if (sheet === 'nose') context.globalAlpha = Math.min(1, Math.max(0, appearance.noseOpacity ?? item.opacity ?? 1))
       context.translate(x, y)
       context.rotate((targetHead.rotation + transform.rotation + (studioTransform?.rotation ?? 0)) * Math.PI / 180)
@@ -1094,9 +1106,11 @@ async function drawFaceCatalogOverlay(context: CanvasRenderingContext2D, artwork
     const openTransform = originalEye
       ? expressionTransform ?? selectedPart.transform ?? originalEye.defaultTransform
       : undefined
-    const transform = closedEyeAssets.has(part) && originalEye && openTransform
+    const sourceTransform = closedEyeAssets.has(part) && originalEye && openTransform
       ? transferEyeCloseAdjustment(originalEye.defaultTransform, openTransform, asset.defaultTransform)
       : expressionTransform ?? selectedPart.transform ?? asset.defaultTransform
+    const override = headOverrides[`head:${part}`]
+    const transform = override ? { ...sourceTransform, x: sourceTransform.x + (override.x ?? 0), y: sourceTransform.y + (override.y ?? 0), scaleX: sourceTransform.scaleX * (override.scaleX ?? 1), scaleY: sourceTransform.scaleY * (override.scaleY ?? 1), rotation: sourceTransform.rotation + (override.rotation ?? 0) } : sourceTransform
     const mirroredTransform = isRight && category !== 'pupil' && !asset.rightSidePositioned ? { ...transform, x: sourceHead.width - transform.x, rotation: -transform.rotation } : transform
     let localX = mirroredTransform.x
     let localY = mirroredTransform.y
@@ -1164,10 +1178,10 @@ async function drawFaceCatalogOverlay(context: CanvasRenderingContext2D, artwork
           clipped.rotate((targetHead.rotation + pupilEyeClip.transform.rotation) * Math.PI / 180)
           if (pupilEyeClip.flipX) clipped.scale(-1, 1)
           clipped.drawImage(eyeMask, -eyeWidth / 2, -eyeHeight / 2, eyeWidth, eyeHeight); clipped.restore()
-          context.drawImage(pupilClipCanvas, 0, 0)
+          context.save(); context.globalAlpha = Math.max(0, Math.min(1, override?.opacity ?? 1)); context.drawImage(pupilClipCanvas, 0, 0); context.restore()
         }
       } else {
-        context.save(); context.translate(x, y); context.rotate((targetHead.rotation + drawRotation) * Math.PI / 180)
+        context.save(); context.globalAlpha = Math.max(0, Math.min(1, override?.opacity ?? 1)); context.translate(x, y); context.rotate((targetHead.rotation + drawRotation) * Math.PI / 180)
         if (Boolean(transform.flipX) !== (isRight && !asset.rightSidePositioned)) context.scale(-1, 1)
         context.drawImage(image, -width / 2, -height / 2, width, height); context.restore()
       }
@@ -1179,7 +1193,9 @@ async function drawFaceCatalogOverlay(context: CanvasRenderingContext2D, artwork
     if (!id) continue
     const asset = await loadComponent(id)
     if (!asset || asset.kind !== kind) continue
-    const transform = asset.defaultTransform
+    const baseTransform = asset.defaultTransform
+    const override = headOverrides[`head:${kind}`]
+    const transform = override ? { ...baseTransform, x: baseTransform.x + (override.x ?? 0), y: baseTransform.y + (override.y ?? 0), scaleX: baseTransform.scaleX * (override.scaleX ?? 1), scaleY: baseTransform.scaleY * (override.scaleY ?? 1), rotation: baseTransform.rotation + (override.rotation ?? 0) } : baseTransform
     const localX = transform.x / sourceHead.width * targetHead.width
     const localY = transform.y / sourceHead.height * targetHead.height
     const radians = targetHead.rotation * Math.PI / 180
@@ -1189,7 +1205,7 @@ async function drawFaceCatalogOverlay(context: CanvasRenderingContext2D, artwork
     const height = asset.height * transform.scaleY / sourceHead.height * targetHead.height
     try {
       const image = await loadHairTintedImage(asset.dataUrl, appearance.facePalettes?.[kind], { preserveNearWhite: true, allowNearWhiteRoles: appearance.facePaletteManualRoles?.[kind] })
-      context.save(); context.translate(x, y); context.rotate((targetHead.rotation + transform.rotation) * Math.PI / 180)
+      context.save(); context.globalAlpha = Math.max(0, Math.min(1, override?.opacity ?? 1)); context.translate(x, y); context.rotate((targetHead.rotation + transform.rotation) * Math.PI / 180)
       if (transform.flipX) context.scale(-1, 1)
       context.drawImage(image, -width / 2, -height / 2, width, height); context.restore()
     } catch { /* Keep the rest of the face visible if one detail asset is unavailable. */ }
@@ -1198,7 +1214,10 @@ async function drawFaceCatalogOverlay(context: CanvasRenderingContext2D, artwork
     if (!id) continue
     const asset = await loadComponent(id)
     if (!asset || asset.kind !== 'head-extra') continue
-    const transform = asset.defaultTransform
+    const baseTransform = asset.defaultTransform
+    const extraName = Object.entries(appearance.headExtras ?? {}).find(([, extraId]) => extraId === id)?.[0]
+    const override = headOverrides[`head:${extraName === 'glasses' ? 'oculos' : 'acessorio-cabeca'}`]
+    const transform = override ? { ...baseTransform, x: baseTransform.x + (override.x ?? 0), y: baseTransform.y + (override.y ?? 0), scaleX: baseTransform.scaleX * (override.scaleX ?? 1), scaleY: baseTransform.scaleY * (override.scaleY ?? 1), rotation: baseTransform.rotation + (override.rotation ?? 0) } : baseTransform
     const localX = transform.x / sourceHead.width * targetHead.width
     const localY = transform.y / sourceHead.height * targetHead.height
     const radians = targetHead.rotation * Math.PI / 180
@@ -1208,14 +1227,14 @@ async function drawFaceCatalogOverlay(context: CanvasRenderingContext2D, artwork
     const height = asset.height * transform.scaleY / sourceHead.height * targetHead.height
     try {
       const image = await loadCachedImage(asset.dataUrl)
-      context.save(); context.translate(x, y); context.rotate((targetHead.rotation + transform.rotation) * Math.PI / 180)
+      context.save(); context.globalAlpha = Math.max(0, Math.min(1, override?.opacity ?? 1)); context.translate(x, y); context.rotate((targetHead.rotation + transform.rotation) * Math.PI / 180)
       if (transform.flipX) context.scale(-1, 1)
       context.drawImage(image, -width / 2, -height / 2, width, height); context.restore()
     } catch { /* Keep the character visible if an accessory asset is unavailable. */ }
   }
 }
 
-async function renderFaceCatalogOverlay(artwork: CatalogArtwork, source: FabricatorProject, items: Partial<Record<FaceSheetKind | FaceElementKind, FaceCatalogItem>>, appearance: CustomizerFaceAppearance, skinTone?: string, studioFaceTransforms?: StudioFaceTransforms, maxSize = Math.max(artwork.width, artwork.height), expressionEffects?: FaceExpressionEffects): Promise<string | null> {
+async function renderFaceCatalogOverlay(artwork: CatalogArtwork, source: FabricatorProject, items: Partial<Record<FaceSheetKind | FaceElementKind, FaceCatalogItem>>, appearance: CustomizerFaceAppearance, skinTone?: string, studioFaceTransforms?: StudioFaceTransforms, maxSize = Math.max(artwork.width, artwork.height), expressionEffects?: FaceExpressionEffects, headOverrides: CustomizerCharacter['customization']['partOverrides'] = {}): Promise<string | null> {
   const canvas = document.createElement('canvas')
   const pixelScale = Math.min(maxSize / Math.max(artwork.width, artwork.height), Math.sqrt(16_000_000 / (artwork.width * artwork.height)))
   canvas.width = Math.max(1, Math.ceil(artwork.width * pixelScale))
@@ -1224,7 +1243,7 @@ async function renderFaceCatalogOverlay(artwork: CatalogArtwork, source: Fabrica
   if (context) configureCharacterSampling(context)
   if (!context) return null
   context.scale(pixelScale, pixelScale)
-  await drawFaceCatalogOverlay(context, artwork, source, items, appearance, skinTone, studioFaceTransforms, expressionEffects)
+  await drawFaceCatalogOverlay(context, artwork, source, items, appearance, skinTone, studioFaceTransforms, expressionEffects, undefined, undefined, headOverrides)
   return canvas.toDataURL('image/png')
 }
 
@@ -1248,7 +1267,7 @@ export async function prepareSavedCharacterRenderer(character: CustomizerCharact
   baseImage.height = artwork.height
   const baseContext = baseImage.getContext('2d')
   if (!baseContext) throw new Error(`Não foi possível montar a prévia de ${character.name}.`)
-  await renderArtworkWithHair(artwork, source, backStyles, Math.max(artwork.width, artwork.height), character.customization.modelSkinTone, hairAppearance, baseContext)
+  await renderArtworkWithHair(artwork, source, backStyles, Math.max(artwork.width, artwork.height), character.customization.modelSkinTone, hairAppearance, baseContext, character.customization.partOverrides)
 
   const groups = (character.customization.wardrobeGroups ?? []).filter((group) => group.modelSlot === modelSlot)
   const details: Record<string, WardrobeSet> = {}
@@ -1304,7 +1323,7 @@ export async function prepareSavedCharacterRenderer(character: CustomizerCharact
     frontHairImage.height = artwork.height
     const frontContext = frontHairImage.getContext('2d')
     if (!frontContext) throw new Error('Não foi possível preparar o cabelo do personagem.')
-    await renderFrontHairOverlay(artwork, source, frontStyles, Math.max(artwork.width, artwork.height), hairAppearance, frontContext)
+    await renderFrontHairOverlay(artwork, source, frontStyles, Math.max(artwork.width, artwork.height), hairAppearance, frontContext, character.customization.partOverrides)
   }
   const wardrobeImage = wardrobe.imageUrl ? await loadCachedImage(wardrobe.imageUrl) : null
   const wardrobeAboveHairImage = wardrobe.aboveHairImageUrl ? await loadCachedImage(wardrobe.aboveHairImageUrl) : null
@@ -1360,7 +1379,7 @@ export async function prepareSavedCharacterRenderer(character: CustomizerCharact
         throw new Error('Não encontrei uma boca aberta para esta variante. Selecione uma folha de bocas abertas em Rosto Dev.')
       }
       const mouthEffects = expressionEffects ?? expressionEffectsByIndex[faceAppearance.expressionIndex]
-      if (hasCatalogSelection) await drawFaceCatalogOverlay(context, artwork, source, activeItems, faceAppearance, character.customization.modelSkinTone, studioFaceTransforms, mouthEffects, studioFaceMode, resolveClosedEye)
+      if (hasCatalogSelection) await drawFaceCatalogOverlay(context, artwork, source, activeItems, faceAppearance, character.customization.modelSkinTone, studioFaceTransforms, mouthEffects, studioFaceMode, resolveClosedEye, character.customization.partOverrides)
       else if (legacyFaceImage && faceAppearance.setId === appearance?.setId) context.drawImage(legacyFaceImage, 0, 0, canvas.width, canvas.height)
     } else if (legacyFaceImage) context.drawImage(legacyFaceImage, 0, 0, canvas.width, canvas.height)
     if (frontHairImage) context.drawImage(frontHairImage, 0, 0, canvas.width, canvas.height)
@@ -1974,15 +1993,15 @@ export function CustomizerPage() {
     }
     if (!displayArtworkProject || !selectedSourceModelProject || !appearance || (!hasCatalogSelection && !face)) { setSelectedFaceUrl(null); return }
     const render = hasCatalogSelection
-      ? renderFaceCatalogOverlay(displayArtworkProject, selectedSourceModelProject, catalogItems, appearance, selectedCharacter?.customization.modelSkinTone, undefined, characterRenderSize(displayArtworkProject.width, displayArtworkProject.height, previewExtent.width, previewExtent.height, customizerPreviewZoom, previewExtent.density), standardExpressionEffects[appearance.expressionIndex])
-      : renderFaceOverlay(displayArtworkProject, selectedSourceModelProject, face, appearance, characterRenderSize(displayArtworkProject.width, displayArtworkProject.height, previewExtent.width, previewExtent.height, customizerPreviewZoom, previewExtent.density))
+      ? renderFaceCatalogOverlay(displayArtworkProject, selectedSourceModelProject, catalogItems, appearance, selectedCharacter?.customization.modelSkinTone, undefined, characterRenderSize(displayArtworkProject.width, displayArtworkProject.height, previewExtent.width, previewExtent.height, customizerPreviewZoom, previewExtent.density), standardExpressionEffects[appearance.expressionIndex], selectedCharacter?.customization.partOverrides)
+      : renderFaceOverlay(displayArtworkProject, selectedSourceModelProject, face, appearance, characterRenderSize(displayArtworkProject.width, displayArtworkProject.height, previewExtent.width, previewExtent.height, customizerPreviewZoom, previewExtent.density), selectedCharacter?.customization.partOverrides)
     void render.then((url) => {
       if (!cancelled) setSelectedFaceUrl(url)
     }).catch((reason: unknown) => {
       if (!cancelled) setCatalogError(reason instanceof Error ? reason.message : 'Não foi possível montar o rosto do personagem.')
     })
     return () => { cancelled = true }
-  }, [characterFaceAppearance, faceCatalogDetails, faceDetails, displayArtworkProject, selectedSourceModelProject, selectedCharacter?.customization.modelSkinTone, previewExtent, customizerPreviewZoom, standardExpressionEffects])
+  }, [characterFaceAppearance, faceCatalogDetails, faceDetails, displayArtworkProject, selectedSourceModelProject, selectedCharacter?.customization.modelSkinTone, selectedCharacter?.customization.partOverrides, previewExtent, customizerPreviewZoom, standardExpressionEffects])
 
   useEffect(() => {
     let cancelled = false
@@ -2002,8 +2021,8 @@ export function CustomizerPage() {
       for (const layer of [...backStyles, ...frontStyles]) if (!hairDetails[`${source.slot}:${layer.style.id}`]) newlyLoaded[`${source.slot}:${layer.style.id}`] = layer.style
       if (Object.keys(newlyLoaded).length) setHairDetails((current) => ({ ...current, ...newlyLoaded }))
       const [url, frontUrl] = await Promise.all([
-        renderArtworkWithHair(artwork, source, backStyles, characterRenderSize(artwork.width, artwork.height, previewExtent.width, previewExtent.height, customizerPreviewZoom, previewExtent.density), selectedCharacter?.customization.modelSkinTone, appearance?.modelSlot === source.slot ? appearance : undefined),
-        renderFrontHairOverlay(artwork, source, frontStyles, characterRenderSize(artwork.width, artwork.height, previewExtent.width, previewExtent.height, customizerPreviewZoom, previewExtent.density), appearance?.modelSlot === source.slot ? appearance : undefined)
+        renderArtworkWithHair(artwork, source, backStyles, characterRenderSize(artwork.width, artwork.height, previewExtent.width, previewExtent.height, customizerPreviewZoom, previewExtent.density), selectedCharacter?.customization.modelSkinTone, appearance?.modelSlot === source.slot ? appearance : undefined, undefined, selectedCharacter?.customization.partOverrides),
+        renderFrontHairOverlay(artwork, source, frontStyles, characterRenderSize(artwork.width, artwork.height, previewExtent.width, previewExtent.height, customizerPreviewZoom, previewExtent.density), appearance?.modelSlot === source.slot ? appearance : undefined, undefined, selectedCharacter?.customization.partOverrides)
       ])
       if (!cancelled) { setSelectedArtworkUrl(url); setSelectedFrontHairUrl(frontUrl) }
     })().catch((reason: unknown) => {
@@ -3262,7 +3281,7 @@ export function CustomizerPage() {
     const appearance = selectedCharacter?.customization.faceAppearance
     if (hairCategories.some((part) => part.id === id)) return Boolean(hairAppearancePartStyleId(selectedCharacter?.customization.hairAppearance, id as HairPartId))
     if (id === 'eye-left' || id === 'eye-right' || id === 'pupil-left' || id === 'pupil-right' || id === 'brow-left' || id === 'brow-right') {
-      return Boolean(appearance?.components?.[id as FaceComponentPartId]?.assetId || (id.startsWith('eye') ? appearance?.eyeCatalogId || appearance?.eyeLeftCatalogId || appearance?.eyeRightCatalogId : id.startsWith('brow') ? appearance?.eyebrowCatalogId || appearance?.eyebrowLeftCatalogId || appearance?.eyebrowRightCatalogId : false))
+      return Boolean(appearance?.components?.[id as FaceComponentPartId]?.assetId || (id.startsWith('eye') ? appearance?.eyeCatalogId || appearance?.eyeLeftCatalogId || appearance?.eyeRightCatalogId || appearance?.setId : id.startsWith('brow') ? appearance?.eyebrowCatalogId || appearance?.eyebrowLeftCatalogId || appearance?.eyebrowRightCatalogId || appearance?.setId : false))
     }
     if (id === 'nose') return Boolean(appearance?.noseCatalogId || appearance?.setId)
     if (id === 'mouth') return Boolean(appearance?.mouthClosedCatalogId || appearance?.mouthOpenCatalogId || appearance?.setId)
@@ -3274,15 +3293,33 @@ export function CustomizerPage() {
     setHeadAdjustSelection(null)
     if (!selectedCharacter) return
     void saveCharacterCustomization((current) => ({
-      partOverrides: {},
-      ...(current.faceAppearance ? {
-        faceAppearance: {
-          ...current.faceAppearance,
-          transforms: undefined,
-          components: Object.fromEntries(Object.entries(current.faceAppearance.components ?? {}).map(([id, component]) => [id, component ? { ...component, transform: undefined } : component]))
-        } as CustomizerFaceAppearance
-      } : {})
+      partOverrides: Object.fromEntries(Object.entries(current.partOverrides ?? {}).filter(([key]) => !key.startsWith('head:')))
     }))
+  }
+
+  const updateHeadAdjustment = async (operation: 'transform' | 'toggle-opacity', values?: { x?: number; y?: number; scaleX?: number; scaleY?: number; rotation?: number }) => {
+    if (!selectedCharacter || !headAdjustSelection) return
+    const wardrobeCategory = headAdjustSelection === 'oculos' || headAdjustSelection === 'acessorio-cabeca' ? headAdjustSelection : null
+    const currentCharacter = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
+    const wardrobeGroup = wardrobeCategory ? [...(currentCharacter.customization.wardrobeGroups ?? [])].reverse().find((group) => group.category === wardrobeCategory) : undefined
+    if (wardrobeGroup) {
+      const wardrobeGroups = (currentCharacter.customization.wardrobeGroups ?? []).map((group) => {
+        if (group !== wardrobeGroup) return group
+        if (operation === 'transform') return { ...group, offsetX: values?.x ?? group.offsetX ?? 0, offsetY: values?.y ?? group.offsetY ?? 0, scaleX: values?.scaleX ?? group.scaleX ?? 1, scaleY: values?.scaleY ?? group.scaleY ?? 1, rotation: values?.rotation ?? group.rotation ?? 0 }
+        return (group.opacity ?? 1) < 1 ? (({ opacity: _opacity, ...rest }) => rest)(group) : { ...group, opacity: .35 }
+      })
+      await saveCharacterCustomization({ wardrobeGroups })
+      return
+    }
+    const key = `head:${headAdjustSelection}`
+    await saveCharacterCustomization((current) => {
+      const existing = current.partOverrides?.[key] ?? {}
+      const next = { ...existing }
+      if (operation === 'transform' && values) Object.assign(next, values)
+      else if ((existing.opacity ?? 1) < 1) delete next.opacity
+      else next.opacity = .35
+      return { partOverrides: { ...current.partOverrides, [key]: next } }
+    })
   }
 
   const updateClothesAdjustComponent = async (operation: 'transform' | 'toggle-opacity', values?: Partial<Pick<CustomizerWardrobeGroup, 'offsetX' | 'offsetY' | 'scaleX' | 'scaleY' | 'rotation'>>) => {
@@ -3446,8 +3483,10 @@ export function CustomizerPage() {
         if (detailId) return faceComponentDetails[detailId]?.dataUrl ?? null
         const extraId = appearance?.headExtras?.[id === 'oculos' ? 'glasses' : 'head-accessory']
         if (extraId) return faceComponentDetails[extraId]?.dataUrl ?? null
-        const catalogId = id.startsWith('eye-') || id.startsWith('pupil-') ? appearance?.eyeLeftCatalogId ?? appearance?.eyeCatalogId
-          : id.startsWith('brow-') ? appearance?.eyebrowLeftCatalogId ?? appearance?.eyebrowCatalogId
+        const catalogId = id === 'eye-right' || id === 'pupil-right' ? appearance?.eyeRightCatalogId ?? appearance?.eyeCatalogId
+          : id.startsWith('eye-') || id.startsWith('pupil-') ? appearance?.eyeLeftCatalogId ?? appearance?.eyeCatalogId
+          : id === 'brow-right' ? appearance?.eyebrowRightCatalogId ?? appearance?.eyebrowCatalogId
+            : id.startsWith('brow-') ? appearance?.eyebrowLeftCatalogId ?? appearance?.eyebrowCatalogId
             : id === 'nose' ? appearance?.noseCatalogId : id === 'mouth' ? appearance?.mouthClosedCatalogId : undefined
         const catalog = catalogId ? faceCatalogDetails[`${appearance?.modelSlot}:${catalogId}`] : undefined
         return catalog?.pieces[0]?.dataUrl ?? null
@@ -3456,6 +3495,52 @@ export function CustomizerPage() {
       if (!group) return null
       const set = wardrobeDetails[`${group.modelSlot}:${group.setId}`]
       return set?.components.find((component) => component.id === group.componentId)?.dataUrl ?? set?.components.find((component) => component.category === group.category)?.dataUrl ?? null
+    }
+    if (isHead) {
+      const selectedItem = items.find((item) => item.id === selectedId)
+      const appliedItems = items.filter((item) => hasHeadAdjustmentItem(item.id))
+      const selectedWardrobeGroup = selectedId === 'oculos' || selectedId === 'acessorio-cabeca' ? [...(selectedCharacter?.customization.wardrobeGroups ?? [])].reverse().find((group) => group.category === selectedId) : undefined
+      const selectedOverride = selectedId ? selectedCharacter?.customization.partOverrides?.[`head:${selectedId}`] : undefined
+      const transform = { x: selectedWardrobeGroup?.offsetX ?? selectedOverride?.x ?? 0, y: selectedWardrobeGroup?.offsetY ?? selectedOverride?.y ?? 0, scaleX: selectedWardrobeGroup?.scaleX ?? selectedOverride?.scaleX ?? 1, scaleY: selectedWardrobeGroup?.scaleY ?? selectedOverride?.scaleY ?? 1, rotation: selectedWardrobeGroup?.rotation ?? selectedOverride?.rotation ?? 0 }
+      const selectedDimmed = ((selectedWardrobeGroup?.opacity ?? selectedOverride?.opacity) ?? 1) < 1
+      const changeTransform = (patch: Partial<typeof transform>) => void updateHeadAdjustment('transform', { ...transform, ...patch })
+      const moveBy = (x: number, y: number) => changeTransform({ x: transform.x + x, y: transform.y + y })
+      return <section className="customizer-adjust-picker customizer-clothes-adjust-detail" aria-label="Ajustes de cabeça">
+        <header className="customizer-adjust-heading customizer-clothes-adjust-detail-heading">
+          <button className="customizer-adjust-reset" type="button" onClick={() => void updateHeadAdjustment('toggle-opacity')} disabled={!selectedCharacter || !selectedId || !hasHeadAdjustmentItem(selectedId)} title={selectedDimmed ? 'Restaurar item selecionado' : 'Aplicar transparência ao item selecionado'} aria-label={selectedDimmed ? 'Restaurar item selecionado' : 'Excluir item selecionado'}><Icon name={selectedDimmed ? 'undo' : 'trash'} /><span>{selectedDimmed ? 'RESTAURAR' : 'EXCLUIR'}</span></button>
+          <h2>Ajustar cabeça</h2>
+        </header>
+        {!selectedCharacter && <p className="customizer-adjust-hint">Selecione um personagem para ver os itens de cabeça.</p>}
+        {selectedCharacter && <div className="customizer-clothes-adjust-workspace">
+          <section className="customizer-clothes-adjust-parts" aria-label="Itens de cabeça aplicados">
+            <header><strong>Itens da cabeça</strong><small>{appliedItems.length} item(ns)</small></header>
+            {appliedItems.length ? <div className="customizer-clothes-adjust-part-grid">
+              {appliedItems.map((item) => {
+                const override = selectedCharacter.customization.partOverrides?.[`head:${item.id}`]
+                const dimmed = (override?.opacity ?? 1) < 1
+                const preview = previewFor(item.id)
+                return <div key={item.id} className={`customizer-clothes-adjust-part${selectedId === item.id ? ' selected' : ''}${dimmed ? ' dimmed' : ''}`}>
+                  <button type="button" className="customizer-clothes-adjust-part-select" aria-pressed={selectedId === item.id} onClick={() => setHeadAdjustSelection(item.id)}>
+                    <span className="customizer-clothes-adjust-part-preview">{preview ? <img src={preview} alt="" /> : <Icon name={item.icon} />}</span>
+                    <strong title={item.label}>{item.label}</strong><small>Somente neste personagem</small>
+                  </button>
+                </div>
+              })}
+            </div> : <p className="customizer-clothes-adjust-empty">Nenhum item de cabeça está aplicado. Escolha cabelo, olhos, rosto ou extras nas categorias acima para ajustar cada item separadamente.</p>}
+          </section>
+          {selectedItem && hasHeadAdjustmentItem(selectedItem.id) ? <section className="customizer-clothes-adjust-controls" aria-label="Controles do item de cabeça selecionado">
+            <header><span><strong>{selectedItem.label}</strong><small>{selectedCharacter.name}</small></span></header>
+            <div className="customizer-clothes-adjust-position">
+              <span className="customizer-clothes-adjust-readout">X {transform.x >= 0 ? '+' : ''}{Math.round(transform.x)}<br />Y {transform.y >= 0 ? '+' : ''}{Math.round(transform.y)}</span>
+              <div className="customizer-clothes-adjust-pad" aria-label="Mover o item">
+                <button type="button" aria-label="Mover para cima" onClick={() => moveBy(0, -1)}>↑</button><button type="button" aria-label="Mover para a esquerda" onClick={() => moveBy(-1, 0)}>←</button><span><Icon name="move" /></span><button type="button" aria-label="Mover para a direita" onClick={() => moveBy(1, 0)}>→</button><button type="button" aria-label="Mover para baixo" onClick={() => moveBy(0, 1)}>↓</button>
+              </div>
+            </div>
+            <div className="customizer-clothes-adjust-axis-grid">{([{ key: 'scaleX', label: 'Largura' }, { key: 'scaleY', label: 'Altura' }] as const).map(({ key, label }) => <div className="customizer-clothes-adjust-axis" key={key}><strong>{label} <output>{Math.round(transform[key] * 100)}%</output></strong><button type="button" aria-label={`Diminuir ${label.toLowerCase()}`} onClick={() => changeTransform({ [key]: Math.max(.05, Number((transform[key] - .02).toFixed(2))) })}>−</button><button type="button" aria-label={`Aumentar ${label.toLowerCase()}`} onClick={() => changeTransform({ [key]: Math.min(5, Number((transform[key] + .02).toFixed(2))) })}>+</button></div>)}</div>
+            <div className="customizer-clothes-adjust-rotation"><strong>Rotação <output>{Math.round(transform.rotation)}°</output></strong><button type="button" aria-label="Girar para a esquerda" onClick={() => changeTransform({ rotation: transform.rotation - 1 })}>↶</button><button type="button" aria-label="Girar para a direita" onClick={() => changeTransform({ rotation: transform.rotation + 1 })}>↷</button></div>
+          </section> : <div className="customizer-clothes-adjust-empty-controls">Selecione um item aplicado na lista para ajustar.</div>}
+        </div>}
+      </section>
     }
     return <section className="customizer-adjust-picker" aria-label={isHead ? 'Ajustes de cabeça' : 'Ajustes de roupas'}>
       <header className="customizer-adjust-heading">
