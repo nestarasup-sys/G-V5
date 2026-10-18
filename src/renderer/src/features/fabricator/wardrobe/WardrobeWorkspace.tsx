@@ -6,7 +6,7 @@ import { orderedParts, partJointAnchor, sourcePointFromCanvas } from '../models/
 import { isHeadPart } from '../models/resize'
 import { resizeAroundAnchor } from '../../../../../shared/headShape'
 import { bindWardrobeComponent, mapWardrobeComponentToPose, poseDeltaToSource } from './poseTransform'
-import { splitWardrobeV2Reference, supportsWardrobeV2, wardrobeV2SourceUrl } from './wardrobeV2Reference'
+import { supportsWardrobeV2 } from './wardrobeV2Reference'
 
 type WorkerPiece = Omit<WardrobeComponent, 'category' | 'attachedPartId' | 'rotation' | 'dataUrl'> & { png: ArrayBuffer }
 type WorkerMessage = { type: 'complete'; id: number; width: number; height: number; pieces: WorkerPiece[] } | { type: 'error'; id: number; message: string }
@@ -196,7 +196,10 @@ export function WardrobeWorkspace({ edition = 1 }: { edition?: WardrobeEdition }
   const previewPoseParts = testPose ? orderedParts(testPose.parts, testPose.layerOrder).filter((part) => !(testPose.hiddenPartIds ?? []).includes(part.id)) : []
   const previewLayerStride = (draft?.components.length ?? 0) + 2
   const scale = previewProject && previewSize.width && previewSize.height ? Math.min((previewSize.width - 48) / previewProject.width, (previewSize.height - 48) / previewProject.height) * zoom : 1
-  const referenceSource = model ? edition === 2 ? wardrobeV2SourceUrl : model.sourceDataUrl : null
+  // Both wardrobe editors preview the currently saved model image. Edition 2
+  // only adds its own controls and catalog; its canvas must not use a stale,
+  // bundled reference sheet.
+  const referenceSource = model?.sourceDataUrl ?? null
   const sourceParts = model && sourceReference?.sourceDataUrl === referenceSource ? sourceReference.parts : null
   const referenceModel = model && sourceParts ? { ...model, parts: model.parts.map((part) => withSourceFrame(part, sourceParts[part.id])) } : model
   const referenceBone = (partId: string) => referenceModel?.parts.find((part) => part.id === partId)
@@ -273,14 +276,7 @@ export function WardrobeWorkspace({ edition = 1 }: { edition?: WardrobeEdition }
   }, [model, referenceSource])
   useEffect(() => {
     if (!model) { setSourceReference(null); return }
-    if (edition === 2) {
-      if (referencePreview?.sourceDataUrl !== referenceSource) { setSourceReference(null); return }
-      let alive = true
-      void splitWardrobeV2Reference(referencePreview.imageDataUrl, model).then((parts) => {
-        if (alive) { setSourceReference({ sourceDataUrl: wardrobeV2SourceUrl, parts }); setError('') }
-      }).catch((reason) => { if (alive) setError(reason instanceof Error ? reason.message : String(reason)) })
-      return () => { alive = false }
-    }
+    if (referencePreview?.sourceDataUrl !== referenceSource) { setSourceReference(null); return }
     let alive = true
     setSourceReference(null)
     const worker = new Worker(new URL('../models/imageProcessor.worker.ts', import.meta.url), { type: 'module' })
