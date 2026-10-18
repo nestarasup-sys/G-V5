@@ -106,3 +106,23 @@ Régua + playhead frame-alinhado, zoom independente da duração, faixa por pers
 - **Nunca** atribuir talk/blink automático a uma cena que não possui as variantes.
 - **Nunca** apagar uma faixa ou cortar duração por efeito colateral de mudar zoom.
 - **Nunca** duplicar um estado por personagem em metadados de faixa.
+
+
+## 10. Checkpoint de implementação — 17/10/2026
+
+Primeira fase já integrada à área `Video Studio` na top bar:
+
+- Biblioteca inicial antes do editor: criar, abrir, duplicar, excluir
+- Projetos independentes do Studio comum, criados vazios
+- Persistência Electron com arquivos de imagem endereçados por hash SHA-256
+- Importação de fundos, imagens/objetos e personagens em PNG/JPEG/WebP
+- Importação por **snapshot imutável** de personagens já salvos no Customizador do G-V5, sem editar a origem; não confundir isso com rig/animador completo
+- Preview com componentes estáticos, camadas, arrasto, posição/escala, inversão, texto
+- Timeline inicial com cortes, duração independente de zoom, faixas de personagem e texto, playhead, playback
+- Rascunho de pose/expressão/modo facial + `Salvar frame`; linhas globais de corte e gravação apenas de faixas alteradas
+- Undo/redo, lock inicial, ajustes de fronteiras e autosave
+- Crossfade básico de 20ms entre sprites importados que tenham papéis faciais correspondentes
+
+**Validação automatizada:** workflow `G-V5 Video Studio Check`, execução `39081716208` no commit `5e3c4916`: TypeScript, contratos canônicos (tempo/save-frame/fronteiras/textos) e build Electron passaram.
+
+**Ainda pendente (não anunciar como concluído):** componente G-V5 real por rig/partes, editor de curvas e keyframes contínuos, integração versionada de presets de pose/expressão, automação de blink/talk, snapshots atômicos de dependências complexas, testes reais de janelas Electron/IPC e exportação MP4 com paridade comprovada.
