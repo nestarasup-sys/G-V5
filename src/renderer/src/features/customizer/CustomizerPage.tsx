@@ -251,7 +251,7 @@ function loadHairPreviewImage(source: string): Promise<string> {
 
 type HairTintOptions = { preserveNearWhite?: boolean; allowNearWhiteRoles?: readonly HairColorRole[] }
 
-function HairAssetPreview({ source, alt, colors, tintOptions, skinTone, opacity = 1 }: { source: string; alt: string; colors?: HairColorOverrides; tintOptions?: HairTintOptions; skinTone?: string; opacity?: number }) {
+function HairAssetPreview({ source, alt, colors, tintOptions, skinTone, opacity = 1, flipX = false }: { source: string; alt: string; colors?: HairColorOverrides; tintOptions?: HairTintOptions; skinTone?: string; opacity?: number; flipX?: boolean }) {
   const [previewSource, setPreviewSource] = useState(source)
   const colorKey = JSON.stringify([colors, tintOptions])
   useEffect(() => {
@@ -263,8 +263,10 @@ function HairAssetPreview({ source, alt, colors, tintOptions, skinTone, opacity 
     }).catch(() => undefined)
     return () => { cancelled = true }
   }, [source, colorKey, skinTone])
-  return <img src={previewSource} alt={alt} style={{ opacity: Math.min(1, Math.max(0, opacity)) }} />
+  return <img src={previewSource} alt={alt} style={{ opacity: Math.min(1, Math.max(0, opacity)), transform: flipX ? 'scaleX(-1)' : undefined }} />
 }
+
+const mirroredFaceThumbnailIds = new Set<FaceComponentPartId>(['eye-right', 'pupil-right', 'brow-right'])
 
 function NoseOpacityControl({ value, disabled, onChange }: { value: number; disabled: boolean; onChange: (value: number) => void }) {
   const [open, setOpen] = useState(false)
@@ -3107,7 +3109,7 @@ export function CustomizerPage() {
         <div className="customizer-hair-piece-selector">
           <button aria-label={'Peça anterior: ' + part.label} onClick={() => chooseAt(selectedSlot - 1)} disabled={!options.length || !selectedCharacter} type="button"><Icon name="chevronRight" /></button>
           <button className="customizer-hair-piece-preview" aria-label={'Abrir biblioteca de ' + part.label} title={'Abrir biblioteca de ' + part.label} onClick={() => { setFaceLibraryPage(0); setFaceLibraryPart(part.id) }} type="button">
-            {piece ? <HairAssetPreview source={piece.dataUrl} colors={colors} tintOptions={{ preserveNearWhite: true, allowNearWhiteRoles: componentAppearance?.manualColorRoles }} alt={selected?.name ?? ''} /> : null}
+            {piece ? <HairAssetPreview source={piece.dataUrl} colors={colors} tintOptions={{ preserveNearWhite: true, allowNearWhiteRoles: componentAppearance?.manualColorRoles }} alt={selected?.name ?? ''} flipX={part.side === 'right'} /> : null}
           </button>
           <button aria-label={'Próxima peça: ' + part.label} onClick={() => chooseAt(selectedSlot + 1)} disabled={!options.length || !selectedCharacter} type="button"><Icon name="chevronRight" /></button>
           <div className="customizer-hair-piece-colors" aria-label={'Cores de ' + part.label}>
@@ -3158,7 +3160,7 @@ export function CustomizerPage() {
           const piece = faceComponentDetails[summary.id]
           const selected = summary.id === selectedOption?.id
           return <button className={`customizer-hair-library-item${selected ? ' selected' : ''}`} key={summary.id} title={summary.name} aria-label={'Selecionar ' + summary.name} aria-pressed={selected} type="button" onClick={() => void chooseFacePartCatalogItem(part.id, summary)}>
-            {piece ? <HairAssetPreview source={piece.dataUrl} colors={selectedColors} tintOptions={{ preserveNearWhite: true, allowNearWhiteRoles: selectedFacePart?.manualColorRoles }} alt="" /> : <span className="customizer-hair-library-placeholder"><Icon name="face" /></span>}
+            {piece ? <HairAssetPreview source={piece.dataUrl} colors={selectedColors} tintOptions={{ preserveNearWhite: true, allowNearWhiteRoles: selectedFacePart?.manualColorRoles }} alt="" flipX={part.side === 'right'} /> : <span className="customizer-hair-library-placeholder"><Icon name="face" /></span>}
           </button>
         })}
         {!options.length && <p className="customizer-hair-library-empty">Nenhum asset salvo para {part.label}. Importe esta peça no Rosto Dev.</p>}
@@ -3539,7 +3541,7 @@ export function CustomizerPage() {
                 const preview = previewFor(item.id)
                 return <div key={item.id} className={`customizer-clothes-adjust-part${selectedId === item.id ? ' selected' : ''}${dimmed ? ' dimmed' : ''}`}>
                   <button type="button" className="customizer-clothes-adjust-part-select" aria-pressed={selectedId === item.id} onClick={() => setHeadAdjustSelection(item.id)}>
-                    <span className="customizer-clothes-adjust-part-preview">{preview ? <img src={preview} alt="" /> : <Icon name={item.icon} />}</span>
+                    <span className="customizer-clothes-adjust-part-preview">{preview ? <img src={preview} alt="" style={{ transform: mirroredFaceThumbnailIds.has(item.id as FaceComponentPartId) ? 'scaleX(-1)' : undefined }} /> : <Icon name={item.icon} />}</span>
                     <strong title={item.label}>{item.label}</strong><small>Somente neste personagem</small>
                   </button>
                 </div>
@@ -3571,7 +3573,7 @@ export function CustomizerPage() {
           const preview = previewFor(item.id)
           return <button key={item.id} className={`customizer-adjust-card${selected ? ' selected' : ''}${applied ? ' applied' : ''}`} type="button" disabled={!selectedCharacter} aria-pressed={selected} onClick={() => setHeadAdjustSelection(item.id)} title={`${item.label}${applied ? ' · aplicado neste personagem' : ' · sem peça aplicada'}`}>
             <span className="customizer-adjust-card-label">{item.label}</span>
-            <span className="customizer-adjust-card-preview">{preview ? <img src={preview} alt="" /> : <Icon name={item.icon} />}{applied && <i><Icon name="check" /></i>}</span>
+            <span className="customizer-adjust-card-preview">{preview ? <img src={preview} alt="" style={{ transform: mirroredFaceThumbnailIds.has(item.id as FaceComponentPartId) ? 'scaleX(-1)' : undefined }} /> : <Icon name={item.icon} />}{applied && <i><Icon name="check" /></i>}</span>
             <small>{applied ? 'Aplicado' : 'Sem peça'}</small>
           </button>
         })}
