@@ -27,7 +27,7 @@ function formatTime(frame: number): string {
   return `${String(minutes).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}:${String(frame % 60).padStart(2, '0')}`
 }
 
-export function VideoTimeline({ studio, playheadFrame, playing, height, presetNames, onSeek, onSelectElement, onTogglePlayback, onSaveFrame, onSplitCharacter, onSplitTextClip, onUpdateTextClip, onDeleteTextClip, onDuplicateTextClip, onMoveCharacterBoundary, onChangeDuration, onResize, onAddText, onChangeTrackSettings, onMoveCharacterTrack, onSetCharacterPositionsLocked }: {
+export function VideoTimeline({ studio, playheadFrame, playing, height, presetNames, onSeek, onSelectElement, onTogglePlayback, onSaveFrame, onSplitCharacter, onSplitTextClip, onUpdateTextClip, onDeleteTextClip, onDuplicateTextClip, onMoveCharacterBoundary, onChangeDuration, onResize, onAddText, onChangeTrackSettings, onMoveCharacterTrack, onSetCharacterPositionsLocked, onDeleteCharacterTrack }: {
   studio: StudioDocument
   playheadFrame: number
   playing: boolean
@@ -49,6 +49,7 @@ export function VideoTimeline({ studio, playheadFrame, playing, height, presetNa
   onChangeTrackSettings: (id: string, settings: NonNullable<VideoTimelineDocument['trackSettings']>[string]) => void
   onMoveCharacterTrack: (id: string, direction: -1 | 1) => void
   onSetCharacterPositionsLocked: (locked: boolean) => void
+  onDeleteCharacterTrack: (elementId: string) => void
 }) {
   const resizePointer = useRef<{ id: number; startY: number; startHeight: number } | null>(null)
   const textClipDragRef = useRef<TextClipDrag | null>(null)
@@ -77,6 +78,27 @@ export function VideoTimeline({ studio, playheadFrame, playing, height, presetNa
   const tickCount = Math.floor(timelineSeconds / tickSeconds)
   const characters = studio.elements.filter((element) => element.kind === 'character').sort((left, right) => (trackSettings[left.id]?.order ?? studio.elements.indexOf(left)) - (trackSettings[right.id]?.order ?? studio.elements.indexOf(right)))
   const characterPositionsLocked = characters.length > 0 && characters.every((character) => character.positionLocked === true)
+  const selectedTextClip = selection?.kind === 'text' ? timeline.textClips.find((clip) => clip.id === selection.clipId) : undefined
+  const canDeleteSelection = selection?.kind === 'character'
+    ? !isLocked(selection.elementId) && characters.some((character) => character.id === selection.elementId)
+    : selection?.kind === 'text' && Boolean(selectedTextClip) && !isLocked(selectedTextClip?.kind ?? 'speech')
+  const deleteSelection = () => {
+    if (!selection || !canDeleteSelection) return
+    if (selection.kind === 'character') onDeleteCharacterTrack(selection.elementId)
+    else onDeleteTextClip(selection.clipId)
+    setSelection(null)
+  }
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Backspace' || event.altKey || event.ctrlKey || event.metaKey || !canDeleteSelection) return
+      const target = event.target
+      if (target instanceof HTMLElement && (target.isContentEditable || target.closest('input, textarea, select, [contenteditable="true"]'))) return
+      event.preventDefault()
+      deleteSelection()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [selection, canDeleteSelection])
   useEffect(() => {
     const sampledFrame = Math.min(playheadFrame, duration - 1)
     if (selection?.kind !== 'character' || selection.startFrame <= sampledFrame && sampledFrame < selection.endFrame) return
@@ -222,7 +244,7 @@ export function VideoTimeline({ studio, playheadFrame, playing, height, presetNa
   return <section className="video-timeline" aria-label="Timeline do Video Studio">
     <header className="video-timeline-toolbar">
       <div className="video-timeline-create-actions"><button type="button" onClick={() => onAddText('speech')}>+ Fala</button><button type="button" onClick={() => onAddText('thought')}>+ Pensamento</button><button type="button" onClick={onSaveFrame}>+ Corte</button></div>
-      <div className="video-timeline-heading"><strong>{formatTime(playheadFrame)}</strong><span>/ {formatTime(duration)}</span><small>{timeline.characterKeys.length + timeline.textClips.length} eventos</small><button type="button" className="video-play-button" aria-label={playing ? 'Pausar reprodução' : 'Reproduzir'} onClick={onTogglePlayback}>{playing ? '❚❚' : '▶'}<span>{playing ? 'Pausar' : 'Play'}</span></button><button type="button" className="video-split-button" onClick={splitSelection} disabled={!canSplitSelection} title={selection ? 'Dividir o trecho selecionado na posição do playhead' : 'Selecione um trecho para dividir'}>✂ Dividir</button><button type="button" className={`video-position-lock-button${characterPositionsLocked ? ' active' : ''}`} onClick={() => onSetCharacterPositionsLocked(!characterPositionsLocked)} disabled={!characters.length} aria-pressed={characterPositionsLocked} aria-label={characterPositionsLocked ? 'Destrancar posições dos personagens' : 'Trancar posições dos personagens'} title={characterPositionsLocked ? 'Destrancar posições dos personagens' : 'Trancar posições dos personagens'}><Icon name={characterPositionsLocked ? 'lock' : 'unlock'} /></button>{selection?.kind === 'text' && !isLocked(timeline.textClips.find((clip) => clip.id === selection.clipId)?.kind ?? 'speech') && <><button type="button" onClick={() => { const clip = timeline.textClips.find((item) => item.id === selection.clipId); if (clip) onDuplicateTextClip(clip) }}>Duplicar</button><button type="button" onClick={() => { onDeleteTextClip(selection.clipId); setSelection(null) }}>Excluir</button></>}</div>
+      <div className="video-timeline-heading"><strong>{formatTime(playheadFrame)}</strong><span>/ {formatTime(duration)}</span><small>{timeline.characterKeys.length + timeline.textClips.length} eventos</small><button type="button" className="video-play-button" aria-label={playing ? 'Pausar reprodução' : 'Reproduzir'} onClick={onTogglePlayback}>{playing ? '❚❚' : '▶'}<span>{playing ? 'Pausar' : 'Play'}</span></button><button type="button" className="video-split-button" onClick={splitSelection} disabled={!canSplitSelection} title={selection ? 'Dividir o trecho selecionado na posição do playhead' : 'Selecione um trecho para dividir'}>✂ Dividir</button><button type="button" className={`video-position-lock-button${characterPositionsLocked ? ' active' : ''}`} onClick={() => onSetCharacterPositionsLocked(!characterPositionsLocked)} disabled={!characters.length} aria-pressed={characterPositionsLocked} aria-label={characterPositionsLocked ? 'Destrancar posições dos personagens' : 'Trancar posições dos personagens'} title={characterPositionsLocked ? 'Destrancar posições dos personagens' : 'Trancar posições dos personagens'}><Icon name={characterPositionsLocked ? 'lock' : 'unlock'} /></button>{selection?.kind === 'text' && !isLocked(selectedTextClip?.kind ?? 'speech') && <button type="button" onClick={() => { const clip = timeline.textClips.find((item) => item.id === selection.clipId); if (clip) onDuplicateTextClip(clip) }} title="Duplicar trecho selecionado">Duplicar</button>}{canDeleteSelection && <button type="button" className="video-delete-selection-button" onClick={deleteSelection} aria-label={selection?.kind === 'character' ? 'Excluir faixa e personagem da cena' : 'Excluir trecho selecionado'} title={selection?.kind === 'character' ? 'Excluir faixa e personagem da cena (Backspace)' : 'Excluir trecho selecionado (Backspace)'}><Icon name="trash" /></button>}</div>
       <div className="video-timeline-actions">
         <button type="button" className={snapEnabled ? 'active' : ''} aria-pressed={snapEnabled} onClick={() => setSnapEnabled((value) => !value)} title="Magnetismo das bordas">⌁ Snap</button>
         <button type="button" className={trackMenuOpen ? 'active' : ''} aria-expanded={trackMenuOpen} onClick={() => setTrackMenuOpen((value) => !value)}>Faixas</button>

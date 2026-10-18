@@ -107,6 +107,9 @@ button:focus-visible, input:focus-visible { outline: 3px solid #ed8caf; outline-
 .video-timeline-heading .video-split-button { margin-left:0;border-color:#8c6ca3;background:#30263e;color:#e1cafa; }
 .video-timeline-heading .video-split-button:hover { border-color:#bc94d5;background:#453456;color:#fff; }
 .video-timeline-heading .video-split-button:disabled { opacity:.35;cursor:default; }
+.video-timeline-heading .video-delete-selection-button { width:30px;min-width:30px;padding:0;border-color:#75434d;background:#352128;color:#f49ba7; }
+.video-timeline-heading .video-delete-selection-button svg { width:15px;height:15px; }
+.video-timeline-heading .video-delete-selection-button:hover { border-color:#d66c7b;background:#512832;color:#fff; }
 .video-timeline-heading .video-position-lock-button { width:30px;min-width:30px;padding:0;color:#aeb5c8; }
 .video-timeline-heading .video-position-lock-button svg { width:16px;height:16px; }
 .video-timeline-heading .video-position-lock-button:hover:not(:disabled),.video-timeline-heading .video-position-lock-button.active { border-color:#d6ad61;background:#3d3421;color:#f4d58b; }
