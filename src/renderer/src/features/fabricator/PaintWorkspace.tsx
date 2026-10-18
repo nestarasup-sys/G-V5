@@ -6,6 +6,12 @@ import './paint.css'
 type Tool = 'brush' | 'eraser' | 'edge' | 'picker' | 'magic'
 const sections = ['Modelos Dev', 'Roupas Dev 2.0', 'Cabeças extra Dev', 'Cabelos Dev', 'Olhos Dev', 'Rosto Dev']
 const loadImage = (url: string) => new Promise<HTMLImageElement>((resolve, reject) => { const image = new Image(); image.onload = () => resolve(image); image.onerror = reject; image.src = url })
+function copyLabel(asset: PaintAsset, assets: PaintAsset[], index: number): string {
+  const side = asset.catalogSide === 'left' ? 'E' : asset.catalogSide === 'right' ? 'D' : ''
+  const sameSide = side ? assets.filter((item) => item.catalogSide === asset.catalogSide) : []
+  if (side && sameSide.length > 1) return `${side}${sameSide.filter((item) => assets.indexOf(item) <= index).length}`
+  return side || (asset.catalogSide === 'front' ? 'F' : asset.catalogSide === 'back' ? 'T' : asset.catalogSide === 'fringe' ? 'Fr' : `${index + 1}`)
+}
 function trimTransparentEdge(canvas: HTMLCanvasElement, center: { x: number; y: number; radius: number }): void {
   const context = canvas.getContext('2d', { willReadFrequently: true })!
   const left = Math.max(0, Math.floor(center.x - center.radius - 1))
@@ -84,6 +90,31 @@ export function PaintWorkspace() {
     return [...grouped.values()].sort((a, b) => a.name.localeCompare(b.name, 'pt-BR', { numeric: true }))
   }, [assets, category, query])
   const groupItems = useMemo(() => groups.find((group) => group.id === selectedGroup)?.items ?? [], [groups, selectedGroup])
+  const catalogItems = useMemo(() => {
+    const parent = new Map(groupItems.map((asset) => [asset.id, asset.id]))
+    const find = (id: string): string => { const root = parent.get(id) ?? id; if (root === id) return root; const resolved = find(root); parent.set(id, resolved); return resolved }
+    const unionBy = (keyOf: (asset: PaintAsset) => string) => {
+      const first = new Map<string, string>()
+      for (const asset of groupItems) {
+        const key = keyOf(asset); const known = first.get(key)
+        if (known) parent.set(find(asset.id), find(known)); else first.set(key, asset.id)
+      }
+    }
+    unionBy((asset) => `pair:${asset.catalogId}`)
+    unionBy((asset) => `image:${asset.fingerprint}`)
+    const grouped = new Map<string, { id: string; name: string; assets: PaintAsset[] }>()
+    for (const asset of groupItems) {
+      const id = find(asset.id)
+      const item = grouped.get(id) ?? { id, name: asset.catalogName, assets: [] }
+      item.assets.push(asset); grouped.set(id, item)
+    }
+    const sideOrder = { left: 0, right: 1, front: 0, back: 1, fringe: 2 }
+    return [...grouped.values()].map((item) => {
+      const assets = item.assets.sort((a, b) => (sideOrder[a.catalogSide ?? 'left'] ?? 3) - (sideOrder[b.catalogSide ?? 'left'] ?? 3))
+      const visuals = [...new Map(assets.map((asset) => [asset.fingerprint, { id: asset.fingerprint, assets: assets.filter((candidate) => candidate.fingerprint === asset.fingerprint) }])).values()]
+      return { ...item, assets, visuals }
+    }).sort((a, b) => a.name.localeCompare(b.name, 'pt-BR', { numeric: true }))
+  }, [groupItems])
   useEffect(() => {
     if (!groups.some((group) => group.id === selectedGroup)) setSelectedGroup(groups[0]?.id ?? null)
   }, [groups, selectedGroup])
@@ -181,7 +212,7 @@ export function PaintWorkspace() {
         <div className="paint-library-controls"><input aria-label="Buscar conjunto ou peça" placeholder="Buscar conjunto…" value={query} onChange={(event) => setQuery(event.target.value)} /><select aria-label="Área" value={category} onChange={(event) => setCategory(event.target.value)}><option value="all">Todas as áreas</option>{sections.map((section) => <option key={section} value={section}>{section}</option>)}</select><button onClick={() => void refresh()}><Icon name="reset" /> Atualizar</button></div>
         <div className="paint-group-list">{groups.map((group) => <button key={group.id} className={selectedGroup === group.id ? 'active' : ''} onClick={() => selectGroup(group.id)}><span className="paint-group-icon"><Icon name={group.category === 'models' || group.category === 'animations' ? 'body' : group.category === 'wardrobe' ? 'shirt' : group.category === 'hair' ? 'bow' : 'face'} /></span><span><strong title={group.name}>{group.name}</strong><small>{group.items.length} peça(s)</small></span><Icon name="chevronRight" /></button>)}{!groups.length && <p>Nenhum conjunto encontrado.</p>}</div>
       </aside>
-      <aside className="paint-catalog-panel"><header><strong>{groups.find((group) => group.id === selectedGroup)?.name ?? 'Catálogo'}</strong><small>{groupItems.length} peça(s)</small></header><div className="paint-piece-grid">{groupItems.map((asset) => <button key={asset.id} className={selected === asset.id ? 'active' : ''} onClick={() => void select(asset.id)} title={`${asset.name} · ${asset.location}`}><span className="paint-piece-image">{thumbnails[asset.id] ? <img src={thumbnails[asset.id]} alt="" /> : <Icon name="frame" />}</span><strong>{asset.name}</strong><small>{asset.edited ? 'Edição salva' : asset.section}</small></button>)}{!groupItems.length && <p>Escolha um conjunto para ver as peças.</p>}</div></aside>
+      <aside className="paint-catalog-panel"><header><strong>{groups.find((group) => group.id === selectedGroup)?.name ?? 'Catálogo'}</strong><small>{groupItems.length} arquivo(s) · {catalogItems.length} item(ns)</small></header><div className="paint-piece-grid">{catalogItems.map((item) => <article className="paint-catalog-item" key={item.id}><strong title={item.name}>{item.name}{item.assets.length > 1 && <small className="paint-duplicate-count">{item.assets.length} arquivos relacionados</small>}</strong><div className={`paint-catalog-item-assets${item.visuals.length > 1 ? ' paired' : ''}`}>{item.visuals.map((visual) => <div className="paint-visual-group" key={visual.id}><button className="paint-visual-image" onClick={() => void select(visual.assets[0].id)} title={visual.assets.map((asset) => asset.name).join(' / ')}><span className="paint-piece-image">{thumbnails[visual.assets[0].id] ? <img src={thumbnails[visual.assets[0].id]} alt="" /> : <Icon name="frame" />}</span><small>{visual.assets.length > 1 ? `${visual.assets.length} imagens iguais` : visual.assets[0].catalogSide === 'left' ? 'Esquerda' : visual.assets[0].catalogSide === 'right' ? 'Direita' : visual.assets[0].catalogSide === 'front' ? 'Frente' : visual.assets[0].catalogSide === 'back' ? 'Trás' : visual.assets[0].catalogSide === 'fringe' ? 'Franja' : visual.assets[0].edited ? 'Editado' : 'Original'}</small></button>{visual.assets.length > 1 && <div className="paint-duplicate-selectors">{visual.assets.map((asset, index) => <button key={asset.id} aria-pressed={selected === asset.id} onClick={() => void select(asset.id)} title={asset.name}>{copyLabel(asset, visual.assets, index)}</button>)}</div>}</div>)}</div></article>)}{!catalogItems.length && <p>Escolha um conjunto para ver as peças.</p>}</div></aside>
     <div className="paint-editor"><div className="paint-toolbar"><div className="paint-tool-row"><button className={tool === 'brush' ? 'active' : ''} onClick={() => setTool('brush')} title="Pincel"><Icon name="brush" /> Pincel</button><button className={tool === 'eraser' ? 'active' : ''} onClick={() => setTool('eraser')} title="Borracha"><Icon name="eraser" /> Borracha</button><button className={tool === 'edge' ? 'active' : ''} onClick={() => setTool('edge')} title="Arraste sobre as bordas da imagem para limpar o contorno"><Icon name="eraser" /> Remover bordas</button><button className={tool === 'magic' ? 'active' : ''} onClick={() => setTool('magic')} title="Remove a região de cor parecida conectada ao clique">Borracha mágica</button><button className={tool === 'picker' ? 'active' : ''} onClick={() => setTool('picker')} title="Escolher cor da imagem">Conta-gotas</button><button disabled={!undoRef.current.length} onClick={() => void undo()} title="Desfazer"><Icon name="undo" /></button><button disabled={!redoRef.current.length} onClick={() => void redo()} title="Refazer"><Icon name="redo" /></button></div><div className="paint-tool-row"><label>Cor <input type="color" value={color} onChange={(event) => setColor(event.target.value)} /></label><label>Tamanho {size}px <input type="range" min="1" max="100" value={size} onChange={(event) => setSize(Number(event.target.value))} /></label><label>Opacidade {opacity}% <input type="range" min="1" max="100" value={opacity} onChange={(event) => setOpacity(Number(event.target.value))} /></label><label>Tolerância {tolerance} <input type="range" min="0" max="100" value={tolerance} onChange={(event) => setTolerance(Number(event.target.value))} /></label><label>Zoom {Math.round(zoom * 100)}% <input type="range" min="0.25" max="6" step="0.25" value={zoom} onChange={(event) => setZoom(Number(event.target.value))} /></label><button disabled={!selected} onPointerDown={() => setCompare(true)} onPointerUp={() => setCompare(false)} onPointerLeave={() => setCompare(false)}>Ver original</button></div></div>
     <div className="paint-stage"><div className="paint-canvas-wrap" style={{ display: selected ? undefined : 'none', width: canvasRef.current?.width ? canvasRef.current.width * zoom : undefined, height: canvasRef.current?.height ? canvasRef.current.height * zoom : undefined }}><canvas ref={canvasRef} style={{ visibility: compare ? 'hidden' : 'visible' }} onPointerDown={start} onPointerMove={move} onPointerUp={stop} onPointerCancel={stop} />{compare && <img src={original} alt="Imagem original" />}</div>{!selected && <p>Selecione uma peça à esquerda para começar.</p>}</div><footer className="paint-status"><span>{selected ? `${canvasRef.current?.width ?? 0} × ${canvasRef.current?.height ?? 0} px${dirty ? ' · alterações não salvas' : edited ? ' · edição salva' : ' · original'}` : 'O original permanece intacto.'}</span><span role="status">{message}</span></footer></div></div>
   </section>
