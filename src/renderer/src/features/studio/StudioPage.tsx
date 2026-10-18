@@ -2,6 +2,9 @@ import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPoi
 import { buildStudioExpressionAppearance, buildStudioExpressionTransforms, resolveStudioExpressionBase, studioExpressionCollection } from './expressionTransforms'
 import { Icon } from '../../ui/components/Icon'
 import { CharacterPortrait } from '../../ui/components/CharacterPortrait'
+import type { VideoProject, VideoStudioScene } from '../../../../shared/videoStudio'
+import { StudioVideoTimeline } from '../videoStudio/StudioVideoTimeline'
+import { captureStudioScene, recordStudioSceneAtFrame, studioDocumentForVideo } from '../videoStudio/studioVideoBridge'
 import { resolveStudioTalkMouthId } from '../../../../shared/studio'
 import type { StudioAsset, StudioDocument, StudioElement, StudioFaceMode, StudioFaceTransform, StudioFaceTransforms } from '../../../../shared/studio'
 import type { CustomizerCharacter } from '../../../../shared/customizer'
@@ -228,8 +231,22 @@ function makeCanvasPrint(studio: StudioDocument): Promise<string> {
   })
 }
 
-export function StudioPage() {
-  const [studios, setStudios] = useState<StudioCard[]>([])
+type StudioPageProps = {
+  /** Video Studio uses precisely the existing Studio authoring panels and compositor. */
+  videoStudioProject?: VideoProject
+  onVideoStudioChange?: (project: VideoProject) => Promise<void>
+  onVideoStudioExit?: () => void
+}
+
+export function StudioPage({ videoStudioProject, onVideoStudioChange, onVideoStudioExit }: StudioPageProps = {}) {
+  const isVideoStudio = Boolean(videoStudioProject)
+  const videoProjectRef = useRef<VideoProject | null>(videoStudioProject ?? null)
+  const initialVideoSceneRef = useRef<VideoStudioScene | null>(videoStudioProject?.studioScene ?? null)
+  const [videoFrame, setVideoFrame] = useState(0)
+  const [videoPlaying, setVideoPlaying] = useState(false)
+  const [videoRevision, setVideoRevision] = useState(0)
+  const seekInProgressRef = useRef(false)
+  const [studios, setStudios] = useState<StudioCard[]>(() => videoStudioProject ? [studioDocumentForVideo(videoStudioProject)] : [])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
@@ -259,7 +276,7 @@ export function StudioPage() {
   const [studioFaceBusy, setStudioFaceBusy] = useState(false)
   const [studioFolder, setStudioFolder] = useState('')
   const [selectedId, setSelectedId] = useState<string | null>(null)
-  const [activeStudioId, setActiveStudioId] = useState<string | null>(null)
+  const [activeStudioId, setActiveStudioId] = useState<string | null>(videoStudioProject?.id ?? null)
   const [activeTool, setActiveTool] = useState<Tool>(null)
   const [fullView, setFullView] = useState(false)
   const [saved, setSaved] = useState(true)
@@ -399,6 +416,7 @@ export function StudioPage() {
   }, [activeStudio?.id, activeScenePresetSignature, availableCharacters])
 
   useEffect(() => {
+    if (isVideoStudio) { setLoading(false); return }
     let cancelled = false
     void (async () => {
       try {
@@ -701,7 +719,15 @@ export function StudioPage() {
     if (!document) return true
     const generation = ++saveGenerationRef.current
     try {
-      await window.desktop.saveStudio({ ...document, updatedAt: new Date().toISOString() })
+      if (videoStudioProject) {
+        const current = videoProjectRef.current ?? videoStudioProject
+        const next = captureStudioScene(current, { ...document, updatedAt: new Date().toISOString() })
+        videoProjectRef.current = next
+        if (!onVideoStudioChange) throw new Error('Video Studio sem rotina de salvamento.')
+        await onVideoStudioChange(next)
+      } else {
+        await window.desktop.saveStudio({ ...document, updatedAt: new Date().toISOString() })
+      }
       if (generation === saveGenerationRef.current) {
         setSaved(true)
         setError(null)
@@ -711,10 +737,14 @@ export function StudioPage() {
       if (generation === saveGenerationRef.current) setError(reason instanceof Error ? reason.message : 'Não foi possível salvar o Studio neste dispositivo.')
       return false
     }
-  }, [activeStudio])
+  }, [activeStudio, videoStudioProject?.id, onVideoStudioChange])
 
   useEffect(() => {
     if (!activeStudio) return
+    if (isVideoStudio && seekInProgressRef.current) {
+      seekInProgressRef.current = false
+      return
+    }
     setSaved(false)
     const signature = JSON.stringify(activeStudio.elements.filter((element) => element.kind === 'character').map((element) => [element.id, element.activeExpressionCollectionId, element.activeExpressionPresetId]))
     const previous = expressionSaveSignatureRef.current
@@ -1208,7 +1238,12 @@ export function StudioPage() {
   }
 
   const leaveStudio = async () => {
+    setVideoPlaying(false)
     if (!await saveStudio(activeStudio)) return
+    if (isVideoStudio) {
+      onVideoStudioExit?.()
+      return
+    }
     setActiveStudioId(null)
     setActiveTool(null)
     setSelectedElementId(null)
@@ -1407,6 +1442,66 @@ export function StudioPage() {
     </div>
   }
 
+  const seekVideoFrame = (requestedFrame: number) => {
+    const current = videoProjectRef.current ?? videoStudioProject
+    if (!current) return
+    const next = Math.max(0, Math.min(current.durationFrames - 1, Math.floor(requestedFrame)))
+    setVideoFrame(next)
+    if ((current.sceneFrames?.length ?? 0) > 0) {
+      const nextScene = studioDocumentForVideo(current, next)
+      seekInProgressRef.current = true
+      setStudios([nextScene])
+      setSelectedElementId(null)
+    }
+  }
+
+  const saveVideoFrame = async () => {
+    const current = videoProjectRef.current ?? videoStudioProject
+    if (!current || !activeStudio || !onVideoStudioChange) return
+    try {
+      let next = recordStudioSceneAtFrame(current, activeStudio, videoFrame)
+      // Preserve an initial scene when the first authored cut is after frame 0.
+      if (videoFrame > 0 && (current.sceneFrames?.length ?? 0) === 0) {
+        const baseline = initialVideoSceneRef.current ?? current.studioScene
+        if (baseline) next = {
+          ...next,
+          sceneFrames: [{ frame: 0, scene: structuredClone(baseline) }, ...(next.sceneFrames ?? [])]
+        }
+      }
+      videoProjectRef.current = next
+      await onVideoStudioChange(next)
+      setVideoRevision(value => value + 1)
+      setSaved(true)
+      setError(null)
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Não foi possível gravar o frame.')
+    }
+  }
+
+  useEffect(() => {
+    if (!isVideoStudio || !videoPlaying) return
+    const current = videoProjectRef.current
+    if (!current) return
+    const from = videoFrame
+    const started = performance.now()
+    let request = 0
+    let lastSceneFrame = -1
+    const tick = (now: number) => {
+      const frame = Math.min(current.durationFrames - 1, from + Math.floor((now - started) * current.frameRate / 1000))
+      setVideoFrame(frame)
+      const snapshotFrame = [...(current.sceneFrames ?? [])].reverse().find(item => item.frame <= frame)?.frame ?? -1
+      if (snapshotFrame !== lastSceneFrame && snapshotFrame >= 0) {
+        lastSceneFrame = snapshotFrame
+        seekInProgressRef.current = true
+        setStudios([studioDocumentForVideo(current, frame)])
+      }
+      if (frame < current.durationFrames - 1) request = requestAnimationFrame(tick)
+      else setVideoPlaying(false)
+    }
+    request = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(request)
+  }, [videoPlaying, isVideoStudio, videoStudioProject?.id, videoRevision])
+
   const castPanel = () => <div className="studio-cast-content">
     <header><span><h2>Elenco</h2><small>{stageCharacters.length} na cena</small></span><button className="studio-cast-add-button" onClick={openCastPicker} type="button"><Icon name="plus" />Adicionar</button></header>
     <section className="studio-cast-section" aria-label="Personagens na cena">
@@ -1437,6 +1532,7 @@ export function StudioPage() {
       ? 'left'
       : selectedBounds?.left !== undefined && selectedBounds.left < inspectorWidth ? 'right' : 'right'
     return (
+      <div className={isVideoStudio ? 'studio-video-shell' : 'studio-normal-shell'} style={isVideoStudio ? undefined : { display: 'contents' }}>
       <main className={`studio-editor${fullView ? ' full-view' : ''}`} aria-label={`Editor do ${activeStudio.title}`}>
         {!fullView && <aside className="studio-editor-rail studio-editor-left" aria-label="Ferramentas do Studio">
           <div className="studio-editor-quick-actions">
@@ -1453,8 +1549,8 @@ export function StudioPage() {
             <button className="studio-tool-button" onClick={() => addTextElement('speech')} type="button"><Icon name="message" /><span>Fala</span><i aria-hidden="true">✦</i></button>
             <button className="studio-tool-button" onClick={() => addTextElement('thought')} type="button"><Icon name="face" /><span>Pensamento</span><i aria-hidden="true">✦</i></button>
             <span className="studio-tool-separator" />
-            <button className="studio-tool-button" onClick={() => void exportPrint()} type="button"><Icon name="download" /><span>Print</span><i aria-hidden="true">✦</i></button>
-            <button className="studio-tool-button" onClick={() => void openPrints()} type="button"><Icon name="folder" /><span>Pasta</span><i aria-hidden="true">✦</i></button>
+            {!isVideoStudio && <button className="studio-tool-button" onClick={() => void exportPrint()} type="button"><Icon name="download" /><span>Print</span><i aria-hidden="true">✦</i></button>}
+            {!isVideoStudio && <button className="studio-tool-button" onClick={() => void openPrints()} type="button"><Icon name="folder" /><span>Pasta</span><i aria-hidden="true">✦</i></button>}
             <button className="studio-tool-button studio-view-button" onClick={() => setFullView(true)} type="button"><Icon name="expand" /><span>View</span></button>
           </nav>
           <small className={`studio-save-indicator${saved ? '' : ' unsaved'}`}><i />{saved ? 'Salvo automaticamente' : 'Salvando alterações…'}</small>
@@ -1497,6 +1593,16 @@ export function StudioPage() {
           </section>
         </div>}
       </main>
+      {isVideoStudio && !fullView && videoStudioProject && <StudioVideoTimeline
+        project={videoProjectRef.current ?? videoStudioProject}
+        frame={videoFrame}
+        playing={videoPlaying}
+        unsavedDraft={!saved}
+        onSeek={frame => { setVideoPlaying(false); seekVideoFrame(frame) }}
+        onPlay={() => setVideoPlaying(value => !value)}
+        onSaveFrame={() => void saveVideoFrame()}
+      />}
+      </div>
     )
   }
 
