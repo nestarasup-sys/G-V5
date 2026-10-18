@@ -464,7 +464,7 @@ function loadSkinTintedImage(source: string, tone: string): Promise<HTMLImageEle
 }
 
 type ClothingGroupCategory = CustomizerWardrobeCategory
-type SelectedWardrobeComponent = { setId: string; category: ClothingGroupCategory; componentId: string }
+type SelectedWardrobeComponent = { modelSlot: number; setId: string; category: ClothingGroupCategory; componentId: string }
 type HairCatalogSide = 'front' | 'back'
 type HairLayerSide = HairCatalogSide | 'fringe'
 type HairLayerReference = { style: HairStyle; side: HairLayerSide; part: HairPartId }
@@ -1585,6 +1585,7 @@ export function CustomizerPage() {
   const [headPanelTab, setHeadPanelTab] = useState<'hair' | 'eyes' | 'face' | 'extra' | 'adjust'>('hair')
   const [headAdjustSelection, setHeadAdjustSelection] = useState<string | null>(null)
   const [clothesAdjustSelection, setClothesAdjustSelection] = useState<string | null>(null)
+  const [clothesAdjustDetailOpen, setClothesAdjustDetailOpen] = useState(false)
   const [activeHairColorRole, setActiveHairColorRole] = useState<HairColorRole>('base')
   const [selectedClothing, setSelectedClothing] = useState<SelectedWardrobeComponent | null>(null)
   const [wardrobeTransformDraft, setWardrobeTransformDraft] = useState<Pick<CustomizerWardrobeGroup, 'offsetX' | 'offsetY' | 'scaleX' | 'scaleY' | 'rotation'> | null>(null)
@@ -1759,10 +1760,11 @@ export function CustomizerPage() {
   useEffect(() => {
     setSelectedClothing(null)
     setWardrobeHighlightVisible(false)
+    setClothesAdjustDetailOpen(false)
   }, [selectedCharacter?.id])
 
   useEffect(() => {
-    if (!selectedCharacter || selectedClothing) return
+    if (!selectedCharacter || selectedClothing || activeModule === 'Roupas' && clothesPanelTab === 'adjust' && clothesAdjustDetailOpen) return
     const firstGroup = selectedCharacter?.customization.wardrobeGroups?.[0]
     const firstSet = firstGroup ? wardrobeDetails[`${firstGroup.modelSlot}:${firstGroup.setId}`] : undefined
     const firstDefinition = firstGroup ? Object.values(clothingCategories).flat().find((item) => item.id === firstGroup.category) : undefined
@@ -1771,17 +1773,17 @@ export function CustomizerPage() {
         ? firstSet.components.find((component) => component.id === firstGroup.componentId)
         : firstSet.components.find((component) => firstDefinition?.source.includes(component.category))
       : undefined
-    setSelectedClothing(firstGroup && firstComponent ? { setId: firstGroup.setId, category: firstGroup.category, componentId: firstComponent.id } : null)
+    setSelectedClothing(firstGroup && firstComponent ? { modelSlot: firstGroup.modelSlot, setId: firstGroup.setId, category: firstGroup.category, componentId: firstComponent.id } : null)
     setWardrobeHighlightVisible(Boolean(firstComponent))
-  }, [selectedCharacter?.id, selectedCharacter?.customization.wardrobeGroups, selectedClothing, wardrobeDetails])
+  }, [activeModule, clothesPanelTab, clothesAdjustDetailOpen, selectedCharacter?.id, selectedCharacter?.customization.wardrobeGroups, selectedClothing, wardrobeDetails])
 
   useEffect(() => {
     const group = selectedClothing
-      ? selectedCharacter?.customization.wardrobeGroups?.find((item) => item.setId === selectedClothing.setId && item.category === selectedClothing.category && (item.componentId === selectedClothing.componentId || !item.componentId))
+      ? selectedCharacter?.customization.wardrobeGroups?.find((item) => item.modelSlot === selectedClothing.modelSlot && item.setId === selectedClothing.setId && item.category === selectedClothing.category && (item.componentId === selectedClothing.componentId || !item.componentId))
       : undefined
     wardrobeTransformDirty.current = false
     setWardrobeTransformDraft(group ? { offsetX: group.offsetX, offsetY: group.offsetY, scaleX: group.scaleX, scaleY: group.scaleY, rotation: group.rotation } : null)
-  }, [selectedCharacter?.id, selectedCharacter?.customization.wardrobeGroups, selectedClothing?.setId, selectedClothing?.category, selectedClothing?.componentId])
+  }, [selectedCharacter?.id, selectedCharacter?.customization.wardrobeGroups, selectedClothing?.modelSlot, selectedClothing?.setId, selectedClothing?.category, selectedClothing?.componentId])
 
   useEffect(() => {
     if (activeModule !== 'Modelos' || catalogLoading) return
@@ -2057,7 +2059,7 @@ export function CustomizerPage() {
       return
     }
     const previewGroups = wardrobeTransformDraft && selectedClothing
-      ? groups.map((group) => group.setId === selectedClothing.setId && group.category === selectedClothing.category && (group.componentId === selectedClothing.componentId || !group.componentId) ? { ...group, componentId: selectedClothing.componentId, ...wardrobeTransformDraft } : group)
+      ? groups.map((group) => group.modelSlot === selectedClothing.modelSlot && group.setId === selectedClothing.setId && group.category === selectedClothing.category && (group.componentId === selectedClothing.componentId || !group.componentId) ? { ...group, componentId: selectedClothing.componentId, ...wardrobeTransformDraft } : group)
       : groups
     void renderWardrobeOverlay(previewGroups, wardrobeDetails, displayArtworkProject, selectedCatalogModelSlot, selectedSourceModelProject, wardrobeHighlightVisible ? selectedClothing : null, selectedCharacter?.customization.modelSkinTone, characterRenderSize(displayArtworkProject.width, displayArtworkProject.height, previewExtent.width, previewExtent.height, customizerPreviewZoom, previewExtent.density)).then((result) => {
       if (!cancelled) {
@@ -2069,7 +2071,7 @@ export function CustomizerPage() {
       if (!cancelled) setCatalogError(reason instanceof Error ? reason.message : 'Não foi possível compor as roupas do personagem.')
     })
     return () => { cancelled = true }
-  }, [selectedCharacter?.id, selectedCharacter?.customization.modelSkinTone, selectedCharacter?.customization.wardrobeGroups, wardrobeDetails, displayArtworkProject, selectedCatalogModelSlot, selectedSourceModelProject, selectedClothing?.setId, selectedClothing?.category, selectedClothing?.componentId, wardrobeTransformDraft, wardrobeHighlightVisible, previewExtent, customizerPreviewZoom])
+  }, [selectedCharacter?.id, selectedCharacter?.customization.modelSkinTone, selectedCharacter?.customization.wardrobeGroups, wardrobeDetails, displayArtworkProject, selectedCatalogModelSlot, selectedSourceModelProject, selectedClothing?.modelSlot, selectedClothing?.setId, selectedClothing?.category, selectedClothing?.componentId, wardrobeTransformDraft, wardrobeHighlightVisible, previewExtent, customizerPreviewZoom])
 
   function selectCharacter(id: string) {
     setSelectedCharacterId(id)
@@ -2477,7 +2479,7 @@ export function CustomizerPage() {
     const replacesSelectedHeadExtra = panel.id === 'glasses' && current.customization.faceAppearance?.modelSlot === selectedCatalogModelSlot && Boolean(current.customization.faceAppearance.headExtras?.glasses)
     const existingCandidate = candidate && !replacesSelectedHeadExtra && candidate.components.every((component) => before.some((group) => group.modelSlot === candidate.summary.modelSlot && group.setId === candidate.summary.id && group.category === panel.category && group.componentId === component.id))
     if (existingCandidate) {
-      setSelectedClothing({ setId: candidate.summary.id, category: panel.category, componentId: candidate.component.id })
+      setSelectedClothing({ modelSlot: candidate.summary.modelSlot, setId: candidate.summary.id, category: panel.category, componentId: candidate.component.id })
       setWardrobeHighlightVisible(true)
       return
     }
@@ -2496,7 +2498,7 @@ export function CustomizerPage() {
     if (candidate) {
       const palette = current.customization.wardrobePalettes?.[panel.id]
       after.push(...candidate.components.map((component) => ({ modelSlot: candidate.summary.modelSlot, setId: candidate.summary.id, category: panel.category, componentId: component.id, offsetX: 0, offsetY: 0, scaleX: 1, scaleY: 1, rotation: 0, ...(palette ? { colors: palette } : {}) })))
-      setSelectedClothing({ setId: candidate.summary.id, category: panel.category, componentId: candidate.component.id })
+      setSelectedClothing({ modelSlot: candidate.summary.modelSlot, setId: candidate.summary.id, category: panel.category, componentId: candidate.component.id })
       setWardrobeHighlightVisible(true)
     } else {
       if (selectedClothing?.category === panel.category && panelComponentKeys.has(`${selectedCatalogModelSlot}:${selectedClothing.setId}:${selectedClothing.componentId}`)) setSelectedClothing(null)
@@ -3258,8 +3260,43 @@ export function CustomizerPage() {
 
   const restoreClothesAdjustments = () => {
     setClothesAdjustSelection(null)
+    setClothesAdjustDetailOpen(false)
     if (!selectedCharacter) return
     void saveCharacterCustomization({ wardrobeGroups: (selectedCharacter.customization.wardrobeGroups ?? []).map((group) => ({ ...group, offsetX: 0, offsetY: 0, scaleX: 1, scaleY: 1, rotation: 0 })) })
+  }
+
+  const updateClothesAdjustComponent = async (operation: 'transform' | 'remove', values?: Partial<Pick<CustomizerWardrobeGroup, 'offsetX' | 'offsetY' | 'scaleX' | 'scaleY' | 'rotation'>>) => {
+    if (!selectedCharacter || !selectedClothing) return
+    const current = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
+    const groups = current.customization.wardrobeGroups ?? []
+    const selectedSet = wardrobeDetails[`${selectedClothing.modelSlot}:${selectedClothing.setId}`]
+    const sourceCategories: WardrobeCategory[] = clothingCategories.Inferior.concat(clothingCategories.Superior).find((item) => item.id === clothesAdjustSelection)?.source ?? []
+    const isSamePiece = (group: CustomizerWardrobeGroup) => group.modelSlot === selectedClothing.modelSlot && group.setId === selectedClothing.setId && group.category === selectedClothing.category && (group.componentId === selectedClothing.componentId || !group.componentId)
+    const nextGroups: CustomizerWardrobeGroup[] = []
+    for (const group of groups) {
+      if (!isSamePiece(group)) { nextGroups.push(group); continue }
+      if (group.componentId) {
+        if (operation === 'transform') nextGroups.push({ ...group, ...values })
+        continue
+      }
+      if (!selectedSet) { nextGroups.push(group); continue }
+      const matchingComponents = selectedSet.components.filter((component) => sourceCategories.includes(component.category))
+      if (!matchingComponents.length) { nextGroups.push(group); continue }
+      for (const component of matchingComponents) {
+        if (operation === 'remove' && component.id === selectedClothing.componentId) continue
+        nextGroups.push({ ...group, componentId: component.id, ...(operation === 'transform' && component.id === selectedClothing.componentId ? values : {}) })
+      }
+    }
+    if (operation === 'remove') {
+      setWardrobeHighlightVisible(false)
+      const remaining = nextGroups.find((group) => group.modelSlot === selectedClothing.modelSlot && group.category === selectedClothing.category && group.setId === selectedClothing.setId && group.componentId)
+      const nextComponentId = remaining?.componentId
+      setSelectedClothing(nextComponentId ? { ...selectedClothing, componentId: nextComponentId } : null)
+      await saveCharacterCustomization({ wardrobeGroups: nextGroups })
+      return
+    }
+    if (values) setWardrobeTransformDraft((draft) => ({ offsetX: draft?.offsetX ?? 0, offsetY: draft?.offsetY ?? 0, scaleX: draft?.scaleX ?? 1, scaleY: draft?.scaleY ?? 1, rotation: draft?.rotation ?? 0, ...values }))
+    await saveCharacterCustomization({ wardrobeGroups: nextGroups })
   }
 
   const renderAdjustmentPicker = (area: 'head' | 'clothes') => {
@@ -3267,6 +3304,93 @@ export function CustomizerPage() {
     const items = isHead ? headAdjustmentItems : clothesAdjustmentItems
     const selectedId = isHead ? headAdjustSelection : clothesAdjustSelection
     const reset = isHead ? restoreHeadAdjustments : restoreClothesAdjustments
+    const selectedGroups = !isHead && selectedId ? (selectedCharacter?.customization.wardrobeGroups ?? []).filter((group) => group.category === selectedId) : []
+    const sourceCategories: WardrobeCategory[] = !isHead && selectedId ? clothingCategories.Inferior.concat(clothingCategories.Superior).find((item) => item.id === selectedId)?.source ?? [] : []
+    const adjustmentComponents = selectedGroups.flatMap((group) => {
+      const set = wardrobeDetails[`${group.modelSlot}:${group.setId}`]
+      if (!set) return []
+      const parts = group.componentId
+        ? set.components.filter((component) => component.id === group.componentId)
+        : set.components.filter((component) => sourceCategories.includes(component.category))
+      return parts.map((component) => ({ group: { ...group, componentId: component.id }, component, set }))
+    }).filter((entry, index, list) => list.findIndex((candidate) => candidate.group.modelSlot === entry.group.modelSlot && candidate.group.setId === entry.group.setId && candidate.group.category === entry.group.category && candidate.component.id === entry.component.id) === index)
+    const selectedAdjustmentComponent = !isHead && selectedClothing
+      ? adjustmentComponents.find((entry) => entry.group.modelSlot === selectedClothing.modelSlot && entry.group.setId === selectedClothing.setId && entry.group.category === selectedClothing.category && entry.component.id === selectedClothing.componentId)
+      : undefined
+
+    const openClothesAdjustment = (category: string) => {
+      setClothesAdjustSelection(category)
+      setClothesAdjustDetailOpen(true)
+      const firstGroup = selectedCharacter?.customization.wardrobeGroups?.find((group) => group.category === category)
+      const set = firstGroup ? wardrobeDetails[`${firstGroup.modelSlot}:${firstGroup.setId}`] : undefined
+      const sources = clothingCategories.Inferior.concat(clothingCategories.Superior).find((item) => item.id === category)?.source ?? []
+      const component = firstGroup && set
+        ? firstGroup.componentId ? set.components.find((piece) => piece.id === firstGroup.componentId) : set.components.find((piece) => sources.includes(piece.category))
+        : undefined
+      setSelectedClothing(firstGroup && component ? { modelSlot: firstGroup.modelSlot, setId: firstGroup.setId, category: firstGroup.category, componentId: component.id } : null)
+      setWardrobeHighlightVisible(Boolean(firstGroup && component))
+    }
+
+    if (!isHead && clothesAdjustDetailOpen && selectedId) {
+      const transform = wardrobeTransformDraft ?? { offsetX: 0, offsetY: 0, scaleX: 1, scaleY: 1, rotation: 0 }
+      const changeTransform = (patch: Partial<typeof transform>) => {
+        const next = { ...transform, ...patch }
+        void updateClothesAdjustComponent('transform', next)
+      }
+      const moveBy = (x: number, y: number) => changeTransform({ offsetX: transform.offsetX + x, offsetY: transform.offsetY + y })
+      const selectedItem = clothesAdjustmentItems.find((item) => item.id === selectedId)
+      return <section className="customizer-adjust-picker customizer-clothes-adjust-detail" aria-label={`Ajustes de ${selectedItem?.label ?? 'roupa'}`}>
+        <header className="customizer-adjust-heading customizer-clothes-adjust-detail-heading">
+          <button className="customizer-adjust-back" type="button" onClick={() => setClothesAdjustDetailOpen(false)}><Icon name="chevronRight" /> Categorias</button>
+          <h2>{selectedItem?.label ?? 'Ajustar roupa'}</h2>
+        </header>
+        {!selectedCharacter && <p className="customizer-adjust-hint">Selecione um personagem para ver as peças dele.</p>}
+        {selectedCharacter && <div className="customizer-clothes-adjust-workspace">
+          <section className="customizer-clothes-adjust-parts" aria-label="Peças do conjunto">
+            <header><strong>Peças do conjunto</strong><small>{adjustmentComponents.length} peça(s)</small></header>
+            {adjustmentComponents.length ? <div className="customizer-clothes-adjust-part-grid">
+              {adjustmentComponents.map(({ group, component, set }) => {
+                const isSelected = selectedClothing?.modelSlot === group.modelSlot && selectedClothing.setId === group.setId && selectedClothing.category === group.category && selectedClothing.componentId === component.id
+                return <div key={`${group.modelSlot}:${group.setId}:${component.id}`} className={`customizer-clothes-adjust-part${isSelected ? ' selected' : ''}`}>
+                  <button type="button" className="customizer-clothes-adjust-part-select" aria-pressed={isSelected} onClick={() => {
+                    setSelectedClothing({ modelSlot: group.modelSlot, setId: group.setId, category: group.category, componentId: component.id })
+                    setWardrobeHighlightVisible(true)
+                  }}>
+                    <span className="customizer-clothes-adjust-part-preview"><img src={component.dataUrl} alt="" /></span>
+                    <strong title={component.name}>{component.name || component.attachedPartId}</strong>
+                    <small>{set.name}</small>
+                  </button>
+                  {isSelected && <button type="button" className="customizer-clothes-adjust-part-remove" title="Remover esta peça" aria-label={`Remover ${component.name || component.attachedPartId}`} onClick={() => void updateClothesAdjustComponent('remove')}><Icon name="close" /></button>}
+                </div>
+              })}
+            </div> : <p className="customizer-clothes-adjust-empty">Nenhuma peça desta categoria está aplicada neste personagem. Aplique um conjunto em Roupas para ajustar cada componente.</p>}
+          </section>
+          {selectedAdjustmentComponent ? <section className="customizer-clothes-adjust-controls" aria-label="Controles da peça selecionada">
+            <header><span><strong>{selectedAdjustmentComponent.component.name}</strong><small>{selectedAdjustmentComponent.set.name}</small></span></header>
+            <div className="customizer-clothes-adjust-position">
+              <span className="customizer-clothes-adjust-readout">X {transform.offsetX >= 0 ? '+' : ''}{Math.round(transform.offsetX)}<br />Y {transform.offsetY >= 0 ? '+' : ''}{Math.round(transform.offsetY)}</span>
+              <div className="customizer-clothes-adjust-pad" aria-label="Mover a peça">
+                <button type="button" aria-label="Mover para cima" onClick={() => moveBy(0, -1)}>↑</button>
+                <button type="button" aria-label="Mover para a esquerda" onClick={() => moveBy(-1, 0)}>←</button>
+                <span><Icon name="move" /></span>
+                <button type="button" aria-label="Mover para a direita" onClick={() => moveBy(1, 0)}>→</button>
+                <button type="button" aria-label="Mover para baixo" onClick={() => moveBy(0, 1)}>↓</button>
+              </div>
+            </div>
+            <div className="customizer-clothes-adjust-axis-grid">
+              {([{ key: 'scaleX', label: 'Largura', min: .05, max: 5, step: .02 }, { key: 'scaleY', label: 'Altura', min: .05, max: 5, step: .02 }] as const).map(({ key, label, min, max, step }) => <div className="customizer-clothes-adjust-axis" key={key}>
+                <strong>{label} <output>{Math.round(transform[key] * 100)}%</output></strong>
+                <button type="button" aria-label={`Diminuir ${label.toLowerCase()}`} onClick={() => changeTransform({ [key]: Math.max(min, Number((transform[key] - step).toFixed(2))) })}>−</button>
+                <button type="button" aria-label={`Aumentar ${label.toLowerCase()}`} onClick={() => changeTransform({ [key]: Math.min(max, Number((transform[key] + step).toFixed(2))) })}>+</button>
+              </div>)}
+            </div>
+            <div className="customizer-clothes-adjust-rotation"><strong>Rotação <output>{Math.round(transform.rotation)}°</output></strong><button type="button" aria-label="Girar para a esquerda" onClick={() => changeTransform({ rotation: transform.rotation - 1 })}>↶</button><button type="button" aria-label="Girar para a direita" onClick={() => changeTransform({ rotation: transform.rotation + 1 })}>↷</button></div>
+            <button className="customizer-clothes-adjust-reset-piece" type="button" onClick={() => changeTransform({ offsetX: 0, offsetY: 0, scaleX: 1, scaleY: 1, rotation: 0 })}><Icon name="reset" /> Restaurar peça</button>
+          </section> : <div className="customizer-clothes-adjust-empty-controls">Selecione uma peça na lista para ajustar.</div>}
+        </div>}
+        <p className="customizer-adjust-scope">Cada transformação e remoção fica salva somente neste personagem.</p>
+      </section>
+    }
     const previewFor = (id: string): string | null => {
       if (!selectedCharacter) return null
       if (isHead) {
@@ -3306,7 +3430,7 @@ export function CustomizerPage() {
           const applied = isHead ? hasHeadAdjustmentItem(item.id) : Boolean(selectedCharacter?.customization.wardrobeGroups?.some((group) => group.category === item.id))
           const selected = selectedId === item.id
           const preview = previewFor(item.id)
-          return <button key={item.id} className={`customizer-adjust-card${selected ? ' selected' : ''}${applied ? ' applied' : ''}`} type="button" disabled={!selectedCharacter} aria-pressed={selected} onClick={() => isHead ? setHeadAdjustSelection(item.id) : setClothesAdjustSelection(item.id)} title={`${item.label}${applied ? ' · aplicado neste personagem' : ' · sem peça aplicada'}`}>
+          return <button key={item.id} className={`customizer-adjust-card${selected ? ' selected' : ''}${applied ? ' applied' : ''}`} type="button" disabled={!selectedCharacter} aria-pressed={selected} onClick={() => isHead ? setHeadAdjustSelection(item.id) : openClothesAdjustment(item.id)} title={`${item.label}${applied ? ' · aplicado neste personagem' : ' · sem peça aplicada'}`}>
             <span className="customizer-adjust-card-label">{item.label}</span>
             <span className="customizer-adjust-card-preview">{preview ? <img src={preview} alt="" /> : <Icon name={item.icon} />}{applied && <i><Icon name="check" /></i>}</span>
             <small>{applied ? 'Aplicado' : 'Sem peça'}</small>
@@ -3343,7 +3467,7 @@ export function CustomizerPage() {
                 {selectedArtworkUrl ? <img className="customizer-selected-artwork" src={selectedArtworkUrl} alt={selectedArtworkLabel} /> : !previewLoading && <div className="customizer-no-artwork"><Icon name="body" /><span>Nenhum modelo salvo para mostrar.</span></div>}
               {selectedWardrobeUrl && selectedArtworkUrl && <img className={'customizer-wardrobe-overlay' + (wardrobePreviewDraggable ? ' draggable' : '')} src={selectedWardrobeUrl} alt="Roupas do personagem" draggable={false} onPointerDown={wardrobePreviewDraggable ? beginWardrobeDrag : undefined} onPointerMove={wardrobePreviewDraggable ? moveWardrobeDrag : undefined} onPointerUp={wardrobePreviewDraggable ? finishWardrobeDrag : undefined} onPointerCancel={wardrobePreviewDraggable ? finishWardrobeDrag : undefined} />}
               {selectedFaceUrl && selectedArtworkUrl && <img className="customizer-face-overlay" src={selectedFaceUrl} alt="Rosto do personagem" draggable={false} />}
-              {activeModule === 'Roupas' && clothingSection === 'Customizar' && wardrobeHighlightVisible && selectedWardrobeHighlightUrl && <img className="customizer-wardrobe-selection-halo" src={selectedWardrobeHighlightUrl} alt="Peça de roupa selecionada" draggable={false} />}
+              {activeModule === 'Roupas' && (clothingSection === 'Customizar' || clothesPanelTab === 'adjust' && clothesAdjustDetailOpen) && wardrobeHighlightVisible && selectedWardrobeHighlightUrl && <img className="customizer-wardrobe-selection-halo" src={selectedWardrobeHighlightUrl} alt="Peça de roupa selecionada" draggable={false} />}
               {selectedFrontHairUrl && selectedArtworkUrl && <img className="customizer-front-hair-overlay" src={selectedFrontHairUrl} alt="Cabelo posterior e franja frontal" draggable={false} />}
               {selectedWardrobeAboveHairUrl && selectedArtworkUrl && <img className="customizer-wardrobe-above-hair-overlay" src={selectedWardrobeAboveHairUrl} alt="Óculos e acessórios de cabeça por cima dos cabelos" draggable={false} />}
                 {previewLoading && <div className="customizer-preview-loading">Carregando prévia…</div>}
@@ -3606,7 +3730,7 @@ export function CustomizerPage() {
               {selectedArtworkUrl ? <img className="customizer-selected-artwork" src={selectedArtworkUrl} alt={selectedArtworkLabel} /> : !previewLoading && <div className="customizer-no-artwork"><Icon name="body" /><span>{selectedCharacter ? 'Importe um modelo no Fabricador Dev para começar.' : 'Crie um personagem para começar a personalizar.'}</span></div>}
                 {selectedWardrobeUrl && selectedArtworkUrl && <img className={'customizer-wardrobe-overlay' + (wardrobePreviewDraggable ? ' draggable' : '')} src={selectedWardrobeUrl} alt="Roupas do personagem" draggable={false} onPointerDown={wardrobePreviewDraggable ? beginWardrobeDrag : undefined} onPointerMove={wardrobePreviewDraggable ? moveWardrobeDrag : undefined} onPointerUp={wardrobePreviewDraggable ? finishWardrobeDrag : undefined} onPointerCancel={wardrobePreviewDraggable ? finishWardrobeDrag : undefined} />}
                 {selectedFaceUrl && selectedArtworkUrl && <img className="customizer-face-overlay" src={selectedFaceUrl} alt="Rosto do personagem" draggable={false} />}
-                {activeModule === 'Roupas' && clothingSection === 'Customizar' && wardrobeHighlightVisible && selectedWardrobeHighlightUrl && <img className="customizer-wardrobe-selection-halo" src={selectedWardrobeHighlightUrl} alt="Peça de roupa selecionada" draggable={false} />}
+                {activeModule === 'Roupas' && (clothingSection === 'Customizar' || clothesPanelTab === 'adjust' && clothesAdjustDetailOpen) && wardrobeHighlightVisible && selectedWardrobeHighlightUrl && <img className="customizer-wardrobe-selection-halo" src={selectedWardrobeHighlightUrl} alt="Peça de roupa selecionada" draggable={false} />}
                 {selectedFrontHairUrl && selectedArtworkUrl && <img className="customizer-front-hair-overlay" src={selectedFrontHairUrl} alt="Cabelo posterior e franja frontal" draggable={false} />}
                 {selectedWardrobeAboveHairUrl && selectedArtworkUrl && <img className="customizer-wardrobe-above-hair-overlay" src={selectedWardrobeAboveHairUrl} alt="Óculos e acessórios de cabeça por cima dos cabelos" draggable={false} />}
               {previewLoading && <div className="customizer-preview-loading">Carregando prévia…</div>}
