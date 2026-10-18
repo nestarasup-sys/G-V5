@@ -10,6 +10,9 @@ Para fechar qualquer `R-xx`: registrar **problema**, `E-xx`/arquivo/linha, hipó
 
 ## Etapa A — Proteções e linha de base (bloqueia TODAS as mudanças em storage)
 
+**Progresso parcial 2026-10-18 (implementação documental + harness):** [relatório de baseline DEV AI](AUDITORIAS/BASELINE_DEV_AI_2026-10-18.md). Foram adicionados `scripts/dev-ai/{catalog,baseline,boundary-scan}.cjs`, `tests/dev-ai-baseline.test.cjs`, comandos npm e cobertura mockada adicional para navegação entre os Studios. Oito testes unitários do harness passaram em workspace sintético local; **não** houve `npm ci`, typecheck/build ou execução Electron no checkout integral. Assim, **R-01, R-02, R-05 e R-25 permanecem [ ]**; não confundir presença de scripts com aceite dos seus gates. Handoff profundo para execução de ambientes indisponíveis: [CODEX_HANDOFF_EXECUCAO_WINDOWS_E_IPC.md](CODEX_HANDOFF_EXECUCAO_WINDOWS_E_IPC.md).
+
+
 **Objetivo:** construir uma rede de segurança antes de 'limpar' pastas. **Entrega:** relatórios reproduzíveis, fixture mínima, script de restauração e matriz dos fluxos principais.
 
 - [ ] **R-01 / investigação + validação / P / P0.** Consolidar scripts `audit-*.cjs/mjs` em catálogo com comandos e pré-requisitos; executar `npm ci`, `npm run typecheck`, `npm run build` e `electron scripts/audit-studio-isolation.cjs` em sistema suportado com `out/` descartável. Evidência: E-06/E-07, `scripts/`. Risco: auditorias usam preload fixture e podem passar apesar de IPC real quebrado. Rollback: nenhum código de produto tocado. Aceite: relatório por comando (exit code, versões, SHA, SO, stdout/stderr redigidos), screenshot e diffs versionados apenas com fixtures sintéticas.
