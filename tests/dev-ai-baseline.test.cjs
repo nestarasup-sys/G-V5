@@ -66,13 +66,17 @@ test('runner lists audits without npm dependencies or Electron', () => {
   assert.equal(listing.schemaVersion, 1)
 })
 
-test('out/ symlink is rejected rather than following a user-controlled directory', () => {
+test('out/ symlink is rejected rather than following a user-controlled directory', (t) => {
   const dir = mkdtempSync(join(tmpdir(), 'gacha-audit-symlink-'))
   const out = join(ROOT, 'out')
   // Never replace a real build/output folder.
-  if (existsSync(out)) { rmSync(dir, { recursive: true, force: true }); return }
+  if (existsSync(out)) { rmSync(dir, { recursive: true, force: true }); return t.skip('out/ já existe; não alterar dados gerados') }
   try {
-    symlinkSync(dir, out, 'dir')
+    try { symlinkSync(dir, out, 'dir') }
+    catch (error) {
+      if (['EPERM', 'EACCES', 'ENOSYS'].includes(error.code)) return t.skip('SO impede criar symlink') t.skip('SO impede criar symlink')
+      throw error
+    }
     assert.throws(() => assertSafeOutputRoot(), /symlink/)
   } finally {
     try { rmSync(out) } catch {}
@@ -98,7 +102,7 @@ test('static feature boundary scanner detects cross-feature imports on synthetic
   } finally { rmSync(root, { recursive: true, force: true }) }
 })
 
-test('boundary scanner is non-destructive and ignores linked source trees', () => {
+test('boundary scanner is non-destructive and ignores linked source trees', (t) => {
   const { scan } = require('../scripts/dev-ai/boundary-scan.cjs')
   const { mkdirSync, writeFileSync } = require('node:fs')
   const root = mkdtempSync(join(tmpdir(), 'gacha-boundaries-safe-'))
