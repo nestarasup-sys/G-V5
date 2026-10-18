@@ -10,7 +10,12 @@
     "dev": "electron-vite dev --watch",
     "build": "electron-vite build",
     "preview": "electron-vite preview",
-    "typecheck": "tsc --noEmit -p tsconfig.json"
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test:dev-ai": "node --test tests/dev-ai-baseline.test.cjs",
+    "audit:list": "node scripts/dev-ai/baseline.cjs --list",
+    "audit:fast": "node scripts/dev-ai/baseline.cjs --suite fast",
+    "audit:isolation": "node scripts/dev-ai/baseline.cjs --suite isolation",
+    "audit:all": "node scripts/dev-ai/baseline.cjs --suite all"
   },
   "dependencies": {
     "react": "^19.2.0",
