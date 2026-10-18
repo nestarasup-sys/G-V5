@@ -1,0 +1,104 @@
+name: G-V5 DEV AI Foundation
+
+on:
+  push:
+    branches:
+      - 'ci/dev-ai-*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dev-ai-foundation-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unit-and-architecture:
+    name: Unit tests / architectural inventory
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      CI: 'true'
+      DO_NOT_TRACK: '1'
+      npm_config_fund: 'false'
+      npm_config_audit: 'false'
+    steps:
+      - name: Checkout exact commit
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Install reproducible dependencies
+        run: npm ci
+      - name: Run Node foundation tests
+        run: npm test
+      - name: TypeScript typecheck
+        run: npm run typecheck
+      - name: Record architecture inventory without treating legacy edges as clean
+        run: npm run audit:boundaries
+      - name: Seven existing synthetic audits
+        run: npm run audit:fast
+      - name: Check tracked data folders
+        shell: bash
+        run: |
+          if git ls-files | grep -E '^(app-data/|out/|node_modules/|\.env$|\.env\.)'; then
+            echo 'Unsafe generated/private files are tracked'
+            exit 1
+          fi
+      - name: Attach synthetic JSON evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dev-ai-unit-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            out/dev-ai/runs/**/report.json
+          if-no-files-found: ignore
+          retention-days: 7
+
+  windows-electron-ipc:
+    name: Windows Electron / real IPC / visual
+    runs-on: windows-latest
+    timeout-minutes: 35
+    env:
+      CI: 'true'
+      DO_NOT_TRACK: '1'
+      npm_config_fund: 'false'
+      npm_config_audit: 'false'
+      ELECTRON_ENABLE_LOGGING: '0'
+    steps:
+      - name: Checkout exact commit
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Install Electron and dependencies
+        run: npm ci
+      - name: Unit / comparator regression tests
+        run: npm test
+      - name: Run synthetic visual and real IPC Electron suites
+        run: npm run audit:all
+      - name: Publish synthetic diagnostics only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dev-ai-windows-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            out/dev-ai/runs/**/report.json
+            out/dev-ai/runs/**/metrics.json
+            out/dev-ai/runs/**/studio-ipc-real/report.json
+            out/dev-ai/runs/**/studio-ipc-real-artifacts/*result.json
+            out/dev-ai/runs/**/studio-ipc-real-artifacts/real-ipc-visual-comparison.json
+            out/dev-ai/runs/**/studio-ipc-real-artifacts/real-ipc-studio-*.png
+            out/dev-ai/runs/**/studio-isolation/result.json
+            out/dev-ai/runs/**/studio-isolation/*.png
+          if-no-files-found: ignore
+          retention-days: 7
