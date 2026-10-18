@@ -795,10 +795,10 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .customizer-upper-wardrobe-layout.lower-page-two>.customizer-wardrobe-piece-lower-skirt { grid-row:1;grid-column:2; }
 .customizer-upper-wardrobe-layout:not(.page-two):not(.lower-page-two)>.customizer-wardrobe-piece-pants-left { grid-row:1;grid-column:1; }
 .customizer-upper-wardrobe-layout:not(.page-two):not(.lower-page-two)>.customizer-wardrobe-piece-shorts-right { grid-row:2;grid-column:1; }
-.customizer-upper-wardrobe-layout:not(.page-two):not(.lower-page-two)>.customizer-wardrobe-piece-shoe-right { grid-row:1;grid-column:2; }
-.customizer-upper-wardrobe-layout:not(.page-two):not(.lower-page-two)>.customizer-wardrobe-piece-shoe-left { grid-row:1;grid-column:3; }
-.customizer-upper-wardrobe-layout:not(.page-two):not(.lower-page-two)>.customizer-wardrobe-piece-sock-right { grid-row:2;grid-column:2; }
-.customizer-upper-wardrobe-layout:not(.page-two):not(.lower-page-two)>.customizer-wardrobe-piece-sock-left { grid-row:2;grid-column:3; }
+.customizer-upper-wardrobe-layout:not(.page-two):not(.lower-page-two)>.customizer-wardrobe-piece-shoe-left { grid-row:1;grid-column:2; }
+.customizer-upper-wardrobe-layout:not(.page-two):not(.lower-page-two)>.customizer-wardrobe-piece-shoe-right { grid-row:1;grid-column:3; }
+.customizer-upper-wardrobe-layout:not(.page-two):not(.lower-page-two)>.customizer-wardrobe-piece-sock-left { grid-row:2;grid-column:2; }
+.customizer-upper-wardrobe-layout:not(.page-two):not(.lower-page-two)>.customizer-wardrobe-piece-sock-right { grid-row:2;grid-column:3; }
 .customizer-upper-wardrobe-piece { grid-template-rows:28px minmax(0,1fr) 47px; }
 .customizer-upper-wardrobe-piece>header strong { min-width:0;font-size:clamp(10px,.95vw,14px); }
 .customizer-upper-wardrobe-selector { grid-template-columns:clamp(24px,3vw,38px) minmax(0,1fr) clamp(24px,3vw,38px) clamp(30px,3.8vw,48px); }
