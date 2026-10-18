@@ -93,7 +93,8 @@ Régua + playhead frame-alinhado, zoom independente da duração, faixa por pers
 - [x] Testes determinísticos do runtime, typecheck e build em GitHub Actions na branch isolada.
 - [ ] Adaptadores do renderer nativo do Fabricador: pose/preset facial como snapshots editáveis por personagem. Os IDs atuais são placeholders, sem aplicação visual.
 - [ ] Blink/talk automáticos por fala/temporização (dependem de assets e regras definidas). Nesta fase os modos são escolhidos manualmente.
-- [ ] Drag/resize de blocos de texto na timeline e correção visual de qualquer divergência detectada em smoke real.
+- [x] Movimentação e ajuste de início/fim de blocos de texto na timeline por gestos com snap em frames inteiros, respeitando locks e Undo.
+- [ ] Smoke real no Windows dos gestos de blocos de texto, incluindo scroll/zoom em projetos longos.
 - [ ] Smoke real de Electron no Windows com cenas pesadas, integração de presets e testes visuais.
 - [ ] Export MP4 usando o MESMO avaliador de estado da Preview, com parity comprovada antes de otimizar.
 
@@ -129,7 +130,7 @@ Arquivos implementados:
 
 **Observação arquitetural:** o fluxo de importação do Studio normal cria cópias de imagens e estados base; não traz controle paramétrico de membros/rosto do Fabricador. Apenas elementos visuais suportados (personagem/imagem) passam à cena inicial. Elementos narrativos do Studio normal ainda aguardam adaptador e são informados ao usuário.
 
-**Conferência:** o gate GitHub Actions do commit `a5b36c0` foi concluído com sucesso (typecheck + testes + build). Isso não substitui smoke de UI/Electron real no Windows.
+**Conferência:** o gate GitHub Actions dos commits `a5b36c0` e `64ce64f` foi concluído com sucesso (typecheck + testes + build). Isso não substitui smoke de UI/Electron real no Windows.
 
 ### Próxima prioridade técnica
 
