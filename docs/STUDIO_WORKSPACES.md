@@ -144,3 +144,18 @@ Restaurar um checkpoint pausa a reprodução, invalida renders faciais pendentes
 e restaura o documento diretamente, sem passar pela rotina que grava uma nova
 pose/expressão na faixa. As faixas são avaliadas novamente no playhead atual.
 Os atalhos Ctrl+Z, Ctrl+Shift+Z e Ctrl+Y respeitam os campos de texto e modais.
+
+## Prévia em tela cheia
+
+O botão à direita de **+ Vídeo** abre a prévia; o botão maior no topo e Esc
+permitem sair. `usePreviewFullscreen.ts` gerencia a API nativa de fullscreen e
+sincroniza a saída nativa com o layout. Quando a API não está disponível, a
+prévia ocupa a janela. A desmontagem libera apenas o fullscreen que ela abriu.
+
+`PreviewTransport.tsx` usa o mesmo playhead, duração e estado de reprodução da
+timeline: Play/Pause, início, saltos de cinco segundos, barra arrastável com
+precisão de um frame e timecode a 60 FPS. Arrastar a barra pausa e procura o
+quadro escolhido. Play no fim reinicia a reprodução. O último frame permanece
+visível ao chegar ao final. Os controles de áudio usam o volume mestre existente
+do roteiro, incluindo o histórico de edição. Entrar e sair preservam o tempo e
+a reprodução; os elementos da composição não são editáveis nesse modo.
