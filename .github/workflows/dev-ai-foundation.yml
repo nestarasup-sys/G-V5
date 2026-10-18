@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - 'ci/dev-ai-*'
+      - 'feat/dev-ai-*'
   workflow_dispatch:
 
 permissions:
@@ -45,7 +46,7 @@ jobs:
         run: npm run audit:boundaries:ast
       - name: Reject growth of existing cross-feature coupling debt
         run: npm run audit:boundaries:gate
-      - name: Seven existing synthetic audits
+      - name: Eight synthetic audits including wardrobe asset flow
         run: npm run audit:fast
       - name: Check tracked data folders
         shell: bash
