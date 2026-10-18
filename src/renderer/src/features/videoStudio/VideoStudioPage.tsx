@@ -41,6 +41,7 @@ export function VideoStudioPage() {
   const [playing, setPlaying] = useState(false)
   const [zoom, setZoom] = useState(4)
   const [boundaryPreview, setBoundaryPreview] = useState<BoundaryDrag | null>(null)
+  const [dragPreview, setDragPreview] = useState<{ id: string; x: number; y: number } | null>(null)
   const [selectedClip, setSelectedClip] = useState<{ trackId: string; id: string } | null>(null)
 
   const undoStack = useRef<VideoProject[]>([])
@@ -270,6 +271,49 @@ export function VideoStudioPage() {
     }))
   }
 
+  const removeElement = (element: VideoSceneElement) => {
+    const associatedTrack = activeProject?.characterTracks.find(track => track.elementId === element.id)
+    commit(project => ({
+      ...project,
+      elements: project.elements.filter(item => item.id !== element.id),
+      characterTracks: project.characterTracks.filter(track => track.elementId !== element.id),
+      saveMarkers: project.saveMarkers.map(marker => ({
+        ...marker, affectedTrackIds: marker.affectedTrackIds.filter(id => id !== associatedTrack?.id)
+      }))
+    }))
+    setSelectedElementId(null)
+    setDrafts(current => {
+      const next = { ...current }
+      delete next[element.id]
+      return next
+    })
+  }
+
+  const beginElementDrag = (event: ReactPointerEvent<HTMLButtonElement>, element: VideoSceneElement) => {
+    if (event.button !== 0) return
+    event.preventDefault()
+    event.stopPropagation()
+    setPlaying(false)
+    setSelectedElementId(element.id)
+    const rect = stageRef.current?.getBoundingClientRect()
+    if (!rect || rect.width <= 0 || rect.height <= 0) return
+    const clientX = event.clientX, clientY = event.clientY
+    const updated = (pointer: PointerEvent) => ({
+      x: Math.round((element.x + (pointer.clientX - clientX) * 100 / rect.width) * 100) / 100,
+      y: Math.round((element.y + (pointer.clientY - clientY) * 100 / rect.height) * 100) / 100
+    })
+    const onMove = (next: PointerEvent) => setDragPreview({ id: element.id, ...updated(next) })
+    const onEnd = (next: PointerEvent) => {
+      const position = updated(next)
+      if (position.x !== element.x || position.y !== element.y) updateElement(element.id, position)
+      setDragPreview(null)
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onEnd)
+    }
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onEnd, { once: true })
+  }
+
   const saveFrame = () => {
     commit(project => recordVideoFrame(project, playheadRef.current, drafts))
     setDrafts({})
@@ -399,6 +443,9 @@ export function VideoStudioPage() {
         <aside className="video-studio-sidebar">
           <h3>Composição</h3>
           <button type="button" onClick={() => void importImage('background')}>+ Fundo</button>
+          {activeProject.canvas.backgroundAssetId && <button type="button" onClick={() => commit(project => ({
+            ...project, canvas: { ...project.canvas, backgroundAssetId: null }
+          }))}>Remover fundo</button>}
           <button type="button" onClick={() => void importImage('character')}>+ Personagem (PNG)</button>
           <button type="button" onClick={() => void importImage('object')}>+ Objeto</button>
           <p>Assets são copiados para a pasta do projeto. A ponte de personagens renderizados do Fabricador será integrada depois.</p>
@@ -423,6 +470,7 @@ export function VideoStudioPage() {
               {assetById(activeProject, activeProject.canvas.backgroundAssetId) && <img className="video-studio-background"
                 alt="" draggable={false} src={assetById(activeProject, activeProject.canvas.backgroundAssetId)!.dataUrl} />}
               {activeProject.elements.slice().sort((a,b) => a.zIndex - b.zIndex).map(element => {
+                const displayPosition = dragPreview?.id === element.id ? dragPreview : element
                 const visual = previewActors.get(element.id)
                 const state = element.id === selectedElementId && !playing && drafts[element.id] ? drafts[element.id] : visual?.state
                 const roleAssetId = element.kind === 'character' && state ? element.faceAssets?.[state.faceMode] : undefined
@@ -434,8 +482,9 @@ export function VideoStudioPage() {
                   ? assetById(activeProject, previousRoleId ?? element.assetId) : undefined
                 return <button className={'video-studio-stage-element' + (selectedElementId === element.id ? ' selected' : '')}
                   type="button" key={element.id} onClick={() => setSelectedElementId(element.id)}
+                  onPointerDown={event => beginElementDrag(event, element)}
                   style={{
-                    left: 'calc(50% + ' + element.x + '%)', top: 'calc(50% + ' + element.y + '%)',
+                    left: 'calc(50% + ' + displayPosition.x + '%)', top: 'calc(50% + ' + displayPosition.y + '%)',
                     width: element.width + '%', height: element.height + '%',
                     transform: 'translate(-50%, -50%) rotate(' + element.rotation + 'deg) scaleX(' + (element.flipX ? -1 : 1) + ')',
                     zIndex: 10 + element.zIndex
@@ -470,6 +519,7 @@ export function VideoStudioPage() {
             <label>Altura (%) <input type="number" min="1" value={selectedElement.height} onChange={e => updateElement(selectedElement.id, { height: Math.max(1, Number(e.target.value)) })} /></label>
             <label>Camada <input type="number" value={selectedElement.zIndex} onChange={e => updateElement(selectedElement.id, { zIndex: Number(e.target.value) })} /></label>
             <label>Inverter <input type="checkbox" checked={selectedElement.flipX} onChange={e => updateElement(selectedElement.id, { flipX: e.target.checked })} /></label>
+            <button type="button" onClick={() => removeElement(selectedElement)}>Remover elemento</button>
             {selectedTrack && displayedState && <>
               <h3>Animação facial</h3>
               <label>Modo facial
