@@ -83,7 +83,7 @@
 .video-studio-card-action:hover { background:#fff1f6;color:#a44166; }
 .video-studio-card-action.danger:hover { background:#fff1f1;color:#b34555; }
 .video-studio-card-action svg { width:13px;height:13px; }
-.video-studio-cover { width:100%;display:block;aspect-ratio:16/9;padding:0;border:0;cursor:pointer; }
+.video-studio-cover { width:100%;display:block;aspect-ratio:16/9;padding:0;border:0;background-position:center;background-size:cover;cursor:pointer; }
 .video-studio-empty-state { flex:1;min-height:220px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;color:#a097a1;text-align:center; }
 .video-studio-empty-state>span { width:42px;height:42px;display:grid;place-items:center;margin-bottom:3px;border-radius:13px;background:#fff1f6;color:#b2476e; }
 .video-studio-empty-state svg { width:19px;height:19px; }

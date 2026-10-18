@@ -174,6 +174,8 @@ export type VideoTimelineDocument = {
   characterGaps?: Array<{ id: string; elementId: string; startFrame: number; endFrame: number }>
   /** Imported media files live in this Studio project's dedicated videos folder. */
   videoAssets?: VideoStudioAsset[]
+  /** Compressed still from the first video clip, used as this project's library cover. */
+  coverDataUrl?: string
   /** Video clips use source duration in frames and are placed on the top timeline lane. */
   videoClips?: VideoMediaClip[]
   /** Project-wide video sound mix, restored with the timeline. */

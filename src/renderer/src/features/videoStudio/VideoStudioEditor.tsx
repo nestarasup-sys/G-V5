@@ -30,6 +30,59 @@ type AutomaticMouthAnimation = { frames: AutomaticMouthFrame[]; cycleFrames: num
 
 const STUDIO_FACE_RENDER_VERSION = 4
 const studioColor = (number: number) => `hsl(${(number * 137.508) % 360} 45% 78%)`
+
+function captureVideoPoster(videoId: string, sourceFrame = 0): Promise<string | null> {
+  return new Promise((resolve) => {
+    const video = document.createElement('video')
+    video.crossOrigin = 'anonymous'
+    video.muted = true
+    video.preload = 'auto'
+    let finished = false
+    const timeout = window.setTimeout(() => finish(null), 12000)
+    const cleanup = () => {
+      window.clearTimeout(timeout)
+      video.onloadeddata = null
+      video.onseeked = null
+      video.onerror = null
+      video.pause()
+      video.removeAttribute('src')
+      video.load()
+    }
+    const finish = (poster: string | null) => {
+      if (finished) return
+      finished = true
+      cleanup()
+      resolve(poster)
+    }
+    const capture = () => {
+      try {
+        if (!video.videoWidth || !video.videoHeight) return finish(null)
+        const width = 640, height = 360
+        const canvas = document.createElement('canvas')
+        canvas.width = width; canvas.height = height
+        const context = canvas.getContext('2d')
+        if (!context) return finish(null)
+        const sourceRatio = video.videoWidth / video.videoHeight
+        const targetRatio = width / height
+        const sourceWidth = sourceRatio > targetRatio ? video.videoHeight * targetRatio : video.videoWidth
+        const sourceHeight = sourceRatio > targetRatio ? video.videoHeight : video.videoWidth / targetRatio
+        context.drawImage(video, (video.videoWidth - sourceWidth) / 2, (video.videoHeight - sourceHeight) / 2, sourceWidth, sourceHeight, 0, 0, width, height)
+        finish(canvas.toDataURL('image/jpeg', 0.78))
+      } catch { finish(null) }
+    }
+    video.onerror = () => finish(null)
+    video.onseeked = capture
+    video.onloadeddata = () => {
+      const frameTime = Math.max(0, sourceFrame / 60)
+      if (frameTime > 0 && Number.isFinite(video.duration) && frameTime < video.duration) {
+        try { video.currentTime = frameTime } catch { capture() }
+      } else capture()
+    }
+    video.src = `gacha-video://library/${videoId}`
+    video.load()
+  })
+}
+
 const defaultStudioEyeTransform: StudioFaceTransform = { x: 0, y: 0, width: 100, height: 100, rotation: 0 }
 function studioFaceModeForElement(element: StudioElement | null, appearance: CustomizerFaceAppearance | undefined): StudioFaceMode {
   if (element?.activeFaceMode) return element.activeFaceMode
@@ -681,7 +734,18 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
         const loaded = await persistence.list()
         const folder = await persistence.getFolder()
         if (cancelled) return
-        setStudios(loaded.map(normalizeVideoCharacterTransforms))
+        const prepared = await Promise.all(loaded.map(async (studio) => {
+          const timeline = studio.videoTimeline
+          if (timeline?.coverDataUrl || !timeline?.videoClips?.length) return studio
+          const firstClip = [...timeline.videoClips].sort((left, right) => left.startFrame - right.startFrame)[0]
+          const coverDataUrl = await captureVideoPoster(firstClip.assetId, firstClip.sourceStartFrame)
+          if (!coverDataUrl || cancelled) return studio
+          const updated = { ...studio, videoTimeline: { ...timeline, coverDataUrl }, updatedAt: new Date().toISOString() }
+          await persistence.save(updated)
+          return updated
+        }))
+        if (cancelled) return
+        setStudios(prepared.map(normalizeVideoCharacterTransforms))
         setStudioFolder(folder)
       } catch (reason) {
         if (!cancelled) setError(reason instanceof Error ? reason.message : 'Não foi possível carregar os Studios.')
@@ -1228,6 +1292,19 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
   const addLibraryVideos = async (ids: string[]) => {
     if (!activeStudio || videoTimelineFor(activeStudio).trackSettings?.video?.locked) throw new Error('Desbloqueie a faixa de vídeo para adicionar clipes.')
     const assets = await window.desktop.attachVideoLibraryItems(activeStudio.id, ids)
+    const startingTimeline = videoTimelineFor(activeStudio)
+    let coverDataUrl = startingTimeline.coverDataUrl
+    if (!coverDataUrl) {
+      const existingClips = [...(startingTimeline.videoClips ?? [])].sort((left, right) => left.startFrame - right.startFrame)
+      const candidates = [
+        ...existingClips.map((clip) => ({ assetId: clip.assetId, frame: clip.sourceStartFrame })),
+        ...assets.map((asset) => ({ assetId: asset.id, frame: 0 }))
+      ]
+      for (const candidate of candidates) {
+        coverDataUrl = await captureVideoPoster(candidate.assetId, candidate.frame) ?? undefined
+        if (coverDataUrl) break
+      }
+    }
     const totalFrames = assets.reduce((sum, item) => sum + item.durationFrames, 0)
     if (videoPlayheadFrame + totalFrames > 60 * 60 * 60 * 24) throw new Error('Os vídeos selecionados ultrapassam a duração máxima de 24 horas do roteiro.')
     const assetIds = new Set([...(videoTimelineFor(activeStudio).videoAssets ?? []).map((item) => item.id), ...assets.map((item) => item.id)])
@@ -1244,7 +1321,7 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
       })
       const videoAssets = [...(timeline.videoAssets ?? [])]
       for (const asset of assets) if (!videoAssets.some((item) => item.id === asset.id)) videoAssets.push(asset)
-      return { ...studio, videoTimeline: { ...timeline, durationFrames: Math.max(timeline.durationFrames, cursor), videoAssets, videoClips: [...(timeline.videoClips ?? []), ...clips] }, updatedAt: new Date().toISOString() }
+      return { ...studio, videoTimeline: { ...timeline, ...(timeline.coverDataUrl || !coverDataUrl ? {} : { coverDataUrl }), durationFrames: Math.max(timeline.durationFrames, cursor), videoAssets, videoClips: [...(timeline.videoClips ?? []), ...clips] }, updatedAt: new Date().toISOString() }
     })
   }
 
@@ -2361,7 +2438,7 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
         <section className="video-studio-grid" aria-label={`${workspacePlural} criados`}>
           {studios.map((studio) => <article className={`video-studio-card${selectedId === studio.id ? ' selected' : ''}`} key={studio.id}>
             <header className="video-studio-card-heading"><button className="video-studio-card-open" onClick={() => { setSelectedId(studio.id); setActiveStudioId(studio.id) }} aria-label={`Abrir ${studio.title}`} type="button">{studio.title}</button><div className="video-studio-card-actions"><button className="video-studio-card-action" onClick={() => void duplicateStudio(studio)} aria-label={`Duplicar ${studio.title}`} title={`Duplicar ${studio.title}`} type="button"><span className="video-studio-duplicate-icon" aria-hidden="true">▢</span></button><button className="video-studio-card-action danger" onClick={() => void deleteStudio(studio)} aria-label={`Excluir ${studio.title}`} title={`Excluir ${studio.title}`} type="button"><Icon name="trash" /></button></div></header>
-            <button className="video-studio-cover" style={{ backgroundColor: studio.color }} onClick={() => { setSelectedId(studio.id); setActiveStudioId(studio.id) }} aria-label={`Abrir ${studio.title}`} type="button" />
+            <button className="video-studio-cover" style={{ backgroundColor: studio.color, ...(studio.videoTimeline?.coverDataUrl ? { backgroundImage: `url(${studio.videoTimeline.coverDataUrl})` } : {}) }} onClick={() => { setSelectedId(studio.id); setActiveStudioId(studio.id) }} aria-label={`Abrir ${studio.title}`} type="button" />
           </article>)}
         </section>
       ) : <section className="video-studio-empty-state"><span><Icon name="camera" /></span><strong>Nenhum {workspaceTitle} criado</strong><small>Crie um {workspaceTitle} para começar sua coleção.</small></section>}
