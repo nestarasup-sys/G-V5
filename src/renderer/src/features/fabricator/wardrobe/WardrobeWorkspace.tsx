@@ -6,6 +6,7 @@ import { orderedParts, partJointAnchor, sourcePointFromCanvas } from '../models/
 import { isHeadPart } from '../models/resize'
 import { resizeAroundAnchor } from '../../../../../shared/headShape'
 import { bindWardrobeComponent, mapWardrobeComponentToPose, poseDeltaToSource } from './poseTransform'
+import { suggestWardrobeBone } from './boneSelection'
 import { splitWardrobeV2Reference, supportsWardrobeV2, wardrobeV2SourceUrl } from './wardrobeV2Reference'
 
 type WorkerPiece = Omit<WardrobeComponent, 'category' | 'attachedPartId' | 'rotation' | 'dataUrl'> & { png: ArrayBuffer }
@@ -125,34 +126,8 @@ function serializeModel(model: FabricatorProject): FabricatorProjectSave {
   const { sourceDataUrl: _sourceDataUrl, parts, ...metadata } = model
   return { ...metadata, parts: parts.map(({ dataUrl: _dataUrl, chromaBaseDataUrl: _chromaBaseDataUrl, ...part }) => part) }
 }
-function guessBone(category: WardrobeCategory, x: number, width: number, model: FabricatorProject): FabricatorProject['parts'][number] | undefined {
-  const side = x < width / 2 ? 'left' : 'right'
-  const centerCategory = category === 'camisa' || category === 'jaqueta' || category === 'capa' || category === 'cinto' || category === 'oculos' || category === 'acessorio-cabeca' || category === 'saia'
-  const target = category === 'capa' ? { x: .5, y: .31 }
-    : category === 'oculos' || category === 'acessorio-cabeca' ? { x: .5, y: .2 }
-      : category === 'cinto' || category === 'saia' ? { x: .5, y: .49 }
-      : category === 'camisa' || category === 'jaqueta' ? { x: .5, y: .36 }
-    : category === 'shorts' ? { x: side === 'left' ? .42 : .58, y: .42 }
-      : category === 'meia' ? { x: side === 'left' ? .43 : .57, y: .83 }
-        : category === 'sapato' ? { x: side === 'left' ? .43 : .57, y: .94 }
-        : category === 'manga-superior' ? { x: side === 'left' ? .27 : .73, y: .27 }
-          : category === 'manga-inferior' ? { x: side === 'left' ? .22 : .78, y: .45 }
-            : category === 'luvas' ? { x: side === 'left' ? .21 : .79, y: .49 }
-              : category === 'calca-coxa' ? { x: side === 'left' ? .42 : .58, y: .58 }
-                : { x: side === 'left' ? .38 : .62, y: .82 }
-  const candidates = model.parts.filter((part) => {
-    const partX = part.sourceTransform?.x ?? part.x
-    const centerX = (partX + part.width / 2) / model.width
-    return centerCategory ? centerX > .3 && centerX < .7 : side === 'left' ? centerX < .5 : centerX >= .5
-  })
-  const distance = (part: FabricatorProject['parts'][number]) => {
-    const partX = part.sourceTransform?.x ?? part.x
-    const partY = part.sourceTransform?.y ?? part.y
-    const dx = (partX + part.width / 2) / model.width - target.x
-    const dy = (partY + part.height / 2) / model.height - target.y
-    return dx * dx + dy * dy * 1.5
-  }
-  return candidates.sort((a, b) => distance(a) - distance(b))[0] ?? model.parts[0]
+function guessBone(category: WardrobeCategory, x: number, width: number, model: FabricatorProject): ModelPart | undefined {
+  return suggestWardrobeBone(category, x, width, model).bone ?? undefined
 }
 export function WardrobeWorkspace({ edition = 1 }: { edition?: WardrobeEdition }) {
   const [previewBackground, setPreviewBackground] = usePreviewBackground()
@@ -349,6 +324,10 @@ export function WardrobeWorkspace({ edition = 1 }: { edition?: WardrobeEdition }
           if (bone) positioned.binding = bindWardrobeComponent(positioned, bone)
           return { ...positioned, name: guessName(category, piece.x + piece.width / 2, message.width) }
         })
+        const unbound = components.filter((component) => !component.attachedPartId)
+        if (unbound.length) {
+          setError(`${unbound.length} peça(s) sem osso correspondente na referência original. Selecione o osso de cada peça antes de salvar; não faremos um encaixe arbitrário.`)
+        }
         setDraft({ schemaVersion: 1, edition, id: crypto.randomUUID(), modelSlot, modelName: model.name, name: file.name.replace(/\.[^.]+$/, ''), width: model.width, height: model.height, components, updatedAt: new Date().toISOString() })
         setActiveSetId(null); setSelectedId(components[0]?.id ?? null); setDirty(true); setBodyOffsets({})
       }
@@ -516,6 +495,11 @@ export function WardrobeWorkspace({ edition = 1 }: { edition?: WardrobeEdition }
     if (!draft || !draft.components.length || saving || edition === 2 && !sourceParts) return
     setSaving(true); setError('')
     try {
+      const unbound = draft.components.filter((component) => !referenceBone(component.attachedPartId)
+        || component.binding?.boneId !== component.attachedPartId)
+      if (unbound.length) {
+        throw new Error(`Não é seguro publicar este conjunto: ${unbound.length} peça(s) não têm um vínculo válido com o osso. Corrija os encaixes na lista de peças.`)
+      }
       const set: WardrobeSet = { ...draft, edition, modelSlot, modelName: model?.name ?? draft.modelName, updatedAt: new Date().toISOString() }
       const serialized: WardrobeSetSave = { ...set, components: set.components.map(({ dataUrl: _dataUrl, ...component }) => ({ ...component, renderAboveHair: (component.category === 'oculos' || component.category === 'acessorio-cabeca') && component.renderAboveHair === true })) }
       await window.desktop.saveWardrobeSet(modelSlot, serialized, set.components.map(({ id, dataUrl: image }) => ({ id, dataUrl: image })))
