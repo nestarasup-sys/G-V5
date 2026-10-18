@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { StudioDocument, StudioElement } from '../../../../shared/studio'
+import type { CSSProperties, MouseEvent, PointerEvent } from 'react'
+import type { StudioAsset, StudioDocument, StudioElement } from '../../../../shared/studio'
 import {
   actorStateAtFrame, blankVideoProject, changeVideoDuration, commitVideoFrame,
   evaluateVideoProject, importStudioComposition, moveVideoBoundary
@@ -18,7 +19,7 @@ const showTime = (frames: number, fps: number) => {
   const frame = Math.floor((totalSeconds - Math.floor(totalSeconds)) * fps + 1e-7)
   return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}:${String(frame).padStart(2, '0')}`
 }
-const sceneElementStyle = (element: StudioElement): React.CSSProperties => {
+const sceneElementStyle = (element: StudioElement): CSSProperties => {
   const scale = element.kind === 'character' ? (element.characterScale ?? 100) / 100 : 1
   const width = element.width * scale * (element.kind === 'character' ? (element.characterWidthScale ?? 100) / 100 : 1)
   const height = element.height * scale * (element.kind === 'character' ? (element.characterHeightScale ?? 100) / 100 : 1)
@@ -29,7 +30,7 @@ const sceneElementStyle = (element: StudioElement): React.CSSProperties => {
     zIndex: element.zIndex + 2
   }
 }
-const backgroundStyle = (scene: StudioDocument): React.CSSProperties => ({
+const backgroundStyle = (scene: StudioDocument): CSSProperties => ({
   left: `calc(50% + ${scene.backgroundX}%)`,
   top: `calc(50% + ${scene.backgroundY}%)`,
   width: `${scene.backgroundWidth}%`, height: `${scene.backgroundHeight}%`,
@@ -100,7 +101,9 @@ export function VideoStudioPage() {
     return () => cancelAnimationFrame(handle)
   }, [playing, project?.id, project?.frameRate, project?.durationFrames])
 
-  const sceneAssets = useMemo(() => new Map(project?.scene.assets.map((asset) => [asset.id, asset]) ?? []), [project?.scene.assets])
+  const sceneAssets = useMemo(() => new Map<string, StudioAsset>(
+    (project?.scene.assets ?? []).map((asset): [string, StudioAsset] => [asset.id, asset])
+  ), [project?.scene.assets])
   const stateAtFrame = useMemo(() => project ? evaluateVideoProject(project, playhead) : {}, [project, playhead])
   const selectedElement = project?.scene.elements.find((el) => el.id === activeElementId)
   const selectedTrack = project?.characterTracks.find((track) => track.characterElementId === activeElementId)
@@ -263,12 +266,12 @@ export function VideoStudioPage() {
       ? { ...track, clips: track.clips.filter((clip) => clip.id !== activeClip.id) } : track) })
     setActiveClip(null)
   }
-  const clickTimeline = (event: React.MouseEvent<HTMLElement>) => {
+  const clickTimeline = (event: MouseEvent<HTMLElement>) => {
     const rect = event.currentTarget.getBoundingClientRect()
     seek((event.clientX - rect.left) / pps * fps)
     setPlaying(false)
   }
-  const beginBoundary = (event: React.PointerEvent<HTMLButtonElement>, track: VideoCharacterTrack, boundaryIndex: number) => {
+  const beginBoundary = (event: PointerEvent<HTMLButtonElement>, track: VideoCharacterTrack, boundaryIndex: number) => {
     if (!project || track.locked) return
     event.preventDefault(); event.stopPropagation(); setPlaying(false)
     const lane = event.currentTarget.closest('.vs-lane') as HTMLElement | null
