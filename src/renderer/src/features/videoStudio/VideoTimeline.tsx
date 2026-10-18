@@ -89,6 +89,7 @@ export function VideoTimeline({ preparing, onEnterFullscreen, canUndo, canRedo, 
   const suppressClipClickRef = useRef(false)
   const timelineScrollRef = useRef<HTMLDivElement>(null)
   const [selection, setSelection] = useState<TrackSelection>(null)
+  const characterTrackClickRef = useRef<string | null>(null)
   const [previewTextClip, setPreviewTextClip] = useState<TextClip | null>(null)
   const [previewVideoClip, setPreviewVideoClip] = useState<VideoMediaClip | null>(null)
   const [previewBoundary, setPreviewBoundary] = useState<{ elementId: string; keyId: string; frame: number } | null>(null)
@@ -187,9 +188,18 @@ export function VideoTimeline({ preparing, onEnterFullscreen, canUndo, canRedo, 
   }
   const seekToLanePosition = (event: ReactMouseEvent<HTMLDivElement>) => {
     if ((event.target as HTMLElement).closest('button')) return
+    characterTrackClickRef.current = null
     const laneBounds = event.currentTarget.getBoundingClientRect()
     const laneFrame = Math.floor(((event.clientX - laneBounds.left) / pixelsPerSecond) * 60)
     onSeek(Math.max(0, Math.min(duration - 1, laneFrame)))
+  }
+  const selectOrSeekCharacterTrack = (elementId: string, frame: number) => {
+    const secondClickOnTrack = characterTrackClickRef.current === elementId
+    characterTrackClickRef.current = elementId
+    const segment = characterSegmentAtFrame(timeline, elementId, frame, duration)
+    setSelection(segment ? { kind: 'character', elementId, ...segment } : null)
+    onSelectElement(elementId)
+    if (secondClickOnTrack) onSeek(frame)
   }
   const snapFrame = (frame: number, excludedClipId?: string) => {
     if (!snapEnabled) return frame
@@ -452,21 +462,24 @@ export function VideoTimeline({ preparing, onEnterFullscreen, canUndo, canRedo, 
             })
             return <div className={`video-track-row${trackSettings[character.id]?.collapsed ? ' collapsed' : ''}`} key={character.id}>
               <span className="video-track-label" title={name}><i className="video-track-badge" style={{ backgroundColor: color }}>{name.slice(0, 1).toUpperCase()}</i><span>{trackSettings[character.id]?.label ?? name}</span></span>
-              <div className="video-track-lane character-lane" style={{ backgroundSize: `${tickSeconds * pixelsPerSecond}px 100%` }} aria-label={`Faixa de ${name}`} onClick={seekToLanePosition}>
+              <div className="video-track-lane character-lane" style={{ backgroundSize: `${tickSeconds * pixelsPerSecond}px 100%` }} aria-label={`Faixa de ${name}`} onClick={(event) => {
+                if ((event.target as HTMLElement).closest('button')) return
+                const bounds = event.currentTarget.getBoundingClientRect()
+                const frame = Math.max(0, Math.min(duration - 1, Math.floor(((event.clientX - bounds.left) / pixelsPerSecond) * 60)))
+                selectOrSeekCharacterTrack(character.id, frame)
+              }}>
                 {visibleStates.map((state) => {
                   const selected = selection?.kind === 'character' && selection.elementId === character.id && selection.startFrame === state.start && selection.endFrame === state.end
                   return <button type="button" key={state.renderId} className={`video-character-span ${selected ? 'selected' : ''}`} style={{ left: `${state.start / 60 * pixelsPerSecond}px`, width: `${Math.max(3, (state.end - state.start) / 60 * pixelsPerSecond)}px`, background: `linear-gradient(180deg, ${color} 0%, ${color}cc 48%, ${color}8c 100%)` }} onClick={(event) => {
                     const rect = event.currentTarget.getBoundingClientRect()
                     const ratio = rect.width > 0 ? Math.max(0, Math.min(0.999999, (event.clientX - rect.left) / rect.width)) : 0
                     const frame = Math.min(state.end - 1, state.start + Math.floor((state.end - state.start) * ratio))
-                    setSelection({ kind: 'character', elementId: character.id, startFrame: state.start, endFrame: state.end })
-                    onSelectElement(character.id)
-                    onSeek(frame)
-                  }} title={`${name} · ${state.label}`}><span>{state.label}</span></button>
+                    selectOrSeekCharacterTrack(character.id, frame)
+                  }} title={`${name} · ${state.label} · clique para selecionar; clique novamente na faixa para mover o playhead`}><span>{state.label}</span></button>
                 })}
                 {keys.map((key, index) => key.frame > 0 && <button type="button" key={`boundary:${key.id}`} className="video-character-boundary" style={{ left: `${key.frame / 60 * pixelsPerSecond}px` }} aria-label={`Mover divisão de ${name}`} title="Arraste para ajustar a duração deste estado" onPointerDown={(event) => beginBoundaryDrag(event, character.id, key.id, key.frame, (keys[index - 1]?.frame ?? 0) + 1, (keys[index + 1]?.frame ?? duration) - 1)} onPointerMove={moveBoundaryDrag} onPointerUp={finishBoundaryDrag} onPointerCancel={finishBoundaryDrag} />)}
                 {timeline.saveMarkers.map((marker) => <i className="video-saved-marker" key={marker.id} style={{ left: `${marker.frame / 60 * pixelsPerSecond}px` }} title={`Frame salvo · ${formatTime(marker.frame)}`} />)}
-                {keys.map((key) => <button type="button" className="video-keyframe" key={key.id} style={{ left: `${key.frame / 60 * pixelsPerSecond}px` }} title={`${formatTime(key.frame)} · ${key.faceMode}`} onClick={() => { const segment = characterSegmentAtFrame(timeline, character.id, key.frame, duration); setSelection(segment ? { kind: 'character', elementId: character.id, ...segment } : null); onSelectElement(character.id); onSeek(key.frame) }} aria-label={`Ir ao frame ${formatTime(key.frame)} de ${name}`} />)}
+                {keys.map((key) => <button type="button" className="video-keyframe" key={key.id} style={{ left: `${key.frame / 60 * pixelsPerSecond}px` }} title={`${formatTime(key.frame)} · ${key.faceMode}`} onClick={() => { characterTrackClickRef.current = null; const segment = characterSegmentAtFrame(timeline, character.id, key.frame, duration); setSelection(segment ? { kind: 'character', elementId: character.id, ...segment } : null); onSelectElement(character.id); onSeek(key.frame) }} aria-label={`Ir ao frame ${formatTime(key.frame)} de ${name}`} />)}
                 <i className="video-lane-playhead" style={{ left: `${playheadFrame / 60 * pixelsPerSecond}px` }} />
               </div>
             </div>
