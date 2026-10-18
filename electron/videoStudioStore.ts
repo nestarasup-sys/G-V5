@@ -93,6 +93,25 @@ function validProject(project: VideoProject): boolean {
   if (!project.saveMarkers.every(marker => Number.isInteger(marker.frame) && marker.frame >= 0
       && marker.frame < project.durationFrames && Array.isArray(marker.affectedTrackIds)
       && marker.affectedTrackIds.every(id => trackIds.has(id)))) return false
+  const isValidScene = (scene: NonNullable<VideoProject['studioScene']>) =>
+    scene && typeof scene === 'object' && scene.schemaVersion === 1
+      && scene.id === project.id && typeof scene.title === 'string'
+      && typeof scene.backgroundColor === 'string' && /^#[0-9a-f]{6}$/i.test(scene.backgroundColor)
+      && (scene.backgroundAssetId === null || typeof scene.backgroundAssetId === 'string' && assets.has(scene.backgroundAssetId))
+      && [scene.backgroundX, scene.backgroundY, scene.backgroundWidth, scene.backgroundHeight,
+        scene.backgroundRotation].every(Number.isFinite)
+      && Array.isArray(scene.elements) && scene.elements.length <= 250
+      && scene.elements.every(element => element && typeof element.id === 'string' && uuidPattern.test(element.id)
+        && ['character', 'image', 'speech', 'thought', 'narrator'].includes(element.kind)
+        && (element.assetId === undefined || assets.has(element.assetId))
+        && typeof element.text === 'string' && element.text.length <= 20000
+        && [element.x, element.y, element.width, element.height, element.rotation, element.zIndex].every(Number.isFinite))
+  if (project.studioScene && !isValidScene(project.studioScene)) return false
+  if (project.sceneFrames !== undefined && (!Array.isArray(project.sceneFrames) || project.sceneFrames.length > 5000
+    || project.sceneFrames.some((entry, i) => !entry || !Number.isInteger(entry.frame)
+      || entry.frame < 0 || entry.frame >= project.durationFrames
+      || (i > 0 && project.sceneFrames![i - 1].frame >= entry.frame)
+      || !isValidScene(entry.scene)))) return false
   return true
 }
 
