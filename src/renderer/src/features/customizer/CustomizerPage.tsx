@@ -612,6 +612,16 @@ async function renderWardrobeThumbnail(set: WardrobeSet, categories: WardrobeCat
   return canvas.toDataURL('image/png')
 }
 
+function wardrobeGarmentCenter(transform: ReturnType<typeof mapWardrobeComponentToPose>) {
+  const matrix = /^matrix\(([^)]+)\)$/.exec(transform.matrix)?.[1].split(',').map(Number) ?? [1, 0, 0, 1]
+  const localX = transform.localLeft + transform.renderWidth / 2
+  const localY = transform.localTop + transform.renderHeight / 2
+  return {
+    x: transform.origin.x + matrix[0] * localX + matrix[2] * localY,
+    y: transform.origin.y + matrix[1] * localX + matrix[3] * localY
+  }
+}
+
 function WardrobePanelCandidatePreview({ candidate, colors }: { candidate: WardrobePanelCandidate; colors?: HairColorOverrides }) {
   const [source, setSource] = useState<string | null>(null)
   const componentIds = candidate.components.map((component) => component.id)
@@ -673,7 +683,7 @@ async function renderWardrobeOverlay(
         ? Math.max(8, Math.min(14, Math.round(Math.min(component.width, component.height) * .06)))
         : 0
       const transform = mapWardrobeComponentToPose(component, sourceBone, targetBone, kneeOverlap, sleeveEdgePadding)
-      mapped.push({ component, transform, center: transform.origin, sequence: sequence++ })
+      mapped.push({ component, transform, center: wardrobeGarmentCenter(transform), sequence: sequence++ })
     }
     if (!mapped.length) continue
     const center = mapped.reduce((sum, item) => ({ x: sum.x + item.center.x / mapped.length, y: sum.y + item.center.y / mapped.length }), { x: 0, y: 0 })

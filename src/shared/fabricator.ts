@@ -82,6 +82,9 @@ export type WardrobeEdition = 1 | 2
 export type WardrobeBinding = {
   version: 1
   boneId: string
+  /** Source frame used when the garment was last fitted. Older sets omit these fields. */
+  referenceX?: number
+  referenceY?: number
   boneWidth: number
   boneHeight: number
   boneRotation: number
