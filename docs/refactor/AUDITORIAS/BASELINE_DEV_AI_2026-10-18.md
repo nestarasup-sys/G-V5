@@ -52,7 +52,7 @@ Executados em workspace **sintético local de desenvolvimento do runner** (`/mnt
 ## D. Pendências e bloqueios (não marcar concluído)
 
 - [x] Executar `npm ci`, testes, typecheck/build, audit:fast/isolation/ipc/all e scanner no checkout completo em Windows; evidências e SHA base no [relatório Windows](VALIDACAO_WINDOWS_2026-10-18.md).
-- [x] Repetir a suíte completa no commit `03d0f4d88ef7c8663972c3a938c6ac730d4964ae` em Windows — 11/11 casos passaram.
+- [x] Repetir a suíte completa no commit `a8dc31689192d634fae2c0650051e21624f451d5` em Windows — último run 11/11 passou; tentativa anterior falhou em rename `EPERM` e não se reproduziu em duas execuções seguintes.
 - [ ] Repetir validação em outra plataforma suportada.
 - [x] Capturar regressão de layout Studio normal ↔ Video Studio em janela oculta fixture por 20 ciclos; semântica de storage foi exercitada separadamente com IPC real.
 - [x] Adapter IPC/preload real para persistência concorrente, namespaces, exclusão, restart, root inválido e smoke sintético de montagem/leitura de Customizer/Fabricador; lifecycle, escrita nessas áreas e vetores da matriz ISO seguem abertos.
