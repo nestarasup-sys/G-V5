@@ -45,15 +45,15 @@ window.auditPromise=(async()=>{
   const fromCrop=await trimTransparentImage(fromRendered.dataUrl),toCrop=await trimTransparentImage(toRendered.dataUrl)
   const from={element:{...base,...faceRenderGeometry(base,fromRendered,fromCrop,1920,1080)},imageDataUrl:fromCrop?.dataUrl??fromRendered.dataUrl}
   const to={element:{...base,...faceRenderGeometry(base,toRendered,toCrop,1920,1080),poseSlot:2,faceAppearance:targetAppearance,faceTransforms:transforms,activeExpressionEffects:effects,activeExpressionPresetId:'indignada'},imageDataUrl:toCrop?.dataUrl??toRendered.dataUrl}
-  const span={elementId:'element',startFrame:178.8,boundaryFrame:180,from,to}
+  const span={elementId:'element',startFrame:165,boundaryFrame:180,from,to}
   const engine=new TransitionRenderer()
-  const middle=await engine.render(span,179.4,character)
+  const middle=await engine.render(span,172.5,character)
   const sample60fps=await engine.render(span,179,character)
   if(Math.abs(middle.element.faceTransforms['expression-component:eye-left'].sourceTransformOverride.x-39)>1e-7)throw Error('Base did not resolve supplier eye calibration')
   if(Math.abs(middle.element.activeExpressionEffects.shadow.opacity-.3)>1e-7)throw Error('Shadow does not interpolate')
   if(middle.imageDataUrl===from.imageDataUrl||middle.imageDataUrl===to.imageDataUrl)throw Error('No intermediate artwork')
   if((await engine.render(span,180,character))!==to)throw Error('Wrong exact boundary state')
-  if((await engine.render(span,178.8,character))!==from)throw Error('Wrong exact start state')
+  if((await engine.render(span,165,character))!==from)throw Error('Wrong exact start state')
   const states=[];const errors=[]
   const studio={id:'script-fixture',elements:[from.element],assets:[],videoTimeline:{schemaVersion:1,frameRate:60,durationFrames:600,characterBases:{element:from},characterKeys:[{id:'key',elementId:'element',frame:180,state:to}],characterGaps:[]}}
   const characters=[character]
@@ -64,7 +64,7 @@ window.auditPromise=(async()=>{
   root.unmount();if(errors.length)throw Error(errors.join('; '));if(!states.length)throw Error('StrictMode transition cache did not publish an animation frame')
   if(JSON.stringify({model,pose,components,mouthItem})!==sources)throw Error('Supplier documents were mutated')
   const panel=document.getElementById('artwork');for(const [label,state]of[['Base / pose 1',from],['Transição / pose interpolada',middle],['Indignada / pose 2',to]]){const card=document.createElement('article');const title=document.createElement('h2');title.textContent=label;const img=new Image();img.src=state.imageDataUrl;await img.decode();card.append(title,img);panel.append(card)}
-  return {timingMs:20,fps:60,outputSamples:[179],supplierCalibration:true,bodyAndFaceInterpolated:true,shadowInterpolated:true,strictModeCache:true,sourceUnchanged:true,intermediateBytes:sample60fps.imageDataUrl.length}
+  return {timingMs:250,fps:60,outputSamples:[179],supplierCalibration:true,bodyAndFaceInterpolated:true,shadowInterpolated:true,strictModeCache:true,sourceUnchanged:true,intermediateBytes:sample60fps.imageDataUrl.length}
 })()
 `
 

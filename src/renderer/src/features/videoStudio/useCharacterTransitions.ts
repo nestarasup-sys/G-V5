@@ -4,7 +4,7 @@ import type { StudioDocument, VideoCharacterState } from '../../../../shared/stu
 import { compileCharacterTransitions, transitionSampleFrames, type CharacterTransition } from './characterTransitions'
 import { TransitionRenderer } from './transitionRenderer'
 
-type CachedFrame = { state: VideoCharacterState; image: HTMLImageElement; bytes: number }
+type CachedFrame = { state: VideoCharacterState; bytes: number }
 
 /** Bounded, cancellable pre-render queue: playback never waits on an asset renderer. */
 class TransitionSession {
@@ -42,12 +42,15 @@ class TransitionSession {
       image.src = state.imageDataUrl
       await image.decode()
       if (this.disposed) { image.src = ''; return }
-      const bytes = image.naturalWidth * image.naturalHeight * 4 + state.imageDataUrl.length * 2
-      this.cache.set(key, { state, image, bytes }); this.bytes += bytes
-      while ((this.bytes > 128 * 1024 ** 2 || this.cache.size > 40) && this.cache.size > 1) {
+      // Keep full-resolution PNGs, not hundreds of pinned decoded bitmaps.
+      // Chromium owns the decoded frames used by the actual preview.
+      image.src = ''
+      const bytes = state.imageDataUrl.length * 2
+      this.cache.set(key, { state, bytes }); this.bytes += bytes
+      while ((this.bytes > 128 * 1024 ** 2 || this.cache.size > 240) && this.cache.size > 1) {
         const oldest = this.cache.keys().next().value!
         const entry = this.cache.get(oldest)!
-        entry.image.src = ''; this.bytes -= entry.bytes; this.cache.delete(oldest)
+        this.bytes -= entry.bytes; this.cache.delete(oldest)
       }
     }).finally(() => { this.pending.delete(key) })
     this.pending.set(key, job); this.queue = job
@@ -57,7 +60,7 @@ class TransitionSession {
   async prepareAhead(spans: CharacterTransition[], frame: number, characters: CustomizerCharacter[]) {
     const upcoming = spans.filter((span) => span.boundaryFrame > frame)
     const nextBoundary = upcoming[0]?.boundaryFrame ?? frame
-    const horizon = Math.max(frame + 120, nextBoundary)
+    const horizon = nextBoundary
     for (const span of upcoming.filter((item) => item.boundaryFrame <= horizon)) {
       if (this.disposed) return
       const character = characters.find((item) => item.id === span.from.element.characterId)
@@ -70,7 +73,6 @@ class TransitionSession {
 
   dispose() {
     this.disposed = true
-    this.cache.forEach((entry) => { entry.image.src = '' })
     this.cache.clear(); this.bytes = 0
   }
 }
@@ -85,15 +87,16 @@ export function useCharacterTransitions(studio: StudioDocument | null, character
   const activePlan = useRef({ spans, characters })
   activePlan.current = { spans, characters }
   const bucket = Math.floor(frame / 60)
+  const nextBoundary = spans.find((span) => span.boundaryFrame > frame)?.boundaryFrame
   useEffect(() => { session.activate(); return () => session.dispose() }, [session])
   useEffect(() => {
     if (!studio) return
     let cancelled = false
-    void session.prepareAhead(spans, bucket * 60, characters).then(() => { if (!cancelled) setRevision((value) => value + 1) }).catch((reason: unknown) => {
+    void session.prepareAhead(spans, frame, characters).then(() => { if (!cancelled) setRevision((value) => value + 1) }).catch((reason: unknown) => {
       if (!cancelled) onError(reason instanceof Error ? reason.message : 'Não foi possível preparar uma animação de personagem.')
     })
     return () => { cancelled = true }
-  }, [session, spans, bucket, characters, onError])
+  }, [session, spans, bucket, nextBoundary, characters, onError])
 
   const samplesByFrame = useMemo(() => {
     const result = new Map<number, CharacterTransition[]>()

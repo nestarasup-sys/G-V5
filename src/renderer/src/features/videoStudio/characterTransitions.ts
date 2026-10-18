@@ -3,7 +3,7 @@ import type { FaceExpressionEffect, FaceExpressionEffects, FaceTransform, JointL
 import type { StudioDocument, StudioElement, StudioFaceTransforms, VideoCharacterState } from '../../../../shared/studio'
 import { equalHistoryValue } from './editHistory'
 
-export const CHARACTER_TRANSITION_MS = 20
+export const CHARACTER_TRANSITION_MS = 250
 export const VIDEO_FRAME_RATE = 60
 export type CharacterTransition = { elementId: string; boundaryFrame: number; startFrame: number; from: VideoCharacterState; to: VideoCharacterState }
 export type PoseArtwork = { width: number; height: number; parts: ModelPart[]; joints?: JointLink[]; layerOrder?: string[]; hiddenPartIds?: string[] }
@@ -12,7 +12,7 @@ export const mix = (a: number, b: number, t: number) => a + (b - a) * t
 export const mixAngle = (a: number, b: number, t: number) => a + (((b - a) % 360 + 540) % 360 - 180) * t
 export const smoothProgress = (value: number) => { const t = clamp(value); return t * t * (3 - 2 * t) }
 
-/** Work in fractional frames: 20 ms is exactly 1.2 frames at 60 FPS. */
+/** Work in fractional frames: 250 ms is exactly 15 frames at 60 FPS. */
 export function transitionProgress(transition: CharacterTransition, frame: number): number {
   return clamp((frame - transition.startFrame) / (transition.boundaryFrame - transition.startFrame))
 }

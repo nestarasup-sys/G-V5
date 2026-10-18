@@ -24,13 +24,13 @@ for (const count of [1, 2, 10]) {
   const transitions = compileCharacterTransitions(studio)
   assert.equal(transitions.length, count * 2)
   for (const span of transitions) {
-    assert.ok(Math.abs((span.boundaryFrame - span.startFrame) / 60 * 1000 - 20) < 1e-8, 'Do not round 20 ms to 2 frames')
+    assert.ok(Math.abs((span.boundaryFrame - span.startFrame) / 60 * 1000 - 250) < 1e-8, 'A quarter second must span exactly 15 frames')
     assert.equal(transitionProgress(span, span.startFrame - .001), 0)
     assert.equal(transitionProgress(span, span.startFrame), 0)
     assert.ok(Math.abs(transitionProgress(span, (span.startFrame + span.boundaryFrame) / 2) - .5) < 1e-9)
     assert.equal(transitionProgress(span, span.boundaryFrame), 1)
     assert.equal(transitionProgress(span, span.boundaryFrame + .001), 1)
-    assert.deepEqual(transitionSampleFrames(span), [span.boundaryFrame - 1])
+    assert.deepEqual(transitionSampleFrames(span), Array.from({ length: 14 }, (_, index) => span.boundaryFrame - 14 + index))
   }
   studio.videoTimeline.characterGaps = [{ elementId: 'actor-0', startFrame: 120, endFrame: 180 }]
   assert.equal(compileCharacterTransitions(studio).length, count * 2 - 1, 'No animation across an excluded span')
@@ -57,4 +57,4 @@ assert.deepEqual(pose.joints[0].parentAnchor, pose.joints[0].childAnchor, 'Conne
 assert.equal(JSON.stringify({ a, b }), frozen)
 assert.equal(mixPoseArtwork(a, b, 0), a); assert.equal(mixPoseArtwork(a, b, 1), b)
 assert.equal(mixStageElement({ ...base.element, characterScale: 50 }, { ...base.element, x: 20, characterScale: 150 }, .5).characterScale, 100)
-console.log('Character transition audit passed: exact 20 ms, 1/2/10 actors, endpoints, gaps, base/preset, pose, effects, joint constraints and immutable sources.')
+console.log('Character transition audit passed: exact 250 ms, 1/2/10 actors, endpoints, gaps, base/preset, pose, effects, joint constraints and immutable sources.')

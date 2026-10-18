@@ -163,11 +163,10 @@ a reprodução; os elementos da composição não são editáveis nesse modo.
 ## Transições próprias entre estados de personagens
 
 O Video Studio calcula automaticamente as transições de pose e expressão nos
-últimos **20 ms** anteriores a cada divisão de personagem. O intervalo termina
-exatamente no início do estado seguinte. A 60 FPS são 1,2 quadros: o cálculo não
-arredonda a duração para dois quadros. Há um quadro intermediário no grid de
-saída atual; por isso o movimento é intencionalmente muito rápido. Intervalos
-menores limitam a transição ao próprio trecho. Gaps e estados idênticos não
+últimos **250 ms (um quarto de segundo)** anteriores a cada divisão de personagem.
+O intervalo termina exatamente no início do estado seguinte. A 60 FPS são 15
+quadros de duração, com 14 quadros intermediários antes de chegar ao estado final
+na divisão. Intervalos menores limitam a transição ao próprio trecho. Gaps e estados idênticos não
 produzem animações.
 
 - `characterTransitions.ts`: compilação dos limites, avaliação em tempo e
@@ -181,8 +180,9 @@ produzem animações.
   entrada opcional de artwork; as chamadas normais de Customizer/Studio seguem
   o mesmo caminho anterior. A geometria usa o enquadramento fixo 1920x1080.
 - `useCharacterTransitions.ts`: fila assíncrona serial, preparação do próximo
-  limite e de dois segundos à frente, decode antecipado e cache LRU de até 40
-  imagens / 128 MiB estimados (permitindo uma imagem isolada maior). Mudanças de
+  limite, decode antecipado e cache LRU de até 240 imagens PNG / 128 MiB de dados
+  codificados (permitindo uma imagem isolada maior). Os bitmaps decodificados
+  não ficam presos no cache; a resolução original é preservada. Mudanças de
   estado ou revisão do personagem mudam a chave. Sair do roteiro libera o cache.
 
 Play prepara a janela inicial antes de iniciar o relógio e oferece cancelamento
