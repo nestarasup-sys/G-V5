@@ -1,0 +1,28 @@
+.studio-video-shell{display:flex;flex:1;min-height:0;min-width:0;flex-direction:column;background:#f5f3f4;overflow:hidden}
+.studio-video-shell>.studio-editor{flex:1 1 0;min-height:180px;width:100%;min-width:0}
+.studio-video-shell>.studio-editor.full-view{position:fixed}
+.studio-video-timeline{flex:0 0 clamp(175px,25vh,300px);min-height:0;margin:0 10px 10px;border:1px solid #e8dce5;border-radius:10px;background:#fff;overflow:hidden;display:flex;flex-direction:column;color:#65576a;font:11px Manrope,sans-serif}
+.studio-video-timeline button{cursor:pointer;font:inherit}
+.studio-video-timeline-controls{display:flex;align-items:center;flex-wrap:wrap;gap:5px;min-height:43px;padding:6px 9px;border-bottom:1px solid #e8dce5}
+.studio-video-timeline-controls strong{font-weight:850;letter-spacing:.04em;margin-right:6px}
+.studio-video-timeline-controls button{border:1px solid #e9dce6;border-radius:6px;background:#fff6fa;color:#85546e;padding:5px 8px}
+.studio-video-timeline-controls button:hover{border-color:#d57da6;background:#fff0f7}
+.studio-video-timecode{font:11px/1.25 monospace;font-variant-numeric:tabular-nums;color:#5e4b60;white-space:nowrap}
+.studio-video-timeline-controls .studio-video-save-frame{border-color:#cc5e8d;background:#d56998;color:white;font-weight:800}
+.studio-video-pending{font-size:10px;color:#a56d3c;white-space:nowrap}
+.studio-video-spacer{flex:1}
+.studio-video-timeline-columns{min-height:0;min-width:0;flex:1;display:grid;grid-template-columns:160px minmax(0,1fr)}
+.studio-video-track-names{min-width:0;overflow:hidden;background:#f8f0f5;border-right:1px solid #e6d6e1}
+.studio-video-track-ruler-label{height:32px;padding:10px 8px;font-size:9px;font-weight:800;color:#8d6c80;border-bottom:1px solid #eadfea}
+.studio-video-track-name{height:35px;padding:10px 8px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-size:10px;border-bottom:1px solid #eadfea}
+.studio-video-timeline-scroll{min-width:0;min-height:0;overflow:auto}
+.studio-video-timeline-sheet{position:relative;min-height:100%}
+.studio-video-ruler{height:32px;position:sticky;top:0;z-index:7;background:#fff9fc;border-bottom:1px solid #eadfea;cursor:crosshair}
+.studio-video-ruler-tick{position:absolute;top:0;padding:9px 4px 0;border-left:1px solid #d8bbcd;font:10px monospace;color:#7e6878;white-space:nowrap;pointer-events:none}
+.studio-video-track{position:relative;height:35px;border-bottom:1px solid #eadfea;background:repeating-linear-gradient(to right,#fff 0,#fff 99px,#fcf7fa 100px)}
+.studio-video-scene-marker,.studio-video-track-beat{position:absolute;top:7px;padding:2px 3px;border:0;background:transparent;color:#bd4c8a;font-size:15px;transform:translateX(-50%);cursor:pointer}
+.studio-video-track-beat{color:#9873be}
+.studio-video-text-clip{position:absolute;top:5px;height:24px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:left;padding:4px;border:1px solid #e1a8ba;border-radius:4px;background:#ffe6ee;color:#945574;font-size:10px}
+.studio-video-playhead{position:absolute;top:0;bottom:0;z-index:8;width:1px;background:#e04583;pointer-events:none}
+.studio-video-playhead::before{content:'';position:absolute;top:0;left:-4px;border-top:8px solid #e04583;border-left:4px solid transparent;border-right:4px solid transparent}
+@media(max-width:920px){.studio-video-timeline-controls{padding:5px}.studio-video-timeline-columns{grid-template-columns:120px minmax(0,1fr)}.studio-video-track-names{font-size:9px}.studio-video-shell>.studio-editor{min-height:200px}}
