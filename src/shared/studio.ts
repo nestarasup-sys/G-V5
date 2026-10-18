@@ -158,9 +158,22 @@ export type VideoTimelineDocument = {
   characterBases?: Record<string, VideoCharacterState>
   /** Empty intervals created by deleting a character segment, preserving adjacent states. */
   characterGaps?: Array<{ id: string; elementId: string; startFrame: number; endFrame: number }>
+  /** Imported media files live in this Studio project's dedicated videos folder. */
+  videoAssets?: VideoStudioAsset[]
+  /** Video clips use source duration in frames and are placed on the top timeline lane. */
+  videoClips?: Array<{ id: string; assetId: string; startFrame: number; endFrame: number; sourceStartFrame: number; sourceEndFrame: number }>
   characterKeys: Array<{ id: string; elementId: string; frame: number; poseSlot: number | null; expressionCollectionId: string | null; expressionPresetId: string | null; faceMode: StudioFaceMode; state?: VideoCharacterState }>
   textClips: Array<{ id: string; elementId: string; kind: 'speech' | 'thought'; startFrame: number; endFrame: number; state?: StudioElement }>
   saveMarkers: Array<{ id: string; frame: number; affectedTrackIds: string[] }>
+}
+
+export type VideoStudioAsset = {
+  id: string
+  name: string
+  mimeType: 'video/mp4' | 'video/webm' | 'video/quicktime' | 'video/x-m4v'
+  extension: 'mp4' | 'webm' | 'mov' | 'm4v'
+  size: number
+  durationFrames: number
 }
 
 /** A segment owns both its editable Studio properties and its composed artwork. */
@@ -183,6 +196,7 @@ export type VideoStudioDesktopApi = {
   deleteVideoStudio: (id: string) => Promise<void>
   getVideoStudioFolder: () => Promise<string>
   importVideoStudioImage: (category: StudioAsset['category']) => Promise<StudioAsset | null>
+  importVideoStudioVideo: (studioId: string) => Promise<Omit<VideoStudioAsset, 'durationFrames'> | null>
   saveVideoStudioPrint: (studioId: string, dataUrl: string) => Promise<string | null>
   openVideoStudioPrints: (studioId: string) => Promise<void>
 }

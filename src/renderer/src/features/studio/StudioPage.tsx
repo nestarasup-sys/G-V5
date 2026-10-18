@@ -3,7 +3,7 @@ import { buildStudioExpressionAppearance, buildStudioExpressionTransforms, resol
 import { Icon } from '../../ui/components/Icon'
 import { CharacterPortrait } from '../../ui/components/CharacterPortrait'
 import { resolveStudioTalkMouthId, videoCharacterTrackColor } from '../../../../shared/studio'
-import type { StudioAsset, StudioDocument, StudioElement, StudioFaceMode, StudioFaceTransform, StudioFaceTransforms, VideoTimelineDocument } from '../../../../shared/studio'
+import type { StudioAsset, StudioDocument, StudioElement, StudioFaceMode, StudioFaceTransform, StudioFaceTransforms, VideoStudioAsset, VideoTimelineDocument } from '../../../../shared/studio'
 import { VideoTimeline, videoTimelineFor } from '../videoStudio/VideoTimeline'
 import { captureVideoCharacter, characterStateAt, restoreVideoTracks, videoCharacterStateEquals } from '../videoStudio/characterTrack'
 import type { CustomizerCharacter } from '../../../../shared/customizer'
@@ -231,6 +231,26 @@ function makeCanvasPrint(studio: StudioDocument): Promise<string> {
   })
 }
 
+function VideoStudioClipPreview({ studioId, clip, playheadFrame, playing }: {
+  studioId: string
+  clip: NonNullable<VideoTimelineDocument['videoClips']>[number]
+  playheadFrame: number
+  playing: boolean
+}) {
+  const mediaRef = useRef<HTMLVideoElement>(null)
+  const sourceUrl = `gacha-video://studio/${studioId}/${clip.assetId}`
+  const synchronize = () => {
+    const media = mediaRef.current
+    if (!media || !Number.isFinite(media.duration)) return
+    const target = Math.max(0, (clip.sourceStartFrame + playheadFrame - clip.startFrame) / 60)
+    if (Math.abs(media.currentTime - target) > (playing ? 0.35 : 0.02)) media.currentTime = Math.min(target, Math.max(0, media.duration - 0.001))
+    if (playing) void media.play().catch(() => undefined)
+    else media.pause()
+  }
+  useEffect(synchronize, [clip.id, clip.sourceStartFrame, clip.startFrame, playheadFrame, playing])
+  return <video ref={mediaRef} className="studio-video-clip-preview" src={sourceUrl} muted playsInline preload="auto" onLoadedMetadata={synchronize} aria-hidden="true" />
+}
+
 type StudioWorkspace = 'studio' | 'video'
 type StudioWorkspacePersistence = {
   list: () => Promise<StudioDocument[]>
@@ -238,6 +258,7 @@ type StudioWorkspacePersistence = {
   delete: (id: string) => Promise<void>
   getFolder: () => Promise<string>
   importImage: (category: StudioAsset['category']) => Promise<StudioAsset | null>
+  importVideo?: (studioId: string) => Promise<Omit<VideoStudioAsset, 'durationFrames'> | null>
   savePrint: (id: string, dataUrl: string) => Promise<string | null>
   openPrints: (id: string) => Promise<void>
 }
@@ -251,6 +272,7 @@ function studioWorkspacePersistence(workspace: StudioWorkspace): StudioWorkspace
         delete: desktop.deleteVideoStudio,
         getFolder: desktop.getVideoStudioFolder,
         importImage: desktop.importVideoStudioImage,
+        importVideo: desktop.importVideoStudioVideo,
         savePrint: desktop.saveVideoStudioPrint,
         openPrints: desktop.openVideoStudioPrints
       }
@@ -1047,6 +1069,53 @@ export function StudioPage({ workspace = 'studio', onEditorActiveChange }: { wor
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível importar a imagem.') }
   }
 
+  const addVideoClip = async () => {
+    const studioAtImport = activeStudio
+    if (!isVideoWorkspace || !studioAtImport || !persistence.importVideo) return
+    let metadataVideo: HTMLVideoElement | null = null
+    try {
+      const imported = await persistence.importVideo(studioAtImport.id)
+      if (!imported) return
+      metadataVideo = document.createElement('video')
+      metadataVideo.preload = 'metadata'
+      metadataVideo.src = `gacha-video://studio/${studioAtImport.id}/${imported.id}`
+      await new Promise<void>((resolve, reject) => {
+        metadataVideo!.onloadedmetadata = () => resolve()
+        metadataVideo!.onerror = () => reject(new Error('Não foi possível ler a duração deste vídeo.'))
+        metadataVideo!.load()
+      })
+      if (!Number.isFinite(metadataVideo.duration) || metadataVideo.duration <= 0) throw new Error('A duração do vídeo não pôde ser lida.')
+      const durationFrames = Math.max(1, Math.min(60 * 60 * 60 * 24, Math.ceil(metadataVideo.duration * 60)))
+      const asset: VideoStudioAsset = { ...imported, durationFrames }
+      if (activeStudioId !== studioAtImport.id) return
+      const videoClipId = crypto.randomUUID()
+      changeScene((studio) => {
+        const timeline = videoTimelineFor(studio)
+        const startFrame = Math.min(videoPlayheadFrame, Math.max(0, 60 * 60 * 60 * 24 - durationFrames))
+        const endFrame = startFrame + durationFrames
+        return {
+          ...studio,
+          videoTimeline: {
+            ...timeline,
+            durationFrames: Math.max(timeline.durationFrames, endFrame),
+            videoAssets: [...(timeline.videoAssets ?? []), asset],
+            videoClips: [...(timeline.videoClips ?? []), { id: videoClipId, assetId: asset.id, startFrame, endFrame, sourceStartFrame: 0, sourceEndFrame: durationFrames }]
+          },
+          updatedAt: new Date().toISOString()
+        }
+      })
+      setError(null)
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Não foi possível adicionar este vídeo.')
+    } finally {
+      if (metadataVideo) {
+        metadataVideo.pause()
+        metadataVideo.removeAttribute('src')
+        metadataVideo.load()
+      }
+    }
+  }
+
   const selectBackground = (asset: StudioAsset) => {
     changeScene((studio) => ({ ...studio, backgroundAssetId: asset.id, backgroundX: 0, backgroundY: 0, backgroundWidth: 100, backgroundHeight: 100, backgroundRotation: 0, updatedAt: new Date().toISOString() }))
     setSelectedElementId('background')
@@ -1204,6 +1273,36 @@ export function StudioPage({ workspace = 'studio', onEditorActiveChange }: { wor
       return { ...studio, videoTimeline: { ...current, textClips: [...remaining, left, right] }, updatedAt: new Date().toISOString() }
     })
     setVideoPlayheadFrame(frame)
+  }
+
+  const splitVideoMediaClip = (clipId: string, frame: number, rightClipId: string) => {
+    if (!activeStudio) return
+    changeScene((studio) => {
+      const timeline = videoTimelineFor(studio)
+      const clip = timeline.videoClips?.find((item) => item.id === clipId)
+      if (!clip || frame <= clip.startFrame || frame >= clip.endFrame) return studio
+      const sourceBoundary = clip.sourceStartFrame + (frame - clip.startFrame)
+      return {
+        ...studio,
+        videoTimeline: {
+          ...timeline,
+          videoClips: (timeline.videoClips ?? []).flatMap((item) => item.id !== clipId ? [item] : [
+            { ...item, endFrame: frame, sourceEndFrame: sourceBoundary },
+            { ...item, id: rightClipId, startFrame: frame, sourceStartFrame: sourceBoundary }
+          ])
+        },
+        updatedAt: new Date().toISOString()
+      }
+    })
+    setVideoPlayheadFrame(frame)
+  }
+
+  const deleteVideoMediaClip = (clipId: string) => {
+    changeScene((studio) => {
+      const timeline = videoTimelineFor(studio)
+      if (!(timeline.videoClips ?? []).some((clip) => clip.id === clipId)) return studio
+      return { ...studio, videoTimeline: { ...timeline, videoClips: timeline.videoClips!.filter((clip) => clip.id !== clipId) }, updatedAt: new Date().toISOString() }
+    })
   }
 
   const updateVideoTextClip = (clip: VideoTimelineDocument['textClips'][number]) => {
@@ -1952,11 +2051,16 @@ export function StudioPage({ workspace = 'studio', onEditorActiveChange }: { wor
                 {(element.kind === 'image' || element.kind === 'character') && imageDataUrl ? <img src={imageDataUrl} alt={asset?.name ?? element.text} draggable={false} /> : <span>{element.text}</span>}
               </div>
             })}
+            {isVideoWorkspace && (() => {
+              const timeline = videoTimelineFor(activeStudio)
+              const clip = timeline.videoClips?.find((item) => item.startFrame <= videoPlayheadFrame && videoPlayheadFrame < item.endFrame)
+              return clip ? <VideoStudioClipPreview studioId={activeStudio.id} clip={clip} playheadFrame={videoPlayheadFrame} playing={videoPlaying} /> : null
+            })()}
             {fullView && <button className="studio-exit-view" onClick={() => setFullView(false)} type="button">Sair da visualização <kbd>Esc</kbd></button>}
             {!fullView && <span className="studio-scene-title">{activeStudio.title}</span>}
           </div>
         </section>
-        {!fullView && isVideoWorkspace && <VideoTimeline studio={activeStudio} playheadFrame={videoPlayheadFrame} playing={videoPlaying} height={videoTimelineHeight} presetNames={Object.fromEntries(studioExpressionPresets.map((preset) => [preset.id, preset.name]))} onResize={setVideoTimelineHeight} onSelectElement={(elementId) => { setVideoPlaying(false); setSelectedElementId(elementId); setInspectorOpen(true) }} onSeek={seekVideoFrame} onTogglePlayback={() => { if (videoPlaying) seekVideoFrame(videoPlayheadFrame); else setVideoPlaying(true) }} onSaveFrame={saveVideoFrame} onSplitCharacter={splitVideoCharacterTrack} onSplitTextClip={splitVideoTextClip} onUpdateTextClip={updateVideoTextClip} onDeleteTextClip={deleteVideoTextClip} onDeleteTextElement={deleteVideoTextElement} onDeleteCharacterSegment={deleteVideoCharacterSegment} onDuplicateTextClip={duplicateVideoTextClip} onMoveCharacterBoundary={moveVideoCharacterBoundary} onAddText={(kind) => addTextElement(kind)} onChangeTrackSettings={(id, settings) => changeScene((studio) => ({ ...studio, videoTimeline: { ...videoTimelineFor(studio), trackSettings: { ...videoTimelineFor(studio).trackSettings, [id]: settings } }, updatedAt: new Date().toISOString() }))} onMoveCharacterTrack={moveVideoCharacterTrack} onSetCharacterPositionsLocked={(locked) => changeScene((studio) => ({ ...studio, elements: studio.elements.map((element) => element.kind === 'character' ? { ...element, positionLocked: locked } : element), updatedAt: new Date().toISOString() }))} onChangeDuration={(durationFrames) => changeScene((studio) => ({ ...studio, videoTimeline: { ...videoTimelineFor(studio), durationFrames, playheadFrame: Math.min(videoPlayheadFrame, durationFrames) }, updatedAt: new Date().toISOString() }))} />}
+        {!fullView && isVideoWorkspace && <VideoTimeline studio={activeStudio} playheadFrame={videoPlayheadFrame} playing={videoPlaying} height={videoTimelineHeight} presetNames={Object.fromEntries(studioExpressionPresets.map((preset) => [preset.id, preset.name]))} onResize={setVideoTimelineHeight} onSelectElement={(elementId) => { setVideoPlaying(false); setSelectedElementId(elementId); setInspectorOpen(true) }} onSeek={seekVideoFrame} onTogglePlayback={() => { if (videoPlaying) seekVideoFrame(videoPlayheadFrame); else setVideoPlaying(true) }} onSaveFrame={saveVideoFrame} onSplitCharacter={splitVideoCharacterTrack} onSplitTextClip={splitVideoTextClip} onSplitVideoClip={splitVideoMediaClip} onUpdateTextClip={updateVideoTextClip} onDeleteTextClip={deleteVideoTextClip} onDeleteVideoClip={deleteVideoMediaClip} onDeleteTextElement={deleteVideoTextElement} onDeleteCharacterSegment={deleteVideoCharacterSegment} onDuplicateTextClip={duplicateVideoTextClip} onMoveCharacterBoundary={moveVideoCharacterBoundary} onAddText={(kind) => addTextElement(kind)} onAddVideo={() => void addVideoClip()} onChangeTrackSettings={(id, settings) => changeScene((studio) => ({ ...studio, videoTimeline: { ...videoTimelineFor(studio), trackSettings: { ...videoTimelineFor(studio).trackSettings, [id]: settings } }, updatedAt: new Date().toISOString() }))} onMoveCharacterTrack={moveVideoCharacterTrack} onSetCharacterPositionsLocked={(locked) => changeScene((studio) => ({ ...studio, elements: studio.elements.map((element) => element.kind === 'character' ? { ...element, positionLocked: locked } : element), updatedAt: new Date().toISOString() }))} onChangeDuration={(durationFrames) => changeScene((studio) => ({ ...studio, videoTimeline: { ...videoTimelineFor(studio), durationFrames, playheadFrame: Math.min(videoPlayheadFrame, durationFrames) }, updatedAt: new Date().toISOString() }))} />}
         {castPickerOpen && <div className="studio-cast-modal-backdrop" onPointerDown={(event) => { if (event.target === event.currentTarget && !savingCast) setCastPickerOpen(false) }}>
           <section className="studio-cast-modal" role="dialog" aria-modal="true" aria-labelledby="studio-cast-modal-title">
             <header><span><small>EDITAR ELENCO</small><h2 id="studio-cast-modal-title">Personagens do {workspaceTitle}</h2></span><button className="studio-cast-modal-close" onClick={() => setCastPickerOpen(false)} aria-label="Fechar" disabled={savingCast} type="button">×</button></header>

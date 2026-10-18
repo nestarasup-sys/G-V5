@@ -1,7 +1,9 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, shell, type IpcMainInvokeEvent } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, Menu, protocol, shell, type IpcMainInvokeEvent } from 'electron'
+import { createReadStream } from 'node:fs'
 import { mkdir, readFile, writeFile, readdir, unlink, rename, stat, access, rm, copyFile } from 'node:fs/promises'
 import { basename, dirname, extname, join, resolve } from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
+import { Readable } from 'node:stream'
 import { fileURLToPath } from 'node:url'
 import type { AnimatorAnimation, AnimatorAnimationAsset, AnimatorAnimationDraft, AnimatorAnimationSave, AnimatorAnimationSummary, FaceAssetKind, FaceAssetSave, FaceCatalogItem, FaceCatalogItemSave, FaceCatalogItemSummary, FaceComponentAsset, FaceComponentAssetSave, FaceComponentAssetSummary, FaceElementKind, FaceExpressionCollection, FaceExpressionPreset, FaceExpressionPresetSummary, FaceExpressionTransforms, FaceExpressionWorkspaceDraft, FaceSet, FaceSetSave, FaceSetSummary, FaceSheetKind, FaceTransform, FabricatorAssetSave, FabricatorHistoryEntry, FabricatorHistorySaveEntry, FabricatorHistorySaveState, FabricatorHistoryState, FabricatorPose, FabricatorPoseDraft, FabricatorPoseDraftSave, FabricatorPoseSave, FabricatorPoseSummary, FabricatorProject, FabricatorProjectSave, FabricatorSlotSummary, HairStyle, HairStyleAsset, HairStyleSave, HairStyleSummary, HairWorkspace, HairWorkspaceAsset, HairWorkspaceSave, ModelPart, PosePart, WardrobeAssetSave, WardrobeCategory, WardrobeSet, WardrobeSetSave, WardrobeSetSummary } from '../src/shared/fabricator'
 import { resolvePoseCategory } from '../src/shared/fabricator'
@@ -12,6 +14,8 @@ import type { StudioAsset, StudioDocument, VideoTimelineDocument } from '../src/
 import { applyModelHeadShape } from '../src/shared/headShape'
 import { isStudioExpressionEffects, isStudioFaceTransforms } from '../src/shared/studio'
 import { legacyStandardExpressionEffects } from '../src/shared/legacyExpressionEffects'
+
+protocol.registerSchemesAsPrivileged([{ scheme: 'gacha-video', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true } }])
 
 const slotCount = 10
 const poseSlotCount = 12
@@ -944,7 +948,7 @@ function isVideoTimelineDocument(value: unknown, elements: StudioDocument['eleme
     && typeof state.imageDataUrl === 'string' && state.imageDataUrl.startsWith('data:image/png;base64,') && state.imageDataUrl.length <= 70_000_000)
   return timeline.schemaVersion === 1 && timeline.frameRate === 60
     && typeof timeline.playing === 'boolean'
-    && (timeline.trackSettings === undefined || Object.keys(timeline.trackSettings).length <= 1002 && Object.entries(timeline.trackSettings).every(([id, settings]) => (characterIds.has(id) || id === 'speech' || id === 'thought') && settings && (settings.visible === undefined || typeof settings.visible === 'boolean') && (settings.locked === undefined || typeof settings.locked === 'boolean') && (settings.collapsed === undefined || typeof settings.collapsed === 'boolean') && (settings.order === undefined || Number.isInteger(settings.order) && settings.order >= 0 && settings.order <= 1002) && (settings.label === undefined || typeof settings.label === 'string' && settings.label.length <= 80)))
+    && (timeline.trackSettings === undefined || Object.keys(timeline.trackSettings).length <= 1002 && Object.entries(timeline.trackSettings).every(([id, settings]) => (characterIds.has(id) || id === 'speech' || id === 'thought' || id === 'video') && settings && (settings.visible === undefined || typeof settings.visible === 'boolean') && (settings.locked === undefined || typeof settings.locked === 'boolean') && (settings.collapsed === undefined || typeof settings.collapsed === 'boolean') && (settings.order === undefined || Number.isInteger(settings.order) && settings.order >= 0 && settings.order <= 1002) && (settings.label === undefined || typeof settings.label === 'string' && settings.label.length <= 80)))
     && Number.isInteger(timeline.durationFrames) && timeline.durationFrames! >= 60 && timeline.durationFrames! <= 60 * 60 * 60 * 24
     && Number.isInteger(timeline.playheadFrame) && timeline.playheadFrame! >= 0 && timeline.playheadFrame! <= timeline.durationFrames!
     && Array.isArray(timeline.characterKeys) && timeline.characterKeys.length <= 100_000
@@ -952,6 +956,8 @@ function isVideoTimelineDocument(value: unknown, elements: StudioDocument['eleme
     && timeline.characterKeys.every((key) => Boolean(key && typeof key.id === 'string' && characterIds.has(key.elementId) && Number.isInteger(key.frame) && key.frame >= 0 && key.frame <= timeline.durationFrames! && (key.poseSlot === null || Number.isInteger(key.poseSlot)) && (key.expressionCollectionId === null || typeof key.expressionCollectionId === 'string') && (key.expressionPresetId === null || typeof key.expressionPresetId === 'string') && ['idle', 'blink', 'talk'].includes(key.faceMode) && (key.state === undefined || validState(key.state, key.elementId))))
     && Array.isArray(timeline.textClips) && timeline.textClips.length <= 100_000
     && timeline.textClips.every((clip) => Boolean(clip && typeof clip.id === 'string' && textIds.has(clip.elementId) && (clip.kind === 'speech' || clip.kind === 'thought') && Number.isInteger(clip.startFrame) && Number.isInteger(clip.endFrame) && clip.startFrame >= 0 && clip.endFrame > clip.startFrame && clip.endFrame <= timeline.durationFrames! && (clip.state === undefined || clip.state.id === clip.elementId && clip.state.kind === clip.kind && typeof clip.state.text === 'string' && [clip.state.x, clip.state.y, clip.state.width, clip.state.height, clip.state.rotation, clip.state.zIndex].every(Number.isFinite))))
+    && (timeline.videoAssets === undefined || Array.isArray(timeline.videoAssets) && timeline.videoAssets.length <= 1000 && timeline.videoAssets.every((asset) => Boolean(asset && typeof asset.id === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(asset.id) && typeof asset.name === 'string' && asset.name.length <= 255 && (asset.extension === 'mp4' && asset.mimeType === 'video/mp4' || asset.extension === 'webm' && asset.mimeType === 'video/webm' || asset.extension === 'mov' && asset.mimeType === 'video/quicktime' || asset.extension === 'm4v' && asset.mimeType === 'video/x-m4v') && Number.isInteger(asset.size) && asset.size > 0 && asset.size <= 5 * 1024 * 1024 * 1024 && Number.isInteger(asset.durationFrames) && asset.durationFrames > 0 && asset.durationFrames <= 60 * 60 * 60 * 24)))
+    && (timeline.videoClips === undefined || Array.isArray(timeline.videoClips) && timeline.videoClips.length <= 100_000 && timeline.videoClips.every((clip) => Boolean(clip && typeof clip.id === 'string' && (timeline.videoAssets ?? []).some((asset) => asset.id === clip.assetId) && Number.isInteger(clip.startFrame) && Number.isInteger(clip.endFrame) && clip.startFrame >= 0 && clip.endFrame > clip.startFrame && clip.endFrame <= timeline.durationFrames! && Number.isInteger(clip.sourceStartFrame) && Number.isInteger(clip.sourceEndFrame) && clip.sourceStartFrame >= 0 && clip.sourceEndFrame > clip.sourceStartFrame && clip.sourceEndFrame <= (timeline.videoAssets ?? []).find((asset) => asset.id === clip.assetId)!.durationFrames && clip.endFrame - clip.startFrame === clip.sourceEndFrame - clip.sourceStartFrame)))
     && Array.isArray(timeline.saveMarkers) && timeline.saveMarkers.length <= 100_000
     && timeline.saveMarkers.every((marker) => Boolean(marker && typeof marker.id === 'string' && Number.isInteger(marker.frame) && marker.frame >= 0 && marker.frame <= timeline.durationFrames! && Array.isArray(marker.affectedTrackIds) && marker.affectedTrackIds.every((id) => typeof id === 'string')))
 }
@@ -1495,6 +1501,30 @@ async function registerFabricatorHandlers(): Promise<void> {
       return { id: randomUUID(), category, name: basename(path), mimeType, dataUrl: `data:${mimeType};base64,${bytes.toString('base64')}` }
     })
 
+    if (workspace === 'video') {
+      ipcMain.handle('video-studio:import-video', async (event, id: string) => {
+        assertTrustedSender(event)
+        if (typeof id !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)) throw new Error('Identificador de Video Studio inválido.')
+        const result = await dialog.showOpenDialog({
+          title: 'Video Studio: adicionar vídeo',
+          properties: ['openFile'],
+          filters: [{ name: 'Vídeos', extensions: ['mp4', 'webm', 'mov', 'm4v'] }]
+        })
+        if (result.canceled || !result.filePaths[0]) return null
+        const sourcePath = result.filePaths[0]
+        const extension = extname(sourcePath).slice(1).toLowerCase()
+        const mimeType = ({ mp4: 'video/mp4', webm: 'video/webm', mov: 'video/quicktime', m4v: 'video/x-m4v' } as const)[extension as 'mp4' | 'webm' | 'mov' | 'm4v']
+        if (!mimeType) throw new Error('Formato não compatível. Use MP4, WebM, MOV ou M4V.')
+        const fileStat = await stat(sourcePath)
+        if (!fileStat.isFile() || fileStat.size <= 0 || fileStat.size > 5 * 1024 * 1024 * 1024) throw new Error('O vídeo deve ter até 5 GB.')
+        const assetId = randomUUID()
+        const videoFolder = join(studioPath(id, 'video'), 'videos')
+        await mkdir(videoFolder, { recursive: true })
+        await copyFile(sourcePath, join(videoFolder, `${assetId}.${extension}`))
+        return { id: assetId, name: basename(sourcePath), mimeType, extension, size: fileStat.size }
+      })
+
+    }
     ipcMain.handle(`${channel}:save-print`, async (event, id: string, dataUrl: string): Promise<string | null> => {
       assertTrustedSender(event)
       if (typeof id !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)) throw new Error('Identificador de Studio inválido.')
@@ -2158,7 +2188,50 @@ function createMainWindow(): void {
   }
 }
 
+function registerVideoAssetProtocol(): void {
+  protocol.handle('gacha-video', async (request) => {
+    try {
+      const url = new URL(request.url)
+      const [studioId, assetId, extra] = url.pathname.split('/').filter(Boolean)
+      const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+      if (url.hostname !== 'studio' || extra !== undefined || !uuid.test(studioId ?? '') || !uuid.test(assetId ?? '')) return new Response('Not found', { status: 404 })
+      const folder = join(studioPath(studioId, 'video'), 'videos')
+      const candidates = ['mp4', 'webm', 'mov', 'm4v'] as const
+      let path: string | undefined
+      let extension: typeof candidates[number] | undefined
+      for (const candidate of candidates) {
+        const candidatePath = join(folder, `${assetId}.${candidate}`)
+        try { await access(candidatePath); path = candidatePath; extension = candidate; break } catch { /* try next extension */ }
+      }
+      if (!path || !extension) return new Response('Not found', { status: 404 })
+      const file = await stat(path)
+      const mimeType = ({ mp4: 'video/mp4', webm: 'video/webm', mov: 'video/quicktime', m4v: 'video/x-m4v' } as const)[extension]
+      const range = request.headers.get('range')
+      const headers = new Headers({ 'accept-ranges': 'bytes', 'content-type': mimeType, 'cache-control': 'no-store' })
+      if (request.method === 'HEAD') {
+        headers.set('content-length', String(file.size))
+        return new Response(null, { status: 200, headers })
+      }
+      if (range) {
+        const match = /^bytes=(\d*)-(\d*)$/.exec(range)
+        if (!match || (!match[1] && !match[2])) return new Response(null, { status: 416, headers: { 'content-range': `bytes */${file.size}` } })
+        const start = match[1] ? Number(match[1]) : Math.max(0, file.size - Number(match[2]))
+        const end = match[2] && match[1] ? Math.min(file.size - 1, Number(match[2])) : file.size - 1
+        if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 0 || start >= file.size || end < start) return new Response(null, { status: 416, headers: { 'content-range': `bytes */${file.size}` } })
+        headers.set('content-range', `bytes ${start}-${end}/${file.size}`)
+        headers.set('content-length', String(end - start + 1))
+        return new Response(Readable.toWeb(createReadStream(path, { start, end })) as unknown as BodyInit, { status: 206, headers })
+      }
+      headers.set('content-length', String(file.size))
+      return new Response(Readable.toWeb(createReadStream(path)) as unknown as BodyInit, { status: 200, headers })
+    } catch {
+      return new Response('Not found', { status: 404 })
+    }
+  })
+}
+
 app.whenReady().then(async () => {
+  registerVideoAssetProtocol()
   await registerFabricatorHandlers()
   createMainWindow()
 

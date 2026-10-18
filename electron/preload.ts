@@ -84,6 +84,7 @@ const videoStudioApi: VideoStudioDesktopApi = {
   deleteVideoStudio: (id) => ipcRenderer.invoke('video-studio:delete', id),
   getVideoStudioFolder: () => ipcRenderer.invoke('video-studio:folder'),
   importVideoStudioImage: (category) => ipcRenderer.invoke('video-studio:import-image', category),
+  importVideoStudioVideo: (studioId) => ipcRenderer.invoke('video-studio:import-video', studioId),
   saveVideoStudioPrint: (studioId, dataUrl) => ipcRenderer.invoke('video-studio:save-print', studioId, dataUrl),
   openVideoStudioPrints: (studioId) => ipcRenderer.invoke('video-studio:open-prints', studioId)
 }
