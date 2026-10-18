@@ -141,6 +141,8 @@ export type CustomizerWardrobeGroup = {
   scaleX: number
   scaleY: number
   rotation: number
+  /** Per-character dimming used to temporarily de-emphasize one garment piece. */
+  opacity?: number
   /** Color overrides belong to this individual garment component. */
   colors?: HairColorOverrides
 }

@@ -695,6 +695,7 @@ async function renderWardrobeOverlay(
         const matrix = /^matrix\(([^)]+)\)$/.exec(garment.transform.matrix)?.[1].split(',').map(Number) ?? [1, 0, 0, 1, 0, 0]
         const drawGarment = (context: CanvasRenderingContext2D) => {
           context.save()
+          context.globalAlpha = Math.min(1, Math.max(0, garment.group.opacity ?? 1))
           context.translate(garment.center.x + garment.group.offsetX, garment.center.y + garment.group.offsetY)
           context.rotate(garment.group.rotation * Math.PI / 180)
           context.scale(garment.group.scaleX, garment.group.scaleY)
@@ -3262,10 +3263,13 @@ export function CustomizerPage() {
     setClothesAdjustSelection(null)
     setClothesAdjustDetailOpen(false)
     if (!selectedCharacter) return
-    void saveCharacterCustomization({ wardrobeGroups: (selectedCharacter.customization.wardrobeGroups ?? []).map((group) => ({ ...group, offsetX: 0, offsetY: 0, scaleX: 1, scaleY: 1, rotation: 0 })) })
+    void saveCharacterCustomization({ wardrobeGroups: (selectedCharacter.customization.wardrobeGroups ?? []).map((group) => {
+      const { opacity: _opacity, ...rest } = group
+      return { ...rest, offsetX: 0, offsetY: 0, scaleX: 1, scaleY: 1, rotation: 0 }
+    }) })
   }
 
-  const updateClothesAdjustComponent = async (operation: 'transform' | 'remove', values?: Partial<Pick<CustomizerWardrobeGroup, 'offsetX' | 'offsetY' | 'scaleX' | 'scaleY' | 'rotation'>>) => {
+  const updateClothesAdjustComponent = async (operation: 'transform' | 'toggle-opacity', values?: Partial<Pick<CustomizerWardrobeGroup, 'offsetX' | 'offsetY' | 'scaleX' | 'scaleY' | 'rotation'>>) => {
     if (!selectedCharacter || !selectedClothing) return
     const current = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
     const groups = current.customization.wardrobeGroups ?? []
@@ -3273,27 +3277,29 @@ export function CustomizerPage() {
     const sourceCategories: WardrobeCategory[] = clothingCategories.Inferior.concat(clothingCategories.Superior).find((item) => item.id === clothesAdjustSelection)?.source ?? []
     const isSamePiece = (group: CustomizerWardrobeGroup) => group.modelSlot === selectedClothing.modelSlot && group.setId === selectedClothing.setId && group.category === selectedClothing.category && (group.componentId === selectedClothing.componentId || !group.componentId)
     const nextGroups: CustomizerWardrobeGroup[] = []
+    const toggleOpacity = (group: CustomizerWardrobeGroup): CustomizerWardrobeGroup => {
+      if ((group.opacity ?? 1) < 1) {
+        const { opacity: _opacity, ...rest } = group
+        return rest
+      }
+      return { ...group, opacity: .35 }
+    }
     for (const group of groups) {
       if (!isSamePiece(group)) { nextGroups.push(group); continue }
       if (group.componentId) {
         if (operation === 'transform') nextGroups.push({ ...group, ...values })
+        else nextGroups.push(toggleOpacity(group))
         continue
       }
       if (!selectedSet) { nextGroups.push(group); continue }
       const matchingComponents = selectedSet.components.filter((component) => sourceCategories.includes(component.category))
       if (!matchingComponents.length) { nextGroups.push(group); continue }
       for (const component of matchingComponents) {
-        if (operation === 'remove' && component.id === selectedClothing.componentId) continue
-        nextGroups.push({ ...group, componentId: component.id, ...(operation === 'transform' && component.id === selectedClothing.componentId ? values : {}) })
+        const componentGroup = { ...group, componentId: component.id }
+        if (operation === 'transform' && component.id === selectedClothing.componentId) nextGroups.push({ ...componentGroup, ...values })
+        else if (operation === 'toggle-opacity' && component.id === selectedClothing.componentId) nextGroups.push(toggleOpacity(componentGroup))
+        else nextGroups.push(componentGroup)
       }
-    }
-    if (operation === 'remove') {
-      setWardrobeHighlightVisible(false)
-      const remaining = nextGroups.find((group) => group.modelSlot === selectedClothing.modelSlot && group.category === selectedClothing.category && group.setId === selectedClothing.setId && group.componentId)
-      const nextComponentId = remaining?.componentId
-      setSelectedClothing(nextComponentId ? { ...selectedClothing, componentId: nextComponentId } : null)
-      await saveCharacterCustomization({ wardrobeGroups: nextGroups })
-      return
     }
     if (values) setWardrobeTransformDraft((draft) => ({ offsetX: draft?.offsetX ?? 0, offsetY: draft?.offsetY ?? 0, scaleX: draft?.scaleX ?? 1, scaleY: draft?.scaleY ?? 1, rotation: draft?.rotation ?? 0, ...values }))
     await saveCharacterCustomization({ wardrobeGroups: nextGroups })
@@ -3371,7 +3377,8 @@ export function CustomizerPage() {
             {adjustmentComponents.length ? <div className="customizer-clothes-adjust-part-grid">
               {adjustmentComponents.map(({ group, component, set }) => {
                 const isSelected = selectedClothing?.modelSlot === group.modelSlot && selectedClothing.setId === group.setId && selectedClothing.category === group.category && selectedClothing.componentId === component.id
-                return <div key={`${group.modelSlot}:${group.setId}:${component.id}`} className={`customizer-clothes-adjust-part${isSelected ? ' selected' : ''}`}>
+                const isDimmed = (group.opacity ?? 1) < 1
+                return <div key={`${group.modelSlot}:${group.setId}:${component.id}`} className={`customizer-clothes-adjust-part${isSelected ? ' selected' : ''}${isDimmed ? ' dimmed' : ''}`}>
                   <button type="button" className="customizer-clothes-adjust-part-select" aria-pressed={isSelected} onClick={() => {
                     setSelectedClothing({ modelSlot: group.modelSlot, setId: group.setId, category: group.category, componentId: component.id })
                     setWardrobeHighlightVisible(true)
@@ -3380,7 +3387,7 @@ export function CustomizerPage() {
                     <strong title={component.name}>{component.name || component.attachedPartId}</strong>
                     <small>{set.name}</small>
                   </button>
-                  {isSelected && <button type="button" className="customizer-clothes-adjust-part-remove" title="Remover esta peça" aria-label={`Remover ${component.name || component.attachedPartId}`} onClick={() => void updateClothesAdjustComponent('remove')}><Icon name="close" /></button>}
+                  {isSelected && <button type="button" className={`customizer-clothes-adjust-part-remove${isDimmed ? ' restore' : ''}`} title={isDimmed ? 'Restaurar a peça' : 'Aplicar transparência à peça'} aria-label={isDimmed ? `Restaurar ${component.name || component.attachedPartId}` : `Aplicar transparência em ${component.name || component.attachedPartId}`} onClick={() => void updateClothesAdjustComponent('toggle-opacity')}><Icon name={isDimmed ? 'undo' : 'trash'} /></button>}
                 </div>
               })}
             </div> : <p className="customizer-clothes-adjust-empty">Nenhuma peça desta categoria está aplicada neste personagem. Aplique um conjunto em Roupas para ajustar cada componente.</p>}

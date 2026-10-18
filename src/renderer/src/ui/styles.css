@@ -641,12 +641,14 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .customizer-clothes-adjust-part-grid { min-height:0;flex:1;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));grid-auto-rows:minmax(76px,auto);align-content:start;gap:5px;overflow:auto;padding:1px; }
 .customizer-clothes-adjust-part { min-width:0;min-height:76px;position:relative;overflow:hidden;border:1px solid #756093;border-radius:5px;background:#35204f; }
 .customizer-clothes-adjust-part.selected { border-color:#ff9dc9;box-shadow:0 0 0 1px #ff9dc9; }
+.customizer-clothes-adjust-part.dimmed .customizer-clothes-adjust-part-preview img { opacity:.35; }
 .customizer-clothes-adjust-part-select { width:100%;height:100%;min-width:0;min-height:76px;display:grid;grid-template-rows:minmax(32px,1fr) auto auto;gap:2px;justify-items:center;overflow:hidden;padding:4px 3px;border:0;background:transparent;color:#fff;cursor:pointer; }
 .customizer-clothes-adjust-part-preview { width:100%;min-height:30px;display:grid;place-items:center;overflow:hidden;border-radius:3px;background:#f0eef2; }
 .customizer-clothes-adjust-part-preview img { width:100%;height:100%;min-height:30px;object-fit:contain; }
 .customizer-clothes-adjust-part-select strong { width:100%;overflow:hidden;font-size:9px;text-align:center;text-overflow:ellipsis;white-space:nowrap; }
 .customizer-clothes-adjust-part-select small { width:100%;overflow:hidden;color:#d2c1e1;font-size:7px;text-align:center;text-overflow:ellipsis;white-space:nowrap; }
 .customizer-clothes-adjust-part-remove { position:absolute;top:2px;right:2px;width:19px;height:19px;display:grid;place-items:center;padding:2px;border:1px solid #ffc0d9;border-radius:50%;background:#d73268;color:#fff;cursor:pointer; }
+.customizer-clothes-adjust-part-remove.restore { border-color:#b5f2d2;background:#178654; }
 .customizer-clothes-adjust-part-remove svg { width:12px;height:12px; }
 .customizer-clothes-adjust-controls>header span { min-width:0;display:grid;gap:2px; }
 .customizer-clothes-adjust-position { min-height:132px;display:grid;grid-template-columns:minmax(48px,.8fr) minmax(90px,1.2fr);align-items:center;gap:4px; }
