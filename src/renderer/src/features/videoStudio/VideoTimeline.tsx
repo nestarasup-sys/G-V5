@@ -43,7 +43,7 @@ function characterSegmentAtFrame(timeline: VideoTimelineDocument, elementId: str
   return { startFrame: precedingGap?.endFrame ?? stateStart, endFrame: followingGap?.startFrame ?? stateEnd }
 }
 
-export function VideoTimeline({ preparing, onEnterFullscreen, canUndo, canRedo, onUndo, onRedo, selectedCanvasId, studio, playheadFrame, playing, height, presetNames, onSeek, onSelectElement, onTogglePlayback, onSaveFrame, onSplitCharacter, onSplitTextClip, onSplitVideoClip, onUpdateTextClip, onUpdateVideoClip, onChangeVideoAudio, onBeginAudioEdit, onDuplicateVideoClip, onDeleteTextClip, onDeleteVideoClip, onDeleteTextElement, onDeleteCharacterSegment, onDuplicateTextClip, onMoveCharacterBoundary, onChangeDuration, onResize, onAddText, onAddVideo, onChangeTrackSettings, onSetCharacterAnimationsEnabled, onMoveCharacterTrack, onSetCharacterPositionsLocked }: {
+export function VideoTimeline({ preparing, onEnterFullscreen, canUndo, canRedo, onUndo, onRedo, selectedCanvasId, studio, playheadFrame, playing, height, presetNames, onSeek, onSelectElement, onTogglePlayback, onSaveFrame, onSplitCharacter, onSplitTextClip, onSplitVideoClip, onUpdateTextClip, onUpdateVideoClip, onChangeVideoAudio, onBeginAudioEdit, onDuplicateVideoClip, onDeleteTextClip, onDeleteVideoClip, onDeleteTextElement, onDeleteCharacterSegment, onDuplicateTextClip, onMoveCharacterBoundary, onChangeDuration, onResize, onAddText, onAddVideo, onChangeTrackSettings, onSetCharacterAnimationsEnabled, onMoveCharacterTrack, onSetCharacterPositionsLocked, onChangeTimelineView }: {
   preparing: boolean
   onEnterFullscreen: () => void
   canUndo: boolean
@@ -82,6 +82,7 @@ export function VideoTimeline({ preparing, onEnterFullscreen, canUndo, canRedo, 
   onSetCharacterAnimationsEnabled: (enabled: boolean) => void
   onMoveCharacterTrack: (id: string, direction: -1 | 1) => void
   onSetCharacterPositionsLocked: (locked: boolean) => void
+  onChangeTimelineView: (settings: { zoom?: number; height?: number }) => void
 }) {
   const resizePointer = useRef<{ id: number; startY: number; startHeight: number } | null>(null)
   const textClipDragRef = useRef<TextClipDrag | null>(null)
@@ -95,14 +96,12 @@ export function VideoTimeline({ preparing, onEnterFullscreen, canUndo, canRedo, 
   const [previewVideoClip, setPreviewVideoClip] = useState<VideoMediaClip | null>(null)
   const [previewBoundary, setPreviewBoundary] = useState<{ elementId: string; keyId: string; frame: number } | null>(null)
   const [trackMenuOpen, setTrackMenuOpen] = useState(false)
-  const [pixelsPerSecond, setPixelsPerSecond] = useState(() => {
-    try {
-      const stored = Number(window.localStorage.getItem('gacha-nymi-video-timeline-zoom'))
-      return Number.isFinite(stored) && stored >= 1 ? Math.min(stored, 120) : 37
-    } catch { return 37 }
-  })
+  const [pixelsPerSecond, setPixelsPerSecond] = useState(() => Math.max(1, Math.min(120, studio.videoTimeline?.timelineZoom ?? 37)))
   const timeline = videoTimelineFor(studio)
   const characterAnimationsEnabled = timeline.animateCharacterTransitions !== false
+  useEffect(() => {
+    setPixelsPerSecond(Math.max(1, Math.min(120, studio.videoTimeline?.timelineZoom ?? 37)))
+  }, [studio.id])
   const selectedCharacterForText = studio.elements.find((element) => element.id === selectedCanvasId && element.kind === 'character')
   useEffect(() => {
     if (selectedCanvasId === undefined) return
@@ -121,7 +120,7 @@ export function VideoTimeline({ preparing, onEnterFullscreen, canUndo, canRedo, 
   const tickSeconds = pixelsPerSecond >= 16 ? 5 : Math.max(1, Math.ceil(80 / pixelsPerSecond))
   const tickCount = Math.floor(timelineSeconds / tickSeconds)
   const characters = studio.elements.filter((element) => element.kind === 'character').sort((left, right) => (trackSettings[left.id]?.order ?? studio.elements.indexOf(left)) - (trackSettings[right.id]?.order ?? studio.elements.indexOf(right)))
-  const characterPositionsLocked = characters.length > 0 && characters.every((character) => character.positionLocked === true)
+  const characterPositionsLocked = timeline.characterPositionsLocked ?? (characters.length > 0 && characters.every((character) => character.positionLocked === true))
   const selectedTextClip = selection?.kind === 'text' ? timeline.textClips.find((clip) => clip.id === selection.clipId) : undefined
   const selectedVideoClip = selection?.kind === 'video' ? timeline.videoClips?.find((clip) => clip.id === selection.clipId) : undefined
   const canDeleteSelection = selection?.kind === 'character'
@@ -181,7 +180,7 @@ export function VideoTimeline({ preparing, onEnterFullscreen, canUndo, canRedo, 
   const setZoom = (value: number) => {
     const zoom = Math.max(1, Math.min(120, value))
     setPixelsPerSecond(zoom)
-    try { window.localStorage.setItem('gacha-nymi-video-timeline-zoom', String(zoom)) } catch { /* Keep zoom available for this session. */ }
+    onChangeTimelineView({ zoom })
   }
   const fitTimeline = () => {
     const availableWidth = Math.max(180, (timelineScrollRef.current?.clientWidth ?? 1000) - 96)
@@ -362,8 +361,8 @@ export function VideoTimeline({ preparing, onEnterFullscreen, canUndo, canRedo, 
         <button type="button" className="video-zoom-button" onClick={() => setZoom(pixelsPerSecond * 1.25)} title="Aumentar zoom">+</button>
       </div>
       <div className="video-timeline-resize" role="separator" aria-label="Redimensionar altura da timeline" aria-orientation="horizontal" aria-valuemin={150} aria-valuemax={Math.max(220, Math.floor(window.innerHeight * 0.65))} aria-valuenow={height} tabIndex={0}
-        onKeyDown={(event) => { if (event.key === 'ArrowUp' || event.key === 'ArrowDown') { event.preventDefault(); onResize(Math.max(150, Math.min(Math.floor(window.innerHeight * 0.65), height + (event.key === 'ArrowUp' ? 24 : -24)))) } }}
-        onPointerDown={(event) => { event.preventDefault(); resizePointer.current = { id: event.pointerId, startY: event.clientY, startHeight: height }; event.currentTarget.setPointerCapture(event.pointerId) }} onPointerMove={resizeTimeline} onPointerUp={finishResize} onPointerCancel={finishResize}>
+        onKeyDown={(event) => { if (event.key === 'ArrowUp' || event.key === 'ArrowDown') { event.preventDefault(); const nextHeight = Math.max(150, Math.min(Math.floor(window.innerHeight * 0.65), height + (event.key === 'ArrowUp' ? 24 : -24))); onResize(nextHeight); onChangeTimelineView({ height: nextHeight }) } }}
+        onPointerDown={(event) => { event.preventDefault(); resizePointer.current = { id: event.pointerId, startY: event.clientY, startHeight: height }; event.currentTarget.setPointerCapture(event.pointerId) }} onPointerMove={(event) => { resizeTimeline(event); const drag = resizePointer.current; if (drag?.id === event.pointerId) onChangeTimelineView({ height: Math.max(150, Math.min(Math.floor(window.innerHeight * 0.65), drag.startHeight + drag.startY - event.clientY)) }) }} onPointerUp={finishResize} onPointerCancel={finishResize}>
         <span /><span /><span />
       </div>
     </header>

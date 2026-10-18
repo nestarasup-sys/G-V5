@@ -158,6 +158,10 @@ export type VideoTimelineDocument = {
   playing: boolean
   /** Interpolate pose and expression changes during playback; defaults to enabled for older scenes. */
   animateCharacterTransitions?: boolean
+  /** Video Studio control preferences stored independently in each project. */
+  characterPositionsLocked?: boolean
+  timelineZoom?: number
+  timelineHeight?: number
   /** Persisted timeline UI metadata; visibility hides lanes and lock blocks edits. */
   trackSettings?: Record<string, { visible?: boolean; locked?: boolean; label?: string; collapsed?: boolean; order?: number }>
   /** Original state of each actor, retained when returning to the first segment. */
