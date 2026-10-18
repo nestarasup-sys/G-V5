@@ -23,7 +23,7 @@ function parseArgs(argv) {
     else if (argv[i] === '--help' || argv[i] === '-h') options.help = true
     else throw new Error(`Argumento não reconhecido: ${argv[i]}`)
   }
-  if (!['fast', 'isolation', 'all'].includes(options.suite)) throw new Error('Use --suite fast|isolation|all')
+  if (!['fast', 'isolation', 'ipc', 'all'].includes(options.suite)) throw new Error('Use --suite fast|isolation|ipc|all')
   return options
 }
 
@@ -102,6 +102,7 @@ function runCommand(label, executable, args, options) {
       resolveCase({
         id: label, status, exitCode, signal: signal ?? null,
         durationMs: Math.round(performance.now() - started),
+        ...(options.adapter ? { adapter: options.adapter } : {}),
         stdout: cleanOutput(stdout, options.sandbox),
         stderr: cleanOutput(stderr, options.sandbox)
       })
@@ -144,7 +145,7 @@ function npmCommand(script) {
 async function main(argv = process.argv.slice(2)) {
   const opts = parseArgs(argv)
   if (opts.help) {
-    console.log('Uso: node scripts/dev-ai/baseline.cjs [--list] [--suite fast|isolation|all]')
+    console.log('Uso: node scripts/dev-ai/baseline.cjs [--list] [--suite fast|isolation|ipc|all]')
     console.log('Não instala dependências, não lê APPDATA real e não executa auditorias que requerem mídia pessoal.')
     return 0
   }
@@ -168,7 +169,7 @@ async function main(argv = process.argv.slice(2)) {
     policies: {
       network: 'not-invoked-by-runner; NOT OS-level blocked',
       filesystem: 'child HOME/APPDATA isolated; legacy fast tests may write under out/',
-      electron: 'fixture-preload; NOT a real IPC integration test'
+      electron: 'per-case adapter; studio-isolation uses fixture-preload, studio-ipc-real uses production preload and real IPC in synthetic userData'
     },
     cases: [], status: 'inconclusive'
   }
@@ -180,7 +181,7 @@ async function main(argv = process.argv.slice(2)) {
         reason: 'node_modules/typescript ausente; executar npm ci manualmente em ambiente autorizado'
       })
     } else {
-      if (selection.some(a => a.mode === 'electron')) {
+      if (selection.some(a => ['electron', 'electron-controller'].includes(a.mode))) {
         const npm = npmCommand('typecheck')
         const typecheck = await runCommand('typecheck', npm.executable, npm.args,
           { env, sandbox, shell: npm.shell, timeoutMs: 180_000 })
@@ -198,7 +199,7 @@ async function main(argv = process.argv.slice(2)) {
           continue
         }
         let binary = process.execPath
-        if (audit.mode === 'electron') {
+        if (['electron', 'electron-controller'].includes(audit.mode)) {
           binary = executableElectron()
           if (!binary) {
             report.cases.push({ id: audit.id, status: 'unsupported', reason: 'Executável Electron ausente' })
@@ -206,10 +207,20 @@ async function main(argv = process.argv.slice(2)) {
           }
           env.GACHA_AUDIT_OUTPUT_DIR = join(runRoot, audit.id)
           env.GACHA_AUDIT_RUN_ROOT = runRoot
+          await mkdir(env.GACHA_AUDIT_OUTPUT_DIR, { recursive: true })
         }
-        report.cases.push(await runCommand(audit.id, binary, [join(ROOT, audit.file)], {
-          env: { ...env }, sandbox, timeoutMs: audit.mode === 'electron' ? 180_000 : 120_000
-        }))
+        if (audit.mode === 'electron-controller') {
+          env.GACHA_DEV_AI_TEST = '1'
+          report.cases.push(await runCommand(audit.id, process.execPath,
+            [join(ROOT, audit.file), binary, sandbox, env.GACHA_AUDIT_OUTPUT_DIR], {
+            env: { ...env }, sandbox, timeoutMs: 240_000, adapter: 'controller + production Electron/preload/IPC; synthetic userData'
+          }))
+        } else {
+          report.cases.push(await runCommand(audit.id, binary, [join(ROOT, audit.file)], {
+            env: { ...env }, sandbox, timeoutMs: audit.mode === 'electron' ? 180_000 : 120_000,
+            ...(audit.mode === 'electron' ? { adapter: 'Electron hidden window + fixture-preload; no real IPC' } : {})
+          }))
+        }
       }
     }
     report.status = report.cases.some(c => c.status === 'failed') ? 'failed'

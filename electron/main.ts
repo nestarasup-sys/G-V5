@@ -1,7 +1,7 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, protocol, shell, type IpcMainInvokeEvent } from 'electron'
-import { createReadStream } from 'node:fs'
+import { createReadStream, existsSync, lstatSync, mkdirSync, readFileSync, realpathSync } from 'node:fs'
 import { mkdir, readFile, writeFile, readdir, unlink, rename, stat, access, rm, copyFile } from 'node:fs/promises'
-import { basename, dirname, extname, join, resolve } from 'node:path'
+import { basename, dirname, extname, join, relative, resolve, sep } from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
 import { Readable } from 'node:stream'
 import { fileURLToPath } from 'node:url'
@@ -19,6 +19,49 @@ import { VideoLibraryStore } from './videoLibrary'
 import { VideoBackgroundLibraryStore } from './backgroundLibrary'
 import { readAssetImage, writeAssetImageSource } from './assetImageOverrides'
 import { legacyStandardExpressionEffects } from '../src/shared/legacyExpressionEffects'
+
+function configureDevAiDataRoot(): void {
+  if (process.env.GACHA_DEV_AI_TEST !== '1') return
+  if (app.isPackaged || app.isReady()) throw new Error('DEV AI IPC só pode configurar o root antes do boot em build de desenvolvimento.')
+  const requestedSandbox = process.env.GACHA_DEV_AI_SANDBOX
+  if (!requestedSandbox || !resolve(requestedSandbox)) throw new Error('Root sintético DEV AI ausente.')
+
+  const repoRoot = resolve(__dirname, '../..')
+  const runsRoot = resolve(repoRoot, 'out', 'dev-ai', 'runs')
+  const sandbox = resolve(requestedSandbox)
+  const runRoot = dirname(sandbox)
+  const relativeRun = relative(runsRoot, runRoot)
+  if (!relativeRun || relativeRun === '..' || relativeRun.startsWith(`..${sep}`) || relativeRun.includes(sep)
+    || basename(sandbox) !== 'sandbox' || !existsSync(sandbox)) {
+    throw new Error('Root sintético DEV AI fora do diretório autorizado.')
+  }
+
+  const sameCanonicalPath = (left: string, right: string): boolean => process.platform === 'win32'
+    ? left.toLowerCase() === right.toLowerCase()
+    : left === right
+  for (const path of [resolve(repoRoot, 'out'), resolve(repoRoot, 'out', 'dev-ai'), runsRoot, runRoot, sandbox]) {
+    if (!existsSync(path) || lstatSync(path).isSymbolicLink() || !sameCanonicalPath(realpathSync(path), path)) {
+      throw new Error('Root sintético DEV AI ausente, não canônico ou ligado por symlink.')
+    }
+  }
+  const markerPath = join(runRoot, '.dev-ai-sandbox.json')
+  if (!existsSync(markerPath) || lstatSync(markerPath).isSymbolicLink() || !sameCanonicalPath(realpathSync(markerPath), markerPath)) {
+    throw new Error('Marcador do sandbox DEV AI ausente ou inválido.')
+  }
+  const marker = JSON.parse(readFileSync(markerPath, 'utf8')) as { schemaVersion?: number; runId?: string; syntheticOnly?: boolean }
+  if (marker.schemaVersion !== 1 || marker.runId !== basename(runRoot) || marker.syntheticOnly !== true) {
+    throw new Error('Marcador do sandbox DEV AI não identifica uma execução sintética válida.')
+  }
+
+  const userData = join(sandbox, 'electron-user-data')
+  const sessionData = join(sandbox, 'electron-session-data')
+  mkdirSync(userData, { recursive: true })
+  mkdirSync(sessionData, { recursive: true })
+  app.setPath('userData', userData)
+  app.setPath('sessionData', sessionData)
+}
+
+configureDevAiDataRoot()
 
 protocol.registerSchemesAsPrivileged([
   { scheme: 'gacha-video', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true } },
@@ -2187,6 +2230,7 @@ async function registerFabricatorHandlers(): Promise<void> {
 function createMainWindow(): void {
   Menu.setApplicationMenu(null)
   const window = new BrowserWindow({
+    show: process.env.GACHA_DEV_AI_TEST !== '1',
     width: 1440,
     height: 900,
     minWidth: 1120,

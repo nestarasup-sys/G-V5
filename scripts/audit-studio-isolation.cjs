@@ -6,6 +6,8 @@ const { mkdirSync, existsSync, lstatSync, realpathSync, readFileSync } = require
 const { writeFile } = require('node:fs/promises')
 const { join, resolve, relative, dirname, isAbsolute, sep } = require('node:path')
 
+const rendererDiagnostics = []
+
 const root = resolve(__dirname, '..')
 const defaultOutput = join(root, 'out', 'audit-studio-isolation')
 let output = defaultOutput
@@ -42,7 +44,16 @@ async function waitFor(window, selector) {
     if (await window.webContents.executeJavaScript(`Boolean(document.querySelector(${JSON.stringify(selector)}))`)) return
     await new Promise((resolve) => setTimeout(resolve, 100))
   }
-  throw new Error(`Interface não carregou: ${selector}`)
+  const state = await window.webContents.executeJavaScript(`({
+    url: location.href,
+    title: document.title,
+    bodyText: (document.body?.innerText ?? '').slice(0, 4000),
+    appShell: Boolean(document.querySelector('.app-shell')),
+    errorBoundary: document.querySelector('[role="alert"]')?.innerText ?? null
+  })`)
+  const safeName = selector.replace(/[^a-z0-9_-]+/gi, '_')
+  await writeFile(join(output, `diagnostic-${safeName}.png`), (await window.webContents.capturePage()).toPNG())
+  throw new Error(`Interface não carregou: ${selector}; estado=${JSON.stringify(state)}; renderer=${JSON.stringify(rendererDiagnostics.slice(-20))}`)
 }
 
 async function capture(window, filename) {
@@ -57,7 +68,8 @@ async function inspect(window, video) {
   await waitFor(window, `.${prefix}-card-open`)
   await window.webContents.executeJavaScript(`document.querySelector('.${prefix}-card-open').click()`)
   await waitFor(window, `.${prefix}-editor`)
-  await window.webContents.executeJavaScript(`Array.from(document.querySelectorAll('.${prefix}-tool-button')).find(button => button.textContent.includes('Fundo')).click()`)
+  const inspectorTool = video ? 'Objetos' : 'Fundo'
+  await window.webContents.executeJavaScript(`Array.from(document.querySelectorAll('.${prefix}-tool-button')).find(button => button.textContent.includes(${JSON.stringify(inspectorTool)})).click()`)
   await waitFor(window, `.${prefix}-inspector`)
   await waitFor(window, video ? '.video-timeline' : '.top-bar')
   return window.webContents.executeJavaScript(`(() => {
@@ -118,6 +130,15 @@ async function run() {
   await app.whenReady()
   const window = new BrowserWindow({ show: false, width: 1440, height: 900, useContentSize: true,
     webPreferences: { preload, contextIsolation: true, sandbox: true, backgroundThrottling: false } })
+  window.webContents.on('console-message', (_event, ...args) => {
+    const details = args[0]
+    const message = details && typeof details === 'object' ? details.message : args[1]
+    const level = details && typeof details === 'object' ? details.level : details
+    rendererDiagnostics.push({ level, message: String(message ?? '').slice(0, 1000) })
+  })
+  window.webContents.on('render-process-gone', (_event, details) => {
+    rendererDiagnostics.push({ level: 'render-process-gone', reason: details.reason, exitCode: details.exitCode })
+  })
   await window.loadFile(join(root, 'out', 'renderer', 'index.html'), { hash: '/estudio' })
   const normalBefore = await inspect(window, false)
   checkNormal(normalBefore)
@@ -152,6 +173,7 @@ async function run() {
     const nextNormal = await inspect(window, false)
     assert.deepEqual(nextNormal, normalBefore, `Studio mudou após o ciclo ${cycle + 1}`)
   }
+  const writesBeforeProbe = await window.webContents.executeJavaScript('window.desktop.__auditSnapshot()')
   await window.webContents.executeJavaScript(`(async () => {
     const n = (await window.desktop.listStudios())[0]
     const v = (await window.desktop.listVideoStudios())[0]
@@ -161,8 +183,8 @@ async function run() {
   const mockedAfter = await window.webContents.executeJavaScript('window.desktop.__auditSnapshot()')
   assert.equal(mockedAfter.normal[0].title, 'Normal fixture updated')
   assert.equal(mockedAfter.video[0].title, 'Video fixture updated')
-  assert.equal(mockedAfter.normalWrites, 1)
-  assert.equal(mockedAfter.videoWrites, 1)
+  assert.equal(mockedAfter.normalWrites - writesBeforeProbe.normalWrites, 1)
+  assert.equal(mockedAfter.videoWrites - writesBeforeProbe.videoWrites, 1)
   await capture(window, 'studio-normal-after-cycles.png')
   await writeFile(join(output, 'result.json'), JSON.stringify({
     schemaVersion: 1, adapter: 'fixture-preload', realIpcCovered: false,

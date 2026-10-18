@@ -1,6 +1,6 @@
 # Isolamento Studio ↔ Video Studio e especificação DEV AI
 
-**Status:** especificação futura. O projeto possui `scripts/audit-studio-isolation.cjs` como ponto de partida, mas **a suíte completa aqui descrita não existe e não foi executada**. A branch de baseline acrescentou uma repetição de quatro percursos visual/mockados e separação de saída DEV AI; **isso não constitui aprovação da matriz ISO-01–ISO-15 nem de IPC real**. Consulte [a auditoria parcial](AUDITORIAS/BASELINE_DEV_AI_2026-10-18.md). Evidências: E-03–E-06, E-09–E-10, E-17 e E-24 em [inventário](INVENTARIO_E_EVIDENCIAS.md). Implementação rastreada por R-05/R-10–R-14/R-25–R-27 do [roadmap](ROADMAP_EXECUTAVEL.md).
+**Status:** especificação futura, com validação parcial adicionada em 2026-10-18. `audit:isolation` verifica navegação/layout via fixture-preload e `audit:ipc` agora exercita persistência por IPC real em sandbox sintética, inclusive reinício de processo. **A matriz ISO-01–ISO-15 continua incompleta**; veja [resultados Windows e limites](AUDITORIAS/VALIDACAO_WINDOWS_2026-10-18.md) e [baseline inicial](AUDITORIAS/BASELINE_DEV_AI_2026-10-18.md). Evidências: E-03–E-06, E-09–E-10, E-17 e E-24 em [inventário](INVENTARIO_E_EVIDENCIAS.md). Implementação rastreada por R-05/R-10–R-14/R-25–R-27 do [roadmap](ROADMAP_EXECUTAVEL.md).
 
 ## 1. Contrato de independência
 
@@ -107,7 +107,7 @@ Métricas: performance marks (`cold-start`, `workspace-ready`, `first-preview`, 
 
 - [ ] Runner executa CLI de novo checkout sem janelas visíveis e sem intervenção manual, ou informa claramente suporte incompleto.
 - [ ] Fixture, perfil Electron e `dataRoot` isolados; teste tenta escrever em path real e é bloqueado.
-- [ ] Auditoria existente incorporada e suite IPC real reproduz isolamento de pastas.
+- [x] Auditoria visual existente e suite IPC real reproduzem, respectivamente, layout por fixture e isolamento de pastas com namespace/storage real; cobertura parcial registrada em [validação Windows](AUDITORIAS/VALIDACAO_WINDOWS_2026-10-18.md).
 - [ ] Matriz ISO-01–15 implementada com artefatos pass/fail rastreáveis; regressão do Studio não pode passar ao alterar vídeo sem medir o Studio.
 - [ ] Traces, screenshots, hashes e reports JSON são redigidos, locais, versionados por schema e reproduzíveis.
 - [ ] Sem dependência de painel; painel dev-only passa teste de indisponibilidade em release.

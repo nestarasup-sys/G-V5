@@ -15,6 +15,7 @@
 | Análise de stack, alternativas e decisões a validar | [DECISOES/ADR-0001-runtime-e-testes.md](DECISOES/ADR-0001-runtime-e-testes.md) |
 | Resultados das verificações realmente executadas nesta revisão e limites | [AUDITORIAS/REVISAO_ESTATICA_2026-10-18.md](AUDITORIAS/REVISAO_ESTATICA_2026-10-18.md) |
 | Implementação inicial do DEV AI, comandos e resultados sintéticos da Etapa A | [AUDITORIAS/BASELINE_DEV_AI_2026-10-18.md](AUDITORIAS/BASELINE_DEV_AI_2026-10-18.md) |
+| Validação real do runner/IPC em Windows e limites da cobertura em 2026-10-18 | [AUDITORIAS/VALIDACAO_WINDOWS_2026-10-18.md](AUDITORIAS/VALIDACAO_WINDOWS_2026-10-18.md) |
 | Handoff técnico detalhado para Codex executar testes reais em Windows/Electron/IPC | [CODEX_HANDOFF_EXECUCAO_WINDOWS_E_IPC.md](CODEX_HANDOFF_EXECUCAO_WINDOWS_E_IPC.md) |
 
 **Histórico:** a versão anterior integral do plano permanece recuperável no Git em [`5b848345`](https://github.com/nestarasup-sys/G-V5/blob/5b8483454757f4cc9606c626471aabbeccf35daa/docs/PLANO_ESTRUTURA_PROJETO_E_DADOS.md). Esta versão é histórico, **não** uma segunda fonte normativa. O documento `docs/STUDIO_WORKSPACES.md` foi removido em `192245e`; não criar links correntes para ele.
@@ -37,9 +38,9 @@ Antes de modificar runtime: criar baseline e sandbox de testes, registrar fluxos
 - [x] Leitura integral do plano original via GitHub e levantamento da árvore versionada da branch base.
 - [x] Revisão estática direcionada de entradas, persistência, canais IPC, CSS, workspaces, scripts, dependências e commits relevantes — evidências e limites no inventário.
 - [x] Proposição documental de fases, critérios mensuráveis e isolamento DEV AI.
-- [ ] Rodar `npm ci`, `npm run typecheck`, `npm run build` e auditorias no ambiente de destino.
+- [x] Rodar `npm ci`, `npm run typecheck`, `npm run build` e auditorias sintéticas/IPC em Windows — [resultados e limites](AUDITORIAS/VALIDACAO_WINDOWS_2026-10-18.md).
 - [ ] Inventário de todos os dados reais e `localStorage` instalado.
-- [ ] Teste cross-workspace completo e inspeção visual reproduzível.
+- [ ] Teste cross-workspace completo ISO-01–ISO-15 e smoke de Customizer/Fabricador; validação parcial de layout dos Studios e IPC real documentada no relatório Windows.
 - [ ] Benchmark reproduzível e comparação antes/depois.
 - [ ] Qualquer migração ou mudança de código de produção.
 

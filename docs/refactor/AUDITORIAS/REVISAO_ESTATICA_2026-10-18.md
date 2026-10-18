@@ -1,6 +1,6 @@
 # Verificações documentais da revisão — 2026-10-18
 
-**Tipo de evidência:** checagem estática de Markdown e metadados retornados pela conexão GitHub. **Não é** execução de testes de aplicativo, benchmark, build, Electron nem inspeção visual.  
+**Tipo de evidência:** checagem estática documental original; não é execução de testes, benchmark, build, Electron nem inspeção visual. Execuções posteriores no checkout Windows estão em [VALIDACAO_WINDOWS_2026-10-18.md](VALIDACAO_WINDOWS_2026-10-18.md).
 **Branch:** `docs/refactor-review-2026-10-18`  
 **Base da auditoria:** `master@5b8483454757f4cc9606c626471aabbeccf35daa`.  
 **Head documental inspecionado:** `aa406baff064f799c8796d692bc49f26ab857da1` (pode mudar depois desta revisão).  
@@ -21,10 +21,10 @@
 | Dependências/arquivos registrados | Comparação do inventário com caminhos `master`, leitura dirigida de código/roteamento/persistência/preload/scripts | evidências E-01–E-28 registradas; execução **não** certificada |
 | Links externos | Extração textual dos links absolutos dos docs | 10 referências encontradas; existência e conteúdo atual de cada URL **não foram testados** por este verificador |
 
-## Checks **não** realizados (permanecem abertos)
+## Checks **não** realizados na revisão estática
 
-- `npm ci`, `npm run typecheck`, `npm run build`, `npm test` (script não declarado no baseline), lint, testes unitários, E2E, IPC real e integração Electron.
-- `electron scripts/audit-studio-isolation.cjs` e outros `scripts/audit-*`; screenshot, comparação visual, navegação real e teste de lifecycle/CSS.
+- Na revisão estática original, `npm ci`, typecheck/build e auditorias não foram executados. A validação posterior em Windows está registrada em [VALIDACAO_WINDOWS_2026-10-18.md](VALIDACAO_WINDOWS_2026-10-18.md).
+- Permanecem abertos: lint, E2E amplo, ISO-01–15 completa, lifecycle/CSS, smoke real de Customizer/Fabricador/Opções e comparação visual detalhada.
 - Benchmarks de CPU/RSS, cold start, timeline e uso de mídia; `p50/p95` só são metas metodológicas no plano.
 - Inspeção de `userData` real/`localStorage` de perfil do usuário; backups reais, restore, export/import, migração e exclusão.
 - Testes contra payload malicioso, CSP, arquivos truncados, symlink, crash injection e dependências vulneráveis.

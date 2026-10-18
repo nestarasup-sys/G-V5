@@ -1,21 +1,22 @@
 # Etapa A — Baseline DEV AI inicial, implementação e evidências
 
-**Data:** 2026-10-18. **Branch de implementação:** `chore/dev-ai-baseline-2026-10-18` (derivada de `docs/refactor-review-2026-10-18@1a6b3b9`). **Estado:** implementação parcial de R-01, R-02, R-05 e R-25; **nenhuma delas está concluída** porque faltam build/IPC real/regressão em checkout completo.
+**Data:** 2026-10-18. **Branch inicial:** `chore/dev-ai-baseline-2026-10-18` (derivada de `docs/refactor-review-2026-10-18@1a6b3b9`). Este registro preserva os resultados do primeiro ambiente sintético. A validação posterior no checkout completo de Windows está em [VALIDACAO_WINDOWS_2026-10-18.md](VALIDACAO_WINDOWS_2026-10-18.md).
 
 ## A. Mudanças de código realizadas
 
 | Arquivo | Resultado e finalidade |
 | --- | --- |
-| `scripts/dev-ai/catalog.cjs` | Catálogo das 12 auditorias existentes com ID, modo, precondições, dados, risco e agrupamento. 7 pure Node em `fast`; uma auditoria Electron oculta em `isolation`; 4 legadas apenas manuais. |
-| `scripts/dev-ai/baseline.cjs` | CLI `--list`, `--suite fast|isolation|all`; runner de processos em allowlist; timeout, sinais, cap de saída, report JSON e status pass/failed/inconclusive. Sem `npm ci` automático. |
+| `scripts/dev-ai/catalog.cjs` | Catálogo das auditorias existentes com ID, modo, precondições, dados, risco e agrupamento. Inclui auditoria Electron real de IPC em `ipc`. |
+| `scripts/dev-ai/baseline.cjs` | CLI `--list`, `--suite fast|isolation|ipc|all`; runner de processos em allowlist; timeout, sinais, cap de saída, report JSON e status pass/failed/inconclusive. Sem `npm ci` automático. |
 | `scripts/dev-ai/boundary-scan.cjs` | Scanner de imports estáticos entre `src/renderer/src/features/*` e relatório de imports não resolvidos; não altera fontes. É leitura simples com regex, não substitui TS AST ou testes de runtime. |
 | `scripts/audit-studio-isolation.cjs` | Preservada auditoria de layout original, acrescentado root de run por env com marker sintético e checagem de symlinks; ciclos repetidos e probe **de mock** das duas APIs. Ainda não testa IPC main real. |
+| `scripts/audit-studio-ipc.cjs` e `scripts/dev-ai/studio-ipc-driver.cjs` | Controlador e driver que executam o main compilado, preload, IPC e filesystem reais contra userData sintético; 10 gravações por namespace, colisão de UUID, restart e root inválido. |
 | `tests/dev-ai-baseline.test.cjs` | Casos Node para registry, argumentos aceitos, containment de paths, ambiente isolado, redaction, listagem CLI, symlink e scanner de fronteiras com fixtures. |
-| `package.json` | Novos comandos `test`, `test:dev-ai`, `audit:list`, `audit:boundaries`, `audit:fast`, `audit:isolation`, `audit:all`; sem dependências novas. |
+| `package.json` | Novos comandos `test`, `test:dev-ai`, `audit:list`, `audit:boundaries`, `audit:fast`, `audit:isolation`, `audit:ipc`, `audit:all`; sem dependências novas. |
 | `.gitignore` | Adicionado `app-data/` à lista de conteúdos não versionados. |
 | `README.md` | Runbook básico de comandos e limitações explícitas. |
 
-**Atenção:** a auditoria de Studio usa `show:false`, que não garante `offscreen:true` nem cobertura de IPC. Ela carrega fixture-preload para validar layout e chamadas de API simuladas; screenshot só ocorre depois de `npm run build`. O scanner arquitetural está em modo informativo para não quebrar a branch com imports preexistentes antes de classificá-los.
+**Atenção:** a auditoria de Studio usa `show:false`, que não garante `offscreen:true`; ela usa fixture-preload para validar layout e chamadas simuladas. A cobertura separada de IPC real adicionada depois está registrada no [relatório Windows](VALIDACAO_WINDOWS_2026-10-18.md). O scanner arquitetural segue informativo e não substitui análise AST.
 
 ## B. Comandos realmente executados nesta sessão
 
@@ -32,30 +33,30 @@ Executados em workspace **sintético local de desenvolvimento do runner** (`/mnt
 | `node scripts/dev-ai/boundary-scan.cjs` em árvore sintética | 2 fontes, 1 import cruzado, 0 imports não resolvidos | Scanner detectou dependência Video Studio→Studio inserida na fixture |
 | Verificação sintática da versão persistida no GitHub via parser JS | quatro arquivos CJS, sem erro sintático | **Não** prova que compilem/rodem no repositório alvo |
 
-**Comandos NÃO executados** no G-V5: `npm ci`, `npm run typecheck`, `npm run build`, `npm run audit:fast` com código completo, `npm run audit:isolation`, smoke real, E2E, IPC, testes de vídeo, benchmarks, comparação visual e migrations. Sem download/redeploy e sem acesso ao `userData` real.
+**À época deste primeiro registro, não foram executados** no checkout completo: `npm ci`, typecheck/build, auditorias completas, smoke real, E2E, IPC, benchmarks, comparação visual e migrações. A validação subsequente está no relatório Windows.
 
 ## C. Como executar a próxima validação no checkout de confiança
 
 1. Garantir Node versão suportada e `git status` limpo; preferir branch `chore/dev-ai-baseline-2026-10-18` e anotar SHA atual.
 2. Verificar ausência de `app-data` versionado; **não** iniciar o app com perfil real durante testes.
-3. Executar `npm ci` em workspace descartável, sabendo que o projeto já possui `postinstall` que instala Electron. Esse comando pode usar rede e deve ocorrer em ambiente de confiança com permissão de instalação. Verificar license/deps antes de alterar lockfile.
+3. Instalar dependências em workspace descartável apenas se o lockfile tiver mudado. `npm ci` pode usar rede e executar o `postinstall` de Electron; anote suas versões e avisos.
 4. Executar `npm test` e `npm run audit:list`; coletar stdout, exit code, Node/npm, SO, SHA.
 5. Executar `npm run audit:boundaries`, classificar os imports cross-feature sem bloqueio automático. Salvar relatório manualmente se quiser; o scanner não escreve arquivos.
 6. Executar `npm run audit:fast`, conferir todos os 7 casos, timestamps, códigos e report JSON sob `out/dev-ai/runs/<run-id>`.
-7. Executar `npm run audit:isolation` no SO/host com Electron/Chromium funcionando (xvfb quando aplicável); requer `typecheck`/build. Verificar `realIpcCovered:false` no result, screenshots antes/depois e código de saída.
-8. Rodar UI/IPC real **separadamente** com harness específico de main que injete `app.setPath('userData')` antes do boot e não confie somente no fixture-preload. Essa capacidade é R-26 e permanece aberta.
+7. Executar `npm run audit:isolation`; conferir `realIpcCovered:false` no resultado fixture e as screenshots antes/depois.
+8. Executar `npm run audit:ipc` e revisar o relatório de sandbox real do main/preload/IPC. A matriz completa de IPC/lifecycle continua aberta em R-26.
 9. Repetir a baseline em máquina/hardware declarados; não misturar render software/GPU, builds e versões. Arquivar métricas apenas de projetos sintéticos.
 
-**Protocolos de segurança:** não apontar `--suite` para shell/comandos arbitrários; o runner só aceita 3 suites. Não passar mídia privada, projetos ou roteiros como fixture. `scripts/audit-animator-rig.mjs` fica excluído do runner, pois sem path explícito lê `APPDATA`. Relatórios e screenshots permanecem locais, em `out/`, sem commit. Shell child usa HOME/APPDATA de sandbox, mas ainda não é sandbox de rede em nível de SO; o código declara esse limite.
+**Protocolos de segurança:** não apontar `--suite` para shell/comandos arbitrários; o runner aceita suites allowlisted. Não passar mídia privada, projetos ou roteiros como fixture. `scripts/audit-animator-rig.mjs` fica excluído do runner, pois sem path explícito lê `APPDATA`. Relatórios e screenshots ficam em `out/`; não versionar execuções locais. HOME/APPDATA são sintéticos no child, porém isso não equivale a sandbox de rede ou filesystem em nível de SO.
 
 ## D. Pendências e bloqueios (não marcar concluído)
 
-- [ ] Executar todos os comandos no checkout completo com dependências instaladas em Windows e, se suportado, Linux.
-- [ ] Conferir `npm run build` e `typecheck` no commit desta branch após edição dos scripts.
-- [ ] Provar regressão visual e semântica real do Studio normal com uma janela oculta e fixture, guardar screenshot.
-- [ ] Adapter que teste **IPC/preload real**, namespace de dados, falhas e alterações durante troca de área.
+- [x] Executar `npm ci`, testes, typecheck/build, audit:fast/isolation/ipc/all e scanner no checkout completo em Windows; evidências e SHA base no [relatório Windows](VALIDACAO_WINDOWS_2026-10-18.md).
+- [ ] Repetir validação no commit final e executar em outra plataforma suportada.
+- [x] Capturar regressão de layout Studio normal ↔ Video Studio em janela oculta fixture; semântica de storage foi exercitada separadamente com IPC real.
+- [x] Adapter IPC/preload real para persistência, namespace, restart e rejeição de root inválido; ampliar para lifecycle, mudanças entre áreas e vetores da matriz ISO.
 - [ ] Runner que bloqueie rede por política de SO/container e limpe process tree no Windows; atualmente só isola variáveis de ambiente, usa timeout e logs locais.
-- [ ] Fuzz de paths/symlinks e prova que nenhum arquivo fora da sandbox foi lido/escrito.
+- [ ] Fuzz de paths/symlinks e monitoramento OS-level que prove nenhuma leitura/escrita fora da sandbox.
 - [ ] Suite de estado, atalhos, CSS, recursos, timers/RAF e persistência coberta por testes reais; os ciclos atuais testam layout e mocks.
 - [ ] Métricas p50/p95 de startup/timeline/salvamento/RSS/CPU e baseline por fixture, hardware e commit.
 - [ ] Classificação completa de import cross-feature com parser TS AST e allowlist versionada; o scanner inicial só encontra arestas estáticas simples.
@@ -63,8 +64,8 @@ Executados em workspace **sintético local de desenvolvimento do runner** (`/mnt
 
 ## E. Decisões deste incremento
 
-- Não adicionar Vitest/Playwright/Axe/Rust antes de provar necessidade e compatibilidade do harness atual; primeiro adotar `node:test` da versão mínima de Node.
-- Não instalar Electron via `npm ci` sem checkout e autorização explícita de ambiente; as alterações aqui são scripts sem nova dependência.
+- Não adicionar Vitest/Playwright/Axe/Rust antes de provar necessidade e compatibilidade do harness atual; `node:test` cobre o baseline inicial.
+- A validação Windows instalou dependências em checkout local e usou Electron instalado pelo `postinstall`; nenhuma dependência nova foi adicionada.
 - Não ativar GitHub Actions externo automaticamente: evitar upload de código/logs privados e custo operacional não aprovado.
 - Não criar PR/merge, não tocar `master`, não apagar arquivo legado. Commitar apenas código de testes e docs em branch.
 - Não declarar R-01/R-05/R-25 como completos até resultados efetivos em checkout real.

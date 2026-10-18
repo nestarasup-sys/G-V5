@@ -11,6 +11,7 @@ const audits = Object.freeze([
   { id: 'video-media', file: 'scripts/audit-video-media.mjs', mode: 'node', suite: 'fast', data: 'synthetic', requires: ['typescript'] },
   { id: 'video-library', file: 'scripts/audit-video-library.mjs', mode: 'node', suite: 'fast', data: 'synthetic', requires: ['typescript'], writes: 'out/audit-video-library/<uuid>' },
   { id: 'studio-isolation', file: 'scripts/audit-studio-isolation.cjs', mode: 'electron', suite: 'isolation', data: 'synthetic', requires: ['build', 'electron'], output: 'out/dev-ai/runs/<run-id>/studio-isolation' },
+  { id: 'studio-ipc-real', file: 'scripts/audit-studio-ipc.cjs', mode: 'electron-controller', suite: 'ipc', data: 'synthetic', requires: ['build', 'electron'], output: 'out/dev-ai/runs/<run-id>/studio-ipc-real' },
   { id: 'character-transitions-ui', file: 'scripts/audit-character-transitions-ui.cjs', mode: 'electron', suite: 'manual', data: 'synthetic', requires: ['build', 'electron'], note: 'UI fixture; legacy output under out/' },
   { id: 'video-library-ui', file: 'scripts/audit-video-library-ui.cjs', mode: 'electron', suite: 'manual', data: 'external-video', requires: ['build', 'electron', 'mp4-fixture'], note: 'never pass personal media in unattended runs' },
   { id: 'video-timeline', file: 'scripts/audit-video-timeline.cjs', mode: 'electron', suite: 'manual', data: 'external-video', requires: ['build', 'electron', 'mp4-fixture'] },
@@ -20,7 +21,8 @@ const audits = Object.freeze([
 function selected(suite) {
   if (suite === 'fast') return audits.filter(a => a.suite === 'fast')
   if (suite === 'isolation') return audits.filter(a => a.suite === 'isolation')
-  if (suite === 'all') return audits.filter(a => ['fast', 'isolation'].includes(a.suite))
+  if (suite === 'ipc') return audits.filter(a => a.suite === 'ipc')
+  if (suite === 'all') return audits.filter(a => ['fast', 'isolation', 'ipc'].includes(a.suite))
   throw new Error(`Suite desconhecida: ${suite}`)
 }
 

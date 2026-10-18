@@ -15,6 +15,7 @@
     "audit:list": "node scripts/dev-ai/baseline.cjs --list",
     "audit:fast": "node scripts/dev-ai/baseline.cjs --suite fast",
     "audit:isolation": "node scripts/dev-ai/baseline.cjs --suite isolation",
+    "audit:ipc": "node scripts/dev-ai/baseline.cjs --suite ipc",
     "audit:all": "node scripts/dev-ai/baseline.cjs --suite all",
     "test": "node --test tests/dev-ai-baseline.test.cjs",
     "audit:boundaries": "node scripts/dev-ai/boundary-scan.cjs"
