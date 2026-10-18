@@ -69,8 +69,8 @@ function cleanOutput(value, sandbox) {
     text = text.split(secret).join('<redacted-path>')
   }
   text = text.replace(/(token|password|authorization|api[_-]?key)\s*[:=]\s*[^\s,;]+/gi, '$1=<redacted>')
-  text = text.replace(/data:[a-z0-9.+-]+\\/[a-z0-9.+-]+;base64,[a-z0-9+/=]+/gi, '<redacted-data-url>')
-  text = text.replace(/(?:[a-z]:\\\\Users\\\\|\\/Users\\/|\\/home\\/)[^\\s"'<>]+/gi, '<redacted-user-path>')
+  text = text.replace(/data:[a-z0-9.+-]+[/][a-z0-9.+-]+;base64,[a-z0-9+/=]+/gi, '<redacted-data-url>')
+  text = text.replace(/(?:[a-z]:[\\]Users[\\]|[/]Users[/]|[/]home[/])[^\s"'<>]+/gi, '<redacted-user-path>')
   return text.slice(0, MAX_OUTPUT_BYTES)
 }
 
