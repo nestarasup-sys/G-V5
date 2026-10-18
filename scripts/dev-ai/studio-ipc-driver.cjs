@@ -446,16 +446,14 @@ async function areaSmoke(window) {
         card.click()
         const editor = await waitFor(${JSON.stringify(editorSelector)})
         const editorReadyAt = performance.now()
-        await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
-        const paintReadyAt = performance.now()
         const prefix = ${JSON.stringify(normal ? 'studio' : 'video-studio')}
         const canvas = document.querySelector('.' + prefix + '-scene-canvas')
         const style = getComputedStyle(editor)
         const rect = canvas?.getBoundingClientRect()
         return { missingEditor: !editor, missingCanvas: !canvas, hash: location.hash,
           rendererTimingsMs: { routeToLibrary: libraryReadyAt - navigationStartedAt,
-            libraryToEditor: editorReadyAt - libraryReadyAt, editorToPaint: paintReadyAt - editorReadyAt,
-            total: paintReadyAt - navigationStartedAt },
+            libraryToEditor: editorReadyAt - libraryReadyAt,
+            routeToEditorReady: editorReadyAt - navigationStartedAt },
           columns: style.gridTemplateColumns, rows: style.gridTemplateRows,
           canvas: rect ? [Math.round(rect.width * 100) / 100, Math.round(rect.height * 100) / 100] : null,
           topBar: Boolean(document.querySelector('.top-bar')),
@@ -475,7 +473,7 @@ async function areaSmoke(window) {
   }
   const studioBefore = await openEditor(true)
   const navigationDurations = []
-  const navigationPhaseDurations = { routeToLibrary: [], libraryToEditor: [], editorToPaint: [], totalRenderer: [] }
+  const navigationPhaseDurations = { routeToLibrary: [], libraryToEditor: [], routeToEditorReady: [] }
   // One alternation is one route change. 50 Studio↔Video pairs = 100
   // direction changes, matching ISO-01's 100 alternations requirement.
   const roundTrips = 50
@@ -485,12 +483,12 @@ async function areaSmoke(window) {
   for (let cycle = 0; cycle < roundTrips; cycle += 1) {
     const videoOpen = await openEditor(false)
     navigationDurations.push(videoOpen.durationMs)
-    for (const [phase, duration] of Object.entries(videoOpen.rendererTimingsMs)) navigationPhaseDurations[phase === 'total' ? 'totalRenderer' : phase].push(duration)
+    for (const [phase, duration] of Object.entries(videoOpen.rendererTimingsMs)) navigationPhaseDurations[phase].push(duration)
     if (videoBefore === null) videoBefore = videoOpen.snapshot
     else assert.deepEqual(videoOpen.snapshot, videoBefore, `Video Studio mudou na rodada ${cycle + 1}`)
     const studioOpen = await openEditor(true)
     navigationDurations.push(studioOpen.durationMs)
-    for (const [phase, duration] of Object.entries(studioOpen.rendererTimingsMs)) navigationPhaseDurations[phase === 'total' ? 'totalRenderer' : phase].push(duration)
+    for (const [phase, duration] of Object.entries(studioOpen.rendererTimingsMs)) navigationPhaseDurations[phase].push(duration)
     assert.deepEqual(studioOpen.snapshot, studioBefore.snapshot, `Studio normal mudou após a rodada ${cycle + 1}`)
     if ((cycle + 1) % 5 === 0) {
       await writeFile(join(output, 'real-ipc-navigation-progress.json'), JSON.stringify({
@@ -516,6 +514,7 @@ async function areaSmoke(window) {
       oppositeNamespaceHashUnchanged: true },
     realWorkspaceNavigation: { roundTrips, routeTransitions: navigationDurations.length,
       openLatencyMs: summarizeSamples(navigationDurations),
+      latencyDefinition: 'process-side wall time of executeJavaScript route change, editor activation, DOM readiness and serialization; no RAF/paint claim',
       rendererPhaseLatencyMs: Object.fromEntries(Object.entries(navigationPhaseDurations)
         .map(([phase, samples]) => [phase, summarizeSamples(samples)])),
       studioSnapshotStable: true, videoSnapshotStable: true,

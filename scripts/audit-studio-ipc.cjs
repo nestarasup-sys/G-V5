@@ -99,10 +99,12 @@ async function main() {
       repeatedSaveSamples: 20, repeatedRouteTransitions: smoke.realWorkspaceNavigation.routeTransitions },
     measurements: { studioSaveCommitLatencyMs: seeds.saveLatencyMs.studio,
       videoStudioSaveCommitLatencyMs: seeds.saveLatencyMs.videoStudio,
-      studioVideoEditorOpenLatencyMs: smoke.realWorkspaceNavigation.openLatencyMs },
+      studioVideoEditorDomReadyWallLatencyMs: smoke.realWorkspaceNavigation.openLatencyMs,
+      rendererNavigationPhasesMs: smoke.realWorkspaceNavigation.rendererPhaseLatencyMs },
     visualComparison: smoke.realWorkspaceNavigation.screenshotSha256,
     limitations: ['Nenhum cold start foi medido nesta série.', 'CPU, RSS, heap, GPU e uso ocioso não foram medidos.',
       'A janela Electron estava oculta; backgroundThrottling foi desativado somente no modo DEV AI.',
+      'A latência de navegação termina na montagem do editor no DOM; tempo de paint não foi medido porque RAF em janela oculta não foi confiável.',
       'As medições usam documentos sintéticos pequenos, sem assets nem personagens.',
       'O PNG usa webContents.capturePage e não é Electron offscreen:true.']
   }
