@@ -73,3 +73,14 @@
 .video-studio-marker { position:absolute; top:4px; border:none; background:transparent; color:#ca5e8e; font-size:17px; transform:translateX(-50%); padding:0; }
 @media (max-width:1150px) { .video-studio-workspace { grid-template-columns:160px minmax(200px,1fr) 170px; gap:6px; padding:6px; } .video-studio-sidebar { padding:9px; } .video-studio-timeline { margin:0 6px 6px; flex-basis:220px; } }
 @media (max-width:780px) { .video-studio-workspace { grid-template-columns:minmax(130px,1fr) minmax(220px,2fr); overflow:auto; } .video-studio-preview-column { order:0; } .video-studio-workspace .video-studio-sidebar:first-child { order:1; } .video-studio-workspace .video-studio-sidebar:last-child { grid-column:1/-1; max-height:160px; order:2; } }
+
+.video-studio-text-block { display:flex; align-items:center; gap:3px; cursor:grab; touch-action:none; overflow:visible; }
+.video-studio-text-block:active { cursor:grabbing; }
+.video-studio-text-block:disabled { cursor:not-allowed; opacity:.55; }
+.video-studio-text-label { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; pointer-events:none; }
+.video-studio-text-resize { flex:0 0 5px; align-self:stretch; display:block; background:#ffffff96; border-radius:3px; cursor:ew-resize; touch-action:none; }
+.video-studio-text-resize.start { margin-left:-5px; }
+.video-studio-text-resize.end { margin-right:-5px; }
+.video-studio-import-picker { display:flex; flex-direction:column; gap:5px; padding:8px; border:1px solid #eac9d9; border-radius:8px; background:#fff9fc; }
+.video-studio-import-picker strong { font-size:10px; }
+.video-studio-import-picker button { font-size:10px; padding:6px; }
