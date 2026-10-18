@@ -80,12 +80,12 @@ button:focus-visible, input:focus-visible { outline: 3px solid #ed8caf; outline-
 .studio-editor.inspector-open:not(.full-view) { grid-template-columns:136px 276px minmax(0,1fr); }
 .studio-editor.video-workspace:not(.full-view) { grid-template-rows:minmax(0,1fr) var(--video-timeline-height,218px); }
 .studio-editor.video-workspace:not(.full-view) { gap:6px;padding:4px 8px 6px; }
-.video-timeline { min-width:0;min-height:0;position:relative;grid-column:1/-1;grid-row:2;display:flex;flex-direction:column;gap:5px;overflow:hidden;padding:19px 8px 7px;border:1px solid #2b3040;border-radius:7px;background:#11141d;color:#e8eaf2;box-shadow:0 5px 18px #10121b25; }
-.video-timeline-resize { width:76px;height:13px;position:absolute;z-index:5;top:2px;left:50%;display:flex;align-items:center;justify-content:center;gap:3px;transform:translateX(-50%);border:1px solid #484d5e;border-radius:99px;background:#1a1e2b;color:#aab1c9;cursor:ns-resize;touch-action:none; }
+.video-timeline { min-width:0;min-height:0;position:relative;grid-column:1/-1;grid-row:2;display:flex;flex-direction:column;gap:5px;overflow:hidden;padding:7px 8px;border:1px solid #2b3040;border-radius:7px;background:#11141d;color:#e8eaf2;box-shadow:0 5px 18px #10121b25; }
+.video-timeline-resize { width:76px;height:13px;position:absolute;z-index:5;top:50%;left:50%;display:flex;align-items:center;justify-content:center;gap:3px;transform:translate(-50%,-50%);border:1px solid #484d5e;border-radius:99px;background:#1a1e2b;color:#aab1c9;cursor:ns-resize;touch-action:none; }
 .video-timeline-resize span { width:3px;height:3px;border-radius:50%;background:currentColor; }
 .video-timeline-resize:hover,.video-timeline-resize:focus-visible { border-color:#7f8bba;background:#252b3b;color:#e1e7ff; }
 .video-timeline-toolbar,.video-timeline-heading,.video-timeline-actions,.video-timeline-ruler-row,.video-track-row { display:flex;align-items:center; }
-.video-timeline-toolbar { min-height:30px;justify-content:flex-start;gap:10px; }
+.video-timeline-toolbar { min-height:30px;position:relative;justify-content:flex-start;gap:10px; }
 .video-timeline-create-actions,.video-timeline-heading,.video-timeline-actions { display:flex;align-items:center;gap:5px; }
 .video-timeline-create-actions,.video-timeline-heading { flex:0 0 auto; }
 .video-timeline-create-actions button,.video-timeline-actions button,.video-timeline-heading button { min-height:24px;display:inline-flex;align-items:center;justify-content:center;gap:4px;padding:0 8px;border:1px solid #363c4d;border-radius:5px;background:#1b1f2b;color:#d5d9e6;font-size:9px;font-weight:650;cursor:pointer; }
