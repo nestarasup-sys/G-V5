@@ -143,6 +143,8 @@ export type CustomizerWardrobeGroup = {
   rotation: number
   /** Per-character dimming used to temporarily de-emphasize one garment piece. */
   opacity?: number
+  /** Soft deletion from Adjust: omit this component from the preview while keeping it restorable. */
+  hidden?: boolean
   /** Color overrides belong to this individual garment component. */
   colors?: HairColorOverrides
 }
