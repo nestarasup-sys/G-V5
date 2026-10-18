@@ -417,7 +417,7 @@ export function VideoTimeline({ preparing, onEnterFullscreen, canUndo, canRedo, 
           {textTracks.filter(({ kind }) => trackSettings[kind]?.visible !== false).map(({ kind, label, clips }) => <div className={`video-track-row${trackSettings[kind]?.collapsed ? ' collapsed' : ''}`} key={kind}>
             <span className="video-track-label"><i className={`video-track-badge ${kind}`}>{kind === 'speech' ? 'F' : 'P'}</i><span>{trackSettings[kind]?.label ?? label}</span></span>
             <div className={`video-track-lane ${kind}-lane`} style={{ backgroundSize: `${tickSeconds * pixelsPerSecond}px 100%` }} aria-label={`Faixa de ${label.toLowerCase()}`} onClick={seekToLanePosition}>
-              {timeline.saveMarkers.map((marker) => <i className="video-saved-marker" key={marker.id} style={{ left: `${marker.frame / 60 * pixelsPerSecond}px` }} title={`Frame salvo · ${formatTime(marker.frame)}`} />)}
+              {timeline.saveMarkers.filter((marker) => clips.some(({ element }) => marker.affectedTrackIds?.includes(element.id))).map((marker) => <i className="video-saved-marker" key={marker.id} style={{ left: `${marker.frame / 60 * pixelsPerSecond}px` }} title={`Frame salvo · ${formatTime(marker.frame)}`} />)}
               {clips.map(({ element, clip }) => {
                 const selected = selection?.kind === 'text' && selection.clipId === clip.id
                 const start = clip.startFrame
@@ -478,7 +478,7 @@ export function VideoTimeline({ preparing, onEnterFullscreen, canUndo, canRedo, 
                   }} title={`${name} · ${state.label} · clique para selecionar; clique novamente na faixa para mover o playhead`}><span>{state.label}</span></button>
                 })}
                 {keys.map((key, index) => key.frame > 0 && <button type="button" key={`boundary:${key.id}`} className="video-character-boundary" style={{ left: `${key.frame / 60 * pixelsPerSecond}px` }} aria-label={`Mover divisão de ${name}`} title="Arraste para ajustar a duração deste estado" onPointerDown={(event) => beginBoundaryDrag(event, character.id, key.id, key.frame, (keys[index - 1]?.frame ?? 0) + 1, (keys[index + 1]?.frame ?? duration) - 1)} onPointerMove={moveBoundaryDrag} onPointerUp={finishBoundaryDrag} onPointerCancel={finishBoundaryDrag} />)}
-                {timeline.saveMarkers.map((marker) => <i className="video-saved-marker" key={marker.id} style={{ left: `${marker.frame / 60 * pixelsPerSecond}px` }} title={`Frame salvo · ${formatTime(marker.frame)}`} />)}
+                {timeline.saveMarkers.filter((marker) => marker.affectedTrackIds?.includes(character.id)).map((marker) => <i className="video-saved-marker" key={marker.id} style={{ left: `${marker.frame / 60 * pixelsPerSecond}px` }} title={`Frame salvo · ${formatTime(marker.frame)}`} />)}
                 {keys.map((key) => <button type="button" className="video-keyframe" key={key.id} style={{ left: `${key.frame / 60 * pixelsPerSecond}px` }} title={`${formatTime(key.frame)} · ${key.faceMode}`} onClick={() => { characterTrackClickRef.current = null; const segment = characterSegmentAtFrame(timeline, character.id, key.frame, duration); setSelection(segment ? { kind: 'character', elementId: character.id, ...segment } : null); onSelectElement(character.id); onSeek(key.frame) }} aria-label={`Ir ao frame ${formatTime(key.frame)} de ${name}`} />)}
                 <i className="video-lane-playhead" style={{ left: `${playheadFrame / 60 * pixelsPerSecond}px` }} />
               </div>
