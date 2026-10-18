@@ -359,7 +359,7 @@ export type AnimatorAnimationDraft = {
 }
 export type AnimatorAnimationAsset = { id: string; dataUrl: string }
 
-export type FabricatorDesktopApi = {
+export type FabricatorDesktopApi = import('./paint').PaintDesktopApi & {
   listFabricatorSlots: () => Promise<FabricatorSlotSummary[]>
   importFabricatorModel: (slot: number) => Promise<{ sourceName: string; sourceAssetName: string; sourceDataUrl: string } | null>
   loadFabricatorSlot: (slot: number) => Promise<FabricatorProject | null>

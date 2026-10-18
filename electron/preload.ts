@@ -4,6 +4,10 @@ import type { CustomizerDesktopApi } from '../src/shared/customizer'
 import type { StudioDesktopApi, VideoStudioDesktopApi } from '../src/shared/studio'
 
 const fabricatorApi: FabricatorDesktopApi = {
+  listPaintAssets: () => ipcRenderer.invoke('fabricator:paint:list'),
+  loadPaintAsset: (id) => ipcRenderer.invoke('fabricator:paint:load', id),
+  savePaintAsset: (id, sourceHash, dataUrl) => ipcRenderer.invoke('fabricator:paint:save', id, sourceHash, dataUrl),
+  removePaintEdit: (id) => ipcRenderer.invoke('fabricator:paint:remove', id),
   listFabricatorSlots: () => ipcRenderer.invoke('fabricator:list-slots'),
   importFabricatorModel: (slot) => ipcRenderer.invoke('fabricator:import-model', slot),
   loadFabricatorSlot: (slot) => ipcRenderer.invoke('fabricator:load-slot', slot),
