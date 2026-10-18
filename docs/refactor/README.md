@@ -14,6 +14,8 @@
 | Segurança, logging, performance, acessibilidade e operação | [QUALIDADE_E_OPERACAO.md](QUALIDADE_E_OPERACAO.md) |
 | Análise de stack, alternativas e decisões a validar | [DECISOES/ADR-0001-runtime-e-testes.md](DECISOES/ADR-0001-runtime-e-testes.md) |
 | Resultados das verificações realmente executadas nesta revisão e limites | [AUDITORIAS/REVISAO_ESTATICA_2026-10-18.md](AUDITORIAS/REVISAO_ESTATICA_2026-10-18.md) |
+| Implementação inicial do DEV AI, comandos e resultados sintéticos da Etapa A | [AUDITORIAS/BASELINE_DEV_AI_2026-10-18.md](AUDITORIAS/BASELINE_DEV_AI_2026-10-18.md) |
+| Handoff técnico detalhado para Codex executar testes reais em Windows/Electron/IPC | [CODEX_HANDOFF_EXECUCAO_WINDOWS_E_IPC.md](CODEX_HANDOFF_EXECUCAO_WINDOWS_E_IPC.md) |
 
 **Histórico:** a versão anterior integral do plano permanece recuperável no Git em [`5b848345`](https://github.com/nestarasup-sys/G-V5/blob/5b8483454757f4cc9606c626471aabbeccf35daa/docs/PLANO_ESTRUTURA_PROJETO_E_DADOS.md). Esta versão é histórico, **não** uma segunda fonte normativa. O documento `docs/STUDIO_WORKSPACES.md` foi removido em `192245e`; não criar links correntes para ele.
 
