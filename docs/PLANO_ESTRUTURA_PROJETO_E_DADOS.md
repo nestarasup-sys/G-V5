@@ -677,7 +677,26 @@ Este documento registra o plano inicial; estes detalhes precisam ser definidos d
 - Quais tamanhos de projeto representam os cenários reais de desempenho (ex.: quantidade de personagens, peças, imagens e clipes) para os benchmarks?
 - Qual deve ser o comportamento ao trocar de área: restaurar estado local recente ou iniciar limpo? A regra precisa ser definida separadamente para cada workspace.
 
-## 9. Referências do repositório
+## 9. Espaço de trabalho documental da refatoração
+
+Este plano é vivo e pode ser atualizado pela IA/agente responsável durante a revisão e a implementação. O agente está autorizado a acrescentar checklists marcáveis (`- [ ]`/`- [x]`), notas de investigação, diagramas, decisões arquiteturais (ADR), mapas de dependências, resultados de benchmarks, riscos, dúvidas, critérios de aceite e instruções de operação quando isso ajudar a executar e auditar o trabalho.
+
+Para manter o documento principal legível, pode ser criada uma pasta dedicada, por exemplo `docs/refactor/`, com arquivos como:
+
+```text
+docs/refactor/
+├── README.md                  # índice, escopo, status e links para o plano principal
+├── INVENTARIO.md              # módulos, dependências, dados e pontos de entrada observados
+├── ROADMAP.md                 # etapas detalhadas e checklists de execução
+├── DECISOES/                  # ADR numeradas com contexto, alternativas e consequências
+├── AUDITORIAS/                # resultados reproduzíveis de código, segurança e desempenho
+├── MATRIZES/                  # cobertura por área, fluxo, plataforma e suíte DEV AI
+└── notas/                     # notas temporárias com data, evidência e destino planejado
+```
+
+O agente decide se mantém tudo neste plano ou cria essa pasta conforme o volume. Evitar cópias conflitantes: o README da pasta deve apontar qual documento é a fonte de verdade para cada assunto. Notas temporárias devem indicar data, evidência, status (aberta/resolvida/descartada) e se já foram consolidadas; decisões substituídas devem ser marcadas como superadas, sem apagar contexto necessário. Checklists refletem trabalho realmente concluído, não intenção. Relatórios podem ser resumidos ou ligados a artefatos locais da DEV AI quando forem grandes; não devem incorporar dados pessoais ou conteúdo privado do usuário.
+
+## 10. Referências do repositório
 
 - `README.md` — comandos de desenvolvimento, build e separação atual das camadas.
 - `docs/STUDIO_WORKSPACES.md` — independência entre Studio normal e Video Studio, biblioteca de vídeos/fundos e persistência atual.
