@@ -77,7 +77,7 @@ class TransitionSession {
   }
 }
 
-export function useCharacterTransitions(studio: StudioDocument | null, characters: CustomizerCharacter[], frame: number, playing: boolean, onError: (message: string) => void) {
+export function useCharacterTransitions(studio: StudioDocument | null, characters: CustomizerCharacter[], frame: number, playing: boolean, onError: (message: string) => void, enabled = true) {
   const timeline = studio?.videoTimeline
   const spans = useMemo(() => studio ? compileCharacterTransitions(studio) : [], [studio?.id, timeline?.characterKeys, timeline?.characterBases, timeline?.characterGaps, timeline?.durationFrames])
   const session = useMemo(() => new TransitionSession(studio?.id ?? ''), [studio?.id])
@@ -90,13 +90,13 @@ export function useCharacterTransitions(studio: StudioDocument | null, character
   const nextBoundary = spans.find((span) => span.boundaryFrame > frame)?.boundaryFrame
   useEffect(() => { session.activate(); return () => session.dispose() }, [session])
   useEffect(() => {
-    if (!studio) return
+    if (!studio || !enabled) return
     let cancelled = false
     void session.prepareAhead(spans, frame, characters).then(() => { if (!cancelled) setRevision((value) => value + 1) }).catch((reason: unknown) => {
       if (!cancelled) onError(reason instanceof Error ? reason.message : 'Não foi possível preparar uma animação de personagem.')
     })
     return () => { cancelled = true }
-  }, [session, spans, bucket, nextBoundary, characters, onError])
+  }, [session, spans, bucket, nextBoundary, characters, onError, enabled])
 
   const samplesByFrame = useMemo(() => {
     const result = new Map<number, CharacterTransition[]>()
@@ -105,19 +105,20 @@ export function useCharacterTransitions(studio: StudioDocument | null, character
   }, [spans])
   const samples = useMemo(() => {
     const result = new Map<string, VideoCharacterState>()
-    if (playing) for (const span of samplesByFrame.get(frame) ?? []) {
+    if (enabled && playing) for (const span of samplesByFrame.get(frame) ?? []) {
       if (!(frame > span.startFrame && frame < span.boundaryFrame)) continue
       const character = characters.find((item) => item.id === span.from.element.characterId)
       const state = character && session.get(span, frame, character)
       if (state) result.set(span.elementId, state)
     }
     return result
-  }, [samplesByFrame, frame, playing, session, characters, revision])
+  }, [samplesByFrame, frame, playing, session, characters, revision, enabled])
 
   const preparePlayback = async (startFrame = frame) => {
+    if (!enabled) return true
     await session.prepareAhead(spans, startFrame, characters)
     return activeSession.current === session && activePlan.current.spans === spans && activePlan.current.characters === characters
   }
-  const missing = playing && (samplesByFrame.get(frame) ?? []).some((span) => !samples.has(span.elementId))
+  const missing = enabled && playing && (samplesByFrame.get(frame) ?? []).some((span) => !samples.has(span.elementId))
   return { samples, missing, preparePlayback }
 }

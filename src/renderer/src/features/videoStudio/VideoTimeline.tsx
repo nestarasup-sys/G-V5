@@ -43,7 +43,7 @@ function characterSegmentAtFrame(timeline: VideoTimelineDocument, elementId: str
   return { startFrame: precedingGap?.endFrame ?? stateStart, endFrame: followingGap?.startFrame ?? stateEnd }
 }
 
-export function VideoTimeline({ preparing, onEnterFullscreen, canUndo, canRedo, onUndo, onRedo, selectedCanvasId, studio, playheadFrame, playing, height, presetNames, onSeek, onSelectElement, onTogglePlayback, onSaveFrame, onSplitCharacter, onSplitTextClip, onSplitVideoClip, onUpdateTextClip, onUpdateVideoClip, onChangeVideoAudio, onBeginAudioEdit, onDuplicateVideoClip, onDeleteTextClip, onDeleteVideoClip, onDeleteTextElement, onDeleteCharacterSegment, onDuplicateTextClip, onMoveCharacterBoundary, onChangeDuration, onResize, onAddText, onAddVideo, onChangeTrackSettings, onMoveCharacterTrack, onSetCharacterPositionsLocked }: {
+export function VideoTimeline({ preparing, onEnterFullscreen, canUndo, canRedo, onUndo, onRedo, selectedCanvasId, studio, playheadFrame, playing, height, presetNames, onSeek, onSelectElement, onTogglePlayback, onSaveFrame, onSplitCharacter, onSplitTextClip, onSplitVideoClip, onUpdateTextClip, onUpdateVideoClip, onChangeVideoAudio, onBeginAudioEdit, onDuplicateVideoClip, onDeleteTextClip, onDeleteVideoClip, onDeleteTextElement, onDeleteCharacterSegment, onDuplicateTextClip, onMoveCharacterBoundary, onChangeDuration, onResize, onAddText, onAddVideo, onChangeTrackSettings, onSetCharacterAnimationsEnabled, onMoveCharacterTrack, onSetCharacterPositionsLocked }: {
   preparing: boolean
   onEnterFullscreen: () => void
   canUndo: boolean
@@ -79,6 +79,7 @@ export function VideoTimeline({ preparing, onEnterFullscreen, canUndo, canRedo, 
   onAddText: (kind: 'speech' | 'thought') => void
   onAddVideo: () => void
   onChangeTrackSettings: (id: string, settings: NonNullable<VideoTimelineDocument['trackSettings']>[string]) => void
+  onSetCharacterAnimationsEnabled: (enabled: boolean) => void
   onMoveCharacterTrack: (id: string, direction: -1 | 1) => void
   onSetCharacterPositionsLocked: (locked: boolean) => void
 }) {
@@ -93,7 +94,6 @@ export function VideoTimeline({ preparing, onEnterFullscreen, canUndo, canRedo, 
   const [previewTextClip, setPreviewTextClip] = useState<TextClip | null>(null)
   const [previewVideoClip, setPreviewVideoClip] = useState<VideoMediaClip | null>(null)
   const [previewBoundary, setPreviewBoundary] = useState<{ elementId: string; keyId: string; frame: number } | null>(null)
-  const [snapEnabled, setSnapEnabled] = useState(true)
   const [trackMenuOpen, setTrackMenuOpen] = useState(false)
   const [pixelsPerSecond, setPixelsPerSecond] = useState(() => {
     try {
@@ -102,6 +102,7 @@ export function VideoTimeline({ preparing, onEnterFullscreen, canUndo, canRedo, 
     } catch { return 37 }
   })
   const timeline = videoTimelineFor(studio)
+  const characterAnimationsEnabled = timeline.animateCharacterTransitions !== false
   const selectedCharacterForText = studio.elements.find((element) => element.id === selectedCanvasId && element.kind === 'character')
   useEffect(() => {
     if (selectedCanvasId === undefined) return
@@ -203,7 +204,6 @@ export function VideoTimeline({ preparing, onEnterFullscreen, canUndo, canRedo, 
     if (secondClickOnTrack) onSeek(frame)
   }
   const snapFrame = (frame: number, excludedClipId?: string) => {
-    if (!snapEnabled) return frame
     const candidates = [playheadFrame, Math.round(frame / 60) * 60,
       ...timeline.characterKeys.map((key) => key.frame),
       ...timeline.textClips.filter((clip) => clip.id !== excludedClipId).flatMap((clip) => [clip.startFrame, clip.endFrame]),
@@ -352,8 +352,7 @@ export function VideoTimeline({ preparing, onEnterFullscreen, canUndo, canRedo, 
       <div className="video-timeline-heading"><strong>{formatTime(playheadFrame)}</strong><span>/ {formatTime(duration)}</span><small>{timeline.characterKeys.length + timeline.textClips.length + (timeline.videoClips?.length ?? 0)} eventos</small><button type="button" className="video-history-button" onClick={onUndo} disabled={!canUndo} aria-label="Desfazer" title="Desfazer (Ctrl+Z)"><Icon name="undo" /></button><button type="button" className="video-history-button" onClick={onRedo} disabled={!canRedo} aria-label="Refazer" title="Refazer (Ctrl+Shift+Z ou Ctrl+Y)"><Icon name="redo" /></button><button type="button" className="video-play-button" aria-label={preparing ? 'Cancelar preparação das animações' : playing ? 'Pausar reprodução' : 'Reproduzir'} aria-busy={preparing} onClick={onTogglePlayback}>{playing ? '❚❚' : '▶'}<span>{preparing ? 'Preparando…' : playing ? 'Pausar' : 'Play'}</span></button><button type="button" className="video-split-button" onClick={splitSelection} disabled={!canSplitSelection} title={selection ? 'Dividir o trecho selecionado na posição do playhead' : 'Selecione um trecho para dividir'}>✂ Dividir</button><button type="button" className={`video-position-lock-button${characterPositionsLocked ? ' active' : ''}`} onClick={() => onSetCharacterPositionsLocked(!characterPositionsLocked)} disabled={!characters.length} aria-pressed={characterPositionsLocked} aria-label={characterPositionsLocked ? 'Destrancar posições dos personagens' : 'Trancar posições dos personagens'} title={characterPositionsLocked ? 'Destrancar posições dos personagens' : 'Trancar posições dos personagens'}><Icon name={characterPositionsLocked ? 'lock' : 'unlock'} /></button><button type="button" className="video-add-video-button" onClick={onAddVideo} title="Abrir biblioteca de vídeos">+ Vídeo</button><button type="button" className="video-preview-fullscreen-button" onClick={onEnterFullscreen} aria-label="Prévia em tela cheia" title="Prévia em tela cheia"><Icon name="expand" /></button>{selectedVideoClip && !isLocked('video') && <button type="button" onClick={() => onDuplicateVideoClip(selectedVideoClip)} disabled={selectedVideoClip.endFrame * 2 - selectedVideoClip.startFrame > duration} title="Duplicar vídeo selecionado">Duplicar</button>}{selection?.kind === 'text' && !isLocked(selectedTextClip?.kind ?? 'speech') && selectedTextClip && <button type="button" onClick={() => onDuplicateTextClip(selectedTextClip)} title="Duplicar trecho selecionado">Duplicar</button>}{canDeleteSelection && <button type="button" className="video-delete-selection-button" onClick={deleteSelection} aria-label="Excluir somente o bloco selecionado" title="Excluir somente o bloco selecionado (Backspace)"><Icon name="trash" /></button>}</div>
       <div className="video-timeline-actions">
         <VideoAudioControls master={timeline.videoAudio} selectedClip={selectedVideoClip} clipName={timeline.videoAssets?.find((asset) => asset.id === selectedVideoClip?.assetId)?.name} locked={isLocked('video')} onChangeMaster={onChangeVideoAudio} onChangeClip={onUpdateVideoClip} onBeginEdit={onBeginAudioEdit} />
-        <button type="button" className={snapEnabled ? 'active' : ''} aria-pressed={snapEnabled} onClick={() => setSnapEnabled((value) => !value)} title="Magnetismo das bordas">⌁ Snap</button>
-        <button type="button" className={trackMenuOpen ? 'active' : ''} aria-expanded={trackMenuOpen} onClick={() => setTrackMenuOpen((value) => !value)}>Faixas</button>
+        <button type="button" className={`video-transition-toggle${characterAnimationsEnabled ? ' active' : ''}`} aria-pressed={characterAnimationsEnabled} onClick={() => onSetCharacterAnimationsEnabled(!characterAnimationsEnabled)} title={characterAnimationsEnabled ? 'Desativar animação entre poses e expressões' : 'Ativar animação entre poses e expressões'}><span aria-hidden="true">⇄</span> Animação {characterAnimationsEnabled ? 'ligada' : 'desligada'}</button>
         <label className="video-jump-control">Ir para<input aria-label="Ir para segundo da timeline" type="number" min={0} max={Math.floor(duration / 60)} value={Math.floor(playheadFrame / 60)} onChange={(event) => onSeek(Math.min(duration, Math.max(0, Number(event.currentTarget.value) || 0) * 60))} />s</label>
         <button type="button" onClick={() => onChangeDuration(Math.max(60, duration - 3600))} disabled={duration <= 3600 || timeline.characterKeys.some((key) => key.frame >= duration - 3600) || timeline.textClips.some((clip) => clip.endFrame > duration - 3600) || (timeline.videoClips ?? []).some((clip) => clip.endFrame > duration - 3600)} title="Reduzir duração em um minuto">− 1 min</button>
         <button type="button" onClick={() => onChangeDuration(duration + 3600)} title="Aumentar duração em um minuto">+ 1 min</button>
@@ -383,7 +382,7 @@ export function VideoTimeline({ preparing, onEnterFullscreen, canUndo, canRedo, 
     <div className="video-timeline-scroll" ref={timelineScrollRef}>
       <div className="video-timeline-content" style={{ width: `${contentWidth}px` }}>
         <div className="video-timeline-ruler-row">
-          <span className="video-track-label video-ruler-label">Faixas</span>
+          <span className="video-track-label video-ruler-label">Faixas<button type="button" className={`video-track-settings-toggle${trackMenuOpen ? ' active' : ''}`} aria-label="Configurar faixas" aria-expanded={trackMenuOpen} title="Configurar faixas" onClick={() => setTrackMenuOpen((value) => !value)}>⚙</button></span>
           <div className="video-timeline-ruler" style={{ width: `${timelineWidth}px`, backgroundSize: `${tickSeconds * pixelsPerSecond}px 100%` }} aria-label="Posição do playhead">
             {Array.from({ length: tickCount + 1 }, (_, index) => index * tickSeconds).map((second) => <span key={second} style={{ left: `${second * pixelsPerSecond}px` }}>{`${String(Math.floor(second / 60)).padStart(2, '0')}:${String(second % 60).padStart(2, '0')}`}</span>)}
             <input aria-label="Mover playhead" type="range" min={0} max={duration} step={1} value={Math.min(playheadFrame, duration)} onChange={(event) => onSeek(Number(event.currentTarget.value))} />
