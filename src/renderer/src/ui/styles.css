@@ -76,7 +76,7 @@ button:focus-visible, input:focus-visible { outline: 3px solid #ed8caf; outline-
 .studio-empty-state svg { width:19px;height:19px; }
 .studio-empty-state strong { color:#5a505c;font-size:13px; }
 .studio-empty-state small { font-size:10px; }
-.studio-editor { min-width:0;min-height:0;flex:1;display:grid;grid-template-columns:136px minmax(0,1fr) 136px;gap:10px;overflow:hidden;padding:10px;background:#f5f3f4; }
+.studio-editor { min-width:0;min-height:0;flex:1;display:grid;grid-template-columns:136px minmax(0,1fr);gap:10px;overflow:hidden;padding:10px;background:#f5f3f4; }
 .studio-editor.video-workspace:not(.full-view) { grid-template-rows:minmax(0,1fr) var(--video-timeline-height,218px); }
 .video-timeline { min-width:0;min-height:0;position:relative;grid-column:1/-1;grid-row:2;display:flex;flex-direction:column;gap:5px;overflow:hidden;padding:19px 8px 7px;border:1px solid #2b3040;border-radius:7px;background:#11141d;color:#e8eaf2;box-shadow:0 5px 18px #10121b25; }
 .video-timeline-resize { width:76px;height:13px;position:absolute;z-index:5;top:2px;left:50%;display:flex;align-items:center;justify-content:center;gap:3px;transform:translateX(-50%);border:1px solid #484d5e;border-radius:99px;background:#1a1e2b;color:#aab1c9;cursor:ns-resize;touch-action:none; }
@@ -252,6 +252,7 @@ button:focus-visible, input:focus-visible { outline: 3px solid #ed8caf; outline-
 .studio-tool-button>svg { width:23px;height:23px; }
 .studio-tool-button>span { color:#785163;font-size:10px;font-weight:800;letter-spacing:.7px;text-transform:uppercase; }
 .studio-tool-button>i { position:absolute;top:7px;right:8px;color:#f0a6c1;font-size:9px;font-style:normal; }
+.studio-cast-tool-button>i { min-width:15px;height:15px;display:grid;place-items:center;padding:0 3px;border-radius:99px;background:#f8e5ed;color:#a7446b;font-size:8px;font-weight:800;font-style:normal; }
 .studio-tool-separator { height:4px; }
 .studio-tool-button.studio-view-button { min-height:76px;background:#ffe8f0; }
 .studio-save-indicator { display:flex;align-items:center;gap:6px;margin-top:auto;padding:6px 2px 0;color:#8f8190;font-size:8px; }

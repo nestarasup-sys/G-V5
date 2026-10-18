@@ -405,16 +405,6 @@ export function StudioPage({ workspace = 'studio' }: { workspace?: StudioWorkspa
     raf = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(raf)
   }, [isVideoWorkspace, videoPlaying, activeStudioId, activeStudio?.videoTimeline?.durationFrames])
-  const allStageCharactersLocked = stageCharacters.length > 0 && stageCharacters.every((element) => element.positionLocked === true)
-  const toggleStageCharacterPositionLock = () => {
-    if (!activeStudio || !stageCharacters.length) return
-    const nextLocked = !allStageCharactersLocked
-    changeScene((studio) => ({
-      ...studio,
-      elements: studio.elements.map((element) => element.kind === 'character' ? { ...element, positionLocked: nextLocked } : element),
-      updatedAt: new Date().toISOString()
-    }))
-  }
   const rememberCharacterInspectorView = (tab: 'editor' | 'custom', customView: 'face' | 'presets' = inspectorCustomView) => {
     if (selectedElement?.kind === 'character') characterInspectorViewRef.current = { tab, customView }
   }
@@ -1754,24 +1744,6 @@ export function StudioPage({ workspace = 'studio' }: { workspace?: StudioWorkspa
     </div>
   }
 
-  const castPanel = () => <div className="studio-cast-content">
-    <header><span><h2>Elenco</h2><small>{stageCharacters.length} na cena</small></span><button className="studio-cast-add-button" onClick={openCastPicker} type="button"><Icon name="plus" />Adicionar</button></header>
-    <section className="studio-cast-section" aria-label="Personagens na cena">
-      <header><h3>Na cena</h3><button className={`studio-cast-lock${allStageCharactersLocked ? ' active' : ''}`} onClick={toggleStageCharacterPositionLock} disabled={!stageCharacters.length} aria-label={allStageCharactersLocked ? 'Desbloquear posição dos personagens' : 'Bloquear posição dos personagens'} title={allStageCharactersLocked ? 'Desbloquear posições' : 'Bloquear posições'} type="button"><Icon name={allStageCharactersLocked ? 'lock' : 'unlock'} /></button></header>
-      {stageCharacters.length ? stageCharacters.map((element) => {
-        const character = availableCharacters.find((item) => item.id === element.characterId)
-        const firstName = (character?.name ?? element.text).trim().split(/\s+/)[0] || element.text
-        return <article className={`studio-cast-item${selectedElementId === element.id ? ' selected' : ''}`} key={element.id}>
-          <button className="studio-cast-select" onClick={() => { setSelectedElementId(element.id); setActiveTool(null); setInspectorOpen(true); restoreCharacterInspectorView() }} type="button">
-            {character ? <CharacterPortrait character={character} /> : <span className="studio-cast-fallback">{element.text.slice(0, 1)}</span>}
-            <span>{firstName}</span>
-          </button>
-          <button className="studio-cast-remove" onClick={() => removeStageCharacter(element)} aria-label={`Remover ${firstName} do elenco`} title="Remover da cena" type="button">×</button>
-        </article>
-      }) : <p className="studio-cast-empty">Adicione personagens para montar a cena.</p>}
-    </section>
-  </div>
-
   if (activeStudio) {
     const backgroundAsset = activeStudio.assets.find((asset) => asset.id === activeStudio.backgroundAssetId)
     const inspectorWidth = sceneRef.current ? Math.min(38, 276 / sceneRef.current.clientWidth * 100) : 28
@@ -1795,6 +1767,7 @@ export function StudioPage({ workspace = 'studio' }: { workspace?: StudioWorkspa
             <button className="studio-round-action" disabled={!canRedo} onClick={redo} title="Refazer (Ctrl+Y)" aria-label="Refazer" type="button"><Icon name="redo" /></button>
           </div>
           <nav className="studio-tool-list" aria-label="Ferramentas da cena">
+            <button className="studio-tool-button studio-cast-tool-button" onClick={openCastPicker} type="button" aria-haspopup="dialog" aria-expanded={castPickerOpen}><Icon name="user" /><span>Elenco</span><i aria-hidden="true">{stageCharacters.length}</i></button>
             {studioTools.map((tool) => <button className={`studio-tool-button${activeTool === tool.id ? ' active' : ''}`} key={tool.id} onClick={() => { setActiveTool(tool.id); setInspectorOpen(true); setInspectorTab('editor') }} type="button"><Icon name={tool.icon} /><span>{tool.label}</span><i aria-hidden="true">✦</i></button>)}
             <button className="studio-tool-button" onClick={() => addTextElement('narrator')} type="button"><Icon name="message" /><span>Narrador</span><i aria-hidden="true">✦</i></button>
             <button className="studio-tool-button" onClick={() => addTextElement('speech')} type="button"><Icon name="message" /><span>Fala</span><i aria-hidden="true">✦</i></button>
@@ -1832,7 +1805,6 @@ export function StudioPage({ workspace = 'studio' }: { workspace?: StudioWorkspa
             </aside>}
           </div>
         </section>
-        {!fullView && <aside className="studio-editor-rail studio-editor-right" aria-label="Elenco do Studio">{castPanel()}</aside>}
         {!fullView && isVideoWorkspace && <VideoTimeline studio={activeStudio} playheadFrame={videoPlayheadFrame} playing={videoPlaying} height={videoTimelineHeight} presetNames={Object.fromEntries(studioExpressionPresets.map((preset) => [preset.id, preset.name]))} onResize={setVideoTimelineHeight} onSelectElement={(elementId) => { setVideoPlaying(false); setSelectedElementId(elementId); setInspectorOpen(true); setInspectorTab('editor') }} onSeek={seekVideoFrame} onTogglePlayback={() => { if (videoPlaying) seekVideoFrame(videoPlayheadFrame); else setVideoPlaying(true) }} onSaveFrame={saveVideoFrame} onSplitCharacter={splitVideoCharacterTrack} onSplitTextClip={splitVideoTextClip} onUpdateTextClip={updateVideoTextClip} onDeleteTextClip={deleteVideoTextClip} onDuplicateTextClip={duplicateVideoTextClip} onMoveCharacterBoundary={moveVideoCharacterBoundary} onAddText={(kind) => addTextElement(kind)} onChangeTrackSettings={(id, settings) => changeScene((studio) => ({ ...studio, videoTimeline: { ...videoTimelineFor(studio), trackSettings: { ...videoTimelineFor(studio).trackSettings, [id]: settings } }, updatedAt: new Date().toISOString() }))} onMoveCharacterTrack={moveVideoCharacterTrack} onChangeDuration={(durationFrames) => changeScene((studio) => ({ ...studio, videoTimeline: { ...videoTimelineFor(studio), durationFrames, playheadFrame: Math.min(videoPlayheadFrame, durationFrames) }, updatedAt: new Date().toISOString() }))} />}
         {castPickerOpen && <div className="studio-cast-modal-backdrop" onPointerDown={(event) => { if (event.target === event.currentTarget && !savingCast) setCastPickerOpen(false) }}>
           <section className="studio-cast-modal" role="dialog" aria-modal="true" aria-labelledby="studio-cast-modal-title">
