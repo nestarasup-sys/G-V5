@@ -93,6 +93,10 @@ export class PaintStore {
         const fingerprint = hash(edited ? await readFile(sidecar(path)) : original)
         const category = id.split('/')[0]
         const assetId = basename(entry.name, '.png')
+        // Imported source sheets are retained for editing/reprocessing by their
+        // owning workspace, but Paint Nymi should only expose the final assets
+        // that the app actually uses (for example, an individual mouth crop).
+        if (assetId === 'source' || (category === 'faces' && assetId.startsWith('sheet-'))) continue
         const assetFolder = dirname(path)
         const collectionFolder = basename(assetFolder) === 'images' || basename(assetFolder) === 'parts' ? dirname(assetFolder) : assetFolder
         const manifestFile = category === 'models' ? 'project.json' : category === 'poses' ? basename(collectionFolder) === 'draft' ? 'draft.json' : 'pose.json' : category === 'wardrobe' ? 'wardrobe.json' : category === 'animations' ? 'animation.json' : category === 'face-components' ? 'asset.json' : category === 'faces' ? basename(collectionFolder).startsWith('item-') ? 'item.json' : 'face.json' : category === 'hair' ? basename(collectionFolder).startsWith('style-') ? 'hair-style.json' : 'hair.json' : ''
