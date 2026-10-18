@@ -1,5 +1,68 @@
 import type { StudioDocument, StudioElement, VideoCharacterState, VideoTimelineDocument } from '../../../../shared/studio'
 
+type CharacterPosition = Pick<StudioElement, 'x' | 'y'>
+
+/** The first segment owns stage placement; acting remains local to each segment. */
+function firstCharacterPosition(timeline: VideoTimelineDocument, elementId: string, fallback?: CharacterPosition): CharacterPosition | undefined {
+  let first: VideoTimelineDocument['characterKeys'][number] | undefined
+  for (const key of timeline.characterKeys) {
+    if (key.elementId === elementId && key.state && (!first || key.frame <= first.frame)) first = key
+  }
+  return first?.frame === 0 ? first.state!.element : timeline.characterBases?.[elementId]?.element ?? first?.state?.element ?? fallback
+}
+
+function positionedState(state: VideoCharacterState, position: CharacterPosition): VideoCharacterState {
+  return state.element.x === position.x && state.element.y === position.y ? state : { ...state, element: { ...state.element, x: position.x, y: position.y } }
+}
+
+function applyCharacterPositions(studio: StudioDocument, positions: Map<string, CharacterPosition>): StudioDocument {
+  const timeline = studio.videoTimeline
+  if (!timeline || !positions.size) return studio
+  let changed = false
+  const elements = studio.elements.map((element) => {
+    const position = positions.get(element.id)
+    if (!position || element.x === position.x && element.y === position.y) return element
+    changed = true
+    return { ...element, x: position.x, y: position.y }
+  })
+  const characterBases = Object.fromEntries(Object.entries(timeline.characterBases ?? {}).map(([id, state]) => {
+    const position = positions.get(id), next = position ? positionedState(state, position) : state
+    if (next !== state) changed = true
+    return [id, next]
+  }))
+  const characterKeys = timeline.characterKeys.map((key) => {
+    const position = positions.get(key.elementId)
+    if (!position || !key.state) return key
+    const state = positionedState(key.state, position)
+    if (state === key.state) return key
+    changed = true
+    return { ...key, state }
+  })
+  return changed ? { ...studio, elements, videoTimeline: { ...timeline, ...(timeline.characterBases ? { characterBases } : {}), characterKeys } } : studio
+}
+
+/** Normalize legacy scripts once, preserving every pose, face, bitmap and clip boundary. */
+export function normalizeVideoCharacterPositions(studio: StudioDocument): StudioDocument {
+  if (!studio.videoTimeline) return studio
+  const positions = new Map<string, CharacterPosition>()
+  for (const element of studio.elements) {
+    if (element.kind === 'character') positions.set(element.id, firstCharacterPosition(studio.videoTimeline, element.id, element)!)
+  }
+  return applyCharacterPositions(studio, positions)
+}
+
+/** Any stage/inspector move is a global position edit for that actor alone. */
+export function synchronizeVideoCharacterPositions(before: StudioDocument, after: StudioDocument): StudioDocument {
+  if (before === after || !after.videoTimeline) return after
+  const previous = new Map(before.elements.filter((element) => element.kind === 'character').map((element) => [element.id, element]))
+  const edited = new Map<string, CharacterPosition>()
+  for (const element of after.elements) {
+    const original = previous.get(element.id)
+    if (element.kind === 'character' && original && (element.x !== original.x || element.y !== original.y)) edited.set(element.id, element)
+  }
+  return normalizeVideoCharacterPositions(applyCharacterPositions(after, edited))
+}
+
 export function captureVideoCharacter(studio: StudioDocument, element: StudioElement): VideoCharacterState | null {
   const imageDataUrl = studio.assets.find((asset) => asset.id === element.assetId)?.dataUrl
   return element.kind === 'character' && imageDataUrl ? { element: structuredClone(element), imageDataUrl } : null
@@ -11,10 +74,12 @@ export function characterStateAt(timeline: VideoTimelineDocument, elementId: str
     if (key.frame > frame) break
     if (key.state) current = key.state
   }
-  return current
+  const position = firstCharacterPosition(timeline, elementId)
+  return current && position ? positionedState(current, position) : current
 }
 
 export function restoreVideoTracks(studio: StudioDocument, frame: number): StudioDocument {
+  studio = normalizeVideoCharacterPositions(studio)
   const timeline = studio.videoTimeline
   if (!timeline) return studio
   const states = new Map(studio.elements.filter((element) => element.kind === 'character').map((element) => [element.id, characterStateAt(timeline, element.id, frame)]))

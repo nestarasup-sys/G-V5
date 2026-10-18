@@ -203,3 +203,19 @@ compositor real para comparar a API padrão e a entrada opcional, renderizar a
 transição de corpo/rosto/efeitos e verificar a preparação sob React StrictMode.
 Os artefatos ficam em `out/audit-character-transitions-ui/`; nenhum roteiro ou
 asset real do usuário é alterado pelos testes.
+
+## Posição única por personagem
+
+X e Y são globais para cada personagem no roteiro. Ao carregar, a posição vem do
+estado no frame zero; se não existir, da Base e depois do primeiro estado salvo,
+com a posição atual como fallback. Roteiros antigos com trechos em posições
+diferentes são normalizados em memória e seguem o salvamento automático normal.
+
+`characterTrack.ts` aplica a mesma posição ao elemento da cena, à Base e a todos
+os estados desse personagem. `synchronizeVideoCharacterPositions` detecta
+movimentos em qualquer trecho, inclusive no último, e propaga X/Y antes da
+captura do estado local. A leitura na reprodução e a restauração no seek/undo
+também respeitam a referência inicial. Criar ou dividir trechos mantém essa
+posição. As imagens e os estados de pose, expressão, rotação e tamanho continuam
+individuais; outros personagens não são reposicionados. Não há novo schema nem
+alteração no armazenamento do Studio normal ou do Fabricador Dev.

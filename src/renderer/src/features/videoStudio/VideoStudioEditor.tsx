@@ -15,7 +15,7 @@ import { VideoLibraryModal } from './VideoLibraryModal'
 import { VideoStudioClipPreview } from './VideoClipPreview'
 import { isValidVideoAudioSettings } from '../../../../shared/videoAudio'
 import { VideoTimeline, videoTimelineFor } from './VideoTimeline'
-import { captureVideoCharacter, characterStateAt, restoreVideoTracks, videoCharacterStateEquals } from './characterTrack'
+import { captureVideoCharacter, characterStateAt, normalizeVideoCharacterPositions, restoreVideoTracks, synchronizeVideoCharacterPositions, videoCharacterStateEquals } from './characterTrack'
 import type { CustomizerCharacter } from '../../../../shared/customizer'
 import type { CustomizerFaceAppearance } from '../../../../shared/customizer'
 import type { FaceCatalogItem, FaceCatalogItemSummary, FaceExpressionCollection, FaceExpressionEffects, FaceExpressionPreset, FaceExpressionPresetSummary, FaceSheetKind, FabricatorPoseSummary } from '../../../../shared/fabricator'
@@ -565,7 +565,7 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
         const loaded = await persistence.list()
         const folder = await persistence.getFolder()
         if (cancelled) return
-        setStudios(loaded)
+        setStudios(loaded.map(normalizeVideoCharacterPositions))
         setStudioFolder(folder)
       } catch (reason) {
         if (!cancelled) setError(reason instanceof Error ? reason.message : 'Não foi possível carregar os Studios.')
@@ -896,7 +896,7 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
     if (!activeStudioId) return
     setStudios((current) => current.map((studio) => {
       if (studio.id !== activeStudioId) return studio
-      const next = transform(studio)
+      const next = synchronizeVideoCharacterPositions(studio, transform(studio))
       if (!isVideoWorkspace || !selectedElementId || next === studio) return next
       const previousElement = studio.elements.find((element) => element.id === selectedElementId && element.kind === 'character')
       const editedElement = next.elements.find((element) => element.id === selectedElementId && element.kind === 'character')
@@ -923,7 +923,7 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
           : { ...key, state }
       })
       if (!activeKey) characterBases[selectedElementId] = editedState
-      return { ...next, videoTimeline: { ...timeline, characterBases, characterKeys } }
+      return normalizeVideoCharacterPositions({ ...next, videoTimeline: { ...timeline, characterBases, characterKeys } })
     }))
     setSaved(false)
   }
