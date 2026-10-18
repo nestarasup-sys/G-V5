@@ -270,6 +270,7 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
   const [animationPreparing, setAnimationPreparing] = useState(false)
   const animationPlayRequestRef = useRef(0)
   const [automaticBlinkPreview, setAutomaticBlinkPreview] = useState<Record<string, { dataUrl: string; geometry: Pick<StudioElement, 'width' | 'height' | 'characterCanvasWidth'> }>>({})
+  const [automaticMouthPreview, setAutomaticMouthPreview] = useState<Record<string, { dataUrl: string; geometry: Pick<StudioElement, 'width' | 'height' | 'characterCanvasWidth'> }>>({})
   const [historyVersion, setHistoryVersion] = useState(0)
   const [canUndo, setCanUndo] = useState(false)
   const [canRedo, setCanRedo] = useState(false)
@@ -329,6 +330,34 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
     characters: automaticBlinkTargets.map((element) => {
       const character = availableCharacters.find((item) => item.id === element.characterId)
       return [element.id, element.characterId, character?.updatedAt, element.poseSlot, element.faceAppearance, element.faceTransforms, element.activeExpressionEffects, element.activeFaceMode]
+    }),
+    renderer: STUDIO_FACE_RENDER_VERSION
+  })
+  const automaticMouthModes = new Map<string, 'talk' | 'idle'>()
+  if (isVideoWorkspace && activeStudio) {
+    const timeline = videoTimelineFor(activeStudio)
+    for (const clip of timeline.textClips) {
+      if (clip.startFrame > videoPreviewFrame || videoPreviewFrame >= clip.endFrame) continue
+      const balloon = clip.state ?? activeStudio.elements.find((element) => element.id === clip.elementId)
+      const speakerId = balloon?.speakerCharacterId
+      if (!speakerId) continue
+      if (clip.kind === 'speech') automaticMouthModes.set(speakerId, 'talk')
+      else if (automaticMouthModes.get(speakerId) !== 'talk') automaticMouthModes.set(speakerId, 'idle')
+    }
+  }
+  const automaticMouthTargets = isVideoWorkspace && activeStudio
+    ? stageCharacters.flatMap((element) => {
+        const mode = automaticMouthModes.get(element.id)
+        if (!mode) return []
+        const state = characterStateAt(videoTimelineFor(activeStudio), element.id, videoPreviewFrame)
+        const current = videoPlaybackStates?.get(element.id)?.element ?? state?.element ?? element
+        return [{ element: current, mode }]
+      })
+    : []
+  const automaticMouthSignature = JSON.stringify({
+    targets: automaticMouthTargets.map(({ element, mode }) => {
+      const character = availableCharacters.find((item) => item.id === element.characterId)
+      return [element.id, mode, character?.updatedAt, element.poseSlot, element.faceAppearance, element.faceTransforms, element.activeExpressionEffects, element.activeExpressionPresetId, element.activeExpressionPresetUpdatedAt]
     }),
     renderer: STUDIO_FACE_RENDER_VERSION
   })
@@ -418,6 +447,43 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
       setAutomaticBlinkPreview({})
     }
   }, [activeStudio?.id, automaticBlinkSignature, availableCharacters, isVideoWorkspace, videoPlaying])
+  useEffect(() => {
+    setAutomaticMouthPreview({})
+    if (!activeStudio || !isVideoWorkspace || !automaticMouthTargets.length) return
+    let cancelled = false
+    const renderAutomaticMouths = async () => {
+      const renderedStates: Record<string, { dataUrl: string; geometry: Pick<StudioElement, 'width' | 'height' | 'characterCanvasWidth'> }> = {}
+      const { renderSavedCharacter } = await import('../customizer/CustomizerPage')
+      const stageWidth = sceneRef.current?.clientWidth ?? 1000
+      const stageHeight = sceneRef.current?.clientHeight ?? 562
+      for (const { element, mode } of automaticMouthTargets) {
+        const character = availableCharacters.find((item) => item.id === element.characterId)
+        const appearance = element.faceAppearance ?? character?.customization.faceAppearance
+        if (!character || !appearance) continue
+        try {
+          const characterCopy: CustomizerCharacter = {
+            ...character,
+            customization: {
+              ...character.customization,
+              poseSlot: element.poseSlot === undefined ? character.customization.poseSlot : element.poseSlot,
+              faceAppearance: appearance
+            }
+          }
+          const rendered = await renderSavedCharacter(characterCopy, element.faceTransforms, element.activeExpressionEffects, mode)
+          const crop = await trimTransparentImage(rendered.dataUrl)
+          renderedStates[element.id] = {
+            dataUrl: crop?.dataUrl ?? rendered.dataUrl,
+            geometry: faceRenderGeometry(element, rendered, crop, stageWidth, stageHeight)
+          }
+        } catch {
+          // Keep the authored character face if this model has no matching open-mouth asset.
+        }
+      }
+      if (!cancelled) setAutomaticMouthPreview(renderedStates)
+    }
+    void renderAutomaticMouths()
+    return () => { cancelled = true }
+  }, [activeStudio?.id, automaticMouthSignature, availableCharacters, isVideoWorkspace])
   useEffect(() => {
     if (!isVideoWorkspace) return
     const timer = window.setTimeout(() => {
@@ -1739,7 +1805,19 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
   const updateElement = (id: string, values: Partial<StudioElement>, record = true) => {
     const target = activeStudio?.elements.find((element) => element.id === id)
     if (isVideoWorkspace && target && videoTimelineFor(activeStudio!).trackSettings?.[target.kind === 'character' ? id : target.kind]?.locked) return
-    const update = (studio: StudioDocument) => ({ ...studio, elements: studio.elements.map((element) => element.id === id ? { ...element, ...values } : element), updatedAt: new Date().toISOString() })
+    const sharedTextTransform = target && (target.kind === 'speech' || target.kind === 'thought')
+      ? Object.fromEntries((['x', 'y', 'width', 'height', 'rotation'] as const).filter((key) => Object.hasOwn(values, key)).map((key) => [key, values[key]])) as Partial<Pick<StudioElement, 'x' | 'y' | 'width' | 'height' | 'rotation'>>
+      : {}
+    const update = (studio: StudioDocument) => {
+      const elements = studio.elements.map((element) => element.id === id ? { ...element, ...values } : element)
+      if (!isVideoWorkspace || !target || (target.kind !== 'speech' && target.kind !== 'thought') || !Object.keys(sharedTextTransform).length) return { ...studio, elements, updatedAt: new Date().toISOString() }
+      const timeline = videoTimelineFor(studio)
+      const baseElement = studio.elements.find((element) => element.id === id) ?? target
+      const textClips = timeline.textClips.map((clip) => clip.elementId === id
+        ? { ...clip, state: { ...baseElement, ...clip.state, ...sharedTextTransform } }
+        : clip)
+      return { ...studio, elements, videoTimeline: { ...timeline, textClips }, updatedAt: new Date().toISOString() }
+    }
     if (record) changeScene(update)
     else patchStudio(update)
   }
@@ -2093,16 +2171,18 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
               if (isVideoWorkspace && (sourceElement.kind === 'speech' || sourceElement.kind === 'thought') && !videoTimelineFor(activeStudio).textClips.some((clip) => clip.elementId === sourceElement.id && clip.startFrame <= videoPreviewFrame && videoPreviewFrame < clip.endFrame)) return null
               const transitionState = characterAnimation.samples.get(sourceElement.id)
               const playbackState = transitionState ?? videoPlaybackStates?.get(sourceElement.id)
-              const blinkState = sourceElement.kind === 'character' && !transitionState ? automaticBlinkPreview[sourceElement.id] : undefined
+              const automaticMouthState = sourceElement.kind === 'character' && !transitionState ? automaticMouthPreview[sourceElement.id] : undefined
+              const blinkState = sourceElement.kind === 'character' && !transitionState && !automaticMouthState ? automaticBlinkPreview[sourceElement.id] : undefined
               const activeTextClip = isVideoWorkspace && videoPlaying ? videoTimelineFor(activeStudio).textClips.find((clip) => clip.elementId === sourceElement.id && clip.startFrame <= videoPreviewFrame && videoPreviewFrame < clip.endFrame) : undefined
               const playbackElement = playbackState?.element ?? activeTextClip?.state ?? sourceElement
-              const blinkedElement = blinkState && playbackElement.kind === 'character' ? { ...playbackElement, ...blinkState.geometry } : playbackElement
+              const faceGeometry = automaticMouthState?.geometry ?? blinkState?.geometry
+              const blinkedElement = faceGeometry && playbackElement.kind === 'character' ? { ...playbackElement, ...faceGeometry } : playbackElement
               const element = isVideoWorkspace ? videoCharacterStageElement(videoTimelineFor(activeStudio), blinkedElement) : blinkedElement
               const asset = element.assetId ? activeStudio.assets.find((item) => item.id === element.assetId) : undefined
               const speaker = element.speakerCharacterId ? activeStudio.elements.find((item) => item.id === element.speakerCharacterId && item.kind === 'character') : undefined
               const speakerName = speaker?.text || element.speakerName
               const speakerColor = videoCharacterTrackColor(element.speakerCharacterId ?? element.id, speaker?.timelineColor ?? element.speakerColor)
-              const imageDataUrl = blinkState?.dataUrl ?? playbackState?.imageDataUrl ?? asset?.dataUrl
+              const imageDataUrl = automaticMouthState?.dataUrl ?? blinkState?.dataUrl ?? playbackState?.imageDataUrl ?? asset?.dataUrl
               const size = studioElementSize(element)
               return <div key={element.id} className={`video-studio-canvas-element video-studio-element-${element.kind}${selectedElementId === element.id && !fullView ? ' selected' : ''}`} style={{ ...imageStyle(element.x, element.y, size.width, size.height, element.rotation, element.kind === 'character' && element.flipX === true), zIndex: Math.max(0, element.zIndex) + 2, ...(speakerName ? { '--speaker-color': speakerColor } as CSSProperties : {}) }} onPointerDown={(event) => startDrag(event, element.id)} onPointerMove={moveDrag} onPointerUp={endDrag} onPointerCancel={endDrag}>
                 {(element.kind === 'image' || element.kind === 'character') && imageDataUrl ? <img src={imageDataUrl} alt={asset?.name ?? element.text} draggable={false} /> : element.kind === 'speech' || element.kind === 'thought' ? <span>{speakerName && <strong className="video-studio-balloon-speaker">{speakerName}</strong>}<span className="video-studio-balloon-text">{element.text}</span></span> : <span>{element.text}</span>}
