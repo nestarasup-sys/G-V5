@@ -1,6 +1,6 @@
 # Roadmap executável, gates e checklists
 
-**Versão:** 2026-10-18, base `5b848345`. **Esta é a única fonte de verdade para tarefas e progresso.** Evidência e classificação dos fatos estão em [INVENTARIO_E_EVIDENCIAS.md](INVENTARIO_E_EVIDENCIAS.md). Nada abaixo foi implementado nesta revisão. O plano é incremental: cada PR/commit deve deixar `typecheck`, build e casos afetados verdes antes de avançar.
+**Versão:** 2026-10-18, base `5b848345`. **Esta é a única fonte de verdade para tarefas e progresso.** Evidência e classificação dos fatos estão em [INVENTARIO_E_EVIDENCIAS.md](INVENTARIO_E_EVIDENCIAS.md). O inventário foi inicialmente documentado; implementações parciais e suas evidências agora são atualizadas por incremento, sem considerar gates abertos como concluídos. O plano é incremental: cada PR/commit deve deixar `typecheck`, build e casos afetados verdes antes de avançar.
 
 ## Contrato obrigatório por tarefa
 
@@ -12,6 +12,8 @@ Para fechar qualquer `R-xx`: registrar **problema**, `E-xx`/arquivo/linha, hipó
 
 **Progresso parcial 2026-10-18:** ver [baseline inicial](AUDITORIAS/BASELINE_DEV_AI_2026-10-18.md) e [validação Windows com Electron/IPC real](AUDITORIAS/VALIDACAO_WINDOWS_2026-10-18.md). Na branch `codex/dev-ai-validation-2026-10-18`, `npm ci`, `npm test`, typecheck, build, auditorias `fast`, `isolation`, `ipc`, `all` e scanner foram executados. `audit:all` passou no commit `7ec6954`; incluiu fixture visual (20 ciclos), IPC real com concorrência, falhas simuladas de I/O, fechamento e navegação com salvamentos pendentes, Customizer/Fabricador montados e leitura sintética, reinício e exclusão isolada. Não houve smoke de Opções/edição persistida nas duas áreas, matriz ISO completa, inventário de dados reais ou benchmark. Portanto **R-01, R-02, R-05 e R-25 continuam [ ]**; R-26 permanece parcial. Handoff: [CODEX_HANDOFF_EXECUCAO_WINDOWS_E_IPC.md](CODEX_HANDOFF_EXECUCAO_WINDOWS_E_IPC.md).
 
+
+**CI e reforço posterior (branch `ci/dev-ai-foundation-hardening-2026-10-18`):** foi criado o workflow [DEV AI Foundation](../.github/workflows/dev-ai-foundation.yml) com testes sintéticos Ubuntu e Electron/IPC real Windows, comparador visual com diff e estabilização, teste unitário do oráculo visual, e guardas de salvamento em `electron/main.ts`. Veja [política de evidências de CI](AUDITORIAS/CI_DEV_AI_2026-10-18.md). **Nenhum R-xx é fechado automaticamente**; exigir conclusão `success` dos dois jobs no **SHA final**, dados sintéticos, inspeção dos PNGs e validação do comportamento da aplicação. ISO-03/04/05/07+ e backup/recuperação continuam pendentes.
 
 **Objetivo:** construir uma rede de segurança antes de 'limpar' pastas. **Entrega:** relatórios reproduzíveis, fixture mínima, script de restauração e matriz dos fluxos principais.
 
