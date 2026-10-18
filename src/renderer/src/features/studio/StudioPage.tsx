@@ -362,8 +362,14 @@ export function StudioPage({ workspace = 'studio', onEditorActiveChange }: { wor
   const selectedStudioTalkAvailable = Boolean(selectedStudioOpenMouth?.pieces.some((piece) => piece.sheet === 'mouth-open' && piece.index === selectedStudioFaceAppearance?.expressionIndex))
   const selectedBackgroundAsset = activeStudio?.assets.find((asset) => asset.id === activeStudio.backgroundAssetId) ?? null
   const stageCharacters = activeStudio?.elements.filter((element) => element.kind === 'character') ?? []
+  const automaticBlinkTargets = isVideoWorkspace && videoPlaying && videoPlaybackStates
+    ? stageCharacters.flatMap((element) => {
+        const playbackState = videoPlaybackStates.get(element.id)
+        return playbackState ? [playbackState.element] : []
+      })
+    : []
   const automaticBlinkSignature = JSON.stringify({
-    characters: stageCharacters.map((element) => {
+    characters: automaticBlinkTargets.map((element) => {
       const character = availableCharacters.find((item) => item.id === element.characterId)
       return [element.id, element.characterId, character?.updatedAt, element.poseSlot, element.faceAppearance, element.faceTransforms, element.activeExpressionEffects, element.activeFaceMode]
     }),
@@ -371,7 +377,7 @@ export function StudioPage({ workspace = 'studio', onEditorActiveChange }: { wor
   })
   useEffect(() => {
     setAutomaticBlinkPreview({})
-    if (!activeStudio || isVideoWorkspace && videoPlaying || !stageCharacters.length) return
+    if (!activeStudio || !isVideoWorkspace || !videoPlaying || !automaticBlinkTargets.length) return
     let cancelled = false
     let nextBlinkTimer = 0
     let blinkEndTimer = 0
@@ -386,7 +392,7 @@ export function StudioPage({ workspace = 'studio', onEditorActiveChange }: { wor
           const stageWidth = sceneRef.current?.clientWidth ?? 1000
           const stageHeight = sceneRef.current?.clientHeight ?? 562
           frames = []
-          for (const element of stageCharacters) {
+          for (const element of automaticBlinkTargets) {
             const character = availableCharacters.find((item) => item.id === element.characterId)
             const appearance = element.faceAppearance ?? character?.customization.faceAppearance
             if (!character || !appearance || studioFaceModeForElement(element, appearance) !== 'idle') continue
@@ -443,7 +449,7 @@ export function StudioPage({ workspace = 'studio', onEditorActiveChange }: { wor
         }
         nextBlinkTimer = window.setTimeout(blink, blinkGap)
       } catch {
-        // Auto blink is an optional preview effect and must not interrupt Studio editing.
+          // Auto blink is an optional playback effect and must not interrupt the video preview.
       }
     }
 
@@ -1896,11 +1902,12 @@ export function StudioPage({ workspace = 'studio', onEditorActiveChange }: { wor
             {[...activeStudio.elements].sort((a, b) => a.zIndex - b.zIndex).map((sourceElement) => {
               if (isVideoWorkspace && (sourceElement.kind === 'speech' || sourceElement.kind === 'thought') && !videoTimelineFor(activeStudio).textClips.some((clip) => clip.elementId === sourceElement.id && clip.startFrame <= videoPlayheadFrame && videoPlayheadFrame < clip.endFrame)) return null
               const playbackState = videoPlaybackStates?.get(sourceElement.id)
-              const blinkState = !playbackState && sourceElement.kind === 'character' ? automaticBlinkPreview[sourceElement.id] : undefined
+              const blinkState = sourceElement.kind === 'character' ? automaticBlinkPreview[sourceElement.id] : undefined
               const activeTextClip = isVideoWorkspace && videoPlaying ? videoTimelineFor(activeStudio).textClips.find((clip) => clip.elementId === sourceElement.id && clip.startFrame <= videoPlayheadFrame && videoPlayheadFrame < clip.endFrame) : undefined
-              const element = playbackState?.element ?? (blinkState ? { ...sourceElement, ...blinkState.geometry } : activeTextClip?.state ?? sourceElement)
+              const playbackElement = playbackState?.element ?? activeTextClip?.state ?? sourceElement
+              const element = blinkState && playbackElement.kind === 'character' ? { ...playbackElement, ...blinkState.geometry } : playbackElement
               const asset = element.assetId ? activeStudio.assets.find((item) => item.id === element.assetId) : undefined
-              const imageDataUrl = playbackState?.imageDataUrl ?? blinkState?.dataUrl ?? asset?.dataUrl
+              const imageDataUrl = blinkState?.dataUrl ?? playbackState?.imageDataUrl ?? asset?.dataUrl
               const size = studioElementSize(element)
               return <div key={element.id} className={`studio-canvas-element studio-element-${element.kind}${selectedElementId === element.id && !fullView ? ' selected' : ''}`} style={{ ...imageStyle(element.x, element.y, size.width, size.height, element.rotation, element.kind === 'character' && element.flipX === true), zIndex: element.zIndex + 1 }} onPointerDown={(event) => startDrag(event, element.id)} onPointerMove={moveDrag} onPointerUp={endDrag} onPointerCancel={endDrag}>
                 {(element.kind === 'image' || element.kind === 'character') && imageDataUrl ? <img src={imageDataUrl} alt={asset?.name ?? element.text} draggable={false} /> : <span>{element.text}</span>}
