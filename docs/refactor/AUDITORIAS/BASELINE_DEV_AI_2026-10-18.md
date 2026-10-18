@@ -52,7 +52,8 @@ Executados em workspace **sintético local de desenvolvimento do runner** (`/mnt
 ## D. Pendências e bloqueios (não marcar concluído)
 
 - [x] Executar `npm ci`, testes, typecheck/build, audit:fast/isolation/ipc/all e scanner no checkout completo em Windows; evidências e SHA base no [relatório Windows](VALIDACAO_WINDOWS_2026-10-18.md).
-- [ ] Repetir validação no commit final e executar em outra plataforma suportada.
+- [x] Repetir a suíte completa no commit `03d0f4d88ef7c8663972c3a938c6ac730d4964ae` em Windows — 11/11 casos passaram.
+- [ ] Repetir validação em outra plataforma suportada.
 - [x] Capturar regressão de layout Studio normal ↔ Video Studio em janela oculta fixture por 20 ciclos; semântica de storage foi exercitada separadamente com IPC real.
 - [x] Adapter IPC/preload real para persistência concorrente, namespaces, exclusão, restart, root inválido e smoke sintético de montagem/leitura de Customizer/Fabricador; lifecycle, escrita nessas áreas e vetores da matriz ISO seguem abertos.
 - [ ] Runner que bloqueie rede por política de SO/container e limpe process tree no Windows; atualmente só isola variáveis de ambiente, usa timeout e logs locais.
