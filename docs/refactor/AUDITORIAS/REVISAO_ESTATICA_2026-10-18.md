@@ -33,6 +33,6 @@
 
 ## Como repetir as checagens
 
-Consultar árvore GitHub `GET /repos/nestarasup-sys/G-V5/git/trees/<ref>?recursive=1`; em seguida obter os dez arquivos Markdown dessa árvore. Para cada link relativo `[label](target)`, resolver `target` contra o diretório do arquivo que contém o link e testar existência exata na árvore. Validar quantidade par de fences de Markdown `^````, ausência de headings vazios, IDs R-01…R-28 únicos nas declarações do roadmap e ISO-01…ISO-15 na tabela de cenários. Anotar commit de HEAD, pois qualquer edição invalida os números anteriores. Repetir as verificações após mudar documentação.
+Consultar árvore GitHub `GET /repos/nestarasup-sys/G-V5/git/trees/<ref>?recursive=1`; em seguida obter os dez arquivos Markdown dessa árvore. Para cada link relativo uma referência Markdown relativa, resolver `target` contra o diretório do arquivo que contém o link e testar existência exata na árvore. Validar quantidade par de fences de Markdown `^````, ausência de headings vazios, IDs R-01…R-28 únicos nas declarações do roadmap e ISO-01…ISO-15 na tabela de cenários. Anotar commit de HEAD, pois qualquer edição invalida os números anteriores. Repetir as verificações após mudar documentação.
 
 A revisão documental pode ser considerada concluída independentemente de os gates de execução do produto estarem abertos; **não marcar funcionalidades implementadas somente porque suas especificações estão completas**.
