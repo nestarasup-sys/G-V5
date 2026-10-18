@@ -552,7 +552,14 @@ export function VideoStudioPage() {
               backgroundColor: activeProject.canvas.backgroundColor
             }}>
               {assetById(activeProject, activeProject.canvas.backgroundAssetId) && <img className="video-studio-background"
-                alt="" draggable={false} src={assetById(activeProject, activeProject.canvas.backgroundAssetId)!.dataUrl} />}
+                alt="" draggable={false} src={assetById(activeProject, activeProject.canvas.backgroundAssetId)!.dataUrl}
+                style={activeProject.canvas.backgroundPlacement ? {
+                  left: 'calc(50% + ' + activeProject.canvas.backgroundPlacement.x + '%)',
+                  top: 'calc(50% + ' + activeProject.canvas.backgroundPlacement.y + '%)',
+                  width: activeProject.canvas.backgroundPlacement.width + '%',
+                  height: activeProject.canvas.backgroundPlacement.height + '%',
+                  transform: 'translate(-50%, -50%) rotate(' + activeProject.canvas.backgroundPlacement.rotation + 'deg)'
+                } : undefined} />}
               {activeProject.elements.slice().sort((a,b) => a.zIndex - b.zIndex).map(element => {
                 const displayPosition = dragPreview?.id === element.id ? dragPreview : element
                 const visual = previewActors.get(element.id)
