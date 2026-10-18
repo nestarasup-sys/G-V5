@@ -235,7 +235,8 @@ async function seed(window) {
   assert.equal(existsSync(failedWriteFolder), false)
   assert.equal(existsSync(failedReadFolder), false)
   const videoBeforeIoFailure = treeHash(videoFolder)
-  await mkdir(join(failedWriteFolder, 'studio.json.tmp'), { recursive: true })
+  await mkdir(failedWriteFolder, { recursive: true })
+  await writeFile(join(failedWriteFolder, 'assets'), 'blocks synthetic asset directory creation')
   const writeFailure = await rejectedError(api(`window.desktop.saveStudio(${JSON.stringify({ ...syntheticStudio('simulated write failure'), id: ioFailureIds.write })})`))
   assert.ok(writeFailure, 'A falha de gravação simulada deveria rejeitar o IPC')
   assert.equal(existsSync(join(failedWriteFolder, 'studio.json')), false, 'Falha de escrita deixou documento parcial publicado')
@@ -440,11 +441,33 @@ async function areaSmoke(window) {
           observer.observe(document.documentElement, { childList: true, subtree: true })
           check()
         })
+        const waitForWorkspaceState = (normal, editorSelector) => new Promise((resolve, reject) => {
+          let settled = false
+          const timer = setTimeout(() => finish(new Error('Timed out esperando o estado final do workspace')), 20000)
+          const observer = new MutationObserver(check)
+          function finish(error) {
+            if (settled) return
+            settled = true
+            clearTimeout(timer)
+            observer.disconnect()
+            if (error) reject(error)
+            else resolve(true)
+          }
+          function check() {
+            const editorReady = Boolean(document.querySelector(editorSelector))
+            const topBarReady = Boolean(document.querySelector('.top-bar')) === normal
+            const timelineReady = Boolean(document.querySelector('.video-timeline')) === !normal
+            if (editorReady && topBarReady && timelineReady) finish(null)
+          }
+          observer.observe(document.documentElement, { childList: true, subtree: true, attributes: true })
+          check()
+        })
         location.hash = ${JSON.stringify(hash)}
         const card = await waitFor(${JSON.stringify(cardSelector)})
         const libraryReadyAt = performance.now()
         card.click()
         const editor = await waitFor(${JSON.stringify(editorSelector)})
+        await waitForWorkspaceState(${normal}, ${JSON.stringify(editorSelector)})
         const editorReadyAt = performance.now()
         const prefix = ${JSON.stringify(normal ? 'studio' : 'video-studio')}
         const canvas = document.querySelector('.' + prefix + '-scene-canvas')

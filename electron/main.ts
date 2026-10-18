@@ -1113,7 +1113,7 @@ async function writeStudio(studio: StudioDocument, workspace: StudioWorkspaceSto
     const { dataUrl: _dataUrl, ...metadata } = asset
     assetManifest.push(metadata)
   }
-  const temporary = join(folder, 'studio.json.tmp')
+  const temporary = join(folder, `studio.json.${randomUUID()}.tmp`)
   const { assets: _assets, ...metadata } = studio
   const savedMetadata = { ...metadata, videoTimeline: studio.videoTimeline ? structuredClone(studio.videoTimeline) : undefined }
   if (workspace === 'video' && savedMetadata.videoTimeline) {
@@ -1133,7 +1133,19 @@ async function writeStudio(studio: StudioDocument, workspace: StudioWorkspaceSto
     ])
   }
   await writeFile(temporary, JSON.stringify({ ...savedMetadata, title: studio.title.trim(), assets: assetManifest }, null, 2), 'utf8')
-  await rename(temporary, join(folder, 'studio.json'))
+  const target = join(folder, 'studio.json')
+  const maxAttempts = process.platform === 'win32' ? 5 : 1
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      await rename(temporary, target)
+      break
+    } catch (reason) {
+      const error = reason as NodeJS.ErrnoException
+      const retryable = process.platform === 'win32' && ['EPERM', 'EACCES', 'EBUSY'].includes(error.code ?? '')
+      if (!retryable || attempt >= maxAttempts) throw reason
+      await new Promise((resolveDelay) => setTimeout(resolveDelay, 20 * (2 ** (attempt - 1))))
+    }
+  }
 }
 
 async function listStudios(workspace: StudioWorkspaceStorage = 'studio'): Promise<StudioDocument[]> {
