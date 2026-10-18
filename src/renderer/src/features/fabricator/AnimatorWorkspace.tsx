@@ -1,14 +1,21 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, FormEvent, PointerEvent as ReactPointerEvent } from 'react'
-import type { AnimatorAnimation, AnimatorAnimationAsset, AnimatorAnimationDraft, AnimatorFrame, AnimatorAnimationSave, AnimatorAnimationSummary, AnimatorFrameTransform, FaceCatalogItem, FaceElementKind, FaceSet, FaceSheetKind, FabricatorPose, FabricatorProject, FabricatorSlotSummary, HairStyle, JointLink, PosePart, WardrobeSet } from '../../../../shared/fabricator'
-import type { CustomizerCharacter, CustomizerWardrobeGroup } from '../../../../shared/customizer'
+import { resolvePoseCategory, type AnimatorAnimation, type AnimatorAnimationAsset, type AnimatorAnimationDraft, type AnimatorFrame, type AnimatorAnimationSave, type AnimatorAnimationSummary, type AnimatorFrameTransform, type FaceCatalogItem, type FaceElementKind, type FaceSet, type FaceSheetKind, type FabricatorPose, type FabricatorProject, type FabricatorSlotSummary, type HairStyle, type JointLink, type PosePart, type WardrobeSet } from '../../../../shared/fabricator'
+import { defaultCharacterBodyDimensions, type CustomizerCharacter, type CustomizerWardrobeGroup } from '../../../../shared/customizer'
 import { Icon } from '../../ui/components/Icon'
 import { normalizeLayerOrder, orderedParts, partJointAnchor } from './models/rig'
 import { usePreviewBackground } from './usePreviewBackground'
 import { mapWardrobeComponentToPose } from './wardrobe/poseTransform'
+import { applyCharacterBodyShape } from '../customizer/bodyShape'
 
 const SLOT_COUNT = 12
 const HISTORY_LIMIT = 40
+const breathingVariations = [
+  { key: 'suave', name: 'Suave', cycleMs: 4200, torsoWidth: 100.7, torsoHeight: 102.0 },
+  { key: 'calma', name: 'Calma', cycleMs: 3600, torsoWidth: 101.1, torsoHeight: 103.0 },
+  { key: 'profunda', name: 'Profunda', cycleMs: 5200, torsoWidth: 101.8, torsoHeight: 104.2 },
+  { key: 'ritmada', name: 'Ritmada', cycleMs: 3000, torsoWidth: 101.2, torsoHeight: 102.6 }
+] as const
 const faceOrder: FaceElementKind[] = ['brow-left', 'brow-right', 'eye-left', 'eye-right', 'nose', 'mouth']
 const wardrobeCategories: Record<CustomizerWardrobeGroup['category'], string[]> = {
   camisa: ['camisa'], jaqueta: ['jaqueta'], 'manga-superior': ['manga-superior'], 'manga-inferior': ['manga-inferior'],
@@ -50,7 +57,7 @@ function projectFromAnimation(animation: AnimatorAnimation): FabricatorProject {
 }
 
 function transformsFromProject(project: Pick<FabricatorProject, 'parts'>): Record<string, AnimatorFrameTransform> {
-  return Object.fromEntries(project.parts.map((part) => [part.id, { x: part.x, y: part.y, rotation: part.rotation, ...(part.jointAnchor ? { jointAnchor: { ...part.jointAnchor } } : {}) }]))
+  return Object.fromEntries(project.parts.map((part) => [part.id, { x: part.x, y: part.y, width: part.width, height: part.height, rotation: part.rotation, ...(part.jointAnchor ? { jointAnchor: { ...part.jointAnchor } } : {}) }]))
 }
 
 function applyFrameState(base: FabricatorProject, transforms: Record<string, AnimatorFrameTransform>, joints: JointLink[]): FabricatorProject {
@@ -58,7 +65,7 @@ function applyFrameState(base: FabricatorProject, transforms: Record<string, Ani
     ...base,
     parts: base.parts.map((part) => {
       const transform = transforms[part.id]
-      return transform ? { ...part, x: transform.x, y: transform.y, rotation: transform.rotation, ...(transform.jointAnchor ? { jointAnchor: transform.jointAnchor } : {}) } : part
+      return transform ? { ...part, x: transform.x, y: transform.y, width: transform.width ?? part.width, height: transform.height ?? part.height, rotation: transform.rotation, ...(transform.jointAnchor ? { jointAnchor: transform.jointAnchor } : {}) } : part
     }),
     joints
   }
@@ -144,6 +151,8 @@ function interpolateFrames(frames: AnimatorFrame[], elapsed: number, mode: Anima
     transforms[id] = {
       x: a.x + (b.x - a.x) * t,
       y: a.y + (b.y - a.y) * t,
+      ...(a.width !== undefined || b.width !== undefined ? { width: (a.width ?? b.width!) + ((b.width ?? a.width!) - (a.width ?? b.width!)) * t } : {}),
+      ...(a.height !== undefined || b.height !== undefined ? { height: (a.height ?? b.height!) + ((b.height ?? a.height!) - (a.height ?? b.height!)) * t } : {}),
       rotation: a.rotation + shortestAngle(a.rotation, b.rotation) * t,
       ...(a.jointAnchor && b.jointAnchor ? { jointAnchor: { x: a.jointAnchor.x + (b.jointAnchor.x - a.jointAnchor.x) * t, y: a.jointAnchor.y + (b.jointAnchor.y - a.jointAnchor.y) * t } } : {})
     }
@@ -177,9 +186,9 @@ async function renderThumbnail(project: FabricatorProject, transforms = transfor
     try {
       const image = await loadImage(part.dataUrl)
       context.save()
-      context.translate((transform.x + part.width / 2) * scale, (transform.y + part.height / 2) * scale)
+      context.translate((transform.x + (transform.width ?? part.width) / 2) * scale, (transform.y + (transform.height ?? part.height) / 2) * scale)
       context.rotate(transform.rotation * Math.PI / 180)
-      context.drawImage(image, -part.width * scale / 2, -part.height * scale / 2, part.width * scale, part.height * scale)
+       context.drawImage(image, -(transform.width ?? part.width) * scale / 2, -(transform.height ?? part.height) * scale / 2, (transform.width ?? part.width) * scale, (transform.height ?? part.height) * scale)
       context.restore()
     } catch { /* Uma miniatura parcial não impede a edição. */ }
   }
@@ -188,6 +197,72 @@ async function renderThumbnail(project: FabricatorProject, transforms = transfor
 
 async function refreshThumbnails(project: FabricatorProject, frames: AnimatorFrame[]): Promise<AnimatorFrame[]> {
   return Promise.all(frames.map(async (frame) => ({ ...frame, thumbnailDataUrl: await renderThumbnail(project, frame.transforms) })))
+}
+
+function centerProjectOnCanvas(project: FabricatorProject, width: number, height: number): FabricatorProject {
+  const offsetX = (width - project.width) / 2
+  const offsetY = (height - project.height) / 2
+  return {
+    ...project,
+    width,
+    height,
+    parts: project.parts.map((part) => ({ ...part, x: part.x + offsetX, y: part.y + offsetY, ...(part.jointAnchor ? { jointAnchor: { x: part.jointAnchor.x + offsetX, y: part.jointAnchor.y + offsetY } } : {}) })),
+    joints: project.joints.map((joint) => ({
+      ...joint,
+      parentAnchor: { x: joint.parentAnchor.x + offsetX, y: joint.parentAnchor.y + offsetY },
+      childAnchor: { x: joint.childAnchor.x + offsetX, y: joint.childAnchor.y + offsetY },
+      ...(joint.pivot ? { pivot: { x: joint.pivot.x + offsetX, y: joint.pivot.y + offsetY } } : {})
+    }))
+  }
+}
+
+async function makeBreathingAnimation(source: FabricatorProject, pose: FabricatorPose, slot: number, characterId: string | null, variation: typeof breathingVariations[number]): Promise<AnimatorAnimation> {
+  const poseProject = makePoseProject(source, pose)
+  if (!poseProject.parts.some((part) => /tronco|torso|peito|chest/i.test(part.name))) throw new Error(`A pose ${pose.name} não possui uma peça de tronco identificável.`)
+  const inhaleRaw = applyCharacterBodyShape(poseProject, {
+    ...defaultCharacterBodyDimensions,
+    torsoWidth: variation.torsoWidth,
+    torsoHeight: variation.torsoHeight,
+    balance: 0
+  })
+  const canvasWidth = Math.max(poseProject.width, inhaleRaw.width)
+  const canvasHeight = Math.max(poseProject.height, inhaleRaw.height)
+  const base = centerProjectOnCanvas(poseProject, canvasWidth, canvasHeight)
+  const inhale = centerProjectOnCanvas(inhaleRaw, canvasWidth, canvasHeight)
+  const makeFrame = async (project: FabricatorProject, durationMs: number): Promise<AnimatorFrame> => {
+    const transforms = transformsFromProject(project)
+    return { id: crypto.randomUUID(), durationMs, transforms, joints: structuredClone(project.joints), thumbnailDataUrl: await renderThumbnail(base, transforms) }
+  }
+  const cycle = variation.cycleMs
+  const frames = [
+    await makeFrame(base, Math.round(cycle * .36)),
+    await makeFrame(inhale, Math.round(cycle * .1)),
+    await makeFrame(inhale, Math.round(cycle * .38)),
+    await makeFrame(base, Math.round(cycle * .16))
+  ]
+  return {
+    schemaVersion: 1,
+    slot,
+    name: `Respiração · ${resolvePoseCategory(pose)} · ${variation.name}`,
+    sourceModelSlot: source.slot,
+    sourceModelName: source.name,
+    sourceModelUpdatedAt: source.updatedAt,
+    sourceModelPartCount: source.parts.length,
+    basePoseSlot: pose.slot,
+    characterId,
+    width: canvasWidth,
+    height: canvasHeight,
+    parts: structuredClone(base.parts),
+    joints: structuredClone(base.joints),
+    layerOrder: normalizeLayerOrder(base.parts, base.layerOrder),
+    hiddenPartIds: [...(base.hiddenPartIds ?? [])],
+    frames,
+    interpolation: 'smooth',
+    loopMode: 'loop',
+    speed: 1,
+    thumbnailDataUrl: frames[0].thumbnailDataUrl,
+    updatedAt: new Date().toISOString()
+  }
 }
 
 function mapHeadOverlay(sourceHead: PosePart, targetHead: PosePart, x: number, y: number, width: number, height: number, rotation: number, scaleX: number, scaleY: number, flipX = false) {
@@ -257,6 +332,8 @@ export function AnimatorWorkspace() {
   const [saveMessage, setSaveMessage] = useState('')
   const [largePreview, setLargePreview] = useState(false)
   const [nameDialog, setNameDialog] = useState<{ mode: 'rename' | 'duplicate'; value: string } | null>(null)
+  const [breathingDialog, setBreathingDialog] = useState(false)
+  const [breathingSaving, setBreathingSaving] = useState(false)
   const [background] = usePreviewBackground()
   const stageRef = useRef<HTMLDivElement | null>(null)
   const gestureRef = useRef<Gesture | null>(null)
@@ -561,6 +638,48 @@ export function AnimatorWorkspace() {
       setAnimation(created); setActiveSlot(slot); setSelectedFrameId(created.frames[0].id); setSelectedPartId(created.parts[0]?.id ?? '')
       setCurrentTransforms(created.frames[0].transforms); setCurrentJoints(created.frames[0].joints); setUndoStack([]); setRedoStack([]); playheadRef.current = 0; setPlayhead(0); setError(''); setSaveMessage('Rascunho novo')
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível criar a animação.') }
+  }
+
+  const createBreathingSet = async () => {
+    if (!source || modelSlot === null || breathingSaving || saving) return
+    setBreathingSaving(true); setError('')
+    const createdSlots: number[] = []
+    try {
+      const [poseSummaries, existing] = await Promise.all([
+        window.desktop.listFabricatorPoseSlots(modelSlot),
+        window.desktop.listAnimatorAnimations(modelSlot)
+      ])
+      const poses = await Promise.all(poseSummaries.map(async (summary) => {
+        if (!summary) return null
+        const pose = await window.desktop.loadFabricatorPose(modelSlot, summary.slot)
+        return pose ? { pose, category: resolvePoseCategory(pose) } : null
+      }))
+      const standing = poses.find((entry) => entry?.category.toLocaleLowerCase('pt-BR').includes('parad'))
+      const sitting = poses.find((entry) => entry?.category.toLocaleLowerCase('pt-BR').includes('sentad'))
+      if (!standing || !sitting) throw new Error('Salve pelo menos uma pose “Parado” e uma “Sentado” em Poses Dev para criar as variações.')
+      const occupied = new Set(existing.map((item) => item.slot))
+      const freeSlots = Array.from({ length: SLOT_COUNT }, (_, index) => index + 1).filter((slot) => !occupied.has(slot))
+      const needed = breathingVariations.length * 2
+      if (freeSlots.length < needed) throw new Error(`São necessários ${needed} slots livres; este modelo tem ${freeSlots.length}. Libere slots sem animação para continuar.`)
+      const plans = [
+        ...breathingVariations.map((variation) => ({ pose: standing.pose, variation })),
+        ...breathingVariations.map((variation) => ({ pose: sitting.pose, variation }))
+      ]
+      for (const [index, plan] of plans.entries()) {
+        const animation = await makeBreathingAnimation(source, plan.pose, freeSlots[index], characterId || null, plan.variation)
+        const assets: AnimatorAnimationAsset[] = animation.parts.map((part) => ({ id: part.id, dataUrl: part.dataUrl }))
+        await window.desktop.saveAnimatorAnimation(modelSlot, animation.slot, serializeAnimation(animation), assets)
+        createdSlots.push(animation.slot)
+      }
+      const updated = await window.desktop.listAnimatorAnimations(modelSlot)
+      setSummaries(updated)
+      setSaveMessage('8 variações de respiração salvas')
+      setBreathingDialog(false)
+    } catch (reason) {
+      // This batch owns only the empty slots reserved above; roll back its partial writes.
+      await Promise.all(createdSlots.map((slot) => window.desktop.deleteAnimatorAnimation(modelSlot, slot).catch(() => undefined)))
+      setError(reason instanceof Error ? reason.message : 'Não foi possível criar as animações de respiração.')
+    } finally { setBreathingSaving(false) }
   }
 
   const selectAnimationSlot = async (slot: number) => {
@@ -950,12 +1069,14 @@ export function AnimatorWorkspace() {
       <label className="animator-character">Personagem<select value={characterId} onChange={(event) => { void changeCharacter(event.target.value) }}><option value="">Sem personagem</option>{characters.filter((character) => character.customization.modelSlot !== null).map((character) => <option key={character.id} value={character.id}>{character.name}</option>)}</select></label>
       <label className="animator-model">Modelo<select value={modelSlot ?? ''} onChange={(event) => { void changeModel(Number(event.target.value)) }}><option value="" disabled>Escolher modelo</option>{modelOptions.map((model) => <option key={model.slot} value={model.slot}>{model.label}</option>)}</select></label>
       <span className="animator-toolbar-spacer" />
+      <button className="pose-button secondary animator-breathing-button" onClick={() => setBreathingDialog(true)} disabled={!source || loading || saving || breathingSaving} type="button"><Icon name="sparkles" /> Respiração</button>
       <button className="pose-button secondary" onClick={() => void createAnimation()} disabled={!baseProject || loading || saving} type="button"><Icon name="plus" /> Nova animação</button>
       <button className="pose-icon-button" title="Desfazer (Ctrl+Z)" disabled={!undoStack.length} onClick={undo} type="button"><Icon name="undo" /></button>
       <button className="pose-icon-button" title="Refazer (Ctrl+Shift+Z)" disabled={!redoStack.length} onClick={redo} type="button"><Icon name="redo" /></button>
       {animation && <><button className="pose-button secondary" onClick={renameAnimation} disabled={saving} type="button">Renomear</button><button className="pose-button secondary" onClick={() => setNameDialog({ mode: 'duplicate', value: `${animation.name} — cópia` })} disabled={saving} type="button">Duplicar</button><button className="pose-button danger" onClick={() => void deleteAnimation()} disabled={saving} type="button"><Icon name="trash" /></button><button className="pose-button primary" onClick={() => void saveAnimation()} disabled={saving} type="button"><Icon name="check" />{saving ? 'Salvando…' : 'Salvar animação'}</button></>}
       <span className={`pose-save-state${dirtyFrame ? ' pending' : ''}`}><i />{saveMessage || (animation ? 'Animação aberta' : 'Biblioteca vazia')}</span>
     </header>
+    {breathingDialog && <div className="animator-dialog-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !breathingSaving) setBreathingDialog(false) }}><section className="animator-breathing-dialog" role="dialog" aria-modal="true" aria-labelledby="animator-breathing-title"><header><span><strong id="animator-breathing-title">Animações de respiração</strong><small>Cria quatro estilos para cada pose, sem substituir os slots existentes.</small></span><button className="pose-icon-button" onClick={() => setBreathingDialog(false)} disabled={breathingSaving} type="button" aria-label="Fechar">×</button></header><div className="animator-breathing-groups">{(['Parado', 'Sentado'] as const).map((category) => <article key={category}><strong>{category}</strong><div>{breathingVariations.map((variation, index) => <div className="animator-breathing-variation" key={variation.key}><span><b>{index + 1}</b>{variation.name}</span><small>{(variation.cycleMs / 1000).toFixed(1)} s · loop suave</small></div>)}</div></article>)}</div><p>As oito animações serão salvas nos próximos slots livres deste modelo. O corpo inspira e expira com uma expansão sutil do tronco, acompanhando as juntas do rig.</p><footer><button className="pose-button secondary" onClick={() => setBreathingDialog(false)} disabled={breathingSaving} type="button">Cancelar</button><button className="pose-button primary" onClick={() => void createBreathingSet()} disabled={breathingSaving || loading || !source} type="button"><Icon name={breathingSaving ? 'sparkles' : 'check'} />{breathingSaving ? 'Criando…' : 'Criar 8 animações'}</button></footer></section></div>}
     {nameDialog && <div className="animator-dialog-backdrop"><form className="animator-name-dialog" onSubmit={submitNameDialog} role="dialog" aria-modal="true" aria-labelledby="animator-name-title"><strong id="animator-name-title">{nameDialog.mode === 'rename' ? 'Renomear animação' : 'Duplicar animação'}</strong><input autoFocus maxLength={80} value={nameDialog.value} onChange={(event) => setNameDialog((current) => current ? { ...current, value: event.target.value } : current)} aria-label="Nome da animação" /><div><button className="pose-button secondary" onClick={() => setNameDialog(null)} type="button">Cancelar</button><button className="pose-button primary" disabled={!nameDialog.value.trim() || saving} type="submit">{nameDialog.mode === 'rename' ? 'Renomear' : 'Duplicar'}</button></div></form></div>}
     {error && <div className="animator-error" role="alert"><span>{error}</span><button onClick={() => setError('')} type="button">Fechar</button></div>}
     {draft && !animation && <div className="pose-recovery"><span><strong>Rascunho de animação recuperável</strong><small>{draft.animation.name} · {draft.animation.frames.length} frames</small></span><div><button onClick={() => { void window.desktop.deleteAnimatorDraft(modelSlot!).then(() => setDraft(null)) }} type="button">Descartar</button><button className="pose-recover-button" onClick={() => {

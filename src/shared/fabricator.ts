@@ -315,7 +315,7 @@ export function resolvePoseCategory(pose: { category?: string; slot?: number; na
 export type FabricatorPoseDraft = { editingSlot: number | null; project: Omit<FabricatorPose, 'slot'>; updatedAt: string }
 export type FabricatorPoseDraftSave = { editingSlot: number | null; project: Omit<FabricatorPoseSave, 'slot'>; updatedAt: string }
 
-export type AnimatorFrameTransform = { x: number; y: number; rotation: number; jointAnchor?: { x: number; y: number } }
+export type AnimatorFrameTransform = { x: number; y: number; rotation: number; width?: number; height?: number; jointAnchor?: { x: number; y: number } }
 export type AnimatorFrame = {
   id: string
   durationMs: number
