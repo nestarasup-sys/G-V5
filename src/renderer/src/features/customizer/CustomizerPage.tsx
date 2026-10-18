@@ -3548,6 +3548,15 @@ export function CustomizerPage() {
         if (componentId) return faceComponentDetails[componentId]?.dataUrl ?? null
         const detailId = appearance?.faceDetails?.[id as FaceDetailKind]
         if (detailId) return faceComponentDetails[detailId]?.dataUrl ?? null
+        if (id === 'oculos' || id === 'acessorio-cabeca') {
+          const wardrobeGroup = [...(selectedCharacter.customization.wardrobeGroups ?? [])].reverse().find((group) => group.category === id)
+          if (wardrobeGroup) {
+            const wardrobeSet = wardrobeDetails[`${wardrobeGroup.modelSlot}:${wardrobeGroup.setId}`]
+            const component = wardrobeSet?.components.find((entry) => entry.id === wardrobeGroup.componentId)
+              ?? wardrobeSet?.components.find((entry) => entry.category === wardrobeGroup.category)
+            if (component?.dataUrl) return component.dataUrl
+          }
+        }
         const extraId = appearance?.headExtras?.[id === 'oculos' ? 'glasses' : 'head-accessory']
         if (extraId) return faceComponentDetails[extraId]?.dataUrl ?? null
         const catalogId = id === 'eye-right' || id === 'pupil-right' ? appearance?.eyeRightCatalogId ?? appearance?.eyeCatalogId
