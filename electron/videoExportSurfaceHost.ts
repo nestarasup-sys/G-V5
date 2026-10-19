@@ -1,14 +1,28 @@
-import { BrowserWindow, ipcMain, type IpcMainInvokeEvent } from 'electron'
+import { BrowserWindow, ipcMain, type IpcMainInvokeEvent, type WebContents } from 'electron'
 import { randomUUID } from 'node:crypto'
 import { isAbsolute } from 'node:path'
-import type { VideoExportSurfaceBootstrap, VideoExportSurfaceFrameReady } from '../src/shared/videoExportSurface'
+import type { VideoExportSurfaceBootstrap, VideoExportSurfaceFrameReady, VideoExportSurfaceReady } from '../src/shared/videoExportSurface'
 import { VIDEO_STAGE_HEIGHT, VIDEO_STAGE_WIDTH } from '../src/shared/videoStageGeometry'
 import type { VideoExportJobStore } from './videoExportJobs'
+
+type PendingFrame = {
+  frame: number
+  resolve: () => void
+  reject: (error: Error) => void
+  timer: ReturnType<typeof setTimeout>
+}
 
 type SurfaceSession = {
   jobId: string
   window: BrowserWindow
-  pending: Map<string, { frame: number; resolve: () => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> }>
+  pending: Map<string, PendingFrame>
+  ready: {
+    promise: Promise<void>
+    resolve: () => void
+    reject: (error: Error) => void
+    timer: ReturnType<typeof setTimeout>
+    settled: boolean
+  }
 }
 
 export type VideoExportSurfaceHostOptions = Readonly<{
@@ -24,7 +38,6 @@ export type VideoExportSurfaceHostOptions = Readonly<{
  */
 export class VideoExportSurfaceHost {
   private readonly sessions = new Map<number, SurfaceSession>()
-  private handlersInstalled = false
 
   constructor(private readonly jobs: VideoExportJobStore, private readonly options: VideoExportSurfaceHostOptions) {
     if (!isAbsolute(options.preloadPath)) throw new Error('Preload da surface precisa usar caminho absoluto.')
@@ -32,19 +45,17 @@ export class VideoExportSurfaceHost {
     this.installHandlers()
   }
 
-  private sessionFor(event: { sender: Electron.WebContents }): SurfaceSession {
-    const session = this.sessions.get(event.sender.id)
-    if (!session || session.window.isDestroyed() || session.window.webContents.id !== event.sender.id) {
+  private sessionFor(sender: WebContents): SurfaceSession {
+    const session = this.sessions.get(sender.id)
+    if (!session || session.window.isDestroyed() || session.window.webContents.id !== sender.id) {
       throw new Error('IPC de export surface rejeitado: sender não registrado.')
     }
     return session
   }
 
   private installHandlers(): void {
-    if (this.handlersInstalled) return
-    this.handlersInstalled = true
     ipcMain.handle('video-studio:export-surface:prepare', async (event: IpcMainInvokeEvent, jobId: string): Promise<VideoExportSurfaceBootstrap> => {
-      const session = this.sessionFor(event)
+      const session = this.sessionFor(event.sender)
       if (jobId !== session.jobId) throw new Error('A surface tentou abrir outro job de exportação.')
       const reopened = await this.jobs.reopen(jobId)
       const variant = reopened.manifest.renderVariant
@@ -59,9 +70,20 @@ export class VideoExportSurfaceHost {
         renderVariant: variant,
       }
     })
+
+    ipcMain.on('video-studio:export-surface:ready', (event, ready: VideoExportSurfaceReady) => {
+      let session: SurfaceSession
+      try { session = this.sessionFor(event.sender) } catch { return }
+      if (!ready || ready.jobId !== session.jobId || session.ready.settled) return
+      session.ready.settled = true
+      clearTimeout(session.ready.timer)
+      if (ready.error) session.ready.reject(new Error(ready.error))
+      else session.ready.resolve()
+    })
+
     ipcMain.on('video-studio:export-surface:frame-ready', (event, ready: VideoExportSurfaceFrameReady) => {
       let session: SurfaceSession
-      try { session = this.sessionFor(event) } catch { return }
+      try { session = this.sessionFor(event.sender) } catch { return }
       if (!ready || typeof ready.requestId !== 'string' || !Number.isSafeInteger(ready.frame)) return
       const pending = session.pending.get(ready.requestId)
       if (!pending || pending.frame !== ready.frame) return
@@ -73,6 +95,9 @@ export class VideoExportSurfaceHost {
   }
 
   async open(jobId: string): Promise<VideoExportSurfaceSession> {
+    let readyResolve!: () => void
+    let readyReject!: (error: Error) => void
+    const readyPromise = new Promise<void>((resolve, reject) => { readyResolve = resolve; readyReject = reject })
     const window = new BrowserWindow({
       show: false,
       frame: false,
@@ -95,10 +120,27 @@ export class VideoExportSurfaceHost {
       },
     })
     window.removeMenu()
-    const session: SurfaceSession = { jobId, window, pending: new Map() }
+    const readyTimer = setTimeout(() => {
+      const session = this.sessions.get(window.webContents.id)
+      if (!session || session.ready.settled) return
+      session.ready.settled = true
+      session.ready.reject(new Error('Surface de exportação não concluiu o bootstrap em 30 segundos.'))
+    }, 30_000)
+    const session: SurfaceSession = {
+      jobId,
+      window,
+      pending: new Map(),
+      ready: { promise: readyPromise, resolve: readyResolve, reject: readyReject, timer: readyTimer, settled: false },
+    }
     this.sessions.set(window.webContents.id, session)
+
     const cleanup = () => {
       this.sessions.delete(window.webContents.id)
+      if (!session.ready.settled) {
+        session.ready.settled = true
+        clearTimeout(session.ready.timer)
+        session.ready.reject(new Error('Surface de exportação foi encerrada antes de ficar pronta.'))
+      }
       for (const pending of session.pending.values()) {
         clearTimeout(pending.timer)
         pending.reject(new Error('Surface de exportação foi encerrada.'))
@@ -106,6 +148,7 @@ export class VideoExportSurfaceHost {
       session.pending.clear()
     }
     window.once('closed', cleanup)
+
     try {
       if (this.options.rendererUrl) {
         const url = new URL(this.options.rendererUrl)
@@ -114,6 +157,7 @@ export class VideoExportSurfaceHost {
       } else {
         await window.loadFile(this.options.rendererFile!, { hash: `/video-export-surface?jobId=${encodeURIComponent(jobId)}` })
       }
+      await session.ready.promise
       return new VideoExportSurfaceSession(session)
     } catch (error) {
       if (!window.isDestroyed()) window.destroy()
