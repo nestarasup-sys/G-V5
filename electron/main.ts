@@ -1,6 +1,6 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, protocol, session, shell, type IpcMainInvokeEvent } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, protocol, session, shell, type IpcMainInvokeEvent, type MessageBoxOptions } from 'electron'
 import { createReadStream, existsSync, lstatSync, mkdirSync, readFileSync, realpathSync } from 'node:fs'
-import { mkdir, readFile, writeFile, readdir, unlink, rename, stat, access, rm, copyFile } from 'node:fs/promises'
+import { mkdir as nativeMkdir, readFile as nativeReadFile, writeFile as nativeWriteFile, readdir as nativeReaddir, unlink as nativeUnlink, rename as nativeRename, stat as nativeStat, access as nativeAccess, rm as nativeRm, copyFile as nativeCopyFile } from 'node:fs/promises'
 import { basename, dirname, extname, join, relative, resolve, sep } from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
 import { Readable } from 'node:stream'
@@ -16,10 +16,13 @@ import { applyModelHeadShape } from '../src/shared/headShape'
 import { isStudioExpressionEffects, isStudioFaceTransforms } from '../src/shared/studio'
 import { isValidVideoMediaClip } from '../src/shared/videoMedia'
 import { isValidVideoAudioSettings } from '../src/shared/videoAudio'
-import { VideoLibraryStore } from './videoLibrary'
-import { VideoBackgroundLibraryStore } from './backgroundLibrary'
+import { VideoLibraryStore, configureVideoLibraryStorage } from './videoLibrary'
+import { VideoBackgroundLibraryStore, configureBackgroundLibraryStorage } from './backgroundLibrary'
 import { DataPlatform, getAppDataUsage } from './dataPlatform.cjs'
-import { readAssetImage, writeAssetImageSource } from './assetImageOverrides'
+import { DomainFileSystem } from './domainFileSystem.cjs'
+import { DataMigrationService } from './dataMigration.cjs'
+import { DataBackupService } from './dataBackups.cjs'
+import { configureAssetImageStorage, readAssetImage, writeAssetImageSource } from './assetImageOverrides'
 import { legacyStandardExpressionEffects } from '../src/shared/legacyExpressionEffects'
 
 function configureDevAiDataRoot(): void {
@@ -149,6 +152,25 @@ configureLocalAppDataRoot()
 // The catalog starts empty and does not scan or rewrite legacy libraries.
 // Existing JSON/file stores remain authoritative until each domain is migrated.
 const dataPlatform = new DataPlatform(dirname(app.getPath('userData')))
+const dataFileSystem = new DomainFileSystem(dataPlatform, app.getPath('userData'))
+configureVideoLibraryStorage(dataFileSystem)
+configureBackgroundLibraryStorage(dataFileSystem)
+configureAssetImageStorage(dataFileSystem)
+const mkdir = dataFileSystem.mkdir.bind(dataFileSystem) as typeof nativeMkdir
+const readFile = dataFileSystem.readFile.bind(dataFileSystem) as typeof nativeReadFile
+const writeFile = dataFileSystem.writeFile.bind(dataFileSystem) as typeof nativeWriteFile
+const readdir = dataFileSystem.readdir.bind(dataFileSystem) as typeof nativeReaddir
+const unlink = dataFileSystem.unlink.bind(dataFileSystem) as typeof nativeUnlink
+const rename = dataFileSystem.rename.bind(dataFileSystem) as typeof nativeRename
+const stat = dataFileSystem.stat.bind(dataFileSystem) as typeof nativeStat
+const access = dataFileSystem.access.bind(dataFileSystem) as typeof nativeAccess
+const rm = dataFileSystem.rm.bind(dataFileSystem) as typeof nativeRm
+const copyFile = dataFileSystem.copyFile.bind(dataFileSystem) as typeof nativeCopyFile
+let dataMigration: InstanceType<typeof DataMigrationService> | null = null
+let dataBackupService: InstanceType<typeof DataBackupService> | null = null
+let dataMigrationRunning = false
+let dataMigrationPauseRequested = false
+let dataMigrationTask: Promise<unknown> | null = null
 
 protocol.registerSchemesAsPrivileged([
   { scheme: 'gacha-video', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true } },
@@ -1748,7 +1770,7 @@ async function registerFabricatorHandlers(): Promise<void> {
 
     ipcMain.handle(`${channel}:folder`, (event): string => {
       assertTrustedSender(event)
-      return studioLibraryPath(workspace)
+      return join(app.getPath('appData'), 'projects', workspace === 'video' ? 'video-studio' : 'studio')
     })
 
     ipcMain.handle(`${channel}:import-image`, async (event, category: StudioAsset['category']): Promise<StudioAsset | null> => {
@@ -1810,8 +1832,13 @@ async function registerFabricatorHandlers(): Promise<void> {
       const studioFolder = resolve(studioPath(id, workspace))
       const printsFolder = resolve(studioFolder, 'prints')
       if (dirname(printsFolder) !== studioFolder) throw new Error('Pasta de prints inválida.')
-      await mkdir(printsFolder, { recursive: true })
-      const error = await shell.openPath(printsFolder)
+      let folderToOpen = printsFolder
+      if (dataFileSystem.locate(printsFolder) && dataPlatform.getDomainState(dataFileSystem.locate(printsFolder)!.domainId).state !== 'legacy') {
+        folderToOpen = join(app.getPath('temp'), 'exports', workspace, `studio-${id}`, 'prints')
+        await rm(folderToOpen, { recursive: true, force: true })
+        await dataFileSystem.materializeDirectory(printsFolder, folderToOpen)
+      } else await mkdir(printsFolder, { recursive: true })
+      const error = await shell.openPath(folderToOpen)
       if (error) throw new Error(`Não foi possível abrir a pasta de prints: ${error}`)
     })
   }
@@ -2470,6 +2497,17 @@ function createMainWindow(): void {
     }
   })
   window.removeMenu()
+  window.webContents.once('did-finish-load', () => {
+    if (dataBackupService) {
+      void dataBackupService.finalizePendingRestore().catch((reason: unknown) => {
+        console.error('A restauração foi aplicada, mas a limpeza do staging falhou; a cópia anterior foi preservada.', reason)
+      })
+    }
+    if (!dataMigration) return
+    void dataMigration.finalizeAfterHealthyLoad().catch((reason: unknown) => {
+      console.error('A validação final do armazenamento local falhou; as cópias de segurança temporárias foram preservadas.', reason)
+    })
+  })
 
   let closeAfterFlush = false
   let flushingBeforeClose = false
@@ -2525,6 +2563,7 @@ function registerVideoAssetProtocol(): void {
         }
       }
       if (!path || !extension) return new Response('Not found', { status: 404 })
+      path = await dataFileSystem.resolvePhysicalPath(path) ?? path
       const file = await stat(path)
       const mimeType = ({ mp4: 'video/mp4', webm: 'video/webm', mov: 'video/quicktime', m4v: 'video/x-m4v' } as const)[extension]
       const range = request.headers.get('range')
@@ -2566,10 +2605,115 @@ function registerVideoBackgroundProtocol(): void {
 }
 
 app.whenReady().then(async () => {
+  dataBackupService = new DataBackupService({ dataRoot: app.getPath('appData'), catalog: dataPlatform })
+  await dataBackupService.applyPendingRestore()
   dataPlatform.initialize()
+  dataMigration = new DataMigrationService({
+    dataRoot: app.getPath('appData'),
+    userDataRoot: app.getPath('userData'),
+    catalog: dataPlatform,
+    onProgress: (progress) => {
+      for (const window of BrowserWindow.getAllWindows()) if (!window.isDestroyed()) window.webContents.send('app:data-migration:progress', progress)
+    }
+  })
   ipcMain.handle('app:data-storage-summary', async (event) => {
     assertTrustedSender(event)
     return { disk: await getAppDataUsage(app.getPath('appData')), catalog: dataPlatform.storageSummary() }
+  })
+  ipcMain.handle('app:data-backups:list', async (event) => {
+    assertTrustedSender(event)
+    if (!dataBackupService) throw new Error('Serviço de backup ainda não inicializado.')
+    return dataBackupService.listBackups()
+  })
+  ipcMain.handle('app:data-backups:create', async (event) => {
+    assertTrustedSender(event)
+    if (!dataBackupService) throw new Error('Serviço de backup ainda não inicializado.')
+    const window = BrowserWindow.fromWebContents(event.sender)
+    if (window && !window.webContents.isLoading()) await window.webContents.executeJavaScript('window.desktop?.flushPendingWrites?.()')
+    const pending = [
+      ...fabricatorSaveQueues.values(), ...poseSaveWrites, ...hairSaveQueues.values(), animatorSaveQueue,
+      wardrobeSaveQueue, faceSaveQueue, expressionPresetSaveQueue, faceGuideSaveQueue, characterSaveQueue,
+      studioSaveQueues.studio, studioSaveQueues.video
+    ]
+    const results = await Promise.allSettled(pending)
+    const failed = results.find((result): result is PromiseRejectedResult => result.status === 'rejected')
+    if (failed) throw failed.reason
+    return dataBackupService.createBackup()
+  })
+  ipcMain.handle('app:data-backups:verify', async (event, id: string) => {
+    assertTrustedSender(event)
+    if (!dataBackupService) throw new Error('Serviço de backup ainda não inicializado.')
+    return dataBackupService.verifyBackup(id)
+  })
+  ipcMain.handle('app:data-backups:restore', async (event, id: string) => {
+    assertTrustedSender(event)
+    if (!dataBackupService) throw new Error('Serviço de backup ainda não inicializado.')
+    const owner = BrowserWindow.fromWebContents(event.sender)
+    const options: MessageBoxOptions = {
+      type: 'warning', title: 'Restaurar dados',
+      message: 'O app será reiniciado usando este backup. Antes disso, criará uma cópia de segurança do estado atual. A restauração só será concluída após o novo app abrir.',
+      detail: 'Esse processo substitui as bibliotecas e os projetos atuais pelos dados do backup escolhido.',
+      buttons: ['Restaurar e reiniciar', 'Cancelar'], defaultId: 1, cancelId: 1
+    }
+    const choice = owner ? await dialog.showMessageBox(owner, options) : await dialog.showMessageBox(options)
+    if (choice.response !== 0) return { cancelled: true }
+    const safety = await dataBackupService.createBackup()
+    const staged = await dataBackupService.stageRestore(id)
+    app.relaunch()
+    app.quit()
+    return { cancelled: false, safetyBackupId: safety.id, ...staged }
+  })
+  ipcMain.handle('app:data-backups:delete', async (event, id: string) => {
+    assertTrustedSender(event)
+    if (!dataBackupService) throw new Error('Serviço de backup ainda não inicializado.')
+    const owner = BrowserWindow.fromWebContents(event.sender)
+    const options: MessageBoxOptions = {
+      type: 'warning', title: 'Excluir backup', message: 'Excluir este backup permanentemente?',
+      detail: 'A exclusão não altera os dados atuais do aplicativo.', buttons: ['Excluir backup', 'Cancelar'], defaultId: 1, cancelId: 1
+    }
+    const choice = owner ? await dialog.showMessageBox(owner, options) : await dialog.showMessageBox(options)
+    if (choice.response !== 0) return { deleted: false }
+    await dataBackupService.deleteBackup(id)
+    return { deleted: true }
+  })
+  ipcMain.handle('app:data-migration:prepare', async (event) => {
+    assertTrustedSender(event)
+    if (!dataMigration) throw new Error('Serviço de migração ainda não inicializado.')
+    return dataMigration.prepare()
+  })
+  ipcMain.handle('app:data-migration:run-all', async (event) => {
+    assertTrustedSender(event)
+    if (!dataMigration) throw new Error('Serviço de migração ainda não inicializado.')
+    if (dataMigrationRunning) throw new Error('Uma migração já está em andamento.')
+    dataMigrationRunning = true
+    dataMigrationPauseRequested = false
+    const outcomes: Array<{ domainId: string; state: string; fileCount: number; byteLength: number }> = []
+    const task = (async () => {
+      const prepared = await dataMigration.prepare()
+      if (!prepared.hasEnoughSpace) throw new Error('Espaço livre insuficiente para validar os dados com segurança.')
+      for (const domain of prepared.domains) {
+        if (dataMigrationPauseRequested) break
+        if (domain.state === 'active' || domain.state === 'verified') continue
+        outcomes.push(await dataMigration.migrateDomain(domain.domainId))
+      }
+      return { outcomes, paused: dataMigrationPauseRequested, summary: await dataMigration.prepare() }
+    })()
+    dataMigrationTask = task
+    try { return await task }
+    finally { dataMigrationRunning = false; dataMigrationTask = null }
+  })
+  ipcMain.handle('app:data-migration:pause', async (event) => {
+    assertTrustedSender(event)
+    dataMigrationPauseRequested = true
+    return { paused: dataMigrationRunning }
+  })
+  ipcMain.handle('app:data-migration:restart', async (event) => {
+    assertTrustedSender(event)
+    if (dataMigrationRunning) throw new Error('Aguarde a migração atual terminar antes de reiniciar.')
+    const summary = await dataMigration?.prepare()
+    if (!summary || summary.domains.some((domain) => domain.state !== 'active' && domain.state !== 'verified')) throw new Error('Ainda há domínios que não foram migrados.')
+    app.relaunch()
+    app.quit()
   })
   if (process.env.GACHA_DEV_AI_TEST === '1') {
     // Defense in depth for fixture-only Electron tests: no renderer-originated
@@ -2606,7 +2750,8 @@ app.on('before-quit', (event) => {
   waitingForPersistenceWritesBeforeQuit = true
   const pendingWrites = [
     ...fabricatorSaveQueues.values(), ...poseSaveWrites, ...hairSaveQueues.values(),
-    studioSaveQueues.studio, studioSaveQueues.video
+    studioSaveQueues.studio, studioSaveQueues.video,
+    ...(dataMigrationTask ? [dataMigrationTask] : [])
   ]
   void Promise.allSettled(pendingWrites).then((results) => {
     waitingForPersistenceWritesBeforeQuit = false

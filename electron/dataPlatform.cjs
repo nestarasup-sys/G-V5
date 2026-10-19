@@ -70,6 +70,25 @@ function validateExtension(value) {
   return value.toLowerCase()
 }
 
+function normalizeDomainPath(value, allowEmpty = false) {
+  if (typeof value !== 'string' || value.includes('\0')) throw new Error('Caminho lógico inválido.')
+  const normalized = value.replace(/\\/g, '/').replace(/^\/+|\/+$/g, '')
+  if (!normalized && allowEmpty) return ''
+  if (!normalized || normalized.split('/').some((part) => !part || part === '.' || part === '..' || /^[a-z]:$/i.test(part))) {
+    throw new Error('Caminho lógico fora do domínio.')
+  }
+  return normalized
+}
+
+function escapeLike(value) { return value.replace(/[\\%_]/g, '\\$&') }
+
+function mimeFromExtension(extension) {
+  return ({ '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp',
+    '.gif': 'image/gif', '.mp4': 'video/mp4', '.webm': 'video/webm', '.mov': 'video/quicktime',
+    '.m4v': 'video/x-m4v', '.wav': 'audio/wav', '.mp3': 'audio/mpeg', '.ogg': 'audio/ogg',
+    '.json': 'application/json', '.txt': 'text/plain' })[extension] ?? 'application/octet-stream'
+}
+
 function normalizeAssetInput(input, now) {
   const { id, domainId, kind, displayName, schemaVersion = 1, metadata = {}, archived = false } = input ?? {}
   validateId(id, 'ID do asset')
@@ -115,7 +134,7 @@ class DataPlatform {
     this.database = new Database(dbPath, { timeout: 5000 })
     this.database.pragma('foreign_keys = ON')
     const currentSchema = this.database.pragma('user_version', { simple: true })
-    if (currentSchema > 1) {
+    if (currentSchema > 2) {
       this.database.close()
       this.database = null
       throw new Error(`O catálogo usa schema ${currentSchema}, mais novo que esta versão do app.`)
@@ -184,6 +203,38 @@ class DataPlatform {
         PRIMARY KEY(source_domain, source_id, target_domain, target_id, relation)
       ) WITHOUT ROWID;
       CREATE INDEX IF NOT EXISTS entity_references_by_target ON entity_references(target_domain, target_id);
+      CREATE TABLE IF NOT EXISTS domain_files (
+        domain_id TEXT NOT NULL REFERENCES domains(domain_id),
+        relative_path TEXT NOT NULL,
+        content_text TEXT,
+        object_sha256 TEXT REFERENCES objects(sha256),
+        byte_length INTEGER NOT NULL CHECK(byte_length >= 0),
+        content_sha256 TEXT NOT NULL CHECK(length(content_sha256) = 64),
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY(domain_id, relative_path),
+        CHECK ((content_text IS NULL) <> (object_sha256 IS NULL))
+      ) WITHOUT ROWID;
+      CREATE INDEX IF NOT EXISTS domain_files_by_domain_path ON domain_files(domain_id, relative_path);
+      CREATE TABLE IF NOT EXISTS domain_directories (
+        domain_id TEXT NOT NULL REFERENCES domains(domain_id),
+        relative_path TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY(domain_id, relative_path)
+      ) WITHOUT ROWID;
+      CREATE TABLE IF NOT EXISTS domain_storage_state (
+        domain_id TEXT PRIMARY KEY REFERENCES domains(domain_id),
+        state TEXT NOT NULL CHECK(state IN ('legacy', 'migrating', 'active', 'verified')),
+        manifest_json TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      ) WITHOUT ROWID;
+      CREATE TABLE IF NOT EXISTS migration_runs (
+        id TEXT PRIMARY KEY,
+        state TEXT NOT NULL CHECK(state IN ('prepared', 'copying', 'copied', 'verified', 'cutover', 'complete', 'failed')),
+        manifest_json TEXT NOT NULL,
+        error_text TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      ) WITHOUT ROWID;
       CREATE VIRTUAL TABLE IF NOT EXISTS asset_search USING fts5(asset_id UNINDEXED, domain_id UNINDEXED, kind, display_name, metadata_text, tokenize='unicode61 remove_diacritics 2');
       CREATE TRIGGER IF NOT EXISTS assets_search_insert AFTER INSERT ON assets BEGIN
         INSERT INTO asset_search(asset_id, domain_id, kind, display_name, metadata_text)
@@ -202,11 +253,14 @@ class DataPlatform {
     const now = new Date().toISOString()
     this.database.prepare(`INSERT OR IGNORE INTO schema_migrations(version, name, checksum, applied_at) VALUES (1, 'initial-catalog', ?, ?)`)
       .run(sha256('gacha-data-catalog-schema-v1'), now)
-    this.database.pragma('user_version = 1')
+    this.database.prepare(`INSERT OR IGNORE INTO schema_migrations(version, name, checksum, applied_at) VALUES (2, 'domain-file-store-and-migration-journal', ?, ?)`)
+      .run(sha256('gacha-domain-files-schema-v2'), now)
+    if (currentSchema < 2) this.database.pragma('user_version = 2')
     const insertDomain = this.database.prepare(`INSERT OR IGNORE INTO domains(domain_id, schema_version, manifest_json, updated_at) VALUES (?, 1, '{}', ?)`)
     const registerBuiltins = this.database.transaction(() => BUILTIN_DOMAINS.forEach((id) => insertDomain.run(id, now)))
     registerBuiltins()
     this.database.prepare("INSERT OR IGNORE INTO app_metadata(key, value) VALUES ('schema_version', '1')").run()
+    this.database.prepare("UPDATE app_metadata SET value='2' WHERE key='schema_version'").run()
     return this
   }
 
@@ -282,6 +336,200 @@ class DataPlatform {
       VALUES (?, ?, ?, ?, ?)`).run(sourceDomain, sourceId, targetDomain, targetId, relation)
   }
 
+  setDomainState(domainId, state, manifest = {}) {
+    validateDomainId(domainId)
+    if (!['legacy', 'migrating', 'active', 'verified'].includes(state)) throw new Error('Estado de armazenamento inválido.')
+    const db = this.assertReady()
+    const now = new Date().toISOString()
+    db.prepare(`INSERT INTO domain_storage_state(domain_id, state, manifest_json, updated_at) VALUES (?, ?, ?, ?)
+      ON CONFLICT(domain_id) DO UPDATE SET state=excluded.state, manifest_json=excluded.manifest_json, updated_at=excluded.updated_at`)
+      .run(domainId, state, JSON.stringify(manifest), now)
+  }
+
+  getDomainState(domainId) {
+    validateDomainId(domainId)
+    const row = this.assertReady().prepare('SELECT state, manifest_json, updated_at FROM domain_storage_state WHERE domain_id=?').get(domainId)
+    return row ? { state: row.state, manifest: JSON.parse(row.manifest_json), updatedAt: row.updated_at } : { state: 'legacy', manifest: {}, updatedAt: null }
+  }
+
+  beginMigration({ id, manifest }) {
+    validateId(id, 'ID de migração')
+    if (!manifest || Array.isArray(manifest) || typeof manifest !== 'object') throw new Error('Manifesto de migração inválido.')
+    const now = new Date().toISOString()
+    this.assertReady().prepare(`INSERT INTO migration_runs(id, state, manifest_json, error_text, created_at, updated_at)
+      VALUES (?, 'prepared', ?, NULL, ?, ?)`).run(id, JSON.stringify(manifest), now, now)
+  }
+
+  updateMigration(id, { state, manifest, error = null }) {
+    validateId(id, 'ID de migração')
+    if (!['prepared', 'copying', 'copied', 'verified', 'cutover', 'complete', 'failed'].includes(state)) throw new Error('Estado de migração inválido.')
+    const db = this.assertReady()
+    const current = db.prepare('SELECT manifest_json FROM migration_runs WHERE id=?').get(id)
+    if (!current) throw new Error('Migração não encontrada.')
+    db.prepare('UPDATE migration_runs SET state=?, manifest_json=?, error_text=?, updated_at=? WHERE id=?')
+      .run(state, JSON.stringify(manifest ?? JSON.parse(current.manifest_json)), typeof error === 'string' ? error.slice(0, 2000) : null, new Date().toISOString(), id)
+  }
+
+  getMigration(id) {
+    validateId(id, 'ID de migração')
+    const row = this.assertReady().prepare('SELECT * FROM migration_runs WHERE id=?').get(id)
+    return row ? { id: row.id, state: row.state, manifest: JSON.parse(row.manifest_json), error: row.error_text, createdAt: row.created_at, updatedAt: row.updated_at } : null
+  }
+
+  migrationSummary() {
+    const db = this.assertReady()
+    return db.prepare(`SELECT d.domain_id AS domainId, coalesce(s.state, 'legacy') AS state, coalesce(s.manifest_json, '{}') AS manifest
+      FROM domains d LEFT JOIN domain_storage_state s ON s.domain_id=d.domain_id ORDER BY d.domain_id`).all()
+      .map((row) => ({ domainId: row.domainId, state: row.state, manifest: JSON.parse(row.manifest) }))
+  }
+
+  ensureDomainDirectory(domainId, relativePath = '') {
+    validateDomainId(domainId)
+    const normalized = normalizeDomainPath(relativePath, true)
+    const db = this.assertReady()
+    const now = new Date().toISOString()
+    const segments = normalized ? normalized.split('/') : []
+    const insert = db.prepare('INSERT OR IGNORE INTO domain_directories(domain_id, relative_path, updated_at) VALUES (?, ?, ?)')
+    const txn = db.transaction(() => {
+      insert.run(domainId, '', now)
+      let current = ''
+      for (const segment of segments) { current = current ? `${current}/${segment}` : segment; insert.run(domainId, current, now) }
+    })
+    txn()
+  }
+
+  hasDomainDirectory(domainId, relativePath = '') {
+    validateDomainId(domainId)
+    const normalized = normalizeDomainPath(relativePath, true)
+    return Boolean(this.assertReady().prepare('SELECT 1 FROM domain_directories WHERE domain_id=? AND relative_path=?').get(domainId, normalized))
+  }
+
+  async writeDomainFile(domainId, relativePath, bytes, { text = false } = {}) {
+    validateDomainId(domainId)
+    const normalized = normalizeDomainPath(relativePath)
+    const buffer = Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes)
+    const digest = sha256(buffer)
+    let objectHash = null
+    let contentText = null
+    if (text) {
+      contentText = buffer.toString('utf8')
+      if (!Buffer.from(contentText, 'utf8').equals(buffer)) throw new Error('Arquivo textual não preserva bytes UTF-8.')
+    } else {
+      const extension = path.extname(normalized).toLowerCase() || '.bin'
+      const object = await new ContentAddressedStore(this.root).putObject(buffer, { mimeType: mimeFromExtension(extension), extension })
+      objectHash = object.sha256
+      const db = this.assertReady()
+      db.prepare(`INSERT OR IGNORE INTO objects(sha256, byte_length, mime_type, extension, relative_path, created_at)
+        VALUES (?, ?, ?, ?, ?, ?)`).run(object.sha256, object.byteLength, object.mimeType, object.extension, object.relativePath, new Date().toISOString())
+    }
+    const db = this.assertReady()
+    const now = new Date().toISOString()
+    const txn = db.transaction(() => {
+      this.ensureDomainDirectory(domainId, path.posix.dirname(normalized) === '.' ? '' : path.posix.dirname(normalized))
+      db.prepare(`INSERT INTO domain_files(domain_id, relative_path, content_text, object_sha256, byte_length, content_sha256, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(domain_id, relative_path) DO UPDATE SET content_text=excluded.content_text,
+        object_sha256=excluded.object_sha256, byte_length=excluded.byte_length, content_sha256=excluded.content_sha256, updated_at=excluded.updated_at`)
+        .run(domainId, normalized, contentText, objectHash, buffer.length, digest, now)
+    })
+    txn()
+    return { relativePath: normalized, byteLength: buffer.length, sha256: digest, objectSha256: objectHash }
+  }
+
+  async readDomainFile(domainId, relativePath) {
+    validateDomainId(domainId)
+    const normalized = normalizeDomainPath(relativePath)
+    const row = this.assertReady().prepare('SELECT * FROM domain_files WHERE domain_id=? AND relative_path=?').get(domainId, normalized)
+    if (!row) return null
+    let bytes
+    if (row.content_text !== null) bytes = Buffer.from(row.content_text, 'utf8')
+    else {
+      const object = this.assertReady().prepare('SELECT relative_path FROM objects WHERE sha256=?').get(row.object_sha256)
+      if (!object) throw new Error(`Objeto do arquivo ausente: ${normalized}`)
+      const absolute = path.resolve(this.root, object.relative_path)
+      if (!isWithin(this.root, absolute)) throw new Error('Objeto armazenado fora de app-data.')
+      bytes = await fsp.readFile(absolute)
+    }
+    if (bytes.length !== row.byte_length || sha256(bytes) !== row.content_sha256) throw new Error(`Integridade do arquivo falhou: ${normalized}`)
+    return bytes
+  }
+
+  listDomainFiles(domainId, prefix = '') {
+    validateDomainId(domainId)
+    const normalized = normalizeDomainPath(prefix, true)
+    const rows = normalized
+      ? this.assertReady().prepare(`SELECT relative_path, byte_length, content_sha256, object_sha256 FROM domain_files WHERE domain_id=? AND (relative_path=? OR relative_path LIKE ? ESCAPE '\\') ORDER BY relative_path`)
+        .all(domainId, normalized, `${escapeLike(normalized)}/%`)
+      : this.assertReady().prepare('SELECT relative_path, byte_length, content_sha256, object_sha256 FROM domain_files WHERE domain_id=? ORDER BY relative_path').all(domainId)
+    return rows.map((row) => ({ relativePath: row.relative_path, byteLength: row.byte_length, sha256: row.content_sha256, objectSha256: row.object_sha256 }))
+  }
+
+  listDomainDirectory(domainId, relativePath = '') {
+    validateDomainId(domainId)
+    const normalized = normalizeDomainPath(relativePath, true)
+    const prefix = normalized ? `${normalized}/` : ''
+    const rows = this.listDomainFiles(domainId, normalized)
+    const names = new Map()
+    for (const row of rows) {
+      const rest = row.relativePath.startsWith(prefix) ? row.relativePath.slice(prefix.length) : ''
+      if (!rest) continue
+      const [name, ...tail] = rest.split('/')
+      if (!names.has(name)) names.set(name, { name, directory: tail.length > 0, file: tail.length === 0 })
+      else if (tail.length > 0) names.get(name).directory = true
+    }
+    const dirRows = this.assertReady().prepare('SELECT relative_path FROM domain_directories WHERE domain_id=? AND relative_path LIKE ? ESCAPE \'\\\' ORDER BY relative_path')
+      .all(domainId, `${escapeLike(prefix)}%`)
+    for (const row of dirRows) {
+      const rest = row.relative_path.startsWith(prefix) ? row.relative_path.slice(prefix.length) : ''
+      if (!rest) continue
+      const [name] = rest.split('/')
+      if (!names.has(name)) names.set(name, { name, directory: true, file: false })
+      else names.get(name).directory = true
+    }
+    return [...names.values()].sort((a, b) => a.name.localeCompare(b.name))
+  }
+
+  removeDomainPath(domainId, relativePath, recursive = false) {
+    validateDomainId(domainId)
+    const normalized = normalizeDomainPath(relativePath, true)
+    if (!normalized) throw new Error('Não é permitido remover a raiz de um domínio.')
+    const db = this.assertReady()
+    const prefix = `${escapeLike(normalized)}/%`
+    const txn = db.transaction(() => {
+      const files = db.prepare(`SELECT relative_path FROM domain_files WHERE domain_id=? AND (relative_path=? OR relative_path LIKE ? ESCAPE '\\')`)
+        .all(domainId, normalized, prefix)
+      const dirs = db.prepare(`SELECT relative_path FROM domain_directories WHERE domain_id=? AND (relative_path=? OR relative_path LIKE ? ESCAPE '\\')`)
+        .all(domainId, normalized, prefix)
+      if (!recursive && (files.some((row) => row.relative_path !== normalized) || dirs.some((row) => row.relative_path !== normalized))) throw new Error('Diretório não está vazio.')
+      db.prepare(`DELETE FROM domain_files WHERE domain_id=? AND (relative_path=? OR relative_path LIKE ? ESCAPE '\\')`).run(domainId, normalized, prefix)
+      db.prepare(`DELETE FROM domain_directories WHERE domain_id=? AND (relative_path=? OR relative_path LIKE ? ESCAPE '\\')`).run(domainId, normalized, prefix)
+    })
+    txn()
+  }
+
+  renameDomainPath(domainId, fromPath, toPath) {
+    validateDomainId(domainId)
+    const from = normalizeDomainPath(fromPath, true); const to = normalizeDomainPath(toPath)
+    if (!from) throw new Error('Não é permitido renomear a raiz de um domínio.')
+    const db = this.assertReady(); const fromPrefix = `${escapeLike(from)}/%`; const toPrefix = `${to}/`
+    const txn = db.transaction(() => {
+      const files = db.prepare(`SELECT * FROM domain_files WHERE domain_id=? AND (relative_path=? OR relative_path LIKE ? ESCAPE '\\') ORDER BY relative_path`).all(domainId, from, fromPrefix)
+      const dirs = db.prepare(`SELECT relative_path FROM domain_directories WHERE domain_id=? AND (relative_path=? OR relative_path LIKE ? ESCAPE '\\') ORDER BY relative_path`).all(domainId, from, fromPrefix)
+      if (!files.length && !dirs.length) throw new Error('Origem não encontrada.')
+      const insertFile = db.prepare(`INSERT INTO domain_files(domain_id, relative_path, content_text, object_sha256, byte_length, content_sha256, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(domain_id, relative_path) DO UPDATE SET content_text=excluded.content_text, object_sha256=excluded.object_sha256,
+        byte_length=excluded.byte_length, content_sha256=excluded.content_sha256, updated_at=excluded.updated_at`)
+      const now = new Date().toISOString()
+      for (const row of files) insertFile.run(domainId, row.relative_path === from ? to : `${toPrefix}${row.relative_path.slice(from.length + 1)}`, row.content_text, row.object_sha256, row.byte_length, row.content_sha256, now)
+      for (const row of dirs) {
+        const target = row.relative_path === from ? to : `${toPrefix}${row.relative_path.slice(from.length + 1)}`
+        db.prepare('INSERT OR IGNORE INTO domain_directories(domain_id, relative_path, updated_at) VALUES (?, ?, ?)').run(domainId, target, now)
+      }
+      db.prepare(`DELETE FROM domain_files WHERE domain_id=? AND (relative_path=? OR relative_path LIKE ? ESCAPE '\\')`).run(domainId, from, fromPrefix)
+      db.prepare(`DELETE FROM domain_directories WHERE domain_id=? AND (relative_path=? OR relative_path LIKE ? ESCAPE '\\')`).run(domainId, from, fromPrefix)
+    })
+    txn()
+  }
+
   search({ query = '', domainId, kind, limit = 100, offset = 0 } = {}) {
     if (!Number.isSafeInteger(limit) || limit < 1 || limit > 500 || !Number.isSafeInteger(offset) || offset < 0) throw new Error('Paginação inválida.')
     if (domainId !== undefined) validateDomainId(domainId)
@@ -309,9 +557,12 @@ class DataPlatform {
       assets: db.prepare('SELECT count(*) AS count FROM assets WHERE archived=0').get().count,
       archivedAssets: db.prepare('SELECT count(*) AS count FROM assets WHERE archived=1').get().count,
       uniqueObjects: db.prepare('SELECT count(*) AS count FROM objects').get().count,
-      referencedObjects: db.prepare('SELECT count(DISTINCT sha256) AS count FROM asset_objects').get().count,
+      referencedObjects: db.prepare(`SELECT count(DISTINCT sha256) AS count FROM (
+        SELECT sha256 FROM asset_objects UNION SELECT object_sha256 AS sha256 FROM domain_files WHERE object_sha256 IS NOT NULL)`).get().count,
       objectBytes: db.prepare('SELECT coalesce(sum(byte_length), 0) AS bytes FROM objects').get().bytes,
-      unreferencedObjects: db.prepare('SELECT count(*) AS count FROM objects o WHERE NOT EXISTS (SELECT 1 FROM asset_objects ao WHERE ao.sha256=o.sha256)').get().count
+      unreferencedObjects: db.prepare(`SELECT count(*) AS count FROM objects o WHERE
+        NOT EXISTS (SELECT 1 FROM asset_objects ao WHERE ao.sha256=o.sha256)
+        AND NOT EXISTS (SELECT 1 FROM domain_files df WHERE df.object_sha256=o.sha256)`).get().count
     }
   }
 

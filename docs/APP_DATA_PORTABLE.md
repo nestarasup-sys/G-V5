@@ -22,7 +22,9 @@ app-data/
 
 ## Evolução escalável do layout
 
-A estrutura expandida, o catálogo SQLite, os objetos por conteúdo, as miniaturas, a retenção e a migração gradual estão especificados em [APP_DATA_ESCALAVEL.md](./APP_DATA_ESCALAVEL.md). O app agora cria `database/catalog.sqlite` e diretórios vazios de destino no próximo boot. **Isso não importa, move nem reescreve os dados atuais em `user-data`**; a organização vigente permanece a fonte canônica até migrações por domínio serem validadas e reversíveis.
+A estrutura expandida está detalhada em [APP_DATA_ESCALAVEL.md](./APP_DATA_ESCALAVEL.md). O app cria `database/catalog.sqlite` e oferece migração guiada por domínio em Opções > Dados e armazenamento. A migração não começa no boot: o usuário confere o inventário e inicia a operação. Domínios ativados usam o catálogo e objetos endereçados por conteúdo através de um adaptador de filesystem, preservando os contratos de persistência das áreas. Os demais continuam usando os caminhos legados até serem migrados.
+
+Antes da migração real, crie um backup manual em Opções. A migração cria snapshot temporário próprio, verifica origem e destino por hash e mantém os arquivos originais até o primeiro carregamento saudável. Depois dessa confirmação, remove apenas os arquivos legados enumerados no manifesto. Backups manuais permanecem até o usuário excluí-los. Não execute várias instâncias do app durante a migração.
 
 As áreas continuam com ownership separado: Fabricador publica bibliotecas e vínculos; Customizador guarda personagens e overrides; Studio normal e Video Studio salvam seus próprios projetos. A troca da raiz não altera os caminhos relativos nem os contratos entre essas áreas.
 
@@ -43,6 +45,6 @@ O Electron aponta `userData` e `sessionData` para `app-data/user-data`; logs, cr
 
 ## Testes e limites
 
-Os testes de migração usam apenas fixtures sintéticas sob `out/dev-ai`. A migração do perfil real é uma ação local, executada por `npm run dev`/`npm run preview` depois que o aplicativo estiver fechado. A cópia antiga arquivada permanece em `app-data/backups` como rollback. A aplicação pode manter alguns caches temporários no próprio perfil Electron; os arquivos de cache também ficam dentro da raiz local.
+Os testes de armazenamento, migração, limpeza e restauração usam diretórios sintéticos temporários. Nenhum teste automatizado migra o perfil real. O snapshot transitório de migração é removido depois da validação saudável; backups manuais persistem até exclusão explícita. A aplicação pode manter caches temporários no perfil Electron, todos dentro da raiz local.
 
-O manifesto contém nomes relativos e hashes dos arquivos migrados; não é versionado. Os testes não afirmam que um backup local protege contra falha ou perda do mesmo disco.
+O manifesto contém nomes relativos e hashes dos arquivos migrados; não é versionado. Os testes não afirmam que um backup local protege contra falha ou perda do mesmo disco; mantenha cópia em outra unidade para proteção física.

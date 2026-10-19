@@ -1,8 +1,28 @@
 import { constants } from 'node:fs'
-import { access, copyFile, mkdir, readFile, readdir, rename, stat, unlink, writeFile } from 'node:fs/promises'
+import { access as nativeAccess, copyFile as nativeCopyFile, mkdir as nativeMkdir, readFile as nativeReadFile, readdir as nativeReaddir, rename as nativeRename, stat as nativeStat, unlink as nativeUnlink, writeFile as nativeWriteFile } from 'node:fs/promises'
 import { basename, dirname, extname, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import type { StudioDocument, VideoLibraryItem, VideoStudioAsset } from '../src/shared/studio'
+import type { DomainFileSystem } from './domainFileSystem.cjs'
+
+type StorageAdapter = Pick<DomainFileSystem, 'access' | 'copyFile' | 'mkdir' | 'readFile' | 'readdir' | 'rename' | 'stat' | 'unlink' | 'writeFile'>
+let storage: StorageAdapter = { access: nativeAccess, copyFile: nativeCopyFile, mkdir: nativeMkdir, readFile: nativeReadFile,
+  readdir: nativeReaddir, rename: nativeRename, stat: nativeStat, unlink: nativeUnlink, writeFile: nativeWriteFile }
+export function configureVideoLibraryStorage(adapter: StorageAdapter) { storage = adapter }
+const access = (path: Parameters<StorageAdapter['access']>[0], mode?: Parameters<StorageAdapter['access']>[1]) => storage.access(path, mode)
+const copyFile = (source: Parameters<StorageAdapter['copyFile']>[0], destination: Parameters<StorageAdapter['copyFile']>[1], mode?: Parameters<StorageAdapter['copyFile']>[2]) => storage.copyFile(source, destination, mode)
+const mkdir = (path: Parameters<StorageAdapter['mkdir']>[0], options?: Parameters<StorageAdapter['mkdir']>[1]) => storage.mkdir(path, options)
+function readFile(path: string): Promise<Buffer>
+function readFile(path: string, options: BufferEncoding): Promise<string>
+function readFile(path: string, options: { encoding: BufferEncoding }): Promise<string>
+function readFile(path: string, options?: BufferEncoding | { encoding: BufferEncoding }): Promise<Buffer | string> { return storage.readFile(path, options as BufferEncoding | { encoding: BufferEncoding }) }
+function readdir(path: string, options: { withFileTypes: true }): Promise<import('node:fs').Dirent[]>
+function readdir(path: string, options?: { withFileTypes?: false } | BufferEncoding): Promise<string[]>
+function readdir(path: string, options?: { withFileTypes?: boolean } | BufferEncoding): Promise<import('node:fs').Dirent[] | string[]> { return storage.readdir(path, options as never) }
+const rename = (oldPath: Parameters<StorageAdapter['rename']>[0], newPath: Parameters<StorageAdapter['rename']>[1]) => storage.rename(oldPath, newPath)
+const stat = (path: Parameters<StorageAdapter['stat']>[0]) => storage.stat(path)
+const unlink = (path: Parameters<StorageAdapter['unlink']>[0]) => storage.unlink(path)
+const writeFile = (path: string, data: string | NodeJS.ArrayBufferView, options?: BufferEncoding): Promise<void> => storage.writeFile(path, data, options)
 
 const formats = { mp4: 'video/mp4', webm: 'video/webm', mov: 'video/quicktime', m4v: 'video/x-m4v' } as const
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i

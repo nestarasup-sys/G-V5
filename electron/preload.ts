@@ -102,6 +102,20 @@ contextBridge.exposeInMainWorld('desktop', {
   platform: process.platform,
   appName: 'Gacha Nymi',
   getAppDataStorageSummary: () => ipcRenderer.invoke('app:data-storage-summary'),
+  getDataMigrationSummary: () => ipcRenderer.invoke('app:data-migration:prepare'),
+  runDataMigration: () => ipcRenderer.invoke('app:data-migration:run-all'),
+  pauseDataMigration: () => ipcRenderer.invoke('app:data-migration:pause'),
+  restartAfterDataMigration: () => ipcRenderer.invoke('app:data-migration:restart'),
+  onDataMigrationProgress: (callback: (progress: { domainId: string; completedFiles: number; totalFiles: number; completedBytes: number; totalBytes: number }) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, progress: { domainId: string; completedFiles: number; totalFiles: number; completedBytes: number; totalBytes: number }) => callback(progress)
+    ipcRenderer.on('app:data-migration:progress', listener)
+    return () => ipcRenderer.removeListener('app:data-migration:progress', listener)
+  },
+  listDataBackups: () => ipcRenderer.invoke('app:data-backups:list'),
+  createDataBackup: () => ipcRenderer.invoke('app:data-backups:create'),
+  verifyDataBackup: (id: string) => ipcRenderer.invoke('app:data-backups:verify', id),
+  restoreDataBackup: (id: string) => ipcRenderer.invoke('app:data-backups:restore', id),
+  deleteDataBackup: (id: string) => ipcRenderer.invoke('app:data-backups:delete', id),
   ...fabricatorApi,
   ...customizerApi,
   ...studioApi,

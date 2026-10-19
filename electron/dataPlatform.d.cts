@@ -22,6 +22,20 @@ export class DataPlatform {
   upsertAssets(inputs: AssetRecordInput[]): void
   linkObject(input: { assetId: string; sha256: string; role?: string }): void
   addReference(input: { sourceDomain: string; sourceId: string; targetDomain: string; targetId: string; relation: string }): void
+  setDomainState(domainId: string, state: 'legacy' | 'migrating' | 'active' | 'verified', manifest?: Record<string, unknown>): void
+  getDomainState(domainId: string): { state: 'legacy' | 'migrating' | 'active' | 'verified'; manifest: Record<string, unknown>; updatedAt: string | null }
+  migrationSummary(): Array<{ domainId: string; state: string; manifest: Record<string, unknown> }>
+  beginMigration(input: { id: string; manifest: Record<string, unknown> }): void
+  updateMigration(id: string, input: { state: string; manifest?: Record<string, unknown>; error?: string | null }): void
+  getMigration(id: string): { id: string; state: string; manifest: Record<string, unknown>; error: string | null; createdAt: string; updatedAt: string } | null
+  ensureDomainDirectory(domainId: string, relativePath?: string): void
+  hasDomainDirectory(domainId: string, relativePath?: string): boolean
+  writeDomainFile(domainId: string, relativePath: string, bytes: Buffer, options?: { text?: boolean }): Promise<{ relativePath: string; byteLength: number; sha256: string; objectSha256: string | null }>
+  readDomainFile(domainId: string, relativePath: string): Promise<Buffer | null>
+  listDomainFiles(domainId: string, prefix?: string): Array<{ relativePath: string; byteLength: number; sha256: string; objectSha256: string | null }>
+  listDomainDirectory(domainId: string, relativePath?: string): Array<{ name: string; directory: boolean; file: boolean }>
+  removeDomainPath(domainId: string, relativePath: string, recursive?: boolean): void
+  renameDomainPath(domainId: string, fromPath: string, toPath: string): void
   search(input?: { query?: string; domainId?: string; kind?: string; limit?: number; offset?: number }): Array<{
     id: string; domainId: string; kind: string; displayName: string; schemaVersion: number
     metadata: Record<string, unknown>; archived: boolean; createdAt: string; updatedAt: string
