@@ -47,3 +47,12 @@ Atualizado: 2026-10-19. Cada cartão abaixo é uma mudança isolada recomendada.
 - Em cada amostra: serial cold, serial warm, 2 workers cold, 2 warm; ≥3 runs, mesma fixture, ordem alternada quando possível, controle temperatura.
 - Medir tempo de preflight, resolução assets, raster, video decode, BGRA copy/IPC, ffmpeg encode, concat, áudio, ffprobe, publish; registrar medianas/p95 e divergência visual. Parar experimentos que não apresentem ROI ou que degradem qualidade.
 - 2× significa dois trabalhadores e não promessa de redução de tempo pela metade. 3+ workers só se projeto longo e PC provarem vantagem.
+
+
+## Backlog integral de modernização — referência posterior
+
+Este backlog E01–E20 é o **recorte de export** e mantém validade técnica para o serial/Turbo. O usuário ampliou o objetivo para melhorar também preview, dados, renderizador, biblioteca, recursos de mídia, sincronização e UX.
+
+O novo [backlog com 40 tarefas V501–V540](../VIDEO_STUDIO_V5_MODERNIZACAO/06_BACKLOG_DE_EXECUCAO.md) integra este recorte com [plano diretor](../VIDEO_STUDIO_V5_MODERNIZACAO/00_PLANO_DIRETOR.md). Evitar executar E14/E15/Turbo antes da unificação visual/asset manifest/serial MP4. MLT/libopenshot/GES/PixiJS/WebCodecs são **experimentos A/B**, não decisões de dependências já instaladas.
+
+Implementações existentes de snapshot, writer/checkpoint/CI continuam parciais; *nenhum teste de MP4 ou integração nova* foi feito na rodada de pesquisa.
