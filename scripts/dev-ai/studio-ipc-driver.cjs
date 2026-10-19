@@ -615,7 +615,7 @@ async function verifyRendererNetworkBlock(window) {
   }
 }
 
-async function verifyCustomizerRasterPreview(window) {
+async function verifyCustomizerRasterPreview(window,poseLabel='pose1') {
   // A real production Customizer page consumes the saved Fabricator model,
   // real pose and V2 wardrobe PNGs. We assert that the equipped raster has
   // been decoded and composited; do not call this a cross-Studio golden test.
@@ -682,16 +682,16 @@ async function verifyCustomizerRasterPreview(window) {
   const artifactsFolder=join(output,'raster-asset-flow')
   await mkdir(artifactsFolder,{recursive:true})
   const screenshotA=(await window.webContents.capturePage()).toPNG()
-  await writeFile(join(artifactsFolder,'customizer-actor-a-outfit.png'),screenshotA)
+  await writeFile(join(artifactsFolder,'customizer-actor-a-outfit-'+poseLabel+'.png'),screenshotA)
   const sibling = await waitForCharacter('DEV AI Actor B',false)
-  await writeFile(join(artifactsFolder,'customizer-actor-b-default.png'),
+  await writeFile(join(artifactsFolder,'customizer-actor-b-default-'+poseLabel+'.png'),
     (await window.webContents.capturePage()).toPNG())
   const report={schemaVersion:1,adapter:'production-customizer-real-dom',
     status:outfit.status==='passed'&&sibling.status==='passed'?'passed':'failed',
     configuredFixture:'raster model-9, pose-1, wardrobe-v2 with shoe-left',
     characterA:outfit,characterB:sibling,sourceLibraryWrites:0,
     limitations:'Real DOM and PNG decode: not a quantitative Fabricador/Studio golden image'}
-  await writeFile(join(artifactsFolder,'customizer-render-result.json'),JSON.stringify(report,null,2))
+  await writeFile(join(artifactsFolder,'customizer-render-result-'+poseLabel+'.json'),JSON.stringify(report,null,2))
   assert.equal(report.status,'passed',`Customizer não representou os assets sintéticos corretamente: ${JSON.stringify(report)}`)
   return report
 }
@@ -745,7 +745,33 @@ async function areaSmoke(window) {
   const navigationPendingAtRouteChange = await window.webContents.executeJavaScript('window.__devAiNavigationSaves.filter(entry => !entry.settled).length')
   assert.ok(navigationPendingAtRouteChange > 0, 'O teste de navegação precisa iniciar com salvamentos pendentes')
   const customizer = await route('/customizar', '.home-layout', 'Customizer')
-  const customizerRasterRender = await verifyCustomizerRasterPreview(window)
+  const customizerRasterPose1 = await verifyCustomizerRasterPreview(window,'pose1')
+  // Actual renderer+IPC test: switch the same saved actor to pose 2 while
+  // keeping wardrobe, head-local hair, and head-extra preferences unchanged.
+  // Navigate away/back to force fresh document hydration (not a cached mock).
+  const fabricatorBeforePoseChange=treeHash(join(app.getPath('userData'),'fabricator'))
+  const actorToPose = (await window.webContents.executeJavaScript('window.desktop.listCustomizerCharacters()'))
+    .find(actor => actor.name === 'DEV AI Actor A')
+  assert.ok(actorToPose,'Synthetic actor A missing before pose 2')
+  await window.webContents.executeJavaScript(`window.desktop.saveCustomizerCharacter(${JSON.stringify({
+    ...actorToPose,customization:{...actorToPose.customization,poseSlot:2}
+  })})`)
+  assert.equal(treeHash(join(app.getPath('userData'),'fabricator')),fabricatorBeforePoseChange,
+    'Changing the Customizer character pose altered Fabricador assets')
+  await route('/opcoes','main.blank-page','Opções / renderer reset')
+  await route('/customizar','.home-layout','Customizer pose 2')
+  const customizerRasterPose2 = await verifyCustomizerRasterPreview(window,'pose2')
+  const rasterScreenshots=join(output,'raster-asset-flow')
+  const aPixels=readFileSync(join(rasterScreenshots,'customizer-actor-a-outfit-pose1.png'))
+  const bPixels=readFileSync(join(rasterScreenshots,'customizer-actor-a-outfit-pose2.png'))
+  const difference=screenshotComparison(aPixels,bPixels,{channelTolerance:3,maxChangedPixelRatio:0})
+  await writeFile(join(rasterScreenshots,'pose-1-vs-2-diff.png'),difference.diffPng)
+  await writeFile(join(rasterScreenshots,'pose-comparison.json'),JSON.stringify(difference.metrics,null,2))
+  assert.ok(difference.metrics.changedPixelRatio>0.005,
+    'Pose 2 deve alterar visualmente o modelo, preservando o pré-ajuste de roupas/cabelo')
+  assert.equal(treeHash(join(app.getPath('userData'),'fabricator')),fabricatorBeforePoseChange)
+  const customizerRasterRender={pose1:customizerRasterPose1,pose2:customizerRasterPose2,
+    poseChangedWithoutSourceWrites:true,poseScreenshotChangeRatio:difference.metrics.changedPixelRatio}
   await window.webContents.executeJavaScript('Promise.all(window.__devAiNavigationSaves.map(entry => entry.promise))')
   const navigationSaveErrors = await window.webContents.executeJavaScript('window.__devAiNavigationSaves.filter(entry => entry.error).map(entry => entry.error)')
   assert.deepEqual(navigationSaveErrors, [])
