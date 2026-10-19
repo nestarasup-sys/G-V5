@@ -40,7 +40,7 @@ G-V5/
 
 ## Atualização de execução local — 2026-10-19
 
-A revisão estática acima continua sendo um retrato histórico da base `master@5b848345`. Na branch de continuação `codex/finalizar-dev-ai-local`, testes executáveis foram revalidados; não substituir retroativamente as afirmações históricas por evidência nova. O `npm run audit:all` passou 12/12 casos (typecheck, build, nove auditorias rápidas, isolamento Studio e IPC real). O gate AST passou sem imports não resolvidos e sem novas arestas; as 10 arestas legadas continuam classificadas como dívida permitida. Detalhes, comandos e limites em [VALIDACAO_LOCAL_2026-10-19.md](AUDITORIAS/VALIDACAO_LOCAL_2026-10-19.md).
+A revisão estática acima continua sendo um retrato histórico da base `master@5b848345`. Na branch de continuação `codex/finalizar-dev-ai-local`, testes executáveis foram revalidados; não substituir retroativamente as afirmações históricas por evidência nova. O `npm run audit:all` passou 13/13 casos no SHA limpo `5b82b5a9c4f5b9dda402d30e290517e00f51d2e5` (typecheck, build, nove auditorias rápidas, isolamento Studio e IPC real). O gate AST passou sem imports não resolvidos e sem novas arestas; as 10 arestas legadas continuam classificadas como dívida permitida. Detalhes, comandos e limites em [VALIDACAO_LOCAL_2026-10-19.md](AUDITORIAS/VALIDACAO_LOCAL_2026-10-19.md).
 
 O teste privado de Ayla/Chloe foi executado com backup SHA verificado e cópias independentes. Ambos os renders canônicos mudaram ao zerar transforms exclusivamente na cópia de teste; a biblioteca Fabricador permaneceu idêntica entre as cópias. Evidências visuais e relatórios com dados privados estão fora do repositório. Isso ainda não fecha AF-01–AF-20, ISO-01–ISO-15, nem equivalência entre Customizador e Studios.
 

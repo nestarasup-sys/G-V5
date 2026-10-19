@@ -2,6 +2,7 @@
 
 **Branch:** `codex/finalizar-dev-ai-local`  
 **Base de código antes desta etapa:** `2b1bbcf` (continuação de `9ba244e`).  
+**SHA validado pela suíte completa:** `5b82b5a9c4f5b9dda402d30e290517e00f51d2e5` (árvore limpa).
 **Ambiente:** Windows, Node/Electron do checkout local.  
 **Escopo:** reexecução dos gates DEV AI, fluxo sintético Fabricador → Customizador, isolamento entre Studios e renderização dos personagens Ayla/Chloe em cópias privadas. Esta validação não foi enviada ao GitHub.
 
@@ -17,10 +18,10 @@
 | `npm run audit:boundaries:ast` | executou; 75 arquivos, 227 imports, 22 arestas runtime cruzadas, 0 não resolvidas |
 | `npm run audit:boundaries:gate` | passou; 10 relações legadas permitidas, nenhuma regressão nova |
 | `npm run audit:fast` | passou: 9/9 auditorias com fixtures sintéticas |
-| `npm run audit:all` | passou: 12/12 casos, incluindo typecheck, build, suíte rápida, isolamento Studio e IPC Electron real |
+| `npm run audit:all` | passou: 13/13 casos, incluindo typecheck, build, suíte rápida, isolamento Studio e IPC Electron real |
 | `node --check` dos dois runners alterados e `git diff --check` | passaram |
 
-Execução completa DEV AI: `2026-10-19T02-07-20-885Z-0ea2126a-c45c-4181-b845-9a317e8b796c`. Artefatos sintéticos locais: `out/dev-ai/runs/<run-id>/`. Duração medida por caso no relatório: isolamento 11,7 s e IPC real 31,9 s. São tempos deste runner nesta máquina, **não** benchmarks de desempenho do produto.
+Execução completa DEV AI: `2026-10-19T02-11-56-675Z-73ebea84-608b-4ef1-a350-447e71f1942e`; o `report.json` registra o mesmo SHA `5b82b5a9c4f5b9dda402d30e290517e00f51d2e5`. Artefatos sintéticos locais: `out/dev-ai/runs/<run-id>/`. Duração medida por caso: typecheck 17,7 s, build 6,4 s, isolamento 12,0 s e IPC real 32,6 s. São tempos deste runner nesta máquina, **não** benchmarks de desempenho do produto.
 
 ## Ayla e Chloe — teste privado local
 
