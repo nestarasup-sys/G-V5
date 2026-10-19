@@ -7,13 +7,15 @@
 
 ## Estado Git desta entrega
 
-Esta branch contém cinco commits locais após a base:
+Esta branch contém sete commits após a base:
 
 1. `35c1ad8 test(dev-ai): assemble synthetic raster actor for private evidence`
 2. `2b1bbcf test(dev-ai): isolate shoe geometry mask in raster evidence`
 3. `5b82b5a test(dev-ai): validate real characters in private copies`
 4. `9cecee3 docs: record clean local audit for dev ai continuation`
 5. `4aff45d test(dev-ai): verify isolated character edit roundtrip`
+6. `aefec0b [skip ci] docs: add DEV AI continuation handoff`
+7. `8c31b2c [skip ci] docs: record continuation branch publication`
 
 O commit `4aff45d71746a536baca22780e71e769f772ddec` foi o SHA do código testado por `npm run audit:all`. A branch `master` não foi modificada. O usuário pediu explicitamente para publicar esta branch; a publicação não autoriza merge nem alteração de `master`.
 
