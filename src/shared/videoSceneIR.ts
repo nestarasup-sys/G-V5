@@ -1,5 +1,6 @@
-import type { StudioDocument, StudioElement, VideoCharacterState, VideoClipTransform, VideoTimelineDocument as Timeline } from './studio'
+import type { StudioElement, VideoCharacterState, VideoClipTransform, VideoTimelineDocument as Timeline } from './studio'
 import type { VideoExportSnapshot } from './videoExportSnapshot'
+import { compileVideoCharacterTransitions, type VideoCharacterTransition } from './videoCharacterTransitions'
 import { automaticBlinkFrameFor } from './videoFrame'
 import { videoCharacterStateAt, videoCharacterTimelineLookup, type VideoCharacterTimelineLookup } from './videoCharacterTimeline'
 
@@ -20,13 +21,7 @@ export type VideoSceneProgram = Readonly<{
 type IndexedInterval<T> = Readonly<{ item: T; startFrame: number; endFrame: number; order: number }>
 type IntervalIndex<T> = Readonly<{ items: ReadonlyArray<IndexedInterval<T>>; prefixMaxEnd: ReadonlyArray<number> }>
 
-export type CompiledTransition = Readonly<{
-  elementId: string
-  startFrame: number
-  boundaryFrame: number
-  from: VideoCharacterState
-  to: VideoCharacterState
-}>
+export type CompiledTransition = VideoCharacterTransition
 
 export type EvaluatedCharacter = Readonly<{
   elementId: string
@@ -53,28 +48,6 @@ export type VideoSceneFrame = Readonly<{
   layers: ReadonlyArray<VideoSceneLayer>
   videos: ReadonlyArray<Readonly<{ clipId: string; assetId: string; sourceTick: number; sourceTimeNumerator: number; sourceTimeDenominator: 60; transform?: VideoClipTransform; zOrder: 1 }>>
 }>
-
-const CHARACTER_TRANSITION_FRAMES = 15
-
-function deepEqual(left: unknown, right: unknown): boolean {
-  if (left === right) return true
-  if (!left || !right || typeof left !== 'object' || typeof right !== 'object' || Array.isArray(left) !== Array.isArray(right)) return false
-  const a = left as Record<string, unknown>, b = right as Record<string, unknown>
-  const keys = Object.keys(a)
-  return keys.length === Object.keys(b).length && keys.every((key) => Object.hasOwn(b, key) && deepEqual(a[key], b[key]))
-}
-
-function actingState(state: VideoCharacterState) {
-  const element = state.element
-  return {
-    pose: element.poseSlot,
-    face: element.faceAppearance,
-    transforms: element.faceTransforms,
-    effects: element.activeExpressionEffects,
-    mode: element.activeFaceMode,
-    preset: element.activeExpressionPresetId,
-  }
-}
 
 function buildIntervalIndex<T>(items: ReadonlyArray<T>, getStart: (item: T) => number, getEnd: (item: T) => number): IntervalIndex<T> {
   const indexed = items.flatMap((item, order) => {
@@ -103,26 +76,6 @@ function activeIntervals<T>(index: IntervalIndex<T>, frame: number): IndexedInte
     else high = middle
   }
   return index.items.slice(first, low).filter((entry) => entry.endFrame > frame).sort((a, b) => a.order - b.order)
-}
-
-function transitionsFor(studio: StudioDocument, elementId: string, keys: ReadonlyArray<Timeline['characterKeys'][number]>): CompiledTransition[] {
-  const timeline = studio.videoTimeline!
-  const transitions: CompiledTransition[] = []
-  const byFrame = new Map<number, Timeline['characterKeys'][number]>()
-  for (const key of keys) if (key.frame < timeline.durationFrames) byFrame.set(key.frame, key)
-  let previous = timeline.characterBases?.[elementId]
-  let previousFrame = 0
-  for (const key of [...byFrame.values()].sort((a, b) => a.frame - b.frame)) {
-    if (!key.state) continue
-    const startFrame = Math.max(previousFrame, key.frame - CHARACTER_TRANSITION_FRAMES)
-    const overlapsGap = (timeline.characterGaps ?? []).some((gap) => gap.elementId === elementId && gap.startFrame < key.frame && gap.endFrame > startFrame)
-    if (previous && key.frame > 0 && startFrame < key.frame && !overlapsGap && !deepEqual(actingState(previous), actingState(key.state))) {
-      transitions.push({ elementId, startFrame, boundaryFrame: key.frame, from: previous, to: key.state })
-    }
-    previous = key.state
-    previousFrame = key.frame
-  }
-  return transitions
 }
 
 function stateAt(program: VideoSceneProgram, elementId: string, frame: number): VideoCharacterState | undefined {
@@ -165,7 +118,7 @@ function activeMouthModes(activeText: ReadonlyArray<Timeline['textClips'][number
 /** Compile immutable indexes and animation spans once for deterministic absolute-frame evaluation. */
 export function compileVideoScene(snapshot: VideoExportSnapshot, variant: RenderVariant): VideoSceneProgram {
   const characterLookups = new Map<string, VideoCharacterTimelineLookup>()
-  const transitionsByCharacter = new Map<string, ReadonlyArray<CompiledTransition>>()
+  const transitionsByCharacter = new Map<string, CompiledTransition[]>()
   const gapsByCharacter = new Map<string, IntervalIndex<NonNullable<Timeline['characterGaps']>[number]>>()
   const gapsByElement = new Map<string, NonNullable<Timeline['characterGaps']>[number][]>()
   for (const gap of snapshot.timeline.characterGaps ?? []) {
@@ -173,11 +126,16 @@ export function compileVideoScene(snapshot: VideoExportSnapshot, variant: Render
     if (existing) existing.push(gap)
     else gapsByElement.set(gap.elementId, [gap])
   }
+  for (const transition of compileVideoCharacterTransitions(snapshot.studio)) {
+    const current = transitionsByCharacter.get(transition.elementId) ?? []
+    current.push(transition)
+    transitionsByCharacter.set(transition.elementId, current)
+  }
   for (const element of snapshot.studio.elements) {
     if (element.kind !== 'character') continue
     const lookup = videoCharacterTimelineLookup(snapshot.timeline, element.id)
     characterLookups.set(element.id, lookup)
-    transitionsByCharacter.set(element.id, transitionsFor(snapshot.studio, element.id, lookup.keys))
+    transitionsByCharacter.set(element.id, transitionsByCharacter.get(element.id) ?? [])
     gapsByCharacter.set(element.id, buildIntervalIndex(gapsByElement.get(element.id) ?? [], (gap) => gap.startFrame, (gap) => gap.endFrame))
   }
   const assetsById = new Map(snapshot.studio.assets.flatMap((asset) => asset.dataUrl ? [[asset.id, asset.dataUrl] as const] : []))

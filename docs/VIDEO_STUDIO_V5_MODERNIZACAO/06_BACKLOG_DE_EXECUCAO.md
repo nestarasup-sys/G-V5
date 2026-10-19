@@ -143,3 +143,9 @@ Todos os conceitos originais aprovados (Smart Scene Compiler, cache persistente,
 - Testes sintéticos: `tests/video-scene-ir.test.cjs` cobre seek A-B-A, authored key boundary, transição, precedência de fala, blink, gaps, sobreposições, texto, source tick, z-order e preferência de animação. Compara seleção compilada com `resolveVideoFrameSelection()` em cada frame da fixture (incluindo intervals sobrepostos). `tests/video-timeline-index.test.cjs` verifica ordem de keys e transforms globais/legadas pelo lookup que a preview consome.
 - Verificações: `npm test` (55/55), `npm run test:export:synthetic` (25/25), `npm run typecheck`, `npm run build` e `git diff --check` passaram.
 - Limite: ainda não compõe transição em PNG, não resolve bytes externos pinados, não captura preview/print e não está ligado ao renderizador React ou à exportação. V505/V507/V542 permanecem parciais; nenhum gate visual ou MP4 passa por este IR ainda.
+
+### 2026-10-19 — compilador temporal de transições compartilhado
+
+- `src/shared/videoCharacterTransitions.ts` centraliza a regra de transição usada pelo hook do preview e pelo Scene IR. Isso remove duas implementações paralelas de janelas, keys empatadas e supressão por gaps. O preview consulta samples também em seeks pausados quando o cache assíncrono já os preparou.
+- O teste de fixture compara o plano de transições de ambos os consumidores e verifica que um gap que cruza a janela cancela a interpolação.
+- Estado de V505/V507: parcialmente implementado e testado em Node. A composição da transição ainda é assíncrona/React no preview e não há prova de imagem equivalente entre preview, print e exportação.

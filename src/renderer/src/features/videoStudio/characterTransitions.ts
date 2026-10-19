@@ -1,11 +1,11 @@
 import type { CustomizerFaceAppearance } from '../../../../shared/customizer'
 import type { FaceExpressionEffect, FaceExpressionEffects, FaceTransform, JointLink, ModelPart } from '../../../../shared/fabricator'
-import type { StudioDocument, StudioElement, StudioFaceTransforms, VideoCharacterState } from '../../../../shared/studio'
-import { equalHistoryValue } from './editHistory'
+import type { StudioDocument, StudioElement, StudioFaceTransforms } from '../../../../shared/studio'
+import { compileVideoCharacterTransitions, VIDEO_CHARACTER_TRANSITION_FRAMES, type VideoCharacterTransition } from '../../../../shared/videoCharacterTransitions'
 
-export const CHARACTER_TRANSITION_MS = 250
 export const VIDEO_FRAME_RATE = 60
-export type CharacterTransition = { elementId: string; boundaryFrame: number; startFrame: number; from: VideoCharacterState; to: VideoCharacterState }
+export const CHARACTER_TRANSITION_MS = VIDEO_CHARACTER_TRANSITION_FRAMES / VIDEO_FRAME_RATE * 1000
+export type CharacterTransition = VideoCharacterTransition
 export type PoseArtwork = { width: number; height: number; parts: ModelPart[]; joints?: JointLink[]; layerOrder?: string[]; hiddenPartIds?: string[] }
 const clamp = (value: number) => Math.max(0, Math.min(1, value))
 export const mix = (a: number, b: number, t: number) => a + (b - a) * t
@@ -17,30 +17,8 @@ export function transitionProgress(transition: CharacterTransition, frame: numbe
   return clamp((frame - transition.startFrame) / (transition.boundaryFrame - transition.startFrame))
 }
 
-function acting(element: StudioElement) {
-  return { pose: element.poseSlot, face: element.faceAppearance, transforms: element.faceTransforms, effects: element.activeExpressionEffects, mode: element.activeFaceMode, preset: element.activeExpressionPresetId }
-}
-
 export function compileCharacterTransitions(studio: StudioDocument): CharacterTransition[] {
-  const timeline = studio.videoTimeline
-  if (!timeline) return []
-  const result: CharacterTransition[] = []
-  for (const element of studio.elements.filter((item) => item.kind === 'character')) {
-    let previous = timeline.characterBases?.[element.id]
-    let previousFrame = 0
-    const byFrame = new Map(timeline.characterKeys.filter((key) => key.elementId === element.id && key.frame < timeline.durationFrames).map((key) => [key.frame, key]))
-    for (const key of [...byFrame.values()].sort((a, b) => a.frame - b.frame)) {
-      if (!key.state) continue
-      const startFrame = Math.max(previousFrame, key.frame - CHARACTER_TRANSITION_MS * VIDEO_FRAME_RATE / 1000)
-      const hasGap = timeline.characterGaps?.some((gap) => gap.elementId === element.id && gap.startFrame < key.frame && gap.endFrame > startFrame)
-      if (previous && key.frame > 0 && startFrame < key.frame && !hasGap && !equalHistoryValue(acting(previous.element), acting(key.state.element))) {
-        result.push({ elementId: element.id, boundaryFrame: key.frame, startFrame, from: previous, to: key.state })
-      }
-      previous = key.state
-      previousFrame = key.frame
-    }
-  }
-  return result.sort((a, b) => a.boundaryFrame - b.boundaryFrame)
+  return compileVideoCharacterTransitions(studio)
 }
 
 /** Only intermediate output samples need artwork; the boundary belongs to the next segment. */

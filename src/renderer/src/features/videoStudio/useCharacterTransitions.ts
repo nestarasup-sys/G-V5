@@ -105,14 +105,15 @@ export function useCharacterTransitions(studio: StudioDocument | null, character
   }, [spans])
   const samples = useMemo(() => {
     const result = new Map<string, VideoCharacterState>()
-    if (enabled && playing) for (const span of samplesByFrame.get(frame) ?? []) {
+    // A paused seek is still an absolute timeline frame; show its authored transition sample too.
+    if (enabled) for (const span of samplesByFrame.get(frame) ?? []) {
       if (!(frame > span.startFrame && frame < span.boundaryFrame)) continue
       const character = characters.find((item) => item.id === span.from.element.characterId)
       const state = character && session.get(span, frame, character)
       if (state) result.set(span.elementId, state)
     }
     return result
-  }, [samplesByFrame, frame, playing, session, characters, revision, enabled])
+  }, [samplesByFrame, frame, session, characters, revision, enabled])
 
   const preparePlayback = async (startFrame = frame) => {
     if (!enabled) return true

@@ -18,10 +18,15 @@ function loadPureTs(file, deps = {}) {
 
 const frameHelpers = loadPureTs('../src/shared/videoFrame.ts')
 const characterTimeline = loadPureTs('../src/shared/videoCharacterTimeline.ts')
+const characterTransitions = loadPureTs('../src/shared/videoCharacterTransitions.ts')
+const previewTransitions = loadPureTs('../src/renderer/src/features/videoStudio/characterTransitions.ts', {
+  '../../../../shared/videoCharacterTransitions': characterTransitions,
+})
 const snapshotModule = loadPureTs('../src/shared/videoExportSnapshot.ts', { './videoFrame': frameHelpers })
 const { compileVideoScene, evaluateVideoSceneFrame } = loadPureTs('../src/shared/videoSceneIR.ts', {
   './videoFrame': frameHelpers,
   './videoCharacterTimeline': characterTimeline,
+  './videoCharacterTransitions': characterTransitions,
   './videoExportSnapshot': snapshotModule,
 })
 
@@ -95,6 +100,20 @@ test('animated and static variants are absolute, repeatable and preserve authore
   assert.deepEqual(animatedMid, animatedAfterReverseSeek, 'A-B-A seeks return the same semantic frame')
   assert.equal(source.videoTimeline.playing, true)
   assert.equal(source.videoTimeline.playheadFrame, 33)
+})
+
+test('preview and scene IR use the same transition windows, including gaps', () => {
+  const source = fixture()
+  source.videoTimeline.characterKeys.push({
+    id: 'key-after-gap', elementId: 'actor-a', frame: 40, poseSlot: 3,
+    expressionCollectionId: null, expressionPresetId: null, faceMode: 'idle',
+    state: characterState(3, 'data:image/png;base64,AFTER_GAP'),
+  })
+  const preview = previewTransitions.compileCharacterTransitions(source)
+  const scene = program(source, 'animated')
+  const compiled = scene.transitionsByCharacter.get('actor-a')
+  assert.deepEqual(compiled, preview)
+  assert.deepEqual(compiled.map(({ startFrame, boundaryFrame }) => [startFrame, boundaryFrame]), [[0, 15]])
 })
 
 test('scene resolves gaps, text, source ticks and current V5 layer ordering', () => {

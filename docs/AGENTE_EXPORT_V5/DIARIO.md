@@ -130,6 +130,15 @@ _Atualizações posteriores devem registrar o SHA real do gate e nunca declarar 
 
 **Próxima sequência executável:** V501/V502 (fixtures e oracle) → V505/V507 (estado por frame) → V509 (manifest pinned) → V508/V510 (texto/layers) → V512–V518 (MP4 serial verdadeiro) → preview/proxy/cache → Turbo. Registrar resultados por tarefa; não marcar concluído sem evidência.
 
+## 2026-10-19 — Rodada 07: compilador de transições compartilhado
+
+- Base: `f9a0302a333cd2b1f819eb3aa85a5de368fa8a2d`, branch `master-desenvolvimento`.
+- Divergência encontrada: `characterTransitions.ts` do preview e `videoSceneIR.ts` mantinham cópias da regra de janelas de transição, desempate de keys e supressão por gaps. As cópias eram equivalentes nos casos atuais, mas podiam divergir em futuras mudanças.
+- Correção: `src/shared/videoCharacterTransitions.ts` agora compila uma única lista temporal; o hook do preview e o Scene IR consomem esse mesmo resultado. Mantidos janela de 15 frames, empate pela última key no mesmo frame, transições apenas quando o estado de atuação muda e supressão quando a janela cruza um gap. O preview também consulta samples de transição pelo frame absoluto quando pausado, se já estiverem no cache; a duração/latência da preparação ainda é assíncrona.
+- Evidência sintética: teste adiciona key após um gap, verifica que a transição correspondente é suprimida e compara a lista inteira entre o wrapper usado pelo preview e o Scene IR.
+- Verificações: `npm test` — 56/56; `node --test tests/video-scene-ir.test.cjs tests/video-timeline-index.test.cjs` — 13/13; `npm run typecheck`, `npm run build` e `git diff --check` passaram.
+- Limite: isso unifica o plano temporal, mas não faz rasterização canônica da transição e ainda não conecta o Scene IR ao compositor DOM/print ou a MP4. Nenhum teste Electron/visual foi executado nesta rodada; a apresentação do preview pausado ainda depende do cache React assíncrono.
+
 
 ## 2026-10-19 — Rodada 05: metas de implementação Codex e dois modos de export
 
