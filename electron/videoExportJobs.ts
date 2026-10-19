@@ -504,6 +504,16 @@ export class VideoExportJobStore {
     await this.verifyPinnedMediaInFolder(folder, manifest)
   }
 
+  chunkOutputPath(jobId: string, index: number): string {
+    const folder = this.pathFor(jobId)
+    if (!Number.isSafeInteger(index) || index < 0) throw new Error('Índice de chunk inválido.')
+    return join(folder, `chunk-${String(index).padStart(6, '0')}.mp4`)
+  }
+
+  finalOutputPath(jobId: string): string {
+    return join(this.pathFor(jobId), 'final.mp4')
+  }
+
   async resolvePinnedMedia(jobId: string, assetId: string): Promise<{ path: string; extension: keyof typeof mimeByExtension; mimeType: (typeof mimeByExtension)[keyof typeof mimeByExtension]; sizeBytes: number }> {
     if (!idPattern.test(assetId)) throw new Error('Asset de mídia inválido.')
     const folder = this.pathFor(jobId)
@@ -545,14 +555,19 @@ export class VideoExportJobStore {
     return updated
   }
 
-  async cancel(jobId: string): Promise<void> {
+  async cleanup(jobId: string): Promise<void> {
     const folder = this.pathFor(jobId)
-    const info = await lstat(folder)
+    const info = await lstat(folder).catch(() => null)
+    if (!info) return
     if (!info.isDirectory() || info.isSymbolicLink()) throw new Error('Pasta do job inválida.')
     const manifest = JSON.parse(await readFile(join(folder, 'manifest.json'), 'utf8')) as VideoExportManifest
     if (manifest.jobId !== jobId) throw new Error('O job não é proprietário desta pasta.')
     const rootRelative = relative(this.root, folder)
     if (!rootRelative || rootRelative.startsWith(`..${sep}`)) throw new Error('Pasta do job fora do diretório temporário.')
     await rm(folder, { recursive: true })
+  }
+
+  async cancel(jobId: string): Promise<void> {
+    await this.cleanup(jobId)
   }
 }
