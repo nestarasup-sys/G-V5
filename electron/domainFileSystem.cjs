@@ -38,7 +38,9 @@ function escapeJsonPointerSegment(value) { return String(value).replace(/~/g, '~
 
 async function externalizeImages(value, catalog, pointer = '', refs = []) {
   if (typeof value === 'string' && /^data:image\/(png|jpeg|webp);base64,/i.test(value)) {
-    const image = await catalog.ingestImage(decodeImageDataUrl(value))
+    const bytes = decodeImageDataUrl(value)
+    const generatedPng = /^data:image\/png;base64,/i.test(value) && /\/(?:thumbnailDataUrl|chromaBaseDataUrl|coverDataUrl)$/.test(pointer)
+    const image = generatedPng ? await catalog.storeGeneratedPng(bytes) : await catalog.ingestImage(bytes)
     refs.push({ pointer: pointer || '/', sha256: image.sha256 })
     return `@gacha-image:${image.sha256}`
   }
@@ -260,4 +262,4 @@ class DomainFileSystem {
   }
 }
 
-module.exports = { DomainFileSystem, ROOTS }
+module.exports = { DomainFileSystem, ROOTS, externalizeImages }

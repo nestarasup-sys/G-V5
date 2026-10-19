@@ -487,6 +487,21 @@ class DataPlatform {
     return result
   }
 
+  async storeGeneratedPng(bytes) {
+    const sharp = require('sharp')
+    const buffer = Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes ?? [])
+    if (!buffer.length || buffer.length > 50 * 1024 * 1024) throw new Error('PNG gerado vazio ou acima do limite permitido.')
+    let metadata
+    try { metadata = await sharp(buffer, { limitInputPixels: 32_000_000, failOn: 'error', animated: true }).metadata() }
+    catch (reason) { throw new Error(`PNG gerado inválido ou corrompido: ${reason?.message ?? 'erro de decodificação'}`) }
+    if (metadata.format !== 'png' || (metadata.pages ?? 1) !== 1 || !metadata.width || !metadata.height
+      || metadata.width * metadata.height > 32_000_000) throw new Error('A saída gerada precisa ser PNG estático dentro do limite de pixels.')
+    const object = await new ContentAddressedStore(this.root).putObject(buffer, { mimeType: 'image/png', extension: '.png' })
+    this.assertReady().prepare(`INSERT OR IGNORE INTO objects(sha256, byte_length, mime_type, extension, relative_path, created_at)
+      VALUES (?, ?, ?, ?, ?, ?)`).run(object.sha256, object.byteLength, object.mimeType, object.extension, object.relativePath, new Date().toISOString())
+    return { sha256: object.sha256, byteLength: object.byteLength, width: metadata.width, height: metadata.height, reused: object.reused }
+  }
+
   async readObject(hash) {
     if (typeof hash !== 'string' || !/^[a-f0-9]{64}$/.test(hash)) throw new Error('Hash de imagem inválido.')
     const row = this.assertReady().prepare('SELECT relative_path, byte_length FROM objects WHERE sha256=?').get(hash)
