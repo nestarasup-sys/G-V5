@@ -11,6 +11,12 @@ const compiled = ts.transpile(source, { module: ts.ModuleKind.CommonJS, target: 
 const loadedModule = { exports: {} }
 new Function('require', 'module', 'exports', compiled)(require, loadedModule, loadedModule.exports)
 const { characterKeysForFrameRange, characterSegmentAtFrame, clipsForFrameRange, indexVideoTimeline, nearestTimelineSnapFrame } = loadedModule.exports
+const characterTrackPath = path.join(__dirname, '../src/renderer/src/features/videoStudio/characterTrack.ts')
+const characterTrackSource = fs.readFileSync(characterTrackPath, 'utf8')
+const characterTrackCompiled = ts.transpile(characterTrackSource, { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 })
+const loadedCharacterTrack = { exports: {} }
+new Function('require', 'module', 'exports', characterTrackCompiled)(require, loadedCharacterTrack, loadedCharacterTrack.exports)
+const { characterStateAt } = loadedCharacterTrack.exports
 
 function timeline(overrides = {}) {
   return {
@@ -87,4 +93,23 @@ test('clip viewport query handles long overlapping clips without scanning unrela
   }))
   const visible = clipsForFrameRange(index.textClipsByElement.get('speech'), index.textClipPrefixMaxEndByElement.get('speech'), 50, 80)
   assert.deepEqual(visible.map((clip) => clip.id), ['long', 'middle', 'later'])
+})
+
+test('character preview state lookup preserves same-frame key order and frame boundaries', () => {
+  const state = (id) => ({ imageDataUrl: `data:${id}`, element: { id: 'actor', kind: 'character', x: 0, y: 0, width: 100, height: 100, rotation: 0, zIndex: 1, pose: id } })
+  const doc = timeline({
+    characterBases: { actor: state('base') },
+    characterKeys: [
+      { id: 'later', elementId: 'actor', frame: 10, state: state('later') },
+      { id: 'first', elementId: 'actor', frame: 10, state: state('first') },
+      { id: 'empty', elementId: 'actor', frame: 20 },
+      { id: 'next', elementId: 'actor', frame: 30, state: state('next') }
+    ]
+  })
+
+  assert.equal(characterStateAt(doc, 'actor', 9).element.pose, 'base')
+  assert.equal(characterStateAt(doc, 'actor', 10).element.pose, 'first', 'same-frame ties retain original stable-sort semantics')
+  assert.equal(characterStateAt(doc, 'actor', 20).element.pose, 'first', 'a key without a state does not clear the preceding appearance')
+  assert.equal(characterStateAt(doc, 'actor', 29).element.pose, 'first')
+  assert.equal(characterStateAt(doc, 'actor', 30).element.pose, 'next')
 })

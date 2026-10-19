@@ -1,6 +1,6 @@
 # GACHA V5 — transferência técnica: engine de export do Editor V4
 
-**Status:** investigação do V4/V5 concluída; plano de execução ampliado; primeira otimização da timeline implementada localmente, ainda aguardando validação visual e benchmark Electron. A engine MP4 do V5 permanece por implementar.
+**Status:** investigação V4/V5 concluída; plano de execução ampliado; índices e virtualização da timeline, prévia de arraste coalescida e consulta indexada do estado de personagens implementados localmente. Build e comparações sintéticas passaram; validação visual/Electron permanece pendente. A engine MP4 do V5 ainda não existe.
 **Objetivo:** estabilizar e acelerar edição, criação, animação, preview, mídia, salvamento e exportação no Video Studio do GACHA V5. Adaptar o conhecimento da pipeline do Editor V4 sem transplantar dependências de domínio nem quebrar os contratos do V5.
 
 ## 1. Missão
@@ -301,11 +301,13 @@ Gates gerais: nenhum frame ausente/duplicado; V5 preview/export correspondente; 
 - `VideoTimeline.tsx` agora usa índices derivados por revisão para chaves, gaps, clips, marcadores e snapping. Consultas de segmento e clips visíveis usam busca binária; snapping não recria candidatos a cada movimento do ponteiro.
 - Régua, clips, estados e keyframes são limitados à janela horizontal visível, com overscan. O redimensionamento persiste a altura ao concluir o gesto em vez de atualizar o documento em cada evento pointermove.
 - Atualizações visuais de drag de clipe e boundary são coalescidas em `requestAnimationFrame`; o ponteiro mantém o último valor e o documento recebe a mudança uma única vez ao concluir o gesto.
+- `characterTrack.ts` agrupa e ordena chaves de pose uma vez por revisão imutável; buscar o estado do ator em qualquer frame usa busca binária. Transform base e primeira pose são derivados por revisão em um WeakMap, que não mantém vivas revisões antigas. A ordem original de chaves empatadas e keys sem estado foi preservada.
 - Foi criado teste sintético para indexação, gaps, limites, snapping excluindo o próprio clip, janela visível e 10 mil keyframes. O primeiro ciclo revelou um erro na seleção do frame mais próximo; a correção passou nos testes.
-- `npm test`: 28/28 passaram. `npm run typecheck` passou. `npm run build` passou.
-- `npm run bench:video-timeline` (microbenchmark sintético de 120 buscas mistas por tamanho; mediana de três rodadas de consulta): 100 eventos: baseline 1,73 ms/indexado 0,24 ms (7,08×); 1.000: 9,95/0,20 ms (48,88×); 10.000: 61,04/0,06 ms (1.027,69×). Construir índice levou 0,10/0,59/5,51 ms. Isso mede funções puras em memória neste computador, não React, playback, Electron, GPU ou exportação.
+- `npm test`: 29/29 passaram, nenhum teste falhou ou foi ignorado; inclui teste de estado anterior/exato/posterior à key e desempate de múltiplas chaves no mesmo frame. `npm run typecheck` passou. `npm run build` passou.
+- `npm run bench:video-timeline` (microbenchmark sintético de 120 buscas mistas por tamanho; mediana de três rodadas de consulta): 100 eventos: baseline 2,60 ms/indexado 1,22 ms (2,14×); 1.000: 12,16/0,18 ms (66,58×); 10.000: 79,10/0,08 ms (939,43×). Construir índice levou 0,14/0,53/9,08 ms. Isso mede funções puras em memória neste computador, não React, playback, Electron, GPU ou exportação.
+- O mesmo benchmark compara 120 consultas de estado de personagem: 100 eventos: caminho anterior 0,79 ms/indexado 0,16 ms (4,96×); 1.000: 2,96/0,23 ms (13,17×); 10.000: 16,93/0,19 ms (87,68×). Cada consulta teve o mesmo estado/pose nos dois caminhos. Microbenchmark de funções puras, não FPS de playback nem medida de React/Electron.
 - Ainda não houve benchmark Electron, medição de CPU/RAM, comparação de frames nem teste visual de playback/export. Não declarar ganho de velocidade de interface quantificado.
-- Engine MP4, processo de encode isolado, caches/proxies e Turbo ainda não foram implementados. A próxima fatia é validar esta timeline virtualizada e construir baseline sintético; export só começa após superfície determinística do renderer V5.
+- Engine MP4, processo de encode isolado, caches/proxies e Turbo ainda não foram implementados. Próxima etapa: profiling Electron e comparação da timeline real sob interação; export só começa após superfície determinística do renderer V5.
 
 ## 13. Fontes de evidência revisadas
 
