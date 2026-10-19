@@ -104,3 +104,25 @@ Ao aprovar/rejeitar experimento, adicionar:
 5. data e link para relatório em `04_LAB_E_GATES.md` ou diário correspondente.
 
 **Nunca** converter uma hipótese em decisão por autoridade de um editor conhecido ou pela palavra "GPU".
+
+
+### ADR-013 — Dois modos, um único pipeline
+**Status:** DECIDIDO — contrato de produto, implementação pendente.
+**Decisão:** `RenderVariant` diferencia `animated` de `static-characters`. Completo usa transições e automatismos elegíveis; estático preserva estado authored por key, vídeo importado, áudio e balões e elimina interpolações de personagem, blink e mouth automáticos. Sem mutação da timeline.
+**Justificativa:** rapidez sem destruição das reações; evita engines duplas.
+**Gate:** fixture visual comparativa, PTS/áudio, determinismo e hash de variante. [Contrato](./07_MODOS_DE_EXPORTACAO.md).
+
+### ADR-014 — Reconstrução interna liberada com equivalência de produto
+**Status:** DECIDIDO — diretriz, engenharia pendente.
+**Decisão:** pode reconstruir/substituir Video Studio antigo, reorganizar módulos e introduzir registries; não eliminar código velho antes da prova de equivalência/compatibilidade e rollback. Preservar projetos v1, bibliotecas, Undo/Redo/Autosave.
+**Alternativa:** refactor incremental; default mais seguro. Rebuild completo só se custo/benefício demonstrado.
+**Gate:** catálogo de recursos legado, migração, golden fixtures e smoke no app Windows. [Arquitetura](./08_ARQUITETURA_EXTENSIVEL_E_RECONSTRUCAO.md).
+
+### ADR-015 — Extensibilidade e independência da engine são gate de aceitação
+**Status:** DECIDIDO — diretriz, implementação pendente.
+**Decisão:** layer/animation/render variant/decoder/encoder plugáveis por interfaces tipadas internas, RenderIR canônico e compatibilidade versionada. Registro interno, sem carregar plugins arbitrários inseguros.
+**Gate:** implementar camada/efeito sintético novo sem mudar lógica espalhada no editor e no export; testes passam nos dois modos.
+
+### ADR-016 — Autonomia persistente, conclusão baseada em provas
+**Status:** DECIDIDO — operacional.
+**Decisão:** Codex sincroniza `master-desenvolvimento` com segurança, lê [missão](./09_MISSAO_CODEX_AUTONOMA.md), trabalha em ciclos test/implement/benchmark/commit até passar G0-G6 e V541–V548 ou registrar bloqueio real; não tratar documentação/CI Node como export pronto. Nenhum `git reset --hard`/force push ou perda de dados.
