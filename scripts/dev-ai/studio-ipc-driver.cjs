@@ -636,6 +636,8 @@ async function verifyCustomizerRasterPreview(window) {
         const model=document.querySelector('.customizer-selected-artwork')
         const wardrobe=document.querySelector('.customizer-wardrobe-overlay')
         const aboveHair=document.querySelector('.customizer-wardrobe-above-hair-overlay')
+        const frontHair=document.querySelector('.customizer-front-hair-overlay')
+        const face=document.querySelector('.customizer-face-overlay')
         const renderedPixels=(img)=>{
           if(!img || !img.complete || !img.naturalWidth || !img.naturalHeight) return 0
           const canvas=document.createElement('canvas')
@@ -651,16 +653,23 @@ async function verifyCustomizerRasterPreview(window) {
         const alerts=[...document.querySelectorAll('[role=alert]')].map(e=>e.textContent.trim()).filter(Boolean)
         const shoePixels=expected?renderedPixels(wardrobe):0
         const glassesPixels=expected?renderedPixels(aboveHair):0
+        const frontHairPixels=expected?renderedPixels(frontHair):0
+        const headExtraPixels=expected?renderedPixels(face):0
         last={selected,modelReady:!!model && model.complete && model.naturalWidth>0,
           wardrobeReady:!!wardrobe && wardrobe.complete && wardrobe.naturalWidth>0,
           glassesReady:!!aboveHair && aboveHair.complete && aboveHair.naturalWidth>0,
+          frontHairReady:!!frontHair && frontHair.complete && frontHair.naturalWidth>0,
+          headExtraReady:!!face && face.complete && face.naturalWidth>0,
           shoeOpaquePixels:shoePixels,glassesOpaquePixels:glassesPixels,
+          frontHairOpaquePixels:frontHairPixels,headExtraOpaquePixels:headExtraPixels,
           outfitPresent:!!wardrobe,glassesPresent:!!aboveHair,
+          hairPresent:!!frontHair,headExtraPresent:!!face,
           alerts,modelNaturalSize:model?[model.naturalWidth,model.naturalHeight]:null,
           outfitNaturalSize:wardrobe?[wardrobe.naturalWidth,wardrobe.naturalHeight]:null}
         if(selected===name && last.modelReady
-          && (expected?(last.wardrobeReady && last.glassesReady && shoePixels>100 && glassesPixels>100)
-            :(!last.outfitPresent&&!last.glassesPresent))
+          && (expected?(last.wardrobeReady && last.glassesReady && last.frontHairReady && last.headExtraReady
+             && shoePixels>100 && glassesPixels>100 && frontHairPixels>100 && headExtraPixels>100)
+            :(!last.outfitPresent&&!last.glassesPresent&&!last.hairPresent&&!last.headExtraPresent))
           && alerts.length===0){
           await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))
           return {...last,status:'passed'}
