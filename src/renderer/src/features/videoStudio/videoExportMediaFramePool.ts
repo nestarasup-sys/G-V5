@@ -49,48 +49,61 @@ export class VideoExportMediaFramePool {
     if (signal?.aborted) throw abortError(signal)
     if (!Number.isFinite(video.duration) || video.duration <= 0) throw new Error('Mídia sem duração decodificável.')
     const clamped = Math.max(0, Math.min(target, Math.max(0, video.duration - 0.000001)))
-    if (Math.abs(video.currentTime - clamped) > 0.000001 || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
-      await new Promise<void>((resolve, reject) => {
-        let done = false
-        const timeout = window.setTimeout(() => finish(new Error('Seek de mídia excedeu 8 segundos.')), 8000)
-        const finish = (error?: Error) => {
-          if (done) return
-          done = true
-          window.clearTimeout(timeout)
-          video.removeEventListener('seeked', onSeeked)
-          video.removeEventListener('error', onError)
-          signal?.removeEventListener('abort', onAbort)
-          error ? reject(error) : resolve()
-        }
-        const onSeeked = () => finish()
-        const onError = () => finish(new Error('Decoder falhou durante seek de mídia.'))
-        const onAbort = () => finish(abortError(signal))
-        video.addEventListener('seeked', onSeeked, { once: true })
-        video.addEventListener('error', onError, { once: true })
-        signal?.addEventListener('abort', onAbort, { once: true })
-        try { video.currentTime = clamped } catch (reason) { finish(reason instanceof Error ? reason : new Error(String(reason))) }
-      })
-    }
+    const previousTime = video.currentTime
+    const needsSeek = Math.abs(previousTime - clamped) > 0.000001 || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA
+    if (!needsSeek) return
+
+    await new Promise<void>((resolve, reject) => {
+      let done = false
+      let seeked = false
+      let presented = typeof video.requestVideoFrameCallback !== 'function'
+      let callbackId = 0
+      const previousDistance = Math.abs(previousTime - clamped)
+      const timeout = window.setTimeout(() => finish(new Error('Seek/apresentação de mídia excedeu 8 segundos.')), 8000)
+
+      const finish = (error?: Error) => {
+        if (done) return
+        done = true
+        window.clearTimeout(timeout)
+        video.removeEventListener('seeked', onSeeked)
+        video.removeEventListener('error', onError)
+        signal?.removeEventListener('abort', onAbort)
+        if (error && callbackId && video.cancelVideoFrameCallback) video.cancelVideoFrameCallback(callbackId)
+        error ? reject(error) : resolve()
+      }
+      const maybeFinish = () => {
+        if (seeked && presented) finish()
+      }
+      const watchPresentation = () => {
+        if (typeof video.requestVideoFrameCallback !== 'function' || done) return
+        callbackId = video.requestVideoFrameCallback((_now, metadata) => {
+          callbackId = 0
+          // A callback queued before assigning currentTime may describe the old
+          // frame. Only accept a presentation that moved toward the requested
+          // timestamp; then combine it with the seeked barrier.
+          const distance = Math.abs(metadata.mediaTime - clamped)
+          if (previousDistance <= 0.000001 || distance + 0.000001 < previousDistance) {
+            presented = true
+            maybeFinish()
+          } else watchPresentation()
+        })
+      }
+      const onSeeked = () => {
+        seeked = true
+        if (!presented && !callbackId) watchPresentation()
+        maybeFinish()
+      }
+      const onError = () => finish(new Error('Decoder falhou durante seek de mídia.'))
+      const onAbort = () => finish(abortError(signal))
+
+      video.addEventListener('seeked', onSeeked, { once: true })
+      video.addEventListener('error', onError, { once: true })
+      signal?.addEventListener('abort', onAbort, { once: true })
+      watchPresentation()
+      try { video.currentTime = clamped }
+      catch (reason) { finish(reason instanceof Error ? reason : new Error(String(reason))) }
+    })
     if (signal?.aborted) throw abortError(signal)
-    const requestFrame = video.requestVideoFrameCallback?.bind(video)
-    if (requestFrame) {
-      await new Promise<void>((resolve, reject) => {
-        let done = false
-        const timeout = window.setTimeout(() => finish(new Error('Apresentação do frame de vídeo excedeu 4 segundos.')), 4000)
-        let callbackId = 0
-        const finish = (error?: Error) => {
-          if (done) return
-          done = true
-          window.clearTimeout(timeout)
-          signal?.removeEventListener('abort', onAbort)
-          if (error && callbackId && video.cancelVideoFrameCallback) video.cancelVideoFrameCallback(callbackId)
-          error ? reject(error) : resolve()
-        }
-        const onAbort = () => finish(abortError(signal))
-        signal?.addEventListener('abort', onAbort, { once: true })
-        callbackId = requestFrame(() => finish())
-      })
-    }
   }
 
   private remember(key: string, bitmap: ImageBitmap): ImageBitmap {
