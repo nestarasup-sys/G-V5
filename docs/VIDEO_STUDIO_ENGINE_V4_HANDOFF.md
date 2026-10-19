@@ -311,8 +311,10 @@ Gates gerais: nenhum frame ausente/duplicado; V5 preview/export correspondente; 
 - Nesta continuação, `src/shared/videoFrame.ts` passou a resolver conteúdo temporal a partir do frame absoluto, e o preview usa essa mesma seleção pausado ou reproduzindo. Gaps, balões e clipes usam limites semiabertos `[início, fim)`.
 - Piscadas automáticas agora usam agenda determinística pelo ID do personagem e frame absoluto; não dependem de `Math.random` nem de timers aleatórios. O raster facial ainda vem do pipeline de personagem existente.
 - `electron/videoExports.ts` e os handlers tipados/preload criam a biblioteca física `app-data/EXPORT/<studioId>`, armazenam um sidecar com SHA-256, listam exports sem depender do projeto original, abrem pastas e permitem exclusão explícita após confirmar tamanho/hash. Finalização aceita somente `app-data/temp/video-studio/export/<jobId>/final.mp4`; ainda não há produtor desse arquivo.
-- Novos testes cobrem determinismo, limites de frame e integridade/path containment da biblioteca. `npm test` passou com 34 testes, sem falhas ou skips. A fixture da biblioteca usa bytes sintéticos e não representa MP4 decodificável.
-- Ainda não há renderer canônico reutilizável, worker/UtilityProcess, FFmpeg empacotado/licenciado, UI de exportação, captura offscreen, retomada/cancelamento, mixagem AAC, cache/proxies, medição Electron ou comparação visual de MP4. O Video Studio permanece aberto e sem exportação MP4 real.
+- `electron/videoExportJobs.ts` adiciona manifesto com hash do snapshot e mídias, checkpoints de 600 frames, retomada condicionada à identidade dos inputs e validação dos hashes de chunks; cancelar remove somente a pasta do job validado.
+- Novos testes cobrem determinismo, limites de frame, integridade/path containment da biblioteca e checkpoints/retomada/cancelamento com dados sintéticos. As fixtures usam bytes sintéticos e não representam MP4 decodificável.
+- Validação desta continuação: `npm test` passou com 36 testes, sem falhas ou skips; `npm run typecheck` e `npm run build` passaram. `npm run bench:video-timeline` passou com 100, 1.000 e 10.000 eventos; seus números são microbenchmarks sintéticos em memória.
+- Ainda não há renderer canônico reutilizável, worker/UtilityProcess, FFmpeg empacotado/licenciado, UI de exportação, captura offscreen, validação real de chunks/MP4, mixagem AAC, progresso/cancelamento conectado, cache/proxies, medição Electron ou comparação visual de MP4. O Video Studio permanece aberto e sem exportação MP4 real.
 
 ## 13. Fontes de evidência revisadas
 
