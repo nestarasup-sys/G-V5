@@ -182,7 +182,7 @@ export function VideoTimeline({ preparing, onEnterFullscreen, canUndo, canRedo, 
     const segment = characterSegmentAtFrame(timelineIndex, selection.elementId, sampledFrame, duration)
     setSelection(segment ? { kind: 'character', elementId: selection.elementId, ...segment } : null)
   }, [playheadFrame, selection, timelineIndex, duration])
-  const textTracks = (['speech', 'thought'] as const).map((kind) => ({
+  const textTracks = useMemo(() => (['speech', 'thought'] as const).map((kind) => ({
     kind,
     label: kind === 'speech' ? 'Falas' : 'Pensamentos',
     clips: studio.elements.filter((element) => element.kind === kind).flatMap((element) => {
@@ -191,7 +191,7 @@ export function VideoTimeline({ preparing, onEnterFullscreen, canUndo, canRedo, 
       return (allSavedClips.length ? savedClips : [{ id: `legacy:${element.id}`, elementId: element.id, kind, startFrame: 0, endFrame: Math.min(duration, 300) }])
         .map((clip) => ({ element, clip: previewTextClip?.id === clip.id ? previewTextClip : clip }))
     })
-  }))
+  })), [studio.elements, timelineIndex, visibleStartFrame, visibleEndFrame, duration, previewTextClip])
   const resizeTimeline = (event: ReactPointerEvent<HTMLDivElement>) => {
     const drag = resizePointer.current
     if (!drag || drag.id !== event.pointerId) return
@@ -251,6 +251,32 @@ export function VideoTimeline({ preparing, onEnterFullscreen, canUndo, canRedo, 
   }
   useEffect(() => () => cancelPreviewUpdate(), [])
   const selectedTrackId = selection?.kind === 'video' ? 'video' : selection?.kind === 'character' ? selection.elementId : selectedTextClip?.kind ?? 'speech'
+  const characterTrackRows = useMemo(() => characters
+    .filter((character) => trackSettings[character.id]?.visible !== false)
+    .map((character) => {
+      const keys = characterKeysForFrameRange(timelineIndex.characterKeysByElement.get(character.id) ?? [], visibleStartFrame, visibleEndFrame)
+        .map((key) => previewBoundary?.elementId === character.id && previewBoundary.keyId === key.id ? { ...key, frame: previewBoundary.frame } : key)
+      const name = character.text || studio.assets.find((asset) => asset.id === character.assetId)?.name || 'Personagem'
+      const color = videoCharacterTrackColor(character.id, character.timelineColor)
+      const basePresetId = timeline.characterBases?.[character.id]?.element.activeExpressionPresetId
+      const baseLabel = basePresetId ? presetNames[basePresetId] ?? 'Expressão' : 'Base'
+      const states = keys.length
+        ? [...(keys[0].frame > 0 ? [{ id: `base:${character.id}`, start: 0, end: keys[0].frame, label: baseLabel }] : []), ...keys.map((key, index) => ({ id: key.id, start: key.frame, end: keys[index + 1]?.frame ?? duration, label: key.expressionPresetId ? presetNames[key.expressionPresetId] ?? 'Expressão' : key.faceMode === 'idle' ? 'Base' : key.faceMode === 'blink' ? 'Blink' : 'Talk' }))]
+        : [{ id: `base:${character.id}`, start: 0, end: duration, label: baseLabel }]
+      const gaps = timelineIndex.characterGapsByElement.get(character.id) ?? []
+      const visibleStates = states.flatMap((state) => {
+        let parts = [{ start: state.start, end: state.end }]
+        for (const gap of gaps) parts = parts.flatMap((part) => {
+          if (gap.endFrame <= part.start || gap.startFrame >= part.end) return [part]
+          return [
+            ...(gap.startFrame > part.start ? [{ start: part.start, end: gap.startFrame }] : []),
+            ...(gap.endFrame < part.end ? [{ start: gap.endFrame, end: part.end }] : [])
+          ]
+        })
+        return parts.map((part) => ({ ...state, start: part.start, end: part.end, renderId: `${state.id}:${part.start}` }))
+      }).filter((state) => state.end > visibleStartFrame && state.start < visibleEndFrame)
+      return { character, keys, name, color, visibleStates }
+    }), [characters, trackSettings, timelineIndex, visibleStartFrame, visibleEndFrame, timeline.characterBases, presetNames, duration, studio.assets, previewBoundary])
   const canSplitSelection = Boolean(selection && !isLocked(selectedTrackId) && playheadFrame > selection.startFrame && playheadFrame < selection.endFrame)
   const splitSelection = () => {
     if (!selection || !canSplitSelection || (selection.kind !== 'video' && isLocked(selection.kind === 'character' ? selection.elementId : timeline.textClips.find((clip) => clip.id === selection.clipId)?.kind ?? 'speech'))) return
@@ -481,27 +507,7 @@ export function VideoTimeline({ preparing, onEnterFullscreen, canUndo, canRedo, 
               {!clips.length && <span className="video-track-empty">Adicione {kind === 'speech' ? 'uma fala' : 'um pensamento'} pela barra de ferramentas</span>}
             </div>
           </div>)}
-          {characters.filter((character) => trackSettings[character.id]?.visible !== false).map((character) => {
-            const keys = characterKeysForFrameRange(timelineIndex.characterKeysByElement.get(character.id) ?? [], visibleStartFrame, visibleEndFrame).map((key) => previewBoundary?.elementId === character.id && previewBoundary.keyId === key.id ? { ...key, frame: previewBoundary.frame } : key)
-            const name = character.text || studio.assets.find((asset) => asset.id === character.assetId)?.name || 'Personagem'
-            const color = videoCharacterTrackColor(character.id, character.timelineColor)
-            const basePresetId = timeline.characterBases?.[character.id]?.element.activeExpressionPresetId
-            const baseLabel = basePresetId ? presetNames[basePresetId] ?? 'Expressão' : 'Base'
-            const states = keys.length
-              ? [...(keys[0].frame > 0 ? [{ id: `base:${character.id}`, start: 0, end: keys[0].frame, label: baseLabel }] : []), ...keys.map((key, index) => ({ id: key.id, start: key.frame, end: keys[index + 1]?.frame ?? duration, label: key.expressionPresetId ? presetNames[key.expressionPresetId] ?? 'Expressão' : key.faceMode === 'idle' ? 'Base' : key.faceMode === 'blink' ? 'Blink' : 'Talk' }))]
-              : [{ id: `base:${character.id}`, start: 0, end: duration, label: baseLabel }]
-            const gaps = timelineIndex.characterGapsByElement.get(character.id) ?? []
-            const visibleStates = states.flatMap((state) => {
-              let parts = [{ start: state.start, end: state.end }]
-              for (const gap of gaps) parts = parts.flatMap((part) => {
-                if (gap.endFrame <= part.start || gap.startFrame >= part.end) return [part]
-                return [
-                  ...(gap.startFrame > part.start ? [{ start: part.start, end: gap.startFrame }] : []),
-                  ...(gap.endFrame < part.end ? [{ start: gap.endFrame, end: part.end }] : [])
-                ]
-              })
-              return parts.map((part) => ({ ...state, start: part.start, end: part.end, renderId: `${state.id}:${part.start}` }))
-            }).filter((state) => state.end > visibleStartFrame && state.start < visibleEndFrame)
+          {characterTrackRows.map(({ character, keys, name, color, visibleStates }) => {
             return <div className={`video-track-row${trackSettings[character.id]?.collapsed ? ' collapsed' : ''}`} key={character.id}>
               <span className="video-track-label" title={name}><i className="video-track-badge" style={{ backgroundColor: color }}>{name.slice(0, 1).toUpperCase()}</i><span>{trackSettings[character.id]?.label ?? name}</span></span>
               <div className="video-track-lane character-lane" style={{ backgroundSize: `${tickSeconds * pixelsPerSecond}px 100%` }} aria-label={`Faixa de ${name}`} onClick={(event) => {
