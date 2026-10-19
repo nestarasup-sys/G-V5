@@ -20,6 +20,7 @@ import { VideoLibraryStore, configureVideoLibraryStorage } from './videoLibrary'
 import { VideoBackgroundLibraryStore, configureBackgroundLibraryStorage } from './backgroundLibrary'
 import { VideoExportLibrary } from './videoExports'
 import { VideoExportJobStore } from './videoExportJobs'
+import { VideoExportSurfaceHost } from './videoExportSurfaceHost'
 import { DataPlatform, getAppDataUsage } from './dataPlatform.cjs'
 import { DomainFileSystem } from './domainFileSystem.cjs'
 import { DataMigrationService } from './dataMigration.cjs'
@@ -32,6 +33,7 @@ import { normalizeImageBuffer } from './imageIngestion.cjs'
 let configuredAppDataRoot: string | null = null
 let videoExportLibrary: VideoExportLibrary | null = null
 let videoExportJobStore: VideoExportJobStore | null = null
+let videoExportSurfaceHost: VideoExportSurfaceHost | null = null
 
 function configureDevAiDataRoot(): void {
   const privateCopyTest = process.env.GACHA_DEV_AI_PRIVATE_TEST === '1'
@@ -2817,6 +2819,12 @@ app.whenReady().then(async () => {
   videoExportLibrary ??= new VideoExportLibrary(app.getPath('appData'))
   videoExportJobStore ??= new VideoExportJobStore(videoExportLibrary.jobRoot, (studioId, asset) =>
     videoLibrary.resolveProjectMediaDependency(studioId, asset.id, asset))
+  videoExportSurfaceHost ??= new VideoExportSurfaceHost(videoExportJobStore, {
+    preloadPath: join(__dirname, '../preload/preload.cjs'),
+    ...(process.env.ELECTRON_RENDERER_URL
+      ? { rendererUrl: process.env.ELECTRON_RENDERER_URL }
+      : { rendererFile: join(__dirname, '../renderer/index.html') }),
+  })
   registerVideoAssetProtocol()
   registerVideoBackgroundProtocol()
   await registerFabricatorHandlers()
