@@ -208,3 +208,10 @@ Estados: CREATED/PREFLIGHT/PREPARED/RENDERING/ENCODING/MIXING/VERIFYING/PUBLISHI
 7. spikes PixiJS/MLT/GES/Mediabunny guiados por perfil real.
 
 **Status:** contrato conceitual; não conectar ao botão de Export antes das validações. A atualização desse arquivo não constitui implementação.
+
+
+## Profiles do mesmo compilador (2026-10-19)
+
+O Smart Scene Compiler deve aceitar `RenderVariant = 'animated' | 'static-characters'`. A variante é parte de `JobSpec`, identidade de cache e versionamento do RenderIR. **Não criar dois caminhos de renderização com bugs distintos.** No modo `static-characters`, o evaluator retorna estado authored do segmento a cada key e elimina *apenas* interpolações entre keys, blink automático e talk-mouth automático; todos os clipes de vídeo originais continuam decodificados por PTS, áudios e textos seguem idênticos. Modo `animated` conserva opções autorais e efeitos elegíveis. Implementações futuras declaram política para novos tipos de animação. Ver [07_MODOS_DE_EXPORTACAO.md](./07_MODOS_DE_EXPORTACAO.md).
+
+Os backends devem implementar portas tipadas e substituíveis; a reestruturação do editor foi explicitamente autorizada desde que haja migração/rollback e que `StudioDocument v1` permaneça legível. Ver [08_ARQUITETURA_EXTENSIVEL_E_RECONSTRUCAO.md](./08_ARQUITETURA_EXTENSIVEL_E_RECONSTRUCAO.md).
