@@ -1,13 +1,13 @@
 # BACKLOG DE EXECUÇÃO — Modernização do Video Studio V5
 Versão 1 · 2026-10-19. Tarefas ordenadas por pré-requisito e separadas por domínio.
-**Status atual:** \`TODO\` para todos os itens abaixo, exceto partes expressamente existentes como fundação em código. Planejar != implementar.
+**Status atual:** `TODO` para todos os itens abaixo, exceto partes expressamente existentes como fundação em código. Planejar != implementar.
 
 ## Estratégia de execução
 
-- Escrever apenas em \`G-V5/master-desenvolvimento\`. V4 é referência de leitura.
+- Escrever apenas em `G-V5/master-desenvolvimento`. V4 é referência de leitura.
 - Commits curtos e gates verificáveis; não promover um backend experimental sem testes.
 - Não usar dados privados/DEV AI/auditorias desativadas. Sem migração destrutiva.
-- O trabalho velho de export está em \`../AGENTE_EXPORT_V5/BACKLOG_EXECUTAVEL.md\` (E01-E20). Esta lista nova expande para **editor/preview/dados** e deve prevalecer em ordem estratégica.
+- O trabalho velho de export está em `../AGENTE_EXPORT_V5/BACKLOG_EXECUTAVEL.md` (E01-E20). Esta lista nova expande para **editor/preview/dados** e deve prevalecer em ordem estratégica.
 
 ## Tranche T0 — Oráculos e baseline, 100% sintético
 
@@ -22,24 +22,24 @@ Versão 1 · 2026-10-19. Tarefas ordenadas por pré-requisito e separadas por do
 
 | ID | Mudança | Dependência | Aceite |
 | --- | --- | --- | --- |
-| V505 | \`src/shared/videoSceneIR.ts\` e avaliação frame absoluta para personagem, texto, gap e layer | V501 | N=0,1,boundaries,N-1; idempotente em ordem reversa |
-| V506 | \`videoSceneCompile.ts\` com event boundaries, índices e stable scene signatures | V505 | colapsa intervalos corretos sem perder estado |
-| V507 | Refatorar regra de transição/mouth/blink em evaluator compartilhado; remover dependência de \`playing\` para estado | V505 | samples internos e pausar/seek sem state leakage |
+| V505 | `src/shared/videoSceneIR.ts` e avaliação frame absoluta para personagem, texto, gap e layer | V501 | N=0,1,boundaries,N-1; idempotente em ordem reversa |
+| V506 | `videoSceneCompile.ts` com event boundaries, índices e stable scene signatures | V505 | colapsa intervalos corretos sem perder estado |
+| V507 | Refatorar regra de transição/mouth/blink em evaluator compartilhado; remover dependência de `playing` para estado | V505 | samples internos e pausar/seek sem state leakage |
 | V508 | Contrato de layout de balões/texto, geometry 1920×1080, fontes e tails | V502,V505 | ROI de balões/linha iguais em 4 tamanhos de janela |
 | V509 | Manifest snapshot de assets externos e bytes pinned do Fabricador/Customizer | V505 | bibliotecas mudam durante job e output não muda |
 | V510 | Resolver estável de z-order e vídeo/layers V5 | V505 | ordem vídeo z=1 vs atores zIndex+2 preservada |
-| V511 | \`Print\` e still canônico no mesmo compositor/evaluator | V507,V508,V510 | mesmo frame/geom/texto sem CSS viewport divergente |
+| V511 | `Print` e still canônico no mesmo compositor/evaluator | V507,V508,V510 | mesmo frame/geom/texto sem CSS viewport divergente |
 
 ## Tranche T2 — Serial MP4 real
 
 | ID | Mudança | Dependência | Aceite |
 | --- | --- | --- | --- |
-| V512 | \`ExportSurface\` V5 offscreen com handshake requestId e readiness barrier | V507,V509 | A-B-A, sem stale paint/frames |
-| V513 | \`MediaProbe\`/timestamp rational e decoder para 24/25/29.97/60/VFR | V501,V509 | S05 / cuts / PTS corretos |
-| V514 | \`EncoderCapabilities\` identifica FFmpeg real, licença e codecs | V501 | encode/decode curto no Windows alvo |
+| V512 | `ExportSurface` V5 offscreen com handshake requestId e readiness barrier | V507,V509 | A-B-A, sem stale paint/frames |
+| V513 | `MediaProbe`/timestamp rational e decoder para 24/25/29.97/60/VFR | V501,V509 | S05 / cuts / PTS corretos |
+| V514 | `EncoderCapabilities` identifica FFmpeg real, licença e codecs | V501 | encode/decode curto no Windows alvo |
 | V515 | Pipeline serial BGRA/alpha controlado, backpressure, cancel e RSS | V512,V514 | MP4 curto 60fps contagem N, sem leak |
 | V516 | Plano real de áudio resample/mix/AAC e trim por range | V513,V515 | click offset/sample rate/overlap |
-| V517 | Verificador \`ffprobe\`/decode/PTS/cores e biblioteca transacional | V515,V516 | MP4 íntegro ou falha segura |
+| V517 | Verificador `ffprobe`/decode/PTS/cores e biblioteca transacional | V515,V516 | MP4 íntegro ou falha segura |
 | V518 | IPC tipada start/cancel/status/progress e UI em feature isolada | V517 | trusted sender, cancel e no partial |
 
 ## Tranche T3 — Preview e armazenamento eficiente
