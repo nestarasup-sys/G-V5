@@ -683,23 +683,27 @@ async function verifyCustomizerRasterPreview(window,poseLabel='pose1') {
           return {pixels,bounds:pixels?{x:minX,y:minY,width:maxX-minX+1,height:maxY-minY+1}:null,
             raster:{width,height}}
         }
-        const differenceBounds=(left,right,tolerance=4)=>{
-          if(!left||!right||left.width!==right.width||left.height!==right.height) return null
-          let pixels=0,minX=left.width,minY=left.height,maxX=-1,maxY=-1,maxChannelDelta=0
-          for(let i=0;i<left.data.length;i+=4){
-            let delta=0
-            for(let channel=0;channel<4;channel++)delta=Math.max(delta,Math.abs(left.data[i+channel]-right.data[i+channel]))
+        const colorBounds=(image,target,tolerance=96)=>{
+          if(!image)return null
+          const {width,height,data}=image
+          let pixels=0,minX=width,minY=height,maxX=-1,maxY=-1,maxChannelDelta=0
+          for(let i=0;i<data.length;i+=4){
+            if(data[i+3]<128)continue
+            const delta=Math.max(Math.abs(data[i]-target[0]),Math.abs(data[i+1]-target[1]),Math.abs(data[i+2]-target[2]))
             maxChannelDelta=Math.max(maxChannelDelta,delta)
-            if(delta<=tolerance)continue
+            if(delta>tolerance)continue
             pixels++
-            const pixel=i/4,x=pixel%left.width,y=Math.floor(pixel/left.width)
+            const pixel=i/4,x=pixel%width,y=Math.floor(pixel/width)
             minX=Math.min(minX,x);minY=Math.min(minY,y);maxX=Math.max(maxX,x);maxY=Math.max(maxY,y)
           }
           return {pixels,bounds:pixels?{x:minX,y:minY,width:maxX-minX+1,height:maxY-minY+1}:null,
-            raster:{width:left.width,height:left.height},channelTolerance:tolerance,maxChannelDelta}
+            raster:{width,height},targetRgb:target,colorTolerance:tolerance,maxChannelDelta}
         }
         const alerts=[...document.querySelectorAll('[role=alert]')].map(e=>e.textContent.trim()).filter(Boolean)
-        const shoe=expected?differenceBounds(raster(model),raster(wardrobe)):null
+        // The fixture shoe is the only asset with this synthetic RGB marker.
+        // Body resampling differs slightly between the model IMG and wardrobe
+        // canvas at rotated poses, so compare the tagged garment pixels only.
+        const shoe=expected?colorBounds(raster(wardrobe),[0,255,20]):null
         const glasses=expected?alphaBounds(raster(aboveHair)):null
         const frontHairBounds=expected?alphaBounds(raster(frontHair)):null
         const headExtra=expected?alphaBounds(raster(face)):null

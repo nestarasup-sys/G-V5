@@ -60,7 +60,9 @@ function manifest(nativeImage) {
       sha256: createHash('sha256').update(png).digest('hex') }
   }
   const sourceBytes = asPng(nativeImage, WIDTH, HEIGHT, source)
-  const shoe = pngData(nativeImage, 58, 34, [8, 220, 235, 255], true)
+  // Displayed as saturated green after BGRA encoding; deliberately distinct
+  // from the shared antialias marker used in the body-part rectangles.
+  const shoe = pngData(nativeImage, 58, 34, [20, 255, 0, 255], true)
   const glasses = pngData(nativeImage, 76, 20, [240, 40, 195, 255], true)
   const frontHair = pngData(nativeImage, 106, 70, [45, 100, 235, 255], true)
   const headExtra = pngData(nativeImage, 70, 22, [235, 180, 12, 255], true)
