@@ -56,3 +56,8 @@ Este backlog E01–E20 é o **recorte de export** e mantém validade técnica pa
 O novo [backlog com 40 tarefas V501–V540](../VIDEO_STUDIO_V5_MODERNIZACAO/06_BACKLOG_DE_EXECUCAO.md) integra este recorte com [plano diretor](../VIDEO_STUDIO_V5_MODERNIZACAO/00_PLANO_DIRETOR.md). Evitar executar E14/E15/Turbo antes da unificação visual/asset manifest/serial MP4. MLT/libopenshot/GES/PixiJS/WebCodecs são **experimentos A/B**, não decisões de dependências já instaladas.
 
 Implementações existentes de snapshot, writer/checkpoint/CI continuam parciais; *nenhum teste de MP4 ou integração nova* foi feito na rodada de pesquisa.
+
+
+## Novo requisito de produto: dois modos e arquitetura aberta
+
+O recorte E01–E20 continua tático; acrescentar [07_MODOS_DE_EXPORTACAO.md](../VIDEO_STUDIO_V5_MODERNIZACAO/07_MODOS_DE_EXPORTACAO.md) ao gate de cada tarefa e implementar `animated` + `static-characters` no **mesmo** compiler/render/export. O segundo modo elimina microanimações/interpolações de personagem mas preserva keys authored, vídeos e áudio. O novo [backlog V501–V548](../VIDEO_STUDIO_V5_MODERNIZACAO/06_BACKLOG_DE_EXECUCAO.md) é a prioridade integral, com reestruturação extensível/rebuild liberados sob testes e migração segura.
