@@ -2,9 +2,11 @@
 
 const path = require('node:path')
 const fs = require('node:fs')
+const { decodeImageDataUrl } = require('./imageIngestion.cjs')
 
 const ROOTS = [
   { id: 'fabricator.models', path: 'fabricator/models' },
+  { id: 'fabricator.design-settings', path: 'fabricator/design-settings' },
   { id: 'fabricator.poses', path: 'fabricator/poses' },
   { id: 'fabricator.animations', path: 'fabricator/animations' },
   { id: 'fabricator.wardrobe', path: 'fabricator/wardrobe' },
@@ -30,6 +32,37 @@ function codedError(code, message) {
   const error = new Error(message)
   error.code = code
   return error
+}
+
+function escapeJsonPointerSegment(value) { return String(value).replace(/~/g, '~0').replace(/\//g, '~1') }
+
+async function externalizeImages(value, catalog, pointer = '', refs = []) {
+  if (typeof value === 'string' && /^data:image\/(png|jpeg|webp);base64,/i.test(value)) {
+    const image = await catalog.ingestImage(decodeImageDataUrl(value))
+    refs.push({ pointer: pointer || '/', sha256: image.sha256 })
+    return `@gacha-image:${image.sha256}`
+  }
+  if (Array.isArray(value)) return Promise.all(value.map((item, index) => externalizeImages(item, catalog, `${pointer}/${index}`, refs)))
+  if (value && typeof value === 'object') {
+    const entries = await Promise.all(Object.entries(value).map(async ([key, item]) => [key, await externalizeImages(item, catalog, `${pointer}/${escapeJsonPointerSegment(key)}`, refs)]))
+    return Object.fromEntries(entries)
+  }
+  return value
+}
+
+async function hydrateImages(value, catalog) {
+  if (typeof value === 'string') {
+    const match = /^@gacha-image:([a-f0-9]{64})$/.exec(value)
+    if (!match) return value
+    const bytes = await catalog.readObject(match[1])
+    return `data:image/png;base64,${bytes.toString('base64')}`
+  }
+  if (Array.isArray(value)) return Promise.all(value.map((item) => hydrateImages(item, catalog)))
+  if (value && typeof value === 'object') {
+    const entries = await Promise.all(Object.entries(value).map(async ([key, item]) => [key, await hydrateImages(item, catalog)]))
+    return Object.fromEntries(entries)
+  }
+  return value
 }
 
 function makeDirent(name, directory) {
@@ -97,8 +130,12 @@ class DomainFileSystem {
   async readFile(filePath, options) {
     const location = this.locate(filePath)
     if (!this.active(location)) return this.native.readFile(filePath, options)
-    const bytes = await this.catalog.readDomainFile(location.domainId, location.relativePath)
+    let bytes = await this.catalog.readDomainFile(location.domainId, location.relativePath)
     if (!bytes) throw codedError('ENOENT', `Arquivo não encontrado no domínio ${location.domainId}.`)
+    if (/\.json(?:\.tmp)?$/i.test(location.relativePath) && /@gacha-image:[a-f0-9]{64}/.test(bytes.toString('utf8'))) {
+      const document = JSON.parse(bytes.toString('utf8'))
+      bytes = Buffer.from(JSON.stringify(await hydrateImages(document, this.catalog)), 'utf8')
+    }
     const encoding = typeof options === 'string' ? options : options?.encoding
     return encoding ? bytes.toString(encoding) : bytes
   }
@@ -134,9 +171,17 @@ class DomainFileSystem {
   async writeFile(filePath, data, options) {
     const location = this.locate(filePath)
     if (!this.active(location)) return this.native.writeFile(filePath, data, options)
-    const bytes = Buffer.isBuffer(data) ? data : Buffer.from(String(data), typeof options === 'string' ? options : options?.encoding ?? 'utf8')
+    let bytes = Buffer.isBuffer(data) ? data : Buffer.from(String(data), typeof options === 'string' ? options : options?.encoding ?? 'utf8')
     const text = /\.json(?:\.tmp)?$/i.test(location.relativePath) || /\.txt$/i.test(location.relativePath)
-    await this.catalog.writeDomainFile(location.domainId, location.relativePath, bytes, { text })
+    let imageRefs = []
+    if (/\.json(?:\.tmp)?$/i.test(location.relativePath) && bytes.includes(Buffer.from('data:image/'))) {
+      const document = JSON.parse(bytes.toString('utf8'))
+      const refs = []
+      const canonical = await externalizeImages(document, this.catalog, '', refs)
+      imageRefs = refs
+      bytes = Buffer.from(JSON.stringify(canonical), 'utf8')
+    }
+    await this.catalog.writeDomainFile(location.domainId, location.relativePath, bytes, { text, imageRefs })
   }
 
   async mkdir(directoryPath, options) {

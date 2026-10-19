@@ -1,6 +1,6 @@
 export {}
 
-type Request = { id: number; file: File }
+type Request = { id: number; dataUrl: string }
 type Complete = { type: 'complete'; id: number; width: number; height: number; png: ArrayBuffer }
 type Failure = { type: 'error'; id: number; message: string }
 
@@ -58,7 +58,7 @@ function visibleBounds(pixels: Uint8ClampedArray, width: number, height: number)
 scope.onmessage = async ({ data }: MessageEvent<Request>) => {
   let bitmap: ImageBitmap | null = null
   try {
-    bitmap = await createImageBitmap(data.file)
+    bitmap = await createImageBitmap(await (await fetch(data.dataUrl)).blob())
     if (bitmap.width * bitmap.height > 32_000_000) throw new Error('A imagem tem mais de 32 milhões de pixels. Reduza as dimensões para continuar.')
     const source = new OffscreenCanvas(bitmap.width, bitmap.height)
     const context = source.getContext('2d', { willReadFrequently: true })

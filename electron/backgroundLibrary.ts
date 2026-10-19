@@ -4,6 +4,7 @@ import { basename, dirname, extname, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import type { StudioAsset, StudioDocument, VideoBackgroundLibraryItem } from '../src/shared/studio'
 import type { DomainFileSystem } from './domainFileSystem.cjs'
+import { normalizeImageBuffer } from './imageIngestion.cjs'
 
 type StorageAdapter = Pick<DomainFileSystem, 'access' | 'copyFile' | 'mkdir' | 'readFile' | 'readdir' | 'rename' | 'stat' | 'unlink' | 'writeFile'>
 let storage: StorageAdapter = { access: nativeAccess, copyFile: nativeCopyFile, mkdir: nativeMkdir, readFile: nativeReadFile,
@@ -143,9 +144,12 @@ export class VideoBackgroundLibraryStore {
       if (!Object.hasOwn(formats, extension)) throw new Error('Formato não compatível. Use PNG, JPG, JPEG ou WebP.')
       const file = await stat(source)
       if (!file.isFile() || file.size <= 0 || file.size > 50 * 1024 ** 2) throw new Error('O fundo deve ter até 50 MB.')
-      const item: Entry = { id: randomUUID(), name: basename(source), extension, mimeType: formats[extension], size: file.size, createdAt: new Date().toISOString() }
+      const canonical = await normalizeImageBuffer(await readFile(source))
+      const item: Entry = { id: randomUUID(), name: basename(source), extension: 'png', mimeType: 'image/png', size: canonical.bytes.length, createdAt: new Date().toISOString() }
       const catalog = await this.readCatalog()
-      await this.copyVerified(source, this.libraryFile(item), item.size)
+      await mkdir(join(this.libraryPath(), 'images'), { recursive: true })
+      await writeFile(this.libraryFile(item), canonical.bytes)
+      if ((await stat(this.libraryFile(item))).size !== item.size) throw new Error('O PNG canônico do fundo não passou na verificação de tamanho.')
       catalog.items.push(item)
       await this.writeCatalog(catalog)
       return { ...item, available: true, studios: [] }

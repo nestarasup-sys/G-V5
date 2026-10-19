@@ -87,8 +87,10 @@ function cropVisiblePiece(data: Uint8ClampedArray, width: number, top: number, b
   return { kind, dataUrl: canvas.toDataURL('image/png'), width: cropWidth, height: cropHeight }
 }
 
-export async function splitEyeSheet(file: File): Promise<EyeSheetPiece[]> {
-  const bitmap = await createImageBitmap(file)
+export async function splitEyeSheet(source: File | string): Promise<EyeSheetPiece[]> {
+  const bitmap = typeof source === 'string'
+    ? await createImageBitmap(await (await fetch(source)).blob())
+    : await createImageBitmap(source)
   try {
     if (bitmap.width * bitmap.height > 32_000_000) throw new Error('A folha tem mais de 32 milhões de pixels.')
     const canvas = document.createElement('canvas')

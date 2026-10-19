@@ -6,6 +6,7 @@ import { emptyHairTransform, normalizeHairTransforms } from '../../../../shared/
 import { HairPiecePreview as HairPiece } from './HairPiecePreview'
 import { Icon } from '../../ui/components/Icon'
 import { usePreviewBackground } from './usePreviewBackground'
+import { normalizeEditableImageFile } from './normalizeImage'
 
 type HairSide = HairAssetSide
 type HairAsset = NonNullable<HairWorkspaceData['front']>
@@ -28,12 +29,7 @@ function emptyHairWorkspace(modelSlot: number): HairWorkspaceData {
 }
 
 function readFileDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => typeof reader.result === 'string' ? resolve(reader.result) : reject(new Error('Arquivo de imagem inválido.'))
-    reader.onerror = () => reject(new Error('Não foi possível ler a imagem.'))
-    reader.readAsDataURL(file)
-  })
+  return normalizeEditableImageFile(file).then((image) => image.dataUrl)
 }
 
 function loadImage(dataUrl: string): Promise<HTMLImageElement> {

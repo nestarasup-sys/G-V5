@@ -6,9 +6,10 @@ const { createReadStream, createWriteStream } = require('node:fs')
 const { Transform } = require('node:stream')
 const { pipeline } = require('node:stream/promises')
 const Database = require('better-sqlite3')
+const { normalizeImageBuffer } = require('./imageIngestion.cjs')
 
 const BUILTIN_DOMAINS = [
-  'fabricator.models', 'fabricator.poses', 'fabricator.animations', 'fabricator.wardrobe',
+  'fabricator.models', 'fabricator.poses', 'fabricator.animations', 'fabricator.wardrobe', 'fabricator.design-settings',
   'fabricator.face-sets', 'fabricator.face-catalog', 'fabricator.face-components',
   'fabricator.expression-presets', 'fabricator.hair', 'fabricator.accessories',
   'customizer.characters', 'studio.projects', 'studio.prints', 'video-studio.projects',
@@ -116,6 +117,7 @@ class DataPlatform {
   constructor(dataRoot) {
     this.root = path.resolve(dataRoot)
     this.database = null
+    this.imageIngestCache = new Map()
   }
 
   initialize() {
@@ -137,7 +139,7 @@ class DataPlatform {
     this.database = new Database(dbPath, { timeout: 5000 })
     this.database.pragma('foreign_keys = ON')
     const currentSchema = this.database.pragma('user_version', { simple: true })
-    if (currentSchema > 2) {
+    if (currentSchema > 3) {
       this.database.close()
       this.database = null
       throw new Error(`O catálogo usa schema ${currentSchema}, mais novo que esta versão do app.`)
@@ -217,6 +219,15 @@ class DataPlatform {
         PRIMARY KEY(domain_id, relative_path),
         CHECK ((content_text IS NULL) <> (object_sha256 IS NULL))
       ) WITHOUT ROWID;
+      CREATE TABLE IF NOT EXISTS domain_image_refs (
+        domain_id TEXT NOT NULL,
+        relative_path TEXT NOT NULL,
+        json_pointer TEXT NOT NULL,
+        object_sha256 TEXT NOT NULL REFERENCES objects(sha256),
+        PRIMARY KEY(domain_id, relative_path, json_pointer),
+        FOREIGN KEY(domain_id, relative_path) REFERENCES domain_files(domain_id, relative_path) ON DELETE CASCADE
+      ) WITHOUT ROWID;
+      CREATE INDEX IF NOT EXISTS domain_image_refs_by_object ON domain_image_refs(object_sha256);
       CREATE INDEX IF NOT EXISTS domain_files_by_domain_path ON domain_files(domain_id, relative_path);
       CREATE TABLE IF NOT EXISTS domain_directories (
         domain_id TEXT NOT NULL REFERENCES domains(domain_id),
@@ -258,12 +269,14 @@ class DataPlatform {
       .run(sha256('gacha-data-catalog-schema-v1'), now)
     this.database.prepare(`INSERT OR IGNORE INTO schema_migrations(version, name, checksum, applied_at) VALUES (2, 'domain-file-store-and-migration-journal', ?, ?)`)
       .run(sha256('gacha-domain-files-schema-v2'), now)
-    if (currentSchema < 2) this.database.pragma('user_version = 2')
+    this.database.prepare(`INSERT OR IGNORE INTO schema_migrations(version, name, checksum, applied_at) VALUES (3, 'canonical-image-references', ?, ?)`)
+      .run(sha256('gacha-canonical-image-references-schema-v3'), now)
+    if (currentSchema < 3) this.database.pragma('user_version = 3')
     const insertDomain = this.database.prepare(`INSERT OR IGNORE INTO domains(domain_id, schema_version, manifest_json, updated_at) VALUES (?, 1, '{}', ?)`)
     const registerBuiltins = this.database.transaction(() => BUILTIN_DOMAINS.forEach((id) => insertDomain.run(id, now)))
     registerBuiltins()
     this.database.prepare("INSERT OR IGNORE INTO app_metadata(key, value) VALUES ('schema_version', '1')").run()
-    this.database.prepare("UPDATE app_metadata SET value='2' WHERE key='schema_version'").run()
+    this.database.prepare("UPDATE app_metadata SET value='3' WHERE key='schema_version'").run()
     return this
   }
 
@@ -407,7 +420,7 @@ class DataPlatform {
     return Boolean(this.assertReady().prepare('SELECT 1 FROM domain_directories WHERE domain_id=? AND relative_path=?').get(domainId, normalized))
   }
 
-  async writeDomainFile(domainId, relativePath, bytes, { text = false } = {}) {
+  async writeDomainFile(domainId, relativePath, bytes, { text = false, imageRefs = [] } = {}) {
     validateDomainId(domainId)
     const normalized = normalizeDomainPath(relativePath)
     const buffer = Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes)
@@ -427,12 +440,16 @@ class DataPlatform {
     }
     const db = this.assertReady()
     const now = new Date().toISOString()
+    if (!Array.isArray(imageRefs) || imageRefs.some((ref) => !ref || typeof ref.pointer !== 'string' || !/^[a-f0-9]{64}$/.test(ref.sha256))) throw new Error('Referências de imagem inválidas.')
     const txn = db.transaction(() => {
       this.ensureDomainDirectory(domainId, path.posix.dirname(normalized) === '.' ? '' : path.posix.dirname(normalized))
       db.prepare(`INSERT INTO domain_files(domain_id, relative_path, content_text, object_sha256, byte_length, content_sha256, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(domain_id, relative_path) DO UPDATE SET content_text=excluded.content_text,
         object_sha256=excluded.object_sha256, byte_length=excluded.byte_length, content_sha256=excluded.content_sha256, updated_at=excluded.updated_at`)
         .run(domainId, normalized, contentText, objectHash, buffer.length, digest, now)
+      db.prepare('DELETE FROM domain_image_refs WHERE domain_id=? AND relative_path=?').run(domainId, normalized)
+      const insertImageRef = db.prepare('INSERT INTO domain_image_refs(domain_id, relative_path, json_pointer, object_sha256) VALUES (?, ?, ?, ?)')
+      for (const ref of imageRefs) insertImageRef.run(domainId, normalized, ref.pointer, ref.sha256)
     })
     txn()
     return { relativePath: normalized, byteLength: buffer.length, sha256: digest, objectSha256: objectHash }
@@ -453,6 +470,31 @@ class DataPlatform {
       bytes = await fsp.readFile(absolute)
     }
     if (bytes.length !== row.byte_length || sha256(bytes) !== row.content_sha256) throw new Error(`Integridade do arquivo falhou: ${normalized}`)
+    return bytes
+  }
+
+  async ingestImage(bytes) {
+    const sourceHash = sha256(bytes)
+    const cached = this.imageIngestCache.get(sourceHash)
+    if (cached) return { ...cached, reused: true }
+    const normalized = await normalizeImageBuffer(bytes)
+    const object = await new ContentAddressedStore(this.root).putObject(normalized.bytes, { mimeType: 'image/png', extension: '.png' })
+    this.assertReady().prepare(`INSERT OR IGNORE INTO objects(sha256, byte_length, mime_type, extension, relative_path, created_at)
+      VALUES (?, ?, ?, ?, ?, ?)`).run(object.sha256, object.byteLength, object.mimeType, object.extension, object.relativePath, new Date().toISOString())
+    const result = { ...normalized, sha256: object.sha256, reused: object.reused }
+    this.imageIngestCache.set(sourceHash, result)
+    if (this.imageIngestCache.size > 512) this.imageIngestCache.delete(this.imageIngestCache.keys().next().value)
+    return result
+  }
+
+  async readObject(hash) {
+    if (typeof hash !== 'string' || !/^[a-f0-9]{64}$/.test(hash)) throw new Error('Hash de imagem inválido.')
+    const row = this.assertReady().prepare('SELECT relative_path, byte_length FROM objects WHERE sha256=?').get(hash)
+    if (!row) throw new Error('Imagem referenciada não encontrada no catálogo.')
+    const absolute = path.resolve(this.root, row.relative_path)
+    if (!isWithin(this.root, absolute)) throw new Error('Imagem referenciada fora de app-data.')
+    const bytes = await fsp.readFile(absolute)
+    if (bytes.length !== row.byte_length || sha256(bytes) !== hash) throw new Error('A imagem canônica falhou na verificação de integridade.')
     return bytes
   }
 
@@ -516,13 +558,21 @@ class DataPlatform {
     const db = this.assertReady(); const fromPrefix = `${escapeLike(from)}/%`; const toPrefix = `${to}/`
     const txn = db.transaction(() => {
       const files = db.prepare(`SELECT * FROM domain_files WHERE domain_id=? AND (relative_path=? OR relative_path LIKE ? ESCAPE '\\') ORDER BY relative_path`).all(domainId, from, fromPrefix)
+      const refsByPath = new Map(files.map((row) => [row.relative_path,
+        db.prepare('SELECT json_pointer, object_sha256 FROM domain_image_refs WHERE domain_id=? AND relative_path=?').all(domainId, row.relative_path)]))
       const dirs = db.prepare(`SELECT relative_path FROM domain_directories WHERE domain_id=? AND (relative_path=? OR relative_path LIKE ? ESCAPE '\\') ORDER BY relative_path`).all(domainId, from, fromPrefix)
       if (!files.length && !dirs.length) throw new Error('Origem não encontrada.')
       const insertFile = db.prepare(`INSERT INTO domain_files(domain_id, relative_path, content_text, object_sha256, byte_length, content_sha256, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(domain_id, relative_path) DO UPDATE SET content_text=excluded.content_text, object_sha256=excluded.object_sha256,
         byte_length=excluded.byte_length, content_sha256=excluded.content_sha256, updated_at=excluded.updated_at`)
       const now = new Date().toISOString()
-      for (const row of files) insertFile.run(domainId, row.relative_path === from ? to : `${toPrefix}${row.relative_path.slice(from.length + 1)}`, row.content_text, row.object_sha256, row.byte_length, row.content_sha256, now)
+      for (const row of files) {
+        const target = row.relative_path === from ? to : `${toPrefix}${row.relative_path.slice(from.length + 1)}`
+        insertFile.run(domainId, target, row.content_text, row.object_sha256, row.byte_length, row.content_sha256, now)
+        db.prepare('DELETE FROM domain_image_refs WHERE domain_id=? AND relative_path=?').run(domainId, target)
+        const insertRef = db.prepare('INSERT INTO domain_image_refs(domain_id, relative_path, json_pointer, object_sha256) VALUES (?, ?, ?, ?)')
+        for (const ref of refsByPath.get(row.relative_path) ?? []) insertRef.run(domainId, target, ref.json_pointer, ref.object_sha256)
+      }
       for (const row of dirs) {
         const target = row.relative_path === from ? to : `${toPrefix}${row.relative_path.slice(from.length + 1)}`
         db.prepare('INSERT OR IGNORE INTO domain_directories(domain_id, relative_path, updated_at) VALUES (?, ?, ?)').run(domainId, target, now)
@@ -561,11 +611,13 @@ class DataPlatform {
       archivedAssets: db.prepare('SELECT count(*) AS count FROM assets WHERE archived=1').get().count,
       uniqueObjects: db.prepare('SELECT count(*) AS count FROM objects').get().count,
       referencedObjects: db.prepare(`SELECT count(DISTINCT sha256) AS count FROM (
-        SELECT sha256 FROM asset_objects UNION SELECT object_sha256 AS sha256 FROM domain_files WHERE object_sha256 IS NOT NULL)`).get().count,
+        SELECT sha256 FROM asset_objects UNION SELECT object_sha256 AS sha256 FROM domain_files WHERE object_sha256 IS NOT NULL
+        UNION SELECT object_sha256 AS sha256 FROM domain_image_refs)`).get().count,
       objectBytes: db.prepare('SELECT coalesce(sum(byte_length), 0) AS bytes FROM objects').get().bytes,
       unreferencedObjects: db.prepare(`SELECT count(*) AS count FROM objects o WHERE
         NOT EXISTS (SELECT 1 FROM asset_objects ao WHERE ao.sha256=o.sha256)
-        AND NOT EXISTS (SELECT 1 FROM domain_files df WHERE df.object_sha256=o.sha256)`).get().count
+        AND NOT EXISTS (SELECT 1 FROM domain_files df WHERE df.object_sha256=o.sha256)
+        AND NOT EXISTS (SELECT 1 FROM domain_image_refs ir WHERE ir.object_sha256=o.sha256)`).get().count
     }
   }
 

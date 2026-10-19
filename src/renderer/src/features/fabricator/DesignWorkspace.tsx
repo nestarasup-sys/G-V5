@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Icon } from '../../ui/components/Icon'
+import { normalizeImageFile } from './normalizeImage'
 import { defaultDesignSettings, DESIGN_BANNER_HEIGHT_PX, DESIGN_BANNER_IMAGE_HEIGHT_PX, DESIGN_BANNER_IMAGE_WIDTH_PX, DESIGN_BANNER_WIDTH_PX, designLimits, saveDesignSettings, useDesignSettings, type DesignBannerSlide } from './designSettings'
 
 function createSlide(): DesignBannerSlide {
@@ -59,18 +60,13 @@ export function DesignWorkspace() {
     saveDesignSettings({ ...settings, bannerSlides: settings.bannerSlides.filter((slide) => slide.id !== id) })
   }
 
-  const readImage = (id: string, file?: File) => {
+  const readImage = async (id: string, file?: File) => {
     setError('')
     if (!file) return
     if (!file.type.startsWith('image/')) { setError('Escolha um arquivo de imagem.'); return }
     if (file.size > designLimits.maxImageBytes) { setError('A imagem deve ter no máximo 1,5 MB.'); return }
-    const reader = new FileReader()
-    reader.onload = () => {
-      if (typeof reader.result === 'string') updateSlide(id, { imageDataUrl: reader.result })
-      else setError('Não foi possível carregar essa imagem.')
-    }
-    reader.onerror = () => setError('Não foi possível carregar essa imagem.')
-    reader.readAsDataURL(file)
+    try { updateSlide(id, { imageDataUrl: (await normalizeImageFile(file)).dataUrl }) }
+    catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível carregar essa imagem.') }
   }
 
   return <section className="fabricator-workspace design-dev-workspace" aria-label="Design Dev">
@@ -95,7 +91,7 @@ export function DesignWorkspace() {
               <label>Título<input value={slide.title} maxLength={80} onChange={(event) => updateSlide(slide.id, { title: event.target.value })} placeholder="Título do banner" /></label>
               <label>Subtítulo<input value={slide.subtitle} maxLength={120} onChange={(event) => updateSlide(slide.id, { subtitle: event.target.value })} placeholder="Descrição curta" /></label>
               <div className="design-dev-slide-actions">
-                <label className="design-dev-upload"><Icon name="camera" />{slide.imageDataUrl ? 'Trocar imagem' : 'Escolher imagem'}<input type="file" accept="image/*" onChange={(event) => { readImage(slide.id, event.target.files?.[0]); event.currentTarget.value = '' }} /></label>
+                <label className="design-dev-upload"><Icon name="camera" />{slide.imageDataUrl ? 'Trocar imagem' : 'Escolher imagem'}<input type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => { void readImage(slide.id, event.target.files?.[0]); event.currentTarget.value = '' }} /></label>
                 {slide.imageDataUrl && <button onClick={() => updateSlide(slide.id, { imageDataUrl: null })} type="button">Usar fundo</button>}
                 <button aria-label={`Mover banner ${index + 1} para cima`} title="Mover para cima" disabled={index === 0} onClick={() => moveSlide(index, -1)} type="button">↑</button>
                 <button aria-label={`Mover banner ${index + 1} para baixo`} title="Mover para baixo" disabled={index === settings.bannerSlides.length - 1} onClick={() => moveSlide(index, 1)} type="button">↓</button>

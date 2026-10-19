@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties, type ChangeEv
 import type { FaceComponentAsset, FaceComponentAssetSave, FaceComponentAssetSummary, FaceGuideSettings, FabricatorProject, FabricatorSlotSummary, FaceTransform } from '../../../../../shared/fabricator'
 import { Icon } from '../../../ui/components/Icon'
 import { usePreviewBackground } from '../usePreviewBackground'
+import { normalizeEditableImageFile } from '../normalizeImage'
 import './face-components.css'
 import './head-extras.css'
 
@@ -49,7 +50,7 @@ function HeadGuideOverlay({ head, guide }: { head: NonNullable<ReturnType<typeof
     <line className="face-components-guide-line" x1={x} y1={-head.height} x2={x} y2={head.height * 2} /><line className="face-components-guide-line" x1={-head.width} y1={y} x2={head.width * 2} y2={y} /><line className="face-components-guide-line" x1={-head.width} y1={lowerY} x2={head.width * 2} y2={lowerY} /><circle className="face-components-guide-center" cx={x} cy={y} r={2.4} />
   </g></svg>
 }
-function processHeadExtraImage(file: File): Promise<{ dataUrl: string; width: number; height: number }> {
+function processHeadExtraImage(dataUrl: string): Promise<{ dataUrl: string; width: number; height: number }> {
   return new Promise((resolve, reject) => {
     const worker = new Worker(new URL('./headExtraChroma.worker.ts', import.meta.url), { type: 'module' })
     worker.onmessage = ({ data }: MessageEvent<{ type: 'complete'; id: number; width: number; height: number; png: ArrayBuffer } | { type: 'error'; id: number; message: string }>) => {
@@ -62,7 +63,7 @@ function processHeadExtraImage(file: File): Promise<{ dataUrl: string; width: nu
       reader.readAsDataURL(new Blob([data.png], { type: 'image/png' }))
     }
     worker.onerror = () => { worker.terminate(); reject(new Error('Falha ao processar a imagem dos óculos.')) }
-    worker.postMessage({ id: 1, file })
+    worker.postMessage({ id: 1, dataUrl })
   })
 }
 
@@ -158,7 +159,8 @@ export function HeadExtrasWorkspace() {
     if (!file || !head) return
     setBusy(true); setError('')
     try {
-      const image = await processHeadExtraImage(file)
+      const canonical = await normalizeEditableImageFile(file)
+      const image = await processHeadExtraImage(canonical.dataUrl)
       const id = crypto.randomUUID()
       const now = new Date().toISOString()
       const transform = initialExtraTransform(head, image.width, image.height)

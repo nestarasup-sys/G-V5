@@ -101,6 +101,9 @@ const videoStudioApi: VideoStudioDesktopApi = {
 contextBridge.exposeInMainWorld('desktop', {
   platform: process.platform,
   appName: 'Gacha Nymi',
+  normalizeImageForImport: (bytes: Uint8Array) => ipcRenderer.invoke('app:image:normalize', bytes),
+  loadFabricatorDesignSettings: () => ipcRenderer.invoke('fabricator:design-settings:load'),
+  saveFabricatorDesignSettings: (settings: unknown) => ipcRenderer.invoke('fabricator:design-settings:save', settings),
   getAppDataStorageSummary: () => ipcRenderer.invoke('app:data-storage-summary'),
   getDataMigrationSummary: () => ipcRenderer.invoke('app:data-migration:prepare'),
   runDataMigration: () => ipcRenderer.invoke('app:data-migration:run-all'),

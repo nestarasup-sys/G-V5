@@ -30,8 +30,10 @@ export class DataPlatform {
   getMigration(id: string): { id: string; state: string; manifest: Record<string, unknown>; error: string | null; createdAt: string; updatedAt: string } | null
   ensureDomainDirectory(domainId: string, relativePath?: string): void
   hasDomainDirectory(domainId: string, relativePath?: string): boolean
-  writeDomainFile(domainId: string, relativePath: string, bytes: Buffer, options?: { text?: boolean }): Promise<{ relativePath: string; byteLength: number; sha256: string; objectSha256: string | null }>
+  writeDomainFile(domainId: string, relativePath: string, bytes: Buffer, options?: { text?: boolean; imageRefs?: Array<{ pointer: string; sha256: string }> }): Promise<{ relativePath: string; byteLength: number; sha256: string; objectSha256: string | null }>
   readDomainFile(domainId: string, relativePath: string): Promise<Buffer | null>
+  ingestImage(bytes: Buffer): Promise<{ bytes: Buffer; mimeType: 'image/png'; extension: '.png'; width: number; height: number; channels: number; bitDepth: number; sourceFormat: string; sourceBytes: number; outputBytes: number; sha256: string; reused: boolean }>
+  readObject(hash: string): Promise<Buffer>
   listDomainFiles(domainId: string, prefix?: string): Array<{ relativePath: string; byteLength: number; sha256: string; objectSha256: string | null }>
   listDomainDirectory(domainId: string, relativePath?: string): Array<{ name: string; directory: boolean; file: boolean }>
   removeDomainPath(domainId: string, relativePath: string, recursive?: boolean): void

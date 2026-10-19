@@ -8,6 +8,7 @@ import { eyeInteriorMask } from './eyeInteriorMask'
 import { alignImportedFacePiece, captureFaceImportAnchor, fitClosedEyeToOpen, validFaceImportAnchor, type AlignableFaceKind, type FaceImportAnchor } from './faceImportAlignment'
 import { removeEyebrowGreen } from './removeEyebrowGreen'
 import './face-components.css'
+import { normalizeEditableImageFile } from '../normalizeImage'
 
 type PartId = 'eye-left' | 'eye-right' | 'pupil-left' | 'pupil-right' | 'eye-closed-left' | 'eye-closed-right' | 'brow-left' | 'brow-right'
 type CatalogKind = 'nose' | 'mouth-closed' | 'mouth-open'
@@ -100,15 +101,7 @@ function readFaceImportAnchors(): FaceImportAnchors {
     )])) as FaceImportAnchors
   } catch { return {} }
 }
-const readImage = async (file: File): Promise<{ dataUrl: string; width: number; height: number }> => {
-  const bitmap = await createImageBitmap(file)
-  const canvas = document.createElement('canvas')
-  canvas.width = bitmap.width; canvas.height = bitmap.height
-  const context = canvas.getContext('2d')
-  if (!context) throw new Error('Não foi possível abrir a imagem.')
-  context.drawImage(bitmap, 0, 0); bitmap.close()
-  return { dataUrl: canvas.toDataURL('image/png'), width: canvas.width, height: canvas.height }
-}
+const readImage = normalizeEditableImageFile
 function catalogSaveData(item: FaceCatalogItem): FaceCatalogItemSave {
   const { dataUrl: _sheetData, ...sheet } = item.sheet
   return { ...item, sheet, pieces: item.pieces.map(({ dataUrl: _pieceData, ...piece }) => piece) }
@@ -529,7 +522,8 @@ export function FaceComponentsWorkspace({ mode }: { mode: FaceWorkspaceMode }) {
     setBusy(true); setError('')
     const savedIds: string[] = []
     try {
-      const pieces = await splitEyeSheet(file)
+      const canonicalSheet = await normalizeEditableImageFile(file)
+      const pieces = await splitEyeSheet(canonicalSheet.dataUrl)
       const baseName = file.name.replace(/\.[^.]+$/, '').slice(0, 90) || 'Olhos'
       const imported: FaceComponentAsset[] = []
       const assigned: Partial<Record<PartId, string>> = {}

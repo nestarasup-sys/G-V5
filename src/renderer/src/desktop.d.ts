@@ -7,6 +7,9 @@ declare global {
     desktop: {
       platform: string
       appName: string
+      normalizeImageForImport: (bytes: Uint8Array) => Promise<{ dataUrl: string; width: number; height: number; bitDepth: 8 | 16; sourceBytes: number; outputBytes: number }>
+      loadFabricatorDesignSettings: () => Promise<unknown | null>
+      saveFabricatorDesignSettings: (settings: unknown) => Promise<void>
       getAppDataStorageSummary: () => Promise<{
         disk: { measuredAt: string; groups: Record<string, { files: number; bytes: number; unreadable: number }> }
         catalog: { assets: number; archivedAssets: number; uniqueObjects: number; referencedObjects: number; objectBytes: number; unreferencedObjects: number }

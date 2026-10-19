@@ -7,6 +7,7 @@ import { isHeadPart } from '../models/resize'
 import { resizeAroundAnchor } from '../../../../../shared/headShape'
 import { bindWardrobeComponent, mapWardrobeComponentToPose, poseDeltaToSource, wardrobePosePadding, rebaseWardrobeSetToOriginalSheet } from './poseTransform'
 import { suggestWardrobeBone } from './boneSelection'
+import { normalizeEditableImageFile } from '../normalizeImage'
 
 type WorkerPiece = Omit<WardrobeComponent, 'category' | 'attachedPartId' | 'rotation' | 'dataUrl'> & { png: ArrayBuffer }
 type WorkerMessage = { type: 'complete'; id: number; width: number; height: number; pieces: WorkerPiece[] } | { type: 'error'; id: number; message: string }
@@ -72,9 +73,7 @@ function dataUrl(buffer: ArrayBuffer): string {
   for (let start = 0; start < bytes.length; start += 0x8000) binary += String.fromCharCode(...bytes.subarray(start, Math.min(bytes.length, start + 0x8000)))
   return `data:image/png;base64,${btoa(binary)}`
 }
-function readFile(file: File): Promise<string> {
-  return new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.onerror = () => reject(new Error('Não foi possível ler a imagem.')); reader.readAsDataURL(file) })
-}
+function readFile(file: File): Promise<string> { return normalizeEditableImageFile(file).then((image) => image.dataUrl) }
 function guessCategory(piece: WorkerPiece, width: number, height: number): WardrobeCategory {
   const cx = (piece.x + piece.width / 2) / width; const cy = (piece.y + piece.height / 2) / height
   if (cy < .19 && Math.abs(cx - .5) > .1) return 'manga-superior'

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, protocol, session, shell, type IpcMainInvokeEvent, type MessageBoxOptions } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, Menu, protocol, session, shell, type IpcMainInvokeEvent, type MessageBoxOptions } from 'electron'
 import { createReadStream, existsSync, lstatSync, mkdirSync, readFileSync, realpathSync } from 'node:fs'
 import { mkdir as nativeMkdir, readFile as nativeReadFile, writeFile as nativeWriteFile, readdir as nativeReaddir, unlink as nativeUnlink, rename as nativeRename, stat as nativeStat, access as nativeAccess, rm as nativeRm, copyFile as nativeCopyFile } from 'node:fs/promises'
 import { basename, dirname, extname, join, relative, resolve, sep } from 'node:path'
@@ -25,6 +25,7 @@ import { DataBackupService } from './dataBackups.cjs'
 import { configureAssetImageStorage, readAssetImage, writeAssetImageSource } from './assetImageOverrides'
 import { legacyStandardExpressionEffects } from '../src/shared/legacyExpressionEffects'
 import { migrateElectronProfile } from './electronProfileMigration.cjs'
+import { normalizeImageBuffer } from './imageIngestion.cjs'
 
 let configuredAppDataRoot: string | null = null
 
@@ -1306,12 +1307,16 @@ async function writeStudio(studio: StudioDocument, workspace: StudioWorkspaceSto
   if (workspace === 'video' && studio.videoTimeline?.videoAssets?.length) await videoLibrary.ensureProjectAssets(studio.id, studio.videoTimeline.videoAssets)
   const assetManifest: Array<Omit<StudioAsset, 'dataUrl'>> = []
   for (const asset of studio.assets) {
-    const extension = asset.mimeType === 'image/jpeg' ? 'jpg' : asset.mimeType.slice('image/'.length)
-    const bytes = Buffer.from(asset.dataUrl.slice(asset.dataUrl.indexOf(',') + 1), 'base64')
+    const sourceBytes = importedImageDataUrlBuffer(asset.dataUrl)
+    const canonical = asset.mimeType === 'image/png'
+      ? { bytes: sourceBytes }
+      : await normalizeImageBuffer(sourceBytes)
+    const extension = 'png'
+    const bytes = canonical.bytes
     const categoryFolder = asset.category === 'background' ? 'backgrounds' : asset.category === 'character' ? 'characters' : 'objects'
     await writeFile(join(folder, 'assets', categoryFolder, `${asset.id}.${extension}`), bytes)
     const { dataUrl: _dataUrl, ...metadata } = asset
-    assetManifest.push(metadata)
+    assetManifest.push({ ...metadata, mimeType: 'image/png' })
   }
   const temporary = join(folder, `studio.json.${randomUUID()}.tmp`)
   const { assets: _assets, ...metadata } = studio
@@ -1373,6 +1378,12 @@ function dataUrlBuffer(dataUrl: string): Buffer {
   const match = /^data:image\/png;base64,([A-Za-z0-9+/=]+)$/.exec(dataUrl)
   if (!match) throw new Error('Arquivo de peça inválido.')
   return Buffer.from(match[1], 'base64')
+}
+
+function importedImageDataUrlBuffer(dataUrl: string): Buffer {
+  const match = /^data:image\/(png|jpeg|webp);base64,([A-Za-z0-9+/=]+)$/i.exec(dataUrl)
+  if (!match) throw new Error('Imagem inválida. Selecione PNG, JPG ou WebP estático.')
+  return Buffer.from(match[2], 'base64')
 }
 
 type StoredHistoryEntry = {
@@ -1791,12 +1802,11 @@ async function registerFabricatorHandlers(): Promise<void> {
       })
       if (result.canceled || !result.filePaths[0]) return null
       const path = result.filePaths[0]
-      const extension = extname(path).toLowerCase()
       const size = (await stat(path)).size
       if (size > 50 * 1024 * 1024) throw new Error('A imagem excede o limite de 50 MB.')
-      const mimeType: StudioAsset['mimeType'] = extension === '.png' ? 'image/png' : extension === '.webp' ? 'image/webp' : 'image/jpeg'
       const bytes = await readFile(path)
-      return { id: randomUUID(), category, name: basename(path), mimeType, dataUrl: `data:${mimeType};base64,${bytes.toString('base64')}` }
+      const canonical = await normalizeImageBuffer(bytes)
+      return { id: randomUUID(), category, name: basename(path), mimeType: 'image/png', dataUrl: `data:image/png;base64,${canonical.bytes.toString('base64')}` }
     })
 
     if (workspace === 'video') {
@@ -1939,26 +1949,13 @@ async function registerFabricatorHandlers(): Promise<void> {
     if (fileStat.size > 50 * 1024 * 1024) throw new Error('A imagem excede o limite de 50 MB.')
     if (fileStat.size === 0) throw new Error('O arquivo de imagem está vazio.')
     const bytes = await readFile(path)
-    const pngSignature = bytes.length >= 8 && bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))
-    const jpegSignature = bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff
-    const webpSignature = bytes.length >= 12 && bytes.toString('ascii', 0, 4) === 'RIFF' && bytes.toString('ascii', 8, 12) === 'WEBP'
-    const matchingSignature = extension === '.png' ? pngSignature
-      : extension === '.webp' ? webpSignature : jpegSignature
-    if (!matchingSignature) throw new Error('O conteúdo do arquivo não corresponde a uma imagem PNG, JPG ou WebP válida.')
-    const decoded = nativeImage.createFromBuffer(bytes)
-    const dimensions = decoded.getSize()
-    if (decoded.isEmpty() || dimensions.width < 1 || dimensions.height < 1) {
-      throw new Error('Não foi possível decodificar a imagem selecionada.')
-    }
-    if (dimensions.width * dimensions.height > 32_000_000) {
-      throw new Error('Esta imagem tem mais de 32 milhões de pixels. Reduza suas dimensões para continuar com segurança.')
-    }
-    const mime = extension === '.png' ? 'image/png' : extension === '.webp' ? 'image/webp' : 'image/jpeg'
-    const sourceDataUrl = `data:${mime};base64,${bytes.toString('base64')}`
+    const canonical = await normalizeImageBuffer(bytes)
+    if (canonical.bitDepth > 8) throw new Error('O Fabricador processa a folha em 8 bits. O PNG de 16 bits não foi alterado; converta uma cópia para 8 bits para importar neste editor.')
+    const sourceDataUrl = `data:image/png;base64,${canonical.bytes.toString('base64')}`
     const destination = slotPath(slot)
-    const sourceAssetName = `source-${randomUUID()}${extension}`
+    const sourceAssetName = `source-${randomUUID()}.png`
     await mkdir(destination, { recursive: true })
-    await writeFile(join(destination, sourceAssetName), bytes)
+    await writeFile(join(destination, sourceAssetName), canonical.bytes)
     return { sourceName: basename(path), sourceAssetName, sourceDataUrl }
   })
 
@@ -2611,10 +2608,71 @@ function registerVideoBackgroundProtocol(): void {
   })
 }
 
+let fabricatorDesignSettingsActivation: Promise<void> | null = null
+async function activateFabricatorDesignSettingsDomain(): Promise<void> {
+  if (fabricatorDesignSettingsActivation) return fabricatorDesignSettingsActivation
+  fabricatorDesignSettingsActivation = (async () => {
+    const domainId = 'fabricator.design-settings'
+    const current = dataPlatform.getDomainState(domainId).state
+    if (current === 'active' || current === 'verified') return
+    if (current !== 'legacy') throw new Error(`O armazenamento de Design Dev está em estado ${current}; a gravação foi interrompida.`)
+
+    // Preserve and copy a pre-catalog settings file before switching this new
+    // domain to app-data. The source remains untouched for rollback.
+    const legacyPath = join(app.getPath('userData'), 'fabricator', 'design-settings', 'settings.json')
+    let legacy: Buffer | null = null
+    try { legacy = await nativeReadFile(legacyPath) }
+    catch (reason) { if ((reason as NodeJS.ErrnoException).code !== 'ENOENT') throw reason }
+    dataPlatform.setDomainState(domainId, 'active', { activatedAt: new Date().toISOString(), legacySourcePreserved: Boolean(legacy) })
+    try {
+      if (legacy) await writeFile(legacyPath, legacy)
+    } catch (reason) {
+      dataPlatform.setDomainState(domainId, 'legacy', { activationFailed: true, sourcePreserved: true })
+      throw reason
+    }
+  })()
+  try { await fabricatorDesignSettingsActivation }
+  catch (reason) { fabricatorDesignSettingsActivation = null; throw reason }
+}
+
 app.whenReady().then(async () => {
   dataBackupService = new DataBackupService({ dataRoot: app.getPath('appData'), catalog: dataPlatform })
   await dataBackupService.applyPendingRestore()
   dataPlatform.initialize()
+  ipcMain.handle('app:image:normalize', async (event, input: Uint8Array) => {
+    assertTrustedSender(event)
+    if (!(input instanceof Uint8Array) || input.byteLength === 0 || input.byteLength > 50 * 1024 * 1024) throw new Error('O arquivo de imagem está vazio ou excede 50 MB.')
+    const canonical = await normalizeImageBuffer(Buffer.from(input.buffer, input.byteOffset, input.byteLength))
+    return { dataUrl: `data:image/png;base64,${canonical.bytes.toString('base64')}`, width: canonical.width,
+      height: canonical.height, bitDepth: canonical.bitDepth, sourceBytes: canonical.sourceBytes, outputBytes: canonical.outputBytes }
+  })
+  ipcMain.handle('fabricator:design-settings:load', async (event) => {
+    assertTrustedSender(event)
+    await activateFabricatorDesignSettingsDomain()
+    const target = join(app.getPath('userData'), 'fabricator', 'design-settings', 'settings.json')
+    try { return JSON.parse(await readFile(target, 'utf8')) as unknown }
+    catch (reason) { if ((reason as NodeJS.ErrnoException).code === 'ENOENT') return null; throw reason }
+  })
+  ipcMain.handle('fabricator:design-settings:save', async (event, settings: unknown) => {
+    assertTrustedSender(event)
+    await activateFabricatorDesignSettingsDomain()
+    if (!settings || typeof settings !== 'object' || Array.isArray(settings)) throw new Error('Configuração de Design Dev inválida.')
+    const value = settings as { bannerSlides?: unknown[] }
+    if (!Array.isArray(value.bannerSlides) || value.bannerSlides.length < 1 || value.bannerSlides.length > 8) throw new Error('O Design Dev deve ter entre 1 e 8 slides.')
+    const serialized = JSON.stringify(settings)
+    if (serialized.length > 70_000_000) throw new Error('As imagens do Design Dev excedem o limite de armazenamento.')
+    for (const raw of value.bannerSlides) {
+      if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('Slide do Design Dev inválido.')
+      const slide = raw as { id?: unknown; title?: unknown; subtitle?: unknown; imageDataUrl?: unknown }
+      if (typeof slide.id !== 'string' || slide.id.length > 160 || typeof slide.title !== 'string' || slide.title.length > 80
+        || typeof slide.subtitle !== 'string' || slide.subtitle.length > 120
+        || (slide.imageDataUrl !== null && (typeof slide.imageDataUrl !== 'string' || !/^data:image\/(png|jpeg|webp);base64,/.test(slide.imageDataUrl)))) {
+        throw new Error('Dados ou imagem inválidos em um slide do Design Dev.')
+      }
+    }
+    await mkdir(join(app.getPath('userData'), 'fabricator', 'design-settings'), { recursive: true })
+    await writeFile(join(app.getPath('userData'), 'fabricator', 'design-settings', 'settings.json'), JSON.stringify(settings, null, 2), 'utf8')
+  })
   dataMigration = new DataMigrationService({
     dataRoot: app.getPath('appData'),
     userDataRoot: app.getPath('userData'),

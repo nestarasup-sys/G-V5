@@ -26,8 +26,10 @@ export const defaultDesignSettings: DesignSettings = {
   ]
 }
 
-let cachedSerializedSettings: string | null | undefined
 let cachedSettingsSnapshot = defaultDesignSettings
+let settingsRevision = 0
+let initialization: Promise<void> | null = null
+let saveQueue: Promise<void> = Promise.resolve()
 
 function normalizeSettings(value: unknown): DesignSettings {
   if (!value || typeof value !== 'object' || !Array.isArray((value as DesignSettings).bannerSlides)) return defaultDesignSettings
@@ -38,40 +40,50 @@ function normalizeSettings(value: unknown): DesignSettings {
       id: slide.id,
       title: typeof slide.title === 'string' ? slide.title.slice(0, 80) : '',
       subtitle: typeof slide.subtitle === 'string' ? slide.subtitle.slice(0, 120) : '',
-      imageDataUrl: typeof slide.imageDataUrl === 'string' && slide.imageDataUrl.startsWith('data:image/') ? slide.imageDataUrl : null
+      imageDataUrl: typeof slide.imageDataUrl === 'string' && /^data:image\/(png|jpeg|webp);base64,/i.test(slide.imageDataUrl) ? slide.imageDataUrl : null
     }))
   return { bannerSlides: bannerSlides.length ? bannerSlides : defaultDesignSettings.bannerSlides }
 }
 
 export function getDesignSettings(): DesignSettings {
-  let stored: string | null
-  try {
-    stored = window.localStorage.getItem(STORAGE_KEY)
-  } catch {
-    return cachedSettingsSnapshot
-  }
-  if (stored === cachedSerializedSettings) return cachedSettingsSnapshot
-  cachedSerializedSettings = stored
-  if (!stored) {
-    cachedSettingsSnapshot = defaultDesignSettings
-    return cachedSettingsSnapshot
-  }
-  try { cachedSettingsSnapshot = normalizeSettings(JSON.parse(stored) as unknown) }
-  catch { cachedSettingsSnapshot = defaultDesignSettings }
+  void initializeSettings()
   return cachedSettingsSnapshot
+}
+
+function initializeSettings(): Promise<void> {
+  if (initialization) return initialization
+  initialization = (async () => {
+    let legacy: DesignSettings | null = null
+    try {
+      const text = window.localStorage.getItem(STORAGE_KEY)
+      if (text) legacy = normalizeSettings(JSON.parse(text) as unknown)
+    } catch { /* The app-data copy remains the source of truth. */ }
+    const stored = await window.desktop.loadFabricatorDesignSettings()
+    if (settingsRevision === 0) cachedSettingsSnapshot = stored ? normalizeSettings(stored) : legacy ?? defaultDesignSettings
+    if (!stored) await window.desktop.saveFabricatorDesignSettings(cachedSettingsSnapshot)
+    if (settingsRevision === 0) {
+      try { window.localStorage.removeItem(STORAGE_KEY) } catch { /* Keep the legacy copy if the profile is unavailable. */ }
+    }
+    window.dispatchEvent(new Event(CHANGE_EVENT))
+  })().catch((reason) => {
+    initialization = null
+    console.error('Não foi possível carregar as configurações do Design Dev.', reason)
+  })
+  return initialization
 }
 
 export function saveDesignSettings(settings: DesignSettings): void {
   const normalized = normalizeSettings(settings)
-  const serialized = JSON.stringify(normalized)
-  try {
-    window.localStorage.setItem(STORAGE_KEY, serialized)
-    cachedSerializedSettings = serialized
-  } catch {
-    cachedSerializedSettings = undefined
-  }
+  const revision = ++settingsRevision
   cachedSettingsSnapshot = normalized
   window.dispatchEvent(new Event(CHANGE_EVENT))
+  saveQueue = saveQueue.catch(() => undefined).then(async () => {
+    await initializeSettings()
+    await window.desktop.saveFabricatorDesignSettings(normalized)
+    if (settingsRevision === revision) {
+      try { window.localStorage.removeItem(STORAGE_KEY) } catch { /* app-data remains authoritative */ }
+    }
+  }).catch((reason) => console.error('Não foi possível salvar as configurações do Design Dev.', reason))
 }
 
 function subscribe(callback: () => void): () => void {
