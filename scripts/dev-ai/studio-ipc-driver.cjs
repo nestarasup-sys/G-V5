@@ -217,6 +217,21 @@ async function verifyRasterAssetFlow(window) {
   assert.equal(restoredSet.components[0].binding.version, 1)
   assert.equal(restoredSet.components[1].renderAboveHair, true)
   assert.ok(restoredSet.components.every(c=>c.dataUrl?.startsWith('data:image/png;base64,')))
+  await api(`window.desktop.saveHairStyle(9,${JSON.stringify(fixture.hairStyle)},
+    ${JSON.stringify([{ id:'front',dataUrl:fixture.frontHair.dataUrl }])})`)
+  const loadedHair=await api(`window.desktop.loadHairStyle(9,${JSON.stringify(rasterFixture.HAIR_ID)})`)
+  assert.equal(loadedHair?.id,rasterFixture.HAIR_ID)
+  assert.ok(loadedHair.front?.dataUrl?.startsWith('data:image/png;base64,'))
+  assert.equal(loadedHair.transforms.front.x,fixture.hairStyle.transforms.front.x)
+  assert.equal(loadedHair.transforms.front.scaleX,fixture.hairStyle.transforms.front.scaleX)
+  await api(`window.desktop.saveFaceComponentAsset(9,${JSON.stringify(fixture.extraAsset)},
+    ${JSON.stringify(fixture.headExtra.dataUrl)})`)
+  const loadedExtra=await api(`window.desktop.loadFaceComponentAsset(9,${JSON.stringify(rasterFixture.EXTRA_ID)})`)
+  assert.equal(loadedExtra?.kind,'head-extra')
+  assert.ok(loadedExtra.dataUrl?.startsWith('data:image/png;base64,'))
+  assert.deepEqual(loadedExtra.defaultTransform,fixture.extraAsset.defaultTransform)
+  const afterHair=treeHash(join(userData,'fabricator','hair','model-9'))
+  const afterFace=treeHash(join(userData,'fabricator','face-components','model-9'))
   const afterModel = treeHash(join(userData,'fabricator','models','slot-9'))
   const afterPoses = treeHash(join(userData,'fabricator','poses','model-9'))
   const afterWardrobe = treeHash(join(userData,'fabricator','wardrobe','model-9'))
@@ -230,12 +245,16 @@ async function verifyRasterAssetFlow(window) {
   await writeFile(join(fixtureDir,'source-sheet.png'),fixture.sourceBytes)
   await writeFile(join(fixtureDir,'shoe-left.png'),fixture.shoe.bytes)
   await writeFile(join(fixtureDir,'glasses.png'),fixture.glasses.bytes)
+  await writeFile(join(fixtureDir,'hair-front.png'),fixture.frontHair.bytes)
+  await writeFile(join(fixtureDir,'head-extra.png'),fixture.headExtra.bytes)
   const evidence={schemaVersion:1,adapter:'production-preload-real-ipc',status:'passed',
     syntheticOnly:true,modelSlot:9,sourceReference:'wardrobe-v2-1122x1402',
     modelParts:10,poseSlots:[1,2],wardrobeComponents:2,
     sourceSheetSha256:sourceBefore,assembledModelTreeSha256:afterModel,
     poseTreeSha256:afterPoses,wardrobeTreeSha256:afterWardrobe,
-    garmentBindings:{shoeLeft:'leg-left',glasses:'head'},
+    hairTreeSha256:afterHair,faceExtrasTreeSha256:afterFace,
+    savedHeadLocalTransforms:{hair:fixture.hairStyle.transforms.front,extra:fixture.extraAsset.defaultTransform},
+    garmentBindings:{shoeLeft:'leg-left',glasses:'head'},hairStyles:1,headExtraAssets:1,
     sourceUnchangedAfterSaving:true,posePartIdsStable:true,legacyDataTouched:false,
     renderingCoverage:'fixture PNG raster persisted and decoded by Electron IPC; NOT full Customizer/Studio golden image'}
   await writeFile(join(fixtureDir,'report.json'),JSON.stringify(evidence,null,2))
