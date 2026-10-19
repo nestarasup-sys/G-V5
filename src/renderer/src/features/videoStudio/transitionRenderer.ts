@@ -1,6 +1,7 @@
 import type { CustomizerCharacter, CustomizerFaceAppearance, FaceComponentPartId } from '../../../../shared/customizer'
 import type { FaceCatalogItem, FaceComponentAsset, FaceElementKind, FaceExpressionEffects, FaceTransform, FabricatorProject } from '../../../../shared/fabricator'
 import type { StudioFaceTransforms, VideoCharacterState } from '../../../../shared/studio'
+import type { VideoCharacterTransitionCoreAssetProvider } from '../../../../shared/videoCharacterRenderAssets'
 import { faceRenderGeometry, trimTransparentImage } from './characterGeometry'
 import { mixAppearance, mixEffects, mixPoseArtwork, mixStageElement, mixStudioTransforms, smoothProgress, transitionProgress, type PoseArtwork } from '../../../../shared/videoCharacterInterpolation'
 import type { CharacterTransition } from './characterTransitions'
@@ -20,6 +21,14 @@ function visibleEffects(appearance: CustomizerFaceAppearance | undefined, effect
 
 /** Session-local reader. No supplier, character, or timeline writes are exposed. */
 export class TransitionRenderer {
+  constructor(private readonly assetProvider: VideoCharacterTransitionCoreAssetProvider = {
+    loadModel: (slot) => window.desktop.loadFabricatorSlot(slot),
+    loadPose: (modelSlot, poseSlot) => window.desktop.loadFabricatorPose(modelSlot, poseSlot),
+    loadFaceComponent: (modelSlot, id) => window.desktop.loadFaceComponentAsset(modelSlot, id),
+    loadFaceCatalogItem: (modelSlot, id) => window.desktop.loadFaceCatalogItem(modelSlot, id),
+    loadStandardExpressionEffects: async (modelSlot) => (await import('../customizer/CustomizerPage')).loadStandardExpressionEffects(modelSlot),
+  }) {}
+
   private models = new Map<number, Promise<FabricatorProject | null>>()
   private poses = new Map<string, Promise<PoseArtwork | null>>()
   private components = new Map<string, Promise<FaceComponentAsset | null>>()
@@ -27,23 +36,23 @@ export class TransitionRenderer {
   private effects = new Map<number, Promise<Record<number, FaceExpressionEffects>>>()
 
   private model(slot: number) {
-    if (!this.models.has(slot)) this.models.set(slot, window.desktop.loadFabricatorSlot(slot))
+    if (!this.models.has(slot)) this.models.set(slot, this.assetProvider.loadModel(slot))
     return this.models.get(slot)!
   }
   private pose(slot: number, pose: number | null) {
     if (pose === null) return this.model(slot)
     const key = `${slot}:${pose}`
-    if (!this.poses.has(key)) this.poses.set(key, window.desktop.loadFabricatorPose(slot, pose))
+    if (!this.poses.has(key)) this.poses.set(key, this.assetProvider.loadPose(slot, pose))
     return this.poses.get(key)!
   }
   private component(slot: number, id: string) {
     const key = `${slot}:${id}`
-    if (!this.components.has(key)) this.components.set(key, window.desktop.loadFaceComponentAsset(slot, id))
+    if (!this.components.has(key)) this.components.set(key, this.assetProvider.loadFaceComponent(slot, id))
     return this.components.get(key)!
   }
   private catalog(slot: number, id: string) {
     const key = `${slot}:${id}`
-    if (!this.catalogs.has(key)) this.catalogs.set(key, window.desktop.loadFaceCatalogItem(slot, id))
+    if (!this.catalogs.has(key)) this.catalogs.set(key, this.assetProvider.loadFaceCatalogItem(slot, id))
     return this.catalogs.get(key)!
   }
 
@@ -91,7 +100,7 @@ export class TransitionRenderer {
     const appearance = aa && ba ? mixAppearance(aa, ba, t) : aa ?? ba
     const normalized = await this.normalizedTransforms(a.faceTransforms ?? {}, b.faceTransforms ?? {}, aa, ba)
     const transforms = mixStudioTransforms(normalized.left, normalized.right, t)
-    if (!this.effects.has(slot)) this.effects.set(slot, rendererModule.loadStandardExpressionEffects(slot))
+    if (!this.effects.has(slot)) this.effects.set(slot, this.assetProvider.loadStandardExpressionEffects(slot))
     const defaults = await this.effects.get(slot)!
     const effects = mixEffects(visibleEffects(aa, a.activeExpressionEffects ?? (aa ? defaults[aa.expressionIndex] : undefined)), visibleEffects(ba, b.activeExpressionEffects ?? (ba ? defaults[ba.expressionIndex] : undefined)), t)
     const element = mixStageElement(a, b, t)

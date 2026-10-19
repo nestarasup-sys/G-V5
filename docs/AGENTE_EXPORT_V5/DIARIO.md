@@ -216,3 +216,13 @@ _Atualizações posteriores devem registrar o SHA real do gate e nunca declarar 
 - Estado: V507 avançou na extração da matemática pura compartilhável, mas segue parcial. O `VideoSceneIR` ainda publica descriptor de transição e o renderer de preview ainda resolve assets e rasteriza via Customizer; não há consumidor de render/export usando o interpolador shared, nem prova pixel-equivalente ou execução visual Electron.
 - Validação final: `npm test` — 67/67; `npm run test:export:synthetic` — 37/37; `npm run typecheck`; `npm run build`; `git diff --check` passaram. A suíte encontrou e corrigiu a simulação de dependência do wrapper no teste de Scene IR após a extração.
 - Limite: somente testes Node sintéticos/build foram executados. Não houve execução visual do Electron, comparação de pixels, export MP4 ou benchmark de performance; nenhum dado pessoal ou mídia real foi usado.
+
+## 2026-10-19 — Rodada 14: provider injetável para dependências centrais da transição
+
+- Base: `d930f22c2983a515591ff7dd26028167edf87114`, branch `master-desenvolvimento`, sincronizada com `origin` antes de editar.
+- A inspeção do consumidor real confirmou que `TransitionRenderer` lia modelo, pose, assets/catálogo facial e efeitos padrão diretamente de `window.desktop`. Essas cinco fontes agora estão atrás de `VideoCharacterTransitionCoreAssetProvider`; o adaptador existente do preview preserva o comportamento, enquanto um provider de snapshot aceita dados clonados, profundamente congelados e identificados por chaves sem duplicação.
+- O teste sintético confirma que alterações posteriores na origem não afetam o snapshot/provider, faltas retornam como ausências explícitas, e referências duplicadas ou incompatíveis são rejeitadas. O teste usa objetos de fixture sem conteúdo pessoal.
+- Ações de qualidade: os paths do módulo/provider e renderer foram acrescentados ao workflow sintético; o provider é injetável, mas ainda não está ligado a um job de export.
+- Estado V509: segue parcial. `CustomizerPage.prepareSavedCharacterRenderer()` ainda resolve roupas, cabelo, face, olhos fechados e componentes dependentes usando `window.desktop`; nenhuma coleta transitiva, serialização por hash ou recuperação após reinício foi implementada nesta rodada.
+- Validação final: `npm test` — 69/69; `npm run test:export:synthetic` — 39/39; `npm run typecheck`; `npm run build`; `git diff --check` passaram. O workflow sintético foi atualizado para executar com mudanças nestes módulos/testes.
+- Limite: não houve Electron gráfico, MP4, captura ou comparação visual. O provider cobre somente fontes centrais consultadas pelo `TransitionRenderer`; o Customizer continua com dependências vivas de roupa/cabelo/face e ainda não há pacote persistido/reidratado por job.
