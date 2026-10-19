@@ -32,6 +32,13 @@ const characterAssetsSource = fsSync.readFileSync(path.join(__dirname, '../src/s
 const characterAssetsCompiled = ts.transpile(characterAssetsSource, { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 })
 const loadedCharacterAssets = { exports: {} }
 new Function('require', 'module', 'exports', characterAssetsCompiled)(require, loadedCharacterAssets, loadedCharacterAssets.exports)
+const characterSnapshotSource = fsSync.readFileSync(path.join(__dirname, '../src/shared/videoExportCharacters.ts'), 'utf8')
+const characterSnapshotCompiled = ts.transpile(characterSnapshotSource, { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 })
+const loadedCharacterSnapshot = { exports: {} }
+new Function('require', 'module', 'exports', characterSnapshotCompiled)((name) => {
+  if (name === './videoExportSnapshot') return loadedSnapshot.exports
+  return require(name)
+}, loadedCharacterSnapshot, loadedCharacterSnapshot.exports)
 const assetsSource = fsSync.readFileSync(path.join(__dirname, '../electron/videoExportAssets.ts'), 'utf8')
 const assetsCompiled = ts.transpile(assetsSource, { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 })
 const loadedAssets = { exports: {} }
@@ -40,6 +47,7 @@ new Function('require', 'module', 'exports', compiled)((name) => {
   if (name === './videoExportAssets') return loadedAssets.exports
   if (name === './videoExportSnapshotAssets') return loadedSnapshotAssets.exports
   if (name === '../src/shared/videoCharacterRenderAssets') return loadedCharacterAssets.exports
+  if (name === '../src/shared/videoExportCharacters') return loadedCharacterSnapshot.exports
   if (name === '../src/shared/videoExportSnapshot') return loadedSnapshot.exports
   return require(name)
 }, loaded, loaded.exports)
