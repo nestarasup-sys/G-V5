@@ -64,8 +64,11 @@ function manifest(nativeImage) {
   const glasses = pngData(nativeImage, 76, 20, [240, 40, 195, 255], true)
   const frontHair = pngData(nativeImage, 106, 70, [45, 100, 235, 255], true)
   const headExtra = pngData(nativeImage, 70, 22, [235, 180, 12, 255], true)
-  const parts = FRAMES.map((f,index) => ({
-    ...f, x: 65+(index%3)*270, y: 50+Math.floor(index/3)*260,
+  // The synthetic rig uses the real sheet reference rectangles as assembled
+  // coordinates. This makes the preview read as one actor while retaining
+  // stable IDs and dimensions for the binding oracle.
+  const parts = FRAMES.map((f) => ({
+    ...f, x:f.x, y:f.y,
     rotation: 0, sourceTransform: {
       x:f.x, y:f.y, width:f.width, height:f.height, rotation:0, anchorVersion:1
     }

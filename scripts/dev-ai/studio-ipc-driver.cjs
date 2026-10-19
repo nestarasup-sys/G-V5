@@ -745,6 +745,8 @@ async function verifyCustomizerRasterPreview(window,poseLabel='pose1') {
       const canvas=document.createElement('canvas')
       canvas.width=layers[0].naturalWidth;canvas.height=layers[0].naturalHeight
       const context=canvas.getContext('2d')
+      context.fillStyle='#f6f5f8'
+      context.fillRect(0,0,canvas.width,canvas.height)
       for(const layer of layers)context.drawImage(layer,0,0,canvas.width,canvas.height)
       return canvas.toDataURL('image/png')
     })()`)
@@ -787,7 +789,7 @@ async function verifyCustomizerRasterPreview(window,poseLabel='pose1') {
   const report={schemaVersion:1,adapter:'production-customizer-real-dom',
     status:outfit.status==='passed'&&sibling.status==='passed'&&geometryWithinTolerance?'passed':'failed',
     configuredFixture:`synthetic-only: DEV AI Actor A/B; raster model-9, ${poseLabel}, wardrobe-v2, head-local hair and head-extra`,
-    capture:'canonical character composite only; excludes application navigation and seeded demo characters',
+    capture:'synthetic-only canonical character composite on neutral background; excludes navigation and seeded starter characters',
     characterA:{...outfit,geometry:outfitGeometry},characterB:{...sibling,geometry:siblingGeometry},
     geometryWithinTolerance,tolerancePixels:3,sourceLibraryWrites:0,
     limitations:'Geometric Customizer oracle over production DOM layer rasters; synthetic fixtures only; not a cross-Studio canonical golden image'}

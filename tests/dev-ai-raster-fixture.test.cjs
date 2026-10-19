@@ -36,22 +36,22 @@ test('raster geometry oracle predicts shoe and head-local assets in source and p
   const sourceHead = { x:399,y:29,width:319,height:294,rotation:0 }
   const hair = { width:106,height:70 }
   const hairTransform = { x:159.5,y:100,scaleX:1.2,scaleY:1.1,rotation:0 }
-  const poseOneHead = { id:'head',x:65,y:50,width:319,height:294,rotation:0 }
-  const poseTwoHead = { id:'head',x:90,y:65,width:319,height:294,rotation:10 }
+  const poseOneHead = { id:'head',x:399,y:29,width:319,height:294,rotation:0 }
+  const poseTwoHead = { id:'head',x:424,y:44,width:319,height:294,rotation:10 }
   const oneHair = headLocalBounds(hair,hairTransform,sourceHead,poseOneHead)
   const twoHair = headLocalBounds(hair,hairTransform,sourceHead,poseTwoHead)
-  assert.deepEqual(oneHair,{x:160,y:111,width:129,height:78})
-  assert.deepEqual(twoHair,{x:188,y:116,width:139,height:99})
+  assert.deepEqual(oneHair,{x:494,y:90,width:129,height:78})
+  assert.deepEqual(twoHair,{x:522,y:95,width:139,height:99})
 
   const shoe = { id:'shoe-left',binding:{ boneId:'leg-left',localCenterX:-15/156,
     localCenterY:141.5/431,widthRatio:58/156,heightRatio:34/431,relativeRotation:0 } }
-  const legOne = { id:'leg-left',x:605,y:570,width:156,height:431,rotation:0 }
-  const legTwo = { id:'leg-left',x:646,y:585,width:156,height:431,rotation:26 }
+  const legOne = { id:'leg-left',x:346,y:960,width:156,height:431,rotation:0 }
+  const legTwo = { id:'leg-left',x:387,y:975,width:156,height:431,rotation:26 }
   const shoeOne = boundComponentBounds(shoe,legOne)
   const shoeTwo = boundComponentBounds(shoe,legTwo)
-  assert.deepEqual(shoeOne,{x:639,y:910,width:58,height:34})
-  assert.deepEqual(shoeTwo,{x:614,y:893,width:69,height:57})
-  assert.equal(compareBounds(shoeOne,{x:639,y:910,width:58,height:34}).passed,true)
+  assert.deepEqual(shoeOne,{x:380,y:1300,width:58,height:34})
+  assert.deepEqual(shoeTwo,{x:355,y:1283,width:69,height:57})
+  assert.equal(compareBounds(shoeOne,{x:380,y:1300,width:58,height:34}).passed,true)
 })
 
 test('head-extra default transform uses canvas coordinates and per-actor deltas', () => {
