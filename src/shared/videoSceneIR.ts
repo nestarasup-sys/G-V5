@@ -117,6 +117,11 @@ function activeMouthModes(activeText: ReadonlyArray<Timeline['textClips'][number
 
 /** Compile immutable indexes and animation spans once for deterministic absolute-frame evaluation. */
 export function compileVideoScene(snapshot: VideoExportSnapshot, variant: RenderVariant): VideoSceneProgram {
+  // Job manifests and IPC deserialize untyped inputs: a TypeScript union is not a runtime guard.
+  // Never silently fall back to animated behavior for an unknown export profile.
+  if (variant !== 'animated' && variant !== 'static-characters') {
+    throw new Error('Variante de renderização de vídeo inválida.')
+  }
   const characterLookups = new Map<string, VideoCharacterTimelineLookup>()
   const transitionsByCharacter = new Map<string, CompiledTransition[]>()
   const gapsByCharacter = new Map<string, IntervalIndex<NonNullable<Timeline['characterGaps']>[number]>>()
