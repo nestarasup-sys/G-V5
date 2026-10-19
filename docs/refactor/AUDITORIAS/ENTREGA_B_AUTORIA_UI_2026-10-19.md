@@ -1,21 +1,64 @@
-# Entrega B — autoria de assets pela interface real (2026-10-19)
+# Entrega B — autoria de assets pela interface real
 
-## Implementação
+## Cobertura local atualizada — Prompt 2 (2026-10-19)
 
-Fase `asset-ui-authoring` do runner existente `npm run audit:ipc` / `npm run audit:all`, adicionada após as fases anteriores e seguida por `asset-ui-verify-restart` num segundo processo Electron. O teste usa **uma fixture PNG sintética e o app compilado**, nunca personagens reais.
+O adapter existente `scripts/dev-ai/asset-ui-authoring.cjs` foi ampliado; não foi criado outro runner. O cenário usa o app compilado, React, Web Workers, preload e IPC Electron de produção. Só o diálogo nativo de arquivo é interceptado para selecionar mídia gerada dentro do sandbox sintético.
 
-- Fabricador **Modelos Dev**: pressiona o botão de importar na UI; somente o diálogo nativo é interceptado no processo Electron do teste, apontando para uma imagem synthetic `sandbox/dev-ai-ui-model.png` criada ali pelo runner. O handler **real** `fabricator:import-model`, o processamento Web Worker, a montagem React, autosave e real IPC persistem o modelo com dez recortes, seus `partId` e `sourceTransform`.
-- Fabricador **Poses Dev**: pela UI cria/salva pose 1 e pose 2, muda rotação via controle da interface e verifica persistência.
-- Fabricador **Roupas Dev unificado**: importa a folha PNG sintética pela entrada `<input type=file>` e pelo evento real de mudança, exercita Worker de roupas, classifica uma camisa e um sapato, fixa o sapato à canela correta por `partId`, salva conjunto com bindings no IPC.
-- **Customizador**: abre a rota real, cria um novo personagem pelo formulário, seleciona o modelo e equipa a camisa pelo catálogo visível, exigindo override salvo e presença da camada visual. O teste verifica hash da biblioteca Fabricador antes/depois de equipar.
-- **Reinício completo** do processo Electron: verifica personagem, modelo, roupa e pose 2 persistidos; arquivos e PNGs exclusivamente de sandbox na pasta `out/dev-ai/runs/<run-id>/studio-ipc-real-artifacts/asset-ui-authoring/`.
+### Modelos Dev
 
-## Contratos de segurança e limites
+- Importa pela UI uma PNG sintética de **1122 × 1402**, dividida em 10 componentes desconectados.
+- Confere quantidade, identificação semântica (cabeça, tronco, braços, antebraços, coxas e canelas) e cada caixa de origem com a margem de recuperação de 4 px produzida pelo Worker.
+- Exige IDs únicos, `sourceTransform.anchorVersion`, pivôs finitos, camada e juntas que apontam para IDs existentes.
+- Confere que o `sourceDataUrl` persistido e o arquivo original no slot têm o SHA-256 idêntico à PNG selecionada.
+- Seleciona extensão incompatível e PNG malformada pelo controle de importação da UI. O app apresenta os erros, preserva IDs e projeto existentes e deixa o hash da árvore do Fabricador inalterado.
+- Navega para fora e retorna à área; compara IDs, nomes, geometria de origem e pivôs. O segundo processo Electron repete a leitura após reiniciar.
 
-Sem migração, escrita nos dados reais, rede livre, alteração de permissões ou novas APIs expostas ao renderer. Não há `NODE_ENV=development` com privilégio extra: o runner já exige marcador `.dev-ai-sandbox.json` e raiz dentro de `out/dev-ai/runs`. O diálogo mock só existe no **processo de teste** e recusa qualquer título que não corresponda à importação esperada.
+### Poses Dev
 
-Este cenário valida **apenas** os casos sintéticos construídos: dois poses e duas peças, modelo com 10 recortes. Não fecha a matriz AF-01..20, cobertura legado 1.0/2.0, variações de proporção, fluxo de cabeça/cabelo, nem igualdade pixel Studio/Video (Entrega C).
+- Cria e salva as poses dos slots 1 e 2 por controles da interface, em categorias Parado e Sentado.
+- Pose 1 gira o braço direito em 15° e move sua posição X em 11 px. Pose 2 gira o antebraço esquerdo em −15° e desloca X em −17 px.
+- Compara os conjuntos completos de transformações; exige que sejam diferentes, que os membros mantenham referência a uma junta, que a ordem de camadas corresponda à do modelo e que posições/rotações persistam após reinício.
 
-## Validação no SHA final
+### Roupas Dev unificado e Customizador
 
-O workflow deve executar `npm test`, `typecheck`, build, gates e `audit:all` no Windows e Linux. Um erro dessa fase deve falhar o job Windows, com mensagem explícita; nenhum `unsupported` deve ser tratado como `passed`. A entrega só está pronta depois de inspeção do relatório do run final no GitHub.
+A PNG de roupas possui nove componentes separados, todos colocados sobre a folha de referência do corpo: camisa/tronco; duas coxas; duas canelas; dois sapatos; e duas luvas. Cada componente é selecionado no catálogo React, recebe categoria e `partId` explicitamente e é salvo pelo IPC real.
+
+As assertions verificam posição, dimensões, rotação, imagem persistida e valores do vínculo bone-local. Cada recorte visível deve continuar dentro do `sourceTransform` da peça correspondente; os sapatos precisam apontar para as canelas corretas e as luvas para os antebraços corretos. A luva esquerda recebe deslocamento, escala horizontal/vertical independentes e rotação de 4° pela UI, e esses valores e o binding precisam sobreviver ao save/load.
+
+O Customizador cria um personagem pela interface, equipa camisa, o conjunto de calça, os dois sapatos e as duas luvas pelas bibliotecas correspondentes e confirma todos os nove `componentId`. O estado do personagem precisa manter offsets em 0, escalas em 1 e rotação em 0: o encaixe publicado pelo Fabricador é suficiente para aplicar o conjunto sem reajuste individual. A imagem final do overlay precisa carregar. A hash do namespace do Fabricador permanece idêntica à registrada após publicar o conjunto.
+
+## Correções de produto encontradas pela fixture
+
+- O Worker de Modelos Dev nomeava antebraços como braços e coxas/canelas genericamente como pernas. Ajustou-se a classificação aproximada por posição para separar braço/antebraço e coxa/canela; a fixture agora exige os quatro nomes bilaterais esperados.
+- `fabricator:import-model` copiava o arquivo ao slot antes de rejeitar extensões/conteúdo incompatíveis. O handler agora valida extensão, assinatura, decodificação e limite de pixels antes de criar arquivos. Os dois testes negativos confirmam que o slot e o modelo anterior não são alterados.
+
+## Evidências reproduzíveis
+
+Último run completo aprovado: `2026-10-19T06-30-58-800Z-73311523-403a-459a-ac32-6354deaf3a68` (`npm run audit:all`, Windows). Os artefatos estão localmente em `out/dev-ai/runs/<run-id>/studio-ipc-real-artifacts/asset-ui-authoring/` e são ignorados pelo Git:
+
+- `report.json` — IDs, nomes, source frames, âncoras, layer order, referências de junta, categorias, `partId`, posição/escala/rotação, bone-local bindings, hashes de imagens e estados equipados.
+- `restart.json` — confirmação em um novo processo Electron dos IDs e dados persistidos.
+- `01-model-ui.png`, `02-pose1-ui.png`, `03-pose2-ui.png`, `04-wardrobe-ui.png`, `05-customizer-equipped-ui.png`, `06-model-reopened-ui.png` — capturas estabilizadas por quatro capturas consecutivas iguais.
+- SHA-256 da folha de modelo: `3280212a91334293c80095d0fc0a13dd725a4abee92aff8ed9c08447ff37a544`.
+- SHA-256 da PNG de roupas: `a62820deda387ffda1ad9e8ad2a491c2f94b2d4269b4d759f6650e821ef9df57`.
+- SHA-256 do screenshot final do Customizador: `318cbeecc308cdd8fddc63ae460ac3e0a4f25ec00d7922b8f8bd7aacb77d1fe1`.
+
+Exemplo de árvore de artefatos do último run: `out/dev-ai/runs/2026-10-19T06-30-58-800Z-73311523-403a-459a-ac32-6354deaf3a68/studio-ipc-real-artifacts/asset-ui-authoring/`. Os screenshots e saves são sintéticos; não versionar esse diretório nem copiar dados do usuário para ele.
+
+## Validação local
+
+| Comando | Resultado |
+| --- | --- |
+| `npm test` | Passou: 26 aprovados, 0 falhas, 2 ignorados (um porque `out/` já existia e outro por bloqueio de symlink do SO). |
+| `npm run typecheck` | Passou no run final. |
+| `npm run build` | Passou no run final. |
+| `npm run audit:boundaries:gate` | Passou: 22 arestas observadas, 10 legadas permitidas, zero regressões novas. |
+| `npm run audit:all` | Passou no Windows; todas as 13 fases, incluindo `studio-ipc-real`, passaram no run `2026-10-19T06-30-58-800Z-73311523-403a-459a-ac32-6354deaf3a68`. |
+
+## Cobertura parcial e pendências
+
+Esta é prova E2E sintética da autoria descrita acima, não a conclusão de AF-01…AF-09. Os IDs aleatórios são verificados como estáveis durante save, abertura e reinício do mesmo asset; não se exige que uma nova importação independente gere os mesmos UUIDs. A PNG de corpo tem peças retangulares sintéticas e testa geometria, pivôs e camada, mas não substitui um rig humano complexo.
+
+O cenário cobre agora os dois lados de coxa, canela, sapato e luva, porém ainda não cobre variações de proporção/modelos, malhas com sobreposição real, todos os tipos de folha, múltiplos personagens com ajustes divergentes, 100 alternâncias, dados legados 1.0/2.0 em autoria UI ou comparação canônica de pixels entre Customizador, Studio normal e Video Studio. A captura do Customizador demonstra o cenário montado e o teste valida transforms neutros, mas não é um golden pixel contra render independente dos três ambientes. Erros de exceção dentro do Worker e falhas de escrita em disco também precisam de cenários separados.
+
+AF-01…AF-09 e ISO-01…ISO-15 permanecem abertos até seus critérios integrais e evidências do documento de fluxo serem cumpridos. A aprovação local não é CI Linux/Windows no mesmo SHA nem publicação remota.

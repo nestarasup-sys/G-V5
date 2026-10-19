@@ -148,8 +148,9 @@ function guessName(minX: number, minY: number, maxX: number, maxY: number, width
   const centerX = (minX + maxX) / 2 / width
   const centerY = (minY + maxY) / 2 / height
   if (centerY < 0.27) return 'Cabeça'
-  if (centerY > 0.5) return centerX < 0.5 ? 'Perna esquerda' : 'Perna direita'
+  if (centerY > 0.70) return `Canela ${centerX < 0.5 ? 'esquerda' : 'direita'}`
+  if (centerY > 0.52) return `Coxa ${centerX < 0.5 ? 'esquerda' : 'direita'}`
   if (centerY > 0.23 && centerY < 0.52 && centerX > 0.31 && centerX < 0.69) return 'Tronco'
-  if (centerX < 0.35 || centerX > 0.65) return centerY < 0.48 ? `Braço ${centerX < 0.5 ? 'esquerdo' : 'direito'}` : `Antebraço ${centerX < 0.5 ? 'esquerdo' : 'direito'}`
+  if (centerX < 0.35 || centerX > 0.65) return centerY < 0.40 ? `Braço ${centerX < 0.5 ? 'esquerdo' : 'direito'}` : `Antebraço ${centerX < 0.5 ? 'esquerdo' : 'direito'}`
   return 'Peça do modelo'
 }

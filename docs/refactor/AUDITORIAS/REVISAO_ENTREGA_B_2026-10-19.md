@@ -82,3 +82,9 @@ ISO também permanece parcial: isolamento visual usa preload fixture e o teste I
 ## Fechamento desta rodada
 
 Arquivos de produto/teste não foram alterados nesta revisão. O único novo arquivo é este relatório. Árvore deve permanecer limpa após o commit documental local; nenhum push, PR, merge ou alteração na `master` foi feito. Próximo passo: corrigir o adapter E2E de pose no mesmo `master-desenvolvimento` e executar CI Windows/Linux no mesmo SHA antes de tratar qualquer divergência de raster como resolvida.
+
+## Complemento — Prompt 2 local (2026-10-19)
+
+O adapter E2E foi ampliado em `scripts/dev-ai/asset-ui-authoring.cjs`; a descrição e os limites atuais estão em [ENTREGA_B_AUTORIA_UI_2026-10-19.md](ENTREGA_B_AUTORIA_UI_2026-10-19.md). A verificação local `npm run audit:all` passou em `2026-10-19T06-30-58-800Z-73311523-403a-459a-ac32-6354deaf3a68`, incluindo a auditoria IPC real. A divergência anterior de pose no `audit:all` não se reproduziu neste run. Isso não substitui uma investigação da diferença entre captura programática e UI real de pose 2, nem fecha AF/ISO.
+
+Correções encontradas por esta ampliação: classificação do Worker de modelos para distinguir antebraços e partes da perna; rejeição pré-escrita de formatos/bytes incompatíveis na importação do modelo; e novo teste UI de save/load de nove roupas, pose 1/2 e reinício. PNGs, relatórios e dados de execução permaneceram sintéticos dentro de `out/` ignorado. As métricas de cobertura seguem parciais: AF-01…AF-09 continuam abertos, sem golden visual cross-Studio, sem dados reais e sem aprovação CI Linux/Windows no mesmo SHA.

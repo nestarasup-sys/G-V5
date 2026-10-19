@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, protocol, session, shell, type IpcMainInvokeEvent } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, protocol, session, shell, type IpcMainInvokeEvent } from 'electron'
 import { createReadStream, existsSync, lstatSync, mkdirSync, readFileSync, realpathSync } from 'node:fs'
 import { mkdir, readFile, writeFile, readdir, unlink, rename, stat, access, rm, copyFile } from 'node:fs/promises'
 import { basename, dirname, extname, join, relative, resolve, sep } from 'node:path'
@@ -1793,9 +1793,27 @@ async function registerFabricatorHandlers(): Promise<void> {
     if (result.canceled || !result.filePaths[0]) return null
     const path = result.filePaths[0]
     const extension = extname(path).toLowerCase()
-    if ((await stat(path)).size > 50 * 1024 * 1024) throw new Error('A imagem excede o limite de 50 MB.')
-    const mime = extension === '.png' ? 'image/png' : extension === '.webp' ? 'image/webp' : 'image/jpeg'
+    const supportedExtensions = new Set(['.png', '.jpg', '.jpeg', '.webp'])
+    if (!supportedExtensions.has(extension)) throw new Error('Formato incompatível. Use PNG, JPG ou WebP.')
+    const fileStat = await stat(path)
+    if (fileStat.size > 50 * 1024 * 1024) throw new Error('A imagem excede o limite de 50 MB.')
+    if (fileStat.size === 0) throw new Error('O arquivo de imagem está vazio.')
     const bytes = await readFile(path)
+    const pngSignature = bytes.length >= 8 && bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))
+    const jpegSignature = bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff
+    const webpSignature = bytes.length >= 12 && bytes.toString('ascii', 0, 4) === 'RIFF' && bytes.toString('ascii', 8, 12) === 'WEBP'
+    const matchingSignature = extension === '.png' ? pngSignature
+      : extension === '.webp' ? webpSignature : jpegSignature
+    if (!matchingSignature) throw new Error('O conteúdo do arquivo não corresponde a uma imagem PNG, JPG ou WebP válida.')
+    const decoded = nativeImage.createFromBuffer(bytes)
+    const dimensions = decoded.getSize()
+    if (decoded.isEmpty() || dimensions.width < 1 || dimensions.height < 1) {
+      throw new Error('Não foi possível decodificar a imagem selecionada.')
+    }
+    if (dimensions.width * dimensions.height > 32_000_000) {
+      throw new Error('Esta imagem tem mais de 32 milhões de pixels. Reduza suas dimensões para continuar com segurança.')
+    }
+    const mime = extension === '.png' ? 'image/png' : extension === '.webp' ? 'image/webp' : 'image/jpeg'
     const sourceDataUrl = `data:${mime};base64,${bytes.toString('base64')}`
     const destination = slotPath(slot)
     const sourceAssetName = `source-${randomUUID()}${extension}`
