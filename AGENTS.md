@@ -3,7 +3,7 @@
 ## Primeiro, preserve o que existe
 - Inspecione `git status --short --branch`, HEAD, remotos e mudanças não commitadas antes de editar.
 - **Não descarte** alterações locais ou remotas. Não execute `reset --hard`, `clean -fd`, `push --force` ou substituição de pastas sem plano de recuperação autorizado.
-- Trabalhe na branch da tarefa/PR em curso. **Não crie novas branches por rotina**. Caso precise isolar mudanças, justifique e reutilize um único worktree/branch por entrega.
+- **Branch permanente de desenvolvimento: `master-desenvolvimento`.** Reutilize-a para mudanças incrementais. Não crie branches por rotina; justifique qualquer isolamento excepcional. A `master` só recebe integração após autorização explícita.
 - **Não altere, force-push ou faça merge na `master` sem autorização explícita**. Entregue via PR com CI e evidências; não delete branches antes da integração confirmada.
 
 ## Arquitetura e escopo
@@ -16,4 +16,5 @@
 - Dados pessoais, perfis, bibliotecas privadas, imagens, backups e relatórios reais **não entram em Git, logs remotos ou CI**. Para validação privada, exija cópia isolada, backup/hash conferido e rollback. Nunca teste destrutivamente no perfil original.
 - Use fixtures sintéticas nas auditorias remotas. Não afrouxe assertions, tolerâncias ou status para conseguir testes verdes.
 - Execute testes aplicáveis antes de concluir: `npm test`, `npm run typecheck`, `npm run build`, `npm run audit:boundaries:gate`, `npm run audit:all` (Windows/Electron quando requerido). CI em Linux e Windows deve aprovar o **mesmo SHA**.
+- CI obrigatória: workflow em `.github/workflows/dev-ai-foundation.yml` acompanha pushes na `master-desenvolvimento` e na `master` e PRs para ambas. Exigir aprovação Linux/Windows **no mesmo SHA atual**, não de runs antigos.
 - Faça commits pequenos e relatórios objetivos: arquivos, comportamento, comandos, resultado, SHA, riscos, limitações e pendências. Atualize o roadmap sem marcar cobertura parcial como concluída.

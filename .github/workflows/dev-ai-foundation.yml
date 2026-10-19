@@ -4,8 +4,13 @@ on:
   push:
     branches:
       - master
+      - master-desenvolvimento
       - 'ci/dev-ai-*'
       - 'feat/dev-ai-*'
+  pull_request:
+    branches:
+      - master
+      - master-desenvolvimento
   workflow_dispatch:
 
 permissions:
@@ -41,6 +46,8 @@ jobs:
         run: npm test
       - name: TypeScript typecheck
         run: npm run typecheck
+      - name: Build desktop bundles
+        run: npm run build
       - name: Record architecture inventory without treating legacy edges as clean
         run: npm run audit:boundaries
       - name: Classify runtime vs type-only imports using TypeScript AST

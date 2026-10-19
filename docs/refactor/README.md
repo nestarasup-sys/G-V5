@@ -4,6 +4,8 @@
 
 **Atualização local 2026-10-19:** os gates de teste, build, typecheck, auditorias rápidas, isolamento e IPC passaram na branch `codex/finalizar-dev-ai-local`; Ayla e Chloe foram testadas somente em cópias privadas com backup verificado. As matrizes AF e ISO permanecem parciais. Resultados e limites: [validação local](AUDITORIAS/VALIDACAO_LOCAL_2026-10-19.md).
 
+**Estado consolidado em 2026-10-19:** o [PR #3](https://github.com/nestarasup-sys/G-V5/pull/3) integrou o DEV AI à `master` (`3b70ceef`) e criou `master-desenvolvimento` a partir desse commit. A interface do Fabricador possui **um único Roupas Dev**; 1.0/2.0 são formatos legados. O usuário relatou que um ajuste de roupa seguiu poses e os dois Studios; isso não comprova criação, migração e salvamento/reinício E2E. Ver [Entrega A](AUDITORIAS/ENTREGA_A_CI_E_ROADMAP_2026-10-19.md).
+
 **Handoff para continuação:** [CONTINUACAO_DEV_AI_2026-10-18.md](CONTINUACAO_DEV_AI_2026-10-18.md) registra os commits, a prova de edição IPC/reabertura, limites e próximos passos; não marca o objetivo amplo como concluído.
 
 ## Fontes de verdade — não duplicar especificações
@@ -27,6 +29,8 @@
 | Evidências da CI, teste visual e critérios de avanço por SHA | [AUDITORIAS/CI_DEV_AI_2026-10-18.md](AUDITORIAS/CI_DEV_AI_2026-10-18.md) |
 | Dependências runtime AST e planos de extração de páginas inteiras | [AUDITORIAS/DEPENDENCIAS_AST_2026-10-18.md](AUDITORIAS/DEPENDENCIAS_AST_2026-10-18.md) |
 | Reexecução local completa DEV AI, teste real de Ayla/Chloe em cópias privadas e pendências remotas | [AUDITORIAS/VALIDACAO_LOCAL_2026-10-19.md](AUDITORIAS/VALIDACAO_LOCAL_2026-10-19.md) |
+| CI da branch permanente, roadmap e relato manual da Entrega A | [AUDITORIAS/ENTREGA_A_CI_E_ROADMAP_2026-10-19.md](AUDITORIAS/ENTREGA_A_CI_E_ROADMAP_2026-10-19.md) |
+| Roupas Dev unificado e política dos conjuntos legados | [AUDITORIAS/ROUPAS_DEV_UNIFICADO_2026-10-19.md](AUDITORIAS/ROUPAS_DEV_UNIFICADO_2026-10-19.md) |
 
 **Histórico:** a versão anterior integral do plano permanece recuperável no Git em [`5b848345`](https://github.com/nestarasup-sys/G-V5/blob/5b8483454757f4cc9606c626471aabbeccf35daa/docs/PLANO_ESTRUTURA_PROJETO_E_DADOS.md). Esta versão é histórico, **não** uma segunda fonte normativa. O documento `docs/STUDIO_WORKSPACES.md` foi removido em `192245e`; não criar links correntes para ele.
 
@@ -45,7 +49,7 @@ Antes de modificar runtime: criar baseline e sandbox de testes, registrar fluxos
 
 ## Fundação de testes e CI DEV AI (incremento 2026-10-18)
 
-A implementação mais recente está na branch `ci/dev-ai-foundation-hardening-2026-10-18`, derivada da validação Windows do Codex. O inventário AST identificou 22 ocorrências runtime entre features (10 pares únicos) e o gate de arquitetura bloqueia novos acoplamentos sem mascarar a dívida existente; consultar [classificação e plano de extração](AUDITORIAS/DEPENDENCIAS_AST_2026-10-18.md). Ela adiciona comparação visual por bitmap com diff e estabilização do compositor, guardas adicionais no encerramento e workflow Linux + Windows com fixtures sintéticas. Consulte [guia e aceite de CI](AUDITORIAS/CI_DEV_AI_2026-10-18.md). Nenhum workflow verde isolado substitui a matriz ISO, o benchmark ou o gate de recuperação de dados.
+A implementação foi iniciada na branch histórica `ci/dev-ai-foundation-hardening-2026-10-18` e integrada posteriormente à `master` e `master-desenvolvimento` via PR #3. O inventário AST identificou 22 ocorrências runtime entre features (10 pares únicos) e o gate de arquitetura bloqueia novos acoplamentos sem mascarar a dívida existente; consultar [classificação e plano de extração](AUDITORIAS/DEPENDENCIAS_AST_2026-10-18.md). Ela adiciona comparação visual por bitmap com diff e estabilização do compositor, guardas adicionais no encerramento e workflow Linux + Windows com fixtures sintéticas. Consulte [guia e aceite de CI](AUDITORIAS/CI_DEV_AI_2026-10-18.md). Nenhum workflow verde isolado substitui a matriz ISO, o benchmark ou o gate de recuperação de dados.
 
 ## Estado desta revisão
 
@@ -56,7 +60,7 @@ A implementação mais recente está na branch `ci/dev-ai-foundation-hardening-2
 - [ ] Inventário de todos os dados reais e `localStorage` instalado.
 - [ ] Teste cross-workspace completo ISO-01–ISO-15; smoke sintético de montagem/leitura Customizer/Fabricador passou. Persistência/edição dessas áreas ainda aberta; 20 ciclos visuais Studio↔Video documentados no relatório Windows.
 - [ ] Benchmark reproduzível e comparação antes/depois.
-- [ ] Qualquer migração ou mudança de código de produção.
+- [ ] Migração de dados de produção (ainda não executada; houve mudanças pontuais de código de produto nas entregas DEV AI).
 
 **Escopo atual:** alterações de código foram feitas em `electron/main.ts`, auditorias e na criação/equipamento de roupas. Nenhum arquivo de usuário foi acessado, enviado ou migrado; as auditorias usam fontes e perfis sintéticos. Cobertura do fluxo visual e de armazenamento de modelos/roupas/poses **não está concluída**.
 

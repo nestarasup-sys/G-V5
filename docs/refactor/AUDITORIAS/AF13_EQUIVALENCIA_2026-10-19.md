@@ -2,7 +2,7 @@
 
 Branch: `codex/af13-cross-studio-equivalence`, baseada em `31a7f830`.
 
-**Estado: pendente de confirmação visual manual.** O usuário assumiu o teste
+**Estado na rodada original (histórico): pendente de confirmação visual manual.** O usuário assumiu o teste
 visual e relatou pele visível nas juntas dos joelhos apesar da cobertura no
 Roupas Dev 2.0. Esse relato impede considerar AF-13 concluído.
 
@@ -94,3 +94,9 @@ Validações após essa correção:
 Teste manual pendente: ajustar posição/largura/altura/rotação de uma peça;
 alternar entre poses em pé e sentada; retornar à pose inicial; conferir também
 nos dois Studios e após reiniciar. AF-13 permanece aberto até essa confirmação.
+
+## Validação posterior à integração — 2026-10-19
+
+- **Relato manual:** no código local `codex/dev-ai-validation-2026-10-18@6cfd0b5`, o usuário equipou outra roupa, deslocou o ajuste individual para fora do personagem, alternou poses e confirmou que **Studio e Video Studio acompanharam**. Não enviou screenshots, hashes nem relatou explicitamente teste de save/restart, autoria Fabricador ou todos os casos de joelho.
+- **Automação:** [CI master #39198498661](https://github.com/nestarasup-sys/G-V5/actions/runs/39198498661) passou Linux e Windows no SHA `3b70ceef`. A regressão AF-13 sintética do PR #3 comparou imagens canônicas com resultado positivo; não cobre toda variedade de peças reais.
+- **Status:** o cenário reportado de propagação do ajuste funcionou. AF-13 e R-31/R-34/R-37 **permanecem amplamente abertos** até prova E2E de autoria, joelhos, camadas, outras poses, save/restart e equivalência entre as áreas em fixtures completas.

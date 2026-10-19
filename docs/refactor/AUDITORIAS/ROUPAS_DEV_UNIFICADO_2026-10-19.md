@@ -42,9 +42,13 @@ Customizador e Studios continuam referenciando os mesmos conjuntos/componentes.
   canela/sapato e antebraço/luva mesmo quando há mãos ou pés separados próximos.
 - `npm test`: 26 aprovados e 2 pulados por restrições locais de symlink.
 - `git diff --check`: passou.
-- Conferência visual e de salvamento na interface: pendente, pelo usuário.
+- Na rodada original, conferência visual e de salvamento na interface permanecia pendente. Ver relato manual posterior abaixo.
 
 Conferência sugerida: abrir a área; verificar conjuntos antigos das duas
 áreas na folha original; conferir o corpo de encaixe e a conversão; importar uma
 folha nova; revisar categoria/osso; salvar e reabrir o conjunto. Depois conferir
 um personagem que já utilizava esse conjunto no Customizador e nos Studios.
+
+## Validação manual posterior — 2026-10-19
+
+O usuário reportou que na versão local `6cfd0b5` equipou **outra roupa**, fez ajuste individual deslocando-a para fora do personagem, trocou poses e confirmou que o Studio e Video Studio acompanharam. Isso confirma o cenário observado de propagação do delta, mas **não** prova importação e publicação de novo conjunto pela UI, conversão de todos os legados, cobertura de joelhos em todos os casos nem salvamento/reinício. Não foram enviados dados privados ou capturas ao Git.

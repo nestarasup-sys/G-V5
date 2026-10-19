@@ -1,8 +1,10 @@
 # Roadmap executável, gates e checklists
 
+**Entrega A operacional (2026-10-19):** o [PR #3](https://github.com/nestarasup-sys/G-V5/pull/3) integrou DEV AI à `master@3b70ceef` e criou `master-desenvolvimento`. A [CI da integração](https://github.com/nestarasup-sys/G-V5/actions/runs/39198498661) aprovou Linux/Windows; o workflow da Entrega A passa a acompanhar a branch permanente e PRs. Fabricador possui **um único Roupas Dev** sobre a folha original; conjuntos 1.0/2.0 permanecem legíveis como formatos antigos. **Teste manual reportado:** na versão local `6cfd0b5`, o usuário equipou outra roupa, deslocou seu ajuste individual para fora do personagem, alternou poses e viu Studio e Video Studio acompanharem. Isso é evidência parcial de AF-09/13, **sem** screenshots fornecidos, comprovação de criação na UI, save/restart ou hashes de dados. Os 38 critérios R-xx, AF-01..20 e ISO-01..15 permanecem formalmente abertos. Ver [Entrega A](AUDITORIAS/ENTREGA_A_CI_E_ROADMAP_2026-10-19.md).
+
 **Atualização de execução 2026-10-19:** a branch `codex/finalizar-dev-ai-local` passou em `npm test`, typecheck, build, auditoria rápida, gate AST, isolamento e IPC na suíte `audit:all`. Teste privado real de Ayla/Chloe comprovou resposta visual do Customizador aos transforms existentes. Isso avança evidência de DEV AI e AF-08, mas não fecha as matrizes AF/ISO nem as tarefas de versão, equivalência cross-Studio, recuperação, performance ou migração. Ver [relatório de validação local](AUDITORIAS/VALIDACAO_LOCAL_2026-10-19.md). Todos os checkboxes de iniciativas de produto permanecem abertos até seus critérios integrais serem satisfeitos.
 
-**Versão:** 2026-10-18, base `5b848345`. **Esta é a única fonte de verdade para tarefas e progresso.** Evidência e classificação dos fatos estão em [INVENTARIO_E_EVIDENCIAS.md](INVENTARIO_E_EVIDENCIAS.md). O inventário foi inicialmente documentado; implementações parciais e suas evidências agora são atualizadas por incremento, sem considerar gates abertos como concluídos. O plano é incremental: cada PR/commit deve deixar `typecheck`, build e casos afetados verdes antes de avançar.
+**Base histórica:** 2026-10-18, commit `5b848345`. **Estado operacional:** 2026-10-19, desenvolvimento a partir de `master-desenvolvimento@3b70ceef`. **Esta é a única fonte de verdade para tarefas e progresso.** Evidência e classificação dos fatos estão em [INVENTARIO_E_EVIDENCIAS.md](INVENTARIO_E_EVIDENCIAS.md). O inventário foi inicialmente documentado; implementações parciais e suas evidências agora são atualizadas por incremento, sem considerar gates abertos como concluídos. O plano é incremental: cada PR/commit deve deixar `typecheck`, build e casos afetados verdes antes de avançar.
 
 ## Contrato obrigatório por tarefa
 
@@ -96,8 +98,8 @@ Para fechar qualquer `R-xx`: registrar **problema**, `E-xx`/arquivo/linha, hipó
 ## Sequência de primeiros PRs sugeridos
 
 1. **Fundação já existente:** runner, IPC real, screenshot de 100 transições, gate de imports e GitHub Actions Windows/Linux (referência [#39175935794](https://github.com/nestarasup-sys/G-V5/actions/runs/39175935794)); atualizar SHA/artefatos quando mudar código e não confundir baseline com AF/ISO completos.
-2. **Próximo PR P0:** reproduzir Roupas Dev / 2.0 → Customizador com fixtures sintéticas e completar R-29/R-30/R-36, antes de refatorar o render. 
-3. **Próximo PR P0:** harmonizar referencial visual de poses, roupas, cabelo e óculos (R-31/R-33) com screenshot de duas poses e testes de dosagem de escala.
+2. **Próxima entrega P0:** automatizar a UI real Modelos → Poses → **Roupas Dev unificado** (inclusive dados legados 1.0/2.0) → Customizador, demonstrando pré-ajuste sem intervenção manual; ampliar R-29/R-30/R-36 antes de refatorar o render. 
+3. **Depois:** provar referencial visual de poses, roupas, cabelo e óculos (R-31/R-33), duas poses/DPIs e variantes; a observação manual positiva não substitui o teste E2E.
 4. **Próximo PR P0:** character-only overrides + render canônico para ambos os Studios (R-32/R-34) e cobertura de 2 personagens.
 5. **Somente após backups/restore:** versões imutáveis, migração dry-run de bibliotecas e testes end-to-end (R-35/R-37/R-38, R-07..09).
 6. Migração opt-in de dados reais (`R-15`–`R-17`) exige backup verificado, consentimento explícito e testes de AF/ISO, nunca apenas resultado de CI sintética.
