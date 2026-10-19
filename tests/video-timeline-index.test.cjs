@@ -136,3 +136,21 @@ test('shared absolute character resolver preserves legacy position and global tr
   const transformed = characterStateAt(global, 'actor', 0).element
   assert.deepEqual([transformed.x, transformed.y, transformed.width, transformed.height, transformed.rotation, transformed.zIndex], [80, 90, 200, 160, 25, 9])
 })
+
+
+test('sparse character keys resolve to the last authored artwork without replaying empty metadata', () => {
+  const state = (pose) => ({ imageDataUrl: `data:${pose}`, element: { id: 'actor', kind: 'character', x: 1, y: 2, width: 60, height: 80, rotation: 0, zIndex: 1, poseSlot: pose } })
+  const keys = Array.from({ length: 12000 }, (_, frame) => ({ id: `metadata-${frame}`, elementId: 'actor', frame: frame + 1 }))
+  keys.push({ id: 'visual-in-middle', elementId: 'actor', frame: 6000, state: state('middle') })
+  keys.push({ id: 'visual-at-end', elementId: 'actor', frame: 12000, state: state('last') })
+  keys.push({ id: 'visual-at-end-later-tie', elementId: 'actor', frame: 12000, state: state('latest-tie') })
+  const doc = timeline({ durationFrames: 13000, characterBases: { actor: state('base') }, characterKeys: keys })
+  assert.equal(characterStateAt(doc, 'actor', 0).element.poseSlot, 'base')
+  assert.equal(characterStateAt(doc, 'actor', 5999).element.poseSlot, 'base')
+  assert.equal(characterStateAt(doc, 'actor', 6000).element.poseSlot, 'middle')
+  assert.equal(characterStateAt(doc, 'actor', 11999).element.poseSlot, 'middle')
+  assert.equal(characterStateAt(doc, 'actor', 12000).element.poseSlot, 'latest-tie')
+  assert.equal(characterStateAt(doc, 'actor', 12999).element.poseSlot, 'latest-tie')
+  assert.equal(characterStateAt(doc, 'actor', 5999).element.poseSlot, 'base', 'reverse seek remains deterministic')
+  assert.deepEqual(doc.characterKeys, keys, 'lookup never mutates authored keyframe order')
+})
