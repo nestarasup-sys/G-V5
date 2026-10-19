@@ -173,15 +173,15 @@ O objetivo mais recente **não é reproduzir o motor do Editor V4**. O V4 deve s
 Pesquisa complementar:
 - [Engines open source e comparação de compatibilidade/licença](../VIDEO_STUDIO_V5_MODERNIZACAO/01_ESTUDO_DE_MOTORES.md): FFmpeg baseline, PixiJS WebGL, MLT, GES, libopenshot, WebCodecs/Mediabunny, Electron sharedTexture.
 - [RenderIR e compilador de cenas](../VIDEO_STUDIO_V5_MODERNIZACAO/02_ARQUITETURA_CANONICA.md): estado absoluto por frame, layout de balão, cache semântico, asset manifests e PTS racionais.
-- [Migração de dados](../VIDEO_STUDIO_V5_MODERNIZACAO/03_MIGRACAO_E_DADOS.md): \`VideoLibraryStore.attach()\` **faz cópia física por projeto**; considerar CAS/proxies somente com shadow mode, rollback, backup/delete sem perda.
+- [Migração de dados](../VIDEO_STUDIO_V5_MODERNIZACAO/03_MIGRACAO_E_DADOS.md): `VideoLibraryStore.attach()` **faz cópia física por projeto**; considerar CAS/proxies somente com shadow mode, rollback, backup/delete sem perda.
 - [Gates/benchmarks](../VIDEO_STUDIO_V5_MODERNIZACAO/04_LAB_E_GATES.md) e [backlog integral](../VIDEO_STUDIO_V5_MODERNIZACAO/06_BACKLOG_DE_EXECUCAO.md).
 
 Fatos relevantes adicionais no G-V5:
-1. \`VideoStudioEditor.css\` utiliza \`font-size:clamp(9px,1.4vw,18px)\` para balões, enquanto \`makeCanvasPrint()\` usa Canvas2D/tipografia própria. **Não há contrato de raster paritário único**.
-2. No JSX, elementos têm \`zIndex+2\`, vídeos usam CSS \`z-index:1\`; o compositor novo deve preservar essa semântica antes de introduzir layers NLE arbitrárias.
-3. \`transitionSampleFrames()\` retorna os frames **intermediários estritos**, excluindo início e boundary; um intervalo de 15 frames tipicamente entrega 14 samples internos. Descrever duração e número de amostras separadamente.
-4. Bibliotecas externas carregadas pelo TransitionRenderer durante execução precisam de snapshot/pinning de bytes, não somente \`Object.freeze()\` do Studio.
+1. `VideoStudioEditor.css` utiliza `font-size:clamp(9px,1.4vw,18px)` para balões, enquanto `makeCanvasPrint()` usa Canvas2D/tipografia própria. **Não há contrato de raster paritário único**.
+2. No JSX, elementos têm `zIndex+2`, vídeos usam CSS `z-index:1`; o compositor novo deve preservar essa semântica antes de introduzir layers NLE arbitrárias.
+3. `transitionSampleFrames()` retorna os frames **intermediários estritos**, excluindo início e boundary; um intervalo de 15 frames tipicamente entrega 14 samples internos. Descrever duração e número de amostras separadamente.
+4. Bibliotecas externas carregadas pelo TransitionRenderer durante execução precisam de snapshot/pinning de bytes, não somente `Object.freeze()` do Studio.
 5. SharedTexture GPU Electron é experimental e requer bridge nativa, lifetimes/driver; WebCodecs não é muxer; Mediabunny é MPL-2.0. Nenhum substitui FFmpeg antes de teste de Windows, codecs, áudio e paridade.
 6. A fase M6 de Turbo só pode ser promovida após MP4 serial real correto e benchmarks no PC alvo; duas threads/workers não prometem tempo 2x menor.
 
-**Política:** manter \`master-desenvolvimento\`, dados privados inacessados, sem DEV AI/auditorias desativadas; esta rodada altera documentos, não runtime.
+**Política:** manter `master-desenvolvimento`, dados privados inacessados, sem DEV AI/auditorias desativadas; esta rodada altera documentos, não runtime.
