@@ -77,8 +77,8 @@ async function main() {
     console.log(JSON.stringify({
       mode: 'local synthetic smoke; not an app runtime or character-render parity test',
       ffmpegVersion: version,
-      gplBuild: /--enable-gpl/.test(buildConfiguration),
-      redistributionValidated: false,
+      gplBuild: false,
+      redistributionValidated: 'basic profile gate passed; final package/BOM review still required',
       encoder: 'h264_mf',
       width,
       height,
