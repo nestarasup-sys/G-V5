@@ -19,6 +19,7 @@
 | Validação real do runner/IPC em Windows e limites da cobertura em 2026-10-18 | [AUDITORIAS/VALIDACAO_WINDOWS_2026-10-18.md](AUDITORIAS/VALIDACAO_WINDOWS_2026-10-18.md) |
 | Handoff técnico detalhado para Codex executar testes reais em Windows/Electron/IPC | [CODEX_HANDOFF_EXECUCAO_WINDOWS_E_IPC.md](CODEX_HANDOFF_EXECUCAO_WINDOWS_E_IPC.md) |
 | Evidências e limitações do defeito de roupa/ossos, ligação com pose e preview do Customizador | [AUDITORIAS/FLUXO_ASSETS_2026-10-18.md](AUDITORIAS/FLUXO_ASSETS_2026-10-18.md) |
+| Resultado real Windows/Linux com 8 auditorias rápidas, IPC Customizador, rede e limitações | [AUDITORIAS/VALIDACAO_ASSET_FLOW_2026-10-18.md](AUDITORIAS/VALIDACAO_ASSET_FLOW_2026-10-18.md) |
 | Evidências da CI, teste visual e critérios de avanço por SHA | [AUDITORIAS/CI_DEV_AI_2026-10-18.md](AUDITORIAS/CI_DEV_AI_2026-10-18.md) |
 | Dependências runtime AST e planos de extração de páginas inteiras | [AUDITORIAS/DEPENDENCIAS_AST_2026-10-18.md](AUDITORIAS/DEPENDENCIAS_AST_2026-10-18.md) |
 
