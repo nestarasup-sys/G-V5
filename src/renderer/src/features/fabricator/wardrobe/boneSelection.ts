@@ -65,5 +65,12 @@ export function suggestWardrobeBone(
   if ((category === 'oculos' || category === 'acessorio-cabeca') && scored[0].score >= 100) {
     return { bone: null, confidence: 'missing', reason: 'head-bone-not-found' }
   }
+  // A matching half of the sheet is not enough: the torso can otherwise
+  // become a "right shoe" when the right leg is missing. Fail closed and ask
+  // the author to choose a bone rather than silently corrupt the pre-fit.
+  const maxNormalizedDistanceSquared = 0.20
+  if (scored[0].score > maxNormalizedDistanceSquared) {
+    return { bone: null, confidence: 'missing', reason: 'bone-too-far-from-garment-zone' }
+  }
   return { bone: scored[0].part, confidence: 'estimated', reason: 'source-sheet-position' }
 }
