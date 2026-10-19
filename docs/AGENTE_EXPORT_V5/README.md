@@ -15,3 +15,18 @@ Atualizado em 2026-10-19.
 **Repositórios:** escrita exclusivamente em [G-V5/master-desenvolvimento](https://github.com/nestarasup-sys/G-V5/tree/master-desenvolvimento); referência somente leitura [EDITOR-V4/oai/aggressive-export-v5](https://github.com/nestarasup-sys/EDITOR-V4/tree/oai/aggressive-export-v5).
 
 **Segurança:** fixtures 100% sintéticas; não ler projetos reais. Não invocar DEV AI, audits desativadas, nem sobrescrever trabalho concorrente. CI é evidência do SHA exato, não prova de export MP4 pronto.
+
+
+## Plano estratégico posterior (2026-10-19)
+
+**A missão evoluiu:** não se trata mais de apenas adaptar Turbo 2× do V4. A iniciativa é **modernizar integralmente o Video Studio V5**: preview, RenderIR, assets, áudio, vídeo, cache, dados, qualidade e exportação.
+
+- [Novo plano diretor independente](../VIDEO_STUDIO_V5_MODERNIZACAO/00_PLANO_DIRETOR.md)
+- [Estudo comparativo de motores open source](../VIDEO_STUDIO_V5_MODERNIZACAO/01_ESTUDO_DE_MOTORES.md)
+- [Arquitetura de Smart Scene Compiler / RenderIR](../VIDEO_STUDIO_V5_MODERNIZACAO/02_ARQUITETURA_CANONICA.md)
+- [Migração segura de dados e proxies](../VIDEO_STUDIO_V5_MODERNIZACAO/03_MIGRACAO_E_DADOS.md)
+- [Laboratório de benchmarks e gates](../VIDEO_STUDIO_V5_MODERNIZACAO/04_LAB_E_GATES.md)
+- [Registro de decisões ADR](../VIDEO_STUDIO_V5_MODERNIZACAO/05_DECISOES_ADR.md)
+- [40 tarefas V501–V540](../VIDEO_STUDIO_V5_MODERNIZACAO/06_BACKLOG_DE_EXECUCAO.md)
+
+Este diretório continua válido para o **subprojeto de export serial/Turbo**, subordinado ao plano novo em prioridades arquiteturais. Documentos anteriores refletem seu momento histórico; nenhum MP4 V5 novo foi implementado ou benchmarkado nesta investigação.
