@@ -254,6 +254,13 @@ const faceComponentPartIds = ['eye-left', 'eye-right', 'pupil-left', 'pupil-righ
 function isValidCustomizerFaceAppearance(appearance: CustomizerFaceAppearance): boolean {
   const componentEntries = Object.entries(appearance.components ?? {})
   const faceDetailEntries = Object.entries(appearance.faceDetails ?? {})
+  const headExtraEntries = Object.entries(appearance.headExtras ?? {})
+  const headExtrasValid = appearance.headExtras === undefined || (
+    !!appearance.headExtras && typeof appearance.headExtras === 'object'
+    && !Array.isArray(appearance.headExtras) && headExtraEntries.length <= 2
+    && headExtraEntries.every(([category, id]) => ['glasses', 'head-accessory'].includes(category)
+      && (id === null || typeof id === 'string' && isValidWardrobeId(id)))
+  )
   const componentParts = new Set<string>(faceComponentPartIds)
   const catalogIds = [appearance.eyeCatalogId, appearance.eyeLeftCatalogId, appearance.eyeRightCatalogId, appearance.eyebrowCatalogId, appearance.eyebrowLeftCatalogId, appearance.eyebrowRightCatalogId, appearance.noseCatalogId, appearance.mouthClosedCatalogId, appearance.mouthOpenCatalogId]
   const componentsValid = appearance.components === undefined || (!!appearance.components && typeof appearance.components === 'object' && !Array.isArray(appearance.components)
@@ -276,12 +283,19 @@ function isValidCustomizerFaceAppearance(appearance: CustomizerFaceAppearance): 
     && Object.entries(appearance.linkedSides).every(([kind, linked]) => ['eye', 'pupil', 'eyebrow'].includes(kind) && typeof linked === 'boolean'))
   const partColorsValid = appearance.partColors === undefined || (!!appearance.partColors && typeof appearance.partColors === 'object' && !Array.isArray(appearance.partColors)
     && Object.entries(appearance.partColors).every(([part, colors]) => ['eye-left', 'eye-right', 'brow-left', 'brow-right'].includes(part) && isHairColorMap(colors)))
-  const hasSelection = Boolean(appearance.setId || catalogIds.some(Boolean) || componentEntries.some(([, component]) => component?.assetId) || faceDetailEntries.some(([, id]) => id) || appearance.mouthBlushEnabled !== undefined)
+  // Head-only accessories are valid independent selections. Previously a
+  // glasses-only faceAppearance was rejected by character:save, even though
+  // Customizer can render and select it. Do not silently lose the pre-fit.
+  const hasSelection = Boolean(appearance.setId || catalogIds.some(Boolean)
+    || componentEntries.some(([, component]) => component?.assetId)
+    || faceDetailEntries.some(([, id]) => id)
+    || headExtraEntries.some(([, id]) => Boolean(id))
+    || appearance.mouthBlushEnabled !== undefined)
 
   return isValidModelSlot(appearance.modelSlot)
     && (appearance.setId === undefined || isValidWardrobeId(appearance.setId))
     && catalogIds.every((id) => id === undefined || id === null || isValidFaceCatalogId(id))
-    && componentsValid && transformsValid && faceDetailsValid && linksValid && partColorsValid && hasSelection
+    && componentsValid && transformsValid && faceDetailsValid && headExtrasValid && linksValid && partColorsValid && hasSelection
     && [0, 1, 2].includes(appearance.eyeState)
     && typeof appearance.eyebrows === 'boolean'
     && Number.isInteger(appearance.noseIndex) && appearance.noseIndex >= 0 && appearance.noseIndex <= 5
