@@ -36,8 +36,8 @@ test('character scale is applied once before stage conversion', () => {
   }
   assert.deepEqual(geometry.videoCharacterElementSize(element), { width: 24, height: 54 })
   const rect = geometry.videoElementStageRect(element)
-  assert.equal(rect.width, 460.8)
-  assert.equal(rect.height, 583.2)
+  assert.ok(Math.abs(rect.width - 460.8) < 1e-9)
+  assert.ok(Math.abs(rect.height - 583.2) < 1e-9)
 })
 
 test('video transform fallback and CSS geometry share the authored percentage contract', () => {
