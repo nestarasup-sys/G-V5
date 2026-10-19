@@ -1,0 +1,103 @@
+import { useEffect, useRef } from 'react'
+import { compileVideoScene, evaluateVideoSceneFrame } from '../../../../shared/videoSceneIR'
+import { VIDEO_STAGE_HEIGHT, VIDEO_STAGE_WIDTH } from '../../../../shared/videoStageGeometry'
+import { VideoCharacterFrameRenderer } from './videoCharacterFrameRenderer'
+import { VideoExportMediaFramePool } from './videoExportMediaFramePool'
+import { renderVideoSceneFrameToCanvas, clearVideoCanvasImageCache } from './videoCanvasCompositor'
+
+function errorMessage(reason: unknown): string {
+  return reason instanceof Error ? reason.message : String(reason)
+}
+
+function jobIdFromHash(): string {
+  const query = window.location.hash.includes('?') ? window.location.hash.slice(window.location.hash.indexOf('?') + 1) : ''
+  const value = new URLSearchParams(query).get('jobId') ?? ''
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)) {
+    throw new Error('Surface recebeu jobId inválido.')
+  }
+  return value
+}
+
+async function afterCanvasPaint(): Promise<void> {
+  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+}
+
+export function VideoExportSurfacePage() {
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+
+  useEffect(() => {
+    let disposed = false
+    let characterRenderer: VideoCharacterFrameRenderer | null = null
+    let mediaPool: VideoExportMediaFramePool | null = null
+    let unsubscribe: (() => void) | null = null
+    let jobId = ''
+
+    const bootstrap = (async () => {
+      jobId = jobIdFromHash()
+      const data = await window.desktop.prepareVideoExportSurface(jobId)
+      if (disposed) throw new DOMException('Surface descartada.', 'AbortError')
+      if (data.jobId !== jobId) throw new Error('Bootstrap retornou outro job.')
+      await document.fonts.ready
+      if (disposed) throw new DOMException('Surface descartada.', 'AbortError')
+      const program = compileVideoScene(data.snapshot, data.renderVariant)
+      characterRenderer = new VideoCharacterFrameRenderer(data.characters, data.characterAssets)
+      mediaPool = new VideoExportMediaFramePool(jobId)
+      const canvas = canvasRef.current
+      if (!canvas) throw new Error('Canvas da surface não foi montado.')
+      canvas.width = VIDEO_STAGE_WIDTH
+      canvas.height = VIDEO_STAGE_HEIGHT
+      return { program, canvas }
+    })()
+
+    unsubscribe = window.desktop.onVideoExportSurfaceRender((request) => {
+      void (async () => {
+        try {
+          if (disposed) throw new DOMException('Surface descartada.', 'AbortError')
+          const runtime = await bootstrap
+          const scene = evaluateVideoSceneFrame(runtime.program, request.frame)
+          const [characters, videos] = await Promise.all([
+            characterRenderer!.renderFrame(scene),
+            mediaPool!.framesForScene(scene),
+          ])
+          if (disposed) throw new DOMException('Surface descartada.', 'AbortError')
+          await renderVideoSceneFrameToCanvas(scene, runtime.canvas, { characterStates: characters, videoFrames: videos })
+          await afterCanvasPaint()
+          if (!disposed) window.desktop.reportVideoExportSurfaceFrame({ requestId: request.requestId, frame: request.frame })
+        } catch (reason) {
+          if (!disposed) window.desktop.reportVideoExportSurfaceFrame({
+            requestId: request.requestId,
+            frame: request.frame,
+            error: errorMessage(reason),
+          })
+        }
+      })()
+    })
+
+    void bootstrap.then(() => {
+      if (!disposed) window.desktop.reportVideoExportSurfaceReady({ jobId })
+    }).catch((reason) => {
+      if (!disposed) window.desktop.reportVideoExportSurfaceReady({ jobId: jobId || 'invalid', error: errorMessage(reason) })
+    })
+
+    return () => {
+      disposed = true
+      unsubscribe?.()
+      characterRenderer?.clear()
+      mediaPool?.dispose()
+      clearVideoCanvasImageCache()
+    }
+  }, [])
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, width: VIDEO_STAGE_WIDTH, height: VIDEO_STAGE_HEIGHT, margin: 0, padding: 0, overflow: 'hidden', background: '#000' }}>
+      <canvas
+        ref={canvasRef}
+        width={VIDEO_STAGE_WIDTH}
+        height={VIDEO_STAGE_HEIGHT}
+        aria-label="Surface interna de exportação"
+        style={{ display: 'block', width: VIDEO_STAGE_WIDTH, height: VIDEO_STAGE_HEIGHT, margin: 0, padding: 0 }}
+      />
+    </div>
+  )
+}
