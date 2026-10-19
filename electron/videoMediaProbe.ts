@@ -41,9 +41,15 @@ type Stream = {
 
 type ProbePayload = { streams?: Stream[]; format?: { duration?: string } }
 
-function positiveNumber(value: unknown, label: string): number {
+function finiteNumber(value: unknown, label: string): number {
   const parsed = Number(value)
-  if (!Number.isFinite(parsed) || parsed < 0) throw new Error(`${label} inválido no FFprobe.`)
+  if (!Number.isFinite(parsed)) throw new Error(`${label} inválido no FFprobe.`)
+  return parsed
+}
+
+function positiveNumber(value: unknown, label: string): number {
+  const parsed = finiteNumber(value, label)
+  if (parsed < 0) throw new Error(`${label} inválido no FFprobe.`)
   return parsed
 }
 
@@ -76,7 +82,7 @@ export function parseVideoMediaProbe(path: string, payload: ProbePayload): Video
   if (avg === null || real === null) throw new Error('Frame rate da mídia não pôde ser identificado.')
   const formatDuration = positiveNumber(payload.format?.duration, 'Duração da mídia')
   const videoDuration = video.duration === undefined ? formatDuration : positiveNumber(video.duration, 'Duração do vídeo')
-  const videoStart = video.start_time === undefined ? 0 : positiveNumber(video.start_time, 'Início do vídeo')
+  const videoStart = video.start_time === undefined ? 0 : finiteNumber(video.start_time, 'Início do vídeo')
   const audios = payload.streams.filter((stream) => stream.codec_type === 'audio')
   if (audios.length > 1) throw new Error('Mídia com múltiplos streams de áudio exige seleção explícita, ainda não suportada.')
   let audio: VideoMediaProbeInfo['audio'] = null
@@ -91,7 +97,7 @@ export function parseVideoMediaProbe(path: string, payload: ProbePayload): Video
       codec: stream.codec_name,
       sampleRate,
       channels: stream.channels!,
-      startTimeSeconds: stream.start_time === undefined ? 0 : positiveNumber(stream.start_time, 'Início do áudio'),
+      startTimeSeconds: stream.start_time === undefined ? 0 : finiteNumber(stream.start_time, 'Início do áudio'),
       durationSeconds: stream.duration === undefined ? formatDuration : positiveNumber(stream.duration, 'Duração do áudio'),
     }
   }
