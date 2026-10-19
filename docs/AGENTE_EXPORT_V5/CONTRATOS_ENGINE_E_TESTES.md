@@ -108,3 +108,8 @@ O sucesso de um gate não substitui os posteriores. Sem G2, UI de export deve pe
 4. Contrato V5 `sourceStartFrame` em ticks 60Hz, não índice físico de frame comprimido; timestamps racionais/PTS para fonte VFR.
 5. O `attach()` de videoLibrary faz cópia por projeto, portanto snapshot pinning/digests devem cobrir resolução de qual cópia/original é lido.
 6. Contratos expandidos (RenderIR, scene events, cache, media pipeline, milestones) estão em [02_ARQUITETURA_CANONICA.md](../VIDEO_STUDIO_V5_MODERNIZACAO/02_ARQUITETURA_CANONICA.md). O [plano diretor](../VIDEO_STUDIO_V5_MODERNIZACAO/00_PLANO_DIRETOR.md) prevalece no escopo de modernização; este arquivo cobre os gates do *export*.
+
+
+## Extensão de aceite dos dois modos (requisito mais recente)
+
+Export deve receber `renderVariant` versionado, `animated | static-characters`, sem mutar Studio. `animated` preserva transições e microanimações automáticas conforme configuração do projeto. `static-characters` preserva keyframes authored, mudanças de pose/expressão por segmento e todos os vídeos/áudio, desliga apenas transições interpoladas, piscada/boca automáticas de personagem. Validar interseções, limites, timings, cancel, retomada e paridade de cada variante com preview canônico; teste sintético de comparação visual com frames em key boundary. Protocolo completo em [07_MODOS_DE_EXPORTACAO.md](../VIDEO_STUDIO_V5_MODERNIZACAO/07_MODOS_DE_EXPORTACAO.md). Os dois modos utilizam **a mesma engine**.
