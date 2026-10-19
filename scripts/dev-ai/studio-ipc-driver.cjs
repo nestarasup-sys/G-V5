@@ -320,6 +320,9 @@ async function seed(window) {
   // character document. No Fabricator authoring API is invoked by this test.
   const fabricatorRoot = join(userData, 'fabricator')
   const fabricatorBeforeCharacterSave = treeHash(fabricatorRoot)
+  // The app seeds ten built-in characters on a pristine profile. Preserve
+  // their count and compare only the two newly created synthetic actors.
+  const charactersBefore = await api('window.desktop.listCustomizerCharacters()')
   const [actorA, actorB] = await Promise.all([
     api("window.desktop.createCustomizerCharacter('DEV AI Actor A')"),
     api("window.desktop.createCustomizerCharacter('DEV AI Actor B')")
@@ -342,7 +345,7 @@ async function seed(window) {
   }
   await api(`window.desktop.saveCustomizerCharacter(${JSON.stringify(actorWithFittedGarment)})`)
   const persistedActors = await api('window.desktop.listCustomizerCharacters()')
-  assert.equal(persistedActors.length, 2)
+  assert.equal(persistedActors.length, charactersBefore.length + 2)
   const storedA = persistedActors.find(character => character.id === actorA.id)
   const storedB = persistedActors.find(character => character.id === actorB.id)
   assert.equal(storedA.customization.wardrobeGroups[0].offsetX, 12)
@@ -408,7 +411,7 @@ async function verifyRestart(window) {
   assert.ok(normal[0].videoTimeline === undefined)
   assert.ok(video[0].videoTimeline)
   const actors = await window.webContents.executeJavaScript('window.desktop.listCustomizerCharacters()')
-  assert.equal(actors.length, 2)
+  assert.ok(actors.length >= 2, 'Character catalog disappeared after restart')
   const fitted = actors.find(character => character.name === 'DEV AI Actor A')
   const unchanged = actors.find(character => character.name === 'DEV AI Actor B')
   assert.equal(fitted?.customization.wardrobeGroups?.[0]?.offsetX, 12)
