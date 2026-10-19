@@ -6,6 +6,7 @@ import { AppErrorBoundary } from './components/AppErrorBoundary'
 const LazyCustomizerPage = lazy(async () => ({ default: (await import('../features/customizer/CustomizerPage')).CustomizerPage }))
 const LazyStudioPage = lazy(async () => ({ default: (await import('../features/studio/StudioPage')).StudioPage }))
 const LazyVideoStudioPage = lazy(async () => ({ default: (await import('../features/videoStudio/VideoStudioPage')).VideoStudioPage }))
+const LazyVideoExportSurfacePage = lazy(async () => ({ default: (await import('../features/videoStudio/VideoExportSurfacePage')).VideoExportSurfacePage }))
 const LazyOptionsPage = lazy(async () => ({ default: (await import('../features/options/OptionsPage')).OptionsPage }))
 const LazyFabricatorPage = lazy(async () => ({ default: (await import('../features/fabricator/FabricatorPage')).FabricatorPage }))
 
@@ -16,6 +17,16 @@ export function App() {
   useEffect(() => {
     if (location.pathname !== '/video-studio') setVideoEditorActive(false)
   }, [location.pathname])
+
+  if (location.pathname === '/video-export-surface') {
+    return (
+      <Suspense fallback={null}>
+        <Routes>
+          <Route path="/video-export-surface" element={<LazyVideoExportSurfacePage />} />
+        </Routes>
+      </Suspense>
+    )
+  }
 
   return (
     <main className="app-shell">
