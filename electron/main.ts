@@ -21,6 +21,9 @@ import { VideoBackgroundLibraryStore, configureBackgroundLibraryStorage } from '
 import { VideoExportLibrary } from './videoExports'
 import { VideoExportJobStore } from './videoExportJobs'
 import { VideoExportSurfaceHost } from './videoExportSurfaceHost'
+import { VideoExportCoordinator } from './videoExportCoordinator'
+import type { VideoExportProgress, VideoExportStartRequest } from '../src/shared/videoExportRuntime'
+import { serializeVideoCharacterRenderAssetSnapshot } from '../src/shared/videoCharacterRenderAssets'
 import { DataPlatform, getAppDataUsage } from './dataPlatform.cjs'
 import { DomainFileSystem } from './domainFileSystem.cjs'
 import { DataMigrationService } from './dataMigration.cjs'
@@ -34,6 +37,8 @@ let configuredAppDataRoot: string | null = null
 let videoExportLibrary: VideoExportLibrary | null = null
 let videoExportJobStore: VideoExportJobStore | null = null
 let videoExportSurfaceHost: VideoExportSurfaceHost | null = null
+let videoExportCoordinator: VideoExportCoordinator | null = null
+const videoExportJobOwners = new Map<string, number>()
 
 function configureDevAiDataRoot(): void {
   const privateCopyTest = process.env.GACHA_DEV_AI_PRIVATE_TEST === '1'
@@ -1831,6 +1836,35 @@ async function registerFabricatorHandlers(): Promise<void> {
         assertTrustedSender(event)
         await videoExportLibrary!.delete(id)
       })
+      ipcMain.handle('video-studio:export:start', async (event, request: VideoExportStartRequest) => {
+        assertTrustedSender(event)
+        if (!videoExportCoordinator) throw new Error('Coordenador de exportação ainda não foi inicializado.')
+        if (!request || !isStudioDocument(request.studio) || !request.studio.videoTimeline
+          || !Array.isArray(request.characters) || request.characters.length > 500 || !request.characters.every(isCustomizerCharacter)
+          || !['animated', 'static-characters'].includes(request.renderVariant)) {
+          throw new Error('Solicitação de exportação inválida.')
+        }
+        // Validate the transitively captured dependency snapshot before accepting
+        // a long-running job from the renderer.
+        serializeVideoCharacterRenderAssetSnapshot(request.characterAssets)
+        await studioSaveQueues.video.catch(() => undefined)
+        await videoLibrary.ensureProjectAssets(request.studio.id, request.studio.videoTimeline.videoAssets ?? [])
+        const jobId = videoExportCoordinator.start(request)
+        videoExportJobOwners.set(jobId, event.sender.id)
+        const current = videoExportCoordinator.status(jobId)
+        if (current) event.sender.send('video-studio:export:progress', current)
+        return { jobId }
+      })
+      ipcMain.handle('video-studio:export:status', (event, jobId: string) => {
+        assertTrustedSender(event)
+        if (!videoExportCoordinator || videoExportJobOwners.get(jobId) !== event.sender.id) throw new Error('Job de exportação não pertence a esta janela.')
+        return videoExportCoordinator.status(jobId)
+      })
+      ipcMain.handle('video-studio:export:cancel', async (event, jobId: string) => {
+        assertTrustedSender(event)
+        if (!videoExportCoordinator || videoExportJobOwners.get(jobId) !== event.sender.id) throw new Error('Job de exportação não pertence a esta janela.')
+        await videoExportCoordinator.cancel(jobId)
+      })
       ipcMain.handle('video-studio:video-library:list', async (event) => { assertTrustedSender(event); return videoLibrary.list() })
       ipcMain.handle('video-studio:video-library:import', async (event) => {
         assertTrustedSender(event)
@@ -2825,6 +2859,17 @@ app.whenReady().then(async () => {
       ? { rendererUrl: process.env.ELECTRON_RENDERER_URL }
       : { rendererFile: join(__dirname, '../renderer/index.html') }),
   })
+  videoExportCoordinator ??= new VideoExportCoordinator(
+    videoExportJobStore,
+    videoExportLibrary,
+    videoExportSurfaceHost,
+    (studioId, asset) => videoLibrary.resolveProjectMediaDependency(studioId, asset.id, asset),
+    (progress: VideoExportProgress) => {
+      const ownerId = videoExportJobOwners.get(progress.jobId)
+      const owner = ownerId === undefined ? undefined : BrowserWindow.getAllWindows().find((candidate) => candidate.webContents.id === ownerId)
+      if (owner && !owner.isDestroyed()) owner.webContents.send('video-studio:export:progress', progress)
+    },
+  )
   registerVideoAssetProtocol()
   registerVideoBackgroundProtocol()
   await registerFabricatorHandlers()
