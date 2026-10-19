@@ -182,7 +182,7 @@ async function drawElementLayer(
   if ((element.kind === 'image' || element.kind === 'character') && source) {
     const image = await loadImage(source)
     const size = videoCharacterElementSize(element)
-    drawTransformed(context, image, { ...element, ...size }, element.kind === 'character' && element.flipX === true)
+    drawTransformed(context, image, { ...element, ...size }, element.kind === 'character' && element.flipX === true, element.kind === 'image')
     return
   }
   if (element.kind === 'speech' || element.kind === 'thought' || element.kind === 'narrator') {
