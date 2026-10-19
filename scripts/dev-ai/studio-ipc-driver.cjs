@@ -581,6 +581,58 @@ async function verifyRendererNetworkBlock(window) {
   }
 }
 
+async function verifyCustomizerRasterPreview(window) {
+  // A real production Customizer page consumes the saved Fabricator model,
+  // real pose and V2 wardrobe PNGs. We assert that the equipped raster has
+  // been decoded and composited; do not call this a cross-Studio golden test.
+  const waitForCharacter = async (name, expectOutfit) =>
+    window.webContents.executeJavaScript(`(async()=>{
+      const name=${JSON.stringify(name)}
+      const expected=${expectOutfit}
+      const deadline=Date.now()+30000
+      let last=null
+      while(Date.now()<deadline){
+        const cards=[...document.querySelectorAll('.character-card')]
+        const card=cards.find(el=>el.textContent.includes(name))
+        if(card){card.click();break}
+        await new Promise(resolve=>setTimeout(resolve,150))
+      }
+      while(Date.now()<deadline){
+        const selected=(document.querySelector('.customizer-preview-character-name')?.textContent||'').trim()
+        const model=document.querySelector('.customizer-selected-artwork')
+        const wardrobe=document.querySelector('.customizer-wardrobe-overlay')
+        const alerts=[...document.querySelectorAll('[role=alert]')].map(e=>e.textContent.trim()).filter(Boolean)
+        last={selected,modelReady:!!model && model.complete && model.naturalWidth>0,
+          wardrobeReady:!!wardrobe && wardrobe.complete && wardrobe.naturalWidth>0,
+          outfitPresent:!!wardrobe,alerts,modelNaturalSize:model?[model.naturalWidth,model.naturalHeight]:null,
+          outfitNaturalSize:wardrobe?[wardrobe.naturalWidth,wardrobe.naturalHeight]:null}
+        if(selected===name && last.modelReady && (expected?last.wardrobeReady:!last.outfitPresent)
+          && alerts.length===0){
+          await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))
+          return {...last,status:'passed'}
+        }
+        await new Promise(resolve=>setTimeout(resolve,180))
+      }
+      return {...last,status:'failed',expectedOutfit:expected}
+    })()`)
+  const outfit = await waitForCharacter('DEV AI Actor A',true)
+  const artifactsFolder=join(output,'raster-asset-flow')
+  await mkdir(artifactsFolder,{recursive:true})
+  const screenshotA=(await window.webContents.capturePage()).toPNG()
+  await writeFile(join(artifactsFolder,'customizer-actor-a-outfit.png'),screenshotA)
+  const sibling = await waitForCharacter('DEV AI Actor B',false)
+  await writeFile(join(artifactsFolder,'customizer-actor-b-default.png'),
+    (await window.webContents.capturePage()).toPNG())
+  const report={schemaVersion:1,adapter:'production-customizer-real-dom',
+    status:outfit.status==='passed'&&sibling.status==='passed'?'passed':'failed',
+    configuredFixture:'raster model-9, pose-1, wardrobe-v2 with shoe-left',
+    characterA:outfit,characterB:sibling,sourceLibraryWrites:0,
+    limitations:'Real DOM and PNG decode: not a quantitative Fabricador/Studio golden image'}
+  await writeFile(join(artifactsFolder,'customizer-render-result.json'),JSON.stringify(report,null,2))
+  assert.equal(report.status,'passed',`Customizer não representou os assets sintéticos corretamente: ${JSON.stringify(report)}`)
+  return report
+}
+
 async function areaSmoke(window) {
   const diagnostics = []
   const rendererNetworkBarrier = await verifyRendererNetworkBlock(window)
@@ -630,6 +682,7 @@ async function areaSmoke(window) {
   const navigationPendingAtRouteChange = await window.webContents.executeJavaScript('window.__devAiNavigationSaves.filter(entry => !entry.settled).length')
   assert.ok(navigationPendingAtRouteChange > 0, 'O teste de navegação precisa iniciar com salvamentos pendentes')
   const customizer = await route('/customizar', '.home-layout', 'Customizer')
+  const customizerRasterRender = await verifyCustomizerRasterPreview(window)
   await window.webContents.executeJavaScript('Promise.all(window.__devAiNavigationSaves.map(entry => entry.promise))')
   const navigationSaveErrors = await window.webContents.executeJavaScript('window.__devAiNavigationSaves.filter(entry => entry.error).map(entry => entry.error)')
   assert.deepEqual(navigationSaveErrors, [])
@@ -797,6 +850,7 @@ async function areaSmoke(window) {
   }, null, 2))
   const result = { mode, status: 'passed', adapter: 'production-preload-real-ipc', realIpcCovered: true,
     smokeAreas: [customizer, fabricator, modelWorkspace, options],
+    customizerRasterRender,
     optionsPlaceholderOnly: true, customizerSyntheticCharacters: characters.length,
     fabricatorSlots: slots.length, navigationWhileSaving: { savesDispatched: navigationDocuments.length,
       pendingAtRouteChange: navigationPendingAtRouteChange, finalTitlePersisted: 'Navigation save 40',
