@@ -25,6 +25,20 @@
 - **Teste de composição**: não executado. Passagem de testes de unidade não demonstrará paridade visual.
 - **Privacidade**: nenhum asset privado, userData, screenshot de usuário, mídia real ou log de produção acessado. Sem mudanças em `master`/V4.
 
+### Verificação posterior — Windows Actions e correção do gate
+
+- Primeiro CI em `b76c98c0`: 14/16 testes aprovados; os dois que falharam eram **testes já existentes** da biblioteca de exportações, devido à comparação de `realpath` do job com caminho não canônico em Windows. Novos testes de snapshot passaram. [Run 39323107769](https://github.com/nestarasup-sys/G-V5/actions/runs/39323107769).
+- Correção em `electron/videoExports.ts` (`2bc726ee`): comparar a localização canônica do job com a raiz temporária canônica, mantendo rejeição de symlink/junction que escape do diretório do job.
+- Gate após correção: [run 39323448321](https://github.com/nestarasup-sys/G-V5/actions/runs/39323448321), **success** no SHA `e8b98b2b202af9d3e541db7f394677c377fa31cb`: testes sintéticos, typecheck e build em Windows. Não é smoke Electron nem prova de MP4 real.
+- Corrigido gatilho de CI para ignorar alterações somente na pasta de documentação e executar os gates independentes mesmo se um teste falhar; DEV AI permanece desativado.
+
+### Rodada 02 — Raster sintético isolado [em validação]
+
+- `electron/videoSyntheticRaster.ts`: imagem BGRA gerada deterministicamente por frame absoluto; guardas de dimensões e tamanho (limite por buffer), produtor sequencial com checagem de cancelamento.
+- `tests/video-synthetic-raster.test.cjs`: 1920×1080/8.294.400 bytes, SHA idêntico ao repetir frame, frames diferentes com SHA distinto, alpha e boundaries, cancelamento e transporte exato ao `VideoRawFrameWriter` via filho Node sintético.
+- Incluído no `test:export:synthetic` e no workflow Windows. **Pendente**: status do run no SHA `e846286552228fb6329effb5978e9f6fcd6d0511` ([Actions](https://github.com/nestarasup-sys/G-V5/actions/runs/39323908215)).
+- Esta fixture não representa personagens, roupas, preview, compositor do Video Studio, FFmpeg, codec ou MP4; é apenas um gatilho de validação byte-a-byte.
+
 ### Próximas etapas autorizadas
 
 1. Resolver eventuais falhas do gate sintético sem afrouxar asserts.
