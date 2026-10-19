@@ -83,6 +83,12 @@ ISO também permanece parcial: isolamento visual usa preload fixture e o teste I
 
 Arquivos de produto/teste não foram alterados nesta revisão. O único novo arquivo é este relatório. Árvore deve permanecer limpa após o commit documental local; nenhum push, PR, merge ou alteração na `master` foi feito. Próximo passo: corrigir o adapter E2E de pose no mesmo `master-desenvolvimento` e executar CI Windows/Linux no mesmo SHA antes de tratar qualquer divergência de raster como resolvida.
 
+## Complemento — Prompt 5 de cinco (2026-10-19)
+
+A revisão final reabriu os quatro commits locais desde `cde43a9`, confirmou que são limitados a documentação, testes/fixtures sintéticos e guardas direcionadas a manifestos/importação, e repetiu o fluxo completo. Encontrou um caminho de recuperação incompleto no manifesto de personagens: leitura após interrupção simulada poderia inicializar defaults antes de restaurar `.backup`. A leitura agora tenta restaurar a cópia recuperável antes da semeadura, e `asset-ui-authoring.cjs` exercita essa janela no Electron/IPC com `userData` sintético para personagens e conjunto de roupas, comparando hashes dos bytes restaurados. O teste não simula falha elétrica ou `fsync`.
+
+`npm test`, `npm run typecheck`, `npm run build`, `npm run audit:boundaries:gate` e `npm run audit:all` passaram na validação final local; a suite de Node manteve 2 casos pulados pelas limitações locais documentadas. A comparação AF-13 e as limitações permanecem em [relatório de paridade](ENTREGA_D_PARIDADE_AF13_2026-10-19.md); nenhuma matriz AF/ISO foi fechada integralmente. A auditoria final de origem, SHA publicado e Actions é [FINAL_PROMPT_5](FINAL_PROMPT_5_2026-10-19.md).
+
 ## Complemento — Prompt 2 local (2026-10-19)
 
 O adapter E2E foi ampliado em `scripts/dev-ai/asset-ui-authoring.cjs`; a descrição e os limites atuais estão em [ENTREGA_B_AUTORIA_UI_2026-10-19.md](ENTREGA_B_AUTORIA_UI_2026-10-19.md). A verificação local `npm run audit:all` passou em `2026-10-19T06-30-58-800Z-73311523-403a-459a-ac32-6354deaf3a68`, incluindo a auditoria IPC real. A divergência anterior de pose no `audit:all` não se reproduziu neste run. Isso não substitui uma investigação da diferença entre captura programática e UI real de pose 2, nem fecha AF/ISO.

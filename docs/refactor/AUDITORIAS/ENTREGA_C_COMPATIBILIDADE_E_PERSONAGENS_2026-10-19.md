@@ -1,8 +1,10 @@
 # Entrega C — compatibilidade de roupas e isolamento por personagem
 
-**Data:** 2026-10-19  
-**Branch:** `master-desenvolvimento`  
+**Data:** 2026-10-19
+**Branch:** `master-desenvolvimento`
 **Escopo:** Prompt 3/5; somente fixtures sintéticas no sandbox DEV AI.
+
+**Revalidação Prompt 5:** `audit:all` passou em `2026-10-19T08-07-29-925Z-89ea8c51-c331-4f5c-8a0e-df7a1aac5c27`; recuperação de manifesto de personagem e roupas após interrupção simulada passou junto da compatibilidade e do isolamento. Ver [relatório final](FINAL_PROMPT_5_2026-10-19.md).
 
 ## Resultado
 

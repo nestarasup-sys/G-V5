@@ -5,7 +5,7 @@
 // deterministic PNG in the runner sandbox. Never reads local/private media.
 const assert = require('node:assert/strict')
 const { createHash } = require('node:crypto')
-const { writeFile, mkdir, unlink, readFile: readFileDisk } = require('node:fs/promises')
+const { writeFile, mkdir, unlink, rename, readFile: readFileDisk } = require('node:fs/promises')
 const { join } = require('node:path')
 const { dialog, nativeImage } = require('electron')
 const fixture = require('./asset-flow-raster-fixture.cjs')
@@ -649,6 +649,36 @@ async function run(win, sandbox, output, prepared, treeHash) {
   assert.equal(hash(Buffer.from(reopenedModel.sourceDataUrl.split(',')[1],'base64')), prepared.sourceHash)
   proof.screenshots.modelReopened = await shot(win, folder, '06-model-reopened-ui')
   assert.equal(treeHash(join(sandbox,'electron-user-data','fabricator')),sourceHash)
+
+  // Simulate the recoverable crash window between moving a committed manifest
+  // aside and publishing its replacement. Exercise recovery through production
+  // read IPC, only inside this run's isolated synthetic userData.
+  const characterManifest = join(sandbox,'electron-user-data','customizer','characters','characters.json')
+  const characterBackup = `${characterManifest}.backup`
+  const characterManifestHash = hash(await readFileDisk(characterManifest))
+  await rename(characterManifest,characterBackup)
+  const recoveredCharacters = await api('window.desktop.listCustomizerCharacters()')
+  assert.ok(recoveredCharacters.some(character=>character.id===actorAForReport.id),
+    'Character manifest backup must be restored before a missing-manifest read seeds defaults')
+  assert.ok(recoveredCharacters.some(character=>character.id===actorBForReport.id),
+    'Recovering a character manifest must preserve the full committed roster')
+  assert.equal(hash(await readFileDisk(characterManifest)),characterManifestHash,
+    'Character manifest recovery must restore the exact previously committed bytes')
+
+  const wardrobeManifest = join(sandbox,'electron-user-data','fabricator','wardrobe','model-1',`set-${set.id}`,'wardrobe.json')
+  const wardrobeBackup = `${wardrobeManifest}.backup`
+  const wardrobeManifestHash = hash(await readFileDisk(wardrobeManifest))
+  await rename(wardrobeManifest,wardrobeBackup)
+  const recoveredWardrobe = await api('window.desktop.loadWardrobeSet(1,'+JSON.stringify(set.id)+')')
+  assert.deepEqual(recoveredWardrobe.components.map(component=>component.id).sort(),
+    set.components.map(component=>component.id).sort(),
+    'Wardrobe manifest backup must be restored by the production read path')
+  assert.equal(hash(await readFileDisk(wardrobeManifest)),wardrobeManifestHash,
+    'Wardrobe manifest recovery must restore the exact previously committed bytes')
+  phase('manifest-interrupted-publish-recovery',{syntheticSandboxOnly:true,
+    characterManifestSha256:characterManifestHash,wardrobeManifestSha256:wardrobeManifestHash,
+    characterRosterRecovered:true,wardrobeComponentsRecovered:recoveredWardrobe.components.length})
+
   await writeFile(join(folder,'report.json'), JSON.stringify({ ...proof, status:'passed',
     caveats:'No cross-Studio pixel golden here (Delivery C). File-picker mock is native-dialog-only; workers/IPC/UI are production.' },null,2))
   return proof

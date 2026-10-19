@@ -1,11 +1,11 @@
 # Entrega D — paridade AF-13 com autoria real da interface
 
-Data: 2026-10-19  
-Branch: `master-desenvolvimento`  
-SHA-base da execução: `3624c9b068b931185f9b615d0cb1eda265187fe9`  
-Run: `2026-10-19T07-53-27-359Z-cf8b026a-11a6-4165-bc0f-1ae520404c58`  
-Reexecução completa: `2026-10-19T07-58-23-245Z-96124ae5-3020-4e77-a8e9-70cd01a1abca`  
-Relatório local: `out/dev-ai/runs/2026-10-19T07-53-27-359Z-cf8b026a-11a6-4165-bc0f-1ae520404c58/report.json`  
+Data: 2026-10-19
+Branch: `master-desenvolvimento`
+SHA-base da execução: `3624c9b068b931185f9b615d0cb1eda265187fe9`
+Run: `2026-10-19T07-53-27-359Z-cf8b026a-11a6-4165-bc0f-1ae520404c58`
+Reexecução completa: `2026-10-19T08-07-29-925Z-89ea8c51-c331-4f5c-8a0e-df7a1aac5c27`
+Relatório local: `out/dev-ai/runs/2026-10-19T07-53-27-359Z-cf8b026a-11a6-4165-bc0f-1ae520404c58/report.json`
 Evidências AF-13: `out/dev-ai/runs/2026-10-19T07-53-27-359Z-cf8b026a-11a6-4165-bc0f-1ae520404c58/studio-ipc-real-artifacts/af13-authored/`
 
 ## O que foi exercitado
@@ -48,7 +48,7 @@ Cada estado passa pela captura de camadas do Customizador, abertura do mesmo per
 
 ## Validações executadas
 
-`npm run audit:ipc` e a reexecução completa `npm run audit:all` — passaram no Windows. `audit:all` passou em typecheck, build, oito auditorias de domínio, isolamento Studio↔Video Studio e IPC de produção com captura da interface e novo processo Electron. `npm test` passou com 26 testes aprovados, zero falhas e 2 pulados por limitações locais de symlink; `npm run audit:boundaries:gate` passou sem regressões; `node --check` nos dois scripts alterados e `git diff --check` passaram.
+`npm run audit:ipc` e a reexecução completa `npm run audit:all` — passaram no Windows. O run mais recente passou 13 casos, sem `unsupported`/`skipped`, incluindo typecheck, build, oito auditorias de domínio, isolamento Studio↔Video Studio, IPC de produção e recuperação de manifesto. `npm test` passou com 26 testes aprovados, zero falhas e 2 pulados por limitações locais de symlink; `npm run audit:boundaries:gate` passou sem regressões; `node --check` nos scripts alterados e `git diff --check` passaram.
 
 As execuções exploratórias anteriores encontraram e ajudaram a corrigir: seleção de elenco salva antes do React aplicar a escolha; imagem antiga lida durante troca de pose; um bounding box de joelho inválido para o override maior de B; e comparação após reinício que tentava comparar cenas antigas com uma versão posterior do personagem. Essas falhas não foram ocultadas por tolerâncias mais amplas.
 
@@ -68,4 +68,3 @@ As execuções exploratórias anteriores encontraram e ajudaram a corrigir: sele
 2. Conferir visualmente joelhos/camadas, ajustes individuais, cabelo e acessórios suportados pelo personagem.
 3. Salvar, fechar completamente o app, reabrir e repetir a comparação.
 4. Registrar para cada diferença a pose, categoria/peça, estado do ajuste e ambiente; não substituir evidência real por esta fixture sintética.
-

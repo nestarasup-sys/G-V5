@@ -72,6 +72,8 @@ Para `saveStudio`, Fabricador, personagens e bibliotecas: validação → resolv
 
 **Limitação:** `rename` isolado de um JSON não dá atomicidade ao grupo de PNG/frames/vídeos; consistência precisa de referências por hash, versão de manifesto, journal e GC pós-commit. Crash injection deve ocorrer após cada checkpoint e depois de `rename`.
 
+**Implementação parcial observada na branch `master-desenvolvimento` (2026-10-19):** publicação de `characters.json` e `wardrobe.json` preserva temporariamente o manifesto anterior como `.backup`; readers de roupas recuperam essa cópia se o alvo estiver ausente, e a leitura do Customizador agora restaura `characters.json.backup` antes de tratar o manifesto como primeira execução e semear personagens iniciais. O `audit:all` de Prompt 5 injeta essa condição com fixtures exclusivamente sintéticas no `userData` de teste e exige que os bytes/hash, IDs dos dois personagens e IDs das nove peças sejam recuperados sem alteração. É recuperação dirigida de manifesto. Não é journal transacional, não usa `fsync`, não injeta kill real, disco cheio, falha parcial de PNG ou corrida entre processos; esses itens continuam nos gates abaixo. A implementação não inspecionou nem migrou perfis instalados.
+
 ## 6. Ciclo de vida obrigatório por tipo
 
 `create`/import (`validated`) → `draft` → `active` ↔ `archived` → `trash` → `purged` (explícito). `duplicate` cria novo ID e declara compartilhamento/cópia de mídia; `export` contém schema, lista de arquivos e checksums; `restore` resolve conflitos com `rename` lógico/novo ID e mapa de referências. Todas as operações têm `operationId`, auditoria com metadados mínimos, idempotência e resultado por entidade.

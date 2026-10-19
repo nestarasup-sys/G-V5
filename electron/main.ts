@@ -254,8 +254,15 @@ function isCustomizerCharacter(value: unknown): value is CustomizerCharacter {
 }
 
 async function readCustomizerCharacters(): Promise<CustomizerCharacter[]> {
+  const target = characterManifestPath()
+  try { await access(target) } catch (reason) {
+    if ((reason as NodeJS.ErrnoException).code !== 'ENOENT') throw reason
+    try { await rename(`${target}.backup`, target) } catch (restoreReason) {
+      if ((restoreReason as NodeJS.ErrnoException).code !== 'ENOENT') throw restoreReason
+    }
+  }
   try {
-    const parsed = JSON.parse(await readFile(characterManifestPath(), 'utf8')) as unknown
+    const parsed = JSON.parse(await readFile(target, 'utf8')) as unknown
     if (!Array.isArray(parsed) || !parsed.every(isCustomizerCharacter)) throw new Error('A biblioteca de personagens está inválida.')
     return parsed.map((character) => {
       const storedCustomization = character.customization as CustomizerCharacter['customization'] & { wardrobeColors?: HairColorOverrides }

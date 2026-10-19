@@ -115,6 +115,9 @@ jobs:
             out/dev-ai/runs/**/studio-ipc-real-artifacts/asset-ui-authoring/report.json
             out/dev-ai/runs/**/studio-ipc-real-artifacts/asset-ui-authoring/restart.json
             out/dev-ai/runs/**/studio-ipc-real-artifacts/af13/*.png
+            out/dev-ai/runs/**/studio-ipc-real-artifacts/af13-authored/*.png
+            out/dev-ai/runs/**/studio-ipc-real-artifacts/af13-authored/report.json
+            out/dev-ai/runs/**/studio-ipc-real-artifacts/af13-authored/restart.json
             out/dev-ai/runs/**/studio-ipc-real-artifacts/raster-asset-flow/*.png
             out/dev-ai/runs/**/studio-ipc-real-artifacts/raster-asset-flow/report.json
             out/dev-ai/runs/**/studio-ipc-real-artifacts/raster-asset-flow/customizer-render-result-*.json
