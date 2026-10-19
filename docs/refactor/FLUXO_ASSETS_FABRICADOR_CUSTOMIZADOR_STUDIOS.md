@@ -1,6 +1,7 @@
 # Contrato de fluxo de assets — Fabricador Dev → Customizador → Studio / Video Studio
 
 **Estado:** contrato alvo e diagnóstico do código em 2026-10-18; algumas proteções e testes sintéticos estão implementados, **a correção visual end-to-end de todas as áreas ainda não está comprovada**.  
+**Execução local 2026-10-19:** `audit:all` passou e transforms individuais salvos de Ayla/Chloe alteraram o render real do Customizador em cópias privadas; isso é evidência parcial de AF-08. Não houve edição/salvamento/restart do fluxo da UI, AF-01–AF-20 não está fechado e a equivalência Studio/Video ainda não foi demonstrada. Consulte [relatório local](AUDITORIAS/VALIDACAO_LOCAL_2026-10-19.md).
 **Autoridade funcional:** o Fabricador publica bibliotecas de origem; o Customizador cria uma **instância de personagem** que herda encaixes de fábrica e possui seus próprios ajustes; Studio e Video Studio **consomem a apresentação salva no Customizador**, não inventam outro personagem.  
 **Referências:** [plano mestre](../PLANO_ESTRUTURA_PROJETO_E_DADOS.md), [roadmap](ROADMAP_EXECUTAVEL.md), [auditoria de evidências](AUDITORIAS/FLUXO_ASSETS_2026-10-18.md), [dados e recuperação](DADOS_E_RECUPERACAO.md), [matriz de isolamento](ISOLAMENTO_STUDIOS_E_DEV_AI.md).
 

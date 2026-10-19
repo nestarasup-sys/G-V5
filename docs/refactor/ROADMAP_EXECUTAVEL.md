@@ -1,5 +1,7 @@
 # Roadmap executável, gates e checklists
 
+**Atualização de execução 2026-10-19:** a branch `codex/finalizar-dev-ai-local` passou em `npm test`, typecheck, build, auditoria rápida, gate AST, isolamento e IPC na suíte `audit:all`. Teste privado real de Ayla/Chloe comprovou resposta visual do Customizador aos transforms existentes. Isso avança evidência de DEV AI e AF-08, mas não fecha as matrizes AF/ISO nem as tarefas de versão, equivalência cross-Studio, recuperação, performance ou migração. Ver [relatório de validação local](AUDITORIAS/VALIDACAO_LOCAL_2026-10-19.md). Todos os checkboxes de iniciativas de produto permanecem abertos até seus critérios integrais serem satisfeitos.
+
 **Versão:** 2026-10-18, base `5b848345`. **Esta é a única fonte de verdade para tarefas e progresso.** Evidência e classificação dos fatos estão em [INVENTARIO_E_EVIDENCIAS.md](INVENTARIO_E_EVIDENCIAS.md). O inventário foi inicialmente documentado; implementações parciais e suas evidências agora são atualizadas por incremento, sem considerar gates abertos como concluídos. O plano é incremental: cada PR/commit deve deixar `typecheck`, build e casos afetados verdes antes de avançar.
 
 ## Contrato obrigatório por tarefa

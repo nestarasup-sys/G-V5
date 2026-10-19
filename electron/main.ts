@@ -21,10 +21,59 @@ import { readAssetImage, writeAssetImageSource } from './assetImageOverrides'
 import { legacyStandardExpressionEffects } from '../src/shared/legacyExpressionEffects'
 
 function configureDevAiDataRoot(): void {
+  const privateCopyTest = process.env.GACHA_DEV_AI_PRIVATE_TEST === '1'
+  if (privateCopyTest && process.env.GACHA_DEV_AI_TEST !== '1') {
+    throw new Error('O modo privado DEV AI exige o runner local isolado.')
+  }
   if (process.env.GACHA_DEV_AI_TEST !== '1') return
   if (app.isPackaged || app.isReady()) throw new Error('DEV AI IPC só pode configurar o root antes do boot em build de desenvolvimento.')
   const requestedSandbox = process.env.GACHA_DEV_AI_SANDBOX
   if (!requestedSandbox || !resolve(requestedSandbox)) throw new Error('Root sintético DEV AI ausente.')
+
+  if (privateCopyTest) {
+    const privateRoot = resolve(process.env.GACHA_DEV_AI_PRIVATE_ROOT ?? '')
+    const allowedRoot = resolve(process.env.GACHA_DEV_AI_PRIVATE_ALLOWED_ROOT ?? '')
+    const sandbox = resolve(requestedSandbox)
+    const userData = join(privateRoot, 'userData')
+    const markerPath = join(privateRoot, 'private-copy-marker.json')
+    const relativePrivate = relative(allowedRoot, privateRoot)
+    const relativeSandbox = relative(privateRoot, sandbox)
+    const isWithin = (root: string, path: string): boolean => {
+      const pathRelative = relative(root, path)
+      return !!pathRelative && pathRelative !== '..' && !pathRelative.startsWith(`..${sep}`)
+    }
+    const sameCanonicalPath = (left: string, right: string): boolean => process.platform === 'win32'
+      ? left.toLowerCase() === right.toLowerCase()
+      : left === right
+    if (!relativePrivate || !isWithin(allowedRoot, privateRoot) || relativeSandbox !== 'userData'
+      || !sameCanonicalPath(sandbox, userData)) {
+      throw new Error('Cópia privada DEV AI fora da raiz local autorizada.')
+    }
+    const marker = existsSync(markerPath) ? JSON.parse(readFileSync(markerPath, 'utf8')) as {
+      schemaVersion?: number; privateDataCopy?: boolean; verifiedSha256?: boolean; sourceBackup?: string; copyMode?: string
+    } : null
+    const sourceBackup = marker?.sourceBackup ? resolve(marker.sourceBackup) : ''
+    const backupManifest = sourceBackup ? join(sourceBackup, 'backup-manifest.json') : ''
+    if (marker?.schemaVersion !== 1 || marker.privateDataCopy !== true || marker.verifiedSha256 !== true
+      || !['baseline', 'wardrobe-reset'].includes(marker.copyMode ?? '')
+      || !isWithin(allowedRoot, sourceBackup) || sourceBackup.toLowerCase() === privateRoot.toLowerCase()
+      || !existsSync(backupManifest) || !existsSync(sandbox)) {
+      throw new Error('Cópia privada DEV AI sem backup local validado.')
+    }
+    for (const path of [allowedRoot, privateRoot, markerPath, sourceBackup, backupManifest, sandbox]) {
+      if (!existsSync(path) || lstatSync(path).isSymbolicLink() || !sameCanonicalPath(realpathSync(path), path)) {
+        throw new Error('Path não canônico ou symlink recusado no teste privado.')
+      }
+    }
+    const sessionData = join(privateRoot, 'session-data')
+    mkdirSync(sessionData, { recursive: true })
+    if (lstatSync(sessionData).isSymbolicLink() || !sameCanonicalPath(realpathSync(sessionData), sessionData)) {
+      throw new Error('Diretório de sessão privado inválido.')
+    }
+    app.setPath('userData', userData)
+    app.setPath('sessionData', sessionData)
+    return
+  }
 
   const repoRoot = resolve(__dirname, '../..')
   const runsRoot = resolve(repoRoot, 'out', 'dev-ai', 'runs')

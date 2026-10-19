@@ -2,6 +2,8 @@
 
 **Data da revisão estática:** 2026-10-18. **Base inspecionada:** `master` em `5b8483454757f4cc9606c626471aabbeccf35daa`. **Estado:** a primeira revisão foi documental. As branches posteriores implementaram runner DEV AI, IPC Electron sintético, GitHub Actions e proteções direcionadas ao fluxo de roupas; migração de dados reais e matriz AF/ISO completa continuam não executadas.
 
+**Atualização local 2026-10-19:** os gates de teste, build, typecheck, auditorias rápidas, isolamento e IPC passaram na branch `codex/finalizar-dev-ai-local`; Ayla e Chloe foram testadas somente em cópias privadas com backup verificado. As matrizes AF e ISO permanecem parciais. Resultados e limites: [validação local](AUDITORIAS/VALIDACAO_LOCAL_2026-10-19.md).
+
 ## Fontes de verdade — não duplicar especificações
 
 | Assunto | Documento normativo |
@@ -22,6 +24,7 @@
 | Resultado real Windows/Linux com 8 auditorias rápidas, IPC Customizador, rede e limitações | [AUDITORIAS/VALIDACAO_ASSET_FLOW_2026-10-18.md](AUDITORIAS/VALIDACAO_ASSET_FLOW_2026-10-18.md) |
 | Evidências da CI, teste visual e critérios de avanço por SHA | [AUDITORIAS/CI_DEV_AI_2026-10-18.md](AUDITORIAS/CI_DEV_AI_2026-10-18.md) |
 | Dependências runtime AST e planos de extração de páginas inteiras | [AUDITORIAS/DEPENDENCIAS_AST_2026-10-18.md](AUDITORIAS/DEPENDENCIAS_AST_2026-10-18.md) |
+| Reexecução local completa DEV AI, teste real de Ayla/Chloe em cópias privadas e pendências remotas | [AUDITORIAS/VALIDACAO_LOCAL_2026-10-19.md](AUDITORIAS/VALIDACAO_LOCAL_2026-10-19.md) |
 
 **Histórico:** a versão anterior integral do plano permanece recuperável no Git em [`5b848345`](https://github.com/nestarasup-sys/G-V5/blob/5b8483454757f4cc9606c626471aabbeccf35daa/docs/PLANO_ESTRUTURA_PROJETO_E_DADOS.md). Esta versão é histórico, **não** uma segunda fonte normativa. O documento `docs/STUDIO_WORKSPACES.md` foi removido em `192245e`; não criar links correntes para ele.
 

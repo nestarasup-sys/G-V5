@@ -1,6 +1,6 @@
 # Isolamento Studio ↔ Video Studio e especificação DEV AI
 
-**Status:** especificação futura, com validação parcial adicionada em 2026-10-18. `audit:isolation` verifica navegação/layout via fixture-preload e `audit:ipc` agora exercita persistência por IPC real em sandbox sintética, inclusive reinício de processo. **A matriz ISO-01–ISO-15 continua incompleta**; veja [resultados Windows e limites](AUDITORIAS/VALIDACAO_WINDOWS_2026-10-18.md) e [baseline inicial](AUDITORIAS/BASELINE_DEV_AI_2026-10-18.md). Evidências: E-03–E-06, E-09–E-10, E-17 e E-24 em [inventário](INVENTARIO_E_EVIDENCIAS.md). Implementação rastreada por R-05/R-10–R-14/R-25–R-27 do [roadmap](ROADMAP_EXECUTAVEL.md).
+**Status:** especificação futura, com validação parcial em Windows. A execução `audit:all` de 2026-10-19 passou nos casos implementados de navegação/layout e persistência IPC real em sandbox sintética, inclusive reinício de processo. **A matriz ISO-01–ISO-15 continua incompleta**; os resultados incrementais estão em [validação local 2026-10-19](AUDITORIAS/VALIDACAO_LOCAL_2026-10-19.md), além dos [resultados Windows anteriores](AUDITORIAS/VALIDACAO_WINDOWS_2026-10-18.md) e [baseline inicial](AUDITORIAS/BASELINE_DEV_AI_2026-10-18.md). Evidências: E-03–E-06, E-09–E-10, E-17 e E-24 em [inventário](INVENTARIO_E_EVIDENCIAS.md). Implementação rastreada por R-05/R-10–R-14/R-25–R-27 do [roadmap](ROADMAP_EXECUTAVEL.md).
 
 ## 1. Contrato de independência
 

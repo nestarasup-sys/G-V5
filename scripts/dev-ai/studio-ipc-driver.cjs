@@ -3,7 +3,7 @@
 const assert = require('node:assert/strict')
 const { createHash } = require('node:crypto')
 const { createServer, get } = require('node:http')
-const { existsSync, lstatSync, readdirSync, readFileSync } = require('node:fs')
+const { existsSync, lstatSync, readdirSync, readFileSync, realpathSync } = require('node:fs')
 const { mkdir, rm, writeFile } = require('node:fs/promises')
 const { performance } = require('node:perf_hooks')
 const os = require('node:os')
@@ -22,6 +22,32 @@ let exitCode = 1
 let allowNaturalQuit = false
 
 function assertOutputSandbox() {
+  if (process.env.GACHA_DEV_AI_PRIVATE_TEST === '1') {
+    const privateRoot = resolve(process.env.GACHA_DEV_AI_PRIVATE_ROOT ?? '')
+    const allowedRoot = resolve(process.env.GACHA_DEV_AI_PRIVATE_ALLOWED_ROOT ?? '')
+    const markerPath = join(privateRoot, 'private-copy-marker.json')
+    const relativePrivate = relative(allowedRoot, privateRoot)
+    const relativeOutput = relative(privateRoot, output)
+    const privateMarker = existsSync(markerPath) ? JSON.parse(readFileSync(markerPath, 'utf8')) : null
+    const validChild = (root, path) => {
+      const fromRoot = relative(root, path)
+      return !!fromRoot && fromRoot !== '..' && !fromRoot.startsWith(`..${sep}`)
+    }
+    assert.ok(relativePrivate && validChild(allowedRoot, privateRoot), 'Cópia privada fora da pasta local autorizada')
+    assert.equal(sandbox.toLowerCase(), join(privateRoot, 'userData').toLowerCase())
+    assert.ok(relativeOutput.startsWith(`evidence${sep}`), 'Relatórios privados devem ficar na pasta evidence da cópia')
+    assert.equal(privateMarker?.schemaVersion, 1)
+    assert.equal(privateMarker?.privateDataCopy, true)
+    assert.equal(privateMarker?.verifiedSha256, true)
+    assert.ok(['baseline', 'wardrobe-reset'].includes(privateMarker?.copyMode))
+    assert.equal(typeof privateMarker?.sourceBackup, 'string')
+    for (const path of [allowedRoot, privateRoot, markerPath, sandbox, output,
+      resolve(privateMarker.sourceBackup), join(resolve(privateMarker.sourceBackup), 'backup-manifest.json')]) {
+      assert.ok(existsSync(path) && !lstatSync(path).isSymbolicLink(), `Path privado ausente ou ligado: ${path}`)
+      assert.equal(realpathSync(path).toLowerCase(), path.toLowerCase(), `Path privado não canônico: ${path}`)
+    }
+    return
+  }
   const runsRoot = resolve(ROOT, 'out', 'dev-ai', 'runs')
   const runRoot = dirname(sandbox)
   const relativeRun = relative(runsRoot, runRoot)
@@ -802,6 +828,149 @@ async function verifyCustomizerRasterPreview(window,poseLabel='pose1') {
   return report
 }
 
+async function privateCharacterPreview(window) {
+  const characters = await window.webContents.executeJavaScript('window.desktop.listCustomizerCharacters()')
+  const selected = ['Ayla', 'Chloe'].map(name => {
+    const matches = characters.filter(character => character.name === name)
+    assert.equal(matches.length, 1, `A cópia privada deve conter exatamente um personagem ${name}`)
+    return matches[0]
+  })
+  const customizerManifestPath = join(sandbox, 'customizer', 'characters', 'characters.json')
+  const characterManifestHashBefore = createHash('sha256').update(readFileSync(customizerManifestPath)).digest('hex')
+  const fabricatorHashBefore = treeHash(join(sandbox, 'fabricator'))
+  const networkBarrier = await verifyRendererNetworkBlock(window)
+  await window.webContents.executeJavaScript('location.hash = "/customizar"')
+  const routeDeadline = Date.now() + 30_000
+  while (Date.now() < routeDeadline) {
+    if (await window.webContents.executeJavaScript('Boolean(document.querySelector(".home-layout"))')) break
+    await new Promise(resolveDelay => setTimeout(resolveDelay, 100))
+  }
+  assert.equal(await window.webContents.executeJavaScript('Boolean(document.querySelector(".home-layout"))'), true,
+    'A rota Customizador não carregou na cópia privada')
+
+  const actorResults = []
+  for (const character of selected) {
+    const expectedAboveHair = (await Promise.all((character.customization.wardrobeGroups ?? []).map(group =>
+      window.webContents.executeJavaScript(`(async()=>{const s=await window.desktop.loadWardrobeSet(${Number(group.modelSlot)},${JSON.stringify(group.setId)});return Boolean(s?.components?.some(c=>c.id===${JSON.stringify(group.componentId)}&&c.renderAboveHair===true))})()`)))).some(Boolean)
+    const expectedLayers = {
+      wardrobe: (character.customization.wardrobeGroups ?? []).length > 0,
+      face: Boolean(character.customization.faceAppearance && (
+        Object.values(character.customization.faceAppearance.components ?? {}).some(component => Boolean(component?.assetId))
+        || Object.values(character.customization.faceAppearance.headExtras ?? {}).some(Boolean)
+        || character.customization.faceAppearance.eyeCatalogId || character.customization.faceAppearance.eyebrowCatalogId
+        || character.customization.faceAppearance.noseCatalogId || character.customization.faceAppearance.mouthClosedCatalogId
+        || character.customization.faceAppearance.mouthOpenCatalogId)),
+      frontHair: Object.values(character.customization.hairAppearance?.parts ?? {}).some(id => typeof id === 'string'),
+      aboveHair: expectedAboveHair
+    }
+    const capture = await window.webContents.executeJavaScript(`(async()=>{
+      const name=${JSON.stringify(character.name)}
+      const expectedLayers=${JSON.stringify(expectedLayers)}
+      const deadline=Date.now()+45000
+      let card=null
+      while(Date.now()<deadline){
+        card=[...document.querySelectorAll('.character-card')].find(item=>item.textContent.includes(name))
+        if(card)break
+        await new Promise(resolve=>setTimeout(resolve,100))
+      }
+      if(!card)return {status:'missing-character-card',name}
+      card.click()
+      while(Date.now()<deadline){
+        const selected=(document.querySelector('.customizer-preview-character-name')?.textContent||'').trim()
+        const model=document.querySelector('.customizer-selected-artwork')
+        const ready=(selector)=>{const image=document.querySelector(selector);return Boolean(image?.complete&&image.naturalWidth)}
+        const layersReady=(!expectedLayers.wardrobe||ready('.customizer-wardrobe-overlay'))
+          &&(!expectedLayers.face||ready('.customizer-face-overlay'))
+          &&(!expectedLayers.frontHair||ready('.customizer-front-hair-overlay'))
+          &&(!expectedLayers.aboveHair||ready('.customizer-wardrobe-above-hair-overlay'))
+        if(selected===name&&model?.complete&&model.naturalWidth&&layersReady)break
+        await new Promise(resolve=>setTimeout(resolve,120))
+      }
+      const selectedName=(document.querySelector('.customizer-preview-character-name')?.textContent||'').trim()
+      const selectors=[
+        ['model','.customizer-selected-artwork'],
+        ['wardrobe','.customizer-wardrobe-overlay'],
+        ['face','.customizer-face-overlay'],
+        ['frontHair','.customizer-front-hair-overlay'],
+        ['aboveHair','.customizer-wardrobe-above-hair-overlay']
+      ]
+      const entries=selectors.map(([key,selector])=>[key,document.querySelector(selector)])
+      const model=entries.find(([key])=>key==='model')?.[1]
+      if(selectedName!==name||!model?.complete||!model.naturalWidth)return {status:'preview-not-ready',name,selectedName}
+      await Promise.all(entries.map(async([,image])=>{if(image?.decode){try{await image.decode()}catch{}}}))
+      const layers=entries.filter(([,image])=>image?.complete&&image.naturalWidth)
+      const canvas=document.createElement('canvas')
+      canvas.width=model.naturalWidth;canvas.height=model.naturalHeight
+      const context=canvas.getContext('2d')
+      context.fillStyle='#f6f5f8';context.fillRect(0,0,canvas.width,canvas.height)
+      for(const [,image] of layers)context.drawImage(image,0,0,canvas.width,canvas.height)
+      const layerStatus=Object.fromEntries(selectors.map(([key])=>{
+        const image=entries.find(([entryKey])=>entryKey===key)?.[1]
+        return [key,Boolean(image?.complete&&image.naturalWidth)]
+      }))
+      const missingExpectedLayers=Object.entries(expectedLayers).filter(([key,expected])=>expected&&!layerStatus[key]).map(([key])=>key)
+      return {
+        status:missingExpectedLayers.length?'missing-expected-layer':'captured',name,selectedName,
+        dimensions:{width:canvas.width,height:canvas.height},
+        layers:layerStatus,missingExpectedLayers,
+        alerts:[...document.querySelectorAll('[role=alert]')].map(item=>item.textContent.trim()).filter(Boolean),
+        dataUrl:canvas.toDataURL('image/png')
+      }
+    })()`)
+    if (capture.dataUrl?.startsWith('data:image/png;base64,')) {
+      const imageName = `${character.name.toLowerCase()}-customizer-canonical.png`
+      await writeFile(join(output, imageName), Buffer.from(capture.dataUrl.slice('data:image/png;base64,'.length), 'base64'))
+    }
+    if (capture.status !== 'captured') {
+      actorResults.push({ name: character.name, id: character.id, status: capture.status,
+        modelSlot: character.customization.modelSlot, poseSlot: character.customization.poseSlot,
+        missingExpectedLayers: capture.missingExpectedLayers ?? [] })
+      continue
+    }
+    const imageName = `${character.name.toLowerCase()}-customizer-canonical.png`
+    const groups = character.customization.wardrobeGroups ?? []
+    const adjustedGroups = groups.filter(group => group.offsetX !== 0 || group.offsetY !== 0
+      || group.scaleX !== 1 || group.scaleY !== 1 || group.rotation !== 0)
+    actorResults.push({
+      name: character.name, id: character.id, status: 'captured',
+      modelSlot: character.customization.modelSlot, poseSlot: character.customization.poseSlot,
+      wardrobeGroupCount: groups.length, adjustedWardrobeGroupCount: adjustedGroups.length,
+      adjustedWardrobeGroups: adjustedGroups.map(group => ({ category: group.category,
+        componentId: group.componentId, setId: group.setId,
+        offsetX: group.offsetX, offsetY: group.offsetY, scaleX: group.scaleX, scaleY: group.scaleY, rotation: group.rotation })),
+      partOverrideCount: Object.keys(character.customization.partOverrides ?? {}).length,
+      hairPartIds: Object.entries(character.customization.hairAppearance?.parts ?? {})
+        .filter(([, id]) => typeof id === 'string').map(([partId]) => partId),
+      faceComponentCount: Object.values(character.customization.faceAppearance?.components ?? {})
+        .filter(component => Boolean(component?.assetId)).length,
+      layers: capture.layers, dimensions: capture.dimensions,
+      alerts: capture.alerts, screenshot: imageName
+    })
+  }
+  const characterManifestHashAfter = createHash('sha256').update(readFileSync(customizerManifestPath)).digest('hex')
+  const fabricatorHashAfter = treeHash(join(sandbox, 'fabricator'))
+  const noPersistentWrites = characterManifestHashBefore === characterManifestHashAfter
+    && fabricatorHashBefore === fabricatorHashAfter
+  const report = { schemaVersion: 1, adapter: 'local-private-copy-production-customizer',
+    status: actorResults.length === 2 && actorResults.every(actor => actor.status === 'captured')
+      && noPersistentWrites && networkBarrier.status === 'passed' ? 'passed' : 'failed',
+    privacy: { userProfileWritten: false, testCopyOnly: true, outputOutsideRepository: true,
+      networkBarrier, noPersistentWrites },
+    hashes: { characterManifestBefore: characterManifestHashBefore, characterManifestAfter: characterManifestHashAfter,
+      fabricatorBefore: fabricatorHashBefore, fabricatorAfter: fabricatorHashAfter },
+    actors: actorResults,
+    limitations: ['A inspeção usa somente a cópia privada validada.',
+      'A captura inclui apenas as camadas canônicas do personagem, não a janela ou a lista de personagens.'] }
+  await writeFile(join(output, 'private-character-preview.json'), JSON.stringify(report, null, 2))
+  assert.equal(noPersistentWrites, true, 'Preview privado alterou o personagem ou biblioteca Fabricador da cópia')
+  assert.equal(report.status, 'passed', `Preview dos personagens privados falhou: ${JSON.stringify(report)}`)
+  console.log(JSON.stringify({ mode, status: report.status, actors: actorResults.map(actor => ({
+    name: actor.name, modelSlot: actor.modelSlot, poseSlot: actor.poseSlot,
+    wardrobeGroupCount: actor.wardrobeGroupCount, adjustedWardrobeGroupCount: actor.adjustedWardrobeGroupCount,
+    layerStatus: actor.layers, screenshot: actor.screenshot
+  })), noPersistentWrites }))
+}
+
 async function areaSmoke(window) {
   const diagnostics = []
   const rendererNetworkBarrier = await verifyRendererNetworkBlock(window)
@@ -1077,6 +1246,91 @@ async function areaSmoke(window) {
   console.log(JSON.stringify(result))
 }
 
+async function comparePrivateCharacterCaptures(window) {
+  const baselineRoot = resolve(process.env.GACHA_DEV_AI_PRIVATE_ROOT ?? '')
+  const resetRoot = resolve(process.env.GACHA_DEV_AI_PRIVATE_COMPARE_ROOT ?? '')
+  const allowedRoot = resolve(process.env.GACHA_DEV_AI_PRIVATE_ALLOWED_ROOT ?? '')
+  const resetOutput = resolve(process.env.GACHA_DEV_AI_PRIVATE_COMPARE_OUTPUT ?? '')
+  assert.ok(allowedRoot && baselineRoot && resetRoot && resetOutput, 'Raízes privadas de comparação ausentes')
+  const baselineMarkerPath = join(baselineRoot, 'private-copy-marker.json')
+  const baselineMarker = existsSync(baselineMarkerPath) ? JSON.parse(readFileSync(baselineMarkerPath, 'utf8')) : null
+  const markerPath = join(resetRoot, 'private-copy-marker.json')
+  const marker = existsSync(markerPath) ? JSON.parse(readFileSync(markerPath, 'utf8')) : null
+  const insideAllowed = path => {
+    const relativePath = relative(allowedRoot, path)
+    return !!relativePath && relativePath !== '..' && !relativePath.startsWith(`..${sep}`)
+  }
+  assert.ok(insideAllowed(baselineRoot) && insideAllowed(resetRoot) && insideAllowed(resetOutput))
+  assert.equal(baselineMarker?.schemaVersion, 1)
+  assert.equal(baselineMarker?.privateDataCopy, true)
+  assert.equal(baselineMarker?.verifiedSha256, true)
+  assert.equal(baselineMarker?.copyMode, 'baseline')
+  assert.ok(insideAllowed(resetRoot) && insideAllowed(resetOutput))
+  assert.equal(marker?.schemaVersion, 1)
+  assert.equal(marker?.privateDataCopy, true)
+  assert.equal(marker?.verifiedSha256, true)
+  assert.equal(marker?.copyMode, 'wardrobe-reset')
+  assert.equal(realpathSync(resetRoot).toLowerCase(), resetRoot.toLowerCase())
+  assert.equal(realpathSync(resetOutput).toLowerCase(), resetOutput.toLowerCase())
+  const baselineReportPath = join(output, 'private-character-preview.json')
+  const resetReportPath = join(resetOutput, 'private-character-preview.json')
+  const baselineReport = JSON.parse(readFileSync(baselineReportPath, 'utf8'))
+  const resetReport = JSON.parse(readFileSync(resetReportPath, 'utf8'))
+  assert.equal(baselineReport.status, 'passed')
+  assert.equal(resetReport.status, 'passed')
+  assert.equal(baselineReport.hashes.fabricatorAfter, resetReport.hashes.fabricatorAfter,
+    'Biblioteca Fabricador não corresponde entre cópias privadas')
+  const results = []
+  for (const name of ['Ayla', 'Chloe']) {
+    const before = baselineReport.actors.find(actor => actor.name === name)
+    const after = resetReport.actors.find(actor => actor.name === name)
+    assert.ok(before && after)
+    assert.ok(before.adjustedWardrobeGroupCount > 0, `${name} não possui ajuste privado a comparar`)
+    assert.equal(after.adjustedWardrobeGroupCount, 0, `${name} ainda tem delta de roupa após reset da cópia`)
+    const beforePng = readFileSync(join(output, before.screenshot))
+    const afterPng = readFileSync(join(resetOutput, after.screenshot))
+    const difference = await window.webContents.executeJavaScript(`(async()=>{
+      const beforeUrl=${JSON.stringify(`data:image/png;base64,${beforePng.toString('base64')}`)}
+      const afterUrl=${JSON.stringify(`data:image/png;base64,${afterPng.toString('base64')}`)}
+      const load=async src=>{const image=new Image();image.src=src;await image.decode();return image}
+      const [before,after]=await Promise.all([load(beforeUrl),load(afterUrl)])
+      if(before.naturalWidth!==after.naturalWidth||before.naturalHeight!==after.naturalHeight)
+        return {status:'dimensions-changed',before:{width:before.naturalWidth,height:before.naturalHeight},after:{width:after.naturalWidth,height:after.naturalHeight}}
+      const canvas=document.createElement('canvas');canvas.width=before.naturalWidth;canvas.height=before.naturalHeight
+      const context=canvas.getContext('2d',{willReadFrequently:true})
+      context.drawImage(before,0,0);const a=context.getImageData(0,0,canvas.width,canvas.height).data
+      context.clearRect(0,0,canvas.width,canvas.height);context.drawImage(after,0,0)
+      const b=context.getImageData(0,0,canvas.width,canvas.height).data
+      const diff=context.createImageData(canvas.width,canvas.height);let changedPixels=0,minX=canvas.width,minY=canvas.height,maxX=-1,maxY=-1
+      for(let i=0;i<a.length;i+=4){let changed=false;for(let c=0;c<4;c++)if(Math.abs(a[i+c]-b[i+c])>3)changed=true
+        if(changed){changedPixels++;const pixel=i/4,x=pixel%canvas.width,y=Math.floor(pixel/canvas.width);minX=Math.min(minX,x);minY=Math.min(minY,y);maxX=Math.max(maxX,x);maxY=Math.max(maxY,y);diff.data[i]=255;diff.data[i+1]=0;diff.data[i+2]=255;diff.data[i+3]=255}}
+      context.putImageData(diff,0,0)
+      return {status:'compared',width:canvas.width,height:canvas.height,pixels:canvas.width*canvas.height,changedPixels,
+        changedPixelRatio:changedPixels/(canvas.width*canvas.height),changeBounds:changedPixels?{x:minX,y:minY,width:maxX-minX+1,height:maxY-minY+1}:null,
+        diffDataUrl:canvas.toDataURL('image/png')}
+    })()`)
+    assert.equal(difference.status, 'compared', `${name}: dimensões diferentes no render privado`)
+    const changed = difference.changedPixels > 0
+    assert.equal(changed, true, `${name}: zerar os deltas de roupa não alterou o render do Customizador`)
+    const diffName = `${name.toLowerCase()}-before-vs-factory-fit-diff.png`
+    await writeFile(join(output, diffName), Buffer.from(difference.diffDataUrl.slice('data:image/png;base64,'.length), 'base64'))
+    results.push({ name, adjustedGroupsBefore: before.adjustedWardrobeGroupCount,
+      adjustedGroupsAfter: after.adjustedWardrobeGroupCount, changedPixels: difference.changedPixels,
+      changedPixelRatio: difference.changedPixelRatio, changeBounds: difference.changeBounds,
+      screenshotBefore: before.screenshot, screenshotAfter: after.screenshot, diff: diffName })
+    await writeFile(join(output, 'private-character-comparison-progress.json'), JSON.stringify({
+      schemaVersion: 1, status: 'in-progress', actors: results
+    }, null, 2))
+  }
+  const report = { schemaVersion: 1, status: 'passed', comparison: 'same production Customizer; private baseline vs copied wardrobe-fit resets',
+    userProfileModified: false, fabricatorLibrariesEqual: true, actors: results,
+    privacy: { baselineCopy: true, resetCopy: true, artifactsOutsideRepository: true } }
+  await writeFile(join(output, 'private-character-comparison.json'), JSON.stringify(report, null, 2))
+  console.log(JSON.stringify({ mode, status: report.status,
+    actors: results.map(actor => ({ name: actor.name, adjustedGroupsBefore: actor.adjustedGroupsBefore,
+      adjustedGroupsAfter: actor.adjustedGroupsAfter, changedPixelRatio: actor.changedPixelRatio })) }))
+}
+
 async function main() {
   assertOutputSandbox()
   if (mode === 'invalid-root') {
@@ -1092,13 +1346,15 @@ async function main() {
       return
     }
   }
-  if (!['seed', 'verify-restart', 'area-smoke', 'close-pending', 'verify-close-pending', 'delete'].includes(mode)) throw new Error('Modo inválido.')
+  if (!['seed', 'verify-restart', 'area-smoke', 'close-pending', 'verify-close-pending', 'delete', 'private-character-preview', 'private-character-compare'].includes(mode)) throw new Error('Modo inválido.')
   await import(pathToFileURL(join(ROOT, 'out', 'main', 'main.js')).href)
   await app.whenReady()
   const window = await waitForWindow()
   if (mode === 'seed') await seed(window)
   else if (mode === 'verify-restart') await verifyRestart(window)
   else if (mode === 'area-smoke') await areaSmoke(window)
+  else if (mode === 'private-character-preview') await privateCharacterPreview(window)
+  else if (mode === 'private-character-compare') await comparePrivateCharacterCaptures(window)
   else if (mode === 'close-pending') await closeWithPendingSaves(window)
   else if (mode === 'verify-close-pending') await verifyClosePending(window)
   else await deleteDocuments(window)
