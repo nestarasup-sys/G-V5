@@ -130,6 +130,16 @@ _Atualizações posteriores devem registrar o SHA real do gate e nunca declarar 
 
 **Próxima sequência executável:** V501/V502 (fixtures e oracle) → V505/V507 (estado por frame) → V509 (manifest pinned) → V508/V510 (texto/layers) → V512–V518 (MP4 serial verdadeiro) → preview/proxy/cache → Turbo. Registrar resultados por tarefa; não marcar concluído sem evidência.
 
+## 2026-10-19 — Rodada 08: manifesto verificável de mídias de vídeo
+
+- Base: `5f4119e8de902eafbcde845f97df939782a78f05`, branch `master-desenvolvimento`.
+- Risco confirmado: `VideoExportSnapshot` congela o JSON do roteiro, mas `videoClips` aponta para cópias em disco que ainda podem mudar ou desaparecer. O job store já aceita SHA-256 de mídia, mas faltava produzir e revalidar a identidade dos arquivos por asset.
+- Implementado parcialmente: `electron/videoExportAssets.ts` gera um manifesto ordenado apenas com os vídeos referenciados na timeline, deduplica usos repetidos, valida formato/tamanho, confere contenção no root confiável, rejeita link simbólico no arquivo, calcula SHA-256 e revalida metadata durante a leitura. `verifyVideoExportMediaManifest()` detecta bytes diferentes ao retomar/finalizar. O manifesto não contém caminhos absolutos.
+- `VideoLibraryStore.resolveProjectMediaDependency()` encontra somente a cópia salva no projeto solicitado e compara ID, tipo, MIME e tamanho; não procura arquivo com mesmo nome em outro projeto.
+- Testes novos com arquivos sintéticos cobrem hash, deduplicação, referência ausente, caminho fora do root, alteração após snapshot e associação à cópia certa do projeto. Entraram em `npm test`, `test:export:synthetic` e nos filtros do workflow Windows.
+- Validação: `npm test` — 59/59; `npm run test:export:synthetic` — 29/29; `npm run typecheck`, `npm run build` e `git diff --check` passaram.
+- Limite: essa etapa ainda não copia bytes para pasta de job nem está chamada por um orquestrador de export, pois o pipeline não possui job IPC executável. Fornecedores de modelo/pose/face/cabelos e imagens embutidas ainda não têm manifesto/digest próprio. V509 segue parcial; export não é retomável com media pinada ainda.
+
 ## 2026-10-19 — Rodada 07: compilador de transições compartilhado
 
 - Base: `f9a0302a333cd2b1f819eb3aa85a5de368fa8a2d`, branch `master-desenvolvimento`.

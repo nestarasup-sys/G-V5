@@ -17,6 +17,8 @@ on:
       - 'src/renderer/src/features/videoStudio/characterTransitions.ts'
       - 'src/renderer/src/features/videoStudio/useCharacterTransitions.ts'
       - 'electron/videoExportJobs.ts'
+      - 'electron/videoExportAssets.ts'
+      - 'electron/videoLibrary.ts'
       - 'electron/videoExports.ts'
       - 'electron/videoRawFrameWriter.ts'
       - 'electron/videoSyntheticRaster.ts'

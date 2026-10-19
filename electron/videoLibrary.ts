@@ -193,6 +193,23 @@ export class VideoLibraryStore {
       return { path: this.mediaPath(item), extension: item.extension }
     })
   }
+  /** Resolves a referenced copy from this saved project, never a same-named asset in another project. */
+  async resolveProjectMediaDependency(studioId: string, assetId: string, expected: Pick<VideoStudioAsset, 'extension' | 'mimeType' | 'size'>): Promise<{ path: string; trustedRoot: string }> {
+    requireId(studioId)
+    requireId(assetId)
+    return this.run(async () => {
+      const project = (await this.projects()).find((entry) => entry.id === studioId)
+      const asset = project?.assets.find((entry) => entry.id === assetId)
+      if (!asset || asset.extension !== expected.extension || asset.mimeType !== expected.mimeType || asset.size !== expected.size) {
+        throw new Error('O vídeo não corresponde aos metadados salvos neste roteiro.')
+      }
+      const path = this.projectMediaPath(studioId, asset)
+      if (!await exists(path)) throw new Error(`O arquivo de ${asset.name} não está disponível neste roteiro.`)
+      const file = await stat(path)
+      if (file.size !== asset.size) throw new Error(`O arquivo de ${asset.name} mudou desde que foi anexado.`)
+      return { path, trustedRoot: join(this.workspacePath(), `studio-${studioId}`, 'videos') }
+    })
+  }
   /** Repairs copies in duplicated scripts without resurrecting deleted library entries. */
   async ensureProjectAssets(studioId: string, assets: VideoStudioAsset[]): Promise<void> {
     requireId(studioId)

@@ -149,3 +149,9 @@ Todos os conceitos originais aprovados (Smart Scene Compiler, cache persistente,
 - `src/shared/videoCharacterTransitions.ts` centraliza a regra de transição usada pelo hook do preview e pelo Scene IR. Isso remove duas implementações paralelas de janelas, keys empatadas e supressão por gaps. O preview consulta samples também em seeks pausados quando o cache assíncrono já os preparou.
 - O teste de fixture compara o plano de transições de ambos os consumidores e verifica que um gap que cruza a janela cancela a interpolação.
 - Estado de V505/V507: parcialmente implementado e testado em Node. A composição da transição ainda é assíncrona/React no preview e não há prova de imagem equivalente entre preview, print e exportação.
+
+### 2026-10-19 — manifesto de dependências de vídeo (V509 parcial)
+
+- `electron/videoExportAssets.ts` produz SHA-256 ordenado para cada arquivo de vídeo referenciado, sem incluir paths no manifesto; valida root autorizado, tamanho/tipo, ausência de link simbólico no arquivo e mudanças durante a leitura. Há verificador para retomar/finalizar contra os bytes atuais.
+- `VideoLibraryStore.resolveProjectMediaDependency()` resolve a cópia de mídia do projeto salvo e recusa divergência de metadados.
+- A fixture cobre deduplicação, mídia ausente, escape do root, alteração pós-snapshot e resolução do projeto dono. O pipeline de export ainda não chama esses helpers; assets Fabricator/Customizador e cópia física imutável do job continuam abertos.
