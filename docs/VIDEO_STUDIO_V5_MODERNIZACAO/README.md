@@ -32,3 +32,15 @@ Este diretório é o **plano estratégico independente** solicitado para moderni
 Escrita **somente** em `nestarasup-sys/G-V5/master-desenvolvimento`. Editor V4 `oai/aggressive-export-v5` é referência de leitura. Não usar mídia, personagens ou projetos privados em CI; não executar DEV AI e auditorias desativadas. Não tocar em master, pastas do usuário ou trabalhos concorrentes.
 
 A implementação deve avançar em commits pequenos, com PR/merge apenas quando autorizado, gates sintéticos/Electron/PC alvo e rollback por feature flag. A documentação original e os fatos antigos ficam em [../AGENTE_EXPORT_V5/README.md](../AGENTE_EXPORT_V5/README.md) e [../AGENTE_EXPORT_V5/DIARIO.md](../AGENTE_EXPORT_V5/DIARIO.md).
+
+
+## Atualização de direção — reconstrução extensível e dois modos de export (2026-10-19)
+
+A visão originalmente aprovada — **Smart Scene Compiler**, reutilização inteligente de estados, GPU quando vantajosa, cache persistente, preview/export no mesmo motor, proxies, jobs retomáveis, autotuning, benchmark embutido e Smart Export por tipo de cena — permanece integralmente. O usuário autorizou ainda **reconstruir o Video Studio internamente**, desde que o projeto e as funções atuais sejam preservados, e solicitou dois modos de exportação.
+
+**Leia obrigatoriamente também:**
+- [07_MODOS_DE_EXPORTACAO.md](./07_MODOS_DE_EXPORTACAO.md): contrato dos modos Completo (interpolações e automatismos) e Sem animações de personagem (trocas authored preservadas, automações desligadas, vídeos/áudio preservados).
+- [08_ARQUITETURA_EXTENSIVEL_E_RECONSTRUCAO.md](./08_ARQUITETURA_EXTENSIVEL_E_RECONSTRUCAO.md): novo desenho modular, interfaces/registries para novos elementos e autorização condicionada de rebuild.
+- [09_MISSAO_CODEX_AUTONOMA.md](./09_MISSAO_CODEX_AUTONOMA.md): instruções de sync local e loop de implementação autônoma até passar os gates, sem parar após documentação/POC.
+
+**Prioridade operacional:** implementar e testar uma engine, não produzir planos indefinidamente. A meta termina por evidência de paridade, MP4 real, dois modos, resiliência, Windows e extensibilidade — não por alegação de "perfeito".
