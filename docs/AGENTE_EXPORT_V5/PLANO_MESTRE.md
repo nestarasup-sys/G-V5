@@ -1,7 +1,29 @@
 # GACHA V5 — plano mestre de engenharia da exportação
 
 > Área de trabalho de agente: `docs/AGENTE_EXPORT_V5/`.
-> Atualizado: 2026-10-19. Estado: **execução incremental iniciada**, sem declarar exportação MP4 pronta.
+> Atualizado: 2026-10-19. Estado: **fundação sintética implementada; MP4 real e Turbo não implementados/validados**.
+
+## Estado executivo após reanálise de código — 19/10/2026
+
+**Nenhum MP4 real foi demonstrado nesta reanálise.** Há código de fundação e testes sintéticos, mas falta integração em Electron (renderer isolado + decoder + FFmpeg + publish), paridade V5 e Turbo. A revisão atual foi **estática via repositórios**, não houve execução de testes nesta rodada.
+
+Documentação operacional detalhada (nova):
+- [README.md](./README.md) — ponto de entrada e status.
+- [AUDITORIA_CODIGO_2026-10-19.md](./AUDITORIA_CODIGO_2026-10-19.md) — evidência arquivo a arquivo, problemas P0/P1 e distinção fato/hipótese.
+- [CONTRATOS_ENGINE_E_TESTES.md](./CONTRATOS_ENGINE_E_TESTES.md) — job imutável, semântica de frames/PTS, IPC/handshake, checklist de 14 gates.
+- [BACKLOG_EXECUTAVEL.md](./BACKLOG_EXECUTAVEL.md) — E01–E20, ordem de implementação e qualidade de prova.
+
+**Decisões novas que prevalecem sobre ambiguidades do texto histórico:**
+1. O snapshot atual congela Studio JS, mas NÃO congela bibliotecas externas do Fabricador/Customizer; incorporar digests/bytes de arte e mídia no preflight antes de processar um job real.
+2. Transições de personagem, boca automática e blink **não** ficam semanticamente iguais apenas por reutilizar resolveVideoFrameSelection. O preview aplica transições com samples condicionados a playing; construir resolvedor canônico absoluto e testá-lo a 60 FPS independentemente do transporte.
+3. 'sourceFrame' existente significa tick da timeline em 1/60 s, **não** índice real de frame em arquivo de vídeo. Para VFR/29.97/24/25/30/60 usar timestamp/PTS de stream e decodificação reproduzível.
+4. videoExportJobs.ts confirma blocos de 600 frames em ordem e hashes, **não** valida MP4. Turbo conclui fora de ordem: exigir manifesto versionado e validation gate por chunk.
+5. VideoRawFrameWriter com BGRA e callback por frame não garante pipeline paralelo pleno; medir e limitar cópias/IPC/RSS. Full HD BGRA = 8.294.400 bytes por frame, 497.664.000 bytes/s a 60 FPS; não persistir frames brutos.
+6. buildVideoStudioAudioPlan apenas produz argumentos; mixer, PTS, cancelamento e waveform sintética devem ser verificados com encoder real. VideoExportLibrary apenas verifica arquivo/hash; validar ffprobe, frame count e decode antes de publicar.
+7. h264_mf não pode ser chamado de encoder garantido nem 'licença correta' pode ser inferida só de grep em FFmpeg -buildconf. Probar pacote efetivo e revisar redistribuição. Suporte/ fallback depende do ambiente comprovado.
+8. Antes de habilitar Turbo, serial com áudio único e validação no PC alvo deve ser estável. 'Turbo 2×' expressa concorrência de até dois workers, jamais promete 2× de velocidade. Hybrid entra só quando benchmarks/paridade justificarem.
+9. A matriz de CI sintético não executa Electron/FFmpeg nem cobre as alterações em superfícies visuais/IPC. O caminho para 'pronto' exige gates separados e evidências no SHA exato.
+10. Preservar a branch master-desenvolvimento do G-V5; V4 é referência somente leitura; não ativar scripts DEV AI/auditorias desativadas nem empregar mídia privada.
 
 ## Identidade e limites
 
