@@ -68,15 +68,18 @@ export class VideoCharacterFrameRenderer {
     const transition = character.transition
     if (!transition) throw new Error('Transição ausente no frame solicitado.')
     const key = this.transitionKey(frame, character.elementId, transition.startFrame, transition.boundaryFrame)
-    return this.remember(key, () => {
+    return this.remember(key, async () => {
       const source = characterFromVideoExportSnapshot(this.characters, transition.from.element.characterId ?? '')
-      return this.transitionRenderer.render({
+      const rendered = await this.transitionRenderer.render({
         elementId: character.elementId,
         startFrame: transition.startFrame,
         boundaryFrame: transition.boundaryFrame,
         from: transition.from,
         to: transition.to,
       }, frame.frame, source)
+      return character.stageTransform
+        ? { ...rendered, element: { ...rendered.element, ...character.stageTransform } }
+        : rendered
     })
   }
 
