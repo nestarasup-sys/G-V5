@@ -7,8 +7,10 @@
   "main": "out/main/main.js",
   "scripts": {
     "postinstall": "node scripts/install-electron.cjs",
+    "predev": "node scripts/prepare-app-data.cjs",
     "dev": "electron-vite dev --watch",
     "build": "electron-vite build",
+    "prepreview": "node scripts/prepare-app-data.cjs",
     "preview": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test:dev-ai": "node --test tests/dev-ai-baseline.test.cjs",
@@ -17,7 +19,7 @@
     "audit:isolation": "node scripts/dev-ai/baseline.cjs --suite isolation",
     "audit:ipc": "node scripts/dev-ai/baseline.cjs --suite ipc",
     "audit:all": "node scripts/dev-ai/baseline.cjs --suite all",
-    "test": "node --test tests/dev-ai-baseline.test.cjs tests/dev-ai-visual.test.cjs tests/dev-ai-ast-boundaries.test.cjs tests/dev-ai-boundary-gate.test.cjs tests/dev-ai-raster-fixture.test.cjs",
+    "test": "node --test tests/dev-ai-baseline.test.cjs tests/dev-ai-visual.test.cjs tests/dev-ai-ast-boundaries.test.cjs tests/dev-ai-boundary-gate.test.cjs tests/dev-ai-raster-fixture.test.cjs tests/app-data-migration.test.cjs",
     "audit:boundaries": "node scripts/dev-ai/boundary-scan.cjs",
     "audit:boundaries:ast": "node scripts/dev-ai/boundary-ast.cjs",
     "audit:boundaries:gate": "node scripts/dev-ai/feature-boundary-gate.cjs"

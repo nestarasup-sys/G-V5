@@ -113,6 +113,38 @@ function configureDevAiDataRoot(): void {
 
 configureDevAiDataRoot()
 
+function configureLocalAppDataRoot(): void {
+  if (process.env.GACHA_DEV_AI_TEST === '1') return
+
+  const defaultRoot = app.isPackaged
+    ? join(dirname(process.execPath), 'app-data')
+    : join(app.getAppPath(), 'app-data')
+  const dataRoot = resolve(defaultRoot)
+  const userData = join(dataRoot, 'user-data')
+  const paths = [dataRoot, userData, join(dataRoot, 'logs'), join(dataRoot, 'crash-dumps'), join(dataRoot, 'temp')]
+  for (const path of paths) {
+    mkdirSync(path, { recursive: true })
+    if (lstatSync(path).isSymbolicLink() || resolve(path) !== realpathSync(path)) {
+      throw new Error(`Diretório local de dados não canônico: ${path}`)
+    }
+  }
+
+  // Keep application libraries, Chromium localStorage/session and Electron
+  // user data under one portable root. Feature folders remain grouped inside
+  // user-data (customizer, fabricator, studios and video-studios).
+  app.setPath('appData', dataRoot)
+  app.setPath('userData', userData)
+  app.setPath('sessionData', userData)
+  app.setPath('logs', join(dataRoot, 'logs'))
+  app.setPath('crashDumps', join(dataRoot, 'crash-dumps'))
+  app.setPath('temp', join(dataRoot, 'temp'))
+  process.env.TEMP = join(dataRoot, 'temp')
+  process.env.TMP = join(dataRoot, 'temp')
+  process.env.TMPDIR = join(dataRoot, 'temp')
+}
+
+configureLocalAppDataRoot()
+
 protocol.registerSchemesAsPrivileged([
   { scheme: 'gacha-video', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true } },
   { scheme: 'gacha-background', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true } }
