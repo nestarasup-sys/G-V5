@@ -504,6 +504,32 @@ export class VideoExportJobStore {
     await this.verifyPinnedMediaInFolder(folder, manifest)
   }
 
+  async resolvePinnedMedia(jobId: string, assetId: string): Promise<{ path: string; extension: keyof typeof mimeByExtension; mimeType: (typeof mimeByExtension)[keyof typeof mimeByExtension]; sizeBytes: number }> {
+    if (!idPattern.test(assetId)) throw new Error('Asset de mídia inválido.')
+    const folder = this.pathFor(jobId)
+    const info = await lstat(folder)
+    if (!info.isDirectory() || info.isSymbolicLink()) throw new Error('Pasta do job inválida.')
+    const manifest = JSON.parse(await readFile(join(folder, 'manifest.json'), 'utf8')) as VideoExportManifest
+    if (manifest.jobId !== jobId) throw new Error('O job não é proprietário desta pasta.')
+    const dependency = (manifest.mediaDependencies ?? []).find((item) => item.assetId === assetId)
+    if (!dependency || !shaPattern.test(dependency.sha256) || !Object.hasOwn(mimeByExtension, dependency.extension)
+      || mimeByExtension[dependency.extension] !== dependency.mimeType) throw new Error('Mídia pinada não encontrada no job.')
+    const expected = dependency.filename === `assets/${dependency.sha256}`
+      ? dependency.filename
+      : `assets/${dependency.assetId}.${dependency.extension}`
+    if (dependency.filename !== expected) throw new Error('Caminho da mídia pinada é inválido.')
+    const path = join(folder, dependency.filename)
+    const [pathInfo, canonicalFolder, canonicalPath] = await Promise.all([
+      lstat(path).catch(() => null), realpath(folder), realpath(path).catch(() => null),
+    ])
+    const relativePath = canonicalPath ? relative(canonicalFolder, canonicalPath) : ''
+    if (!pathInfo?.isFile() || pathInfo.isSymbolicLink() || pathInfo.size !== dependency.sizeBytes || !canonicalPath
+      || !relativePath || relativePath === '..' || relativePath.startsWith(`..${sep}`)) {
+      throw new Error('Mídia pinada saiu do diretório do job ou foi alterada.')
+    }
+    return { path: canonicalPath, extension: dependency.extension, mimeType: dependency.mimeType, sizeBytes: dependency.sizeBytes }
+  }
+
   async recordChunk(jobId: string, index: number): Promise<VideoExportManifest> {
     const folder = this.pathFor(jobId)
     const manifest = JSON.parse(await readFile(join(folder, 'manifest.json'), 'utf8')) as VideoExportManifest
