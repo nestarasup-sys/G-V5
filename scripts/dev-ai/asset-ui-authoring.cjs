@@ -80,6 +80,7 @@ async function route(win, hash, ready) {
   await wait(win, 'Boolean(document.querySelector(' + JSON.stringify(ready) + '))', 'Route ' + hash)
 }
 async function shot(win, folder, title) {
+  await win.webContents.executeJavaScript('new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))')
   await pause(250)
   const png = (await win.webContents.capturePage()).toPNG()
   assert.ok(png.length > 1000, 'Screenshot empty: ' + title)
@@ -105,6 +106,7 @@ async function run(win, sandbox, output, prepared, treeHash) {
   await click(win, '.model-primary-button', 'Import model through UI')
   await wait(win, 'document.querySelectorAll(".model-canvas-part").length >= 10', 'Model worker processed 10 source parts', 60000)
   await wait(win, 'window.desktop.listFabricatorSlots().then(slots=>slots[0]?.partCount>=10)', 'Model persisted by UI', 60000)
+  await wait(win, 'Boolean(document.querySelector(".model-slot.filled.active")) && !document.querySelector(".model-processing") && !document.querySelector(".model-processing-overlay") && document.querySelector(".model-editor-content")?.getAttribute("aria-busy")==="false"', 'Model UI settled after processing', 45000)
   const model = await api('window.desktop.loadFabricatorSlot(1)')
   assert.equal(model.parts.length, 10, 'Model importer should split 10 real parts')
   assert.equal(model.sourceName, MODEL_NAME)
@@ -117,6 +119,7 @@ async function run(win, sandbox, output, prepared, treeHash) {
   await wait(win, 'Boolean(document.querySelector(".pose-workspace .pose-toolbar"))', 'Pose workspace mount')
   await wait(win, '[...document.querySelectorAll(".pose-toolbar button")].some(b=>b.textContent.includes("Nova pose")&&!b.disabled)', 'New pose action ready')
   await clickText(win, '.pose-toolbar button', 'Nova pose', 'Author pose 1')
+  await wait(win, 'Boolean(document.querySelector(".pose-save-state.pending")) && document.querySelector(".pose-category-trigger")?.textContent.includes("Parado")', 'New pose 1 draft hydrated')
   await wait(win, 'document.querySelectorAll(".pose-artboard img").length >= 10', 'Pose authoring preview')
   await wait(win, '[...document.querySelectorAll(".pose-toolbar button")].some(b=>b.textContent.includes("Salvar pose")&&!b.disabled)', 'Pose 1 save enabled')
   await clickText(win, '.pose-toolbar button', 'Salvar pose', 'Persist pose 1')
@@ -124,7 +127,11 @@ async function run(win, sandbox, output, prepared, treeHash) {
   const pose1 = await api('window.desktop.loadFabricatorPose(1,1)')
   assert.equal(pose1.parts.length, 10)
   proof.screenshots.pose1 = await shot(win, folder, '02-pose1-ui')
+  await wait(win, 'Boolean(document.querySelector(".pose-save-state:not(.pending)"))', 'Pose 1 saved state reflected in React')
   await clickText(win, '.pose-toolbar button', 'Nova pose', 'Author pose 2')
+  // The previous pose remains on screen during asynchronous loadFabricatorSlot.
+  // Do not rotate the old pose and re-save slot 1 by racing the new draft.
+  await wait(win, 'Boolean(document.querySelector(".pose-save-state.pending")) && document.querySelector(".pose-category-trigger")?.textContent.includes("Sentado")', 'New pose 2 draft hydrated', 30000)
   await wait(win, 'document.querySelectorAll(".pose-piece-row").length>=10', 'Pose 2 editor')
   await click(win, '.pose-piece-row', 'Select part to rotate')
   await clickText(win, '.pose-rotation-actions button', '−15°', 'Rotate in UI')
