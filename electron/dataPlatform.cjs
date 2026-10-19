@@ -66,7 +66,10 @@ function validateId(value, label = 'Identificador') {
 }
 
 function validateExtension(value) {
-  if (typeof value !== 'string' || !/^\.[a-z0-9]{1,10}$/i.test(value)) throw new Error('Extensão de asset inválida.')
+  // Domain files preserve their original logical filenames. Some existing
+  // sidecars use descriptive suffixes such as `.before-head-shape`; CAS object
+  // paths are hash-only, so allowing a bounded alphanumeric suffix is safe.
+  if (typeof value !== 'string' || !/^\.[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$/i.test(value)) throw new Error('Extensão de asset inválida.')
   return value.toLowerCase()
 }
 

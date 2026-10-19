@@ -161,6 +161,24 @@ test('guided migration snapshots and verifies a synthetic domain; source is remo
   assert.equal(catalog.getMigration(result.migrationId).state, 'complete')
 }))
 
+test('guided migration preserves valid long sidecar extensions used by existing pose projects', async () => withRoot(async (root) => {
+  const catalog = catalogAt(root)
+  const userData = path.join(root, 'user-data')
+  const poses = path.join(userData, 'fabricator', 'poses', 'model-1', 'slot-1')
+  await fs.mkdir(poses, { recursive: true })
+  const sidecar = Buffer.from('synthetic preserved pose sidecar')
+  const sidecarPath = path.join(poses, 'rig.before-head-shape')
+  await fs.writeFile(sidecarPath, sidecar)
+  const service = new DataMigrationService({ dataRoot: root, userDataRoot: userData, catalog })
+  const result = await service.migrateDomain('fabricator.poses')
+  assert.equal(result.state, 'active')
+  const adapter = new DomainFileSystem(catalog, userData)
+  assert.deepEqual(await adapter.readFile(sidecarPath), sidecar)
+  assert.equal((await service.finalizeAfterHealthyLoad()).find((item) => item.domainId === 'fabricator.poses').cleaned, true)
+  await assert.rejects(fs.access(sidecarPath), { code: 'ENOENT' })
+  catalog.close()
+}))
+
 test('video project cleanup cannot delete separate media-library or background-library roots', async () => withRoot(async (root) => {
   const catalog = catalogAt(root)
   const userData = path.join(root, 'user-data')
