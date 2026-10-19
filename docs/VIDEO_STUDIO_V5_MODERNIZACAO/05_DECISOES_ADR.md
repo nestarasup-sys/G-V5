@@ -3,12 +3,12 @@ Data: 2026-10-19 · ADRs propostos/aceitos como **orientação de pesquisa**, n�
 
 ## Convenção
 
-Status possíveis: \`DECIDIDO — diretriz\`, \`PROVISÓRIO — experimento pendente\`, \`ADIADO\`, \`REJEITADO por ora\`, \`APROVADO em benchmark\`. Nenhum candidato foi "aprovado em benchmark" nesta rodada. O impacto e rollback precisam ser revisados a cada experimento.
+Status possíveis: `DECIDIDO — diretriz`, `PROVISÓRIO — experimento pendente`, `ADIADO`, `REJEITADO por ora`, `APROVADO em benchmark`. Nenhum candidato foi "aprovado em benchmark" nesta rodada. O impacto e rollback precisam ser revisados a cada experimento.
 
 ### ADR-001 — Separar a nova estratégia do plano antigo de export
 **Status:** DECIDIDO — diretriz.
 **Contexto:** objetivo passou de portar Turbo V4 para modernizar todo Video Studio V5.
-**Decisão:** \`00_PLANO_DIRETOR.md\` é o plano estratégico canônico; \`docs/AGENTE_EXPORT_V5/PLANO_MESTRE.md\` continua como plano de implementação de export serial/Turbo subordinado.
+**Decisão:** `00_PLANO_DIRETOR.md` é o plano estratégico canônico; `docs/AGENTE_EXPORT_V5/PLANO_MESTRE.md` continua como plano de implementação de export serial/Turbo subordinado.
 **Consequências:** os trabalhos de timeline/preview, biblioteca, estabilidade e desktop packaging fazem parte do escopo.
 **Rollback:** nenhum efeito em runtime; atualizar cross-references se estratégia mudar.
 
@@ -35,21 +35,21 @@ Status possíveis: \`DECIDIDO — diretriz\`, \`PROVISÓRIO — experimento pend
 
 ### ADR-005 — Fonte de verdade é frame absoluto + assets pinned
 **Status:** DECIDIDO — diretriz.
-**Decisão:** RenderIR por \`frame n\`, snapshots externos por hash de bytes e versão; preview/print/export usam o mesmo evaluator.
-**Risco mitigado:** transição só em \`playing\`, frame stale, troca de roupa/face durante job, viewport CSS.
+**Decisão:** RenderIR por `frame n`, snapshots externos por hash de bytes e versão; preview/print/export usam o mesmo evaluator.
+**Risco mitigado:** transição só em `playing`, frame stale, troca de roupa/face durante job, viewport CSS.
 **Gate:** seek A-B-A, testes de 15 frames de transição, renderer/cor/texto e troca concorrente de mídia.
 **Rollback:** preservar schema autoral v1; novo IR/cache totalmente derivado.
 
 ### ADR-006 — Biblioteca de vídeos: não apagar cópias legadas
 **Status:** DECIDIDO — diretriz; CAS permanece PROVISÓRIO.
-**Evidência:** \`VideoLibraryStore.attach()\` faz cópia de original para projeto; há migração/cópias de recuperação.
+**Evidência:** `VideoLibraryStore.attach()` faz cópia de original para projeto; há migração/cópias de recuperação.
 **Decisão:** shadow CAS e proxy são opcionais e reversíveis; GC só de cache derivado; hardlink não é pressuposto; backup/portable antes de qualquer dedup física.
 **Gate:** refcount/tombstone/projects/remover/backup/offline/move appdata.
 **Rollback:** leitor legado com arquivos de projeto intactos.
 
 ### ADR-007 — Encoder por capability probe, nunca por nome
 **Status:** DECIDIDO — diretriz.
-**Decisão:** \`h264_mf\`, \`h264_amf\`, \`h264_nvenc\`, \`h264_qsv\` ou CPU só após executar encode/decode curto com binário real, driver e configuração final no PC/pacote. FFmpeg licencia/configuração verificadas.
+**Decisão:** `h264_mf`, `h264_amf`, `h264_nvenc`, `h264_qsv` ou CPU só após executar encode/decode curto com binário real, driver e configuração final no PC/pacote. FFmpeg licencia/configuração verificadas.
 **Alternativas:** WebCodecs para subfunção avaliada.
 **Gate:** qualidade, conformidade, estabilidade, GOP e fallback CPU.
 **Rollback:** o job retorna modo serial/CPU sondado; output anterior preservado.
@@ -70,7 +70,7 @@ Status possíveis: \`DECIDIDO — diretriz\`, \`PROVISÓRIO — experimento pend
 ### ADR-010 — Não apostar em zero-copy GPU antes de profiling
 **Status:** ADIADO.
 **Contexto:** Electron offscreen useSharedTexture é experimental e requer ponte nativa.
-**Decisão:** bitmap/OSR primeiro; medir \`readbackMs\`, custos de cópia e codecs; só pesquisar shared GPU texture/Direct3D11VA se gargalo dominante.
+**Decisão:** bitmap/OSR primeiro; medir `readbackMs`, custos de cópia e codecs; só pesquisar shared GPU texture/Direct3D11VA se gargalo dominante.
 **Gate:** bridge independente, GPU device compatibility, release lifecycle e failback.
 **Rollback:** bitmap e CPU encode.
 
@@ -89,7 +89,7 @@ Status possíveis: \`DECIDIDO — diretriz\`, \`PROVISÓRIO — experimento pend
 
 ## Decisões não tomadas
 
-- Bibliotecas finais instaladas em \`package.json\`: nenhuma nesta rodada.
+- Bibliotecas finais instaladas em `package.json`: nenhuma nesta rodada.
 - Encoder padrão de distribuição, LGPL/GPL definitivo e licença de pacote: **não decidido**.
 - Datas, performance estimada em x vezes, número de workers e limite de VRAM/RAM: **não decidido**, dependem de benchmark.
 - Intercâmbio OpenTimelineIO, filters NLE avançados, render 4K e formatos de projeto v2: **fora da implantação inicial**.
@@ -101,6 +101,6 @@ Ao aprovar/rejeitar experimento, adicionar:
 2. ambiente/hardware/binários/licenças;
 3. registros de paridade, PTS, áudio, cancel e FPS/tempo/RSS;
 4. decisão e reversão/feature flag;
-5. data e link para relatório em \`04_LAB_E_GATES.md\` ou diário correspondente.
+5. data e link para relatório em `04_LAB_E_GATES.md` ou diário correspondente.
 
 **Nunca** converter uma hipótese em decisão por autoridade de um editor conhecido ou pela palavra "GPU".
