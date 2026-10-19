@@ -33,10 +33,10 @@ function wardrobeSheet() {
   return nativeImage.createFromBitmap(bitmap, { width: w, height: h }).toPNG()
 }
 
-async function prepare(sandbox) {
-  const source = fixture.manifest(nativeImage).sourceBytes
+function prepare(sandbox) {
+  // Do not render/generate PNG before Electron main installs its isolated
+  // userData root. Native image generation can yield until app.whenReady().
   const filename = join(sandbox, MODEL_NAME)
-  await writeFile(filename, source, { flag: 'wx' })
   // Intercept exactly the authorized import dialog; production IPC then reads
   // the actual sandbox PNG from disk and the UI launches its real image worker.
   const original = dialog.showOpenDialog.bind(dialog)
@@ -46,7 +46,7 @@ async function prepare(sandbox) {
       return { canceled: false, filePaths: [filename], bookmarks: [] }
     throw new Error('DEV AI refuses unplanned native file dialog: ' + String(options?.title ?? 'unknown'))
   }
-  return { sourceHash: hash(source), clothingPng: wardrobeSheet(), restore: () => { dialog.showOpenDialog = original } }
+  return { filename, restore: () => { dialog.showOpenDialog = original } }
 }
 
 async function wait(win, condition, label, timeout = 25000) {
@@ -88,6 +88,10 @@ async function shot(win, folder, title) {
 }
 
 async function run(win, sandbox, output, prepared, treeHash) {
+  const source = fixture.manifest(nativeImage).sourceBytes
+  await writeFile(prepared.filename, source, { flag: 'wx' })
+  prepared.sourceHash = hash(source)
+  prepared.clothingPng = wardrobeSheet()
   const folder = join(output, 'asset-ui-authoring')
   await mkdir(folder, { recursive: true })
   const api = (code) => query(win, code)
