@@ -21,3 +21,8 @@ export type VideoExportSurfaceFrameReady = Readonly<{
   frame: number
   error?: string
 }>
+
+export type VideoExportSurfaceReady = Readonly<{
+  jobId: string
+  error?: string
+}>
