@@ -50,6 +50,8 @@ Versão 1 · 2026-10-19. Tarefas ordenadas por pré-requisito e separadas por do
 | V517 | Verificador `ffprobe`/decode/PTS/cores e biblioteca transacional | V515,V516 | MP4 íntegro ou falha segura |
 | V518 | IPC tipada start/cancel/status/progress e UI em feature isolada | V517 | trusted sender, cancel e no partial |
 
+**Evidência local parcial para V515/V517 (2026-10-19):** `scripts/video-studio/ffmpeg-local-smoke.cjs` consegue alimentar 60 frames BGRA sintéticos pelo `VideoRawFrameWriter`, gerar H.264 1920×1080/60 com um FFmpeg WinGet local e verificar 60 frames + decode completo com FFprobe. O binário é GPL e não foi empacotado. Como a fixture não usa o compositor V5, áudio, IPC, UI, cancelamento ou projeto real, os critérios V515/V517 continuam abertos; ver `../AGENTE_EXPORT_V5/DIARIO.md` (Rodada 18).
+
 ## Tranche T3 — Preview e armazenamento eficiente
 
 | ID | Mudança | Dependência | Aceite |

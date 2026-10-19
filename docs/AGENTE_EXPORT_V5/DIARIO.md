@@ -267,3 +267,10 @@ _Atualizações posteriores devem registrar o SHA real do gate e nunca declarar 
 - `tests/video-export-jobs.test.cjs` inclui caso sintético com junction/symlink para fora do job e confirma que nenhum arquivo chega ao destino externo.
 - Validação: `node --test tests/video-export-jobs.test.cjs` — 8/8 passou; `npm test` — 73/73; `npm run test:export:synthetic` — 43/43; `npm run typecheck`, `npm run build` e `git diff --check` passaram.
 - A correção preserva o escopo de V509 parcial; ainda não há conexão com o fluxo de export de produção nem runtime Electron/MP4.
+
+## 2026-10-19 — Rodada 18: smoke local reprodutível do writer com FFmpeg real
+
+- Novo comando manual `scripts/video-studio/ffmpeg-local-smoke.cjs` recebe caminhos absolutos explícitos para `ffmpeg.exe` e `ffprobe.exe`; não procura executável no `PATH`. Gera 60 frames BGRA sintéticos 1920×1080, usa `VideoRawFrameWriter`/perfil atual `h264_mf`, valida metadados do MP4 com FFprobe e decodifica o arquivo inteiro. O MP4 temporário é removido após validação; o JSON de saída guarda versão, licença de build, frames, bytes e hash, sem path local.
+- Executado com o FFmpeg WinGet local v8.1.2 Gyan full build. Resultado observado: H.264, 1920×1080, 60/1 FPS, duração 1 s, 60/60 frames lidos, decode integral aprovado, tamanho 1.810.830 bytes, SHA-256 `e3f953be9bdfce958063ba71f315d52b17026d4ca0b1793a2836fb0630eeecc6`.
+- O binário usado tem `--enable-gpl`; a saída do harness marca `gplBuild: true` e `redistributionValidated: false`. Ele serve apenas para teste local e não pode ser empacotado/selecionado pelo app sem resolver licença e build compatível.
+- Limite: os pixels vêm de `renderSyntheticBgraFrame()`, não de cena/personagens do V5. Não houve Electron, áudio/AAC, interface, cancelamento, recuperação, pipeline VFR, dois modos nem comparação preview/export. Isto prova só a interoperabilidade sintética do writer e deste encoder local, não fecha M2/V515 ou a exportação do produto.
