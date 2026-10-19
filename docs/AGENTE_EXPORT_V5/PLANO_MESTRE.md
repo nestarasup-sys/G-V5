@@ -185,3 +185,10 @@ Fatos relevantes adicionais no G-V5:
 6. A fase M6 de Turbo só pode ser promovida após MP4 serial real correto e benchmarks no PC alvo; duas threads/workers não prometem tempo 2x menor.
 
 **Política:** manter `master-desenvolvimento`, dados privados inacessados, sem DEV AI/auditorias desativadas; esta rodada altera documentos, não runtime.
+
+
+## Requisitos posteriores e contrato de modos (2026-10-19)
+
+A meta é implementação integral do **Video Studio Nova Geração**, não somente portar Turbo. A engenharia local pode reconstruir o editor mediante segurança e paridade do projeto legado. Dois modos no mesmo motor: `animated` (transições, piscadas e boca automáticas quando elegíveis) e `static-characters` (sem interpolações/piscadas/boca automáticas, mantendo keys authored, vídeo e áudio). Para que a exportação possa avançar é obrigatório implementar, testar e manter corretos ambos os perfis, com MP4 serial antes de promover Turbo.
+
+Fonte superior de requisitos: [missão Codex](../VIDEO_STUDIO_V5_MODERNIZACAO/09_MISSAO_CODEX_AUTONOMA.md), [modos](../VIDEO_STUDIO_V5_MODERNIZACAO/07_MODOS_DE_EXPORTACAO.md) e [arquitetura extensível](../VIDEO_STUDIO_V5_MODERNIZACAO/08_ARQUITETURA_EXTENSIVEL_E_RECONSTRUCAO.md). As otimizações do Editor V4 são conhecimento reaproveitável **somente** quando superiores no G-V5 após medição.
