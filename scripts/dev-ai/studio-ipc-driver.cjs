@@ -11,6 +11,7 @@ const { basename, dirname, join, relative, resolve, sep } = require('node:path')
 const { pathToFileURL } = require('node:url')
 const { app, BrowserWindow, nativeImage } = require('electron')
 const { compareBitmaps, evaluateVisualComparison } = require('./visual-regression.cjs')
+const rasterFixture = require('./asset-flow-raster-fixture.cjs')
 
 const ROOT = resolve(__dirname, '../..')
 const mode = process.argv[2]
@@ -173,6 +174,74 @@ async function rejectedError(expression) {
   return expression.then(() => null, (error) => String(error?.message ?? error))
 }
 
+async function verifyRasterAssetFlow(window) {
+  const fixture = rasterFixture.manifest(nativeImage)
+  const api = expression => window.webContents.executeJavaScript(expression)
+  const userData = app.getPath('userData')
+  assert.equal(relative(sandbox, userData).startsWith('..'), false,
+    'A fixture raster só pode ser criada dentro da sandbox DEV AI')
+  const modelPath = join(userData, 'fabricator', 'models', 'slot-9')
+  assert.equal(existsSync(modelPath), false, 'A fixture não pode sobrescrever um modelo no slot 9')
+  await mkdir(modelPath, { recursive: true })
+  await writeFile(join(modelPath, rasterFixture.SOURCE_NAME), fixture.sourceBytes)
+  const sourceBefore = createHash('sha256').update(readFileSync(join(modelPath, rasterFixture.SOURCE_NAME))).digest('hex')
+  assert.equal(sourceBefore, fixture.sourceHash)
+  const modelAssets = Object.entries(fixture.assets).map(([id, image]) => ({ id, dataUrl: image.dataUrl }))
+  await api(`window.desktop.saveFabricatorProject(${JSON.stringify(fixture.model)},${JSON.stringify(modelAssets)})`)
+  const restoredModel = await api('window.desktop.loadFabricatorSlot(9)')
+  assert.equal(restoredModel?.parts.length, 10)
+  assert.equal(restoredModel.parts[0].sourceTransform.x, rasterFixture.FRAMES[0].x)
+  assert.equal(restoredModel.parts[0].sourceTransform.width, rasterFixture.FRAMES[0].width)
+  assert.equal(restoredModel.parts[9].id, 'leg-right')
+  assert.ok(restoredModel.parts.every(p => p.dataUrl?.startsWith('data:image/png;base64,')))
+  assert.equal(createHash('sha256').update(readFileSync(join(modelPath, rasterFixture.SOURCE_NAME))).digest('hex'),
+    sourceBefore, 'Saving the assembled model changed the source sheet')
+  for (const slot of [1,2]) {
+    const pose = slot === 1 ? fixture.pose1 : fixture.pose2
+    await api(`window.desktop.saveFabricatorPose(9,${slot},${JSON.stringify(pose)},${JSON.stringify(modelAssets)})`)
+    const restored = await api(`window.desktop.loadFabricatorPose(9,${slot})`)
+    assert.equal(restored?.parts.length,10)
+    assert.equal(restored.sourceModelSlot,9)
+    assert.ok(restored.parts.every(p=>p.dataUrl?.startsWith('data:image/png;base64,')))
+    assert.equal(restored.parts[0].sourceTransform.x,fixture.pose1.parts[0].sourceTransform.x)
+    if(slot===2)assert.notEqual(restored.parts[0].x,fixture.pose1.parts[0].x)
+  }
+  const setAssets = [
+    { id: 'shoe-left', dataUrl: fixture.shoe.dataUrl },
+    { id: 'glasses', dataUrl: fixture.glasses.dataUrl }
+  ]
+  await api(`window.desktop.saveWardrobeSet(9,${JSON.stringify(fixture.set)},${JSON.stringify(setAssets)})`)
+  const restoredSet = await api(`window.desktop.loadWardrobeSet(9,${JSON.stringify(rasterFixture.SET_ID)})`)
+  assert.equal(restoredSet?.components.length, 2)
+  assert.equal(restoredSet.components[0].binding.boneId, 'leg-left')
+  assert.equal(restoredSet.components[0].binding.version, 1)
+  assert.equal(restoredSet.components[1].renderAboveHair, true)
+  assert.ok(restoredSet.components.every(c=>c.dataUrl?.startsWith('data:image/png;base64,')))
+  const afterModel = treeHash(join(userData,'fabricator','models','slot-9'))
+  const afterPoses = treeHash(join(userData,'fabricator','poses','model-9'))
+  const afterWardrobe = treeHash(join(userData,'fabricator','wardrobe','model-9'))
+  const modelBeforeNegative = treeHash(join(userData,'fabricator','models','slot-9'))
+  await rejectPromise(api(`window.desktop.saveWardrobeSet(9,${JSON.stringify({...fixture.set,id:'../../escape'})},${JSON.stringify(setAssets)}).then(()=>false,()=>true)`),
+    'Wardrobe set path traversal')
+  assert.equal(treeHash(join(userData,'fabricator','models','slot-9')),modelBeforeNegative)
+  assert.equal(treeHash(join(userData,'fabricator','wardrobe','model-9')),afterWardrobe)
+  const fixtureDir = join(output,'raster-asset-flow')
+  await mkdir(fixtureDir,{recursive:true})
+  await writeFile(join(fixtureDir,'source-sheet.png'),fixture.sourceBytes)
+  await writeFile(join(fixtureDir,'shoe-left.png'),fixture.shoe.bytes)
+  await writeFile(join(fixtureDir,'glasses.png'),fixture.glasses.bytes)
+  const evidence={schemaVersion:1,adapter:'production-preload-real-ipc',status:'passed',
+    syntheticOnly:true,modelSlot:9,sourceReference:'wardrobe-v2-1122x1402',
+    modelParts:10,poseSlots:[1,2],wardrobeComponents:2,
+    sourceSheetSha256:sourceBefore,assembledModelTreeSha256:afterModel,
+    poseTreeSha256:afterPoses,wardrobeTreeSha256:afterWardrobe,
+    garmentBindings:{shoeLeft:'leg-left',glasses:'head'},
+    sourceUnchangedAfterSaving:true,posePartIdsStable:true,legacyDataTouched:false,
+    renderingCoverage:'fixture PNG raster persisted and decoded by Electron IPC; NOT full Customizer/Studio golden image'}
+  await writeFile(join(fixtureDir,'report.json'),JSON.stringify(evidence,null,2))
+  return evidence
+}
+
 async function seed(window) {
   const api = (expression) => window.webContents.executeJavaScript(expression)
   const normalFolder = await api('window.desktop.getStudioFolder()')
@@ -315,6 +384,7 @@ async function seed(window) {
 
   // Test the real delete handlers with colliding IDs; only the selected
   // workspace directory may be removed. Then reopen verifies absence/presence.
+  const rasterEvidence = await verifyRasterAssetFlow(window)
   // Asset-flow ownership IPC invariant: a new Customizer actor starts with
   // model/pose preference, and outfit adjustments belong exclusively to its
   // character document. No Fabricator authoring API is invoked by this test.
@@ -332,13 +402,13 @@ async function seed(window) {
   assert.equal(actorA.customization.poseSlot, 1)
   assert.equal(actorB.customization.modelSlot, 1)
   assert.equal(actorB.customization.poseSlot, 1)
-  const syntheticGarmentId = 'ba8a8f4a-d74a-4b91-a7c4-73408f0add11'
+  const syntheticGarmentId = rasterFixture.SET_ID
   const actorWithFittedGarment = {
     ...actorA, customization: {
       ...actorA.customization,
       wardrobeGroups: [{
-        modelSlot: 1, setId: syntheticGarmentId, category: 'sapato',
-        componentId: 'synthetic-shoe-left', offsetX: 12, offsetY: -5,
+        modelSlot: 9, setId: syntheticGarmentId, category: 'sapato',
+        componentId: 'shoe-left', offsetX: 12, offsetY: -5,
         scaleX: 1.2, scaleY: 1, rotation: 8
       }]
     }
@@ -366,7 +436,8 @@ async function seed(window) {
       fixture: 'documento sintético sem assets, 1 elemento de dados; IPC real + escrita local confirmada' },
     customizerCharacterOwnership: {
       charactersCreated: 2, updatedCharacters: 1, siblingCustomizationUnchanged: true,
-      fabricatorLibraryHashUnchanged: true, testedReference: 'synthetic garment locator (no garment rendering)'
+      fabricatorLibraryHashUnchanged: true, testedReference: 'persisted raster wardrobe v2, full renderer golden pending',
+      rasterSourceSheetSha256: rasterEvidence.sourceSheetSha256
     },
     deleteOperations: 0, outsideSandboxWritesObserved: 0,
     sandboxRoot: 'out/dev-ai/runs/<run-id>/sandbox',
@@ -418,6 +489,9 @@ async function verifyRestart(window) {
   const fitted = actors.find(character => character.name === 'DEV AI Actor A')
   const unchanged = actors.find(character => character.name === 'DEV AI Actor B')
   assert.equal(fitted?.customization.wardrobeGroups?.[0]?.offsetX, 12)
+  assert.equal(fitted?.customization.wardrobeGroups?.[0]?.modelSlot,9)
+  assert.equal(fitted?.customization.wardrobeGroups?.[0]?.setId,rasterFixture.SET_ID)
+  assert.equal((await window.webContents.executeJavaScript('window.desktop.loadFabricatorPose(9,1)'))?.parts.length,10)
   assert.equal(fitted?.customization.wardrobeGroups?.[0]?.rotation, 8)
   assert.deepEqual(unchanged?.customization.wardrobeGroups ?? [], [],
     'Após restart, personagem B herdou alterações do personagem A')
