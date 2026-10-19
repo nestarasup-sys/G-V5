@@ -102,9 +102,9 @@ O sucesso de um gate não substitui os posteriores. Sem G2, UI de export deve pe
 
 ## Nota de compatibilidade com o plano integral (2026-10-19)
 
-1. \`transitionSampleFrames()\` entrega somente amostras internas; no caso clássico de 15 frames de janela, os frames estritamente internos são 14. Os testes devem verificar função real, e não exigir exatamente 15 PNGs intermediários.
-2. Balões/textos do preview DOM CSS e \`makeCanvasPrint()\` Canvas2D têm layouts independentes; unificar por contrato tipográfico/geométrico fixo 1920×1080 antes de chamar "mesmo preview/export".
+1. `transitionSampleFrames()` entrega somente amostras internas; no caso clássico de 15 frames de janela, os frames estritamente internos são 14. Os testes devem verificar função real, e não exigir exatamente 15 PNGs intermediários.
+2. Balões/textos do preview DOM CSS e `makeCanvasPrint()` Canvas2D têm layouts independentes; unificar por contrato tipográfico/geométrico fixo 1920×1080 antes de chamar "mesmo preview/export".
 3. Política de camada atual: CSS vídeo z=1, elementos Studio zIndex+2. Preservar até decisão/versionamento explícito.
-4. Contrato V5 \`sourceStartFrame\` em ticks 60Hz, não índice físico de frame comprimido; timestamps racionais/PTS para fonte VFR.
-5. O \`attach()\` de videoLibrary faz cópia por projeto, portanto snapshot pinning/digests devem cobrir resolução de qual cópia/original é lido.
+4. Contrato V5 `sourceStartFrame` em ticks 60Hz, não índice físico de frame comprimido; timestamps racionais/PTS para fonte VFR.
+5. O `attach()` de videoLibrary faz cópia por projeto, portanto snapshot pinning/digests devem cobrir resolução de qual cópia/original é lido.
 6. Contratos expandidos (RenderIR, scene events, cache, media pipeline, milestones) estão em [02_ARQUITETURA_CANONICA.md](../VIDEO_STUDIO_V5_MODERNIZACAO/02_ARQUITETURA_CANONICA.md). O [plano diretor](../VIDEO_STUDIO_V5_MODERNIZACAO/00_PLANO_DIRETOR.md) prevalece no escopo de modernização; este arquivo cobre os gates do *export*.
