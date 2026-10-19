@@ -30,6 +30,7 @@ on:
       - 'src/renderer/src/features/videoStudio/VideoExportSurfacePage.tsx'
       - 'src/renderer/src/features/videoStudio/VideoStudioEditor.tsx'
       - 'src/renderer/src/ui/App.tsx'
+      - 'src/renderer/src/main.tsx'
       - 'src/renderer/src/desktop.d.ts'
       - 'src/renderer/src/features/customizer/CustomizerPage.tsx'
       - 'electron/videoExportJobs.ts'
