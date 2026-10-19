@@ -23,6 +23,9 @@ test('export library publishes only job-owned output and retains it independentl
   const library = new VideoExportLibrary(root)
   const job = path.join(library.jobRoot, jobId)
   await fs.mkdir(job, { recursive: true })
+  const projectFolder = path.join(root, 'projects', 'video-studio', `studio-${projectId}`)
+  await fs.mkdir(projectFolder, { recursive: true })
+  await fs.writeFile(path.join(projectFolder, 'project.json'), '{}')
   await fs.writeFile(path.join(job, 'final.mp4'), Buffer.from('synthetic-validated-video-output'))
   const record = await library.finalize(jobId, {
     id: exportId, studioId: projectId, studioTitle: 'Fixture Synthetic', width: 1920, height: 1080,
@@ -31,6 +34,7 @@ test('export library publishes only job-owned output and retains it independentl
   assert.equal(record.filename.includes('Fixture-Synthetic'), true)
   assert.equal(record.sizeBytes, Buffer.byteLength('synthetic-validated-video-output'))
   assert.match(record.sha256, /^[a-f0-9]{64}$/)
+  await fs.rm(projectFolder, { recursive: true })
   const listed = await library.list()
   assert.equal(listed.length, 1)
   assert.equal(listed[0].available, true)
