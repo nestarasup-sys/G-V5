@@ -192,7 +192,7 @@ async function run(win, sandbox, output, prepared, treeHash) {
   await wait(win, 'Boolean(document.querySelector(".customizer-selected-artwork")?.complete)', 'Character model preview', 35000)
   await clickText(win, '.customizer-top-tabs button', 'Roupas', 'Open clothes tab')
   await wait(win, 'Boolean(document.querySelector(".customizer-upper-wardrobe-piece"))', 'Clothes panel visible', 25000)
-  await clickText(win, '.customizer-upper-wardrobe-piece button[aria-label^="Abrir biblioteca de"]', 'Camisa', 'Open shirt library')
+  await click(win, '.customizer-wardrobe-piece-camisa button[aria-label^="Abrir biblioteca de"]', 'Open shirt library from its labelled category')
   await wait(win, 'Boolean(document.querySelector(".customizer-hair-library-grid [title]"))', 'Shirt library loaded', 25000)
   await clickText(win, '.customizer-hair-library-grid button[title]', 'Camisa', 'Equip UI-authored shirt')
   await wait(win, 'window.desktop.listCustomizerCharacters().then(items=>items.find(c=>c.name===' + JSON.stringify(CHARACTER_NAME) + ')?.customization.wardrobeGroups?.some(g=>g.setId===' + JSON.stringify(set.id) + '))', 'Character equipment persisted', 45000)
