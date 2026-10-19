@@ -105,7 +105,8 @@ jobs:
             out/dev-ai/runs/**/studio-ipc-real-artifacts/real-ipc-studio-*.png
             out/dev-ai/runs/**/studio-ipc-real-artifacts/raster-asset-flow/*.png
             out/dev-ai/runs/**/studio-ipc-real-artifacts/raster-asset-flow/report.json
-            out/dev-ai/runs/**/studio-ipc-real-artifacts/raster-asset-flow/customizer-render-result.json
+            out/dev-ai/runs/**/studio-ipc-real-artifacts/raster-asset-flow/customizer-render-result-*.json
+            out/dev-ai/runs/**/studio-ipc-real-artifacts/raster-asset-flow/pose-comparison.json
             out/dev-ai/runs/**/studio-isolation/result.json
             out/dev-ai/runs/**/studio-isolation/*.png
           if-no-files-found: ignore
