@@ -1,9 +1,9 @@
 # PLANO DIRETOR — Modernização Integral do Video Studio G-V5
 > Documento **estratégico e executável, separado** do antigo plano de exportação. Versão 1.0 · 2026-10-19.
 >
-> Repositório de escrita: \`nestarasup-sys/G-V5\`, branch \`master-desenvolvimento\`.
-> Referência histórica de desempenho: \`nestarasup-sys/EDITOR-V4\`, branch \`oai/aggressive-export-v5\`, **somente leitura**.
-> Base inspecionada desta investigação: G-V5 \`7352d748fcd482545f49ac0d546886e9be195108\`; pode avançar após commits de documentação. Resultados descritos como "proposta" não foram executados.
+> Repositório de escrita: `nestarasup-sys/G-V5`, branch `master-desenvolvimento`.
+> Referência histórica de desempenho: `nestarasup-sys/EDITOR-V4`, branch `oai/aggressive-export-v5`, **somente leitura**.
+> Base inspecionada desta investigação: G-V5 `7352d748fcd482545f49ac0d546886e9be195108`; pode avançar após commits de documentação. Resultados descritos como "proposta" não foram executados.
 
 ## 0. Visão do produto
 
@@ -13,8 +13,8 @@ Transformar o Video Studio num editor de reação/animação 2D com **preview re
 
 ## 1. Princípios de engenharia
 
-1. **Uma semântica visual, várias apresentações:** a mesma função absoluta \`evaluateFrame(job, n)\` alimenta preview canônico, still/print, serial e Turbo. O resultado depende de documento+dependências+versões+frame, não de \`playing\`, estado assíncrono não drenado, tamanho da janela ou ordem dos seeks.
-2. **Projetos V5 seguem válidos:** \`StudioDocument\`/\`VideoTimelineDocument\` v1 permanecem entrada. Novos manifests e formatos de cache são *derivados*, versionados, reversíveis, fora dos documentos autorais.
+1. **Uma semântica visual, várias apresentações:** a mesma função absoluta `evaluateFrame(job, n)` alimenta preview canônico, still/print, serial e Turbo. O resultado depende de documento+dependências+versões+frame, não de `playing`, estado assíncrono não drenado, tamanho da janela ou ordem dos seeks.
+2. **Projetos V5 seguem válidos:** `StudioDocument`/`VideoTimelineDocument` v1 permanecem entrada. Novos manifests e formatos de cache são *derivados*, versionados, reversíveis, fora dos documentos autorais.
 3. **Primeiro correto, depois rápido:** guardar baseline, implementar um MP4 serial funcional, validar a reprodução, então cache/Turbo/hardware sem esconder perdas de qualidade.
 4. **Tecnologia escolhida por experimento:** FFmpeg+composição especializada é a hipótese líder; PixiJS WebGL, MLT, GES, libopenshot e WebCodecs/Mediabunny competem em protótipos controlados. Não comprometer a produção sem gates.
 5. **Custos explícitos:** tempo frio/quente, CPU, GPU, VRAM, RSS, disco, p95 de seek/preview, consumo de memória e qualidade de pixels. Evitar alegar "2×" de throughput sem medição.
@@ -26,21 +26,21 @@ Transformar o Video Studio num editor de reação/animação 2D com **preview re
 
 | Evidência | Consequência |
 |---|---|
-| \`VideoStudioEditor.tsx\` usa RAF e samples condicionados a \`videoPlaying\`; \`useCharacterTransitions.ts\` condiciona \`samples\` a \`playing\` | Reproduzir N arbitrário não equivale ao estado da preview tocando; criar timeline evaluator canônico. |
-| \`transitionRenderer.ts\` consulta Fabricador/Customizer em tempo de render | Snapshot do Studio congelado não fixa conteúdo de fornecedores externos; materializar manifesto de bytes/dependências. |
-| \`VideoStudioEditor.css\`: texto \`font-size:clamp(9px,1.4vw,18px)\`, balões por DOM; \`makeCanvasPrint()\` redesenha texto com Canvas 2D e regras próprias | Risco confirmado de **implementações de layout divergentes**; geometria/tipografia em coordenadas de palco e oráculo visual; não presumir prints equivalentes. |
-| \`VideoStudioEditor.tsx\`: vídeo \`z-index:1\` e elementos \`zIndex + 2\`; clipes \`<video>\` | Semântica de camadas para vídeo é específica; compilador não pode supor mixer de trilhas genérico ou z-order arbitrário. |
-| \`videoMediaPlayback.ts\` usa \`currentTime\` e tolerância de drift | Playback nativo não é decoder frame-exato para export; usar PTS/decoder controlado. |
-| \`videoLibrary.ts\` mantém original + \`copyVerified\` em \`projectMediaPath\` no attach | Há cópias físicas por projeto. Não converter para CAS/global sem migração, integridade, isolamento, delete e backup testados. |
-| \`videoExportSnapshot.ts\` resolve texto/gaps/vídeos/blink, não pixels/estado completo | Fundação parcial. |
-| \`videoRawFrameWriter.ts\`, \`videoExportJobs.ts\`, \`videoExports.ts\` | Infra de transporte, checkpoint e catálogo, mas ainda sem renderer real, FFmpeg comprovado, FFprobe, API start/cancel/progress. |
-| \`package.json\`: Electron/React/sharp, sem FFmpeg empacotado | Não existe encoder disponível garantido no instalador. |
+| `VideoStudioEditor.tsx` usa RAF e samples condicionados a `videoPlaying`; `useCharacterTransitions.ts` condiciona `samples` a `playing` | Reproduzir N arbitrário não equivale ao estado da preview tocando; criar timeline evaluator canônico. |
+| `transitionRenderer.ts` consulta Fabricador/Customizer em tempo de render | Snapshot do Studio congelado não fixa conteúdo de fornecedores externos; materializar manifesto de bytes/dependências. |
+| `VideoStudioEditor.css`: texto `font-size:clamp(9px,1.4vw,18px)`, balões por DOM; `makeCanvasPrint()` redesenha texto com Canvas 2D e regras próprias | Risco confirmado de **implementações de layout divergentes**; geometria/tipografia em coordenadas de palco e oráculo visual; não presumir prints equivalentes. |
+| `VideoStudioEditor.tsx`: vídeo `z-index:1` e elementos `zIndex + 2`; clipes `<video>` | Semântica de camadas para vídeo é específica; compilador não pode supor mixer de trilhas genérico ou z-order arbitrário. |
+| `videoMediaPlayback.ts` usa `currentTime` e tolerância de drift | Playback nativo não é decoder frame-exato para export; usar PTS/decoder controlado. |
+| `videoLibrary.ts` mantém original + `copyVerified` em `projectMediaPath` no attach | Há cópias físicas por projeto. Não converter para CAS/global sem migração, integridade, isolamento, delete e backup testados. |
+| `videoExportSnapshot.ts` resolve texto/gaps/vídeos/blink, não pixels/estado completo | Fundação parcial. |
+| `videoRawFrameWriter.ts`, `videoExportJobs.ts`, `videoExports.ts` | Infra de transporte, checkpoint e catálogo, mas ainda sem renderer real, FFmpeg comprovado, FFprobe, API start/cancel/progress. |
+| `package.json`: Electron/React/sharp, sem FFmpeg empacotado | Não existe encoder disponível garantido no instalador. |
 
 Mais detalhes auditáveis em [01_ESTUDO_DE_MOTORES.md](./01_ESTUDO_DE_MOTORES.md) e [02_ARQUITETURA_CANONICA.md](./02_ARQUITETURA_CANONICA.md).
 
 ## 3. Arquitetura-alvo, separando plano lógico de tecnologia
 
-\`\`\`text
+```text
                Studio V5 v1 + bibliotecas existentes
                               │
                         Preflight + Snapshot
@@ -68,11 +68,11 @@ Mais detalhes auditáveis em [01_ESTUDO_DE_MOTORES.md](./01_ESTUDO_DE_MOTORES.md
                                         audio mix uma vez
                                          verificação final
                                      publicação transacional
-\`\`\`
+```
 
 **Três fronteiras independentes:**
-- **A. Editor / domínio**: salvar, editar, voltar, preview. Somente leitura de \`JobSpec\` no export.
-- **B. Render/compilação**: \`RenderIR\` por frame e por intervalo, plano de dependências, sort de camadas, pixel/layout contracts.
+- **A. Editor / domínio**: salvar, editar, voltar, preview. Somente leitura de `JobSpec` no export.
+- **B. Render/compilação**: `RenderIR` por frame e por intervalo, plano de dependências, sort de camadas, pixel/layout contracts.
 - **C. Media/entrega**: decode VFR, encoder, streams, concat, áudio, FFprobe, retry, cache, worker ownership.
 
 ## 4. Sequência de execução (gates vinculantes)
@@ -85,14 +85,14 @@ Mais detalhes auditáveis em [01_ESTUDO_DE_MOTORES.md](./01_ESTUDO_DE_MOTORES.md
 **Gate P0:** quadro e áudio esperados especificados; baseline reproduzível, sem tocar runtime real.
 
 ### Fase P1 — Semântica única e fidelidade do preview
-- [ ] Implementar \`RenderIR\` absoluto a partir de \`VideoTimelineDocument\`, com transições e efeitos por quadro, prioridade e identidade de layers.
+- [ ] Implementar `RenderIR` absoluto a partir de `VideoTimelineDocument`, com transições e efeitos por quadro, prioridade e identidade de layers.
 - [ ] Fixar palco lógico 1920×1080, texto/balloons/linha/quebra/fontes/alpha e posição de personagem, sem viewport-dependent units na camada canônica.
 - [ ] Resolver e materializar dependências transitivas (pose, roupas, presets, faces, PNGs, vídeo); versionar hashes sem alterar o schema do projeto.
-- [ ] Oferecer \`preview canonical\` experimental; preservar UI/editor e fazer A/B por amostras PNG. Unificar também \`Print\` em etapa posterior.
+- [ ] Oferecer `preview canonical` experimental; preservar UI/editor e fazer A/B por amostras PNG. Unificar também `Print` em etapa posterior.
 **Gate P1:** transição, seek reverso, pausa, blink, boca, clip e mudança de janela dão mesmo frame lógico; não aceitar tolerância para estado errado.
 
 ### Fase P2 — MP4 serial real
-- [ ] \`ExportSurface\` V5 isolada (não \`ExportSurface\` do V4) com requestId, barriers de assets/presentation/readback e cleanup.
+- [ ] `ExportSurface` V5 isolada (não `ExportSurface` do V4) com requestId, barriers de assets/presentation/readback e cleanup.
 - [ ] FFmpeg locator+probe real no Windows alvo, encoder CPU confiável + HW candidatos após sonda, container e saída temporária.
 - [ ] Produzir MP4 pequeno com áudio correto, validar count/PTS/codec/BT.709/range/duração por FFprobe + decode completo.
 - [ ] Job API start/cancel/status/progress com trusted sender e owner; publicar apenas saída validada.
@@ -133,7 +133,7 @@ Mais detalhes auditáveis em [01_ESTUDO_DE_MOTORES.md](./01_ESTUDO_DE_MOTORES.md
 | Motor padrão | V5 RenderIR + compositor especializado + FFmpeg sondado | Trocar apenas se MLT/GES/libopenshot vencerem paridade+perf+manutenção |
 | Engine visual | reusar composição atual inicialmente; PixiJS WebGL como candidato A/B | WebGL não é prova de pixel-idêntico a CSS |
 | Codificação | CPU estável sondada; GPU candidata por hardware | fallback + prova de cor/PTS/qualidade |
-| Frame clock | inteiros 60fps / timestamps racionais | N nunca vem de \`currentTime\` do preview |
+| Frame clock | inteiros 60fps / timestamps racionais | N nunca vem de `currentTime` do preview |
 | Cache | derivado, endereçado por hashes de conteúdos e versões | invalidação em qualquer dependência |
 | Turbo | 1 worker primeiro, dois se comprovado | 3+ só com ganho repetível e memória |
 | Biblioteca de vídeo | preservar originais e cópias por projeto enquanto migração for planejada | CAS compartilhado só com testes de perda/backup/delete |
@@ -168,11 +168,11 @@ Consulte [04_LAB_E_GATES.md](./04_LAB_E_GATES.md).
 - **Documentos deste plano**: [01_ESTUDO_DE_MOTORES.md](./01_ESTUDO_DE_MOTORES.md), [02_ARQUITETURA_CANONICA.md](./02_ARQUITETURA_CANONICA.md), [03_MIGRACAO_E_DADOS.md](./03_MIGRACAO_E_DADOS.md), [04_LAB_E_GATES.md](./04_LAB_E_GATES.md), [05_DECISOES_ADR.md](./05_DECISOES_ADR.md).
 - **Plano de export antigo:** [../AGENTE_EXPORT_V5/PLANO_MESTRE.md](../AGENTE_EXPORT_V5/PLANO_MESTRE.md) continua como backlog tático do *pipeline de export*, subordinado a este plano integral quando houver divergência.
 - **Diário:** [../AGENTE_EXPORT_V5/DIARIO.md](../AGENTE_EXPORT_V5/DIARIO.md) registra mudanças com SHA/testes exatos; plano não se torna feature por ser escrito.
-- **Alçada:** commits só em \`master-desenvolvimento\` do G-V5, sem alterar \`master\`, V4, mídia privada, DEV AI ou auditorias desligadas.
+- **Alçada:** commits só em `master-desenvolvimento` do G-V5, sem alterar `master`, V4, mídia privada, DEV AI ou auditorias desligadas.
 - **Controle:** cada tranche gera issues/tarefas executáveis com teste, artefato sintético, benchmark, decisão e plano de rollback. Não misturar "teste Node" com "MP4 Windows validado".
 
 ## 9. Primeira onda técnica recomendada
 
-**Começar pelas fontes de verdade em vez de importar engines:** produzir uma fixture de 2 personagens+balão+vídeo+áudio e implementar \`RenderIR\` com snapshot de arte e estado absoluto; corrigir diver­gência temporal de transição/boca/texto; capturar still na mesma superfície; depois MP4 serial H.264 real com FFmpeg. Paralelamente (sem bloquear essa trilha) executar três spikes A/B: PixiJS, MLT e WebCodecs/Mediabunny. Isso permite aproveitar rapidamente os componentes existentes sem fixar um backend prematuramente.
+**Começar pelas fontes de verdade em vez de importar engines:** produzir uma fixture de 2 personagens+balão+vídeo+áudio e implementar `RenderIR` com snapshot de arte e estado absoluto; corrigir diver­gência temporal de transição/boca/texto; capturar still na mesma superfície; depois MP4 serial H.264 real com FFmpeg. Paralelamente (sem bloquear essa trilha) executar três spikes A/B: PixiJS, MLT e WebCodecs/Mediabunny. Isso permite aproveitar rapidamente os componentes existentes sem fixar um backend prematuramente.
 
 **Status em 2026-10-19:** documento novo; todas as caixas são pendências futuras salvo quando explicitamente indicadas como código já existente. Não há teste nem benchmark novo de runtime executado durante esta rodada documental.
