@@ -12,6 +12,13 @@ export type VideoExportSnapshot = Readonly<{
   durationFrames: number
 }>
 
+type SerializedVideoExportSnapshot = Readonly<{
+  schemaVersion: 1
+  studio: StudioDocument
+  frameRate: 60
+  durationFrames: number
+}>
+
 export type VideoExportFrameSelection = Readonly<{
   frame: number
   timeSeconds: number
@@ -31,6 +38,20 @@ function deepFreeze<T>(value: T, visited = new WeakSet<object>()): T {
   visited.add(value)
   for (const member of Object.values(value)) deepFreeze(member, visited)
   return Object.freeze(value)
+}
+
+function canonicalJson(value: unknown): string {
+  if (value === null || typeof value === 'string' || typeof value === 'boolean') return JSON.stringify(value)
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) throw new Error('Snapshot contém um número inválido.')
+    return JSON.stringify(value)
+  }
+  if (Array.isArray(value)) return `[${value.map((entry) => canonicalJson(entry)).join(',')}]`
+  if (typeof value === 'object') {
+    const entries = Object.entries(value).filter(([, entry]) => entry !== undefined).sort(([left], [right]) => left.localeCompare(right))
+    return `{${entries.map(([key, entry]) => `${JSON.stringify(key)}:${canonicalJson(entry)}`).join(',')}}`
+  }
+  throw new Error('Snapshot contém um valor que não pode ser persistido.')
 }
 
 /**
@@ -66,6 +87,35 @@ export function createVideoExportSnapshot(source: StudioDocument): VideoExportSn
     frameRate: 60 as const,
     durationFrames: detachedTimeline.durationFrames
   })
+}
+
+/** Stable, versioned JSON for persisting the exact project state accepted by an export job. */
+export function serializeVideoExportSnapshot(snapshot: VideoExportSnapshot): string {
+  if (!snapshot || snapshot.frameRate !== 60 || snapshot.durationFrames !== snapshot.timeline.durationFrames
+    || snapshot.studio.videoTimeline !== snapshot.timeline) throw new Error('Snapshot de exportação inconsistente.')
+  const payload: SerializedVideoExportSnapshot = {
+    schemaVersion: 1,
+    studio: snapshot.studio,
+    frameRate: snapshot.frameRate,
+    durationFrames: snapshot.durationFrames,
+  }
+  return canonicalJson(payload)
+}
+
+/** Reconstructs the frozen runtime view from its pinned on-disk representation. */
+export function parseVideoExportSnapshot(serialized: string): VideoExportSnapshot {
+  let payload: SerializedVideoExportSnapshot
+  try { payload = JSON.parse(serialized) as SerializedVideoExportSnapshot }
+  catch { throw new Error('Snapshot persistido da exportação está corrompido.') }
+  if (!payload || payload.schemaVersion !== 1 || !payload.studio || payload.frameRate !== 60
+    || !Number.isSafeInteger(payload.durationFrames) || payload.durationFrames < 1) {
+    throw new Error('Snapshot persistido da exportação tem um formato incompatível.')
+  }
+  const snapshot = createVideoExportSnapshot(payload.studio)
+  if (snapshot.frameRate !== payload.frameRate || snapshot.durationFrames !== payload.durationFrames) {
+    throw new Error('Duração do snapshot persistido não confere com a timeline.')
+  }
+  return snapshot
 }
 
 /**
