@@ -105,4 +105,4 @@ A comparação inicial focava export. A inspeção ampliada encontrou:
 
 **Estudos externos e plano integral:** [Motores](../VIDEO_STUDIO_V5_MODERNIZACAO/01_ESTUDO_DE_MOTORES.md) · [Arquitetura](../VIDEO_STUDIO_V5_MODERNIZACAO/02_ARQUITETURA_CANONICA.md) · [Dados](../VIDEO_STUDIO_V5_MODERNIZACAO/03_MIGRACAO_E_DADOS.md) · [Gates](../VIDEO_STUDIO_V5_MODERNIZACAO/04_LAB_E_GATES.md).
 
-**Limites:** fontes verificadas estaticamente; testes runtime/Pixi/FFmpeg/MLT/SES não foram realizados nesta rodada. Direção arquitetural = hipótese até bench real.
+**Limites:** fontes verificadas estaticamente; testes runtime/Pixi/FFmpeg/MLT/GES não foram realizados nesta rodada. Direção arquitetural = hipótese até bench real.
