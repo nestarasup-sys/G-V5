@@ -176,3 +176,18 @@ Consulte [04_LAB_E_GATES.md](./04_LAB_E_GATES.md).
 **Começar pelas fontes de verdade em vez de importar engines:** produzir uma fixture de 2 personagens+balão+vídeo+áudio e implementar `RenderIR` com snapshot de arte e estado absoluto; corrigir diver­gência temporal de transição/boca/texto; capturar still na mesma superfície; depois MP4 serial H.264 real com FFmpeg. Paralelamente (sem bloquear essa trilha) executar três spikes A/B: PixiJS, MLT e WebCodecs/Mediabunny. Isso permite aproveitar rapidamente os componentes existentes sem fixar um backend prematuramente.
 
 **Status em 2026-10-19:** documento novo; todas as caixas são pendências futuras salvo quando explicitamente indicadas como código já existente. Não há teste nem benchmark novo de runtime executado durante esta rodada documental.
+
+
+## Adendo de requisitos do produto e autorização técnica (2026-10-19)
+
+**A direção desta versão inclui explicitamente TODAS as ideias da proposta "Video Studio Engine V5 — Nova Geração":** combinar tecnologias open source por evidência; compositor de personagens acelerado com PixiJS/WebGL caso vença A/B; MLT/GES/libopenshot como alternativas de mídia; FFmpeg + Smart Scene Compiler como baseline; renderização por mudanças visuais sem pular frames CFR; cache semântico persistente compartilhável por digest; preview e export com mesmo estado/cena; paralelismo por chunks; proxies; recuperação por checkpoints; hardware/autotuner; medição invisível ao usuário; Smart Export por complexidade/cena; processamento GPU/CPU com fallback e estabilidade em vídeos longos.
+
+**Autorizações e requisitos novos:**
+1. O usuário autoriza reconstrução interna profunda do Video Studio, desde que não haja perda de funções, arquivos, projetos ou bibliotecas. Preferir substituir componentes incrementalmente atrás de adaptadores/flags; remover legado apenas após paridade e migração testadas. Ver [08_ARQUITETURA_EXTENSIVEL_E_RECONSTRUCAO.md](./08_ARQUITETURA_EXTENSIVEL_E_RECONSTRUCAO.md).
+2. Extensibilidade passa a ser gate de produto: adicionar um novo tipo de elemento/efeito ao compilador e renderers por registro e interfaces, sem editar monólito JSX. Separar domínio/IR, animações, UI, renderers, mídia, codecs e jobs.
+3. Dois modos de export com o mesmo pipeline e diferenças **semânticas versionadas**: [07_MODOS_DE_EXPORTACAO.md](./07_MODOS_DE_EXPORTACAO.md). O modo Sem animações preserva mudanças autorais de pose/expressão e toda a mídia/áudio, mas remove interpolações automáticas, blink e boca animada; não congela vídeos.
+4. A missão local para Codex está pronta em [09_MISSAO_CODEX_AUTONOMA.md](./09_MISSAO_CODEX_AUTONOMA.md): sincronização segura de branch, implementação end-to-end e ciclo de testes/commits até os gates. Não considerar documentação, proof-of-concept, build ou CI sintético prova de finalização.
+5. As tecnologias listadas são **candidatas**, não dependências obrigatórias. Codex tem liberdade para encontrar substitutos melhores e demonstrar superioridade por licenças, manutenção, visual parity, performance e Windows.
+6. Nenhuma limpeza irreversível, migração de dados sem backup ou ocultação de falhas para alcançar métricas de velocidade.
+
+**Gate adicional:** comparar os dois modos lado a lado frame-a-frame, com intermediários de transição, fala/blink, corte de key authored, vídeos em movimento, áudio correto; mesmo preset output e codec, sem artefatos ou "2×" inventados.
