@@ -1,6 +1,6 @@
 # Revisão de refatoração do G-V5 — índice
 
-**Data da revisão estática:** 2026-10-18. **Base inspecionada:** `master` em `5b8483454757f4cc9606c626471aabbeccf35daa`. **Estado:** documentação de planejamento; nenhuma refatoração de runtime, migração de dados, instalação ou suíte foi executada nesta revisão.
+**Data da revisão estática:** 2026-10-18. **Base inspecionada:** `master` em `5b8483454757f4cc9606c626471aabbeccf35daa`. **Estado:** a primeira revisão foi documental. As branches posteriores implementaram runner DEV AI, IPC Electron sintético, GitHub Actions e proteções direcionadas ao fluxo de roupas; migração de dados reais e matriz AF/ISO completa continuam não executadas.
 
 ## Fontes de verdade — não duplicar especificações
 
@@ -11,12 +11,16 @@
 | Ordem de execução, tarefas marcáveis, dependências, esforço, rollback e critérios | [ROADMAP_EXECUTAVEL.md](ROADMAP_EXECUTAVEL.md) |
 | Política de dados, formato portátil, transações, backups e restauração | [DADOS_E_RECUPERACAO.md](DADOS_E_RECUPERACAO.md) |
 | Isolamento e contrato de runner DEV AI, suites, evidências e matriz | [ISOLAMENTO_STUDIOS_E_DEV_AI.md](ISOLAMENTO_STUDIOS_E_DEV_AI.md) |
+| Fluxo normativo de modelos montado/desmontado, poses, roupas 1/2, cabelo, cabeça, Customizador e Studios | [FLUXO_ASSETS_FABRICADOR_CUSTOMIZADOR_STUDIOS.md](FLUXO_ASSETS_FABRICADOR_CUSTOMIZADOR_STUDIOS.md) |
 | Segurança, logging, performance, acessibilidade e operação | [QUALIDADE_E_OPERACAO.md](QUALIDADE_E_OPERACAO.md) |
 | Análise de stack, alternativas e decisões a validar | [DECISOES/ADR-0001-runtime-e-testes.md](DECISOES/ADR-0001-runtime-e-testes.md) |
 | Resultados das verificações realmente executadas nesta revisão e limites | [AUDITORIAS/REVISAO_ESTATICA_2026-10-18.md](AUDITORIAS/REVISAO_ESTATICA_2026-10-18.md) |
 | Implementação inicial do DEV AI, comandos e resultados sintéticos da Etapa A | [AUDITORIAS/BASELINE_DEV_AI_2026-10-18.md](AUDITORIAS/BASELINE_DEV_AI_2026-10-18.md) |
 | Validação real do runner/IPC em Windows e limites da cobertura em 2026-10-18 | [AUDITORIAS/VALIDACAO_WINDOWS_2026-10-18.md](AUDITORIAS/VALIDACAO_WINDOWS_2026-10-18.md) |
 | Handoff técnico detalhado para Codex executar testes reais em Windows/Electron/IPC | [CODEX_HANDOFF_EXECUCAO_WINDOWS_E_IPC.md](CODEX_HANDOFF_EXECUCAO_WINDOWS_E_IPC.md) |
+| Evidências e limitações do defeito de roupa/ossos, ligação com pose e preview do Customizador | [AUDITORIAS/FLUXO_ASSETS_2026-10-18.md](AUDITORIAS/FLUXO_ASSETS_2026-10-18.md) |
+| Evidências da CI, teste visual e critérios de avanço por SHA | [AUDITORIAS/CI_DEV_AI_2026-10-18.md](AUDITORIAS/CI_DEV_AI_2026-10-18.md) |
+| Dependências runtime AST e planos de extração de páginas inteiras | [AUDITORIAS/DEPENDENCIAS_AST_2026-10-18.md](AUDITORIAS/DEPENDENCIAS_AST_2026-10-18.md) |
 
 **Histórico:** a versão anterior integral do plano permanece recuperável no Git em [`5b848345`](https://github.com/nestarasup-sys/G-V5/blob/5b8483454757f4cc9606c626471aabbeccf35daa/docs/PLANO_ESTRUTURA_PROJETO_E_DADOS.md). Esta versão é histórico, **não** uma segunda fonte normativa. O documento `docs/STUDIO_WORKSPACES.md` foi removido em `192245e`; não criar links correntes para ele.
 
@@ -48,4 +52,6 @@ A implementação mais recente está na branch `ci/dev-ai-foundation-hardening-2
 - [ ] Benchmark reproduzível e comparação antes/depois.
 - [ ] Qualquer migração ou mudança de código de produção.
 
-**Escopo da edição documental:** não cria `app-data/`, não executa exclusões, não toca mídia nem altera o comportamento do aplicativo.
+**Escopo atual:** alterações de código foram feitas em `electron/main.ts`, auditorias e na criação/equipamento de roupas. Nenhum arquivo de usuário foi acessado, enviado ou migrado; as auditorias usam fontes e perfis sintéticos. Cobertura do fluxo visual e de armazenamento de modelos/roupas/poses **não está concluída**.
+
+**Próxima prioridade:** fechar [R-29..R-38](ROADMAP_EXECUTAVEL.md) para a coerência de preview e source, mantendo AF-01..AF-20 abertos até evidência real. Regressões de Character Copy-on-write já podem rodar em IPC sintético, mas render idêntico Fabricador/Customizador/Studio/Video ainda exige fixture raster E2E.
