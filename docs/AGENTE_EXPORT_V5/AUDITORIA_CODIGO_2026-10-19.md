@@ -90,3 +90,19 @@ O arquivo V4 docs/EXPORT_V5_STATUS_2026-09-21.md informa 180 s de vídeo a 30 FP
 
 ## Critério de verdade
 Separar quatro estados nos próximos diários: IMPLEMENTADO NO CÓDIGO, TESTADO SINTETICAMENTE, TESTADO EM ELECTRON/FFMPEG REAL, VALIDADO NO PC ALVO. Nunca promover um estado a outro apenas porque build/typecheck passou.
+
+
+## Extensão da auditoria — domínio integral do Video Studio (2026-10-19)
+
+A comparação inicial focava export. A inspeção ampliada encontrou:
+- \`VideoStudioEditor.tsx::makeCanvasPrint\` faz raster de texto com \`context.roundRect\`, \`measureText\` e fonte própria, independente dos balões reais feitos em DOM/CSS. O print atual portanto **não é oráculo raster da prévia**; testar texto, círculo/tail, fonte, cor e clipping separadamente.
+- \`VideoStudioEditor.css\` usa \`font-size: clamp(9px, 1.4vw, 18px)\` para balões. Uma superfície de export em viewport diferente pode calcular tipografia diferente. Migrar geometria/tipografia para palco 1920×1080 canônico.
+- \`VideoStudioEditor.tsx\` atribui \`zIndex: Math.max(0, element.zIndex)+2\` aos elementos, com \`video-studio-video-composition\` CSS em \`z-index:1\`; importar engine de timeline genérica pode inverter camadas.
+- \`electron/videoLibrary.ts\` mantém \`media-library/videos\` e cópias físicas \`studio-<id>/videos\`. \`attach()\` chama \`copyVerified()\`; a integridade de cópia é aferida por **tamanho**, não hash completo. CAS e proxies devem ser migrados em shadow mode; não assumir deduplicação global automática.
+- \`src/shared/videoMedia.ts\` garante corte/source range de tamanho igual em *ticks 1/60*; não confundir sourceStartFrame com frame real de stream, especialmente VFR/29.97.
+- \`useCharacterTransitions.ts\` usa \`playing\` para samples, \`transitionSampleFrames()\` exclui os extremos. Ao falar em '15 frames de transição', diferenciar **janela de 15** de **14 intermediários** no caso pleno.
+- \`VideoStudioEditor.tsx\` monta seis quadros de boca em ciclo \`frames.length*6\` ao falar; sequenciamento deve ser dependente do frame absoluto e speechStartFrame, não do relógio React.
+
+**Estudos externos e plano integral:** [Motores](../VIDEO_STUDIO_V5_MODERNIZACAO/01_ESTUDO_DE_MOTORES.md) · [Arquitetura](../VIDEO_STUDIO_V5_MODERNIZACAO/02_ARQUITETURA_CANONICA.md) · [Dados](../VIDEO_STUDIO_V5_MODERNIZACAO/03_MIGRACAO_E_DADOS.md) · [Gates](../VIDEO_STUDIO_V5_MODERNIZACAO/04_LAB_E_GATES.md).
+
+**Limites:** fontes verificadas estaticamente; testes runtime/Pixi/FFmpeg/MLT/SES não foram realizados nesta rodada. Direção arquitetural = hipótese até bench real.
