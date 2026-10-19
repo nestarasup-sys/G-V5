@@ -81,3 +81,38 @@ _Atualizações posteriores devem registrar o SHA real do gate e nunca declarar 
 **Próxima ação técnica:** E01 (manifest de dependências) + E02 (frame evaluator com transições) + E03 (fixture visual); depois surface/encoder serial antes de chunks Turbo. Não publicar componente de export como funcional antecipadamente.
 
 **Rollback:** documentos não alteraram runtime nem projeto; qualquer implementação futura permanece atrás de gate até provas Electron/FFmpeg, com serial estável antes de Turbo.
+
+## 2026-10-19 — Rodada 04: pesquisa profunda e modernização integral do Video Studio
+
+**Solicitação:** ampliar o escopo além de portar Export Turbo 2× do V4, investigar tecnologias open source, documentar oportunidades para o G-V5 inteiro (preview, mídia, assets, personagens, cache, export e UX) e criar plano de execução separado.
+
+**Método/evidências:** inspeção estática de `G-V5/master-desenvolvimento` (a partir de `7352d748fcd482545f49ac0d546886e9be195108`) e `EDITOR-V4/oai/aggressive-export-v5` (referência `b951b4d2cbb360e3cfef7769e457894337bbc83e`); consulta a documentação primária de FFmpeg, MLT, GES, libopenshot, PixiJS, WebCodecs/MDN, Mediabunny, Electron OSR/shared texture, Remotion, OTIO e Olive. Não executar code, Electron, FFmpeg, CI, bench nem manipular projetos reais nesta rodada.
+
+**Nova área independente criada:** `docs/VIDEO_STUDIO_V5_MODERNIZACAO/`
+- `00_PLANO_DIRETOR.md`: objetivos, P0-P6, arquitetura, estratégia de gates e baseline.
+- `01_ESTUDO_DE_MOTORES.md`: matriz comparativa de 12 opções, papéis reais, licenças, dependências e adoção por A/B.
+- `02_ARQUITETURA_CANONICA.md`: Smart Scene Compiler, RenderIR, PTS racionais, layout fixo, cache, hash e protocolo frame-ready.
+- `03_MIGRACAO_E_DADOS.md`: diagnóstico de cópias físicas por projeto em videoLibrary e plano CAS/proxy reversível.
+- `04_LAB_E_GATES.md`: fixtures S00-S07, matriz de performance, gates G0-G6, qualidade por pixel/PTS/áudio.
+- `05_DECISOES_ADR.md`: ADR-001 a ADR-012 e status de hipóteses.
+- `06_BACKLOG_DE_EXECUCAO.md`: tarefas V501–V540 com pré-requisitos e critérios de aceite.
+- `README.md`: índice e ponte com documentação anterior.
+
+**Commits de criação representativos:** `ea3ba1fb` (plano), `3b707aa7` (engines), `c726b2a6` (RenderIR), `1df3445a` (dados), `b7bdbd59` (lab), `48c380d4` (ADRs), `85a26f39` (backlog), `4b225499` (índice). Commits posteriores apenas normalizaram Markdown e reconciliaram documentos antigos; consultar a branch para os SHAs finais exatos.
+
+**Documentos anteriores conciliados, sem apagar registros históricos:** `AGENTE_EXPORT_V5/README.md`, `PLANO_MESTRE.md`, `AUDITORIA_CODIGO_2026-10-19.md`, `CONTRATOS_ENGINE_E_TESTES.md` e `BACKLOG_EXECUTAVEL.md`.
+
+**Novos fatos confirmados por código:**
+1. `makeCanvasPrint()` renderiza balões e texto em Canvas 2D com regra distinta do preview DOM/CSS; o CSS tem `font-size:clamp(9px,1.4vw,18px)` dependente de viewport. Paridade precisa de motor/layout canônico.
+2. `VideoStudioEditor.tsx` posiciona vídeos CSS `z-index:1` e elementos em `zIndex+2`; preservar essas camadas antes de redesenhar mixer.
+3. `VideoLibraryStore.attach()` copia arquivos da biblioteca global para projeto com `copyVerified` (verifica size, não SHA); não existe deduplicação CAS de vídeo global por referência no caminho atual.
+4. A transição nominal de 250 ms contém 15 ticks a 60fps; `transitionSampleFrames()` gera amostras *estritamente internas* e tipicamente 14 intermediárias quando a janela tem 15 ticks.
+5. `VideoStudioEditor.tsx` mantém ciclo de 6 quadros de boca; aplicação precisa depender de frame absoluto no novo evaluator.
+6. `sourceStartFrame` mede ticks de timeline 60Hz e não frames codificados da mídia; buscar PTS correto por stream.
+7. Electron oferece OSR com shared texture experimental, mas ainda sem ponte nativa no V5. PixiJS WebGL é candidato; WebGPU não deve ser default sem teste. Mediabunny usa MPL-2.0, WebCodecs não muxa sem biblioteca adicional.
+
+**Diretriz de escolha:** RenderIR + compositor especializado V5 + FFmpeg sondado são hipótese líder, enquanto MLT/GES/libopenshot, PixiJS e WebCodecs/Mediabunny competem em testes. Nenhuma biblioteca nova foi instalada nem incorporada ao runtime; nenhuma performance prometida ou comprovada.
+
+**Gates realizados nesta rodada:** leitura e gravação de arquivos via GitHub, comparação estática e links oficiais. **NÃO realizados:** testes Node/typecheck/build, CI do novo HEAD, execução Windows/Electron/FFmpeg, FFprobe, A/B, benchmarks ou paridade real. Workflows de docs não iniciam validação sintética por padrão.
+
+**Próxima sequência executável:** V501/V502 (fixtures e oracle) → V505/V507 (estado por frame) → V509 (manifest pinned) → V508/V510 (texto/layers) → V512–V518 (MP4 serial verdadeiro) → preview/proxy/cache → Turbo. Registrar resultados por tarefa; não marcar concluído sem evidência.
