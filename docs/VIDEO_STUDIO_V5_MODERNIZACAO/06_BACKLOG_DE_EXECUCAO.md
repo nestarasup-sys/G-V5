@@ -114,3 +114,21 @@ Próximo item desbloqueado:
 ~~~
 
 **Nota:** uma matriz pode dizer "há implementação parcial" para códigos existentes, mas a tarefa completa só fica concluída após gate específico. Evitar "todos os 40 itens" como promessa de implementação numa única mudança gigante; aplicar testes de regressão e commits pequenos.
+
+
+## Extensão de escopo exigida pelo produto — V541 a V548
+
+| ID | Tarefa obrigatória | Critério de aceite |
+| --- | --- | --- |
+| V541 | Catálogo de recursos do Video Studio legado, contratos/UX/undo/redo/salvamento/prints antes de rebuild | cada recurso atual coberto por fixture ou checklist verificável; nenhuma perda |
+| V542 | Especificar e implementar `RenderVariant` no IR e no job digest | modos `animated` e `static-characters` não alteram Studio salvo |
+| V543 | Implementar export animado end-to-end com transição e automatismos no MP4 | preview/render/MP4 iguais por frame + áudio/PTS corretos |
+| V544 | Implementar export sem animações de personagem, mantendo keys authored/vídeos/áudio | cortes de pose/expressão preservados, blink/mouth/transições automáticas ausentes |
+| V545 | UI de seleção dos dois modos, cancel/status/validar arquivo, fallback | simples, nenhum preset expõe workers obrigatórios nem promete multiplicador |
+| V546 | Extrair módulos extensíveis para novos tipos de cena/efeitos/codec sem editar JSX monolítico | fixture adiciona layer/efeito e usa preview, print, serial e Turbo |
+| V547 | Reconstrução/migração gradual ou total do Video Studio autorizada, com adaptador legado/rollback | todos os recursos atuais e projetos v1 preservados; testes Windows |
+| V548 | Critério de conclusão/autonomia Codex e relatório de gates evidenciados | histórico de comandos, SHA, runtime real, benchmark, bloqueios e próximos passos |
+
+**Dependências recomendadas:** V541 antes de eliminar legado; V542 depende de V505/V507; V543 depende de V515–V517; V544 depende de V542/V543; V545 depende de V518/V543/V544; V546 depende de V505/V510/V512, validado antes de V540; V547 é transversal e só conclui após V541/V546/V538; V548 é gate final e depende das demais.
+
+Todos os conceitos originais aprovados (Smart Scene Compiler, cache persistente, paralelismo, proxies, hardware autodetect, Smart Export, preview/export unificado e A/B open source) continuam requisitos; não reduza a tarefa a portar Turbo V4. O documento [09_MISSAO_CODEX_AUTONOMA.md](./09_MISSAO_CODEX_AUTONOMA.md) é o **brief de execução** para o agente local.
