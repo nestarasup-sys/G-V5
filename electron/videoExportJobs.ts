@@ -374,7 +374,7 @@ export class VideoExportJobStore {
     }
   }
 
-  async reopen(jobId: string, expected?: { studioId: string; snapshotSha256: string; mediaSha256: string[]; mediaDependencies?: ReadonlyArray<VideoExportMediaDependency>; durationFrames: number; renderVariant?: RenderVariant; characterAssetsSha256?: string; charactersSha256?: string }): Promise<{ manifest: VideoExportManifest; nextChunkIndex: number; snapshot?: VideoExportSnapshot; characterAssets?: VideoCharacterRenderAssetSnapshot }> {
+  async reopen(jobId: string, expected?: { studioId: string; snapshotSha256: string; mediaSha256: string[]; mediaDependencies?: ReadonlyArray<VideoExportMediaDependency>; durationFrames: number; renderVariant?: RenderVariant; characterAssetsSha256?: string; charactersSha256?: string }): Promise<{ manifest: VideoExportManifest; nextChunkIndex: number; snapshot?: VideoExportSnapshot; characters?: VideoExportCharacterSnapshot; characterAssets?: VideoCharacterRenderAssetSnapshot }> {
     const folder = this.pathFor(jobId)
     const info = await lstat(folder)
     if (!info.isDirectory() || info.isSymbolicLink()) throw new Error('Pasta do job inválida.')
@@ -410,6 +410,13 @@ export class VideoExportJobStore {
     if (manifest.charactersFile !== undefined) {
       if (expected?.charactersSha256 !== undefined && expected.charactersSha256 !== manifest.charactersSha256) throw new Error('As definições dos personagens mudaram desde o snapshot de exportação.')
       const characterPath = join(folder, 'characters.json')
+      const [characterInfo, canonicalFolder, canonicalCharacterPath] = await Promise.all([
+        lstat(characterPath).catch(() => null),
+        realpath(folder),
+        realpath(characterPath).catch(() => null),
+      ])
+      if (!characterInfo?.isFile() || characterInfo.isSymbolicLink() || !canonicalCharacterPath
+        || relative(canonicalFolder, canonicalCharacterPath) !== 'characters.json') throw new Error('Snapshot de personagens ausente ou inválido.')
       const serializedCharacters = await readFile(characterPath, 'utf8')
       if (createHash('sha256').update(serializedCharacters).digest('hex') !== manifest.charactersSha256) throw new Error('Snapshot de personagens não confere com o hash do manifesto.')
       characters = parseVideoExportCharacterSnapshot(serializedCharacters)
@@ -469,7 +476,12 @@ export class VideoExportJobStore {
     if (manifest.jobId !== jobId || manifest.charactersFile !== 'characters.json' || !shaPattern.test(manifest.charactersSha256 ?? '')) {
       throw new Error('O job não contém snapshot válido dos personagens.')
     }
-    const serialized = await readFile(join(folder, 'characters.json'), 'utf8')
+    const path = join(folder, 'characters.json')
+    const [pathInfo, canonicalFolder, canonicalPath] = await Promise.all([lstat(path).catch(() => null), realpath(folder), realpath(path).catch(() => null)])
+    if (!pathInfo?.isFile() || pathInfo.isSymbolicLink() || !canonicalPath || relative(canonicalFolder, canonicalPath) !== 'characters.json') {
+      throw new Error('Snapshot de personagens ausente ou inválido.')
+    }
+    const serialized = await readFile(path, 'utf8')
     if (createHash('sha256').update(serialized).digest('hex') !== manifest.charactersSha256) throw new Error('Snapshot de personagens está corrompido.')
     return parseVideoExportCharacterSnapshot(serialized)
   }
