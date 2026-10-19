@@ -18,6 +18,7 @@ import { tintSkinPixels } from './skinTint'
 import { characterRenderSize, configureCharacterSampling } from './renderResolution'
 import { drawFaceExpressionEffects } from './expressionEffectRender'
 import { legacyStandardExpressionEffects } from '../../../../shared/legacyExpressionEffects'
+import type { VideoCharacterRenderAssetProvider } from '../../../../shared/videoCharacterRenderAssets'
 
 export type CatalogArtwork = Pick<FabricatorProject, 'width' | 'height' | 'parts' | 'layerOrder' | 'hiddenPartIds'> & Partial<Pick<FabricatorProject, 'joints'>>
 function withCharacterHeadSize(artwork: CatalogArtwork, proportions: CharacterProportions): CatalogArtwork {
@@ -47,11 +48,11 @@ const hairTintImageCache = new Map<string, Promise<HTMLImageElement>>()
 const hairPreviewImageCache = new Map<string, Promise<string>>()
 type StandardExpressionEffects = Record<number, FaceExpressionEffects>
 
-export async function loadStandardExpressionEffects(modelSlot: number): Promise<StandardExpressionEffects> {
-  const summaries = await window.desktop.listFaceExpressionPresets(modelSlot)
+export async function loadStandardExpressionEffects(modelSlot: number, assetProvider: VideoCharacterRenderAssetProvider = window.desktop): Promise<StandardExpressionEffects> {
+  const summaries = await assetProvider.listFaceExpressionPresets(modelSlot)
   const standard = summaries.filter((preset) => (preset.collectionId ?? 'standard') === 'standard'
     && Number.isInteger(preset.expressionIndex) && preset.expressionIndex! >= 0 && preset.expressionIndex! < 21)
-  const loaded = await Promise.all(standard.map((summary) => window.desktop.loadFaceExpressionPreset(modelSlot, summary.id)))
+  const loaded = await Promise.all(standard.map((summary) => assetProvider.loadFaceExpressionPreset(modelSlot, summary.id)))
   const effectsByIndex: StandardExpressionEffects = {}
   for (const preset of loaded) {
     if (!preset || !Number.isInteger(preset.expressionIndex)) continue
@@ -509,10 +510,10 @@ function hairAppearancePartStyleId(appearance: NonNullable<CustomizerCharacter['
   if (part === 'rearHair') return appearance?.parts?.frontHair ?? hairAppearanceStyleId(appearance, 'front')
   return null
 }
-async function loadHairAppearanceLayers(appearance: NonNullable<CustomizerCharacter['customization']['hairAppearance']> | undefined, modelSlot: number, side: HairLayerSide, cached: Record<string, HairStyle> = {}): Promise<HairLayerReference[]> {
+async function loadHairAppearanceLayers(appearance: NonNullable<CustomizerCharacter['customization']['hairAppearance']> | undefined, modelSlot: number, side: HairLayerSide, cached: Record<string, HairStyle> = {}, assetProvider: VideoCharacterRenderAssetProvider = window.desktop): Promise<HairLayerReference[]> {
   if (!appearance || appearance.modelSlot !== modelSlot) return []
   const ids = hairAppearanceStyleIds(appearance, side)
-  const styles = await Promise.all(ids.map(async ({ id }) => cached[`${modelSlot}:${id}`] ?? await window.desktop.loadHairStyle(modelSlot, id)))
+  const styles = await Promise.all(ids.map(async ({ id }) => cached[`${modelSlot}:${id}`] ?? await assetProvider.loadHairStyle(modelSlot, id)))
   return styles.flatMap((style, index) => style ? [{ style, side, part: ids[index].part }] : [])
 }
 function resolvedHairColors(appearance: CustomizerCharacter['customization']['hairAppearance'], part: HairPartId): HairColorOverrides {
@@ -1020,7 +1021,7 @@ function alignMouthTransformToClosedBase(transform: FaceComponentAsset['defaultT
 
 type StudioClosedEyeResolver = (openEye: FaceComponentAsset, side: 'left' | 'right') => Promise<FaceComponentAsset | null>
 
-async function drawFaceCatalogOverlay(context: CanvasRenderingContext2D, artwork: CatalogArtwork, source: FabricatorProject, items: Partial<Record<FaceSheetKind | FaceElementKind, FaceCatalogItem>>, appearance: CustomizerFaceAppearance, skinTone?: string, studioFaceTransforms?: StudioFaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: StudioFaceMode, resolveClosedEye?: StudioClosedEyeResolver, headOverrides: CustomizerCharacter['customization']['partOverrides'] = {}, highlightedHeadId?: string | null): Promise<void> {
+async function drawFaceCatalogOverlay(context: CanvasRenderingContext2D, artwork: CatalogArtwork, source: FabricatorProject, items: Partial<Record<FaceSheetKind | FaceElementKind, FaceCatalogItem>>, appearance: CustomizerFaceAppearance, skinTone?: string, studioFaceTransforms?: StudioFaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: StudioFaceMode, resolveClosedEye?: StudioClosedEyeResolver, headOverrides: CustomizerCharacter['customization']['partOverrides'] = {}, highlightedHeadId?: string | null, assetProvider: VideoCharacterRenderAssetProvider = window.desktop): Promise<void> {
   const sourceHead = source.parts.find((part) => /cabe[çc]a|head/i.test(part.name))
   const targetHead = artwork.parts.find((part) => /cabe[çc]a|head/i.test(part.name))
   if (!sourceHead || !targetHead || sourceHead.width <= 0 || sourceHead.height <= 0) return
@@ -1029,7 +1030,7 @@ async function drawFaceCatalogOverlay(context: CanvasRenderingContext2D, artwork
   const componentLoads = new Map<string, Promise<FaceComponentAsset | null>>()
   const loadComponent = (id: string) => {
     let pending = componentLoads.get(id)
-    if (!pending) { pending = window.desktop.loadFaceComponentAsset(appearance.modelSlot, id); componentLoads.set(id, pending) }
+    if (!pending) { pending = assetProvider.loadFaceComponentAsset(appearance.modelSlot, id); componentLoads.set(id, pending) }
     return pending
   }
   await drawFaceExpressionEffects(context, artwork, sourceHead, targetHead, appearance, items, expressionEffects, studioFaceTransforms)
@@ -1301,18 +1302,19 @@ async function renderFaceCatalogOverlay(artwork: CatalogArtwork, source: Fabrica
 }
 
 /** Render the selected Customizer character as one self-contained Studio actor image. */
-export async function prepareSavedCharacterRenderer(character: CustomizerCharacter, renderSource?: { artwork: CatalogArtwork; source: FabricatorProject }): Promise<{ width: number; height: number; render: (appearance?: CustomizerFaceAppearance, studioFaceTransforms?: StudioFaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: StudioFaceMode) => Promise<{ dataUrl: string; width: number; height: number }> }> {
+export async function prepareSavedCharacterRenderer(character: CustomizerCharacter, renderSource?: { artwork: CatalogArtwork; source: FabricatorProject; assetProvider?: VideoCharacterRenderAssetProvider }): Promise<{ width: number; height: number; render: (appearance?: CustomizerFaceAppearance, studioFaceTransforms?: StudioFaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: StudioFaceMode) => Promise<{ dataUrl: string; width: number; height: number }> }> {
   const modelSlot = character.customization.modelSlot ?? 1
-  const source = renderSource?.source ?? await window.desktop.loadFabricatorSlot(modelSlot)
+  const assetProvider = renderSource?.assetProvider ?? window.desktop
+  const source = renderSource?.source ?? await assetProvider.loadFabricatorSlot(modelSlot)
   if (!source) throw new Error(`O modelo de ${character.name} não está disponível.`)
-  const pose = renderSource?.artwork ?? (character.customization.poseSlot === null ? null : await window.desktop.loadFabricatorPose(modelSlot, character.customization.poseSlot))
+  const pose = renderSource?.artwork ?? (character.customization.poseSlot === null ? null : await assetProvider.loadFabricatorPose(modelSlot, character.customization.poseSlot))
   const proportions = getCharacterProportions(character.customization)
   const artwork = applyCharacterBodyShape(withCharacterHeadSize(pose ?? source, proportions), getCharacterBodyDimensions(character.customization))
   const hairAppearance = character.customization.hairAppearance
   const [backStyles, posteriorStyles, fringeStyles] = await Promise.all([
-    loadHairAppearanceLayers(hairAppearance, modelSlot, 'back'),
-    loadHairAppearanceLayers(hairAppearance, modelSlot, 'front'),
-    loadHairAppearanceLayers(hairAppearance, modelSlot, 'fringe')
+    loadHairAppearanceLayers(hairAppearance, modelSlot, 'back', {}, assetProvider),
+    loadHairAppearanceLayers(hairAppearance, modelSlot, 'front', {}, assetProvider),
+    loadHairAppearanceLayers(hairAppearance, modelSlot, 'fringe', {}, assetProvider)
   ])
   const frontStyles = [...posteriorStyles, ...fringeStyles]
   const baseImage = document.createElement('canvas')
@@ -1327,7 +1329,7 @@ export async function prepareSavedCharacterRenderer(character: CustomizerCharact
   await Promise.all(groups.map(async (group) => {
     const key = `${group.modelSlot}:${group.setId}`
     if (details[key]) return
-    const set = await window.desktop.loadWardrobeSet(group.modelSlot, group.setId)
+    const set = await assetProvider.loadWardrobeSet(group.modelSlot, group.setId)
     if (!set) throw new Error(`O personagem referencia um conjunto de roupa indisponível (${key}). A fonte não será modificada.`)
     details[key] = set
   }))
@@ -1335,7 +1337,7 @@ export async function prepareSavedCharacterRenderer(character: CustomizerCharact
 
   const appearance = character.customization.faceAppearance
   const expressionEffectsByIndex = appearance?.modelSlot === modelSlot
-    ? await loadStandardExpressionEffects(modelSlot).catch((): StandardExpressionEffects => ({}))
+    ? await loadStandardExpressionEffects(modelSlot, assetProvider).catch((): StandardExpressionEffects => ({}))
     : {}
   let faceItems: Partial<Record<FaceSheetKind | FaceElementKind, FaceCatalogItem>> = {}
   const faceItemPromises = new Map<string, Promise<FaceCatalogItem | null>>()
@@ -1343,8 +1345,8 @@ export async function prepareSavedCharacterRenderer(character: CustomizerCharact
   let closedEyeAssetsPromise: Promise<FaceComponentAsset[]> | null = null
   const resolveClosedEye: StudioClosedEyeResolver = async (openEye, side) => {
     if (!closedEyeAssetsPromise) {
-      closedEyeAssetsPromise = window.desktop.listFaceComponentAssets(modelSlot, 'eye-closed').then(async (summaries) => {
-        const details = await Promise.all(summaries.map((summary) => window.desktop.loadFaceComponentAsset(modelSlot, summary.id)))
+      closedEyeAssetsPromise = assetProvider.listFaceComponentAssets(modelSlot, 'eye-closed').then(async (summaries) => {
+        const details = await Promise.all(summaries.map((summary) => assetProvider.loadFaceComponentAsset(modelSlot, summary.id)))
         return details.filter((asset): asset is FaceComponentAsset => Boolean(asset?.kind === 'eye-closed'))
       })
     }
@@ -1364,10 +1366,10 @@ export async function prepareSavedCharacterRenderer(character: CustomizerCharact
         ['eye-left', appearance.eyeLeftCatalogId ?? undefined], ['eye-right', appearance.eyeRightCatalogId ?? undefined], ['brow-left', appearance.eyebrowLeftCatalogId ?? undefined], ['brow-right', appearance.eyebrowRightCatalogId ?? undefined],
         ['mouth-closed', appearance.mouthClosedCatalogId], ['mouth-open', appearance.mouthOpenCatalogId]
       ]
-      const entries = await Promise.all(selections.filter((entry): entry is [FaceSheetKind | FaceElementKind, string] => Boolean(entry[1])).map(async ([category, id]) => [category, await window.desktop.loadFaceCatalogItem(modelSlot, id)] as const))
+      const entries = await Promise.all(selections.filter((entry): entry is [FaceSheetKind | FaceElementKind, string] => Boolean(entry[1])).map(async ([category, id]) => [category, await assetProvider.loadFaceCatalogItem(modelSlot, id)] as const))
       for (const [category, item] of entries) if (item) faceItems[category] = item
     } else if (appearance.setId) {
-      const face = await window.desktop.loadFaceSet(modelSlot, appearance.setId)
+      const face = await assetProvider.loadFaceSet(modelSlot, appearance.setId)
       if (face) legacyFaceUrl = await renderFaceOverlay(artwork, source, face, appearance)
     }
   }
@@ -1401,7 +1403,7 @@ export async function prepareSavedCharacterRenderer(character: CustomizerCharact
       mouthOpen: studioFaceMode === 'talk'
     } : currentAppearance
     if (studioFaceMode === 'talk' && faceAppearance && !faceAppearance.mouthOpenCatalogId) {
-      faceCatalogSummariesPromise ??= window.desktop.listFaceCatalog(modelSlot)
+      faceCatalogSummariesPromise ??= assetProvider.listFaceCatalog(modelSlot)
       const catalog = await faceCatalogSummariesPromise
       const mouthOpenCatalogId = resolveStudioTalkMouthId(faceAppearance, catalog)
       if (mouthOpenCatalogId) faceAppearance = { ...faceAppearance, mouthOpenCatalogId }
@@ -1421,7 +1423,7 @@ export async function prepareSavedCharacterRenderer(character: CustomizerCharact
           const key = `${category}:${id}`
           let pending = faceItemPromises.get(key)
           if (!pending) {
-            pending = window.desktop.loadFaceCatalogItem(modelSlot, id)
+            pending = assetProvider.loadFaceCatalogItem(modelSlot, id)
             faceItemPromises.set(key, pending)
           }
           item = await pending ?? null
@@ -1433,7 +1435,7 @@ export async function prepareSavedCharacterRenderer(character: CustomizerCharact
         throw new Error('Não encontrei uma boca aberta para esta variante. Selecione uma folha de bocas abertas em Rosto Dev.')
       }
       const mouthEffects = expressionEffects ?? expressionEffectsByIndex[faceAppearance.expressionIndex]
-      if (hasCatalogSelection) await drawFaceCatalogOverlay(context, artwork, source, activeItems, faceAppearance, character.customization.modelSkinTone, studioFaceTransforms, mouthEffects, studioFaceMode, resolveClosedEye, character.customization.partOverrides)
+      if (hasCatalogSelection) await drawFaceCatalogOverlay(context, artwork, source, activeItems, faceAppearance, character.customization.modelSkinTone, studioFaceTransforms, mouthEffects, studioFaceMode, resolveClosedEye, character.customization.partOverrides, undefined, assetProvider)
       else if (legacyFaceImage && faceAppearance.setId === appearance?.setId) context.drawImage(legacyFaceImage, 0, 0, canvas.width, canvas.height)
     } else if (legacyFaceImage) context.drawImage(legacyFaceImage, 0, 0, canvas.width, canvas.height)
     if (frontHairImage) context.drawImage(frontHairImage, 0, 0, canvas.width, canvas.height)

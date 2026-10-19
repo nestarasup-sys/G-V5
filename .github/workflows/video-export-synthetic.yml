@@ -19,6 +19,7 @@ on:
       - 'src/renderer/src/features/videoStudio/characterTransitions.ts'
       - 'src/renderer/src/features/videoStudio/transitionRenderer.ts'
       - 'src/renderer/src/features/videoStudio/useCharacterTransitions.ts'
+      - 'src/renderer/src/features/customizer/CustomizerPage.tsx'
       - 'electron/videoExportJobs.ts'
       - 'electron/videoExportAssets.ts'
       - 'electron/videoLibrary.ts'

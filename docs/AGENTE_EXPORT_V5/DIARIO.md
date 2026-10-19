@@ -226,3 +226,12 @@ _Atualizações posteriores devem registrar o SHA real do gate e nunca declarar 
 - Estado V509: segue parcial. `CustomizerPage.prepareSavedCharacterRenderer()` ainda resolve roupas, cabelo, face, olhos fechados e componentes dependentes usando `window.desktop`; nenhuma coleta transitiva, serialização por hash ou recuperação após reinício foi implementada nesta rodada.
 - Validação final: `npm test` — 69/69; `npm run test:export:synthetic` — 39/39; `npm run typecheck`; `npm run build`; `git diff --check` passaram. O workflow sintético foi atualizado para executar com mudanças nestes módulos/testes.
 - Limite: não houve Electron gráfico, MP4, captura ou comparação visual. O provider cobre somente fontes centrais consultadas pelo `TransitionRenderer`; o Customizer continua com dependências vivas de roupa/cabelo/face e ainda não há pacote persistido/reidratado por job.
+
+## 2026-10-19 — Rodada 15: provider completo até o compositor de personagem
+
+- Base: `9c6f008244ca5c4331513b4c3854f7f5e2442815`, branch `master-desenvolvimento`, sincronizada com `origin` antes desta rodada.
+- A interface `VideoCharacterRenderAssetProvider` agora cobre os métodos do Fabricador/Customizer lidos pelo render de personagem: modelo, pose, hairstyle, roupa, face legacy, catálogo e resumos/ativos faciais. `TransitionRenderer` encaminha a mesma instância para `loadStandardExpressionEffects()` e `prepareSavedCharacterRenderer()`; a função do Customizer usa o provider nos loaders de cabelo, roupa, pose, modelo, face, catálogo, olhos fechados e efeitos. Chamadas normais do Customizer mantêm `window.desktop` como padrão compatível.
+- Fixture sintética instancia o `TransitionRenderer` com provider falso e confirma leituras de modelo/duas poses/catálogo, carregamento de efeitos e identidade do provider que chega ao compositor Customizer. Isso valida a rota de chamadas, não pixels/canvas.
+- O workflow sintético passou a observar mudanças em `CustomizerPage.tsx` além do provider e renderer.
+- Validação local: `npm test` — 70/70; `npm run test:export:synthetic` — 40/40; `npm run typecheck`; `npm run build`; `git diff --check` passaram.
+- Limite V509: ainda falta coletar todas as dependências realmente usadas por um personagem/transição, construir um provider completo só de snapshot e persistir/hasear/pinar esses bytes no job para reabertura. O preview continua usando a origem viva; não houve Electron visual, MP4, reinício ou teste de paridade.

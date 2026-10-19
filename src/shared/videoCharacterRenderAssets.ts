@@ -1,4 +1,12 @@
 import type { FaceComponentAsset, FaceCatalogItem, FaceExpressionEffects, FabricatorPose, FabricatorProject } from './fabricator'
+import type { FabricatorDesktopApi } from './fabricator'
+
+/** Reads every Fabricator/Customizer library used while composing a saved character. */
+export type VideoCharacterRenderAssetProvider = Pick<FabricatorDesktopApi,
+  | 'loadFabricatorSlot' | 'loadFabricatorPose' | 'loadHairStyle' | 'loadWardrobeSet' | 'loadFaceSet'
+  | 'listFaceComponentAssets' | 'loadFaceComponentAsset' | 'listFaceCatalog' | 'loadFaceCatalogItem'
+  | 'listFaceExpressionPresets' | 'loadFaceExpressionPreset'
+>
 
 export type VideoCharacterTransitionCoreAssetProvider = Readonly<{
   loadModel: (modelSlot: number) => Promise<FabricatorProject | null>
