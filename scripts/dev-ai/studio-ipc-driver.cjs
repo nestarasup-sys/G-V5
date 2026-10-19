@@ -410,6 +410,10 @@ async function seed(window) {
         modelSlot: 9, setId: syntheticGarmentId, category: 'sapato',
         componentId: 'shoe-left', offsetX: 12, offsetY: -5,
         scaleX: 1.2, scaleY: 1, rotation: 8
+      }, {
+        modelSlot: 9, setId: syntheticGarmentId, category: 'oculos',
+        componentId: 'glasses', offsetX: 0, offsetY: 0,
+        scaleX: 1, scaleY: 1, rotation: 0
       }]
     }
   }
@@ -424,6 +428,9 @@ async function seed(window) {
   const storedB = persistedActors.find(character => character.id === actorB.id)
   assert.equal(storedA.customization.wardrobeGroups[0].offsetX, 12)
   assert.equal(storedA.customization.wardrobeGroups[0].rotation, 8)
+  assert.equal(storedA.customization.wardrobeGroups[1].componentId,'glasses')
+  assert.equal(storedA.customization.wardrobeGroups[1].offsetX,0)
+  assert.equal(storedA.customization.wardrobeGroups[1].rotation,0)
   // Electron IPC structured clone may materialize optional undefined fields.
   // Compare persistent JSON values, not JS object property-presence quirks.
   assert.deepEqual(JSON.parse(JSON.stringify(storedB.customization)),
@@ -497,6 +504,7 @@ async function verifyRestart(window) {
   assert.equal(fitted?.customization.wardrobeGroups?.[0]?.setId,rasterFixture.SET_ID)
   assert.equal((await window.webContents.executeJavaScript('window.desktop.loadFabricatorPose(9,1)'))?.parts.length,10)
   assert.equal(fitted?.customization.wardrobeGroups?.[0]?.rotation, 8)
+  assert.equal(fitted?.customization.wardrobeGroups?.[1]?.componentId,'glasses')
   assert.equal(unchanged?.customization.modelSlot, 9)
   assert.deepEqual(unchanged?.customization.wardrobeGroups ?? [], [],
     'Após restart, personagem B herdou alterações do personagem A')
