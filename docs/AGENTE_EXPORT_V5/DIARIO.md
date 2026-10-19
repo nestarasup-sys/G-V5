@@ -260,3 +260,10 @@ _Atualizações posteriores devem registrar o SHA real do gate e nunca declarar 
 - V509 avançou em captura/serialização/pinagem e reabertura sintética, mas não está concluído. Não há chamada de produção que crie job com `characterAssets`, nenhum IPC/runner usa o provider reaberto, e nenhuma saída MP4 depende dele ainda.
 - A captura atual renderiza todos os samples internos de transição de forma serial; seu custo precisa ser medido em projetos sintéticos longos e pode ser reduzido somente preservando cobertura de todas as dependências.
 - Nenhum dado pessoal ou biblioteca local foi aberto ou modificado. Nenhum teste DEV AI/auditoria foi executado.
+
+## 2026-10-19 — Rodada 17: proteção de caminhos ao fixar imagens de job
+
+- Revisão pós-CI identificou que a rotina de pinagem confiava no diretório `assets/images` sem validar os pais antes da primeira escrita. `VideoExportJobStore.pinSnapshotImage()` agora resolve e confere o root do job, rejeita `assets`/`images` como symlink ou junction e só então cria o arquivo temporário dentro do diretório canônico.
+- `tests/video-export-jobs.test.cjs` inclui caso sintético com junction/symlink para fora do job e confirma que nenhum arquivo chega ao destino externo.
+- Validação: `node --test tests/video-export-jobs.test.cjs` — 8/8 passou; `npm test` — 73/73; `npm run test:export:synthetic` — 43/43; `npm run typecheck`, `npm run build` e `git diff --check` passaram.
+- A correção preserva o escopo de V509 parcial; ainda não há conexão com o fluxo de export de produção nem runtime Electron/MP4.

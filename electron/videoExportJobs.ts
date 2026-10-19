@@ -93,10 +93,23 @@ export class VideoExportJobStore {
 
   private async pinSnapshotImage(folder: string, image: VideoExportSnapshotImage): Promise<PinnedVideoExportSnapshotImage> {
     const filename = `assets/images/${image.sha256}.${image.extension}`
-    const imageFolder = join(folder, 'assets', 'images')
-    const destination = join(folder, filename)
-    const temporary = `${destination}.${randomUUID()}.tmp`
+    const jobRoot = await realpath(folder)
+    const assetsFolder = join(folder, 'assets')
+    await mkdir(assetsFolder, { recursive: true })
+    const assetsInfo = await lstat(assetsFolder)
+    const canonicalAssetsFolder = await realpath(assetsFolder)
+    if (!assetsInfo.isDirectory() || assetsInfo.isSymbolicLink() || relative(jobRoot, canonicalAssetsFolder) !== 'assets') {
+      throw new Error('Pasta de assets pinados do job inválida.')
+    }
+    const imageFolder = join(canonicalAssetsFolder, 'images')
     await mkdir(imageFolder, { recursive: true })
+    const imageFolderInfo = await lstat(imageFolder)
+    const canonicalImageFolder = await realpath(imageFolder)
+    if (!imageFolderInfo.isDirectory() || imageFolderInfo.isSymbolicLink() || relative(canonicalAssetsFolder, canonicalImageFolder) !== 'images') {
+      throw new Error('Pasta de imagens pinadas do job inválida.')
+    }
+    const destination = join(canonicalImageFolder, `${image.sha256}.${image.extension}`)
+    const temporary = `${destination}.${randomUUID()}.tmp`
     const existing = await lstat(destination).catch(() => null)
     if (existing) {
       if (!existing.isFile() || existing.isSymbolicLink() || existing.size !== image.sizeBytes

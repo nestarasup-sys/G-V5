@@ -195,6 +195,24 @@ test('job pins and restores character supplier images independently from the liv
   await assert.rejects(store.readCharacterAssets(jobId), /hash do manifesto/)
 })
 
+test('job refuses to write pinned images through an assets-directory link', async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'gacha-video-job-image-link-'))
+  const outside = await fs.mkdtemp(path.join(os.tmpdir(), 'gacha-video-outside-image-link-'))
+  t.after(async () => { await fs.rm(root, { recursive: true, force: true }); await fs.rm(outside, { recursive: true, force: true }) })
+  const store = new VideoExportJobStore(root)
+  await store.create({ jobId, ...parameters })
+  const jobFolder = path.join(root, jobId)
+  const assetsFolder = path.join(jobFolder, 'assets')
+  await fs.symlink(outside, assetsFolder, process.platform === 'win32' ? 'junction' : 'dir')
+  const bytes = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a4uoAAAAASUVORK5CYII=', 'base64')
+  const image = {
+    sha256: require('node:crypto').createHash('sha256').update(bytes).digest('hex'),
+    mimeType: 'image/png', extension: 'png', sizeBytes: bytes.length, bytes,
+  }
+  await assert.rejects(store.pinSnapshotImage(jobFolder, image), /Pasta de assets pinados do job inválida/)
+  assert.deepEqual(await fs.readdir(outside), [], 'no file was written outside the job')
+})
+
 test('export jobs copy referenced media into their folder and resume from pinned bytes', async (t) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'gacha-video-job-pin-'))
   const sourceRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'gacha-video-source-'))
