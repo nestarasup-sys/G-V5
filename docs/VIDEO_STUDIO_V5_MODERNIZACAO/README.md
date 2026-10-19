@@ -1,6 +1,6 @@
 # Video Studio V5 — Modernização Integral (2026-10-19)
 
-Este diretório é o **plano estratégico independente** solicitado para modernizar TODO o Video Studio do G-V5 (edição, preview, personagens, vídeos, armazenamento e exportação). O plano antigo \`docs/AGENTE_EXPORT_V5/\` permanece como documentação **tática de exportação**, subordinada aqui em caso de divergência.
+Este diretório é o **plano estratégico independente** solicitado para modernizar TODO o Video Studio do G-V5 (edição, preview, personagens, vídeos, armazenamento e exportação). O plano antigo `docs/AGENTE_EXPORT_V5/` permanece como documentação **tática de exportação**, subordinada aqui em caso de divergência.
 
 ## Comece por este roteiro
 
@@ -22,13 +22,13 @@ Este diretório é o **plano estratégico independente** solicitado para moderni
 
 ## Direção preferida (provisória)
 
-- **Semântica única:** \`StudioDocument v1 → AssetManifest → RenderIR → RenderSurface → encoder\`.
+- **Semântica única:** `StudioDocument v1 → AssetManifest → RenderIR → RenderSurface → encoder`.
 - **Motor baseline:** compositor especializado no G-V5 e FFmpeg testado; PixiJS WebGL compete pela camada visual, MLT/libopenshot/GES competem por media/NLE se houver benefício.
 - **Melhorias maiores:** preview 2D determinístico, cache por estado, mídia correta por PTS, controle de memória/GPU, Smart Export, serial robusto, Turbo com fallback e retenção segura de dados.
 - **Não há promessa de velocidade em "x"** antes de medições; "Turbo 2×" denota até dois trabalhadores simultâneos.
 
 ## Governança
 
-Escrita **somente** em \`nestarasup-sys/G-V5/master-desenvolvimento\`. Editor V4 \`oai/aggressive-export-v5\` é referência de leitura. Não usar mídia, personagens ou projetos privados em CI; não executar DEV AI e auditorias desativadas. Não tocar em master, pastas do usuário ou trabalhos concorrentes.
+Escrita **somente** em `nestarasup-sys/G-V5/master-desenvolvimento`. Editor V4 `oai/aggressive-export-v5` é referência de leitura. Não usar mídia, personagens ou projetos privados em CI; não executar DEV AI e auditorias desativadas. Não tocar em master, pastas do usuário ou trabalhos concorrentes.
 
 A implementação deve avançar em commits pequenos, com PR/merge apenas quando autorizado, gates sintéticos/Electron/PC alvo e rollback por feature flag. A documentação original e os fatos antigos ficam em [../AGENTE_EXPORT_V5/README.md](../AGENTE_EXPORT_V5/README.md) e [../AGENTE_EXPORT_V5/DIARIO.md](../AGENTE_EXPORT_V5/DIARIO.md).
