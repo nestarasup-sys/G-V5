@@ -5,7 +5,6 @@ on:
     branches: [master-desenvolvimento]
     paths:
       - '.github/workflows/video-export-synthetic.yml'
-      - 'docs/AGENTE_EXPORT_V5/**'
       - 'package.json'
       - 'package-lock.json'
       - 'src/shared/videoFrame.ts'
@@ -41,14 +40,17 @@ jobs:
           node-version: '22'
           cache: npm
       - name: Install dependencies without lifecycle scripts or Electron native rebuilds
+        id: install
         shell: pwsh
         run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Verify synthetic export tests only
         shell: pwsh
         run: npm run test:export:synthetic
       - name: Validate TypeScript contracts
+        if: always() && steps.install.outcome == 'success'
         shell: pwsh
         run: npm run typecheck
       - name: Validate production bundling (not an Electron runtime smoke)
+        if: always() && steps.install.outcome == 'success'
         shell: pwsh
         run: npm run build
