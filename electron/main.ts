@@ -2854,7 +2854,7 @@ app.whenReady().then(async () => {
   videoExportJobStore ??= new VideoExportJobStore(videoExportLibrary.jobRoot, (studioId, asset) =>
     videoLibrary.resolveProjectMediaDependency(studioId, asset.id, asset))
   videoExportSurfaceHost ??= new VideoExportSurfaceHost(videoExportJobStore, {
-    preloadPath: join(__dirname, '../preload/preload.cjs'),
+    preloadPath: join(__dirname, '../preload/video-export-preload.cjs'),
     ...(process.env.ELECTRON_RENDERER_URL
       ? { rendererUrl: process.env.ELECTRON_RENDERER_URL }
       : { rendererFile: join(__dirname, '../renderer/index.html') }),
