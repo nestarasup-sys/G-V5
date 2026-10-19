@@ -1,19 +1,24 @@
-import { createReadStream } from 'node:fs'
-import { mkdir, lstat, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { constants, createReadStream } from 'node:fs'
+import { copyFile, mkdir, lstat, readFile, realpath, rename, rm, writeFile } from 'node:fs/promises'
 import { createHash, randomUUID } from 'node:crypto'
 import { basename, join, relative, resolve, sep } from 'node:path'
+import { verifyVideoExportMediaManifest, type ResolveVideoExportMedia, type VideoExportMediaDependency } from './videoExportAssets'
 
 const idPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const shaPattern = /^[a-f0-9]{64}$/
 const chunkSize = 600
+const mimeByExtension = { mp4: 'video/mp4', webm: 'video/webm', mov: 'video/quicktime', m4v: 'video/x-m4v' } as const
 
 export type VideoExportChunk = { index: number; startFrame: number; endFrame: number; filename: string; sizeBytes: number; sha256: string }
+export type PinnedVideoExportMediaDependency = VideoExportMediaDependency & { filename: string }
 export type VideoExportManifest = {
   schemaVersion: 1
   jobId: string
   studioId: string
   snapshotSha256: string
   mediaSha256: string[]
+  /** Added compatibly: older v1 jobs without pinned media remain readable. */
+  mediaDependencies?: PinnedVideoExportMediaDependency[]
   durationFrames: number
   frameRate: 60
   width: 1920
@@ -26,7 +31,7 @@ export type VideoExportManifest = {
 
 export class VideoExportJobStore {
   readonly root: string
-  constructor(root: string) { this.root = resolve(root) }
+  constructor(root: string, private readonly resolveMedia?: ResolveVideoExportMedia) { this.root = resolve(root) }
 
   private pathFor(jobId: string): string {
     if (!idPattern.test(jobId)) throw new Error('Job de exportação inválido.')
@@ -58,23 +63,101 @@ export class VideoExportJobStore {
     await rename(temp, path)
   }
 
-  async create(input: { jobId: string; studioId: string; snapshotSha256: string; mediaSha256: string[]; durationFrames: number }): Promise<VideoExportManifest> {
-    const folder = this.pathFor(input.jobId)
-    if (!idPattern.test(input.studioId) || !shaPattern.test(input.snapshotSha256) || !input.mediaSha256.every((hash) => shaPattern.test(hash))
-      || !Number.isSafeInteger(input.durationFrames) || input.durationFrames < 1 || input.durationFrames > 60 * 60 * 24 * 60) throw new Error('Snapshot ou parâmetros do job inválidos.')
-    await mkdir(this.root, { recursive: true })
-    await mkdir(folder)
-    const now = new Date().toISOString()
-    const manifest: VideoExportManifest = {
-      schemaVersion: 1, jobId: input.jobId, studioId: input.studioId, snapshotSha256: input.snapshotSha256,
-      mediaSha256: [...new Set(input.mediaSha256)].sort(), durationFrames: input.durationFrames,
-      frameRate: 60, width: 1920, height: 1080, chunkFrames: chunkSize, createdAt: now, updatedAt: now, chunks: []
+  private async pinMedia(folder: string, studioId: string, dependency: VideoExportMediaDependency): Promise<PinnedVideoExportMediaDependency> {
+    if (!this.resolveMedia) throw new Error('Não há resolvedor confiável para copiar as mídias deste job.')
+    const expected = { id: dependency.assetId, extension: dependency.extension, mimeType: dependency.mimeType, size: dependency.sizeBytes }
+    const source = await this.resolveMedia(studioId, expected)
+    const [canonicalRoot, canonicalSource] = await Promise.all([realpath(source.trustedRoot), realpath(source.path)])
+    const relativeSource = relative(canonicalRoot, canonicalSource)
+    if (!relativeSource || relativeSource === '..' || relativeSource.startsWith(`..${sep}`)) throw new Error('Uma mídia do job está fora da pasta autorizada.')
+    const sourceInfo = await lstat(source.path)
+    if (!sourceInfo.isFile() || sourceInfo.isSymbolicLink() || sourceInfo.size !== dependency.sizeBytes) throw new Error(`A mídia ${dependency.assetId} mudou antes de ser fixada no job.`)
+
+    const filename = `assets/${dependency.assetId}.${dependency.extension}`
+    const assetFolder = join(folder, 'assets')
+    const destination = join(folder, filename)
+    const temporary = `${destination}.${randomUUID()}.tmp`
+    await mkdir(assetFolder)
+    try {
+      await copyFile(canonicalSource, temporary, constants.COPYFILE_EXCL)
+      const info = await lstat(temporary)
+      if (!info.isFile() || info.isSymbolicLink() || info.size !== dependency.sizeBytes
+        || await this.hashFile(temporary) !== dependency.sha256) {
+        throw new Error(`A cópia isolada da mídia ${dependency.assetId} não confere com o snapshot.`)
+      }
+      await rename(temporary, destination)
+    } finally {
+      await rm(temporary, { force: true }).catch(() => undefined)
     }
-    await this.writeManifest(folder, manifest)
-    return manifest
+    return { ...dependency, filename }
   }
 
-  async reopen(jobId: string, expected: { studioId: string; snapshotSha256: string; mediaSha256: string[]; durationFrames: number }): Promise<{ manifest: VideoExportManifest; nextChunkIndex: number }> {
+  private async verifyPinnedMediaInFolder(folder: string, manifest: VideoExportManifest): Promise<void> {
+    const dependencies = manifest.mediaDependencies ?? []
+    if (new Set(dependencies.map((dependency) => dependency.assetId)).size !== dependencies.length) throw new Error('O manifesto do job contém dependências duplicadas.')
+    let canonicalAssetsRoot: string | undefined
+    if (dependencies.length) {
+      const assetFolder = join(folder, 'assets')
+      const assetFolderInfo = await lstat(assetFolder).catch(() => null)
+      if (!assetFolderInfo?.isDirectory() || assetFolderInfo.isSymbolicLink()) throw new Error('A pasta de mídias pinadas do job está inválida.')
+      const [canonicalJob, canonicalAssets] = await Promise.all([realpath(folder), realpath(assetFolder)])
+      if (relative(canonicalJob, canonicalAssets) !== 'assets') throw new Error('A pasta de mídias pinadas saiu do diretório do job.')
+      canonicalAssetsRoot = canonicalAssets
+    }
+    const dependencyHashes: string[] = []
+    for (const dependency of dependencies) {
+      const expectedFilename = `assets/${dependency.assetId}.${dependency.extension}`
+      if (!idPattern.test(dependency.assetId) || !shaPattern.test(dependency.sha256)
+        || !Number.isSafeInteger(dependency.sizeBytes) || dependency.sizeBytes < 1 || dependency.filename !== expectedFilename
+        || !Object.hasOwn(mimeByExtension, dependency.extension)
+        || mimeByExtension[dependency.extension as keyof typeof mimeByExtension] !== dependency.mimeType) throw new Error('Dependência pinada do job tem metadados inválidos.')
+      const path = join(folder, expectedFilename)
+      const info = await lstat(path).catch(() => null)
+      const canonicalPath = await realpath(path).catch(() => null)
+      if (!info?.isFile() || info.isSymbolicLink() || info.size !== dependency.sizeBytes || !canonicalPath
+        || relative(canonicalAssetsRoot!, canonicalPath) !== `${dependency.assetId}.${dependency.extension}`
+        || await this.hashFile(path) !== dependency.sha256) throw new Error(`A cópia pinada da mídia ${dependency.assetId} está ausente ou corrompida.`)
+      dependencyHashes.push(dependency.sha256)
+    }
+    if (dependencies.length && dependencyHashes.some((hash) => !manifest.mediaSha256.includes(hash))) throw new Error('Os hashes pinados não correspondem ao manifesto do job.')
+  }
+
+  async create(input: { jobId: string; studioId: string; snapshotSha256: string; mediaSha256: string[]; mediaDependencies?: ReadonlyArray<VideoExportMediaDependency>; durationFrames: number }): Promise<VideoExportManifest> {
+    const folder = this.pathFor(input.jobId)
+    const dependencies = [...(input.mediaDependencies ?? [])].sort((left, right) => left.assetId.localeCompare(right.assetId))
+    if (!idPattern.test(input.studioId) || !shaPattern.test(input.snapshotSha256) || !input.mediaSha256.every((hash) => shaPattern.test(hash))
+      || !Number.isSafeInteger(input.durationFrames) || input.durationFrames < 1 || input.durationFrames > 60 * 60 * 24 * 60
+      || new Set(dependencies.map((item) => item.assetId)).size !== dependencies.length
+      || dependencies.some((item) => !idPattern.test(item.assetId) || !shaPattern.test(item.sha256)
+        || !Number.isSafeInteger(item.sizeBytes) || item.sizeBytes < 1 || !['mp4', 'webm', 'mov', 'm4v'].includes(item.extension)
+        || !['video/mp4', 'video/webm', 'video/quicktime', 'video/x-m4v'].includes(item.mimeType)
+        || !input.mediaSha256.includes(item.sha256))) throw new Error('Snapshot ou parâmetros do job inválidos.')
+    if (dependencies.length) {
+      if (!this.resolveMedia) throw new Error('Não há resolvedor confiável para fixar as mídias deste job.')
+      await verifyVideoExportMediaManifest(dependencies, input.studioId, this.resolveMedia)
+    }
+    await mkdir(this.root, { recursive: true })
+    await mkdir(folder)
+    try {
+      const pinnedDependencies: PinnedVideoExportMediaDependency[] = []
+      for (const dependency of dependencies) pinnedDependencies.push(await this.pinMedia(folder, input.studioId, dependency))
+      const now = new Date().toISOString()
+      const manifest: VideoExportManifest = {
+        schemaVersion: 1, jobId: input.jobId, studioId: input.studioId, snapshotSha256: input.snapshotSha256,
+        mediaSha256: [...new Set(input.mediaSha256)].sort(), ...(pinnedDependencies.length ? { mediaDependencies: pinnedDependencies } : {}),
+        durationFrames: input.durationFrames, frameRate: 60, width: 1920, height: 1080,
+        chunkFrames: chunkSize, createdAt: now, updatedAt: now, chunks: []
+      }
+      await this.verifyPinnedMediaInFolder(folder, manifest)
+      await this.writeManifest(folder, manifest)
+      return manifest
+    } catch (error) {
+      await rm(folder, { recursive: true, force: true }).catch(() => undefined)
+      throw error
+    }
+  }
+
+  async reopen(jobId: string, expected: { studioId: string; snapshotSha256: string; mediaSha256: string[]; mediaDependencies?: ReadonlyArray<VideoExportMediaDependency>; durationFrames: number }): Promise<{ manifest: VideoExportManifest; nextChunkIndex: number }> {
     const folder = this.pathFor(jobId)
     const info = await lstat(folder)
     if (!info.isDirectory() || info.isSymbolicLink()) throw new Error('Pasta do job inválida.')
@@ -84,6 +167,11 @@ export class VideoExportJobStore {
       || manifest.snapshotSha256 !== expected.snapshotSha256 || JSON.stringify(manifest.mediaSha256) !== JSON.stringify(expectedMedia)
       || manifest.durationFrames !== expected.durationFrames || manifest.frameRate !== 60 || manifest.width !== 1920 || manifest.height !== 1080
       || manifest.chunkFrames !== chunkSize || !Array.isArray(manifest.chunks)) throw new Error('O projeto ou a mídia mudou; este job não pode ser retomado com o snapshot atual.')
+    const expectedDependencies = [...(expected.mediaDependencies ?? [])].sort((a, b) => a.assetId.localeCompare(b.assetId))
+    const manifestDependencies = [...(manifest.mediaDependencies ?? [])].map(({ filename: _filename, ...dependency }) => dependency).sort((a, b) => a.assetId.localeCompare(b.assetId))
+    const signature = (items: ReadonlyArray<VideoExportMediaDependency>) => items.map((item) => [item.assetId, item.extension, item.mimeType, item.sizeBytes, item.sha256].join('\0')).join('\n')
+    if (signature(manifestDependencies) !== signature(expectedDependencies)) throw new Error('As dependências do job não correspondem ao snapshot atual.')
+    await this.verifyPinnedMediaInFolder(folder, manifest)
     const validChunks: VideoExportChunk[] = []
     for (const chunk of manifest.chunks) {
       const expectedRange = this.expectedRange(manifest, chunk.index)
@@ -107,6 +195,15 @@ export class VideoExportJobStore {
       await this.writeManifest(folder, repaired)
     }
     return { manifest: repaired, nextChunkIndex: contiguous.length }
+  }
+
+  async verifyPinnedMedia(jobId: string): Promise<void> {
+    const folder = this.pathFor(jobId)
+    const info = await lstat(folder)
+    if (!info.isDirectory() || info.isSymbolicLink()) throw new Error('Pasta do job inválida.')
+    const manifest = JSON.parse(await readFile(join(folder, 'manifest.json'), 'utf8')) as VideoExportManifest
+    if (manifest.jobId !== jobId) throw new Error('O job não é proprietário desta pasta.')
+    await this.verifyPinnedMediaInFolder(folder, manifest)
   }
 
   async recordChunk(jobId: string, index: number): Promise<VideoExportManifest> {

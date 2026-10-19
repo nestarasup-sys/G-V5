@@ -140,6 +140,15 @@ _Atualizações posteriores devem registrar o SHA real do gate e nunca declarar 
 - Validação: `npm test` — 59/59; `npm run test:export:synthetic` — 29/29; `npm run typecheck`, `npm run build` e `git diff --check` passaram.
 - Limite: essa etapa ainda não copia bytes para pasta de job nem está chamada por um orquestrador de export, pois o pipeline não possui job IPC executável. Fornecedores de modelo/pose/face/cabelos e imagens embutidas ainda não têm manifesto/digest próprio. V509 segue parcial; export não é retomável com media pinada ainda.
 
+## 2026-10-19 — Rodada 09: cópia pinada no ciclo de vida do job
+
+- Base: `3cf24b15fff3ee069e039f08f30646c774c455c7`, branch `master-desenvolvimento`.
+- `VideoExportJobStore.create()` agora aceita dependências com SHA-256 e copia cada arquivo de vídeo referenciado uma vez para `temp/video-studio/export/<job>/assets/<assetId>.<ext>`. A cópia é re-hasheada antes do manifesto ser confirmado; uma divergência limpa somente a pasta recém-criada desse job.
+- `reopen()` valida o caminho relativo, tipo de arquivo, hash e tamanho da cópia pinada antes de aceitar checkpoints. `verifyPinnedMedia()` também permite que um futuro runner revalide antes de renderizar/finalizar. Jobs v1 anteriores sem campo `mediaDependencies` continuam legíveis.
+- Testes sintéticos verificam independência da mídia original após a cópia, rejeição de cópia pinada adulterada e rollback local quando a origem já diverge do hash.
+- Validação: `npm test` — 61/61; `npm run test:export:synthetic` — 31/31; `npm run typecheck`, `npm run build` e `git diff --check` passaram.
+- Estado: pinagem de vídeos já implementada no armazenamento de jobs, ainda sem chamada por IPC/runner e sem snapshot completo do documento para retomada automática. Assets de imagens e fornecedores Fabricator/Customizer não estão incluídos. Nenhuma exportação real foi executada.
+
 ## 2026-10-19 — Rodada 07: compilador de transições compartilhado
 
 - Base: `f9a0302a333cd2b1f819eb3aa85a5de368fa8a2d`, branch `master-desenvolvimento`.

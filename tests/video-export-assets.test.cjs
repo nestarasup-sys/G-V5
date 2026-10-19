@@ -23,7 +23,7 @@ const assetId = 'f3c40c08-5be8-476f-8132-4dafca4f3d57'
 const asset = { id: assetId, name: 'synthetic.mp4', mimeType: 'video/mp4', extension: 'mp4', size: 20, durationFrames: 60 }
 
 function syntheticStudio(assets = [asset]) {
-  return { videoTimeline: {
+  return { id: studioId, videoTimeline: {
     videoAssets: assets,
     videoClips: [
       { id: 'clip-a', assetId, startFrame: 0, endFrame: 8, sourceStartFrame: 0, sourceEndFrame: 8 },
@@ -48,7 +48,7 @@ test('media manifest hashes only referenced project assets and deduplicates repe
     sha256: crypto.createHash('sha256').update(bytes).digest('hex'),
   })
   assert.equal(JSON.stringify(manifest).includes(root), false)
-  await verifyVideoExportMediaManifest(manifest, resolveAsset)
+  await verifyVideoExportMediaManifest(manifest, studioId, resolveAsset)
 })
 
 test('manifest rejects missing refs, path escapes and media changed after snapshot', async (t) => {
@@ -69,7 +69,7 @@ test('manifest rejects missing refs, path escapes and media changed after snapsh
   await assert.rejects(buildVideoExportMediaManifest(syntheticStudio(), async () => ({ path: escapedPath, trustedRoot: root })), /fora da pasta autorizada/)
 
   await fs.writeFile(mediaPath, 'changed-video-bytexx')
-  await assert.rejects(verifyVideoExportMediaManifest(manifest, resolveAsset), /mudou desde o snapshot/)
+  await assert.rejects(verifyVideoExportMediaManifest(manifest, studioId, resolveAsset), /mudou desde o snapshot/)
 })
 
 test('library resolves the persisted copy owned by the requested project', async (t) => {

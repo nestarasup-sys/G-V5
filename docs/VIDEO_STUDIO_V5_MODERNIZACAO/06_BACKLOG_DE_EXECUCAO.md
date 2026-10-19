@@ -155,3 +155,9 @@ Todos os conceitos originais aprovados (Smart Scene Compiler, cache persistente,
 - `electron/videoExportAssets.ts` produz SHA-256 ordenado para cada arquivo de vídeo referenciado, sem incluir paths no manifesto; valida root autorizado, tamanho/tipo, ausência de link simbólico no arquivo e mudanças durante a leitura. Há verificador para retomar/finalizar contra os bytes atuais.
 - `VideoLibraryStore.resolveProjectMediaDependency()` resolve a cópia de mídia do projeto salvo e recusa divergência de metadados.
 - A fixture cobre deduplicação, mídia ausente, escape do root, alteração pós-snapshot e resolução do projeto dono. O pipeline de export ainda não chama esses helpers; assets Fabricator/Customizador e cópia física imutável do job continuam abertos.
+
+### 2026-10-19 — cópia pinada de mídia em jobs (V509 parcial)
+
+- `VideoExportJobStore.create()` copia os vídeos do manifesto para `assets/` dentro do diretório exclusivo do job e valida SHA-256 antes de gravar o manifesto. Falha durante pinagem remove só a pasta nova do job.
+- `reopen()` exige arquivos pinados íntegros para aceitar checkpoints; `verifyPinnedMedia()` está disponível para o futuro runner. Manifestos antigos sem `mediaDependencies` continuam válidos.
+- Ainda falta conectar a criação/retomada ao processo principal e persistir/restaurar o snapshot completo de cena e os fornecedores de imagem/modelo/pose/face. Logo, V509 permanece parcial e ainda não existe retomada de export de ponta a ponta.

@@ -18,7 +18,7 @@ export type VideoExportMediaDependency = Readonly<{
 }>
 
 export type ResolvedVideoExportMedia = Readonly<{ path: string; trustedRoot: string }>
-export type ResolveVideoExportMedia = (asset: Pick<VideoStudioAsset, 'id' | 'extension' | 'mimeType' | 'size'>) => Promise<ResolvedVideoExportMedia>
+export type ResolveVideoExportMedia = (studioId: string, asset: Pick<VideoStudioAsset, 'id' | 'extension' | 'mimeType' | 'size'>) => Promise<ResolvedVideoExportMedia>
 
 function assertAssetMetadata(asset: VideoStudioAsset): void {
   if (!idPattern.test(asset.id) || !Object.hasOwn(mimeByExtension, asset.extension)
@@ -28,8 +28,8 @@ function assertAssetMetadata(asset: VideoStudioAsset): void {
   }
 }
 
-async function inspectMedia(asset: Pick<VideoStudioAsset, 'id' | 'extension' | 'mimeType' | 'size'>, resolveAsset: ResolveVideoExportMedia): Promise<VideoExportMediaDependency> {
-  const resolved = await resolveAsset(asset)
+async function inspectMedia(studioId: string, asset: Pick<VideoStudioAsset, 'id' | 'extension' | 'mimeType' | 'size'>, resolveAsset: ResolveVideoExportMedia): Promise<VideoExportMediaDependency> {
+  const resolved = await resolveAsset(studioId, asset)
   const [trustedRoot, mediaPath] = await Promise.all([realpath(resolved.trustedRoot), realpath(resolved.path)])
   const pathFromRoot = relative(trustedRoot, mediaPath)
   if (!pathFromRoot || pathFromRoot === '..' || pathFromRoot.startsWith(`..${sep}`) || pathFromRoot.startsWith(`..${process.platform === 'win32' ? '/' : sep}`)) {
@@ -55,9 +55,9 @@ async function inspectMedia(asset: Pick<VideoStudioAsset, 'id' | 'extension' | '
 }
 
 /** Hashes only media referenced by timeline clips; no absolute paths enter the manifest. */
-export async function buildVideoExportMediaManifest(studio: Pick<StudioDocument, 'videoTimeline'>, resolveAsset: ResolveVideoExportMedia): Promise<ReadonlyArray<VideoExportMediaDependency>> {
+export async function buildVideoExportMediaManifest(studio: Pick<StudioDocument, 'id' | 'videoTimeline'>, resolveAsset: ResolveVideoExportMedia): Promise<ReadonlyArray<VideoExportMediaDependency>> {
   const timeline = studio?.videoTimeline
-  if (!timeline) throw new Error('Manifest de mídia exige um roteiro do Video Studio.')
+  if (!timeline || !idPattern.test(studio.id)) throw new Error('Manifest de mídia exige um roteiro válido do Video Studio.')
   const assets = new Map<string, VideoStudioAsset>()
   for (const asset of timeline.videoAssets ?? []) {
     assertAssetMetadata(asset)
@@ -73,14 +73,15 @@ export async function buildVideoExportMediaManifest(studio: Pick<StudioDocument,
     if (!idPattern.test(assetId)) throw new Error('Uma referência de vídeo do roteiro tem ID inválido.')
     const asset = assets.get(assetId)
     if (!asset) throw new Error(`O vídeo ${assetId} usado na timeline não está anexado ao roteiro.`)
-    result.push(await inspectMedia(asset, resolveAsset))
+    result.push(await inspectMedia(studio.id, asset, resolveAsset))
   }
   return Object.freeze(result)
 }
 
 /** Re-hashes the same logical dependencies before resume/finalization and fails closed on change. */
-export async function verifyVideoExportMediaManifest(manifest: ReadonlyArray<VideoExportMediaDependency>, resolveAsset: ResolveVideoExportMedia): Promise<void> {
+export async function verifyVideoExportMediaManifest(manifest: ReadonlyArray<VideoExportMediaDependency>, studioId: string, resolveAsset: ResolveVideoExportMedia): Promise<void> {
   if (!Array.isArray(manifest)) throw new Error('Manifest de mídia da exportação está inválido.')
+  if (!idPattern.test(studioId)) throw new Error('Identificador do roteiro no manifesto é inválido.')
   const dependencies = [...(manifest as ReadonlyArray<VideoExportMediaDependency>)].sort((a, b) => a.assetId.localeCompare(b.assetId))
   if (new Set(dependencies.map((entry) => entry.assetId)).size !== dependencies.length) throw new Error('Manifest de mídia contém IDs duplicados.')
   for (const expected of dependencies) {
@@ -89,7 +90,7 @@ export async function verifyVideoExportMediaManifest(manifest: ReadonlyArray<Vid
       || expected.sizeBytes < 1 || expected.sizeBytes > 5 * 1024 ** 3 || !/^[a-f0-9]{64}$/.test(expected.sha256)) {
       throw new Error('Manifest de mídia da exportação está inválido.')
     }
-    const actual = await inspectMedia({ id: expected.assetId, extension: expected.extension, mimeType: expected.mimeType, size: expected.sizeBytes }, resolveAsset)
+    const actual = await inspectMedia(studioId, { id: expected.assetId, extension: expected.extension, mimeType: expected.mimeType, size: expected.sizeBytes }, resolveAsset)
     if (actual.assetId !== expected.assetId || actual.extension !== expected.extension || actual.mimeType !== expected.mimeType
       || actual.sizeBytes !== expected.sizeBytes || actual.sha256 !== expected.sha256) {
       throw new Error(`A mídia ${expected.assetId} mudou desde o snapshot da exportação.`)
