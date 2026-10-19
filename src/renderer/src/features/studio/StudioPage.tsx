@@ -14,7 +14,7 @@ type Tool = 'background' | 'objects' | null
 type DragState = { id: string; pointerId: number; startX: number; startY: number; originalX: number; originalY: number; width: number; height: number }
 
 const STORAGE_KEY = 'gacha-nymi-studio-catalog-v1'
-const STUDIO_FACE_RENDER_VERSION = 4
+const STUDIO_FACE_RENDER_VERSION = 6
 const studioColor = (number: number) => `hsl(${(number * 137.508) % 360} 45% 78%)`
 const defaultStudioEyeTransform: StudioFaceTransform = { x: 0, y: 0, width: 100, height: 100, rotation: 0 }
 function studioFaceModeForElement(element: StudioElement | null, appearance: CustomizerFaceAppearance | undefined): StudioFaceMode {

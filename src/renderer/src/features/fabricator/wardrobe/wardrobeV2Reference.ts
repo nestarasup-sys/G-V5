@@ -21,11 +21,16 @@ const frames: Frame[] = [
 
 export function supportsWardrobeV2(model: FabricatorProject): boolean {
   if (model.width !== 1122 || model.height !== 1402 || model.parts.length !== frames.length) return false
-  const keyParts = [[0, 403, 33], [1, 242, 310], [2, 769, 310], [3, 467, 340]] as const
-  return keyParts.every(([index, x, y]) => {
+  // Checking only the first four bones allowed the other six parts to be
+  // reordered while still looking "compatible". splitWardrobeV2Reference
+  // indexes all TEN frames and would silently assign wrong images to IDs.
+  // Validate the entire ordered source sheet; do not try to guess identity.
+  return frames.every((frame, index) => {
     const part = model.parts[index]
     const origin = part?.sourceTransform
-    return origin && Math.abs(origin.x - x) < 35 && Math.abs(origin.y - y) < 35
+    return Boolean(origin
+      && Number.isFinite(origin.x) && Number.isFinite(origin.y)
+      && Math.abs(origin.x - frame.x) < 35 && Math.abs(origin.y - frame.y) < 35)
   })
 }
 

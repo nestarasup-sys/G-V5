@@ -1,4 +1,4 @@
-import type { ModelPart, WardrobeBinding, WardrobeComponent } from '../../../../../shared/fabricator'
+import type { FabricatorProject, ModelPart, WardrobeBinding, WardrobeComponent, WardrobeSet } from '../../../../../shared/fabricator'
 
 type Point = { x: number; y: number }
 
@@ -35,6 +35,45 @@ export function bindWardrobeComponent(component: WardrobeComponent, bone: ModelP
   }
 }
 
+/** Move old separated-sheet placements onto the original sheet without changing their fitted bone ratios. */
+export function rebaseWardrobeSetToOriginalSheet(set: WardrobeSet, model: Pick<FabricatorProject, 'parts' | 'width' | 'height'>): WardrobeSet {
+  if (set.edition !== 2) return set
+  const projectBinding = (binding: WardrobeBinding, frame: ReturnType<typeof referenceFrame>) => {
+    const radians = frame.rotation * Math.PI / 180
+    const dx = binding.localCenterX * frame.width, dy = binding.localCenterY * frame.height
+    const width = binding.widthRatio * frame.width, height = binding.heightRatio * frame.height
+    return { x: frame.x + frame.width / 2 + dx * Math.cos(radians) - dy * Math.sin(radians) - width / 2,
+      y: frame.y + frame.height / 2 + dx * Math.sin(radians) + dy * Math.cos(radians) - height / 2,
+      width, height, rotation: frame.rotation + binding.relativeRotation }
+  }
+  return { ...set, edition: 1, width: model.width, height: model.height, components: set.components.map((component) => {
+    const bone = model.parts.find((part) => part.id === component.attachedPartId)
+    const binding = component.binding
+    if (!bone || !binding || binding.boneId !== bone.id || binding.boneWidth <= 0 || binding.boneHeight <= 0
+      || ![binding.boneWidth, binding.boneHeight, binding.boneRotation, binding.localCenterX, binding.localCenterY,
+        binding.widthRatio, binding.heightRatio, binding.relativeRotation].every(Number.isFinite)
+      || binding.widthRatio <= 0 || binding.heightRatio <= 0) return component
+    const frame = referenceFrame(bone)
+    const placement = projectBinding(binding, frame)
+    // Recover the old source frame from its frozen binding, not from the new
+    // model or an assumed ordering of ten hardcoded body rectangles.
+    const radians = binding.boneRotation * Math.PI / 180
+    const dx = binding.localCenterX * binding.boneWidth, dy = binding.localCenterY * binding.boneHeight
+    const oldFrame = {
+      x: component.x + component.width / 2 - dx * Math.cos(radians) + dy * Math.sin(radians) - binding.boneWidth / 2,
+      y: component.y + component.height / 2 - dx * Math.sin(radians) - dy * Math.cos(radians) - binding.boneHeight / 2,
+      width: binding.boneWidth, height: binding.boneHeight, rotation: binding.boneRotation
+    }
+    const origin = projectBinding(bindWardrobeComponent({ ...component,
+      x: component.originX ?? component.x, y: component.originY ?? component.y,
+      width: component.originWidth ?? component.width, height: component.originHeight ?? component.height, rotation: 0
+    }, { ...bone, sourceTransform: oldFrame }), frame)
+    const projected = { ...component, ...placement,
+      originX: origin.x, originY: origin.y, originWidth: origin.width, originHeight: origin.height }
+    return { ...projected, binding: bindWardrobeComponent(projected, bone) }
+  }) }
+}
+
 export type WardrobePoseTransform = {
   origin: Point
   localLeft: number
@@ -45,6 +84,17 @@ export type WardrobePoseTransform = {
   matrix: string
   scaleX: number
   scaleY: number
+}
+
+/** Pose seam coverage is based on the complete visible outfit, not one picker slot. */
+export function wardrobePosePadding(component: WardrobeComponent, outfit: readonly WardrobeComponent[]): { kneeOverlap: number; edgePadding: number } {
+  const hasThighAndCalf = outfit.some((piece) => piece.category === 'calca-coxa')
+    && outfit.some((piece) => piece.category === 'calca-canela')
+  return {
+    kneeOverlap: hasThighAndCalf && (component.category === 'calca-coxa' || component.category === 'calca-canela') ? 18 : 0,
+    edgePadding: component.category === 'manga-superior' || component.category === 'manga-inferior'
+      ? Math.max(8, Math.min(14, Math.round(Math.min(component.width, component.height) * .06))) : 0
+  }
 }
 
 /**

@@ -2076,7 +2076,7 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 
 /* Área de roupas: biblioteca por modelo, prévia ampla e edição por peça. */
 .wardrobe-workspace { display:flex; flex-direction:column; overflow:hidden; }
-.wardrobe-toolbar { min-height:64px; display:flex; align-items:center; justify-content:space-between; gap:12px; padding:8px 13px; border-bottom:1px solid #f0ebef; }
+.wardrobe-toolbar { min-height:64px; display:flex; flex-wrap:wrap; flex-shrink:0; align-items:center; justify-content:space-between; gap:12px; padding:8px 13px; border-bottom:1px solid #f0ebef; }
 .wardrobe-title,.wardrobe-toolbar-actions { min-width:0; display:flex; align-items:center; gap:9px; }
 .wardrobe-title>span:last-child { display:grid; gap:3px; }
 .wardrobe-title strong { color:#342e36; font:750 14px Manrope,sans-serif; }
@@ -2085,6 +2085,7 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .wardrobe-save-state { display:inline-flex; align-items:center; gap:5px; color:#829184; font-size:10px; white-space:nowrap; }
 .wardrobe-save-state i { width:6px;height:6px;border-radius:50%;background:#78b58b; }
 .wardrobe-model-select { display:flex; align-items:center; gap:7px; white-space:nowrap; }
+.wardrobe-model-select select { max-width:220px; }
 .wardrobe-model-select select,.wardrobe-fields input,.wardrobe-fields select { min-width:0; height:30px; padding:0 8px; border:1px solid #eee5eb; border-radius:7px; background:#fff; color:#554c57; font-size:11px; }
 .wardrobe-name-input { width:min(220px,20vw);height:32px;padding:0 9px;border:1px solid #eee5eb;border-radius:8px;color:#554c57;font-size:11px; }
 .wardrobe-save-state.pending { color:#a38055; }

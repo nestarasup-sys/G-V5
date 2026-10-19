@@ -236,6 +236,7 @@ export type VideoBackgroundLibraryItem = {
 export type VideoCharacterState = { element: StudioElement; imageDataUrl: string }
 
 export type StudioDesktopApi = {
+  flushPendingWrites: () => Promise<void>
   listStudios: () => Promise<StudioDocument[]>
   saveStudio: (studio: StudioDocument) => Promise<void>
   deleteStudio: (id: string) => Promise<void>

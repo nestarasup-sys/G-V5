@@ -9,7 +9,9 @@ import { characterBodyDimensionLimits, characterProportionLimits, defaultCharact
 import { resolveStudioTalkMouthId, type StudioFaceMode, type StudioFaceTransforms } from '../../../../shared/studio'
 import { usePreviewBackground } from '../fabricator/usePreviewBackground'
 import { DesignBanner } from '../fabricator/DesignWorkspace'
-import { mapWardrobeComponentToPose } from '../fabricator/wardrobe/poseTransform'
+import { mapWardrobeComponentToPose, wardrobePosePadding } from '../fabricator/wardrobe/poseTransform'
+import { validateWardrobeFlow } from '../../../../shared/assetFlow'
+import { anchorWardrobeAdjustments, editWardrobeAdjustment, moveWardrobeAdjustment, wardrobeAdjustmentMatrix } from '../../../../shared/wardrobeAdjustment'
 import { eyeInteriorMask } from '../fabricator/face/eyeInteriorMask'
 import { applyCharacterBodyShape } from './bodyShape'
 import { tintSkinPixels } from './skinTint'
@@ -537,6 +539,12 @@ const clothingCategories: Record<'Superior' | 'Inferior', Array<{ id: ClothingGr
   ]
 }
 
+function wardrobeComponentsForGroup(group: CustomizerWardrobeGroup, details: Record<string, WardrobeSet>): WardrobeSet['components'] {
+  const accepted = Object.values(clothingCategories).flat().find((category) => category.id === group.category)?.source
+  return details[`${group.modelSlot}:${group.setId}`]?.components.filter((component) => accepted?.includes(component.category)
+    && (!group.componentId || group.componentId === component.id)) ?? []
+}
+
 type WardrobePanel = { id: CustomizerWardrobePaletteKey; label: string; category: ClothingGroupCategory; side: 'left' | 'right' | null; source?: WardrobeCategory[] }
 const upperWardrobePanels: WardrobePanel[] = [
   { id: 'shirt', label: 'Camisa', category: 'camisa', side: null },
@@ -652,27 +660,42 @@ async function renderWardrobeOverlay(
   let sequence = 0
   let hasAboveHairAccessories = false
 
-  // Match the wardrobe pose test: each garment is inserted immediately above
-  // the model layer it is attached to, before the next body layer is drawn.
-  for (const group of groups) {
+  const selections = groups.flatMap((group) => {
     const set = details[`${group.modelSlot}:${group.setId}`]
-    if (!set || group.modelSlot !== modelSlot || group.hidden) continue
+    if (!set || group.modelSlot !== modelSlot || group.hidden) return []
     const accepted = clothingCategories[clothingCategories.Inferior.some((item) => item.id === group.category) ? 'Inferior' : 'Superior']
       .find((category) => category.id === group.category)?.source
-    if (!accepted) continue
-    const components = set.components.filter((component) => accepted.includes(component.category) && (!group.componentId || group.componentId === component.id))
-    if (!components.length) continue
+    if (!accepted) return []
+    const components = wardrobeComponentsForGroup(group, details)
+    return [{ group, set, components }]
+  })
+  const equippedComponents = new Map<string, WardrobeSet['components']>()
+  for (const { group, components } of selections) {
+    const key = `${group.modelSlot}:${group.setId}`
+    equippedComponents.set(key, [...(equippedComponents.get(key) ?? []), ...components])
+  }
+
+  // Match the wardrobe pose test: each garment is inserted immediately above
+  // the model layer it is attached to, before the next body layer is drawn.
+  for (const { group, set, components } of selections) {
+    if (!components.length) {
+      // A saved character references a component that is no longer found;
+      // silently omitting it makes the Customizer appear miscalibrated.
+      throw new Error(`O conjunto de roupa ${group.setId} não possui mais a peça selecionada (${group.componentId ?? group.category}). Reabra a biblioteca e confira o encaixe.`)
+    }
+    const checked = validateWardrobeFlow({ ...set, components }, source,
+      { sourceModelSlot: modelSlot, sourceModelUpdatedAt: source.updatedAt, parts: artwork.parts }, [group])
+    const errors = checked.issues.filter((issue) => issue.severity === 'error')
+    if (errors.length) {
+      throw new Error(`O pré-ajuste da roupa ${group.setId} não é compatível com este modelo/pose: ${errors.map((issue) => `${issue.code}:${issue.componentId ?? '-'}`).join(', ')}. Corrija o vínculo no Fabricador Dev; o personagem não será alterado.`)
+    }
     const mapped: Array<{ component: WardrobeSet['components'][number]; transform: ReturnType<typeof mapWardrobeComponentToPose>; center: { x: number; y: number }; sequence: number }> = []
     for (const component of components) {
       const sourceBone = source.parts.find((part) => part.id === component.attachedPartId)
       const targetBone = artwork.parts.find((part) => part.id === component.attachedPartId)
       if (!sourceBone || !targetBone) continue
-      const hasThighAndCalf = components.some((piece) => piece.category === 'calca-coxa') && components.some((piece) => piece.category === 'calca-canela')
-      const kneeOverlap = hasThighAndCalf && (component.category === 'calca-coxa' || component.category === 'calca-canela') ? 18 : 0
-      const sleeveEdgePadding = component.category === 'manga-superior' || component.category === 'manga-inferior'
-        ? Math.max(8, Math.min(14, Math.round(Math.min(component.width, component.height) * .06)))
-        : 0
-      const transform = mapWardrobeComponentToPose(component, sourceBone, targetBone, kneeOverlap, sleeveEdgePadding)
+      const { kneeOverlap, edgePadding } = wardrobePosePadding(component, equippedComponents.get(`${group.modelSlot}:${group.setId}`) ?? [])
+      const transform = mapWardrobeComponentToPose(component, sourceBone, targetBone, kneeOverlap, edgePadding)
       mapped.push({ component, transform, center: transform.origin, sequence: sequence++ })
     }
     if (!mapped.length) continue
@@ -708,10 +731,7 @@ async function renderWardrobeOverlay(
         const drawGarment = (context: CanvasRenderingContext2D, highlighted = false) => {
           context.save()
           context.globalAlpha = garment.group.hidden ? 0 : Math.min(1, Math.max(0, garment.group.opacity ?? 1))
-          context.translate(garment.center.x + garment.group.offsetX, garment.center.y + garment.group.offsetY)
-          context.rotate(garment.group.rotation * Math.PI / 180)
-          context.scale(garment.group.scaleX, garment.group.scaleY)
-          context.translate(-garment.center.x, -garment.center.y)
+          context.transform(...wardrobeAdjustmentMatrix(garment.group, artwork.parts.find((bone) => bone.id === garment.component.attachedPartId), garment.center))
           context.translate(garment.transform.origin.x, garment.transform.origin.y)
           context.transform(matrix[0], matrix[1], matrix[2], matrix[3], matrix[4], matrix[5])
           context.translate(garment.transform.localLeft + garment.transform.renderWidth / 2, garment.transform.localTop + garment.transform.renderHeight / 2)
@@ -740,7 +760,9 @@ async function renderWardrobeOverlay(
         const targetContext = renderAboveHair && aboveHairContext ? aboveHairContext : outputContext
         if (highlightMatchesClothing || highlightMatchesHeadExtra) drawGarment(targetContext, true)
         drawGarment(targetContext)
-      } catch { /* Keep rendering the remaining layers when one image is unavailable. */ }
+      } catch {
+        throw new Error(`A imagem da peça ${garment.component.name} não pôde ser renderizada. Verifique o asset no Fabricador Dev sem alterar o personagem.`)
+      }
     }
   }
   const aboveHairImageUrl = hasAboveHairAccessories && aboveHairCanvas ? aboveHairCanvas.toDataURL('image/png') : null
@@ -1306,7 +1328,8 @@ export async function prepareSavedCharacterRenderer(character: CustomizerCharact
     const key = `${group.modelSlot}:${group.setId}`
     if (details[key]) return
     const set = await window.desktop.loadWardrobeSet(group.modelSlot, group.setId)
-    if (set) details[key] = set
+    if (!set) throw new Error(`O personagem referencia um conjunto de roupa indisponível (${key}). A fonte não será modificada.`)
+    details[key] = set
   }))
   const wardrobe = await renderWardrobeOverlay(groups, details, artwork, modelSlot, source, character.customization.modelSkinTone)
 
@@ -1653,7 +1676,7 @@ export function CustomizerPage() {
   const customizerPreviewStageRef = useRef<HTMLDivElement>(null)
   const mainPreviewStageRef = useRef<HTMLDivElement>(null)
   const customizerPreviewPanDragRef = useRef<{ pointerId: number; startX: number; startY: number; originX: number; originY: number } | null>(null)
-  const clothingDragRef = useRef<{ pointerId: number; clientX: number; clientY: number; scaleX: number; scaleY: number; startX: number; startY: number; groupKey: string; characterId: string; beforeGroups: CustomizerWardrobeGroup[]; latest: CustomizerCharacter | null } | null>(null)
+  const clothingDragRef = useRef<{ pointerId: number; clientX: number; clientY: number; scaleX: number; scaleY: number; bone?: CatalogArtwork['parts'][number]; groupKey: string; characterId: string; beforeGroups: CustomizerWardrobeGroup[]; latest: CustomizerCharacter | null } | null>(null)
   const adjustmentLastTargetRef = useRef<AdjustmentPreviewHighlight | null>(null)
   const wardrobeTransformDirty = useRef(false)
   const selectedCharacter = characters.find((character) => character.id === selectedCharacterId) ?? characters[0] ?? null
@@ -2131,21 +2154,35 @@ export function CustomizerPage() {
         const set = await window.desktop.loadWardrobeSet(group.modelSlot, group.setId)
         return { group, key, set }
       }))
+      if (!cancelled && restored.some(({ set }) => !set)) {
+        setCatalogError(`Há roupas equipadas sem conjunto disponível no Fabricador Dev: ${restored.filter(({ set }) => !set).map(({ key }) => key).join(', ')}. Verifique a biblioteca antes de editar o personagem.`)
+      }
       if (cancelled) return
       setWardrobeDetails((current) => {
         const next = { ...current }
         for (const { key, set } of restored) if (set) next[key] = set
         return next
       })
-      const migratedGroups = restored.flatMap(({ group, set }) => {
-        if (group.componentId || !set) return [group]
-        const definition = Object.values(clothingCategories).flat().find((item) => item.id === group.category)
-        const components = set.components.filter((component) => definition?.source.includes(component.category))
-        return components.length ? components.map((component) => ({ ...group, componentId: component.id })) : [group]
-      })
-      if (migratedGroups.some((group, index) => group.componentId !== groupsToRestore[index]?.componentId) || migratedGroups.length !== groupsToRestore.length) {
+      let migratedGroups = groupsToRestore
+      if (groupsToRestore.some((group) => !group.adjustmentReference)) {
+        const modelSlot = selectedCharacter.customization.modelSlot ?? 1
+        const source = await window.desktop.loadFabricatorSlot(modelSlot)
+        const poseSlot = selectedCharacter.customization.poseSlot
+        const pose = poseSlot === null ? null : await window.desktop.loadFabricatorPose(modelSlot, poseSlot)
+        const artwork = poseSlot === null ? source : pose
+        if (source && artwork) {
+          const shaped = applyCharacterBodyShape(withCharacterHeadSize(artwork, getCharacterProportions(selectedCharacter.customization)), getCharacterBodyDimensions(selectedCharacter.customization))
+          const details = Object.fromEntries(restored.filter((entry): entry is typeof entry & { set: WardrobeSet } => !!entry.set).map(({ key, set }) => [key, set]))
+          migratedGroups = anchorWardrobeAdjustments(groupsToRestore, modelSlot, shaped.parts, (group) => wardrobeComponentsForGroup(group, details))
+        }
+      }
+      if (cancelled) return
+      if (JSON.stringify(migratedGroups) !== JSON.stringify(groupsToRestore)) {
         const current = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
-        await saveCharacter({ ...current, customization: { ...current.customization, wardrobeGroups: migratedGroups }, updatedAt: new Date().toISOString() })
+        // Hydration must not overwrite an edit made while assets were loading.
+        if (JSON.stringify(current.customization.wardrobeGroups) === JSON.stringify(groupsToRestore)) {
+          await saveCharacter({ ...current, customization: { ...current.customization, wardrobeGroups: migratedGroups }, updatedAt: new Date().toISOString() })
+        }
       }
       for (const { group, set } of restored) {
         if (!set) continue
@@ -2180,7 +2217,11 @@ export function CustomizerPage() {
         setSelectedWardrobeAboveHairUrl(result.aboveHairImageUrl)
       }
     }).catch((reason: unknown) => {
-      if (!cancelled) setCatalogError(reason instanceof Error ? reason.message : 'Não foi possível compor as roupas do personagem.')
+      if (!cancelled) {
+        setSelectedWardrobeUrl(null)
+        setSelectedWardrobeAboveHairUrl(null)
+        setCatalogError(reason instanceof Error ? reason.message : 'Não foi possível compor as roupas do personagem.')
+      }
     })
     return () => { cancelled = true }
   }, [selectedCharacter?.id, selectedCharacter?.customization.modelSkinTone, selectedCharacter?.customization.wardrobeGroups, wardrobeDetails, displayArtworkProject, selectedCatalogModelSlot, selectedSourceModelProject, selectedClothing?.modelSlot, selectedClothing?.setId, selectedClothing?.category, selectedClothing?.componentId, wardrobeTransformDraft, previewExtent, customizerPreviewZoom, activeWardrobePreviewHighlight])
@@ -2218,11 +2259,19 @@ export function CustomizerPage() {
     }
   }
 
+  function anchorCurrentWardrobe(groups: CustomizerWardrobeGroup[]): CustomizerWardrobeGroup[] {
+    if (!displayArtworkProject || !selectedSourceModelProject) return groups
+    return anchorWardrobeAdjustments(groups, selectedSourceModelProject.slot, displayArtworkProject.parts,
+      (group) => wardrobeComponentsForGroup(group, wardrobeDetails))
+  }
+
   async function saveCharacterCustomization(patch: Partial<CustomizerCharacter['customization']> | ((current: CustomizerCharacter['customization']) => Partial<CustomizerCharacter['customization']>)) {
     if (!selectedCharacter) return
     const current = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
     const changes = typeof patch === 'function' ? patch(current.customization) : patch
-    await saveCharacter({ ...current, customization: { ...current.customization, ...changes }, updatedAt: new Date().toISOString() })
+    const customization = { ...current.customization, ...changes }
+    if (customization.wardrobeGroups) customization.wardrobeGroups = anchorCurrentWardrobe(customization.wardrobeGroups)
+    await saveCharacter({ ...current, customization, updatedAt: new Date().toISOString() })
   }
 
   function changeProportion(key: keyof CharacterProportions, value: number) {
@@ -2670,7 +2719,7 @@ export function CustomizerPage() {
   function beginWardrobeDrag(event: import('react').PointerEvent<HTMLImageElement>) {
     if (activeModule !== 'Roupas' || clothingSection !== 'Customizar' || !selectedCharacter || !selectedClothing || !selectedArtworkProject) return
     const current = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
-    const beforeGroups = (current.customization.wardrobeGroups ?? []).map((item) => ({ ...item }))
+    const beforeGroups = anchorCurrentWardrobe(current.customization.wardrobeGroups ?? [])
     const group = beforeGroups.find((item) => item.setId === selectedClothing.setId && item.category === selectedClothing.category && (item.componentId === selectedClothing.componentId || !item.componentId))
     if (!group) return
     const scene = event.currentTarget.closest('.stage-scene')
@@ -2680,7 +2729,8 @@ export function CustomizerPage() {
     clothingDragRef.current = {
       pointerId: event.pointerId, clientX: event.clientX, clientY: event.clientY,
       scaleX: Math.max(.01, previewScale * activeShapeScale.x), scaleY: Math.max(.01, previewScale * activeShapeScale.y),
-      startX: group.offsetX, startY: group.offsetY, groupKey: wardrobeGroupKey(group), characterId: selectedCharacter.id, beforeGroups, latest: null
+      bone: displayArtworkProject?.parts.find((bone) => bone.id === group.adjustmentReference?.boneId),
+      groupKey: wardrobeGroupKey(group), characterId: selectedCharacter.id, beforeGroups, latest: null
     }
     event.currentTarget.setPointerCapture(event.pointerId)
     event.preventDefault()
@@ -2689,12 +2739,8 @@ export function CustomizerPage() {
   function moveWardrobeDrag(event: import('react').PointerEvent<HTMLImageElement>) {
     const drag = clothingDragRef.current
     if (activeModule !== 'Roupas' || clothingSection !== 'Customizar' || !drag || drag.pointerId !== event.pointerId || !selectedCharacter || selectedCharacter.id !== drag.characterId) return
-    const groups = selectedCharacter.customization.wardrobeGroups ?? []
-    const nextGroups = groups.map((group) => wardrobeGroupKey(group) === drag.groupKey ? {
-      ...group,
-      offsetX: drag.startX + (event.clientX - drag.clientX) / drag.scaleX,
-      offsetY: drag.startY + (event.clientY - drag.clientY) / drag.scaleY
-    } : group)
+    const nextGroups = drag.beforeGroups.map((group) => wardrobeGroupKey(group) === drag.groupKey
+      ? moveWardrobeAdjustment(group, drag.bone, { x: (event.clientX - drag.clientX) / drag.scaleX, y: (event.clientY - drag.clientY) / drag.scaleY }) : group)
     const nextCharacter = { ...selectedCharacter, customization: { ...selectedCharacter.customization, wardrobeGroups: nextGroups }, updatedAt: new Date().toISOString() }
     drag.latest = nextCharacter
     charactersRef.current = charactersRef.current.map((character) => character.id === nextCharacter.id ? nextCharacter : character)
@@ -3368,11 +3414,16 @@ export function CustomizerPage() {
     setAdjustmentPreviewHighlight(null)
     const wardrobeCategory = headAdjustSelection === 'oculos' || headAdjustSelection === 'acessorio-cabeca' ? headAdjustSelection : null
     const currentCharacter = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
-    const wardrobeGroup = wardrobeCategory ? [...(currentCharacter.customization.wardrobeGroups ?? [])].reverse().find((group) => group.category === wardrobeCategory) : undefined
+    const originalGroups = currentCharacter.customization.wardrobeGroups ?? []
+    const anchoredGroups = anchorCurrentWardrobe(originalGroups)
+    const wardrobeGroup = wardrobeCategory ? [...anchoredGroups].reverse().find((group) => group.category === wardrobeCategory) : undefined
     if (wardrobeGroup) {
-      const wardrobeGroups = (currentCharacter.customization.wardrobeGroups ?? []).map((group) => {
+      const displayed = [...originalGroups].reverse().find((group) => group.category === wardrobeCategory) ?? wardrobeGroup
+      const wardrobeGroups = anchoredGroups.map((group) => {
         if (group !== wardrobeGroup) return group
-        if (operation === 'transform') return { ...group, offsetX: values?.x ?? group.offsetX ?? 0, offsetY: values?.y ?? group.offsetY ?? 0, scaleX: values?.scaleX ?? group.scaleX ?? 1, scaleY: values?.scaleY ?? group.scaleY ?? 1, rotation: values?.rotation ?? group.rotation ?? 0 }
+        if (operation === 'transform') return editWardrobeAdjustment(group,
+          displayArtworkProject?.parts.find((bone) => bone.id === group.adjustmentReference?.boneId),
+          { offsetX: values?.x, offsetY: values?.y, scaleX: values?.scaleX, scaleY: values?.scaleY, rotation: values?.rotation }, displayed)
         if (group.hidden) { const { opacity: _opacity, ...rest } = group; return { ...rest, hidden: false } }
         return { ...group, hidden: true }
       })
@@ -3396,10 +3447,14 @@ export function CustomizerPage() {
     if (!selectedCharacter || !selectedClothing) return
     setAdjustmentPreviewHighlight(null)
     const current = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
-    const groups = current.customization.wardrobeGroups ?? []
+    const originalGroups = current.customization.wardrobeGroups ?? []
+    const groups = anchorCurrentWardrobe(originalGroups)
     const selectedSet = wardrobeDetails[`${selectedClothing.modelSlot}:${selectedClothing.setId}`]
     const sourceCategories: WardrobeCategory[] = clothingCategories.Inferior.concat(clothingCategories.Superior).find((item) => item.id === selectedClothing.category)?.source ?? []
     const isSamePiece = (group: CustomizerWardrobeGroup) => group.modelSlot === selectedClothing.modelSlot && group.setId === selectedClothing.setId && group.category === selectedClothing.category && (group.componentId === selectedClothing.componentId || !group.componentId)
+    const displayed = originalGroups.find(isSamePiece)
+    const transformGroup = (group: CustomizerWardrobeGroup) => editWardrobeAdjustment(group,
+      displayArtworkProject?.parts.find((bone) => bone.id === group.adjustmentReference?.boneId), values ?? {}, displayed ?? group)
     const nextGroups: CustomizerWardrobeGroup[] = []
     const toggleHidden = (group: CustomizerWardrobeGroup): CustomizerWardrobeGroup => {
       if (group.hidden) { const { opacity: _opacity, ...rest } = group; return { ...rest, hidden: false } }
@@ -3408,7 +3463,7 @@ export function CustomizerPage() {
     for (const group of groups) {
       if (!isSamePiece(group)) { nextGroups.push(group); continue }
       if (group.componentId) {
-        if (operation === 'transform') nextGroups.push({ ...group, ...values })
+        if (operation === 'transform') nextGroups.push(transformGroup(group))
         else nextGroups.push(toggleHidden(group))
         continue
       }
@@ -3417,12 +3472,13 @@ export function CustomizerPage() {
       if (!matchingComponents.length) { nextGroups.push(group); continue }
       for (const component of matchingComponents) {
         const componentGroup = { ...group, componentId: component.id }
-        if (operation === 'transform' && component.id === selectedClothing.componentId) nextGroups.push({ ...componentGroup, ...values })
+        if (operation === 'transform' && component.id === selectedClothing.componentId) nextGroups.push(transformGroup(componentGroup))
         else if (operation === 'toggle-hidden' && component.id === selectedClothing.componentId) nextGroups.push(toggleHidden(componentGroup))
         else nextGroups.push(componentGroup)
       }
     }
-    if (values) setWardrobeTransformDraft((draft) => ({ offsetX: draft?.offsetX ?? 0, offsetY: draft?.offsetY ?? 0, scaleX: draft?.scaleX ?? 1, scaleY: draft?.scaleY ?? 1, rotation: draft?.rotation ?? 0, ...values }))
+    const adjusted = nextGroups.find(isSamePiece)
+    if (values && adjusted) setWardrobeTransformDraft({ offsetX: adjusted.offsetX, offsetY: adjusted.offsetY, scaleX: adjusted.scaleX, scaleY: adjusted.scaleY, rotation: adjusted.rotation })
     await saveCharacterCustomization({ wardrobeGroups: nextGroups })
   }
 

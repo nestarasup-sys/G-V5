@@ -1,7 +1,7 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, protocol, shell, type IpcMainInvokeEvent } from 'electron'
-import { createReadStream } from 'node:fs'
+import { app, BrowserWindow, dialog, ipcMain, Menu, protocol, session, shell, type IpcMainInvokeEvent } from 'electron'
+import { createReadStream, existsSync, lstatSync, mkdirSync, readFileSync, realpathSync } from 'node:fs'
 import { mkdir, readFile, writeFile, readdir, unlink, rename, stat, access, rm, copyFile } from 'node:fs/promises'
-import { basename, dirname, extname, join, resolve } from 'node:path'
+import { basename, dirname, extname, join, relative, resolve, sep } from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
 import { Readable } from 'node:stream'
 import { fileURLToPath } from 'node:url'
@@ -10,6 +10,7 @@ import { resolvePoseCategory } from '../src/shared/fabricator'
 import { hairCategories } from '../src/shared/hairCategories'
 import type { CustomizerCharacter, CustomizerFaceAppearance, CustomizerWardrobePaletteKey, HairColorOverrides } from '../src/shared/customizer'
 import { characterBodyDimensionLimits, characterProportionLimits } from '../src/shared/customizer'
+import { validWardrobeAdjustmentReference } from '../src/shared/wardrobeAdjustment'
 import type { StudioAsset, StudioDocument, VideoTimelineDocument } from '../src/shared/studio'
 import { applyModelHeadShape } from '../src/shared/headShape'
 import { isStudioExpressionEffects, isStudioFaceTransforms } from '../src/shared/studio'
@@ -19,6 +20,98 @@ import { VideoLibraryStore } from './videoLibrary'
 import { VideoBackgroundLibraryStore } from './backgroundLibrary'
 import { readAssetImage, writeAssetImageSource } from './assetImageOverrides'
 import { legacyStandardExpressionEffects } from '../src/shared/legacyExpressionEffects'
+
+function configureDevAiDataRoot(): void {
+  const privateCopyTest = process.env.GACHA_DEV_AI_PRIVATE_TEST === '1'
+  if (privateCopyTest && process.env.GACHA_DEV_AI_TEST !== '1') {
+    throw new Error('O modo privado DEV AI exige o runner local isolado.')
+  }
+  if (process.env.GACHA_DEV_AI_TEST !== '1') return
+  if (app.isPackaged || app.isReady()) throw new Error('DEV AI IPC só pode configurar o root antes do boot em build de desenvolvimento.')
+  const requestedSandbox = process.env.GACHA_DEV_AI_SANDBOX
+  if (!requestedSandbox || !resolve(requestedSandbox)) throw new Error('Root sintético DEV AI ausente.')
+
+  if (privateCopyTest) {
+    const privateRoot = resolve(process.env.GACHA_DEV_AI_PRIVATE_ROOT ?? '')
+    const allowedRoot = resolve(process.env.GACHA_DEV_AI_PRIVATE_ALLOWED_ROOT ?? '')
+    const sandbox = resolve(requestedSandbox)
+    const userData = join(privateRoot, 'userData')
+    const markerPath = join(privateRoot, 'private-copy-marker.json')
+    const relativePrivate = relative(allowedRoot, privateRoot)
+    const relativeSandbox = relative(privateRoot, sandbox)
+    const isWithin = (root: string, path: string): boolean => {
+      const pathRelative = relative(root, path)
+      return !!pathRelative && pathRelative !== '..' && !pathRelative.startsWith(`..${sep}`)
+    }
+    const sameCanonicalPath = (left: string, right: string): boolean => process.platform === 'win32'
+      ? left.toLowerCase() === right.toLowerCase()
+      : left === right
+    if (!relativePrivate || !isWithin(allowedRoot, privateRoot) || relativeSandbox !== 'userData'
+      || !sameCanonicalPath(sandbox, userData)) {
+      throw new Error('Cópia privada DEV AI fora da raiz local autorizada.')
+    }
+    const marker = existsSync(markerPath) ? JSON.parse(readFileSync(markerPath, 'utf8')) as {
+      schemaVersion?: number; privateDataCopy?: boolean; verifiedSha256?: boolean; sourceBackup?: string; copyMode?: string
+    } : null
+    const sourceBackup = marker?.sourceBackup ? resolve(marker.sourceBackup) : ''
+    const backupManifest = sourceBackup ? join(sourceBackup, 'backup-manifest.json') : ''
+    if (marker?.schemaVersion !== 1 || marker.privateDataCopy !== true || marker.verifiedSha256 !== true
+      || !['baseline', 'wardrobe-reset'].includes(marker.copyMode ?? '')
+      || !isWithin(allowedRoot, sourceBackup) || sourceBackup.toLowerCase() === privateRoot.toLowerCase()
+      || !existsSync(backupManifest) || !existsSync(sandbox)) {
+      throw new Error('Cópia privada DEV AI sem backup local validado.')
+    }
+    for (const path of [allowedRoot, privateRoot, markerPath, sourceBackup, backupManifest, sandbox]) {
+      if (!existsSync(path) || lstatSync(path).isSymbolicLink() || !sameCanonicalPath(realpathSync(path), path)) {
+        throw new Error('Path não canônico ou symlink recusado no teste privado.')
+      }
+    }
+    const sessionData = join(privateRoot, 'session-data')
+    mkdirSync(sessionData, { recursive: true })
+    if (lstatSync(sessionData).isSymbolicLink() || !sameCanonicalPath(realpathSync(sessionData), sessionData)) {
+      throw new Error('Diretório de sessão privado inválido.')
+    }
+    app.setPath('userData', userData)
+    app.setPath('sessionData', sessionData)
+    return
+  }
+
+  const repoRoot = resolve(__dirname, '../..')
+  const runsRoot = resolve(repoRoot, 'out', 'dev-ai', 'runs')
+  const sandbox = resolve(requestedSandbox)
+  const runRoot = dirname(sandbox)
+  const relativeRun = relative(runsRoot, runRoot)
+  if (!relativeRun || relativeRun === '..' || relativeRun.startsWith(`..${sep}`) || relativeRun.includes(sep)
+    || basename(sandbox) !== 'sandbox' || !existsSync(sandbox)) {
+    throw new Error('Root sintético DEV AI fora do diretório autorizado.')
+  }
+
+  const sameCanonicalPath = (left: string, right: string): boolean => process.platform === 'win32'
+    ? left.toLowerCase() === right.toLowerCase()
+    : left === right
+  for (const path of [resolve(repoRoot, 'out'), resolve(repoRoot, 'out', 'dev-ai'), runsRoot, runRoot, sandbox]) {
+    if (!existsSync(path) || lstatSync(path).isSymbolicLink() || !sameCanonicalPath(realpathSync(path), path)) {
+      throw new Error('Root sintético DEV AI ausente, não canônico ou ligado por symlink.')
+    }
+  }
+  const markerPath = join(runRoot, '.dev-ai-sandbox.json')
+  if (!existsSync(markerPath) || lstatSync(markerPath).isSymbolicLink() || !sameCanonicalPath(realpathSync(markerPath), markerPath)) {
+    throw new Error('Marcador do sandbox DEV AI ausente ou inválido.')
+  }
+  const marker = JSON.parse(readFileSync(markerPath, 'utf8')) as { schemaVersion?: number; runId?: string; syntheticOnly?: boolean }
+  if (marker.schemaVersion !== 1 || marker.runId !== basename(runRoot) || marker.syntheticOnly !== true) {
+    throw new Error('Marcador do sandbox DEV AI não identifica uma execução sintética válida.')
+  }
+
+  const userData = join(sandbox, 'electron-user-data')
+  const sessionData = join(sandbox, 'electron-session-data')
+  mkdirSync(userData, { recursive: true })
+  mkdirSync(sessionData, { recursive: true })
+  app.setPath('userData', userData)
+  app.setPath('sessionData', sessionData)
+}
+
+configureDevAiDataRoot()
 
 protocol.registerSchemesAsPrivileged([
   { scheme: 'gacha-video', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true } },
@@ -136,7 +229,9 @@ function isCustomizerCharacter(value: unknown): value is CustomizerCharacter {
         && isValidWardrobeId(group.setId)
         && ['camisa', 'jaqueta', 'manga-superior', 'manga-inferior', 'luvas', 'capa', 'cinto', 'oculos', 'acessorio-cabeca', 'saia', 'saia-superior', 'saia-inferior', 'cinto-saia-1', 'cinto-saia-2', 'calca', 'shorts', 'meia', 'sapato'].includes(group.category)
         && [group.offsetX, group.offsetY, group.scaleX, group.scaleY, group.rotation].every(Number.isFinite)
-        && group.scaleX > 0 && group.scaleY > 0)
+        && group.scaleX > 0 && group.scaleY > 0
+        && (group.adjustmentReference === undefined || typeof group.componentId === 'string'
+          && validWardrobeAdjustmentReference(group.adjustmentReference)))
     ))
     && (character.customization.faceAppearance === undefined || isValidCustomizerFaceAppearance(character.customization.faceAppearance))
     && (character.customization.hairAppearance === undefined || (
@@ -211,6 +306,13 @@ const faceComponentPartIds = ['eye-left', 'eye-right', 'pupil-left', 'pupil-righ
 function isValidCustomizerFaceAppearance(appearance: CustomizerFaceAppearance): boolean {
   const componentEntries = Object.entries(appearance.components ?? {})
   const faceDetailEntries = Object.entries(appearance.faceDetails ?? {})
+  const headExtraEntries = Object.entries(appearance.headExtras ?? {})
+  const headExtrasValid = appearance.headExtras === undefined || (
+    !!appearance.headExtras && typeof appearance.headExtras === 'object'
+    && !Array.isArray(appearance.headExtras) && headExtraEntries.length <= 2
+    && headExtraEntries.every(([category, id]) => ['glasses', 'head-accessory'].includes(category)
+      && (id === null || typeof id === 'string' && isValidWardrobeId(id)))
+  )
   const componentParts = new Set<string>(faceComponentPartIds)
   const catalogIds = [appearance.eyeCatalogId, appearance.eyeLeftCatalogId, appearance.eyeRightCatalogId, appearance.eyebrowCatalogId, appearance.eyebrowLeftCatalogId, appearance.eyebrowRightCatalogId, appearance.noseCatalogId, appearance.mouthClosedCatalogId, appearance.mouthOpenCatalogId]
   const componentsValid = appearance.components === undefined || (!!appearance.components && typeof appearance.components === 'object' && !Array.isArray(appearance.components)
@@ -233,12 +335,19 @@ function isValidCustomizerFaceAppearance(appearance: CustomizerFaceAppearance): 
     && Object.entries(appearance.linkedSides).every(([kind, linked]) => ['eye', 'pupil', 'eyebrow'].includes(kind) && typeof linked === 'boolean'))
   const partColorsValid = appearance.partColors === undefined || (!!appearance.partColors && typeof appearance.partColors === 'object' && !Array.isArray(appearance.partColors)
     && Object.entries(appearance.partColors).every(([part, colors]) => ['eye-left', 'eye-right', 'brow-left', 'brow-right'].includes(part) && isHairColorMap(colors)))
-  const hasSelection = Boolean(appearance.setId || catalogIds.some(Boolean) || componentEntries.some(([, component]) => component?.assetId) || faceDetailEntries.some(([, id]) => id) || appearance.mouthBlushEnabled !== undefined)
+  // Head-only accessories are valid independent selections. Previously a
+  // glasses-only faceAppearance was rejected by character:save, even though
+  // Customizer can render and select it. Do not silently lose the pre-fit.
+  const hasSelection = Boolean(appearance.setId || catalogIds.some(Boolean)
+    || componentEntries.some(([, component]) => component?.assetId)
+    || faceDetailEntries.some(([, id]) => id)
+    || headExtraEntries.some(([, id]) => Boolean(id))
+    || appearance.mouthBlushEnabled !== undefined)
 
   return isValidModelSlot(appearance.modelSlot)
     && (appearance.setId === undefined || isValidWardrobeId(appearance.setId))
     && catalogIds.every((id) => id === undefined || id === null || isValidFaceCatalogId(id))
-    && componentsValid && transformsValid && faceDetailsValid && linksValid && partColorsValid && hasSelection
+    && componentsValid && transformsValid && faceDetailsValid && headExtrasValid && linksValid && partColorsValid && hasSelection
     && [0, 1, 2].includes(appearance.eyeState)
     && typeof appearance.eyebrows === 'boolean'
     && Number.isInteger(appearance.noseIndex) && appearance.noseIndex >= 0 && appearance.noseIndex <= 5
@@ -1070,7 +1179,7 @@ async function writeStudio(studio: StudioDocument, workspace: StudioWorkspaceSto
     const { dataUrl: _dataUrl, ...metadata } = asset
     assetManifest.push(metadata)
   }
-  const temporary = join(folder, 'studio.json.tmp')
+  const temporary = join(folder, `studio.json.${randomUUID()}.tmp`)
   const { assets: _assets, ...metadata } = studio
   const savedMetadata = { ...metadata, videoTimeline: studio.videoTimeline ? structuredClone(studio.videoTimeline) : undefined }
   if (workspace === 'video' && savedMetadata.videoTimeline) {
@@ -1089,8 +1198,30 @@ async function writeStudio(studio: StudioDocument, workspace: StudioWorkspaceSto
       ...savedMetadata.videoTimeline.characterKeys.map((key) => storeImage(key.state))
     ])
   }
-  await writeFile(temporary, JSON.stringify({ ...savedMetadata, title: studio.title.trim(), assets: assetManifest }, null, 2), 'utf8')
-  await rename(temporary, join(folder, 'studio.json'))
+  try {
+    await writeFile(temporary, JSON.stringify({ ...savedMetadata, title: studio.title.trim(), assets: assetManifest }, null, 2), 'utf8')
+    const target = join(folder, 'studio.json')
+    const maxAttempts = process.platform === 'win32' ? 5 : 1
+    for (let attempt = 1; ; attempt += 1) {
+      try {
+        await rename(temporary, target)
+        break
+      } catch (reason) {
+        const error = reason as NodeJS.ErrnoException
+        const retryable = process.platform === 'win32' && ['EPERM', 'EACCES', 'EBUSY'].includes(error.code ?? '')
+        if (!retryable || attempt >= maxAttempts) throw reason
+        await new Promise((resolveDelay) => setTimeout(resolveDelay, 20 * (2 ** (attempt - 1))))
+      }
+    }
+  } finally {
+    // Only this save operation owns the UUID-named temporary manifest.
+    // Never touch the prior committed studio.json on a failed rename.
+    try { await unlink(temporary) } catch (reason) {
+      if ((reason as NodeJS.ErrnoException).code !== 'ENOENT') {
+        console.error('Não foi possível remover o manifesto temporário do Studio após gravar.')
+      }
+    }
+  }
 }
 
 async function listStudios(workspace: StudioWorkspaceStorage = 'studio'): Promise<StudioDocument[]> {
@@ -1475,6 +1606,15 @@ async function readAnimatorDraft(modelSlot: number): Promise<AnimatorAnimationDr
 }
 
 async function registerFabricatorHandlers(): Promise<void> {
+  ipcMain.handle('app:flush-pending-writes', async (event): Promise<void> => {
+    assertTrustedSender(event)
+    const pendingWrites = [...fabricatorSaveQueues.values(), ...poseSaveWrites, ...hairSaveQueues.values(),
+      studioSaveQueues.studio, studioSaveQueues.video]
+    const results = await Promise.allSettled(pendingWrites)
+    const failedWrite = results.find((result): result is PromiseRejectedResult => result.status === 'rejected')
+    if (failedWrite) throw failedWrite.reason
+  })
+
   const registerStudioWorkspace = (workspace: StudioWorkspaceStorage, channel: 'studio' | 'video-studio') => {
     ipcMain.handle(`${channel}:list`, async (event): Promise<StudioDocument[]> => {
       assertTrustedSender(event)
@@ -2187,6 +2327,7 @@ async function registerFabricatorHandlers(): Promise<void> {
 function createMainWindow(): void {
   Menu.setApplicationMenu(null)
   const window = new BrowserWindow({
+    show: process.env.GACHA_DEV_AI_TEST !== '1',
     width: 1440,
     height: 900,
     minWidth: 1120,
@@ -2198,10 +2339,39 @@ function createMainWindow(): void {
       preload: join(__dirname, '../preload/preload.cjs'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: true
+      sandbox: true,
+      // Deterministic paint and requestAnimationFrame behavior for the hidden
+      // DEV AI Electron window; normal user windows retain Chromium throttling.
+      backgroundThrottling: process.env.GACHA_DEV_AI_TEST === '1' ? false : true
     }
   })
   window.removeMenu()
+
+  let closeAfterFlush = false
+  let flushingBeforeClose = false
+  window.on('close', (event) => {
+    if (closeAfterFlush) return
+    event.preventDefault()
+    if (flushingBeforeClose) return
+    flushingBeforeClose = true
+    const flushRendererWrites = window.webContents.isLoading()
+      ? Promise.resolve()
+      : window.webContents.executeJavaScript("window.desktop?.flushPendingWrites ? window.desktop.flushPendingWrites() : undefined")
+    void flushRendererWrites.then(() => {
+      closeAfterFlush = true
+      flushingBeforeClose = false
+      if (!window.isDestroyed()) window.close()
+    }).catch(async (reason: unknown) => {
+      flushingBeforeClose = false
+      console.error('Não foi possível concluir os salvamentos antes de fechar o editor:', reason)
+      if (!window.isDestroyed()) await dialog.showMessageBox(window, {
+        type: 'error',
+        title: 'Salvamento pendente',
+        message: 'Não foi possível concluir os salvamentos. O editor continuará aberto para proteger suas alterações.',
+        buttons: ['Voltar ao editor']
+      })
+    })
+  })
 
   if (process.env.ELECTRON_RENDERER_URL) {
     void window.loadURL(process.env.ELECTRON_RENDERER_URL)
@@ -2272,6 +2442,16 @@ function registerVideoBackgroundProtocol(): void {
 }
 
 app.whenReady().then(async () => {
+  if (process.env.GACHA_DEV_AI_TEST === '1') {
+    // Defense in depth for fixture-only Electron tests: no renderer-originated
+    // HTTP(S), WebSocket or FTP traffic, including images or fetch calls.
+    // This is NOT an OS firewall and does not confine Node subprocesses.
+    session.defaultSession.webRequest.onBeforeRequest((details, callback) => {
+      const blocked = /^(?:https?|wss?|ftp):/i.test(details.url)
+      callback({ cancel: blocked })
+    })
+    session.defaultSession.setPermissionRequestHandler((_contents, _permission, callback) => callback(false))
+  }
   registerVideoAssetProtocol()
   registerVideoBackgroundProtocol()
   await registerFabricatorHandlers()
@@ -2286,14 +2466,30 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
 })
 
-let waitingForFabricatorWritesBeforeQuit = false
+let waitingForPersistenceWritesBeforeQuit = false
+let persistenceWritesDrainedForQuit = false
 app.on('before-quit', (event) => {
-  const pendingWrites = [...fabricatorSaveQueues.values(), ...poseSaveWrites, ...hairSaveQueues.values(), studioSaveQueues.studio, studioSaveQueues.video]
-  if (pendingWrites.length === 0 || waitingForFabricatorWritesBeforeQuit) return
+  if (persistenceWritesDrainedForQuit) return
+  // Always prevent quit while an asynchronous drain is in flight. A second
+  // before-quit must not bypass the first drain.
   event.preventDefault()
-  waitingForFabricatorWritesBeforeQuit = true
-  void Promise.allSettled(pendingWrites).then(() => {
-    waitingForFabricatorWritesBeforeQuit = false
+  if (waitingForPersistenceWritesBeforeQuit) return
+  waitingForPersistenceWritesBeforeQuit = true
+  const pendingWrites = [
+    ...fabricatorSaveQueues.values(), ...poseSaveWrites, ...hairSaveQueues.values(),
+    studioSaveQueues.studio, studioSaveQueues.video
+  ]
+  void Promise.allSettled(pendingWrites).then((results) => {
+    waitingForPersistenceWritesBeforeQuit = false
+    const failed = results.some((result) => result.status === 'rejected')
+    if (failed) {
+      // Do not report successful shutdown after a persistence failure.
+      // Keep the application available for retry/recovery instead.
+      if (!BrowserWindow.getAllWindows().some((window) => !window.isDestroyed())) createMainWindow()
+      dialog.showErrorBox('Falha no salvamento', 'Uma gravação pendente falhou. O aplicativo permanecerá aberto para proteger suas alterações.')
+      return
+    }
+    persistenceWritesDrainedForQuit = true
     app.quit()
   })
 })
