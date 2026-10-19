@@ -1,49 +1,43 @@
 # Dados locais portáteis do GACHA V5
 
-## Raiz
+## Raiz e ownership
 
-Todo dado persistente do aplicativo deve ficar sob `app-data/`, dentro do checkout original. A pasta é ignorada pelo Git e não deve ser incluída em commits, releases ou CI.
+Todo dado persistente do aplicativo fica sob `app-data/`, dentro do checkout. A pasta é ignorada pelo Git e não deve entrar em commits, releases ou CI.
 
 ```text
 app-data/
-  database/catalog.sqlite   # metadados e arquivos lógicos por domínio
-  media/objects/sha256/      # arquivos binários deduplicados por conteúdo
-  media/thumbnails/          # miniaturas derivadas
-  user-data/                 # perfil interno Electron e estado web
-  logs/                      # logs locais
-  crash-dumps/               # relatórios locais de falha
-  temp/                      # temporários do processo do app
-  backups/                   # backups manuais e recuperação local
-  manifests/                 # recibos e proveniência local
+  database/catalog.sqlite       # metadados e arquivos lógicos por domínio
+  libraries/                    # bibliotecas publicadas pelo Fabricador
+  characters/                   # personagens e overrides do Customizador
+  projects/                     # documentos dos Studios
+  media/objects/sha256/         # arquivos binários deduplicados
+  media/thumbnails/             # miniaturas derivadas
+  runtime/profile/              # Local State e preferências do Electron
+  cache/electron-session/        # localStorage, cookies e estado da sessão Electron
+  cache/                        # caches recriáveis
+  logs/                         # logs locais
+  crash-dumps/                  # relatórios locais de falha
+  temp/                         # temporários do processo
+  backups/                      # backups manuais e recuperação local
+  manifests/                    # recibos e proveniência local
 ```
 
-## Evolução escalável do layout
+`runtime/profile` e `cache/electron-session` são diretórios internos do Electron, mas ficam dentro de `app-data`. O app aponta `userData` e `sessionData` para esses locais antes do evento `ready`. Os caches descartáveis são separados e podem ser recriados. A pasta antiga `app-data/user-data` não é mais um destino de dados.
 
-A estrutura expandida está detalhada em [APP_DATA_ESCALAVEL.md](./APP_DATA_ESCALAVEL.md). O app cria `database/catalog.sqlite` e oferece migração guiada por domínio em Opções > Dados e armazenamento. A migração não começa no boot: o usuário confere o inventário e inicia a operação. Domínios ativados usam o catálogo e objetos endereçados por conteúdo através de um adaptador de filesystem, preservando os contratos de persistência das áreas. Os demais continuam usando os caminhos legados até serem migrados.
+## Dados de domínio
 
-Antes de uma migração, crie um backup manual em Opções. A migração verifica origem e destino por hash e só remove os arquivos antigos após o primeiro carregamento saudável. Backups manuais permanecem até o usuário excluí-los. Não execute várias instâncias do app durante a migração.
+O catálogo oferece migração guiada por domínio em Opções > Dados e armazenamento. Domínios ativos usam o catálogo e objetos endereçados por conteúdo através de um adaptador de filesystem, preservando os contratos de persistência das áreas. Fabricador publica bibliotecas e vínculos; Customizador guarda personagens e overrides; Studio normal e Video Studio mantêm projetos independentes.
 
-Depois da migração, `user-data` permanece como perfil interno do Electron. Personagens, bibliotecas e projetos são lidos e gravados pelo catálogo e pelo armazenamento de objetos; as antigas pastas de domínio deixam de ser a fonte ativa. O perfil mantém `Local Storage` e preferências do renderer.
+Antes de uma migração de domínio, crie um backup manual em Opções. A migração verifica origem e destino por hash e só remove os arquivos antigos após o primeiro carregamento saudável. Não execute várias instâncias durante a migração.
 
-As áreas continuam com ownership separado: Fabricador publica bibliotecas e vínculos; Customizador guarda personagens e overrides; Studio normal e Video Studio salvam seus próprios projetos. O catálogo mantém esses domínios isolados e deduplica binários pelo hash do conteúdo.
+## Migração do perfil Electron
 
-## Migração do perfil Electron legado
+`npm run dev` e `npm run preview` executam `scripts/prepare-app-data.cjs` antes do Electron. Se o perfil `%APPDATA%/gacha-nymi-work-app` existir, o script confirma que o app está fechado, verifica a cópia por hashes e arquiva a origem em `app-data/backups`. O perfil portátil fica em `runtime/profile`.
 
-`npm run dev` e `npm run preview` executam `scripts/prepare-app-data.cjs` antes de abrir o Electron. O Electron de desenvolvimento aponta `userData` e `sessionData` para `app-data/user-data`; a versão empacotada usa `app-data` ao lado do executável. Logs, crash dumps, temporários do processo e o caminho `appData` também são direcionados para a raiz local. Se o perfil `%APPDATA%/gacha-nymi-work-app` existir e `app-data/user-data` ainda não existir, o migrador:
+Na inicialização, o Electron separa dados persistentes de sessão para `cache/electron-session`, remove somente caches descartáveis e recusa links simbólicos, colisões ou destinos não canônicos. A rotina não sobrescreve arquivos de perfil existentes. Pastas de domínio antigas eventualmente encontradas são preservadas no perfil portátil para a migração guiada; não são apagadas silenciosamente.
 
-1. Confirma que não há processo principal do GACHA V5 aberto.
-2. Inventaria arquivos e diretórios, rejeitando links simbólicos e tipos especiais.
-3. Copia o perfil inteiro para um staging dentro de `app-data` e compara SHA-256, tamanhos e estrutura.
-4. Copia para `app-data/user-data` e compara novamente a publicação por hash.
-5. Faz uma cópia de verificação do perfil legado, move o original para `app-data/backups/roaming-profile-<data>` e valida o arquivo movido antes de remover o staging.
-6. Grava um manifesto local com inventário, hashes, resumo e local do backup.
+## Backup e testes
 
-Se o destino já existe sem manifesto ou as cópias divergem, o processo para sem mesclar nem sobrescrever dados. Um staging de falha é mantido para inspeção. Se uma origem Roaming reaparecer após a primeira abertura, o próximo início exige que o app esteja fechado, restaura apenas arquivos ausentes nas pastas de domínio (sem sobrescrever conflitos), arquiva e verifica a origem completa. O perfil Chromium legado é preservado no backup; não mesclamos arquivos de banco do Chromium individualmente.
+Backups manuais incluem `runtime/profile`, `cache/electron-session`, bibliotecas, personagens, projetos, mídia, manifestos e snapshot do catálogo. Caches descartáveis são omitidos. O restore valida hashes e integridade SQLite antes de aplicar.
 
-O Electron aponta `userData` e `sessionData` para `app-data/user-data`; logs, crash dumps e temporários ficam em pastas próprias dentro de `app-data`. O perfil Chromium permanece em `user-data` para preservar `localStorage` e preferências.
-
-## Testes e limites
-
-Os testes de armazenamento, migração, limpeza e restauração usam diretórios sintéticos temporários. Nenhum teste automatizado migra o perfil real. O snapshot transitório de migração é removido depois da validação saudável; backups manuais persistem até exclusão explícita. A aplicação pode manter caches temporários no perfil Electron, todos dentro da raiz local.
-
-O manifesto contém nomes relativos e hashes dos arquivos migrados; não é versionado. Os testes não afirmam que um backup local protege contra falha ou perda do mesmo disco; mantenha cópia em outra unidade para proteção física.
+Os testes de armazenamento, migração, limpeza e restauração usam diretórios sintéticos temporários. Nenhum teste automatizado migra o perfil real. Um backup no mesmo disco não protege contra falha física; mantenha outra cópia em uma unidade separada se precisar desse nível de proteção.

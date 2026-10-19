@@ -152,10 +152,12 @@ function restoreMissingDomainFiles(source, destination) {
 function migrateProfile({ sourceProfile, dataRoot, now = new Date() }) {
   const source = path.resolve(sourceProfile)
   const root = path.resolve(dataRoot)
-  const destination = path.join(root, 'user-data')
+  const destination = path.join(root, 'runtime', 'profile')
   const backupRoot = path.join(root, 'backups')
-  const manifestPath = path.join(root, 'migration-manifest.json')
+  const manifestPath = path.join(root, 'manifests', 'electron-profile-migration.json')
   fs.mkdirSync(root, { recursive: true })
+  fs.mkdirSync(path.dirname(destination), { recursive: true })
+  fs.mkdirSync(path.dirname(manifestPath), { recursive: true })
   if (fs.lstatSync(root).isSymbolicLink() || path.resolve(root) !== fs.realpathSync(root)) throw new Error('A raiz app-data não pode ser link simbólico ou caminho não canônico.')
   const sourceExists = fs.existsSync(source)
   const destinationExists = fs.existsSync(destination)
@@ -168,7 +170,7 @@ function migrateProfile({ sourceProfile, dataRoot, now = new Date() }) {
 
   const sourceInventory = scanTree(source)
   if (destinationExists) {
-    if (!fs.existsSync(manifestPath)) throw new Error('app-data/user-data já existe sem manifesto de migração; origem preservada e nenhuma mesclagem foi feita.')
+    if (!fs.existsSync(manifestPath)) throw new Error('O perfil Electron portátil já existe sem manifesto de migração; origem preservada e nenhuma mesclagem foi feita.')
     const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'))
     if (manifest.status === 'complete') {
       const reconciliation = restoreMissingDomainFiles(source, destination)
@@ -181,7 +183,7 @@ function migrateProfile({ sourceProfile, dataRoot, now = new Date() }) {
       return { status: 'reconciled-existing-portable', destination, archivedOriginal: recoveredArchive, ...inventorySummary(sourceInventory), ...reconciliation }
     }
     if (manifest.status !== 'copy-verified-source-pending-archive'
-      || !sameInventory(sourceInventory, scanTree(destination))) throw new Error('A origem e app-data/user-data divergem. Ambas foram preservadas; migração interrompida.')
+      || !sameInventory(sourceInventory, scanTree(destination))) throw new Error('A origem e app-data/runtime/profile divergem. Ambas foram preservadas; migração interrompida.')
   } else {
     const runId = `${now.toISOString().replace(/[:.]/g, '-')}-${process.pid}`
     const staging = path.join(root, `.migration-staging-${runId}`)
@@ -191,7 +193,7 @@ function migrateProfile({ sourceProfile, dataRoot, now = new Date() }) {
     const copiedInventory = scanTree(staging)
     if (!sameInventory(sourceInventory, copiedInventory)) throw new Error('A cópia não passou na verificação SHA-256. Origem e staging foram preservados.')
     fs.cpSync(staging, destination, { recursive: true, force: false, errorOnExist: true, preserveTimestamps: true, verbatimSymlinks: true })
-    if (!sameInventory(copiedInventory, scanTree(destination))) throw new Error('A publicação em user-data não passou na verificação SHA-256. Origem e staging foram preservados.')
+    if (!sameInventory(copiedInventory, scanTree(destination))) throw new Error('A publicação do perfil Electron não passou na verificação SHA-256. Origem e staging foram preservados.')
     if (!isInside(root, staging)) throw new Error('Recusa de limpeza do staging fora da raiz app-data.')
     fs.rmSync(staging, { recursive: true, force: false })
     writeManifest(manifestPath, {
@@ -199,7 +201,7 @@ function migrateProfile({ sourceProfile, dataRoot, now = new Date() }) {
       status: 'copy-verified-source-pending-archive',
       verifiedAt: now.toISOString(),
       sourceLabel: 'Electron userData legado',
-      destinationRelative: 'user-data',
+      destinationRelative: 'runtime/profile',
       entries: copiedInventory
     })
   }

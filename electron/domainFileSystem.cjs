@@ -76,14 +76,14 @@ class DomainFileSystem {
     let candidate
     for (const root of ROOTS) {
       const prefix = root.path.toLowerCase()
-      if (root.file ? lower === prefix : lower === prefix || lower.startsWith(`${prefix}/`)) { candidate = root; break }
+      if (root.file ? lower === prefix || lower === `${prefix}.tmp` : lower === prefix || lower.startsWith(`${prefix}/`)) { candidate = root; break }
     }
     if (!candidate) return null
     let domainId = candidate.id
     if (domainId === 'fabricator.face-sets' && /(?:^|\/)catalog(?:\/|$)/i.test(relative)) domainId = 'fabricator.face-catalog'
     const prefixLength = candidate.path.length
     const relativePath = candidate.file
-      ? path.posix.basename(candidate.path)
+      ? `${path.posix.basename(candidate.path)}${lower === `${candidate.path.toLowerCase()}.tmp` ? '.tmp' : ''}`
       : relative.slice(prefixLength).replace(/^\//, '')
     return { absolute, domainId, relativePath }
   }
@@ -141,7 +141,18 @@ class DomainFileSystem {
 
   async mkdir(directoryPath, options) {
     const location = this.locate(directoryPath)
-    if (!this.active(location)) return this.native.mkdir(directoryPath, options)
+    if (!this.active(location)) {
+      const absolute = path.resolve(directoryPath)
+      if (isWithin(this.root, absolute)) {
+        const relative = path.relative(this.root, absolute).split(path.sep).join('/').toLowerCase()
+        const singleFileParent = ROOTS.find((root) => root.file && path.posix.dirname(root.path).toLowerCase() === relative)
+        if (singleFileParent && this.catalog.getDomainState(singleFileParent.id).state !== 'legacy') {
+          this.catalog.ensureDomainDirectory(singleFileParent.id, '')
+          return undefined
+        }
+      }
+      return this.native.mkdir(directoryPath, options)
+    }
     this.catalog.ensureDomainDirectory(location.domainId, location.relativePath)
     return undefined
   }

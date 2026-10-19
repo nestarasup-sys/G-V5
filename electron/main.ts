@@ -24,6 +24,9 @@ import { DataMigrationService } from './dataMigration.cjs'
 import { DataBackupService } from './dataBackups.cjs'
 import { configureAssetImageStorage, readAssetImage, writeAssetImageSource } from './assetImageOverrides'
 import { legacyStandardExpressionEffects } from '../src/shared/legacyExpressionEffects'
+import { migrateElectronProfile } from './electronProfileMigration.cjs'
+
+let configuredAppDataRoot: string | null = null
 
 function configureDevAiDataRoot(): void {
   const privateCopyTest = process.env.GACHA_DEV_AI_PRIVATE_TEST === '1'
@@ -117,15 +120,18 @@ function configureDevAiDataRoot(): void {
 
 configureDevAiDataRoot()
 
-function configureLocalAppDataRoot(): void {
-  if (process.env.GACHA_DEV_AI_TEST === '1') return
+function configureLocalAppDataRoot(): string | null {
+  if (process.env.GACHA_DEV_AI_TEST === '1') return null
 
   const defaultRoot = app.isPackaged
     ? join(dirname(process.execPath), 'app-data')
     : join(app.getAppPath(), 'app-data')
   const dataRoot = resolve(defaultRoot)
-  const userData = join(dataRoot, 'user-data')
-  const paths = [dataRoot, userData, join(dataRoot, 'logs'), join(dataRoot, 'crash-dumps'), join(dataRoot, 'temp')]
+  const legacyUserData = join(dataRoot, 'user-data')
+  const profileRoot = join(dataRoot, 'runtime', 'profile')
+  const sessionDataRoot = join(dataRoot, 'cache', 'electron-session')
+  const paths = [dataRoot, join(dataRoot, 'runtime'), profileRoot, join(dataRoot, 'cache'), sessionDataRoot,
+    join(dataRoot, 'logs'), join(dataRoot, 'crash-dumps'), join(dataRoot, 'temp')]
   for (const path of paths) {
     mkdirSync(path, { recursive: true })
     if (lstatSync(path).isSymbolicLink() || resolve(path) !== realpathSync(path)) {
@@ -133,24 +139,26 @@ function configureLocalAppDataRoot(): void {
     }
   }
 
-  // Keep all persistent app data and Chromium's disposable cache inside the
-  // portable app-data root. Chromium localStorage/session remain in user-data.
+  // Keep Chromium's persistent profile and session storage inside the portable
+  // app-data root, separate from the app's domain data and from each other.
+  migrateElectronProfile({ dataRoot, legacyRoot: legacyUserData, profileRoot, sessionRoot: sessionDataRoot })
   app.setPath('appData', dataRoot)
-  app.setPath('userData', userData)
-  app.setPath('sessionData', userData)
+  app.setPath('userData', profileRoot)
+  app.setPath('sessionData', sessionDataRoot)
   app.setPath('logs', join(dataRoot, 'logs'))
   app.setPath('crashDumps', join(dataRoot, 'crash-dumps'))
   app.setPath('temp', join(dataRoot, 'temp'))
   process.env.TEMP = join(dataRoot, 'temp')
   process.env.TMP = join(dataRoot, 'temp')
   process.env.TMPDIR = join(dataRoot, 'temp')
+  return dataRoot
 }
 
-configureLocalAppDataRoot()
+configuredAppDataRoot = configureLocalAppDataRoot()
 
 // The catalog starts empty and does not scan or rewrite legacy libraries.
 // Existing JSON/file stores remain authoritative until each domain is migrated.
-const dataPlatform = new DataPlatform(dirname(app.getPath('userData')))
+const dataPlatform = new DataPlatform(configuredAppDataRoot ?? dirname(app.getPath('userData')))
 const dataFileSystem = new DomainFileSystem(dataPlatform, app.getPath('userData'))
 configureVideoLibraryStorage(dataFileSystem)
 configureBackgroundLibraryStorage(dataFileSystem)

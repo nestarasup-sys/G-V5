@@ -276,6 +276,11 @@ class DataMigrationService {
           if (!within(this.userDataRoot, absolute)) throw new Error('Caminho de origem inválido durante limpeza.')
           await fsp.unlink(absolute)
         }
+        for (const file of actual.files) {
+          const parent = path.dirname(path.resolve(this.userDataRoot, file.sourceRelativePath))
+          if (!within(this.userDataRoot, parent)) throw new Error('Pasta de origem inválida durante limpeza.')
+          await pruneEmptyDirectories(parent, this.userDataRoot)
+        }
         for (const root of definition.roots) await pruneEmptyDirectories(path.resolve(this.userDataRoot, root), this.userDataRoot)
       } else {
         for (const root of definition.roots) {

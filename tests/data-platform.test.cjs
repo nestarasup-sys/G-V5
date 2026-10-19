@@ -8,6 +8,7 @@ const { ContentAddressedStore, DataPlatform, createDatabaseSnapshot, getAppDataU
 const { DomainFileSystem } = require('../electron/domainFileSystem.cjs')
 const { DataMigrationService } = require('../electron/dataMigration.cjs')
 const { DataBackupService } = require('../electron/dataBackups.cjs')
+const { migrateElectronProfile } = require('../electron/electronProfileMigration.cjs')
 const activeCatalogs = new Set()
 
 function catalogAt(root) {
@@ -196,7 +197,54 @@ test('guided migration mounts and cleans up Fabricator face-guide single files',
   assert.equal(finalized.find((item) => item.domainId === 'fabricator.face-sets').cleaned, true)
   await assert.rejects(fs.access(guidePath), { code: 'ENOENT' })
   assert.deepEqual(await adapter.readFile(guidePath), guides)
+  const updatedGuides = Buffer.from('{"eyes":{"x":0.5}}\n')
+  await adapter.mkdir(path.dirname(guidePath), { recursive: true })
+  await adapter.writeFile(`${guidePath}.tmp`, updatedGuides)
+  await adapter.rename(`${guidePath}.tmp`, guidePath)
+  assert.deepEqual(await adapter.readFile(guidePath), updatedGuides)
+  await assert.rejects(fs.access(path.join(userData, 'fabricator')))
   catalog.close()
+}))
+
+test('Electron profile data moves inside app-data while session data is split and caches are discarded', async () => withRoot(async (root) => {
+  const legacy = path.join(root, 'user-data')
+  const profile = path.join(root, 'runtime', 'profile')
+  const session = path.join(root, 'cache', 'electron-session')
+  await fs.mkdir(path.join(legacy, 'Local Storage', 'leveldb'), { recursive: true })
+  await fs.mkdir(path.join(legacy, 'Cache'), { recursive: true })
+  await fs.writeFile(path.join(legacy, 'Local State'), '{"profile":true}')
+  await fs.writeFile(path.join(legacy, 'Preferences'), '{"preferences":true}')
+  await fs.writeFile(path.join(legacy, 'Local Storage', 'leveldb', 'data.log'), 'preserve')
+  await fs.writeFile(path.join(legacy, 'Cache', 'throwaway.bin'), 'disposable')
+
+  const result = migrateElectronProfile({ dataRoot: root, legacyRoot: legacy, profileRoot: profile, sessionRoot: session })
+  assert.deepEqual(result, { movedProfile: 2, movedSession: 1, removedDisposable: 1, removedLegacyDomainDirs: 0 })
+  assert.equal(await fs.readFile(path.join(profile, 'Local State'), 'utf8'), '{"profile":true}')
+  assert.equal(await fs.readFile(path.join(profile, 'Preferences'), 'utf8'), '{"preferences":true}')
+  assert.equal(await fs.readFile(path.join(session, 'Local Storage', 'leveldb', 'data.log'), 'utf8'), 'preserve')
+  await assert.rejects(fs.access(legacy))
+  await assert.rejects(fs.access(path.join(session, 'Cache')))
+}))
+
+test('Electron profile migration preserves legacy domain data and refuses to overwrite profile files', async () => withRoot(async (root) => {
+  const legacy = path.join(root, 'user-data')
+  const profile = path.join(root, 'runtime', 'profile')
+  const session = path.join(root, 'cache', 'electron-session')
+  await fs.mkdir(path.join(legacy, 'fabricator'), { recursive: true })
+  await fs.writeFile(path.join(legacy, 'fabricator', 'asset.json'), '{}')
+  const moved = migrateElectronProfile({ dataRoot: root, legacyRoot: legacy, profileRoot: profile, sessionRoot: session })
+  assert.equal(moved.movedProfile, 1)
+  assert.equal(await fs.readFile(path.join(profile, 'fabricator', 'asset.json'), 'utf8'), '{}')
+  await assert.rejects(fs.access(legacy))
+
+  await fs.mkdir(legacy, { recursive: true })
+  await fs.mkdir(profile, { recursive: true })
+  await fs.mkdir(legacy, { recursive: true })
+  await fs.writeFile(path.join(profile, 'Preferences'), 'existing')
+  await fs.writeFile(path.join(legacy, 'Preferences'), 'source')
+  assert.throws(() => migrateElectronProfile({ dataRoot: root, legacyRoot: legacy, profileRoot: profile, sessionRoot: session }), /já existe/)
+  assert.equal(await fs.readFile(path.join(legacy, 'Preferences'), 'utf8'), 'source')
+  assert.equal(await fs.readFile(path.join(profile, 'Preferences'), 'utf8'), 'existing')
 }))
 
 test('video project cleanup cannot delete separate media-library or background-library roots', async () => withRoot(async (root) => {
@@ -220,20 +268,25 @@ test('video project cleanup cannot delete separate media-library or background-l
 
 test('on-demand app backup verifies every file and restore swaps into place only after staging', async () => withRoot(async (root) => {
   const catalog = catalogAt(root)
-  const userData = path.join(root, 'user-data')
-  await fs.mkdir(path.join(userData, 'customizer', 'characters'), { recursive: true })
-  const character = path.join(userData, 'customizer', 'characters', 'characters.json')
-  await fs.writeFile(character, '[{"id":"synthetic-a"}]')
-  await fs.mkdir(path.join(userData, 'Cache'), { recursive: true })
-  await fs.writeFile(path.join(userData, 'Cache', 'regenerable.bin'), 'cache')
+  const profile = path.join(root, 'runtime', 'profile')
+  const session = path.join(root, 'cache', 'electron-session')
+  await fs.mkdir(profile, { recursive: true })
+  await fs.mkdir(path.join(session, 'Local Storage'), { recursive: true })
+  await fs.mkdir(path.join(session, 'Cache'), { recursive: true })
+  const preferences = path.join(profile, 'Preferences')
+  const localStorage = path.join(session, 'Local Storage', 'state.json')
+  await fs.writeFile(preferences, '{"theme":"dark"}')
+  await fs.writeFile(localStorage, '{"lastWorkspace":"customizer"}')
+  await fs.writeFile(path.join(session, 'Cache', 'regenerable.bin'), 'cache')
   catalog.upsertAsset({ id: 'backup-fixture', domainId: 'customizer.characters', kind: 'character', displayName: 'Synthetic backup character' })
   const backups = new DataBackupService({ dataRoot: root, catalog })
   const saved = await backups.createBackup()
   assert.equal(saved.valid, true)
   assert.ok(saved.fileCount > 1)
   assert.equal((await backups.listBackups()).length, 1)
-  await assert.rejects(fs.access(path.join(root, 'backups', saved.id, 'payload', 'user-data', 'Cache')))
-  await fs.writeFile(character, '[{"id":"mutated-after-backup"}]')
+  await assert.rejects(fs.access(path.join(root, 'backups', saved.id, 'payload', 'cache', 'electron-session', 'Cache')))
+  await fs.writeFile(preferences, '{"theme":"light"}')
+  await fs.writeFile(localStorage, '{"lastWorkspace":"fabricator"}')
   assert.equal((await backups.verifyBackup(saved.id)).valid, true)
   const staged = await backups.stageRestore(saved.id)
   assert.equal(staged.backupId, saved.id)
@@ -242,7 +295,8 @@ test('on-demand app backup verifies every file and restore swaps into place only
   assert.equal(applied.state, 'applied')
   const restoredCatalog = catalogAt(root)
   assert.equal(restoredCatalog.search({ query: 'Synthetic backup character', domainId: 'customizer.characters' })[0].id, 'backup-fixture')
-  assert.equal(await fs.readFile(character, 'utf8'), '[{"id":"synthetic-a"}]')
+  assert.equal(await fs.readFile(preferences, 'utf8'), '{"theme":"dark"}')
+  assert.equal(await fs.readFile(localStorage, 'utf8'), '{"lastWorkspace":"customizer"}')
   const finished = await backups.finalizePendingRestore()
   assert.equal(finished.finalized, true)
   await backups.deleteBackup(saved.id)
@@ -282,12 +336,12 @@ test('SQLite snapshot is created through the database backup API and reopens wit
 
 test('storage report separates app data, Chromium cache, profile metadata and backups without exposing paths', async () => withRoot(async (root) => {
   const files = [
-    ['user-data/customizer/character.json', 5],
-    ['user-data/Cache/data.bin', 7],
-    ['user-data/Network/Cookies', 11],
+    ['characters/character.json', 5],
+    ['cache/electron-session/Cache/data.bin', 7],
+    ['cache/electron-session/Network/Cookies', 11],
     ['media/objects/sha256/aa/object', 13],
     ['backups/snapshot/catalog.sqlite', 17],
-    ['migration-manifest.json', 19],
+    ['manifests/electron-profile-migration.json', 19],
     ['unclassified-local-file.bin', 23],
     ['unclassified-local-directory/large-blob.bin', 29]
   ]

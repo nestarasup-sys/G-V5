@@ -10,9 +10,9 @@ const Database = require('better-sqlite3')
 const { createDatabaseSnapshot } = require('./dataPlatform.cjs')
 
 const BACKUP_ID = /^user-[0-9]{8}T[0-9]{6}Z-[0-9a-f-]{36}$/i
-const ROOTS = ['user-data', 'media/objects', 'media/thumbnails', 'libraries', 'characters', 'projects', 'manifests']
+const ROOTS = ['runtime/profile', 'cache/electron-session', 'media/objects', 'media/thumbnails', 'libraries', 'characters', 'projects', 'manifests']
 const CACHE_NAMES = new Set(['cache', 'code cache', 'gpu cache', 'shadercache', 'grshadercache', 'dawnwebgpucache', 'dawngraphitecache', 'blob_storage'.toLowerCase(), 'shared dictionary'])
-const RESTORE_TARGETS = ['database', 'user-data', 'media/objects', 'media/thumbnails', 'libraries', 'characters', 'projects', 'manifests']
+const RESTORE_TARGETS = ['database', 'runtime/profile', 'cache/electron-session', 'media/objects', 'media/thumbnails', 'libraries', 'characters', 'projects', 'manifests']
 
 function isWithin(root, target) {
   const rel = path.relative(path.resolve(root), path.resolve(target))

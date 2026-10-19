@@ -42,10 +42,10 @@ test('app-data: migra fixture, verifica hashes e arquiva a origem dentro do root
     const result = migrateProfile({ ...fixture, now: new Date('2026-10-19T12:00:00.000Z') })
     assert.equal(result.status, 'migrated')
     assert.equal(result.files, 3)
-    assert.deepEqual(scanTree(path.join(fixture.dataRoot, 'user-data')), original)
+    assert.deepEqual(scanTree(path.join(fixture.dataRoot, 'runtime', 'profile')), original)
     assert.deepEqual(scanTree(result.archivedOriginal), original)
     assert.equal(fs.existsSync(fixture.sourceProfile), false)
-    const manifest = JSON.parse(fs.readFileSync(path.join(fixture.dataRoot, 'migration-manifest.json'), 'utf8'))
+    const manifest = JSON.parse(fs.readFileSync(path.join(fixture.dataRoot, 'manifests', 'electron-profile-migration.json'), 'utf8'))
     assert.equal(manifest.status, 'complete')
     assert.equal(manifest.archivedOriginalRelative.startsWith('backups/'), true)
     assert.equal(migrateProfile(fixture).status, 'already-portable')
@@ -56,7 +56,7 @@ test('app-data: recusa mesclar origem e destino divergentes e preserva ambos', (
   const root = createFixtureRoot()
   try {
     const fixture = makeFixture(root)
-    const destination = path.join(fixture.dataRoot, 'user-data')
+    const destination = path.join(fixture.dataRoot, 'runtime', 'profile')
     fs.mkdirSync(path.join(destination, 'fabricator'), { recursive: true })
     fs.writeFileSync(path.join(destination, 'fabricator', 'different.json'), 'preserve')
     assert.throws(() => migrateProfile(fixture), /já existe sem manifesto/)
@@ -65,7 +65,7 @@ test('app-data: recusa mesclar origem e destino divergentes e preserva ambos', (
   } finally { cleanupFixture(root) }
 })
 
-test('app-data: reconcilia perfil Roaming reaparecido sem sobrescrever o user-data portátil', () => {
+test('app-data: reconcilia perfil Roaming reaparecido sem sobrescrever o perfil portátil', () => {
   const root = createFixtureRoot()
   try {
     const fixture = makeFixture(root)
@@ -84,10 +84,10 @@ test('app-data: reconcilia perfil Roaming reaparecido sem sobrescrever o user-da
     assert.equal(result.alreadyPresentFiles, 1)
     assert.equal(result.preservedConflicts, 1)
     assert.equal(fs.existsSync(fixture.sourceProfile), false)
-    assert.equal(fs.readFileSync(path.join(fixture.dataRoot, 'user-data', 'fabricator', 'models', 'project.json'), 'utf8'), '{"fixture":"synthetic"}')
-    assert.equal(fs.readFileSync(path.join(fixture.dataRoot, 'user-data', 'studios', 'legacy-project', 'studio.json'), 'utf8'), '{"fixture":"restored"}')
+    assert.equal(fs.readFileSync(path.join(fixture.dataRoot, 'runtime', 'profile', 'fabricator', 'models', 'project.json'), 'utf8'), '{"fixture":"synthetic"}')
+    assert.equal(fs.readFileSync(path.join(fixture.dataRoot, 'runtime', 'profile', 'studios', 'legacy-project', 'studio.json'), 'utf8'), '{"fixture":"restored"}')
     assert.deepEqual(scanTree(result.archivedOriginal), recoveredSourceSnapshot)
-    const manifest = JSON.parse(fs.readFileSync(path.join(fixture.dataRoot, 'migration-manifest.json'), 'utf8'))
+    const manifest = JSON.parse(fs.readFileSync(path.join(fixture.dataRoot, 'manifests', 'electron-profile-migration.json'), 'utf8'))
     assert.equal(manifest.status, 'complete')
     assert.equal(manifest.recoveredProfileInventory.files, recoveredSourceSnapshot.filter(entry => entry.type === 'file').length)
     assert.match(manifest.recoveredProfileInventory.sha256, /^[a-f0-9]{64}$/)
@@ -101,6 +101,6 @@ test('app-data: inicia raiz vazia quando ainda não há perfil legado', () => {
   try {
     const result = migrateProfile({ sourceProfile: path.join(root, 'missing-source'), dataRoot: path.join(root, 'empty-app-data') })
     assert.equal(result.status, 'initialized-empty')
-    assert.equal(fs.existsSync(path.join(root, 'empty-app-data', 'user-data')), true)
+    assert.equal(fs.existsSync(path.join(root, 'empty-app-data', 'runtime', 'profile')), true)
   } finally { cleanupFixture(root) }
 })
