@@ -8,6 +8,7 @@ import { fitStudioCharacterToStage } from '../../../../shared/studioCharacterGeo
 import type { StudioAsset, StudioDocument, StudioElement, StudioFaceMode, StudioFaceTransform, StudioFaceTransforms, VideoAudioSettings, VideoMediaClip, VideoTimelineDocument } from '../../../../shared/studio'
 import { automaticBlinkFrameFor, resolveVideoFrameSelection } from '../../../../shared/videoFrame'
 import { defaultVideoTransform, editVideoMediaClip, isValidVideoMediaClip, splitVideoMediaClip as splitMediaClip } from '../../../../shared/videoMedia'
+import { videoCharacterElementSize, videoStageCssTransform } from '../../../../shared/videoStageGeometry'
 import { faceRenderGeometry, trimTransparentImage, type TrimmedImage } from './characterGeometry'
 import { useCharacterTransitions } from './useCharacterTransitions'
 import { PreviewTransport } from './PreviewTransport'
@@ -145,14 +146,7 @@ function studioCharacterRenderKey(character: CustomizerCharacter): string {
   return JSON.stringify({ id: character.id, customization })
 }
 
-function studioElementSize(element: StudioElement) {
-  if (element.kind !== 'character') return { width: element.width, height: element.height }
-  const scale = (element.characterScale ?? 100) / 100
-  return {
-    width: element.width * scale * (element.characterWidthScale ?? 100) / 100,
-    height: element.height * scale * (element.characterHeightScale ?? 100) / 100
-  }
-}
+const studioElementSize = videoCharacterElementSize
 
 function makeElement(kind: StudioElement['kind'], zIndex: number): StudioElement {
   return {
@@ -2116,10 +2110,7 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [castPickerOpen, savingCast, studioFaceBusy, studioExpressionBusy, fullView, activeStudio, videoPlayheadFrame, videoPlaying, animationPreparing, historyVersion, videoLibraryOpen, backgroundLibraryOpen, exitFullView])
 
-  const imageStyle = (x: number, y: number, width: number, height: number, rotation: number, flipX = false) => ({
-    left: `calc(50% + ${x}%)`, top: `calc(50% + ${y}%)`, width: `${width}%`, height: `${height}%`,
-    transform: `translate(-50%, -50%) rotate(${rotation}deg) scaleX(${flipX ? -1 : 1})`
-  })
+  const imageStyle = videoStageCssTransform
 
   const control = (label: string, value: number, onChange: (value: number, record?: boolean) => void, min: number, max: number, suffix = '%', onFinish?: () => void, disabled = false) => (
     <StudioNumericControl key={label} label={label} value={value} onChange={onChange} onStart={recordHistory} onFinish={onFinish} disabled={disabled} min={min} max={max} suffix={suffix} />
