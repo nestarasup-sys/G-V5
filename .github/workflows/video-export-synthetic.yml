@@ -1,0 +1,54 @@
+name: Video Studio Export - synthetic foundation
+
+on:
+  push:
+    branches: [master-desenvolvimento]
+    paths:
+      - '.github/workflows/video-export-synthetic.yml'
+      - 'docs/AGENTE_EXPORT_V5/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'src/shared/videoFrame.ts'
+      - 'src/shared/videoExportSnapshot.ts'
+      - 'src/shared/videoStudioAudioPlan.ts'
+      - 'electron/videoExportJobs.ts'
+      - 'electron/videoExports.ts'
+      - 'electron/videoRawFrameWriter.ts'
+      - 'tests/video-export-*.test.cjs'
+      - 'tests/video-frame-determinism.test.cjs'
+      - 'tests/video-studio-audio-plan.test.cjs'
+      - 'tests/video-raw-frame-writer.test.cjs'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: export-synthetic-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  synthetic-windows:
+    name: Synthetic contracts / Windows
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout exact commit
+        uses: actions/checkout@v4
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install dependencies without lifecycle scripts or Electron native rebuilds
+        shell: pwsh
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Verify synthetic export tests only
+        shell: pwsh
+        run: npm run test:export:synthetic
+      - name: Validate TypeScript contracts
+        shell: pwsh
+        run: npm run typecheck
+      - name: Validate production bundling (not an Electron runtime smoke)
+        shell: pwsh
+        run: npm run build
