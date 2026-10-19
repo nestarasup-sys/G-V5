@@ -79,6 +79,8 @@ export function VideoTimeline({ preparing, onEnterFullscreen, canUndo, canRedo, 
   const textClipDragRef = useRef<TextClipDrag | null>(null)
   const videoClipDragRef = useRef<VideoClipDrag | null>(null)
   const boundaryDragRef = useRef<BoundaryDrag | null>(null)
+  const previewUpdateFrameRef = useRef<number | null>(null)
+  const previewUpdateRef = useRef<(() => void) | null>(null)
   const suppressClipClickRef = useRef(false)
   const timelineScrollRef = useRef<HTMLDivElement>(null)
   const scrollMeasureFrameRef = useRef<number | null>(null)
@@ -232,6 +234,22 @@ export function VideoTimeline({ preparing, onEnterFullscreen, canUndo, canRedo, 
   const snapFrame = (frame: number, excludedClipId?: string) => {
     return nearestTimelineSnapFrame(timelineIndex, frame, playheadFrame, pixelsPerSecond, excludedClipId)
   }
+  const schedulePreviewUpdate = (update: () => void) => {
+    previewUpdateRef.current = update
+    if (previewUpdateFrameRef.current !== null) return
+    previewUpdateFrameRef.current = requestAnimationFrame(() => {
+      previewUpdateFrameRef.current = null
+      const pending = previewUpdateRef.current
+      previewUpdateRef.current = null
+      pending?.()
+    })
+  }
+  const cancelPreviewUpdate = () => {
+    if (previewUpdateFrameRef.current !== null) cancelAnimationFrame(previewUpdateFrameRef.current)
+    previewUpdateFrameRef.current = null
+    previewUpdateRef.current = null
+  }
+  useEffect(() => () => cancelPreviewUpdate(), [])
   const selectedTrackId = selection?.kind === 'video' ? 'video' : selection?.kind === 'character' ? selection.elementId : selectedTextClip?.kind ?? 'speech'
   const canSplitSelection = Boolean(selection && !isLocked(selectedTrackId) && playheadFrame > selection.startFrame && playheadFrame < selection.endFrame)
   const splitSelection = () => {
@@ -289,12 +307,13 @@ export function VideoTimeline({ preparing, onEnterFullscreen, canUndo, canRedo, 
     const delta = Math.round((event.clientX - drag.originX) / pixelsPerSecond * 60)
     const origin = drag.mode === 'end' ? drag.clip.endFrame : drag.clip.startFrame
     drag.latest = editVideoMediaClip(drag.clip, drag.mode, snapFrame(origin + delta, drag.clip.id), asset.durationFrames, duration)
-    setPreviewVideoClip(drag.latest)
+    schedulePreviewUpdate(() => setPreviewVideoClip(drag.latest))
   }
   const finishVideoClipDrag = (event: ReactPointerEvent<HTMLButtonElement>) => {
     const drag = videoClipDragRef.current
     if (!drag || drag.pointerId !== event.pointerId) return
     videoClipDragRef.current = null
+    cancelPreviewUpdate()
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
     if (event.type !== 'pointercancel' && !isLocked('video') && (drag.latest.startFrame !== drag.clip.startFrame || drag.latest.endFrame !== drag.clip.endFrame)) {
       suppressClipClickRef.current = true
@@ -317,12 +336,13 @@ export function VideoTimeline({ preparing, onEnterFullscreen, canUndo, canRedo, 
     else endFrame = Math.max(drag.startFrame + 1, Math.min(duration, snapFrame(drag.endFrame + delta, drag.clip.id)))
     drag.latestStartFrame = startFrame
     drag.latestEndFrame = endFrame
-    setPreviewTextClip({ ...drag.clip, startFrame, endFrame })
+    schedulePreviewUpdate(() => setPreviewTextClip({ ...drag.clip, startFrame: drag.latestStartFrame, endFrame: drag.latestEndFrame }))
   }
   const finishTextClipDrag = (event: ReactPointerEvent<HTMLButtonElement>) => {
     const drag = textClipDragRef.current
     if (!drag || drag.pointerId !== event.pointerId) return
     textClipDragRef.current = null
+    cancelPreviewUpdate()
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
     if (drag.latestStartFrame !== drag.startFrame || drag.latestEndFrame !== drag.endFrame) {
       suppressClipClickRef.current = true
@@ -347,12 +367,13 @@ export function VideoTimeline({ preparing, onEnterFullscreen, canUndo, canRedo, 
     if (!drag || drag.pointerId !== event.pointerId) return
     const frame = Math.max(drag.minFrame, Math.min(drag.maxFrame, snapFrame(drag.startFrame + Math.round((event.clientX - drag.originX) / pixelsPerSecond * 60))))
     drag.latestFrame = frame
-    setPreviewBoundary({ elementId: drag.elementId, keyId: drag.keyId, frame })
+    schedulePreviewUpdate(() => setPreviewBoundary({ elementId: drag.elementId, keyId: drag.keyId, frame: drag.latestFrame }))
   }
   const finishBoundaryDrag = (event: ReactPointerEvent<HTMLButtonElement>) => {
     const drag = boundaryDragRef.current
     if (!drag || drag.pointerId !== event.pointerId) return
     boundaryDragRef.current = null
+    cancelPreviewUpdate()
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
     if (drag.latestFrame !== drag.startFrame) {
       onMoveCharacterBoundary(drag.elementId, drag.keyId, drag.latestFrame)
