@@ -149,6 +149,16 @@ _Atualizações posteriores devem registrar o SHA real do gate e nunca declarar 
 - Validação: `npm test` — 61/61; `npm run test:export:synthetic` — 31/31; `npm run typecheck`, `npm run build` e `git diff --check` passaram.
 - Estado: pinagem de vídeos já implementada no armazenamento de jobs, ainda sem chamada por IPC/runner e sem snapshot completo do documento para retomada automática. Assets de imagens e fornecedores Fabricator/Customizer não estão incluídos. Nenhuma exportação real foi executada.
 
+## 2026-10-19 — Rodada 10: snapshot de cena persistido no job (V509 parcial)
+
+- Base: `df67e56e76af368c5ab8c0a255bb6a2972cbe74a`, branch `master-desenvolvimento`.
+- `videoExportSnapshot.ts` agora serializa o documento congelado em JSON versionado e canônico, ordenando as chaves e removendo apenas propriedades `undefined`; a restauração recria o snapshot imutável e reaplica as validações de timeline.
+- `VideoExportJobStore.create()` pode gravar `snapshot.json` dentro da pasta própria do job. O SHA-256 do JSON canônico precisa corresponder ao digest recebido, ao ID do Studio e à duração. O manifesto registra o nome fixo do arquivo e `RenderVariant` (`animated` ou `static-characters`). O snapshot é gravado atomicamente antes do manifesto.
+- `readSnapshot()` e `reopen()` validam arquivo regular, caminho canônico dentro da pasta do job, SHA-256, Studio, duração e variante; `reopen()` devolve o snapshot congelado junto com o próximo checkpoint. Jobs v1 legados sem `snapshotFile` continuam compatíveis para os fluxos antigos; eles não são aceitos como jobs com variante semântica.
+- Testes sintéticos cobrem ordenação estável, round-trip, restauração independente de edição posterior do projeto, imutabilidade, rejeição de JSON malformado, variante divergente e corrupção/hash incorreto do snapshot.
+- Validação local: `node --test tests/video-export-snapshot.test.cjs` (4/4), `node --test tests/video-export-jobs.test.cjs` (5/5) e `npm run typecheck` passaram nesta etapa. Nenhuma captura Electron, exportação MP4 ou renderer de pixels foi executado.
+- Limites: o `VideoExportJobStore` ainda não é chamado por um orquestrador IPC/runner de produção; assets de personagem, pose, face, roupa, fontes e fundos não estão materializados neste snapshot; a retomada ponta a ponta e a prova de paridade continuam abertas. V509 permanece parcial.
+
 ## 2026-10-19 — Rodada 07: compilador de transições compartilhado
 
 - Base: `f9a0302a333cd2b1f819eb3aa85a5de368fa8a2d`, branch `master-desenvolvimento`.

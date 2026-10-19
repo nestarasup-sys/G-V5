@@ -30,6 +30,8 @@ Versão 1 · 2026-10-19. Tarefas ordenadas por pré-requisito e separadas por do
 | V510 | Resolver estável de z-order e vídeo/layers V5 | V505 | ordem vídeo z=1 vs atores zIndex+2 preservada |
 | V511 | `Print` e still canônico no mesmo compositor/evaluator | V507,V508,V510 | mesmo frame/geom/texto sem CSS viewport divergente |
 
+**Estado de V509 (parcial, não concluído):** o código já calcula manifesto/hash de dependências de vídeo, fixa os bytes de vídeo no diretório do job e persiste/restaura o JSON canônico do `StudioDocument` com `RenderVariant`. Ainda faltam a integração num orquestrador IPC/runner usado pelo produto, snapshots/transitivas de imagens e fornecedores do Fabricador/Customizador, assets prontos para render e testes de retomada depois de reiniciar o Electron. Ver `../AGENTE_EXPORT_V5/DIARIO.md` (Rodadas 08–10). Não considerar esse avanço como exportação retomável ou V509 fechado.
+
 ## Tranche T2 — Serial MP4 real
 
 | ID | Mudança | Dependência | Aceite |

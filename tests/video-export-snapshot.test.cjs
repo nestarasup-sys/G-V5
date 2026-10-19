@@ -17,7 +17,7 @@ function loadPureTs(file, deps = {}) {
 }
 
 const frame = loadPureTs('../src/shared/videoFrame.ts')
-const { createVideoExportSnapshot, resolveVideoExportFrameSelection } = loadPureTs(
+const { createVideoExportSnapshot, serializeVideoExportSnapshot, parseVideoExportSnapshot, resolveVideoExportFrameSelection } = loadPureTs(
   '../src/shared/videoExportSnapshot.ts',
   { './videoFrame': frame }
 )
@@ -81,6 +81,22 @@ test('job snapshot isolates playback and is immutable without changing source', 
   source.videoTimeline.videoClips[0].sourceStartFrame = 900
   assert.equal(snap.timeline.videoClips[0].sourceStartFrame, 30)
   assert.deepEqual(resolveVideoExportFrameSelection(snap, 10).videos.map((v) => v.sourceFrame), [30])
+})
+
+test('canonical snapshot serialization survives round-trip and ignores object key insertion order', () => {
+  const original = fixture()
+  const reordered = Object.fromEntries(Object.entries(original).reverse())
+  const serialized = serializeVideoExportSnapshot(createVideoExportSnapshot(original))
+  const reorderedSerialized = serializeVideoExportSnapshot(createVideoExportSnapshot(reordered))
+  assert.equal(serialized, reorderedSerialized)
+
+  const restored = parseVideoExportSnapshot(serialized)
+  assert.deepEqual(serializeVideoExportSnapshot(restored), serialized)
+  assert.equal(restored.studio.videoTimeline.playheadFrame, 0)
+  assert.equal(restored.studio.videoTimeline.playing, false)
+  assert.ok(Object.isFrozen(restored.studio))
+  assert.throws(() => parseVideoExportSnapshot('{broken'), /corrompido/)
+  assert.throws(() => parseVideoExportSnapshot(JSON.stringify({ schemaVersion: 2 })), /incompatível/)
 })
 
 test('absolute frame selection is reproducible at half-open clip, gap and text boundaries', () => {

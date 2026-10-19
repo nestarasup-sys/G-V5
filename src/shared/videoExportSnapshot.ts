@@ -48,7 +48,7 @@ function canonicalJson(value: unknown): string {
   }
   if (Array.isArray(value)) return `[${value.map((entry) => canonicalJson(entry)).join(',')}]`
   if (typeof value === 'object') {
-    const entries = Object.entries(value).filter(([, entry]) => entry !== undefined).sort(([left], [right]) => left.localeCompare(right))
+    const entries = Object.entries(value).filter(([, entry]) => entry !== undefined).sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0)
     return `{${entries.map(([key, entry]) => `${JSON.stringify(key)}:${canonicalJson(entry)}`).join(',')}}`
   }
   throw new Error('Snapshot contém um valor que não pode ser persistido.')

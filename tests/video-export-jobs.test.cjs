@@ -10,15 +10,28 @@ const ts = require('typescript')
 const sourcePath = path.join(__dirname, '../electron/videoExportJobs.ts')
 const compiled = ts.transpile(fsSync.readFileSync(sourcePath, 'utf8'), { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 })
 const loaded = { exports: {} }
+const frameSource = fsSync.readFileSync(path.join(__dirname, '../src/shared/videoFrame.ts'), 'utf8')
+const frameCompiled = ts.transpile(frameSource, { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 })
+const loadedFrame = { exports: {} }
+new Function('require', 'module', 'exports', frameCompiled)(require, loadedFrame, loadedFrame.exports)
+const snapshotSource = fsSync.readFileSync(path.join(__dirname, '../src/shared/videoExportSnapshot.ts'), 'utf8')
+const snapshotCompiled = ts.transpile(snapshotSource, { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 })
+const loadedSnapshot = { exports: {} }
+new Function('require', 'module', 'exports', snapshotCompiled)((name) => {
+  if (name === './videoFrame') return loadedFrame.exports
+  return require(name)
+}, loadedSnapshot, loadedSnapshot.exports)
 const assetsSource = fsSync.readFileSync(path.join(__dirname, '../electron/videoExportAssets.ts'), 'utf8')
 const assetsCompiled = ts.transpile(assetsSource, { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 })
 const loadedAssets = { exports: {} }
 new Function('require', 'module', 'exports', assetsCompiled)(require, loadedAssets, loadedAssets.exports)
 new Function('require', 'module', 'exports', compiled)((name) => {
   if (name === './videoExportAssets') return loadedAssets.exports
+  if (name === '../src/shared/videoExportSnapshot') return loadedSnapshot.exports
   return require(name)
 }, loaded, loaded.exports)
 const { VideoExportJobStore } = loaded.exports
+const { createVideoExportSnapshot, serializeVideoExportSnapshot } = loadedSnapshot.exports
 
 const studioId = '360d7ac8-27c8-4aab-b8be-2397e1c46a76'
 const jobId = 'f3c40c08-5be8-476f-8132-4dafca4f3d57'
@@ -26,6 +39,24 @@ const otherJobId = '006e1fc0-24ea-43ac-8edb-33a46d95fc06'
 const snapshotSha256 = 'a'.repeat(64)
 const mediaSha256 = ['b'.repeat(64), 'c'.repeat(64)]
 const parameters = { studioId, snapshotSha256, mediaSha256, durationFrames: 1201 }
+
+function syntheticStudio() {
+  return {
+    schemaVersion: 1, id: studioId, title: 'synthetic export', color: '#333333',
+    createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z',
+    backgroundColor: '#ffffff', backgroundAssetId: null, backgroundX: 0, backgroundY: 0,
+    backgroundWidth: 1920, backgroundHeight: 1080, backgroundRotation: 0,
+    assets: [], elements: [],
+    videoTimeline: {
+      schemaVersion: 1, frameRate: 60, durationFrames: 30, playheadFrame: 12, playing: true,
+      characterKeys: [], textClips: [], characterGaps: [], videoClips: [], saveMarkers: [],
+    },
+  }
+}
+
+function hashSnapshot(snapshot) {
+  return require('node:crypto').createHash('sha256').update(serializeVideoExportSnapshot(snapshot)).digest('hex')
+}
 
 test('export job store checkpoints 600-frame chunks and resumes only matching snapshot and media', async (t) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'gacha-video-job-'))
@@ -60,6 +91,37 @@ test('resume drops a damaged checkpoint and cancellation removes only its own jo
   await store.cancel(jobId)
   await assert.rejects(fs.stat(path.join(root, jobId)))
   assert.equal((await fs.stat(path.join(root, otherJobId))).isDirectory(), true)
+})
+
+test('job persists and restores the immutable scene snapshot and render variant', async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'gacha-video-job-snapshot-'))
+  t.after(() => fs.rm(root, { recursive: true, force: true }))
+  const store = new VideoExportJobStore(root)
+  const source = syntheticStudio()
+  const snapshot = createVideoExportSnapshot(source)
+  const serialized = serializeVideoExportSnapshot(snapshot)
+  const expected = {
+    studioId, snapshotSha256: hashSnapshot(snapshot), mediaSha256: [], durationFrames: 30,
+    renderVariant: 'static-characters',
+  }
+  const manifest = await store.create({ jobId, ...expected, snapshot, renderVariant: expected.renderVariant })
+  assert.equal(manifest.snapshotFile, 'snapshot.json')
+  assert.equal(manifest.renderVariant, 'static-characters')
+  await assert.rejects(store.create({ jobId: otherJobId, ...expected, snapshot, snapshotSha256: 'f'.repeat(64), renderVariant: expected.renderVariant }), /não corresponde ao hash/)
+  await assert.rejects(fs.stat(path.join(root, otherJobId)))
+  source.title = 'edited after export was queued'
+
+  const restored = await store.readSnapshot(jobId)
+  assert.equal(serializeVideoExportSnapshot(restored), serialized)
+  assert.equal(restored.studio.title, 'synthetic export')
+  const reopened = await store.reopen(jobId, expected)
+  assert.equal(reopened.nextChunkIndex, 0)
+  assert.equal(serializeVideoExportSnapshot(reopened.snapshot), serialized)
+  await assert.rejects(store.reopen(jobId, { ...expected, renderVariant: 'animated' }), /modo ou o formato/)
+
+  await fs.appendFile(path.join(root, jobId, 'snapshot.json'), 'tampered')
+  await assert.rejects(store.readSnapshot(jobId), /hash do manifesto/)
+  await assert.rejects(store.reopen(jobId, expected), /hash do manifesto/)
 })
 
 test('export jobs copy referenced media into their folder and resume from pinned bytes', async (t) => {
