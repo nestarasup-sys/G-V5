@@ -4,6 +4,8 @@
 
 **Atualização local 2026-10-19:** os gates de teste, build, typecheck, auditorias rápidas, isolamento e IPC passaram na branch `codex/finalizar-dev-ai-local`; Ayla e Chloe foram testadas somente em cópias privadas com backup verificado. As matrizes AF e ISO permanecem parciais. Resultados e limites: [validação local](AUDITORIAS/VALIDACAO_LOCAL_2026-10-19.md).
 
+**Handoff para continuação:** [CONTINUACAO_DEV_AI_2026-10-18.md](CONTINUACAO_DEV_AI_2026-10-18.md) registra os commits, a prova de edição IPC/reabertura, limites e próximos passos; não marca o objetivo amplo como concluído.
+
 ## Fontes de verdade — não duplicar especificações
 
 | Assunto | Documento normativo |

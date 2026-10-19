@@ -4,7 +4,7 @@
 **Base de código antes desta etapa:** `2b1bbcf` (continuação de `9ba244e`).  
 **SHA validado pela suíte completa:** `5b82b5a9c4f5b9dda402d30e290517e00f51d2e5` (árvore limpa).
 **Ambiente:** Windows, Node/Electron do checkout local.  
-**Escopo:** reexecução dos gates DEV AI, fluxo sintético Fabricador → Customizador, isolamento entre Studios e renderização dos personagens Ayla/Chloe em cópias privadas. Esta validação não foi enviada ao GitHub.
+**Escopo:** reexecução dos gates DEV AI, fluxo sintético Fabricador → Customizador, isolamento entre Studios e renderização dos personagens Ayla/Chloe em cópias privadas. Evidências privadas continuam fora do repositório; o código e a documentação desta branch serão publicados sob autorização explícita posterior do usuário.
 
 ## Resultado dos comandos
 
@@ -40,7 +40,7 @@ Isso comprova que os ajustes de roupa salvos nesses dois personagens afetam o re
 - **ISO-01–ISO-15:** matriz integral continua aberta. A suíte passou os cenários implementados de navegação/layout e persistência IPC, não prova todos os cenários de recursos, CSS, lifecycle, falhas e interferência.
 - **DEV AI:** runner, guardas, isolamento de IPC, suites e relatórios locais tiveram testes verdes nesta execução; painel visual DEV AI independente, cobertura de rede/firewall no SO, memória/leak, logs redigidos completos e crash injection continuam abertos.
 - Não foram executados benchmark de produto, validação Linux, teste de migração/restore de produção, `npm ci` limpo nem GitHub Actions para o SHA desta continuação.
-- **PENDENTE DE VALIDAÇÃO REMOTA — AGUARDANDO AUTORIZAÇÃO DO USUÁRIO.** Nenhum push, PR, merge ou workflow remoto foi feito nesta rodada local.
+- Na primeira entrega local, push, PR, merge e execução remota estavam pendentes da autorização do usuário. Depois, o usuário autorizou explicitamente o push da branch de continuação; isso não autoriza merge e não afirma que a CI remota foi executada/aprovada.
 
 ### Matriz AF-01–AF-20
 
@@ -82,3 +82,19 @@ Isso comprova que os ajustes de roupa salvos nesses dois personagens afetam o re
 | Timeout, crash, rede e limpeza de processos | Parcial | Timeout e bloqueio do renderer foram exercitados; firewall do SO, crash injection e órfãos não foram verificados integralmente |
 
 O histórico do runner ainda é `BrowserWindow` oculto, não `BrowserWindow({offscreen:true})`. A barreira comprovada neste teste bloqueou requisições do renderer via `webRequest`; firewall do sistema operacional não foi alterado nem testado.
+
+## Adendo — edição real isolada e auditoria final local
+
+**Commit de código validado:** `4aff45d71746a536baca22780e71e769f772ddec`. A suíte executada depois dessa alteração foi `npm run audit:all`, run `2026-10-19T02-25-42-248Z-112f71fa-5fd2-4188-8c81-919186a9cd97`: 13/13 casos passaram, incluindo typecheck, build, nove auditorias sintéticas, isolamento visual e IPC real em `userData` sintético. O relatório é local em `out/dev-ai/runs/<run-id>/report.json`; a suite declara que o bloqueio de rede do renderer não equivale a firewall do SO.
+
+Também passaram `npm test` (24 pass, 2 skip por limitações do Windows), `npm run typecheck`, `npm run build`, `node --check` dos dois runners e `git diff --check`.
+
+### Round trip IPC de Ayla e Chloe
+
+A cópia privada independente foi renderizada antes da edição; cada personagem foi alterado por `window.desktop.saveCustomizerCharacter` via preload/IPC de produção em processo Electron separado. A verificação confirmou copy-on-write: a outra pessoa permaneceu igual em cada edição, a biblioteca Fabricador manteve hashes idênticos e os dois offsets persistiram após iniciar outro processo Electron. A renderização posterior do Customizador mudou para ambos (diferença de pixels não zero), e a comparação visual não escreveu no perfil privado. O resumo JSON e capturas estão somente no `%LOCALAPPDATA%\GachaV5PrivateValidation\...`, fora do repositório.
+
+O perfil original foi comparado antes/depois dessa execução e não mudou. **Um arquivo** do perfil atual já diferia do backup histórico no início da rodada; os 567 arquivos do perfil permaneceram byte a byte iguais ao snapshot capturado no início desta execução. A auditoria relata essa diferença histórica separadamente, sem listar caminhos/valores privados, e não tentou restaurar ou sobrescrever o original.
+
+Este round trip prova o salvamento IPC e a independência de personagem no Customizador em cópia privada. Não prova edição pela interface visual, paridade do personagem entre Customizador/Studio/Video Studio, nem fluxo de autoria UI do Fabricador. AF-01–AF-20, ISO-01–ISO-15 e os gates do roadmap seguem parciais/abertos conforme as matrizes acima.
+
+O usuário autorizou depois o envio desta branch para o GitHub. Esse envio não muda o resultado local nem representa aprovação da CI remota; ver o handoff [CONTINUACAO_DEV_AI_2026-10-18.md](../CONTINUACAO_DEV_AI_2026-10-18.md) para SHA, commits e passos seguintes.
