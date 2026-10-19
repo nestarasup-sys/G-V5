@@ -179,6 +179,26 @@ test('guided migration preserves valid long sidecar extensions used by existing 
   catalog.close()
 }))
 
+test('guided migration mounts and cleans up Fabricator face-guide single files', async () => withRoot(async (root) => {
+  const catalog = catalogAt(root)
+  const userData = path.join(root, 'user-data')
+  await fs.mkdir(path.join(userData, 'fabricator'), { recursive: true })
+  const guides = Buffer.from('{"eyes":{"x":0.25}}\n')
+  const guidePath = path.join(userData, 'fabricator', 'guides-eyes.json')
+  await fs.writeFile(guidePath, guides)
+  const service = new DataMigrationService({ dataRoot: root, userDataRoot: userData, catalog })
+  const result = await service.migrateDomain('fabricator.face-sets')
+  assert.equal(result.state, 'active')
+  const adapter = new DomainFileSystem(catalog, userData)
+  assert.equal(adapter.locate(guidePath).relativePath, 'guides-eyes.json')
+  assert.deepEqual(await adapter.readFile(guidePath), guides)
+  const finalized = await service.finalizeAfterHealthyLoad()
+  assert.equal(finalized.find((item) => item.domainId === 'fabricator.face-sets').cleaned, true)
+  await assert.rejects(fs.access(guidePath), { code: 'ENOENT' })
+  assert.deepEqual(await adapter.readFile(guidePath), guides)
+  catalog.close()
+}))
+
 test('video project cleanup cannot delete separate media-library or background-library roots', async () => withRoot(async (root) => {
   const catalog = catalogAt(root)
   const userData = path.join(root, 'user-data')

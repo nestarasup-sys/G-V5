@@ -12,8 +12,8 @@ const ROOTS = [
   { id: 'fabricator.expression-presets', path: 'fabricator/expression-presets' },
   { id: 'fabricator.hair', path: 'fabricator/hair' },
   { id: 'fabricator.face-sets', path: 'fabricator/faces' },
-  { id: 'fabricator.face-sets', path: 'fabricator/guides-eyes.json' },
-  { id: 'fabricator.face-sets', path: 'fabricator/guides-face.json' },
+  { id: 'fabricator.face-sets', path: 'fabricator/guides-eyes.json', file: true },
+  { id: 'fabricator.face-sets', path: 'fabricator/guides-face.json', file: true },
   { id: 'customizer.characters', path: 'customizer/characters' },
   { id: 'studio.projects', path: 'studios/Studio Principal' },
   { id: 'video-studio.media', path: 'studios/Video Studio/media-library' },
@@ -76,13 +76,16 @@ class DomainFileSystem {
     let candidate
     for (const root of ROOTS) {
       const prefix = root.path.toLowerCase()
-      if (lower === prefix || lower.startsWith(`${prefix}/`)) { candidate = root; break }
+      if (root.file ? lower === prefix : lower === prefix || lower.startsWith(`${prefix}/`)) { candidate = root; break }
     }
     if (!candidate) return null
     let domainId = candidate.id
     if (domainId === 'fabricator.face-sets' && /(?:^|\/)catalog(?:\/|$)/i.test(relative)) domainId = 'fabricator.face-catalog'
     const prefixLength = candidate.path.length
-    return { absolute, domainId, relativePath: relative.slice(prefixLength).replace(/^\//, '') }
+    const relativePath = candidate.file
+      ? path.posix.basename(candidate.path)
+      : relative.slice(prefixLength).replace(/^\//, '')
+    return { absolute, domainId, relativePath }
   }
 
   active(location) {

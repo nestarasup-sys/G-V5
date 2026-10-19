@@ -13,7 +13,7 @@ const DOMAINS = [
   { id: 'fabricator.poses', roots: ['fabricator/poses'] },
   { id: 'fabricator.animations', roots: ['fabricator/animations'] },
   { id: 'fabricator.wardrobe', roots: ['fabricator/wardrobe'] },
-  { id: 'fabricator.face-sets', roots: ['fabricator/faces'], excludeCatalog: true },
+  { id: 'fabricator.face-sets', roots: ['fabricator/faces'], files: ['fabricator/guides-eyes.json', 'fabricator/guides-face.json'], excludeCatalog: true },
   { id: 'fabricator.face-catalog', roots: ['fabricator/faces'], includeCatalog: true },
   { id: 'fabricator.face-components', roots: ['fabricator/face-components'] },
   { id: 'fabricator.expression-presets', roots: ['fabricator/expression-presets'] },
@@ -95,10 +95,21 @@ async function inventoryDomain(userDataRoot, domainId) {
         if (!belongs(definition, relativeFromUserData)) continue
         const stat = await fsp.stat(absolute)
         const digest = await hashFile(absolute)
-        files.push({ absolute, relativePath: path.relative(root, absolute).split(path.sep).join('/'), sourceRelativePath: relativeFromUserData.split(path.sep).join('/'), byteLength: stat.size, mtimeMs: stat.mtimeMs, sha256: digest })
+        const logicalPath = path.relative(root, absolute).split(path.sep).join('/')
+        files.push({ absolute, relativePath: logicalPath, backupRelativePath: logicalPath,
+          sourceRelativePath: relativeFromUserData.split(path.sep).join('/'), byteLength: stat.size, mtimeMs: stat.mtimeMs, sha256: digest })
       }
     }
     await walk(root)
+  }
+  for (const relativeFile of definition.files ?? []) {
+    const absolute = path.resolve(userDataRoot, relativeFile)
+    if (!within(userDataRoot, absolute)) throw new Error('Arquivo de domínio inválido.')
+    let stat
+    try { stat = await fsp.lstat(absolute) } catch (error) { if (error.code === 'ENOENT') continue; throw error }
+    if (!stat.isFile() || stat.isSymbolicLink() || absolute !== await fsp.realpath(absolute)) throw new Error(`A origem do arquivo ${domainId} não é um arquivo regular.`)
+    files.push({ absolute, relativePath: path.basename(relativeFile), backupRelativePath: path.basename(relativeFile),
+      sourceRelativePath: relativeFile.split(path.sep).join('/'), byteLength: stat.size, mtimeMs: stat.mtimeMs, sha256: await hashFile(absolute) })
   }
   files.sort((a, b) => a.sourceRelativePath.localeCompare(b.sourceRelativePath))
   const digest = sha256(files.map((file) => `${file.sourceRelativePath}\0${file.byteLength}\0${file.sha256}`).join('\n'))
@@ -150,6 +161,7 @@ class DataMigrationService {
     assertRealDirectory(backupRoot, this.dataRoot)
     const manifest = { id, domainId, state: 'copying', fileCount: inventory.fileCount, directoryCount: inventory.directoryCount,
       byteLength: inventory.byteLength, inventorySha256: inventory.inventorySha256, backupRelative, sourceRelativeRoots: definition.roots,
+      sourceRelativeFiles: definition.files ?? [],
       startedAt: new Date().toISOString() }
     this.catalog.beginMigration({ id, manifest })
     this.catalog.setDomainState(domainId, 'migrating', manifest)
@@ -169,7 +181,7 @@ class DataMigrationService {
         if (before.size !== after.size || before.mtimeMs !== after.mtimeMs || bytes.length !== entry.byteLength || sha256(bytes) !== entry.sha256) {
           throw new Error(`O arquivo de origem mudou durante a migração de ${domainId}; os originais foram mantidos.`)
         }
-        const backupPath = path.resolve(backupRoot, entry.sourceRelativePath.slice(definition.roots[0].length).replace(/^\//, ''))
+        const backupPath = path.resolve(backupRoot, entry.backupRelativePath)
         if (!within(backupRoot, backupPath)) throw new Error('Destino de backup inválido.')
         await fsp.mkdir(path.dirname(backupPath), { recursive: true })
         await pipeline(createReadStream(entry.absolute), createWriteStream(backupPath, { flags: 'wx' }))
@@ -187,11 +199,11 @@ class DataMigrationService {
         this.onProgress({ domainId, completedFiles: done, totalFiles: inventory.fileCount, completedBytes: inventory.files.slice(0, done).reduce((sum, file) => sum + file.byteLength, 0), totalBytes: inventory.byteLength })
       }
       const backupManifest = { schemaVersion: 1, migrationId: id, domainId, inventorySha256: inventory.inventorySha256,
-        files: inventory.files.map(({ sourceRelativePath, byteLength, sha256: hash }) => ({ path: sourceRelativePath, byteLength, sha256: hash })) }
+        files: inventory.files.map(({ backupRelativePath, byteLength, sha256: hash }) => ({ path: backupRelativePath, byteLength, sha256: hash })) }
       const manifestPath = path.join(backupRoot, 'backup-manifest.json')
       await fsp.writeFile(manifestPath, JSON.stringify(backupManifest, null, 2), { flag: 'wx' })
       for (const entry of inventory.files) {
-        const backupPath = path.resolve(backupRoot, entry.sourceRelativePath.slice(definition.roots[0].length).replace(/^\//, ''))
+        const backupPath = path.resolve(backupRoot, entry.backupRelativePath)
         if (await hashFile(backupPath) !== entry.sha256) throw new Error(`Backup não passou na conferência final de ${domainId}.`)
       }
       manifest.state = 'cutover'
@@ -247,7 +259,7 @@ class DataMigrationService {
         continue
       }
       for (const file of actual.files) {
-        const backupPath = path.resolve(backupRoot, file.sourceRelativePath.slice(definition.roots[0].length).replace(/^\//, ''))
+        const backupPath = path.resolve(backupRoot, file.backupRelativePath)
         if (!within(backupRoot, backupPath) || !fs.existsSync(backupPath) || await hashFile(backupPath) !== file.sha256) {
           allTargetMatches = false; break
         }

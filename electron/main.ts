@@ -133,9 +133,8 @@ function configureLocalAppDataRoot(): void {
     }
   }
 
-  // Keep application libraries, Chromium localStorage/session and Electron
-  // user data under one portable root. Feature folders remain grouped inside
-  // user-data (customizer, fabricator, studios and video-studios).
+  // Keep all persistent app data and Chromium's disposable cache inside the
+  // portable app-data root. Chromium localStorage/session remain in user-data.
   app.setPath('appData', dataRoot)
   app.setPath('userData', userData)
   app.setPath('sessionData', userData)

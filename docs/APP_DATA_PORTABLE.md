@@ -6,27 +6,26 @@ Todo dado persistente do aplicativo deve ficar sob `app-data/`, dentro do checko
 
 ```text
 app-data/
-  user-data/                 # raiz Electron; armazenamento organizado por domínio
-    customizer/              # personagens e personalizações individuais
-    fabricator/              # modelos, poses, roupas, rosto, cabelo e acessórios
-    studios/                 # Studio normal e Video Studio
-    video-studios/           # compatibilidade de dados legados até sua migração validada
-    Local Storage/           # preferências e rascunhos do renderer
-    Cache/                   # cache Chromium local
+  database/catalog.sqlite   # metadados e arquivos lógicos por domínio
+  media/objects/sha256/      # arquivos binários deduplicados por conteúdo
+  media/thumbnails/          # miniaturas derivadas
+  user-data/                 # perfil interno Electron e estado web
   logs/                      # logs locais
   crash-dumps/               # relatórios locais de falha
   temp/                      # temporários do processo do app
-  backups/                   # origem legada arquivada e cópias verificáveis
-  migration-manifest.json    # inventário/hash da migração local
+  backups/                   # backups manuais e recuperação local
+  manifests/                 # recibos e proveniência local
 ```
 
 ## Evolução escalável do layout
 
 A estrutura expandida está detalhada em [APP_DATA_ESCALAVEL.md](./APP_DATA_ESCALAVEL.md). O app cria `database/catalog.sqlite` e oferece migração guiada por domínio em Opções > Dados e armazenamento. A migração não começa no boot: o usuário confere o inventário e inicia a operação. Domínios ativados usam o catálogo e objetos endereçados por conteúdo através de um adaptador de filesystem, preservando os contratos de persistência das áreas. Os demais continuam usando os caminhos legados até serem migrados.
 
-Antes da migração real, crie um backup manual em Opções. A migração cria snapshot temporário próprio, verifica origem e destino por hash e mantém os arquivos originais até o primeiro carregamento saudável. Depois dessa confirmação, remove apenas os arquivos legados enumerados no manifesto. Backups manuais permanecem até o usuário excluí-los. Não execute várias instâncias do app durante a migração.
+Antes de uma migração, crie um backup manual em Opções. A migração verifica origem e destino por hash e só remove os arquivos antigos após o primeiro carregamento saudável. Backups manuais permanecem até o usuário excluí-los. Não execute várias instâncias do app durante a migração.
 
-As áreas continuam com ownership separado: Fabricador publica bibliotecas e vínculos; Customizador guarda personagens e overrides; Studio normal e Video Studio salvam seus próprios projetos. A troca da raiz não altera os caminhos relativos nem os contratos entre essas áreas.
+Depois da migração, `user-data` permanece como perfil interno do Electron. Personagens, bibliotecas e projetos são lidos e gravados pelo catálogo e pelo armazenamento de objetos; as antigas pastas de domínio deixam de ser a fonte ativa. O perfil mantém `Local Storage` e preferências do renderer.
+
+As áreas continuam com ownership separado: Fabricador publica bibliotecas e vínculos; Customizador guarda personagens e overrides; Studio normal e Video Studio salvam seus próprios projetos. O catálogo mantém esses domínios isolados e deduplica binários pelo hash do conteúdo.
 
 ## Migração do perfil Electron legado
 
@@ -41,7 +40,7 @@ As áreas continuam com ownership separado: Fabricador publica bibliotecas e ví
 
 Se o destino já existe sem manifesto ou as cópias divergem, o processo para sem mesclar nem sobrescrever dados. Um staging de falha é mantido para inspeção. Se uma origem Roaming reaparecer após a primeira abertura, o próximo início exige que o app esteja fechado, restaura apenas arquivos ausentes nas pastas de domínio (sem sobrescrever conflitos), arquiva e verifica a origem completa. O perfil Chromium legado é preservado no backup; não mesclamos arquivos de banco do Chromium individualmente.
 
-O Electron aponta `userData` e `sessionData` para `app-data/user-data`; logs, crash dumps e temporários do processo ficam em pastas próprias dentro de `app-data`. O diretório `user-data` contém subpastas das áreas do app e o perfil Chromium necessário para preservar `localStorage`.
+O Electron aponta `userData` e `sessionData` para `app-data/user-data`; logs, crash dumps e temporários ficam em pastas próprias dentro de `app-data`. O perfil Chromium permanece em `user-data` para preservar `localStorage` e preferências.
 
 ## Testes e limites
 
