@@ -3,11 +3,11 @@ Planejamento independente para G-V5 Video Studio · 2026-10-19 · **sem alteraç
 
 ## 1. Situação atual comprovada
 
-\`electron/videoLibrary.ts\` define a biblioteca global em \`media-library/videos/<id>.<ext>\` e associa ao Studio por \`projectMediaPath(studioId, asset)\` em \`studio-<id>/videos/<id>.<ext>\`. \`attach()\` chama \`copyVerified()\` e, portanto, **cria uma cópia física do arquivo por projeto**, salvo arquivo destino já existente. \`ensureProjectAssets()\` repara a cópia desde a biblioteca ou outro projeto. \`delete()\` usa tombstones na biblioteca.
+`electron/videoLibrary.ts` define a biblioteca global em `media-library/videos/<id>.<ext>` e associa ao Studio por `projectMediaPath(studioId, asset)` em `studio-<id>/videos/<id>.<ext>`. `attach()` chama `copyVerified()` e, portanto, **cria uma cópia física do arquivo por projeto**, salvo arquivo destino já existente. `ensureProjectAssets()` repara a cópia desde a biblioteca ou outro projeto. `delete()` usa tombstones na biblioteca.
 
-O código faz validação de tamanho de arquivo, mas o \`copyVerified()\` valida **tamanho**, não SHA-256 do conteúdo. Este desenho é pragmático para portabilidade/isolamento; não declarar que é bug funcional, nem remover cópias existentes à força.
+O código faz validação de tamanho de arquivo, mas o `copyVerified()` valida **tamanho**, não SHA-256 do conteúdo. Este desenho é pragmático para portabilidade/isolamento; não declarar que é bug funcional, nem remover cópias existentes à força.
 
-\`electron/main.ts\` carrega \`@video-frame:<sha256>\` dos PNGs de quadros de personagem no Studio. Esse mecanismo prova que há **endereçamento por conteúdo** em uma parte do pipeline visual, mas não que vídeos globais sejam CAS compartilhado.
+`electron/main.ts` carrega `@video-frame:<sha256>` dos PNGs de quadros de personagem no Studio. Esse mecanismo prova que há **endereçamento por conteúdo** em uma parte do pipeline visual, mas não que vídeos globais sejam CAS compartilhado.
 
 **Riscos para escalar:** espaço físico cresce com projetos duplicados, longos vídeos podem multiplicar bytes; proxies e caches podem causar crescimento adicional; exclusões e backups dependem da semântica atual de cada cópia.
 
@@ -16,9 +16,9 @@ O código faz validação de tamanho de arquivo, mas o \`copyVerified()\` valida
 Hipótese preferida para futuro: **Content-Addressed Store (CAS) para originais compartilhados**, com referências por projeto em manifesto independente (ou metadados derivados) e cópia/export portable sob demanda.
 
 Nunca:
-- trocar o significado do \`VideoStudioAsset.id\` sem migração;
-- sobrescrever/remover \`studio-<id>/videos\` num upgrade automático sem backups/testes;
-- usar \`hardlink\` como premissa entre volumes; hardlinks têm limitações de filesystem e operações de exclusão/alteração;
+- trocar o significado do `VideoStudioAsset.id` sem migração;
+- sobrescrever/remover `studio-<id>/videos` num upgrade automático sem backups/testes;
+- usar `hardlink` como premissa entre volumes; hardlinks têm limitações de filesystem e operações de exclusão/alteração;
 - usar symlinks/junctions sem política forte de segurança de paths;
 - abrir arquivos de outro projeto porque nome/id coincide;
 - confiar em path ou filename como chave de cache ou prova de identidade.
@@ -26,20 +26,20 @@ Nunca:
 ## 3. Plano de migração por estágios
 
 ### D0 — Observabilidade
-- [ ] Mapear por fixture sintética: bytes de originais, número de projetos, duplicação por SHA, tempo de \`attach\`, espaço de proxies e backups.
+- [ ] Mapear por fixture sintética: bytes de originais, número de projetos, duplicação por SHA, tempo de `attach`, espaço de proxies e backups.
 - [ ] Confirmar cenário de projeto movido/copiado para novo PC e arquivo ausente; inspecionar import de média antiga, portabilidade e tombstones.
-- [ ] Levantar contrato dos métodos \`list/import/attach/ensureProjectAssets/resolveMedia/delete\` e chamadas no preview/salvamento.
+- [ ] Levantar contrato dos métodos `list/import/attach/ensureProjectAssets/resolveMedia/delete` e chamadas no preview/salvamento.
 **Gate:** gráfico/relatório apenas com métricas locais agregadas, sem nomes ou caminhos privados.
 
 ### D1 — CAS paralelo em shadow mode
-- [ ] Introduzir \`media-object/<sha256>\` para bytes originais **derivados e validados**; manter cópias do projeto intactas.
-- [ ] Criar índice \`assetId -> digest -> storage candidate\` e validação completa de SHA para novos objetos.
+- [ ] Introduzir `media-object/<sha256>` para bytes originais **derivados e validados**; manter cópias do projeto intactas.
+- [ ] Criar índice `assetId -> digest -> storage candidate` e validação completa de SHA para novos objetos.
 - [ ] Ler preferencialmente o legado enquanto testa CAS em shadow, sem modificar comportamento user-facing.
 - [ ] Esquema de journal para cópias interrompidas e dedup após sucesso; reabrir todos os projetos sintéticos.
 **Gate:** zero alterações em dados legados; hashes iguais e todos os projetos abrem.
 
 ### D2 — Resolver por prioridade/fallback
-- [ ] \`MediaResolver\` escolhe sob regras explícitas: snapshot pinned → projeto legado válido → CAS global válido → original anexado/verificado → erro recuperável.
+- [ ] `MediaResolver` escolhe sob regras explícitas: snapshot pinned → projeto legado válido → CAS global válido → original anexado/verificado → erro recuperável.
 - [ ] Cache/proxy deriva de bytes do original + presetVersion + FFmpegBuild + timebase/fps/size/color config.
 - [ ] Proxy não pode substituir original na export sem política explícita; regenerar quando checksum divergir.
 - [ ] Consumo de disco limitado (quota em bytes), coleta só de derived caches, nunca de originais.
@@ -61,15 +61,15 @@ Nunca:
 
 Unidades independentes:
 - documentos Studio continuam dados autorais no local atual;
-- \`export-jobs/<uuid>\` guarda snapshot/arte pinned/manifest/checkpoints próprios;
-- \`EXPORT/<studioId>/<output>\` é o catálogo final;
-- \`cache/<engineVersion>/<digest>\` é derivado, descartável;
-- \`proxies/<mediaDigest>/<presetDigest>\` é derivado, descartável.
+- `export-jobs/<uuid>` guarda snapshot/arte pinned/manifest/checkpoints próprios;
+- `EXPORT/<studioId>/<output>` é o catálogo final;
+- `cache/<engineVersion>/<digest>` é derivado, descartável;
+- `proxies/<mediaDigest>/<presetDigest>` é derivado, descartável.
 
 Regras:
-1. Nunca salvar \`playing\`/playhead mutável como dependência de frame.
+1. Nunca salvar `playing`/playhead mutável como dependência de frame.
 2. Export lê bytes pinned; mudança da biblioteca não se propaga no meio do job.
-3. Segurança: canonicalize \`realpath\`, validar roots e owner, não seguir symlink arbitrário; checar atomicidade e cross-volume.
+3. Segurança: canonicalize `realpath`, validar roots e owner, não seguir symlink arbitrário; checar atomicidade e cross-volume.
 4. Escrever job.tmp → fsync ou mecanismo apropriado → rename dentro do mesmo volume → validação FFprobe/decode → publish; sidecar gravado depois da saída confirmada; em erro, não substituir vídeo anterior.
 5. Recuperação após crash detecta órfãos e oferece retry; limpar só diretórios que pertencem ao job válido.
 6. Nunca logar names, paths, thumbnails, personagens ou texto privado por padrão. CI usa PNGs/vídeos/tokens sintéticos.
@@ -77,12 +77,12 @@ Regras:
 ## 5. Compatibilidade visual e preview
 
 Não trocar todos os personagens por sprites externos sem reproduzir:
-- \`VideoCharacterState\` com imagem PNG por key; \`characterBases\` e transformações globais;
-- \`faceRenderGeometry\`, asset crop, flip, width/height scales;
+- `VideoCharacterState` com imagem PNG por key; `characterBases` e transformações globais;
+- `faceRenderGeometry`, asset crop, flip, width/height scales;
 - boca falante (6 variações) e blink baseados em timeline;
 - transições de 250 ms/15 frames e layers com gaps;
 - balão e texto CSS; versão de fonte e screen geometry;
-- \`VideoClipTransform\` e overlay real de clipe de vídeo.
+- `VideoClipTransform` e overlay real de clipe de vídeo.
 
 **Migração segura:** compositor novo em modo sombra compara frames escolhidos e registra erros agregados em fixtures, sem substituir a preview por padrão. O print atual é renderer alternativo Canvas 2D; unificação precisa teste de regressão de tipografia/posição.
 
@@ -104,7 +104,7 @@ Não trocar todos os personagens por sprites externos sem reproduzir:
 
 - **M01:** importar mesmo arquivo em biblioteca duas vezes (IDs diferentes, conteúdo igual), reabrir, comparar bytes.
 - **M02:** anexar um vídeo a 3 projetos, copiar/remover projetos; nenhuma referência quebrada.
-- **M03:** mover pasta \`app-data\` para outro caminho e reabrir sem vazamento de caminho absoluto.
+- **M03:** mover pasta `app-data` para outro caminho e reabrir sem vazamento de caminho absoluto.
 - **M04:** modificar arquivo original sintético após import, detectar digest e não usar cache antigo.
 - **M05:** interromper durante CAS shadow copy, retomar sem objeto parcial reconhecido.
 - **M06:** arquivo re-link em volume diferente, sem hardlink obrigatório e sem symlink inseguro.
@@ -119,10 +119,10 @@ CAS e proxies só entram na linha padrão quando os testes anteriores passarem, 
 
 ## 9. Evidências de código e fontes
 
-- \`electron/videoLibrary.ts\`: \`mediaPath\`, \`projectMediaPath\`, \`copyVerified\`, \`attach\`, \`ensureProjectAssets\`.
-- \`src/shared/studio.ts\`: \`VideoStudioAsset\`, \`VideoTimelineDocument\`, \`VideoCharacterState\`.
-- \`electron/main.ts\`: externalização de \`@video-frame:<sha256>\`.
-- \`electron/videoExports.ts\`: output \`EXPORT\`, sidecar, rename e lista.
-- \`electron/videoExportJobs.ts\`: manifest v1 e recuperação de prefixo.
-- \`src/shared/videoMedia.ts\`: contratos de split/trim [start,end).
+- `electron/videoLibrary.ts`: `mediaPath`, `projectMediaPath`, `copyVerified`, `attach`, `ensureProjectAssets`.
+- `src/shared/studio.ts`: `VideoStudioAsset`, `VideoTimelineDocument`, `VideoCharacterState`.
+- `electron/main.ts`: externalização de `@video-frame:<sha256>`.
+- `electron/videoExports.ts`: output `EXPORT`, sidecar, rename e lista.
+- `electron/videoExportJobs.ts`: manifest v1 e recuperação de prefixo.
+- `src/shared/videoMedia.ts`: contratos de split/trim [start,end).
 - Sem benchmark atual de CAS no G-V5; tudo além da implementação atual é **proposta**.
