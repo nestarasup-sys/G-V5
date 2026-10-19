@@ -609,12 +609,32 @@ async function verifyCustomizerRasterPreview(window) {
         const selected=(document.querySelector('.customizer-preview-character-name')?.textContent||'').trim()
         const model=document.querySelector('.customizer-selected-artwork')
         const wardrobe=document.querySelector('.customizer-wardrobe-overlay')
+        const aboveHair=document.querySelector('.customizer-wardrobe-above-hair-overlay')
+        const renderedPixels=(img)=>{
+          if(!img || !img.complete || !img.naturalWidth || !img.naturalHeight) return 0
+          const canvas=document.createElement('canvas')
+          canvas.width=img.naturalWidth;canvas.height=img.naturalHeight
+          const context=canvas.getContext('2d',{willReadFrequently:true})
+          if(!context) return 0
+          context.drawImage(img,0,0)
+          const rgba=context.getImageData(0,0,canvas.width,canvas.height).data
+          let pixels=0
+          for(let i=3;i<rgba.length;i+=4)if(rgba[i]>=32)pixels++
+          return pixels
+        }
         const alerts=[...document.querySelectorAll('[role=alert]')].map(e=>e.textContent.trim()).filter(Boolean)
+        const shoePixels=expected?renderedPixels(wardrobe):0
+        const glassesPixels=expected?renderedPixels(aboveHair):0
         last={selected,modelReady:!!model && model.complete && model.naturalWidth>0,
           wardrobeReady:!!wardrobe && wardrobe.complete && wardrobe.naturalWidth>0,
-          outfitPresent:!!wardrobe,alerts,modelNaturalSize:model?[model.naturalWidth,model.naturalHeight]:null,
+          glassesReady:!!aboveHair && aboveHair.complete && aboveHair.naturalWidth>0,
+          shoeOpaquePixels:shoePixels,glassesOpaquePixels:glassesPixels,
+          outfitPresent:!!wardrobe,glassesPresent:!!aboveHair,
+          alerts,modelNaturalSize:model?[model.naturalWidth,model.naturalHeight]:null,
           outfitNaturalSize:wardrobe?[wardrobe.naturalWidth,wardrobe.naturalHeight]:null}
-        if(selected===name && last.modelReady && (expected?last.wardrobeReady:!last.outfitPresent)
+        if(selected===name && last.modelReady
+          && (expected?(last.wardrobeReady && last.glassesReady && shoePixels>100 && glassesPixels>100)
+            :(!last.outfitPresent&&!last.glassesPresent))
           && alerts.length===0){
           await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))
           return {...last,status:'passed'}
