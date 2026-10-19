@@ -23,7 +23,7 @@ test('media probe parser keeps source timebase and flags VFR without converting 
       {
         codec_type: 'video', codec_name: 'h264', width: 1920, height: 1080,
         time_base: '1/90000', avg_frame_rate: '30000/1001', r_frame_rate: '60/1',
-        start_time: '0.033367', duration: '10.010000',
+        start_time: '-0.033367', duration: '10.010000',
       },
       {
         codec_type: 'audio', codec_name: 'aac', sample_rate: '48000', channels: 2,
@@ -36,7 +36,7 @@ test('media probe parser keeps source timebase and flags VFR without converting 
   assert.equal(result.video.averageFrameRate, '30000/1001')
   assert.equal(result.video.realFrameRate, '60/1')
   assert.equal(result.video.variableFrameRate, true)
-  assert.equal(result.video.startTimeSeconds, 0.033367)
+  assert.equal(result.video.startTimeSeconds, -0.033367)
   assert.equal(result.audio.codec, 'aac')
   assert.equal(result.audio.sampleRate, 48000)
 })
