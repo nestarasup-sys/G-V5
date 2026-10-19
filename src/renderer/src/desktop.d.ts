@@ -1,7 +1,7 @@
 import type { FabricatorDesktopApi } from '../../shared/fabricator'
 import type { CustomizerDesktopApi } from '../../shared/customizer'
 import type { StudioDesktopApi, VideoStudioDesktopApi } from '../../shared/studio'
-import type { VideoExportSurfaceBootstrap, VideoExportSurfaceFrameReady, VideoExportSurfaceRenderRequest } from '../../shared/videoExportSurface'
+import type { VideoExportSurfaceBootstrap, VideoExportSurfaceFrameReady, VideoExportSurfaceReady, VideoExportSurfaceRenderRequest } from '../../shared/videoExportSurface'
 
 declare global {
   interface Window {
@@ -31,6 +31,7 @@ declare global {
       prepareVideoExportSurface: (jobId: string) => Promise<VideoExportSurfaceBootstrap>
       onVideoExportSurfaceRender: (callback: (request: VideoExportSurfaceRenderRequest) => void) => () => void
       reportVideoExportSurfaceFrame: (ready: VideoExportSurfaceFrameReady) => void
+      reportVideoExportSurfaceReady: (ready: VideoExportSurfaceReady) => void
     } & FabricatorDesktopApi & CustomizerDesktopApi & StudioDesktopApi & VideoStudioDesktopApi
   }
 }
