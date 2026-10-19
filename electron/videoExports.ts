@@ -89,7 +89,15 @@ export class VideoExportLibrary {
     const rootRelative = relative(this.jobRoot, jobFolder)
     if (!rootRelative || rootRelative.startsWith(`..${sep}`) || resolve(sourcePath) !== join(jobFolder, 'final.mp4')) throw new Error('Pasta temporária de exportação inválida.')
     const jobDirectoryInfo = await lstat(jobFolder)
-    if (!jobDirectoryInfo.isDirectory() || jobDirectoryInfo.isSymbolicLink() || await realpath(jobFolder) !== jobFolder) throw new Error('Pasta temporária de exportação inválida.')
+    if (!jobDirectoryInfo.isDirectory() || jobDirectoryInfo.isSymbolicLink()) throw new Error('Pasta temporária de exportação inválida.')
+    // Windows realpath may canonicalize drive/path casing differently from path.resolve.
+    // Validate containment against the canonical trusted root, not string equality
+    // with a noncanonical path. Reject symlink/junction escapes outside this root.
+    const canonicalRoot = await realpath(this.jobRoot)
+    const canonicalJobFolder = await realpath(jobFolder)
+    if (relative(canonicalRoot, canonicalJobFolder).toLowerCase() !== jobId.toLowerCase()) {
+      throw new Error('Pasta temporária de exportação inválida.')
+    }
     const sourceInfo = await lstat(sourcePath)
     if (!sourceInfo.isFile() || sourceInfo.isSymbolicLink() || sourceInfo.size < 1) throw new Error('Arquivo MP4 temporário ausente ou inválido.')
     const sourceReal = resolve(sourcePath)
