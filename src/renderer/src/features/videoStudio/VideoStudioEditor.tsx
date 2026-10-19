@@ -23,6 +23,10 @@ import { captureVideoCharacter, characterStateAt, normalizeVideoCharacterTransfo
 import type { CustomizerCharacter } from '../../../../shared/customizer'
 import type { CustomizerFaceAppearance } from '../../../../shared/customizer'
 import type { FaceCatalogItem, FaceCatalogItemSummary, FaceExpressionCollection, FaceExpressionEffects, FaceExpressionPreset, FaceExpressionPresetSummary, FaceSheetKind, FabricatorPoseSummary } from '../../../../shared/fabricator'
+import type { VideoExportProgress } from '../../../../shared/videoExportRuntime'
+import type { RenderVariant } from '../../../../shared/videoSceneIR'
+import { createVideoCharacterRenderAssetSnapshot } from '../../../../shared/videoCharacterRenderAssets'
+import { captureVideoCharacterRenderAssets } from './videoCharacterAssetCapture'
 
 type StudioCard = StudioDocument
 type StudioSnapshot = Pick<StudioDocument, 'backgroundColor' | 'backgroundAssetId' | 'backgroundX' | 'backgroundY' | 'backgroundWidth' | 'backgroundHeight' | 'backgroundRotation' | 'assets' | 'elements' | 'videoTimeline'>
@@ -264,6 +268,11 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
+  const [exportDialogOpen, setExportDialogOpen] = useState(false)
+  const [exportVariant, setExportVariant] = useState<RenderVariant>('animated')
+  const [exportPreparing, setExportPreparing] = useState(false)
+  const [activeExportJobId, setActiveExportJobId] = useState<string | null>(null)
+  const [exportProgress, setExportProgress] = useState<VideoExportProgress | null>(null)
   const [availableCharacters, setAvailableCharacters] = useState<CustomizerCharacter[]>([])
   const [assetLibraryRevision, setAssetLibraryRevision] = useState(0)
   const appliedAssetRevisionRef = useRef(new Map<string, number>())
@@ -2090,6 +2099,57 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
     catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível abrir a pasta de prints.') }
   }
 
+  const startVideoExport = async () => {
+    if (!activeStudio || exportPreparing || (exportProgress && !['done', 'failed', 'cancelled'].includes(exportProgress.stage))) return
+    setExportPreparing(true)
+    setError(null)
+    setNotice(exportVariant === 'animated' ? 'Preparando personagens e dependências do vídeo…' : 'Preparando exportação sem animações…')
+    try {
+      if (!await saveStudio(activeStudio)) return
+      const characterAssets = exportVariant === 'animated'
+        ? await captureVideoCharacterRenderAssets(activeStudio, availableCharacters, window.desktop, {
+            onProgress: (completed, total) => setNotice(total > 0 ? `Preparando personagens… ${completed}/${total}` : 'Preparando personagens…')
+          })
+        : createVideoCharacterRenderAssetSnapshot([])
+      const started = await window.desktop.startVideoExport({
+        studio: structuredClone(activeStudio),
+        characters: structuredClone(availableCharacters),
+        characterAssets,
+        renderVariant: exportVariant,
+      })
+      setActiveExportJobId(started.jobId)
+      setExportProgress(await window.desktop.getVideoExportStatus(started.jobId))
+      setNotice(null)
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Não foi possível iniciar a exportação.')
+    } finally {
+      setExportPreparing(false)
+    }
+  }
+
+  const cancelVideoExport = async () => {
+    if (!activeExportJobId) return
+    try { await window.desktop.cancelVideoExport(activeExportJobId) }
+    catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível cancelar a exportação.') }
+  }
+
+  useEffect(() => window.desktop.onVideoExportProgress((progress) => {
+    setActiveExportJobId((jobId) => {
+      if (jobId && jobId !== progress.jobId) return jobId
+      setExportProgress(progress)
+      if (progress.stage === 'done') {
+        setNotice('Vídeo exportado e verificado.')
+        setExportDialogOpen(true)
+      } else if (progress.stage === 'failed') {
+        setError(progress.message ?? 'A exportação falhou.')
+        setExportDialogOpen(true)
+      } else if (progress.stage === 'cancelled') {
+        setNotice('Exportação cancelada.')
+      }
+      return progress.jobId
+    })
+  }), [])
+
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (videoLibraryOpen || backgroundLibraryOpen) return
@@ -2309,6 +2369,7 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
             <button className="video-studio-tool-button" onClick={() => addTextElement('speech')} disabled={selectedElement?.kind !== 'character'} title={selectedElement?.kind === 'character' ? `Criar fala de ${selectedElement.text}` : 'Selecione um personagem para criar uma fala'} type="button"><Icon name="message" /><span>Fala</span><i aria-hidden="true">✦</i></button>
             <button className="video-studio-tool-button" onClick={() => addTextElement('thought')} disabled={selectedElement?.kind !== 'character'} title={selectedElement?.kind === 'character' ? `Criar pensamento de ${selectedElement.text}` : 'Selecione um personagem para criar um pensamento'} type="button"><Icon name="face" /><span>Pensamento</span><i aria-hidden="true">✦</i></button>
             <span className="video-studio-tool-separator" />
+            <button className="video-studio-tool-button video-studio-export-button" onClick={() => setExportDialogOpen(true)} type="button"><Icon name="download" /><span>Exportar vídeo</span><i aria-hidden="true">▶</i></button>
             <button className="video-studio-tool-button" onClick={() => void exportPrint()} type="button"><Icon name="download" /><span>Print</span><i aria-hidden="true">✦</i></button>
             <button className="video-studio-tool-button" onClick={() => void openPrints()} type="button"><Icon name="folder" /><span>Pasta</span><i aria-hidden="true">✦</i></button>
             <button className="video-studio-tool-button video-studio-view-button" onClick={() => enterFullView()} type="button"><Icon name="expand" /><span>View</span></button>
@@ -2365,6 +2426,33 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
         </section>
         {fullView && <PreviewTransport preparing={animationPreparing} frame={videoPlayheadFrame} duration={videoTimelineFor(activeStudio).durationFrames} playing={videoPlaying} audio={videoTimelineFor(activeStudio).videoAudio} onSeek={seekVideoFrame} onTogglePlayback={toggleVideoPlayback} onAudioChange={updateVideoAudio} onBeginAudioEdit={recordHistory} />}
         {!fullView && isVideoWorkspace && <VideoTimeline preparing={animationPreparing} canUndo={canUndo && !studioFaceBusy && !studioExpressionBusy && !savingCast} canRedo={canRedo && !studioFaceBusy && !studioExpressionBusy && !savingCast} onUndo={undo} onRedo={redo} selectedCanvasId={selectedElementId} studio={activeStudio} playheadFrame={videoPlayheadFrame} playing={videoPlaying} height={videoTimelineHeight} presetNames={Object.fromEntries(studioExpressionPresets.map((preset) => [preset.id, preset.name]))} onResize={setVideoTimelineHeight} onChangeTimelineView={changeTimelineView} onSelectElement={(elementId) => { setVideoPlaying(false); setSelectedElementId(elementId); setInspectorOpen(true); if (elementId.startsWith('video:')) { setActiveTool(null); setInspectorTab('editor') } }} onSeek={seekVideoFrame} onTogglePlayback={toggleVideoPlayback} onEnterFullscreen={enterFullView} onSaveFrame={saveVideoFrame} onSplitCharacter={splitVideoCharacterTrack} onSplitTextClip={splitVideoTextClip} onSplitVideoClip={splitVideoMediaClip} onUpdateVideoClip={updateVideoMediaClip} onChangeVideoAudio={updateVideoAudio} onBeginAudioEdit={recordHistory} onDuplicateVideoClip={duplicateVideoMediaClip} onUpdateTextClip={updateVideoTextClip} onDeleteTextClip={deleteVideoTextClip} onDeleteVideoClip={deleteVideoMediaClip} onDeleteTextElement={deleteVideoTextElement} onDeleteCharacterSegment={deleteVideoCharacterSegment} onDuplicateTextClip={duplicateVideoTextClip} onMoveCharacterBoundary={moveVideoCharacterBoundary} onAddText={(kind) => addTextElement(kind)} onAddVideo={() => void openVideoLibrary()} onChangeTrackSettings={(id, settings) => changeScene((studio) => ({ ...studio, videoTimeline: { ...videoTimelineFor(studio), trackSettings: { ...videoTimelineFor(studio).trackSettings, [id]: settings } }, updatedAt: new Date().toISOString() }))} onSetCharacterAnimationsEnabled={(enabled) => changeScene((studio) => ({ ...studio, videoTimeline: { ...videoTimelineFor(studio), animateCharacterTransitions: enabled }, updatedAt: new Date().toISOString() }))} onMoveCharacterTrack={moveVideoCharacterTrack} onSetCharacterPositionsLocked={setCharacterPositionsLocked} onChangeDuration={(durationFrames) => changeScene((studio) => ({ ...studio, videoTimeline: { ...videoTimelineFor(studio), durationFrames, playheadFrame: Math.min(videoPlayheadFrame, durationFrames) }, updatedAt: new Date().toISOString() }))} />}
+        {exportDialogOpen && !fullView && <div className="video-export-modal-backdrop" onPointerDown={(event) => { if (event.target === event.currentTarget && !exportPreparing) setExportDialogOpen(false) }}>
+          <section className="video-export-modal" role="dialog" aria-modal="true" aria-labelledby="video-export-title">
+            <header><span><small>EXPORTAÇÃO</small><h2 id="video-export-title">Exportar vídeo</h2></span><button type="button" onClick={() => setExportDialogOpen(false)} disabled={exportPreparing}>×</button></header>
+            {!exportProgress || ['done', 'failed', 'cancelled'].includes(exportProgress.stage) ? <>
+              <p>Escolha como os personagens serão renderizados. Vídeos importados e áudio permanecem normais nos dois modos.</p>
+              <div className="video-export-mode-grid">
+                <button type="button" className={exportVariant === 'animated' ? 'active' : ''} onClick={() => setExportVariant('animated')}>
+                  <strong>Completo</strong><span>Transições, piscadas e boca automática.</span>
+                </button>
+                <button type="button" className={exportVariant === 'static-characters' ? 'active' : ''} onClick={() => setExportVariant('static-characters')}>
+                  <strong>Sem animações</strong><span>Mantém poses/expressões authored como cortes, sem microanimações.</span>
+                </button>
+              </div>
+              {exportProgress?.stage === 'done' && <p className="video-export-success">Última exportação concluída e verificada.</p>}
+              {exportProgress?.stage === 'failed' && <p className="video-studio-error-message">{exportProgress.message}</p>}
+              <footer>
+                {exportProgress?.stage === 'done' && <button type="button" onClick={() => void window.desktop.openVideoExportsFolder(activeStudio.id)}>Abrir pasta</button>}
+                <button type="button" className="primary" disabled={exportPreparing} onClick={() => void startVideoExport()}>{exportPreparing ? 'Preparando…' : 'Exportar'}</button>
+              </footer>
+            </> : <>
+              <p>{exportProgress.message ?? 'Exportando vídeo…'}</p>
+              <progress max={Math.max(1, exportProgress.totalFrames)} value={exportProgress.completedFrames} />
+              <strong>{exportProgress.completedFrames.toLocaleString('pt-BR')} / {exportProgress.totalFrames.toLocaleString('pt-BR')} frames</strong>
+              <footer><button type="button" className="danger" onClick={() => void cancelVideoExport()}>Cancelar</button></footer>
+            </>}
+          </section>
+        </div>}
         {videoLibraryOpen && <VideoLibraryModal studioTitle={activeStudio.title} locked={videoTimelineFor(activeStudio).trackSettings?.video?.locked === true} onClose={() => setVideoLibraryOpen(false)} onAdd={addLibraryVideos} />}
         {backgroundLibraryOpen && <BackgroundLibraryModal studioTitle={activeStudio.title} onClose={() => setBackgroundLibraryOpen(false)} onUse={addLibraryBackground} />}
         {castPickerOpen && <div className="video-studio-cast-modal-backdrop" onPointerDown={(event) => { if (event.target === event.currentTarget && !savingCast) setCastPickerOpen(false) }}>
