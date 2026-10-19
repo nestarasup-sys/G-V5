@@ -66,7 +66,7 @@ Condições de falha:
 4. **Frames de vídeo**: overlay por PTS, clip start/end, B-frame/VFR/source rotation, blend, z-order.
 5. **Output codificado**: comparar H.264 decodificado contra referência pré-codec, PSNR/SSIM por ROI como métricas auxiliares (não substituem busca de glitch único). Mapear perdas esperadas de compressão; não usar apenas SSIM médio.
 6. **Audio**: PCM após decode, onset de click e offset por stream; comparar energia por janela e limites de clipping; AAC introduz latency/encoder delay que precisa ser contabilizada. Testar sample rate e downmix.
-7. **Mux**: ffprobe completo, decode do output inteiro e timestamps monotônicos com contagem N. \`-count_frames\` pode ser usado em sondagem, mas confirmar com decode real da fixture.
+7. **Mux**: ffprobe completo, decode do output inteiro e timestamps monotônicos com contagem N. `-count_frames` pode ser usado em sondagem, mas confirmar com decode real da fixture.
 
 Casos obrigatórios de regressão: frames 0/1/N-1, 14 amostras internas de transição quando aplicável, começo/meio/fim de blink, boca fala/fim, gap boundaries, duas falas simultâneas, projeto sem background, imagem transparente, vídeo cropped/rotated, clip out-of-range (preflight falha), silêncio inicial/final, cancel.
 
@@ -96,7 +96,7 @@ Casos obrigatórios de regressão: frames 0/1/N-1, 14 amostras internas de trans
 | G5 — Product performance | cold/warm medido, p95 preview/seek, memória, política HW | PC alvo 5/30/90/180/900s | não executado |
 | G6 — Distribuição | empacotamento, licença/BOM, Windows clean install | PC alvo + pipeline build | não executado |
 
-O workflow \`.github/workflows/video-export-synthetic.yml\` só cobre parte de G0. Sua existência/sucesso histórico não prova G1-G6.
+O workflow `.github/workflows/video-export-synthetic.yml` só cobre parte de G0. Sua existência/sucesso histórico não prova G1-G6.
 
 ## 7. Scorecard para adoção de bibliotecas (sem dar nota antes do teste)
 
@@ -123,7 +123,7 @@ Limiar de adoção para otimização adicional (política inicial, revisável ap
 
 ## 9. Guia de relatório de benchmark
 
-\`\`\`text
+```text
 Date / commit / fixture / durationFrames / platform / build / GPU driver
 Candidate / settings / codec / quality target / fps
 Run1 cold: wall/preflight/raster/decode/readback/encode/mux/verify, peakRSS/VRAM
@@ -134,11 +134,11 @@ Audio: stream, sample rate, expected click, measured click, offset
 Reliability: cancel/crash/recovery, temp clean, output atomic
 Licence/BOM: FFmpeg config and dependencies
 Recommendation: promote / keep spike / reject + evidence + rollback
-\`\`\`
+```
 
 ## 10. Benchmarks V4 são histórico, não predição
 
-A documentação V4 \`docs/EXPORT_V5_STATUS_2026-09-21.md\` relata no V4 180s a 30 FPS, export interno 54.377s warm com 2 chunks e 3.310× realtime em cenário específico. O V5 tem 60 FPS, geometria/personagens/mídia distintos e não foi benchmarkado com essa nova arquitetura. Não extrapolar \`2x\`, \`3x\`, nem comparar msec V4 com V5 como se fossem mesma workload.
+A documentação V4 `docs/EXPORT_V5_STATUS_2026-09-21.md` relata no V4 180s a 30 FPS, export interno 54.377s warm com 2 chunks e 3.310× realtime em cenário específico. O V5 tem 60 FPS, geometria/personagens/mídia distintos e não foi benchmarkado com essa nova arquitetura. Não extrapolar `2x`, `3x`, nem comparar msec V4 com V5 como se fossem mesma workload.
 
 ## 11. Artefatos e privacidade
 
