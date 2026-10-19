@@ -15,6 +15,6 @@
 ## Dados e qualidade
 - Dados pessoais, perfis, bibliotecas privadas, imagens, backups e relatórios reais **não entram em Git, logs remotos ou CI**. Para validação privada, exija cópia isolada, backup/hash conferido e rollback. Nunca teste destrutivamente no perfil original.
 - Use fixtures sintéticas nas auditorias remotas. Não afrouxe assertions, tolerâncias ou status para conseguir testes verdes.
-- Execute testes aplicáveis antes de concluir: `npm test`, `npm run typecheck`, `npm run build`, `npm run audit:boundaries:gate`, `npm run audit:all` (Windows/Electron quando requerido). CI em Linux e Windows deve aprovar o **mesmo SHA**.
-- CI obrigatória: workflow em `.github/workflows/dev-ai-foundation.yml` acompanha pushes na `master-desenvolvimento` e na `master` e PRs para ambas. Exigir aprovação Linux/Windows **no mesmo SHA atual**, não de runs antigos.
+- DEV AI e auditorias DEV AI foram desativados a pedido do usuário: não restaurar workflows nem comandos automáticos, não iniciar `audit:all` e não executar o runner. `npm test` cobre somente os testes locais de migração de dados e geometria do personagem.
+- Para alterações funcionais, execute os testes locais aplicáveis, typecheck e build. Não rode auditorias completas sem novo pedido explícito do usuário.
 - Faça commits pequenos e relatórios objetivos: arquivos, comportamento, comandos, resultado, SHA, riscos, limitações e pendências. Atualize o roadmap sem marcar cobertura parcial como concluída.

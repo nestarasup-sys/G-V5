@@ -300,8 +300,7 @@ async function main(argv = process.argv.slice(2)) {
 }
 
 if (require.main === module) {
-  main().then(code => { process.exitCode = code })
-    .catch(error => { console.error('DEV AI baseline:', error.message); process.exitCode = 1 })
+  console.log('Auditorias DEV AI desativadas neste projeto por solicitação do usuário.')
 }
 
 module.exports = { ROOT, parseArgs, within, assertSafeOutputRoot, safeEnvironment, cleanOutput, npmCommand, runCommand, main }
