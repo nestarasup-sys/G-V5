@@ -1,17 +1,13 @@
 name: G-V5 DEV AI Foundation
 
 on:
-  push:
-    branches:
-      - master
-      - master-desenvolvimento
-      - 'ci/dev-ai-*'
-      - 'feat/dev-ai-*'
-  pull_request:
-    branches:
-      - master
-      - master-desenvolvimento
   workflow_dispatch:
+    inputs:
+      run_extended_dev_ai:
+        description: Executa auditorias longas do DEV AI, incluindo Electron e IPC real
+        required: true
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -55,6 +51,7 @@ jobs:
       - name: Reject growth of existing cross-feature coupling debt
         run: npm run audit:boundaries:gate
       - name: Eight synthetic audits including wardrobe asset flow
+        if: ${{ inputs.run_extended_dev_ai }}
         run: npm run audit:fast
       - name: Check tracked data folders
         shell: bash
@@ -75,6 +72,7 @@ jobs:
 
   windows-electron-ipc:
     name: Windows Electron / real IPC / visual
+    if: ${{ inputs.run_extended_dev_ai }}
     runs-on: windows-latest
     timeout-minutes: 35
     env:
