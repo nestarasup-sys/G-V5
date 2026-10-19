@@ -48,6 +48,8 @@ on:
       - 'electron/videoExportSurfaceHost.ts'
       - 'electron/videoExportCoordinator.ts'
       - 'electron/preload.ts'
+      - 'electron/videoExportPreload.ts'
+      - 'electron.vite.config.ts'
       - 'electron/main.ts'
       - 'tests/video-export-*.test.cjs'
       - 'tests/video-scene-ir.test.cjs'
