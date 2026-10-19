@@ -19,6 +19,7 @@ import { isValidVideoAudioSettings } from '../src/shared/videoAudio'
 import { VideoLibraryStore, configureVideoLibraryStorage } from './videoLibrary'
 import { VideoBackgroundLibraryStore, configureBackgroundLibraryStorage } from './backgroundLibrary'
 import { VideoExportLibrary } from './videoExports'
+import { VideoExportJobStore } from './videoExportJobs'
 import { DataPlatform, getAppDataUsage } from './dataPlatform.cjs'
 import { DomainFileSystem } from './domainFileSystem.cjs'
 import { DataMigrationService } from './dataMigration.cjs'
@@ -30,6 +31,7 @@ import { normalizeImageBuffer } from './imageIngestion.cjs'
 
 let configuredAppDataRoot: string | null = null
 let videoExportLibrary: VideoExportLibrary | null = null
+let videoExportJobStore: VideoExportJobStore | null = null
 
 function configureDevAiDataRoot(): void {
   const privateCopyTest = process.env.GACHA_DEV_AI_PRIVATE_TEST === '1'
@@ -2582,6 +2584,11 @@ function registerVideoAssetProtocol(): void {
           const candidatePath = join(folder, `${parts[1]}.${candidate}`)
           try { await access(candidatePath); path = candidatePath; extension = candidate; break } catch { /* try next extension */ }
         }
+      } else if (url.hostname === 'export-job' && parts.length === 2 && parts.every((part) => uuid.test(part))) {
+        if (!videoExportJobStore) return new Response('Export job unavailable', { status: 503 })
+        const media = await videoExportJobStore.resolvePinnedMedia(parts[0], parts[1])
+        path = media.path
+        extension = media.extension
       }
       if (!path || !extension) return new Response('Not found', { status: 404 })
       path = await dataFileSystem.resolvePhysicalPath(path) ?? path
@@ -2807,6 +2814,9 @@ app.whenReady().then(async () => {
     })
     session.defaultSession.setPermissionRequestHandler((_contents, _permission, callback) => callback(false))
   }
+  videoExportLibrary ??= new VideoExportLibrary(app.getPath('appData'))
+  videoExportJobStore ??= new VideoExportJobStore(videoExportLibrary.jobRoot, (studioId, asset) =>
+    videoLibrary.resolveProjectMediaDependency(studioId, asset.id, asset))
   registerVideoAssetProtocol()
   registerVideoBackgroundProtocol()
   await registerFabricatorHandlers()
