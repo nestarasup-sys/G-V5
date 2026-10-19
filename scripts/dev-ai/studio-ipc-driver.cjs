@@ -350,7 +350,10 @@ async function seed(window) {
   const storedB = persistedActors.find(character => character.id === actorB.id)
   assert.equal(storedA.customization.wardrobeGroups[0].offsetX, 12)
   assert.equal(storedA.customization.wardrobeGroups[0].rotation, 8)
-  assert.deepEqual(storedB.customization, actorB.customization,
+  // Electron IPC structured clone may materialize optional undefined fields.
+  // Compare persistent JSON values, not JS object property-presence quirks.
+  assert.deepEqual(JSON.parse(JSON.stringify(storedB.customization)),
+    JSON.parse(JSON.stringify(actorB.customization)),
     'Alteração de ajuste no personagem A contaminou personagem B')
   assert.equal(treeHash(fabricatorRoot), fabricatorBeforeCharacterSave,
     'Salvar personagem no Customizador modificou a biblioteca Fabricador Dev')
