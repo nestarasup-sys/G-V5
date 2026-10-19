@@ -232,6 +232,24 @@ export type VideoBackgroundLibraryItem = {
   studios: Array<{ id: string; title: string }>
 }
 
+export type VideoExportRecord = {
+  schemaVersion: 1
+  id: string
+  studioId: string
+  studioTitle: string
+  filename: string
+  sizeBytes: number
+  sha256: string
+  width: 1920
+  height: 1080
+  frameRate: 60
+  durationFrames: number
+  videoCodec: 'h264'
+  audioCodec: 'aac' | null
+  createdAt: string
+  available: boolean
+}
+
 /** A segment owns both its editable Studio properties and its composed artwork. */
 export type VideoCharacterState = { element: StudioElement; imageDataUrl: string }
 
@@ -264,4 +282,7 @@ export type VideoStudioDesktopApi = {
   attachVideoBackground: (studioId: string, id: string) => Promise<StudioAsset>
   saveVideoStudioPrint: (studioId: string, dataUrl: string) => Promise<string | null>
   openVideoStudioPrints: (studioId: string) => Promise<void>
+  listVideoExports: () => Promise<VideoExportRecord[]>
+  openVideoExportsFolder: (studioId?: string) => Promise<void>
+  deleteVideoExport: (id: string) => Promise<void>
 }

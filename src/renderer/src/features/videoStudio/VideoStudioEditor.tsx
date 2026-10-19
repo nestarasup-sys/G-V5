@@ -6,6 +6,7 @@ import { CharacterPortrait } from '../../ui/components/CharacterPortrait'
 import { resolveStudioTalkMouthId, videoCharacterTrackColor } from '../../../../shared/studio'
 import { fitStudioCharacterToStage } from '../../../../shared/studioCharacterGeometry'
 import type { StudioAsset, StudioDocument, StudioElement, StudioFaceMode, StudioFaceTransform, StudioFaceTransforms, VideoAudioSettings, VideoMediaClip, VideoTimelineDocument } from '../../../../shared/studio'
+import { automaticBlinkFrameFor, resolveVideoFrameSelection } from '../../../../shared/videoFrame'
 import { defaultVideoTransform, editVideoMediaClip, isValidVideoMediaClip, splitVideoMediaClip as splitMediaClip } from '../../../../shared/videoMedia'
 import { faceRenderGeometry, trimTransparentImage, type TrimmedImage } from './characterGeometry'
 import { useCharacterTransitions } from './useCharacterTransitions'
@@ -333,6 +334,7 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
   const selectedStudio = studios.find((studio) => studio.id === selectedId) ?? null
   const activeStudio = studios.find((studio) => studio.id === activeStudioId) ?? null
   const videoPreviewFrame = Math.min(videoPlayheadFrame, Math.max(0, (activeStudio?.videoTimeline?.durationFrames ?? 1) - 1))
+  const videoFrameSelection = isVideoWorkspace && activeStudio ? resolveVideoFrameSelection(videoTimelineFor(activeStudio), videoPreviewFrame) : null
   useEffect(() => {
     onEditorActiveChange?.(isVideoWorkspace && Boolean(activeStudio))
   }, [isVideoWorkspace, activeStudioId, Boolean(activeStudio), onEditorActiveChange])
@@ -414,10 +416,7 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
     setAutomaticBlinkPreview({})
     if (!activeStudio || !isVideoWorkspace || !videoPlaying || !automaticBlinkTargets.length) return
     let cancelled = false
-    let nextBlinkTimer = 0
-    let blinkEndTimer = 0
-
-    const beginBlinkCycle = async () => {
+    const renderBlinkFrames = async () => {
       try {
         let frames = automaticBlinkFrameCacheRef.current?.signature === automaticBlinkSignature
           ? automaticBlinkFrameCacheRef.current.frames
@@ -455,47 +454,25 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
           automaticBlinkFrameCacheRef.current = { signature: automaticBlinkSignature, frames }
         }
         if (cancelled || !frames.length) return
-        const shuffleFrames = (source: typeof frames) => {
-          const shuffled = [...source]
-          for (let index = shuffled.length - 1; index > 0; index--) {
-            const swapIndex = Math.floor(Math.random() * (index + 1))
-            ;[shuffled[index], shuffled[swapIndex]] = [shuffled[swapIndex], shuffled[index]]
-          }
-          return shuffled
-        }
-        const countForCadence = Math.min(frames.length, 10)
-        const nextBlinkGap = () => Math.max(40, (3200 + Math.random() * 1800) / countForCadence - 120)
-        let blinkOrder = shuffleFrames(frames)
-        let nextCharacterIndex = 0
-        let blinkGap = nextBlinkGap()
-        const blink = () => {
-          if (cancelled) return
-          if (nextCharacterIndex >= blinkOrder.length) {
-            blinkOrder = shuffleFrames(frames!)
-            nextCharacterIndex = 0
-            blinkGap = nextBlinkGap()
-          }
-          const frame = blinkOrder[nextCharacterIndex++]
-          setAutomaticBlinkPreview({ [frame.elementId]: { dataUrl: frame.dataUrl, geometry: frame.geometry } })
-          blinkEndTimer = window.setTimeout(() => {
-            setAutomaticBlinkPreview({})
-            nextBlinkTimer = window.setTimeout(blink, blinkGap)
-          }, 120)
-        }
-        nextBlinkTimer = window.setTimeout(blink, blinkGap)
       } catch {
           // Auto blink is an optional playback effect and must not interrupt the video preview.
       }
     }
-
-    void beginBlinkCycle()
+    void renderBlinkFrames()
     return () => {
       cancelled = true
-      window.clearTimeout(nextBlinkTimer)
-      window.clearTimeout(blinkEndTimer)
       setAutomaticBlinkPreview({})
     }
   }, [activeStudio?.id, automaticBlinkSignature, availableCharacters, isVideoWorkspace, videoPlaying])
+  useEffect(() => {
+    if (!isVideoWorkspace || !videoPlaying || automaticBlinkFrameCacheRef.current?.signature !== automaticBlinkSignature) {
+      setAutomaticBlinkPreview({})
+      return
+    }
+    const frames = automaticBlinkFrameCacheRef.current.frames
+    const active = frames.find((item) => automaticBlinkFrameFor(videoPreviewFrame, item.elementId, 60))
+    setAutomaticBlinkPreview(active ? { [active.elementId]: { dataUrl: active.dataUrl, geometry: active.geometry } } : {})
+  }, [automaticBlinkSignature, isVideoWorkspace, videoPlaying, videoPreviewFrame])
   useEffect(() => {
     if (!activeStudio || !isVideoWorkspace || !automaticMouthTargets.length) {
       setAutomaticMouthPreview({})
@@ -2358,8 +2335,8 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
           <div className="video-studio-scene-canvas" ref={sceneRef} style={{ backgroundColor: activeStudio.backgroundColor }} onPointerDown={() => { if (!fullView) setSelectedElementId(null) }}>
             {backgroundAsset && <img className={`video-studio-canvas-background${selectedElementId === 'background' && !fullView ? ' selected' : ''}`} src={backgroundAsset.dataUrl} alt="" style={imageStyle(activeStudio.backgroundX, activeStudio.backgroundY, activeStudio.backgroundWidth, activeStudio.backgroundHeight, activeStudio.backgroundRotation)} onPointerDown={(event) => startDrag(event, 'background')} onPointerMove={moveDrag} onPointerUp={endDrag} onPointerCancel={endDrag} />}
             {[...activeStudio.elements].sort((a, b) => a.zIndex - b.zIndex).map((sourceElement) => {
-              if (isVideoWorkspace && sourceElement.kind === 'character' && videoTimelineFor(activeStudio).characterGaps?.some((gap) => gap.elementId === sourceElement.id && gap.startFrame <= videoPreviewFrame && videoPreviewFrame < gap.endFrame)) return null
-              if (isVideoWorkspace && (sourceElement.kind === 'speech' || sourceElement.kind === 'thought') && !videoTimelineFor(activeStudio).textClips.some((clip) => clip.elementId === sourceElement.id && clip.startFrame <= videoPreviewFrame && videoPreviewFrame < clip.endFrame)) return null
+              if (videoFrameSelection && sourceElement.kind === 'character' && videoFrameSelection.hiddenCharacterIds.has(sourceElement.id)) return null
+              if (videoFrameSelection && (sourceElement.kind === 'speech' || sourceElement.kind === 'thought') && !videoFrameSelection.textClipByElementId.has(sourceElement.id)) return null
               const transitionState = characterAnimation.samples.get(sourceElement.id)
               const playbackState = transitionState ?? videoPlaybackStates?.get(sourceElement.id)
               const mouthAnimation = sourceElement.kind === 'character' && !transitionState ? automaticMouthPreview[sourceElement.id] : undefined
@@ -2373,7 +2350,7 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
                 : 0
               const automaticMouthState = mouthAnimation?.frames[mouthFrameIndex]
               const blinkState = sourceElement.kind === 'character' && !transitionState && !automaticMouthState ? automaticBlinkPreview[sourceElement.id] : undefined
-              const activeTextClip = isVideoWorkspace && videoPlaying ? videoTimelineFor(activeStudio).textClips.find((clip) => clip.elementId === sourceElement.id && clip.startFrame <= videoPreviewFrame && videoPreviewFrame < clip.endFrame) : undefined
+              const activeTextClip = videoFrameSelection?.textClipByElementId.get(sourceElement.id)
               const playbackElement = playbackState?.element ?? activeTextClip?.state ?? sourceElement
               const faceGeometry = automaticMouthState?.geometry ?? blinkState?.geometry
               const blinkedElement = faceGeometry && playbackElement.kind === 'character' ? { ...playbackElement, ...faceGeometry } : playbackElement
@@ -2390,8 +2367,7 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
             })}
             {isVideoWorkspace && (() => {
               const timeline = videoTimelineFor(activeStudio)
-              return (timeline.videoClips ?? []).filter((item) => item.startFrame <= videoPreviewFrame && videoPreviewFrame < item.endFrame)
-                .map((clip) => <VideoStudioClipPreview key={clip.id} studioId={activeStudio.id} clip={clip} playheadFrame={videoPreviewFrame} playing={videoPlaying} masterAudio={timeline.videoAudio} onPlaybackError={setError} selected={!fullView && selectedElementId === `video:${clip.id}`} editable={!fullView && !timeline.trackSettings?.video?.locked} onSelect={() => { if (fullView) return; setVideoPlaying(false); setSelectedElementId(`video:${clip.id}`); setActiveTool(null); setInspectorOpen(true); setInspectorTab('editor') }} onBeginEdit={recordHistory} onTransform={(transform) => updateVideoMediaClip({ ...clip, transform }, false)} />)
+              return (videoFrameSelection?.videoClips ?? []).map((clip) => <VideoStudioClipPreview key={clip.id} studioId={activeStudio.id} clip={clip} playheadFrame={videoPreviewFrame} playing={videoPlaying} masterAudio={timeline.videoAudio} onPlaybackError={setError} selected={!fullView && selectedElementId === `video:${clip.id}`} editable={!fullView && !timeline.trackSettings?.video?.locked} onSelect={() => { if (fullView) return; setVideoPlaying(false); setSelectedElementId(`video:${clip.id}`); setActiveTool(null); setInspectorOpen(true); setInspectorTab('editor') }} onBeginEdit={recordHistory} onTransform={(transform) => updateVideoMediaClip({ ...clip, transform }, false)} />)
             })()}
             {!fullView && <span className="video-studio-scene-title">{activeStudio.title}</span>}
           </div>

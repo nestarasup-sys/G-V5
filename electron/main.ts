@@ -18,6 +18,7 @@ import { isValidVideoMediaClip } from '../src/shared/videoMedia'
 import { isValidVideoAudioSettings } from '../src/shared/videoAudio'
 import { VideoLibraryStore, configureVideoLibraryStorage } from './videoLibrary'
 import { VideoBackgroundLibraryStore, configureBackgroundLibraryStorage } from './backgroundLibrary'
+import { VideoExportLibrary } from './videoExports'
 import { DataPlatform, getAppDataUsage } from './dataPlatform.cjs'
 import { DomainFileSystem } from './domainFileSystem.cjs'
 import { DataMigrationService } from './dataMigration.cjs'
@@ -28,6 +29,7 @@ import { migrateElectronProfile } from './electronProfileMigration.cjs'
 import { normalizeImageBuffer } from './imageIngestion.cjs'
 
 let configuredAppDataRoot: string | null = null
+let videoExportLibrary: VideoExportLibrary | null = null
 
 function configureDevAiDataRoot(): void {
   const privateCopyTest = process.env.GACHA_DEV_AI_PRIVATE_TEST === '1'
@@ -1810,6 +1812,21 @@ async function registerFabricatorHandlers(): Promise<void> {
     })
 
     if (workspace === 'video') {
+      videoExportLibrary ??= new VideoExportLibrary(app.getPath('appData'))
+      ipcMain.handle('video-studio:exports:list', async (event) => {
+        assertTrustedSender(event)
+        return videoExportLibrary!.list()
+      })
+      ipcMain.handle('video-studio:exports:open-folder', async (event, studioId?: string) => {
+        assertTrustedSender(event)
+        const folder = await videoExportLibrary!.folder(studioId)
+        const error = await shell.openPath(folder)
+        if (error) throw new Error(`Não foi possível abrir a pasta de exportações: ${error}`)
+      })
+      ipcMain.handle('video-studio:exports:delete', async (event, id: string) => {
+        assertTrustedSender(event)
+        await videoExportLibrary!.delete(id)
+      })
       ipcMain.handle('video-studio:video-library:list', async (event) => { assertTrustedSender(event); return videoLibrary.list() })
       ipcMain.handle('video-studio:video-library:import', async (event) => {
         assertTrustedSender(event)

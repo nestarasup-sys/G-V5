@@ -95,7 +95,10 @@ const videoStudioApi: VideoStudioDesktopApi = {
   deleteVideoBackground: (id) => ipcRenderer.invoke('video-studio:background-library:delete', id),
   attachVideoBackground: (studioId, id) => ipcRenderer.invoke('video-studio:background-library:attach', studioId, id),
   saveVideoStudioPrint: (studioId, dataUrl) => ipcRenderer.invoke('video-studio:save-print', studioId, dataUrl),
-  openVideoStudioPrints: (studioId) => ipcRenderer.invoke('video-studio:open-prints', studioId)
+  openVideoStudioPrints: (studioId) => ipcRenderer.invoke('video-studio:open-prints', studioId),
+  listVideoExports: () => ipcRenderer.invoke('video-studio:exports:list'),
+  openVideoExportsFolder: (studioId) => ipcRenderer.invoke('video-studio:exports:open-folder', studioId),
+  deleteVideoExport: (id) => ipcRenderer.invoke('video-studio:exports:delete', id)
 }
 
 contextBridge.exposeInMainWorld('desktop', {
