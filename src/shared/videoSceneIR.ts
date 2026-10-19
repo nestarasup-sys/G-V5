@@ -29,7 +29,7 @@ export type EvaluatedCharacter = Readonly<{
   authoredState?: VideoCharacterState
   /** Applied after pose interpolation, matching the current Video Studio stage transform. */
   stageTransform?: Partial<StudioElement>
-  transition?: Readonly<{ from: VideoCharacterState; to: VideoCharacterState; progress: number; easedProgress: number }>
+  transition?: Readonly<{ startFrame: number; boundaryFrame: number; from: VideoCharacterState; to: VideoCharacterState; progress: number; easedProgress: number }>
   automaticMouth?: Readonly<{ mode: 'talk' | 'idle'; speechStartFrame: number }>
   automaticBlink: boolean
 }>
@@ -96,7 +96,7 @@ function activeTransition(program: VideoSceneProgram, elementId: string, frame: 
   if (!transition) return undefined
   if (frame <= transition.startFrame) return undefined
   const progress = Math.max(0, Math.min(1, (frame - transition.startFrame) / (transition.boundaryFrame - transition.startFrame)))
-  return { from: transition.from, to: transition.to, progress, easedProgress: progress * progress * (3 - 2 * progress) }
+  return { startFrame: transition.startFrame, boundaryFrame: transition.boundaryFrame, from: transition.from, to: transition.to, progress, easedProgress: progress * progress * (3 - 2 * progress) }
 }
 
 function activeMouthModes(activeText: ReadonlyArray<Timeline['textClips'][number]>, frame: number, elementsById: ReadonlyMap<string, StudioElement>) {
