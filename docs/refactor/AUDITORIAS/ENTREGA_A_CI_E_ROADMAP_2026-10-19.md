@@ -21,11 +21,11 @@ Entrega **documental e de CI** realizada na branch `master-desenvolvimento`, ini
 
 ## Aceites e limitações
 
-- [ ] Verificar que `master-desenvolvimento` foi atualizada e `master` continua em `3b70ceef`.
-- [ ] Verificar que o evento `push` disparou o workflow para o **novo SHA** da branch permanente.
-- [ ] Confirmar job Linux **success** (incluindo build explícito) e Windows **success** no mesmo SHA.
-- [ ] Confirmar nenhum dado privado rastreado / upload; apenas fixtures sintéticas.
-- [ ] Registrar qualquer falha do novo SHA antes de declarar a entrega aprovada.
+- [x] `master-desenvolvimento` recebeu `79b2bfcd4d46ac02ed59985f91e2dfd40b667d30`; `master` permaneceu em `3b70ceefc7f6cea5f32e87ccdf642bab0294bd94`.
+- [x] Evento **`push`** disparou automaticamente [GitHub Actions #39200662149](https://github.com/nestarasup-sys/G-V5/actions/runs/39200662149) para o SHA `79b2bfcd`.
+- [x] Linux **success** (`npm test`, `typecheck`, `npm run build` explícito, AST/gate e `audit:fast`) e Windows **success** (`npm test`, `audit:all`, Electron/IPC real) no mesmo SHA `79b2bfcd`.
+- [x] Verificação da árvore Git: nenhum caminho rastreado sob `app-data/`, `out/`, `node_modules/` ou `.env*`. Os artefatos publicados foram os sintéticos `dev-ai-unit-39200662149-1` e `dev-ai-windows-39200662149-1`; não há perfil privado envolvido.
+- [x] Nenhuma falha encontrada nos dois jobs. A aprovação documentada é **específica de `79b2bfcd`** e deve ser repetida após qualquer commit, inclusive este registro documental.
 
 **Não incluído:** mudança de comportamento de roupas/poses, migração de dados, proteção administrativa do GitHub Branch Rules, benchmarks ou fecho de matrizes AF-01..20 / ISO-01..15. Os 38 `R-xx` permanecem formalmente abertos até a evidência específica de cada um. O relato manual confirma um cenário, mas **não comprova** o fluxo inteiro Fabricador → Customizador → Studios, criação por UI, recuperação, assets legados ou save/restart.
 
