@@ -405,7 +405,7 @@ async function seed(window) {
   const syntheticGarmentId = rasterFixture.SET_ID
   const actorWithFittedGarment = {
     ...actorA, customization: {
-      ...actorA.customization,
+      ...actorA.customization, modelSlot:9,poseSlot:1,
       wardrobeGroups: [{
         modelSlot: 9, setId: syntheticGarmentId, category: 'sapato',
         componentId: 'shoe-left', offsetX: 12, offsetY: -5,
@@ -413,6 +413,10 @@ async function seed(window) {
       }]
     }
   }
+  const siblingSameModel = {
+    ...actorB, customization: { ...actorB.customization, modelSlot:9,poseSlot:1 }
+  }
+  await api(`window.desktop.saveCustomizerCharacter(${JSON.stringify(siblingSameModel)})`)
   await api(`window.desktop.saveCustomizerCharacter(${JSON.stringify(actorWithFittedGarment)})`)
   const persistedActors = await api('window.desktop.listCustomizerCharacters()')
   assert.equal(persistedActors.length, charactersBefore.length + 2)
@@ -423,7 +427,7 @@ async function seed(window) {
   // Electron IPC structured clone may materialize optional undefined fields.
   // Compare persistent JSON values, not JS object property-presence quirks.
   assert.deepEqual(JSON.parse(JSON.stringify(storedB.customization)),
-    JSON.parse(JSON.stringify(actorB.customization)),
+    JSON.parse(JSON.stringify(siblingSameModel.customization)),
     'Alteração de ajuste no personagem A contaminou personagem B')
   assert.equal(treeHash(fabricatorRoot), fabricatorBeforeCharacterSave,
     'Salvar personagem no Customizador modificou a biblioteca Fabricador Dev')
@@ -435,7 +439,7 @@ async function seed(window) {
     saveLatencyMs: { studio: summarizeSamples(saveLatency.studio), videoStudio: summarizeSamples(saveLatency.videoStudio),
       fixture: 'documento sintético sem assets, 1 elemento de dados; IPC real + escrita local confirmada' },
     customizerCharacterOwnership: {
-      charactersCreated: 2, updatedCharacters: 1, siblingCustomizationUnchanged: true,
+      charactersCreated: 2, updatedCharacters: 2, siblingCustomizationUnchanged: true,
       fabricatorLibraryHashUnchanged: true, testedReference: 'persisted raster wardrobe v2, full renderer golden pending',
       rasterSourceSheetSha256: rasterEvidence.sourceSheetSha256
     },
@@ -493,6 +497,7 @@ async function verifyRestart(window) {
   assert.equal(fitted?.customization.wardrobeGroups?.[0]?.setId,rasterFixture.SET_ID)
   assert.equal((await window.webContents.executeJavaScript('window.desktop.loadFabricatorPose(9,1)'))?.parts.length,10)
   assert.equal(fitted?.customization.wardrobeGroups?.[0]?.rotation, 8)
+  assert.equal(unchanged?.customization.modelSlot, 9)
   assert.deepEqual(unchanged?.customization.wardrobeGroups ?? [], [],
     'Após restart, personagem B herdou alterações do personagem A')
   const result = { mode, status: 'passed', adapter: 'production-preload-real-ipc', realIpcCovered: true,
