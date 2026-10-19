@@ -90,6 +90,29 @@ const nonexistent = [{ ...equipped[0], componentId: 'missing' }]
 assert.ok(validateWardrobeFlow(set, source, pose, nonexistent).issues.some(x => x.code === 'missing-component'))
 assert.ok(validateWardrobeFlow(set, source, { ...pose, sourceModelSlot: 2 }, equipped).issues.some(x => x.code === 'model-slot-mismatch'))
 assert.ok(validateWardrobeFlow(set, source, { ...pose, sourceModelUpdatedAt: 'changed' }, equipped).issues.some(x => x.code === 'model-revision-mismatch'))
+const incompatibleLegacy = {
+  schemaVersion: 1, edition: 2, id: 'legacy-missing-bone', modelSlot: 1,
+  components: [{ ...garment, id: 'legacy-ghost-shoe', attachedPartId: 'ghost-bone',
+    binding: { ...garment.binding, boneId: 'ghost-bone' } }]
+}
+const incompatibleGroup = [{ ...equipped[0], setId: incompatibleLegacy.id, componentId: 'legacy-ghost-shoe' }]
+const incompatibleCheck = validateWardrobeFlow(incompatibleLegacy, source, pose, incompatibleGroup)
+assert.equal(incompatibleCheck.ok, false)
+assert.ok(incompatibleCheck.issues.some(issue => issue.code === 'missing-source-bone'
+  && issue.componentId === 'legacy-ghost-shoe' && issue.boneId === 'ghost-bone'),
+  'Legacy component with no matching original-sheet bone must receive an explicit diagnostic')
+assert.equal(incompatibleLegacy.components[0].attachedPartId, 'ghost-bone',
+  'Validation must not invent a replacement bone for an incompatible legacy component')
+
+// Legacy 1.0 (edition omitted) stays readable as-is; only a selected 2.0 set
+// is converted by the dedicated original-sheet rebase helper.
+const legacyV1 = { schemaVersion: 1, id: 'legacy-v1', modelSlot: 1, width: 1000, height: 1000,
+  components: [garment], updatedAt: '2026-01-01T00:00:00.000Z' }
+assert.equal(rebaseWardrobeSetToOriginalSheet(legacyV1, source), legacyV1,
+  'Opening edition-omitted legacy 1.0 must not migrate it in memory')
+const legacyV1Explicit = { ...legacyV1, edition: 1 }
+assert.equal(rebaseWardrobeSetToOriginalSheet(legacyV1Explicit, source), legacyV1Explicit,
+  'Opening legacy 1.0 must retain the same reference and geometry')
 
 const leftShoe = suggestWardrobeBone('sapato', 250, 1000, source)
 const rightShoe = suggestWardrobeBone('sapato', 750, 1000, source)

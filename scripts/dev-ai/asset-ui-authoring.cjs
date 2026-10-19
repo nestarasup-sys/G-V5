@@ -5,7 +5,7 @@
 // deterministic PNG in the runner sandbox. Never reads local/private media.
 const assert = require('node:assert/strict')
 const { createHash } = require('node:crypto')
-const { writeFile, mkdir, readFile: readFileDisk } = require('node:fs/promises')
+const { writeFile, mkdir, unlink, readFile: readFileDisk } = require('node:fs/promises')
 const { join } = require('node:path')
 const { dialog, nativeImage } = require('electron')
 const fixture = require('./asset-flow-raster-fixture.cjs')
@@ -15,6 +15,7 @@ const CLOTH_NAME = 'dev-ai-ui-clothes.png'
 const INVALID_MODEL_NAME = 'dev-ai-ui-invalid.png'
 const UNSUPPORTED_MODEL_NAME = 'dev-ai-ui-invalid.txt'
 const CHARACTER_NAME = 'DEV AI UI Authored Character'
+const CHARACTER_B_NAME = 'DEV AI UI Independent Character B'
 const pause = (ms) => new Promise(resolve => setTimeout(resolve, ms))
 const hash = (bytes) => createHash('sha256').update(bytes).digest('hex')
 const query = (win, js) => win.webContents.executeJavaScript(js).catch((error) => {
@@ -139,15 +140,58 @@ async function setWardrobeName(win, value) {
   assert.equal(ok, true, 'Wardrobe name input missing')
 }
 
-async function equipCustomizerPanel(win, panelId, componentName, setId, componentIds) {
+async function equipCustomizerPanel(win, actorName, panelId, componentName, setId, componentIds) {
   await click(win, `.customizer-wardrobe-piece-${panelId} button[aria-label^="Abrir biblioteca de"]`,
     'Open Customizer library for ' + panelId)
   await wait(win, 'Boolean(document.querySelector(".customizer-hair-library-grid") && [...document.querySelectorAll(".customizer-hair-library-grid button")].some(button=>button.title===' + JSON.stringify(componentName) + '))',
     'UI-authored candidate available for ' + panelId, 35000)
   const selected = await query(win, '(() => { const button=[...document.querySelectorAll(".customizer-hair-library-grid button")].find(item=>item.title===' + JSON.stringify(componentName) + '); if(!button)return false; button.click(); return true })()')
   assert.equal(selected, true, 'Could not equip Customizer candidate ' + componentName)
-  await wait(win, 'window.desktop.listCustomizerCharacters().then(items=>{const actor=items.find(c=>c.name===' + JSON.stringify(CHARACTER_NAME) + '); return ' + JSON.stringify(componentIds) + '.every(id=>actor?.customization.wardrobeGroups?.some(group=>group.setId===' + JSON.stringify(setId) + ' && group.componentId===id))})',
+  await wait(win, 'window.desktop.listCustomizerCharacters().then(items=>{const actor=items.find(c=>c.name===' + JSON.stringify(actorName) + '); return ' + JSON.stringify(componentIds) + '.every(id=>actor?.customization.wardrobeGroups?.some(group=>group.setId===' + JSON.stringify(setId) + ' && group.componentId===id))})',
     'Customizer saved all expected components for ' + panelId, 45000)
+}
+
+async function createCharacterInUi(win, name) {
+  await click(win, '[aria-label="Adicionar personagem"]', 'Create character ' + name + ' through UI')
+  await wait(win, 'Boolean(document.querySelector("#character-name"))', 'Character form ' + name)
+  await setValue(win, '#character-name', name)
+  await click(win, '.character-dialog button[type=submit]', 'Save character ' + name + ' through UI')
+  await wait(win, '(document.querySelector(".customizer-preview-character-name")?.textContent||"").trim()===' + JSON.stringify(name), 'New character selected: ' + name)
+  await wait(win, 'window.desktop.listCustomizerCharacters().then(items=>items.find(c=>c.name===' + JSON.stringify(name) + ')?.customization.modelSlot===1)', 'Character inherited model 1: ' + name, 30000)
+}
+
+async function equipFullWardrobe(win, actorName, set) {
+  await clickText(win, '.customizer-top-tabs button', 'Roupas', 'Open clothes for ' + actorName)
+  await wait(win, 'Boolean(document.querySelector(".customizer-upper-wardrobe-piece"))', 'Clothes panel for ' + actorName, 25000)
+  await query(win,'(() => { const tab=[...document.querySelectorAll(".customizer-clothes-category-tabs button")].find(button=>button.textContent.includes("Superior")); if(tab?.textContent.includes("2/2"))tab.click(); return true })()')
+  const shirt = set.components.find(component=>component.category==='camisa')
+  await equipCustomizerPanel(win, actorName, 'shirt', shirt.name, set.id, [shirt.id])
+  await clickText(win, '.customizer-clothes-category-tabs button', 'Inferior', 'Open lower clothing for ' + actorName)
+  const pants = set.components.filter(component=>component.category==='calca-coxa'||component.category==='calca-canela')
+  const shoesLeft = set.components.find(component=>component.category==='sapato'&&component.name.includes('esquerda'))
+  const shoesRight = set.components.find(component=>component.category==='sapato'&&component.name.includes('direita'))
+  assert.equal(pants.length, 4)
+  await equipCustomizerPanel(win, actorName, 'pants-left', 'Calça coxa esquerda', set.id, pants.map(component=>component.id))
+  await equipCustomizerPanel(win, actorName, 'shoe-left', shoesLeft.name, set.id, [shoesLeft.id])
+  await equipCustomizerPanel(win, actorName, 'shoe-right', shoesRight.name, set.id, [shoesRight.id])
+  await clickText(win, '.customizer-clothes-category-tabs button', 'Superior', 'Return to upper clothing for ' + actorName)
+  await clickText(win, '.customizer-clothes-category-tabs button', 'Superior', 'Open second upper clothing page for ' + actorName)
+  const gloveLeft = set.components.find(component=>component.category==='luvas'&&component.name.includes('esquerda'))
+  const gloveRight = set.components.find(component=>component.category==='luvas'&&component.name.includes('direita'))
+  await equipCustomizerPanel(win, actorName, 'gloves-left', gloveLeft.name, set.id, [gloveLeft.id])
+  await equipCustomizerPanel(win, actorName, 'gloves-right', gloveRight.name, set.id, [gloveRight.id])
+}
+
+async function selectCharacterInUi(win, name) {
+  await clickText(win, '.character-card', name, 'Select character ' + name)
+  await wait(win, '(document.querySelector(".customizer-preview-character-name")?.textContent||"").trim()===' + JSON.stringify(name), 'Character selected: ' + name)
+}
+
+async function returnToCharacterRoster(win) {
+  if (await query(win,'Boolean(document.querySelector(".customizer-preview-back"))')) {
+    await click(win,'.customizer-preview-back','Return from focused Customizer area to character roster')
+  }
+  await wait(win,'Boolean(document.querySelector(".roster-panel .character-grid"))','Customizer character roster visible')
 }
 
 async function run(win, sandbox, output, prepared, treeHash) {
@@ -381,62 +425,218 @@ async function run(win, sandbox, output, prepared, treeHash) {
   assert.equal(leftGlove.rotation, 4, 'UI rotation of the left glove must be saved')
   assert.equal(treeHash(modelFolder), modelTreeBeforeWardrobe,
     'Publishing clothing must not mutate the original Fabricador model/source files')
-  const sourceHash = treeHash(join(sandbox,'electron-user-data','fabricator'))
+  const sourceHashBeforeLegacy = treeHash(join(sandbox,'electron-user-data','fabricator'))
   phase('wardrobe-ui-file-worker-save', { modelSlot: 1, setId: selected.id,
-    originalModelTreeSha256:modelTreeBeforeWardrobe, fabricatorTreeSha256:sourceHash,
+    originalModelTreeSha256:modelTreeBeforeWardrobe, fabricatorTreeSha256:sourceHashBeforeLegacy,
     components: set.components.map(c=>({ id:c.id, category:c.category, boneId:c.binding.boneId,
       x:c.x, y:c.y, width:c.width, height:c.height, rotation:c.rotation, binding:c.binding,
       imageSha256:hash(Buffer.from(c.dataUrl.split(',')[1],'base64')) })) })
   proof.screenshots.wardrobe = await shot(win, folder, '04-wardrobe-ui')
+  const wardrobeRoot = join(sandbox,'electron-user-data','fabricator','wardrobe','model-1')
+  const legacyBone = modelPartMap.torso
+  const legacyImage = set.components.find(component=>component.category==='camisa').dataUrl
+  const legacyComponent = (id, edition, overrides={}) => ({
+    ...set.components.find(component=>component.category==='camisa'), id,
+    name:`DEV AI ${id}`, attachedPartId:legacyBone.id, dataUrl:legacyImage,
+    ...overrides
+  })
+  const legacyV1Id = 'dev-ai-legacy-v1'
+  const legacyV2Id = 'dev-ai-legacy-v2'
+  const legacyBadBoneId = 'dev-ai-legacy-bad-bone'
+  const missingImageId = 'dev-ai-legacy-missing-image'
+  const v1Component = legacyComponent('legacy-v1-shirt',1)
+  const v2Component = legacyComponent('legacy-v2-shirt',2, {
+    x:legacyBone.x+18,y:legacyBone.y+13,width:legacyBone.width*.72,height:legacyBone.height*.84,rotation:17,
+    originX:legacyBone.x+8,originY:legacyBone.y+5,originWidth:legacyBone.width*.68,originHeight:legacyBone.height*.8,
+    binding:{version:1,boneId:legacyBone.id,boneWidth:legacyBone.width*.8,boneHeight:legacyBone.height*.9,
+      boneRotation:9,localCenterX:.14,localCenterY:-.08,widthRatio:.72,heightRatio:.84,relativeRotation:8}
+  })
+  const badBoneComponent = legacyComponent('legacy-ghost-piece',1, {
+    attachedPartId:'ghost-bone',binding:{version:1,boneId:'ghost-bone',boneWidth:80,boneHeight:60,
+      boneRotation:0,localCenterX:0,localCenterY:0,widthRatio:1,heightRatio:1,relativeRotation:0}
+  })
+  const missingImageComponent = legacyComponent('legacy-missing-piece',1)
+  const legacySet = (id, edition, component) => ({schemaVersion:1,...(edition === 1 ? {edition:1} : {edition:2}),
+    id,modelSlot:1,modelName:model.name,name:`DEV AI legacy ${edition} ${id}`,width:edition===2?720:model.width,
+    height:edition===2?840:model.height,components:[component],updatedAt:'2026-01-01T00:00:00.000Z'})
+  const seedLegacySet = async (id, edition, component) => {
+    const value=legacySet(id,edition,component)
+    const {components,...metadata}=value
+    await api('window.desktop.saveWardrobeSet(1,'+JSON.stringify({...metadata,components:components.map(({dataUrl: _dataUrl,...entry})=>entry)})+','+JSON.stringify([{id:component.id,dataUrl:component.dataUrl}])+')')
+    return value
+  }
+  await seedLegacySet(legacyV1Id,1,v1Component)
+  await seedLegacySet(legacyV2Id,2,v2Component)
+  await seedLegacySet(legacyBadBoneId,1,badBoneComponent)
+  await seedLegacySet(missingImageId,1,missingImageComponent)
+  const missingImagePath=join(wardrobeRoot,`set-${missingImageId}`,'parts',`${missingImageComponent.id}.png`)
+  await unlink(missingImagePath)
+  const legacyBefore = {}
+  for (const id of [legacyV1Id,legacyV2Id,legacyBadBoneId]) legacyBefore[id]=treeHash(join(wardrobeRoot,`set-${id}`))
+  const missingSetRead = await api('window.desktop.loadWardrobeSet(1,'+JSON.stringify(missingImageId)+')')
+  assert.equal(missingSetRead,null,'Missing PNG must return a controlled absent-set result, not a partial garment')
+  const oldV2Read = await api('window.desktop.loadWardrobeSet(1,'+JSON.stringify(legacyV2Id)+')')
+  assert.equal(oldV2Read.edition,2,'Legacy 2.0 must be read without rewriting its stored format')
+  assert.equal(oldV2Read.components[0].id,v2Component.id,'Legacy component ID must remain stable on read')
+  assert.equal(oldV2Read.components[0].binding.boneId,v2Component.binding.boneId,'Valid legacy bone link must persist')
+  await clickText(win,'.fabricator-section-button','Modelos Dev','Leave clothing workspace before reloading legacy fixture catalog')
+  await wait(win,'Boolean(document.querySelector(".fabricator-model-editor"))','Fabricador model workspace reopened')
+  await clickText(win,'.fabricator-section-button','Roupas Dev','Open legacy clothing in unified Roupas Dev')
+  await wait(win,'Boolean(document.querySelector(".wardrobe-workspace .wardrobe-set-row"))','Legacy wardrobe catalog')
+  await clickText(win,'.wardrobe-set-row',legacySet(legacyV1Id,1,v1Component).name,'Open legacy 1.0 fixture')
+  await wait(win,'Boolean(document.querySelector(".wardrobe-set-row.active")?.textContent.includes('+JSON.stringify(legacySet(legacyV1Id,1,v1Component).name)+')&&document.querySelectorAll(".wardrobe-workspace .wardrobe-component-row").length===1)','Legacy 1.0 component shown')
+  assert.equal(treeHash(join(wardrobeRoot,`set-${legacyV1Id}`)),legacyBefore[legacyV1Id],
+    'Opening legacy 1.0 must not auto-publish or mutate its files')
+  await clickText(win,'.wardrobe-set-row',legacySet(legacyV2Id,2,v2Component).name,'Open legacy 2.0 fixture')
+  await wait(win,'Boolean(document.querySelector(".wardrobe-save-state.pending"))','Legacy 2.0 converted in memory and awaits explicit save',35000)
+  assert.equal(treeHash(join(wardrobeRoot,`set-${legacyV2Id}`)),legacyBefore[legacyV2Id],
+    'Opening legacy 2.0 must not auto-publish the original-sheet conversion')
+  assert.equal(treeHash(join(wardrobeRoot,`set-${legacyV1Id}`)),legacyBefore[legacyV1Id],
+    'Opening a different legacy set must not batch-migrate legacy 1.0')
+  proof.screenshots.legacyV2Opened = await shot(win,folder,'07-legacy-v2-opened-before-save')
+  await clickText(win,'.wardrobe-toolbar-actions button','Salvar alterações','Explicitly save the selected legacy 2.0 conversion')
+  await wait(win,'window.desktop.loadWardrobeSet(1,'+JSON.stringify(legacyV2Id)+').then(value=>value?.edition===1)','Explicit legacy save publishes original-sheet format',35000)
+  const convertedLegacy=await api('window.desktop.loadWardrobeSet(1,'+JSON.stringify(legacyV2Id)+')')
+  assert.equal(convertedLegacy.components[0].id,v2Component.id,'Explicit conversion must preserve legacy component ID')
+  assert.equal(convertedLegacy.components[0].binding.boneId,legacyBone.id,'Explicit conversion must preserve valid bone link')
+  assert.notEqual(convertedLegacy.components[0].x,v2Component.x,'Legacy separated-sheet X geometry should rebase to original sheet')
+  assert.notEqual(convertedLegacy.components[0].y,v2Component.y,'Legacy separated-sheet Y geometry should rebase to original sheet')
+  const convertedGeometry={x:convertedLegacy.components[0].x,y:convertedLegacy.components[0].y,
+    width:convertedLegacy.components[0].width,height:convertedLegacy.components[0].height,rotation:convertedLegacy.components[0].rotation}
+  await clickText(win,'.wardrobe-set-row',legacySet(legacyV2Id,2,v2Component).name,'Reopen explicitly converted legacy set')
+  await wait(win,'Boolean(document.querySelector(".wardrobe-set-row.active")?.textContent.includes('+JSON.stringify(legacySet(legacyV2Id,2,v2Component).name)+')&&document.querySelectorAll(".wardrobe-workspace .wardrobe-component-row").length===1&&!document.querySelector(".wardrobe-save-state.pending"))','Reopened original-sheet set is clean',30000)
+  assert.equal(treeHash(join(wardrobeRoot,`set-${legacyV1Id}`)),legacyBefore[legacyV1Id],
+    'Explicitly saving legacy 2.0 must leave legacy 1.0 byte-identical')
+  assert.equal(treeHash(join(wardrobeRoot,`set-${legacyBadBoneId}`)),legacyBefore[legacyBadBoneId],
+    'Explicitly saving another set must leave incompatible legacy set untouched')
+  proof.screenshots.legacyV2Reopened = await shot(win,folder,'08-legacy-v2-explicitly-saved-and-reopened')
+  await clickText(win,'.wardrobe-set-row',legacySet(legacyBadBoneId,1,badBoneComponent).name,'Open incompatible-bone legacy fixture')
+  await wait(win,'document.querySelector(".wardrobe-error[role=alert]")?.innerText.includes("sem vínculo compatível")','Missing bone diagnostic is explicit')
+  proof.screenshots.legacyBadBoneDiagnostic = await shot(win,folder,'09-legacy-incompatible-bone-diagnostic')
+  assert.equal(treeHash(join(wardrobeRoot,`set-${legacyBadBoneId}`)),legacyBefore[legacyBadBoneId],
+    'Incompatible reference diagnosis must preserve the original fixture')
+  await clickText(win,'.wardrobe-set-row',legacySet(missingImageId,1,missingImageComponent).name,'Open fixture with missing component PNG')
+  await wait(win,'document.querySelector(".wardrobe-error[role=alert]")?.innerText.toLowerCase().includes("não foi possível encontrar")','Missing component image produces a controlled UI diagnostic')
+  const legacyFinal = {v1Sha256:treeHash(join(wardrobeRoot,`set-${legacyV1Id}`)),
+    v2ConvertedSha256:treeHash(join(wardrobeRoot,`set-${legacyV2Id}`)),badBoneSha256:treeHash(join(wardrobeRoot,`set-${legacyBadBoneId}`)),
+    missingAssetHandled:true,openedFormats:[1,2],batchMigration:false,autoPublishOnOpen:false,
+    convertedComponentId:convertedLegacy.components[0].id,convertedBoneId:convertedLegacy.components[0].binding.boneId,
+    convertedGeometry,reopenedGeometry:convertedGeometry}
+  phase('legacy-wardrobe-read-rebase-explicit-save-reopen',legacyFinal)
+  const sourceHashAfterLegacy=treeHash(join(sandbox,'electron-user-data','fabricator'))
+  assert.notEqual(sourceHashAfterLegacy,sourceHashBeforeLegacy,'Synthetic legacy fixtures should be included in the resulting Fabricator test library hash')
+  const sourceHash = sourceHashAfterLegacy
+  proof.phases.find(entry=>entry.id==='wardrobe-ui-file-worker-save').fabricatorTreeSha256=sourceHash
 
   await route(win, '/customizar', '.home-layout')
   await wait(win, 'Boolean(document.querySelector("[aria-label=\\"Adicionar personagem\\"]"))', 'Customizer character create action')
-  await click(win, '[aria-label="Adicionar personagem"]', 'Create character UI')
-  await wait(win, 'Boolean(document.querySelector("#character-name"))', 'Character form')
-  await setValue(win, '#character-name', CHARACTER_NAME)
-  await click(win, '.character-dialog button[type=submit]', 'Save character UI')
-  await wait(win, '(document.querySelector(".customizer-preview-character-name")?.textContent||"").trim()===' + JSON.stringify(CHARACTER_NAME), 'New character selected')
+  await createCharacterInUi(win, CHARACTER_NAME)
   await clickText(win, '.home-customizer-top-tabs button', 'Modelos', 'Open model tab')
   await wait(win, 'Boolean(document.querySelector(".customizer-models-view"))', 'Customizer model layout')
   // The creation flow initializes modelSlot=1. Do not bypass the UI to set it.
   await wait(win, 'window.desktop.listCustomizerCharacters().then(items=>items.find(c=>c.name===' + JSON.stringify(CHARACTER_NAME) + ')?.customization.modelSlot===1)', 'Character inherited model 1', 30000)
   await wait(win, 'Boolean(document.querySelector(".customizer-selected-artwork")?.complete)', 'Character model preview', 35000)
-  await clickText(win, '.customizer-top-tabs button', 'Roupas', 'Open clothes tab')
-  await wait(win, 'Boolean(document.querySelector(".customizer-upper-wardrobe-piece"))', 'Clothes panel visible', 25000)
-  const shirt = set.components.find(component=>component.category==='camisa')
-  await equipCustomizerPanel(win, 'shirt', shirt.name, set.id, [shirt.id])
-  await clickText(win, '.customizer-clothes-category-tabs button', 'Inferior', 'Open lower clothing categories')
-  const pants = set.components.filter(component=>component.category==='calca-coxa'||component.category==='calca-canela')
-  const shoesLeft = set.components.find(component=>component.category==='sapato'&&component.name.includes('esquerda'))
-  const shoesRight = set.components.find(component=>component.category==='sapato'&&component.name.includes('direita'))
-  assert.equal(pants.length, 4)
-  await equipCustomizerPanel(win, 'pants-left', 'Calça coxa esquerda', set.id, pants.map(component=>component.id))
-  await equipCustomizerPanel(win, 'shoe-left', shoesLeft.name, set.id, [shoesLeft.id])
-  await equipCustomizerPanel(win, 'shoe-right', shoesRight.name, set.id, [shoesRight.id])
-  await clickText(win, '.customizer-clothes-category-tabs button', 'Superior', 'Return to upper clothing')
-  await clickText(win, '.customizer-clothes-category-tabs button', 'Superior', 'Open second page of upper clothing')
-  const gloveLeft = set.components.find(component=>component.category==='luvas'&&component.name.includes('esquerda'))
-  const gloveRight = set.components.find(component=>component.category==='luvas'&&component.name.includes('direita'))
-  await equipCustomizerPanel(win, 'gloves-left', gloveLeft.name, set.id, [gloveLeft.id])
-  await equipCustomizerPanel(win, 'gloves-right', gloveRight.name, set.id, [gloveRight.id])
+  await equipFullWardrobe(win, CHARACTER_NAME, set)
+  // Tear down the clothing library panel opened by the last equip operation,
+  // then reopen Customizer through the normal shell before creating actor B.
+  await route(win,'/fabricador-dev','.fabricator-model-editor')
+  await route(win,'/customizar','.home-layout')
+  await wait(win,'Boolean(document.querySelector("[aria-label=\\"Adicionar personagem\\"]"))','Customizer roster reopened before actor B')
+  await createCharacterInUi(win, CHARACTER_B_NAME)
+  await equipFullWardrobe(win, CHARACTER_B_NAME, set)
   await wait(win, 'Boolean(document.querySelector(".customizer-wardrobe-overlay")?.complete)', 'Rendered clothing appears on character', 35000)
   const characters = await api('window.desktop.listCustomizerCharacters()')
   const actor = characters.find(c=>c.name===CHARACTER_NAME)
-  const equipped = actor?.customization.wardrobeGroups.filter(group=>group.setId===set.id) ?? []
+  const actorB = characters.find(c=>c.name===CHARACTER_B_NAME)
   const expectedComponentIds = set.components.map(component=>component.id).sort()
-  assert.deepEqual(equipped.map(group=>group.componentId).sort(), expectedComponentIds,
-    'Customizer initial equipment must include every authored shirt, pants, shoe, and glove component')
-  assert.equal(equipped.every(group=>group.offsetX===0 && group.offsetY===0 && group.scaleX===1
-    && group.scaleY===1 && group.rotation===0), true,
-    'Customizer should equip the authored Fabricador fit without applying manual per-character adjustments')
+  const initialGroups = (character) => character?.customization.wardrobeGroups.filter(group=>group.setId===set.id) ?? []
+  for (const [name, character] of [[CHARACTER_NAME,actor],[CHARACTER_B_NAME,actorB]]) {
+    const groups = initialGroups(character)
+    assert.deepEqual(groups.map(group=>group.componentId).sort(), expectedComponentIds,
+      `${name} must equip every authored shirt, pants, shoe, and glove component`)
+    assert.equal(groups.every(group=>group.offsetX===0 && group.offsetY===0 && group.scaleX===1
+      && group.scaleY===1 && group.rotation===0), true,
+      `${name} should inherit the authored Fabricador fit without manual per-character adjustments`)
+  }
   assert.equal(treeHash(join(sandbox,'electron-user-data','fabricator')),sourceHash,
     'Character UI equipment unexpectedly changed Fabricador source')
   proof.screenshots.customizer = await shot(win, folder, '05-customizer-equipped-ui')
-  phase('character-ui-create-and-equip', { actorId:actor.id, modelSlot:actor.customization.modelSlot,
-    poseSlot:actor.customization.poseSlot, garmentSetId:set.id,
-    equippedComponents:equipped.map(group=>({componentId:group.componentId,category:group.category,
-      adjustment:{offsetX:group.offsetX,offsetY:group.offsetY,scaleX:group.scaleX,scaleY:group.scaleY,rotation:group.rotation}})),
-    sourceLibraryHashUnchanged:true })
+
+  // Exercise a persisted production character override with a large deliberate
+  // displacement, independent width scale, and rotation. The UI-created,
+  // UI-equipped synthetic actors remain the source of all fixture structure;
+  // one production preload save applies the scenario efficiently and then the
+  // React pose selector verifies those character-owned values survive changes.
+  await returnToCharacterRoster(win)
+  await selectCharacterInUi(win, CHARACTER_NAME)
+  const shirtComponent = set.components.find(component=>component.category==='camisa')
+  const beforeAEdit=(await api('window.desktop.listCustomizerCharacters()')).find(c=>c.name===CHARACTER_NAME)
+  const actorAEdited=structuredClone(beforeAEdit)
+  const editedGroup=actorAEdited.customization.wardrobeGroups.find(group=>group.setId===set.id&&group.componentId===shirtComponent.id)
+  assert.ok(editedGroup,'Actor A shirt is not equipped before applying its individual override')
+  Object.assign(editedGroup,{offsetX:220,scaleX:1.05,rotation:1})
+  actorAEdited.updatedAt=new Date().toISOString()
+  await api('window.desktop.saveCustomizerCharacter('+JSON.stringify(actorAEdited)+')')
+  const afterAEdit = (await api('window.desktop.listCustomizerCharacters()')).find(c=>c.name===CHARACTER_NAME)
+  const adjustedA = afterAEdit.customization.wardrobeGroups.find(group=>group.setId===set.id&&group.componentId===shirtComponent.id)
+  assert.equal(adjustedA.offsetX,220,'Actor A garment must be displaced substantially outside the torso area')
+  assert.equal(adjustedA.scaleX,1.05,'Actor A width scale must persist')
+  assert.equal(adjustedA.rotation,1,'Actor A rotation must persist')
+  await wait(win,'Boolean(document.querySelector(".customizer-wardrobe-overlay")?.complete)','Adjusted actor A preview remains renderable',35000)
+  // The fixture override above uses the production preload save API. Remount
+  // the route so the pose selector reads the character document just saved,
+  // rather than the previous in-memory snapshot.
+  await route(win,'/opcoes','main.blank-page')
+  await route(win,'/customizar','.home-layout')
+  await wait(win,'Boolean(document.querySelector(".roster-panel .character-grid"))','Customizer roster after persisted override reload')
+  await wait(win,'[...document.querySelectorAll(".character-card")].some(card=>card.textContent.includes('+JSON.stringify(CHARACTER_NAME)+'))','Actor A roster entry after persisted override reload')
+  await selectCharacterInUi(win, CHARACTER_NAME)
+  const reopenedA = (await api('window.desktop.listCustomizerCharacters()')).find(c=>c.name===CHARACTER_NAME)
+  const reopenedGroup = reopenedA.customization.wardrobeGroups.find(group=>group.setId===set.id&&group.componentId===shirtComponent.id)
+  assert.equal(reopenedGroup.offsetX,adjustedA.offsetX,'Actor A displacement must survive reopening before changing poses')
+  assert.equal(reopenedGroup.scaleX,adjustedA.scaleX,'Actor A scale must survive reopening before changing poses')
+  assert.equal(reopenedGroup.rotation,adjustedA.rotation,'Actor A rotation must survive reopening before changing poses')
+  await clickText(win, '.home-customizer-top-tabs button', 'Modelos', 'Open pose selection for actor A')
+  await wait(win, 'Boolean(document.querySelector(".customizer-pose-carousel"))', 'Pose carousel for actor A')
+  for (const poseSlot of [2,1]) {
+    if (poseSlot === 2) {
+      await click(win, '.customizer-pose-carousel-arrow.category[aria-label="Próxima categoria"]', 'Show the authored seated pose category')
+      await wait(win, 'document.querySelector(".customizer-pose-carousel-heading")?.textContent.includes("Sentado")', 'Sentado pose category for actor A')
+      await wait(win, 'Boolean(document.querySelector(`[aria-label="Selecionar pose 02"]`) && !document.querySelector(`[aria-label="Selecionar pose 02"]`).disabled)', 'Pose 2 ready in the selected category')
+    } else {
+      await click(win, '.customizer-pose-carousel-arrow.category[aria-label="Categoria anterior"]', 'Return to the authored standing pose category')
+      await wait(win, 'document.querySelector(".customizer-pose-carousel-heading")?.textContent.includes("Parado")', 'Parado pose category for actor A')
+      await wait(win, 'Boolean(document.querySelector(`[aria-label="Selecionar pose 01"]`) && !document.querySelector(`[aria-label="Selecionar pose 01"]`).disabled)', 'Pose 1 ready in the selected category')
+    }
+    await click(win, `[aria-label="Selecionar pose ${String(poseSlot).padStart(2,'0')}"]`, 'Switch actor A to pose ' + poseSlot)
+    await wait(win, 'window.desktop.listCustomizerCharacters().then(items=>items.find(c=>c.name===' + JSON.stringify(CHARACTER_NAME) + ')?.customization.poseSlot===' + poseSlot + ')', 'Actor A saved pose ' + poseSlot, 35000)
+    await wait(win, 'Boolean(document.querySelector(".customizer-selected-artwork")?.complete)', 'Actor A pose preview loaded ' + poseSlot, 35000)
+    const afterPose = (await api('window.desktop.listCustomizerCharacters()')).find(c=>c.name===CHARACTER_NAME)
+    const garment = afterPose.customization.wardrobeGroups.find(group=>group.setId===set.id&&group.componentId===shirtComponent.id)
+    assert.equal(garment.offsetX,adjustedA.offsetX,`Actor A outfit drifted after selecting pose ${poseSlot}`)
+    assert.equal(garment.scaleX,adjustedA.scaleX)
+    assert.equal(garment.rotation,adjustedA.rotation)
+  }
+  await returnToCharacterRoster(win)
+  await selectCharacterInUi(win, CHARACTER_B_NAME)
+  const actorBAfterA = (await api('window.desktop.listCustomizerCharacters()')).find(c=>c.name===CHARACTER_B_NAME)
+  const groupBShirt = actorBAfterA.customization.wardrobeGroups.find(group=>group.setId===set.id&&group.componentId===shirtComponent.id)
+  assert.equal(groupBShirt.offsetX,0,'Actor A displacement leaked into actor B')
+  assert.equal(groupBShirt.scaleX,1,'Actor A scaling leaked into actor B')
+  assert.equal(groupBShirt.rotation,0,'Actor A rotation leaked into actor B')
+  assert.equal(actorBAfterA.customization.poseSlot,1,'Actor A pose switch leaked into actor B')
+  await selectCharacterInUi(win, CHARACTER_NAME)
+  const actorAForReport = (await api('window.desktop.listCustomizerCharacters()')).find(c=>c.name===CHARACTER_NAME)
+  const actorBForReport = (await api('window.desktop.listCustomizerCharacters()')).find(c=>c.name===CHARACTER_B_NAME)
+  phase('two-character-ui-isolation-pose-save', { actorA: { id:actorAForReport.id, poseSlot:actorAForReport.customization.poseSlot,
+    shirt:{componentId:shirtComponent.id,offsetX:adjustedA.offsetX,scaleX:adjustedA.scaleX,rotation:adjustedA.rotation},
+    allComponents:actorAForReport.customization.wardrobeGroups.filter(group=>group.setId===set.id).map(group=>group.componentId) },
+    actorB:{id:actorBForReport.id,poseSlot:actorBForReport.customization.poseSlot,
+      groups:actorBForReport.customization.wardrobeGroups.filter(group=>group.setId===set.id).map(group=>({componentId:group.componentId,offsetX:group.offsetX,offsetY:group.offsetY,scaleX:group.scaleX,scaleY:group.scaleY,rotation:group.rotation}))},
+    actorAEditDidNotChangeActorB:true,posesVisited:[2,1],fabricatorTreeSha256:sourceHash })
+  proof.screenshots.customizerAdjustedA = await shot(win, folder, '05-customizer-actor-a-adjusted-ui')
+  await selectCharacterInUi(win, CHARACTER_B_NAME)
+  proof.screenshots.customizerActorB = await shot(win, folder, '06-customizer-actor-b-default-ui')
 
   // Re-open both authoring screens in the running app. The persistence phase
   // in a fresh Electron process is exercised by the follow-up mode.
@@ -460,12 +660,25 @@ async function verifyAfterRestart(win, sandbox, output, treeHash) {
   const list = await query(win,'window.desktop.listCustomizerCharacters()')
   const actor = list.find(c=>c.name===CHARACTER_NAME)
   assert.ok(actor,'UI-authored character missing after Electron restart')
+  const actorB = list.find(c=>c.name===CHARACTER_B_NAME)
+  assert.ok(actorB,'Second UI-authored character missing after Electron restart')
   const setId = written.phases.find(x=>x.id==='wardrobe-ui-file-worker-save').setId
   const expectedIds = written.phases.find(x=>x.id==='wardrobe-ui-file-worker-save').components.map(component=>component.id).sort()
   const equipped = actor.customization.wardrobeGroups.filter(group=>group.setId===setId)
   assert.deepEqual(equipped.map(group=>group.componentId).sort(),expectedIds,'All authored clothing must remain equipped after restart')
-  assert.equal(equipped.every(group=>group.offsetX===0&&group.offsetY===0&&group.scaleX===1&&group.scaleY===1&&group.rotation===0),true,
-    'Restart must not introduce Customizer-specific clothing adjustments')
+  const ownership = written.phases.find(x=>x.id==='two-character-ui-isolation-pose-save')
+  assert.ok(ownership,'Missing two-character isolation evidence before restart')
+  assert.equal(actor.customization.poseSlot,ownership.actorA.poseSlot,'Actor A pose selection must persist after Electron restart')
+  const actorAShirt=equipped.find(group=>group.componentId===ownership.actorA.shirt.componentId)
+  assert.ok(actorAShirt,'Actor A adjusted shirt missing after restart')
+  assert.equal(actorAShirt.offsetX,ownership.actorA.shirt.offsetX,'Actor A displaced shirt must persist after Electron restart')
+  assert.equal(actorAShirt.scaleX,ownership.actorA.shirt.scaleX,'Actor A shirt scale must persist after Electron restart')
+  assert.equal(actorAShirt.rotation,ownership.actorA.shirt.rotation,'Actor A shirt rotation must persist after Electron restart')
+  const equippedB=actorB.customization.wardrobeGroups.filter(group=>group.setId===setId)
+  assert.deepEqual(equippedB.map(group=>group.componentId).sort(),expectedIds,'Actor B must retain the same equipped assets after restart')
+  assert.equal(actorB.customization.poseSlot,ownership.actorB.poseSlot,'Actor B pose must remain independent after restart')
+  assert.ok(equippedB.every(group=>group.offsetX===0&&group.offsetY===0&&group.scaleX===1&&group.scaleY===1&&group.rotation===0),
+    'Actor A clothing adjustments leaked into actor B after Electron restart')
   const model = await query(win,'window.desktop.loadFabricatorSlot(1)')
   const modelPhase = written.phases.find(x=>x.id==='model-ui-worker-save')
   assert.equal(model.parts.length,modelPhase.partCount)
@@ -497,10 +710,28 @@ async function verifyAfterRestart(win, sandbox, output, treeHash) {
   assert.equal(treeHash(join(sandbox,'electron-user-data','fabricator')),
     written.phases.find(x=>x.id==='wardrobe-ui-file-worker-save').fabricatorTreeSha256,
     'Fabricador library changed between successful authoring and restart')
+  const legacyEvidence=written.phases.find(x=>x.id==='legacy-wardrobe-read-rebase-explicit-save-reopen')
+  assert.ok(legacyEvidence,'Legacy clothing compatibility evidence missing')
+  const convertedLegacy=await query(win,'window.desktop.loadWardrobeSet(1,'+JSON.stringify('dev-ai-legacy-v2')+')')
+  assert.equal(convertedLegacy?.edition,1,'Explicitly converted legacy set must remain in the original-sheet edition after restart')
+  assert.equal(convertedLegacy?.components?.[0]?.id,legacyEvidence.convertedComponentId,'Legacy component identity must survive process restart')
+  assert.equal(convertedLegacy?.components?.[0]?.binding?.boneId,legacyEvidence.convertedBoneId,'Legacy binding must survive process restart')
+  assert.deepEqual({x:convertedLegacy.components[0].x,y:convertedLegacy.components[0].y,width:convertedLegacy.components[0].width,
+    height:convertedLegacy.components[0].height,rotation:convertedLegacy.components[0].rotation},legacyEvidence.reopenedGeometry,
+    'Converted legacy geometry must survive process restart and explicit reopen')
+  assert.equal((await query(win,'window.desktop.loadWardrobeSet(1,'+JSON.stringify('dev-ai-legacy-v1')+')'))?.edition,1,
+    'Untouched legacy 1.0 set must remain in its original format')
+  assert.equal((await query(win,'window.desktop.loadWardrobeSet(1,'+JSON.stringify('dev-ai-legacy-bad-bone')+')'))?.components?.[0]?.attachedPartId,'ghost-bone',
+    'Incompatible legacy reference must remain inspectable, not be rewritten to a guessed bone')
   await query(win,'location.hash="/customizar"')
   await wait(win,'Boolean(document.querySelector(".home-layout"))','Restarted Customizer mounts')
   await writeFile(join(p,'restart.json'),JSON.stringify({schemaVersion:2,status:'passed',
-    characterRetained:true,wardrobeRetained:true,wardrobeComponentIds:expectedIds,
+    characterRetained:true,secondCharacterRetained:true,wardrobeRetained:true,wardrobeComponentIds:expectedIds,
+    characterIsolation:{actorAId:actor.id,actorBId:actorB.id,actorAPoseSlot:actor.customization.poseSlot,
+      actorBPoseSlot:actorB.customization.poseSlot,actorAShirt:{offsetX:actorAShirt.offsetX,scaleX:actorAShirt.scaleX,rotation:actorAShirt.rotation},
+      actorBAllDefaultsRetained:true},legacyCompatibility:{convertedSetId:'dev-ai-legacy-v2',edition:convertedLegacy.edition,
+      componentId:convertedLegacy.components[0].id,boneId:convertedLegacy.components[0].binding.boneId,
+      geometry:legacyEvidence.reopenedGeometry,v1Untouched:true,badBoneUnchanged:true,autoPublishOnOpen:false,batchMigration:false},
     editedPoseSlots:[1,2],modelPartIds:model.parts.map(part=>part.id),
     sourceModelTreeSha256:treeHash(join(sandbox,'electron-user-data','fabricator','models','slot-1')),
     fabricatorTreeSha256:treeHash(join(sandbox,'electron-user-data','fabricator'))},null,2))

@@ -291,9 +291,37 @@ async function writeCustomizerCharacters(characters: CustomizerCharacter[]): Pro
   if (!Array.isArray(characters) || characters.length > 500 || !characters.every(isCustomizerCharacter)) throw new Error('Dados de personagem inválidos.')
   if (new Set(characters.map((character) => character.id)).size !== characters.length) throw new Error('Há personagens com identificadores repetidos.')
   await mkdir(characterLibraryPath(), { recursive: true })
-  const temporary = `${characterManifestPath()}.tmp`
+  const target = characterManifestPath()
+  const temporary = `${target}.tmp`
   await writeFile(temporary, JSON.stringify(characters), 'utf8')
-  await rename(temporary, characterManifestPath())
+  await publishRecoverableManifest(target, temporary)
+}
+
+async function publishRecoverableManifest(target: string, temporary: string): Promise<void> {
+  const backup = `${target}.backup`
+  // Restore the last committed file if a previous process stopped between the
+  // two renames. If the target exists, a leftover backup came from a commit
+  // that reached its destination and is now safe to clean up.
+  try { await access(target) } catch (reason) {
+    if ((reason as NodeJS.ErrnoException).code !== 'ENOENT') throw reason
+    try { await rename(backup, target) } catch (restoreReason) {
+      if ((restoreReason as NodeJS.ErrnoException).code !== 'ENOENT') throw restoreReason
+    }
+  }
+  try { await access(target); await unlink(backup).catch((reason) => {
+    if ((reason as NodeJS.ErrnoException).code !== 'ENOENT') throw reason
+  }) } catch (reason) {
+    if ((reason as NodeJS.ErrnoException).code !== 'ENOENT') throw reason
+  }
+  let previousManifest = false
+  try { await rename(target, backup); previousManifest = true } catch (reason) {
+    if ((reason as NodeJS.ErrnoException).code !== 'ENOENT') throw reason
+  }
+  try { await rename(temporary, target) } catch (reason) {
+    if (previousManifest) await rename(backup, target).catch(() => undefined)
+    throw reason
+  }
+  if (previousManifest) await unlink(backup)
 }
 
 const wardrobeCategories: WardrobeCategory[] = ['camisa', 'jaqueta', 'manga-superior', 'manga-inferior', 'luvas', 'capa', 'cinto', 'oculos', 'acessorio-cabeca', 'saia', 'calca-coxa', 'calca-canela', 'shorts', 'meia', 'sapato']
@@ -915,6 +943,17 @@ async function readHairStyle(modelSlot: number, id: string): Promise<HairStyle |
   }
 }
 
+async function recoverWardrobeManifest(folder: string): Promise<void> {
+  const target = join(folder, 'wardrobe.json')
+  const backup = join(folder, 'wardrobe.json.backup')
+  try { await access(target); return } catch (reason) {
+    if ((reason as NodeJS.ErrnoException).code !== 'ENOENT') throw reason
+  }
+  try { await rename(backup, target) } catch (reason) {
+    if ((reason as NodeJS.ErrnoException).code !== 'ENOENT') throw reason
+  }
+}
+
 async function writeWardrobeSet(modelSlot: number, set: WardrobeSetSave, assets: WardrobeAssetSave[]): Promise<void> {
   if (!isValidModelSlot(modelSlot) || set.schemaVersion !== 1 || (set.edition !== undefined && set.edition !== 1 && set.edition !== 2) || set.modelSlot !== modelSlot || !isValidWardrobeId(set.id) || !Array.isArray(set.components) || set.components.length < 1 || set.components.length > 100) throw new Error('Conjunto de roupa inválido.')
   const folder = wardrobeSetPath(modelSlot, set.id)
@@ -929,9 +968,29 @@ async function writeWardrobeSet(modelSlot: number, set: WardrobeSetSave, assets:
       throw new Error(`Imagem ausente no conjunto: ${component.name} (${component.id}).`)
     }
   }
+  const target = join(folder, 'wardrobe.json')
+  const backup = join(folder, 'wardrobe.json.backup')
+  await recoverWardrobeManifest(folder)
+  // On Windows, rename(newFile, existingFile) fails with EPERM. Keep the last
+  // valid manifest under a recoverable name while publishing the replacement.
+  // A stale backup with a present target means the new manifest was already
+  // published before a previous process stopped during cleanup.
+  try { await access(target); await unlink(backup).catch((reason) => {
+    if ((reason as NodeJS.ErrnoException).code !== 'ENOENT') throw reason
+  }) } catch (reason) {
+    if ((reason as NodeJS.ErrnoException).code !== 'ENOENT') throw reason
+  }
   const temporary = join(folder, 'wardrobe.json.tmp')
   await writeFile(temporary, JSON.stringify(set), 'utf8')
-  await rename(temporary, join(folder, 'wardrobe.json'))
+  let previousManifest = false
+  try { await rename(target, backup); previousManifest = true } catch (reason) {
+    if ((reason as NodeJS.ErrnoException).code !== 'ENOENT') throw reason
+  }
+  try { await rename(temporary, target) } catch (reason) {
+    if (previousManifest) await rename(backup, target).catch(() => undefined)
+    throw reason
+  }
+  if (previousManifest) await unlink(backup)
   const retained = new Set(set.components.map((component) => `${component.id}.png`))
   for (const filename of await readdir(partsFolder)) if (filename.endsWith('.png') && !filename.endsWith('.paint.png') && !retained.has(filename)) await unlink(join(partsFolder, filename))
 }
@@ -939,7 +998,9 @@ async function writeWardrobeSet(modelSlot: number, set: WardrobeSetSave, assets:
 async function readWardrobeSet(modelSlot: number, id: string): Promise<WardrobeSet | null> {
   if (!isValidModelSlot(modelSlot) || !isValidWardrobeId(id)) throw new Error('Conjunto de roupa inválido.')
   try {
+    await wardrobeSaveQueue.catch(() => undefined)
     const folder = wardrobeSetPath(modelSlot, id)
+    await recoverWardrobeManifest(folder)
     const set = JSON.parse(await readFile(join(folder, 'wardrobe.json'), 'utf8')) as WardrobeSetSave
     if (set.schemaVersion !== 1 || (set.edition !== undefined && set.edition !== 1 && set.edition !== 2) || set.modelSlot !== modelSlot || set.id !== id || !Array.isArray(set.components) || set.components.length > 100) return null
     const components = await Promise.all(set.components.map(async (component) => ({
@@ -1716,6 +1777,7 @@ async function registerFabricatorHandlers(): Promise<void> {
 
   ipcMain.handle('customizer:characters:list', async (event): Promise<CustomizerCharacter[]> => {
     assertTrustedSender(event)
+    await characterSaveQueue.catch(() => undefined)
     return readCustomizerCharacters()
   })
 

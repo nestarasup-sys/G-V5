@@ -31,6 +31,7 @@
 | Reexecução local completa DEV AI, teste real de Ayla/Chloe em cópias privadas e pendências remotas | [AUDITORIAS/VALIDACAO_LOCAL_2026-10-19.md](AUDITORIAS/VALIDACAO_LOCAL_2026-10-19.md) |
 | CI da branch permanente, roadmap e relato manual da Entrega A | [AUDITORIAS/ENTREGA_A_CI_E_ROADMAP_2026-10-19.md](AUDITORIAS/ENTREGA_A_CI_E_ROADMAP_2026-10-19.md) |
 | Roupas Dev unificado e política dos conjuntos legados | [AUDITORIAS/ROUPAS_DEV_UNIFICADO_2026-10-19.md](AUDITORIAS/ROUPAS_DEV_UNIFICADO_2026-10-19.md) |
+| Entrega C — fixtures legadas 1.0/2.0, reinício e isolamento de dois personagens | [AUDITORIAS/ENTREGA_C_COMPATIBILIDADE_E_PERSONAGENS_2026-10-19.md](AUDITORIAS/ENTREGA_C_COMPATIBILIDADE_E_PERSONAGENS_2026-10-19.md) |
 
 **Histórico:** a versão anterior integral do plano permanece recuperável no Git em [`5b848345`](https://github.com/nestarasup-sys/G-V5/blob/5b8483454757f4cc9606c626471aabbeccf35daa/docs/PLANO_ESTRUTURA_PROJETO_E_DADOS.md). Esta versão é histórico, **não** uma segunda fonte normativa. O documento `docs/STUDIO_WORKSPACES.md` foi removido em `192245e`; não criar links correntes para ele.
 

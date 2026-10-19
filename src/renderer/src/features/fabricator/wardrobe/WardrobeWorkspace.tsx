@@ -287,10 +287,17 @@ export function WardrobeWorkspace() {
       const loaded = await window.desktop.loadWardrobeSet(modelSlot, id)
       if (requestRef.current !== requestId) return
       if (!loaded) throw new Error('Não foi possível encontrar este conjunto.')
+      const incompatible = loaded.components.filter((component) => {
+        const bone = referenceBone(component.attachedPartId) ?? model.parts.find((part) => part.id === component.attachedPartId)
+        return !bone || Boolean(component.binding && component.binding.boneId !== component.attachedPartId)
+      })
       // Resolve the original sheet before translating any old separated-sheet
       // bindings. Opening a set does not publish the conversion to storage.
       setDraft(loaded); setActiveSetId(id); setSelectedId(loaded.components[0]?.id ?? null)
-      setDirty(false); setBodyOffsets({}); setTestPose(null); setTestDragOffsets({}); setCalibratingPartId(null); setError('')
+      setDirty(false); setBodyOffsets({}); setTestPose(null); setTestDragOffsets({}); setCalibratingPartId(null)
+      setError(incompatible.length
+        ? `${incompatible.length} peça(s) sem vínculo compatível com o modelo original (${incompatible.map((component) => component.name || component.id).join(', ')}). O conjunto foi preservado; corrija os ossos antes de salvar.`
+        : '')
     } catch (reason) { if (requestRef.current === requestId) setError(reason instanceof Error ? reason.message : 'Não foi possível abrir o conjunto.') }
     finally { if (requestRef.current === requestId) setOpeningSet(false) }
   }

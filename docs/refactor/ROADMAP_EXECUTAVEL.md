@@ -106,3 +106,7 @@ Para fechar qualquer `R-xx`: registrar **problema**, `E-xx`/arquivo/linha, hipó
 5. **Somente após backups/restore:** versões imutáveis, migração dry-run de bibliotecas e testes end-to-end (R-35/R-37/R-38, R-07..09).
 6. Migração opt-in de dados reais (`R-15`–`R-17`) exige backup verificado, consentimento explícito e testes de AF/ISO, nunca apenas resultado de CI sintética.
 7. PRs pequenas para extração de IPC/CSS/UI e otimização observada, priorizadas por risco e medida, não linhas de código.
+
+## Registro local — Prompt 3/5 (2026-10-19)
+
+Fixtures sintéticas legadas 1.0/2.0, conversão somente após salvamento explícito, diagnóstico de osso ausente, dois personagens independentes, poses alternadas e reabertura em novo processo passaram no run DEV AI `2026-10-19T07-23-15-709Z-a4809fdf-aca8-4704-9fc6-4a50917bb433` da branch `master-desenvolvimento`. A auditoria completa, limites e hashes estão em [Entrega C — compatibilidade e personagens](AUDITORIAS/ENTREGA_C_COMPATIBILIDADE_E_PERSONAGENS_2026-10-19.md). Os critérios AF/ISO permanecem abertos: este avanço sintético não fecha as iniciativas R-29…R-38 nem autoriza migração de dados reais.
