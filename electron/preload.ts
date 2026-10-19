@@ -3,6 +3,7 @@ import type { FabricatorDesktopApi } from '../src/shared/fabricator'
 import type { CustomizerDesktopApi } from '../src/shared/customizer'
 import type { StudioDesktopApi, VideoStudioDesktopApi } from '../src/shared/studio'
 import type { VideoExportSurfaceBootstrap, VideoExportSurfaceFrameReady, VideoExportSurfaceReady, VideoExportSurfaceRenderRequest } from '../src/shared/videoExportSurface'
+import type { VideoExportProgress } from '../src/shared/videoExportRuntime'
 
 const fabricatorApi: FabricatorDesktopApi = {
   listFabricatorSlots: () => ipcRenderer.invoke('fabricator:list-slots'),
@@ -99,7 +100,15 @@ const videoStudioApi: VideoStudioDesktopApi = {
   openVideoStudioPrints: (studioId) => ipcRenderer.invoke('video-studio:open-prints', studioId),
   listVideoExports: () => ipcRenderer.invoke('video-studio:exports:list'),
   openVideoExportsFolder: (studioId) => ipcRenderer.invoke('video-studio:exports:open-folder', studioId),
-  deleteVideoExport: (id) => ipcRenderer.invoke('video-studio:exports:delete', id)
+  deleteVideoExport: (id) => ipcRenderer.invoke('video-studio:exports:delete', id),
+  startVideoExport: (request) => ipcRenderer.invoke('video-studio:export:start', request),
+  cancelVideoExport: (jobId) => ipcRenderer.invoke('video-studio:export:cancel', jobId),
+  getVideoExportStatus: (jobId) => ipcRenderer.invoke('video-studio:export:status', jobId),
+  onVideoExportProgress: (callback) => {
+    const listener = (_event: Electron.IpcRendererEvent, progress: VideoExportProgress) => callback(progress)
+    ipcRenderer.on('video-studio:export:progress', listener)
+    return () => ipcRenderer.removeListener('video-studio:export:progress', listener)
+  }
 }
 
 contextBridge.exposeInMainWorld('desktop', {
