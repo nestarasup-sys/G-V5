@@ -30,3 +30,8 @@ Atualizado em 2026-10-19.
 - [40 tarefas V501–V540](../VIDEO_STUDIO_V5_MODERNIZACAO/06_BACKLOG_DE_EXECUCAO.md)
 
 Este diretório continua válido para o **subprojeto de export serial/Turbo**, subordinado ao plano novo em prioridades arquiteturais. Documentos anteriores refletem seu momento histórico; nenhum MP4 V5 novo foi implementado ou benchmarkado nesta investigação.
+
+
+## Dois modos de export e reconstrução autorizada (diretriz posterior)
+
+O escopo foi ampliado novamente: o usuário aprovou uma arquitetura expansível, inclusive substituição segura do Video Studio legado, e exigiu **dois modos de exportação**. Os critérios estão no [contrato de modos](../VIDEO_STUDIO_V5_MODERNIZACAO/07_MODOS_DE_EXPORTACAO.md), na [arquitetura modular](../VIDEO_STUDIO_V5_MODERNIZACAO/08_ARQUITETURA_EXTENSIVEL_E_RECONSTRUCAO.md) e na [missão autônoma Codex](../VIDEO_STUDIO_V5_MODERNIZACAO/09_MISSAO_CODEX_AUTONOMA.md). O modo sem animações mantém keys authored, vídeos e áudio. Continuam válidos Smart Scene Compiler, cache semântico, proxies, hardware auto, Smart Export e comparação de engines. O V4 é referência, não obrigação de portar códigos.
