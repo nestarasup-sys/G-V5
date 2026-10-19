@@ -100,3 +100,11 @@ nos dois Studios e após reiniciar. AF-13 permanece aberto até essa confirmaç�
 - **Relato manual:** no código local `codex/dev-ai-validation-2026-10-18@6cfd0b5`, o usuário equipou outra roupa, deslocou o ajuste individual para fora do personagem, alternou poses e confirmou que **Studio e Video Studio acompanharam**. Não enviou screenshots, hashes nem relatou explicitamente teste de save/restart, autoria Fabricador ou todos os casos de joelho.
 - **Automação:** [CI master #39198498661](https://github.com/nestarasup-sys/G-V5/actions/runs/39198498661) passou Linux e Windows no SHA `3b70ceef`. A regressão AF-13 sintética do PR #3 comparou imagens canônicas com resultado positivo; não cobre toda variedade de peças reais.
 - **Status:** o cenário reportado de propagação do ajuste funcionou. AF-13 e R-31/R-34/R-37 **permanecem amplamente abertos** até prova E2E de autoria, joelhos, camadas, outras poses, save/restart e equivalência entre as áreas em fixtures completas.
+
+## Entrega D — cenário sintético UI-authored nos três consumidores (2026-10-19)
+
+A [Entrega D](ENTREGA_D_PARIDADE_AF13_2026-10-19.md) adicionou seis estados de AF-13 usando modelo, duas poses, roupas e personagens criados na interface pela automação da Entrega B. Foram capturadas as composições reais em Customizador, Studio e Video Studio, com comparação pixelar a resolução nativa, medições de cada componente, joelhos, hashes de persistência e reabertura em novo processo Electron.
+
+No run `2026-10-19T07-53-27-359Z-cf8b026a-11a6-4165-bc0f-1ae520404c58`, typecheck, build e `npm run audit:ipc` passaram. Nos seis estados, a diferença foi zero pixels em cada par de consumidores. Dois estados finais (A e B) foram reabertos visualmente após reinício nas duas áreas Studio e tiveram zero pixels divergentes do snapshot guardado. A árvore do Fabricador e o manifesto de personagens mantiveram os mesmos SHA-256 durante o consumo.
+
+O alcance continua sintético: nove componentes de roupas/luvas/sapatos, duas poses, partes retangulares e cores marcadoras. A métrica do joelho é overlap de bounding boxes; não comprova máscara alfa ou ausência de pele em arte real. Cabelo e acessórios de cabeça não são cobertos. Portanto AF-13 continua parcial; esta evidência não substitui a validação visual do usuário em personagens reais nem encerra R-34.

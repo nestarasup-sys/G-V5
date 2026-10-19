@@ -1,7 +1,7 @@
 'use strict'
 
 const assert = require('node:assert/strict')
-const { createHash } = require('node:crypto')
+const { createHash, randomUUID } = require('node:crypto')
 const { createServer, get } = require('node:http')
 const { existsSync, lstatSync, readdirSync, readFileSync, realpathSync } = require('node:fs')
 const { mkdir, rm, writeFile } = require('node:fs/promises')
@@ -723,6 +723,8 @@ async function verifyCustomizerRasterPreview(window,poseLabel='pose1') {
       const expected=${expectOutfit}
       const deadline=Date.now()+30000
       let last=null
+      let previousSignature='',stableFrames=0
+      const expectedPoseSlot=${JSON.stringify(poseLabel==='pose2'?2:1)}
       while(Date.now()<deadline){
         const cards=[...document.querySelectorAll('.character-card')]
         const card=cards.find(el=>el.textContent.includes(name))
@@ -775,6 +777,8 @@ async function verifyCustomizerRasterPreview(window,poseLabel='pose1') {
             raster:{width,height},targetRgb:target,colorTolerance:tolerance,maxChannelDelta}
         }
         const alerts=[...document.querySelectorAll('[role=alert]')].map(e=>e.textContent.trim()).filter(Boolean)
+        const storedCharacters=await window.desktop.listCustomizerCharacters()
+        const storedCharacter=storedCharacters.find(character=>character.name===name)
         // The fixture shoe is the only asset with this synthetic RGB marker.
         // Body resampling differs slightly between the model IMG and wardrobe
         // canvas at rotated poses, so compare the tagged garment pixels only.
@@ -794,9 +798,14 @@ async function verifyCustomizerRasterPreview(window,poseLabel='pose1') {
           outfitPresent:!!wardrobe,glassesPresent:!!aboveHair,
           hairPresent:!!frontHair,headExtraPresent:!!face,
           alerts,modelNaturalSize:model?[model.naturalWidth,model.naturalHeight]:null,
-          outfitNaturalSize:wardrobe?[wardrobe.naturalWidth,wardrobe.naturalHeight]:null}
+          outfitNaturalSize:wardrobe?[wardrobe.naturalWidth,wardrobe.naturalHeight]:null,
+          persistedPoseSlot:storedCharacter?.customization.poseSlot??null,
+          previewBusy:!!document.querySelector('.customizer-preview-loading')}
+        const signature=[model?.src,wardrobe?.src,aboveHair?.src,frontHair?.src,face?.src,last.persistedPoseSlot].join('|')
+        if(signature===previousSignature)stableFrames++;else{previousSignature=signature;stableFrames=0}
         const allAssetsMeasured=[shoe,glasses,frontHairBounds,headExtra].every(item=>item?.pixels>100 && item.bounds)
-        if(selected===name && last.modelReady
+        if(selected===name && storedCharacter?.customization.modelSlot===9
+          && last.persistedPoseSlot===expectedPoseSlot && !last.previewBusy && stableFrames>=2 && last.modelReady
           && (expected?(last.wardrobeReady && last.glassesReady && last.frontHairReady && last.headExtraReady
              && allAssetsMeasured)
             :(!last.outfitPresent&&!last.glassesPresent&&!last.hairPresent&&!last.headExtraPresent))
@@ -879,6 +888,339 @@ async function verifyCustomizerRasterPreview(window,poseLabel='pose1') {
     limitations:'Geometric Customizer oracle over production DOM layer rasters; synthetic fixtures only; not a cross-Studio canonical golden image'}
   await writeFile(join(artifactsFolder,'customizer-render-result-'+poseLabel+'.json'),JSON.stringify(report,null,2))
   assert.equal(report.status,'passed',`Customizer não respeitou os bindings/defaultTransforms sintéticos: ${JSON.stringify(report)}`)
+  return report
+}
+
+const AUTHORED_ACTOR_A = 'DEV AI UI Authored Character'
+const AUTHORED_ACTOR_B = 'DEV AI UI Independent Character B'
+const AUTHORED_WARDROBE_NAME = 'dev-ai-ui-clothes'
+
+function alphaCrop(png) {
+  const image=nativeImage.createFromBuffer(png),size=image.getSize(),bitmap=image.toBitmap()
+  let minX=size.width,minY=size.height,maxX=-1,maxY=-1
+  for(let y=0;y<size.height;y++)for(let x=0;x<size.width;x++)if(bitmap[(y*size.width+x)*4+3]>16){
+    minX=Math.min(minX,x);minY=Math.min(minY,y);maxX=Math.max(maxX,x);maxY=Math.max(maxY,y)}
+  assert.ok(maxX>=minX&&maxY>=minY,'AF13 authored character raster has no visible alpha')
+  const width=maxX-minX+1,height=maxY-minY+1,cropped=Buffer.alloc(width*height*4)
+  for(let y=0;y<height;y++)bitmap.copy(cropped,y*width*4,((minY+y)*size.width+minX)*4,((minY+y)*size.width+minX+width)*4)
+  return {png:nativeImage.createFromBitmap(cropped,{width,height}).toPNG(),bounds:{x:minX,y:minY,width,height},size}
+}
+
+function dominantRgba(png) {
+  const image=nativeImage.createFromBuffer(png),{width,height}=image.getSize(),bitmap=image.toBitmap(),histogram=new Map()
+  for(let y=Math.floor(height*.08);y<Math.ceil(height*.92);y++)for(let x=Math.floor(width*.08);x<Math.ceil(width*.92);x++){
+    const at=(y*width+x)*4
+    if(bitmap[at+3]<220)continue
+    const rgb=[bitmap[at+2],bitmap[at+1],bitmap[at],bitmap[at+3]],key=rgb.slice(0,3).join(',')
+    histogram.set(key,{rgb,count:(histogram.get(key)?.count??0)+1})
+  }
+  const dominant=[...histogram.values()].sort((a,b)=>b.count-a.count)[0]
+  assert.ok(dominant&&dominant.count>20,'Authored garment fixture has no stable opaque marker color')
+  return dominant.rgb
+}
+
+function coloredBounds(png,target,tolerance=28) {
+  const image=nativeImage.createFromBuffer(png),{width,height}=image.getSize(),bitmap=image.toBitmap()
+  let count=0,minX=width,minY=height,maxX=-1,maxY=-1
+  for(let y=0;y<height;y++)for(let x=0;x<width;x++){
+    const at=(y*width+x)*4
+    if(bitmap[at+3]<128)continue
+    const delta=Math.max(Math.abs(bitmap[at+2]-target[0]),Math.abs(bitmap[at+1]-target[1]),Math.abs(bitmap[at]-target[2]))
+    if(delta>tolerance)continue
+    count++;minX=Math.min(minX,x);minY=Math.min(minY,y);maxX=Math.max(maxX,x);maxY=Math.max(maxY,y)
+  }
+  return {count,bounds:count?{x:minX,y:minY,width:maxX-minX+1,height:maxY-minY+1}:null}
+}
+
+async function authoredCustomizerCapture(window,characterName,poseSlot,poseCategory,folder,label) {
+  const evaluate=code=>window.webContents.executeJavaScript(code)
+  await evaluate('location.hash="/customizar"')
+  await waitForDom(window,'Boolean(document.querySelector(".home-layout"))','Authored AF13 Customizer route')
+  await waitForDom(window,'[...document.querySelectorAll(".character-card")].some(card=>card.textContent.includes('+JSON.stringify(characterName)+'))','Authored AF13 character card')
+  await evaluate(`(()=>{const card=[...document.querySelectorAll('.character-card')].find(item=>item.textContent.includes(${JSON.stringify(characterName)}));card.click();return true})()`)
+  await waitForDom(window,'(document.querySelector(".customizer-preview-character-name")?.textContent||"").trim()==='+JSON.stringify(characterName),'Authored AF13 selected character')
+  await evaluate(`(()=>{const button=[...document.querySelectorAll('.home-customizer-top-tabs button')].find(item=>item.textContent.includes('Modelos'));if(button)button.click();return !!button})()`)
+  await waitForDom(window,'Boolean(document.querySelector(".customizer-pose-carousel"))','Authored AF13 pose carousel')
+  const categoryArrow=poseCategory==='Sentado'?'Próxima categoria':'Categoria anterior'
+  const categoryState=await evaluate('document.querySelector(".customizer-pose-carousel-heading")?.textContent||""')
+  if(!categoryState.includes(poseCategory)){
+    await evaluate(`(()=>{const button=document.querySelector(${JSON.stringify('.customizer-pose-carousel-arrow.category[aria-label="'+categoryArrow+'"]')});if(!button||button.disabled)return false;button.click();return true})()`)
+  }
+  await waitForDom(window,'document.querySelector(".customizer-pose-carousel-heading")?.textContent.includes('+JSON.stringify(poseCategory)+')','Authored AF13 '+poseCategory+' category')
+  const poseSelector=`[aria-label="Selecionar pose ${String(poseSlot).padStart(2,'0')}"]`
+  await waitForDom(window,'Boolean(document.querySelector('+JSON.stringify(poseSelector)+')&&!document.querySelector('+JSON.stringify(poseSelector)+').disabled)','Authored AF13 pose '+poseSlot+' button')
+  await evaluate(`document.querySelector(${JSON.stringify(poseSelector)}).click()`)
+  await waitForDom(window,'window.desktop.listCustomizerCharacters().then(items=>items.find(item=>item.name==='+JSON.stringify(characterName)+')?.customization.poseSlot==='+poseSlot+')','Authored AF13 pose persisted')
+  await waitForDom(window,'Boolean(document.querySelector(".customizer-selected-artwork")?.complete&&document.querySelector(".customizer-selected-artwork")?.naturalWidth>0&&!document.querySelector(".customizer-preview-loading"))','Authored AF13 base image ready',60000)
+  const composite=await evaluate(`(async()=>{
+    await document.fonts.ready;await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))
+    const selectors=['.customizer-selected-artwork','.customizer-wardrobe-overlay','.customizer-face-overlay','.customizer-front-hair-overlay','.customizer-wardrobe-above-hair-overlay']
+    const layers=selectors.map(selector=>document.querySelector(selector)).filter(Boolean)
+    if(!layers.length||layers.some(image=>!image.complete||!image.naturalWidth))return null
+    const canvas=document.createElement('canvas');canvas.width=layers[0].naturalWidth;canvas.height=layers[0].naturalHeight
+    const context=canvas.getContext('2d');for(const layer of layers){if(layer.naturalWidth!==canvas.width||layer.naturalHeight!==canvas.height)throw Error('Customizador layer dimensions differ: '+layer.className);context.drawImage(layer,0,0)}
+    return {dataUrl:canvas.toDataURL('image/png'),layers:layers.map(image=>({className:image.className,width:image.naturalWidth,height:image.naturalHeight})),poseSlot:${poseSlot}}
+  })()`)
+  assert.ok(composite?.dataUrl?.startsWith('data:image/png;base64,'),'Authored AF13 Customizer composite missing')
+  const raw=Buffer.from(composite.dataUrl.slice('data:image/png;base64,'.length),'base64')
+  const cropped=alphaCrop(raw),filename=`${label}-customizer-character.png`
+  await writeFile(join(folder,filename),cropped.png)
+  const fullCapture=await captureSettled(window,`${label}-customizer-stage`)
+  assert.equal(fullCapture.settled,true,`Authored AF13 Customizer preview did not settle for ${label}`)
+  await writeFile(join(folder,`${label}-customizer-stage.png`),fullCapture.png)
+  const character=(await evaluate('window.desktop.listCustomizerCharacters()')).find(item=>item.name===characterName)
+  return {png:cropped.png,sha256:createHash('sha256').update(cropped.png).digest('hex'),size:cropped.size,alphaBounds:cropped.bounds,
+    layers:composite.layers,poseSlot:character.customization.poseSlot,fullScreenshotSha256:createHash('sha256').update(fullCapture.png).digest('hex')}
+}
+
+async function waitForDom(window,condition,label,timeout=30000) {
+  const end=Date.now()+timeout
+  while(Date.now()<end){if(await window.webContents.executeJavaScript(condition))return;await new Promise(resolve=>setTimeout(resolve,120))}
+  throw new Error(`${label} timeout; route=${await window.webContents.executeJavaScript('location.hash')}; text=${(await window.webContents.executeJavaScript('(document.body?.innerText||"").slice(0,600)')).replace(/\\s+/g,' ')}`)
+}
+
+async function authoredStageCapture(window,characterName,video,title,folder,label) {
+  const document={...syntheticStudio(title,video),id:randomUUID()}
+  if(video)await window.webContents.executeJavaScript(`window.desktop.saveVideoStudio(${JSON.stringify(document)})`)
+  else await window.webContents.executeJavaScript(`window.desktop.saveStudio(${JSON.stringify(document)})`)
+  const hash=video?'/video-studio':'/estudio',cardSelector=video?'.video-studio-card-open':'.studio-card-open'
+  const editorSelector=video?'.video-studio-editor':'.studio-editor'
+  const addSelector=video?'.video-studio-cast-tool-button':'.studio-cast-add-button'
+  const modalSelector=video?'.video-studio-cast-modal':'.studio-cast-modal'
+  const optionSelector=video?'.video-studio-cast-modal-option':'.studio-cast-modal-option'
+  const imageSelector=video?'.video-studio-element-character img':'.studio-element-character img'
+  await window.webContents.executeJavaScript('location.hash="/opcoes"')
+  await waitForDom(window,'Boolean(document.querySelector("main.blank-page"))','Authored AF13 editor route remount')
+  await window.webContents.executeJavaScript(`location.hash=${JSON.stringify(hash)}`)
+  await waitForDom(window,'[...document.querySelectorAll('+JSON.stringify(cardSelector)+')].some(card=>card.textContent.includes('+JSON.stringify(title)+'))','Authored AF13 scene card')
+  await window.webContents.executeJavaScript(`[...document.querySelectorAll(${JSON.stringify(cardSelector)})].find(card=>card.textContent.includes(${JSON.stringify(title)})).click()`)
+  await waitForDom(window,'Boolean(document.querySelector('+JSON.stringify(editorSelector)+'))','Authored AF13 real editor')
+  await window.webContents.executeJavaScript(`document.querySelector(${JSON.stringify(addSelector)}).click()`)
+  await waitForDom(window,'Boolean(document.querySelector('+JSON.stringify(modalSelector)+'))&&[...document.querySelectorAll('+JSON.stringify(optionSelector)+')].some(option=>option.textContent.includes('+JSON.stringify(characterName)+'))','Authored AF13 cast option')
+  await window.webContents.executeJavaScript(`(()=>{const option=[...document.querySelectorAll(${JSON.stringify(optionSelector)})].find(item=>item.textContent.includes(${JSON.stringify(characterName)}));if(!option.classList.contains('selected'))option.click();return true})()`)
+  await waitForDom(window,'[...document.querySelectorAll('+JSON.stringify(optionSelector)+')].some(option=>option.textContent.includes('+JSON.stringify(characterName)+')&&option.classList.contains("selected"))','Authored AF13 selection applied by React')
+  await window.webContents.executeJavaScript(`(()=>{const dialog=document.querySelector(${JSON.stringify(modalSelector)});const save=[...dialog.querySelectorAll('button')].find(button=>button.textContent.includes('Salvar elenco'));if(!save||save.disabled)throw Error('Salvar elenco button unavailable');save.click();return true})()`)
+  await waitForDom(window,'Boolean(document.querySelector('+JSON.stringify(imageSelector)+')?.complete&&document.querySelector('+JSON.stringify(imageSelector)+')?.naturalWidth>0&&!document.querySelector('+JSON.stringify(modalSelector)+'))','Authored AF13 rendered character',60000)
+  const capture=await window.webContents.executeJavaScript(`(async()=>{await document.fonts.ready;await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));const img=document.querySelector(${JSON.stringify(imageSelector)});const element=img.closest('.studio-canvas-element,.video-studio-canvas-element');const rect=element?.getBoundingClientRect(),stage=element?.parentElement;return {dataUrl:img.src,naturalSize:[img.naturalWidth,img.naturalHeight],elementRect:rect?[rect.x,rect.y,rect.width,rect.height]:null,stageSize:stage?[stage.clientWidth,stage.clientHeight]:null}})()`)
+  assert.ok(capture.dataUrl.startsWith('data:image/png;base64,'),`${title}: rendered snapshot missing`)
+  const png=Buffer.from(capture.dataUrl.slice('data:image/png;base64,'.length),'base64'),cropped=alphaCrop(png)
+  const filename=`${label}-${video?'video-studio':'studio'}-character.png`
+  await writeFile(join(folder,filename),cropped.png)
+  const stageScreenshot=await captureSettled(window,`${label}-${video?'video-studio':'studio'}-stage`)
+  assert.equal(stageScreenshot.settled,true,`${title}: editor stage did not settle`)
+  await writeFile(join(folder,`${label}-${video?'video-studio':'studio'}-stage.png`),stageScreenshot.png)
+  const list=video?await window.webContents.executeJavaScript('window.desktop.listVideoStudios()'):await window.webContents.executeJavaScript('window.desktop.listStudios()')
+  const saved=list.find(item=>item.id===document.id)
+  assert.ok(saved,`${title}: scene was not persisted`)
+  const element=saved.elements.find(item=>item.kind==='character'&&item.text===characterName)
+  assert.ok(element,`${title}: saved scene does not reference the selected character`)
+  const asset=saved.assets.find(item=>item.id===element.assetId)
+  assert.ok(asset?.dataUrl?.startsWith('data:image/png;base64,'),`${title}: persisted character snapshot is missing`)
+  assert.equal(createHash('sha256').update(Buffer.from(asset.dataUrl.slice('data:image/png;base64,'.length),'base64')).digest('hex'),
+    createHash('sha256').update(png).digest('hex'),`${title}: displayed image differs from persisted scene snapshot`)
+  const rect=capture.elementRect,stage=capture.stageSize
+  return {sceneId:document.id,title,characterId:element.characterId,assetId:asset.id,imageName:filename,
+    sha256:createHash('sha256').update(cropped.png).digest('hex'),sourceSnapshotSha256:createHash('sha256').update(png).digest('hex'),
+    naturalSize:capture.naturalSize,alphaBounds:cropped.bounds,elementRect:rect,stageSize:stage,
+    relativeRect:rect&&stage?{x:rect[0]/stage[0],y:rect[1]/stage[1],width:rect[2]/stage[0],height:rect[3]/stage[1]}:null,
+    aspectRatioPreserved:!!rect&&Math.abs(rect[2]/rect[3]-capture.naturalSize[0]/capture.naturalSize[1])<.02,
+    stageScreenshotSha256:createHash('sha256').update(stageScreenshot.png).digest('hex')}
+}
+
+async function authoredAf13(window,output,verifyRestart=false) {
+  const folder=join(output,'af13-authored');await mkdir(folder,{recursive:true})
+  const manifestPath=join(app.getPath('userData'),'customizer','characters','characters.json')
+  const fabricatorPath=join(app.getPath('userData'),'fabricator')
+  const manifestHash=()=>createHash('sha256').update(readFileSync(manifestPath)).digest('hex')
+  if(verifyRestart){
+    const first=JSON.parse(readFileSync(join(folder,'report.json'),'utf8'))
+    assert.equal(first.status,'passed','First authored AF13 process did not finish all comparisons')
+    assert.equal(manifestHash(),first.ownership.characterManifestSha256,'Character manifest changed after first AF13 process')
+    assert.equal(treeHash(fabricatorPath),first.ownership.fabricatorTreeSha256,'Fabricador changed after first AF13 process')
+    const studios=await window.webContents.executeJavaScript('window.desktop.listStudios()')
+    const videos=await window.webContents.executeJavaScript('window.desktop.listVideoStudios()')
+    const restartComparisons=[]
+    // Earlier scenarios intentionally reuse A while changing its pose/outfit.
+    // Their stored snapshots are hash-verified above; opening those old scenes
+    // would correctly refresh them to A's later state. Reopen the final saved
+    // state for each actor to prove that both consumers retain the current look.
+    const finalScenarioByCharacter=new Map()
+    for(const scenario of first.scenarios)finalScenarioByCharacter.set(scenario.characterId,scenario)
+    const restartScenarios=[...finalScenarioByCharacter.values()]
+    for(const scenario of restartScenarios){
+      for(const [type,collection] of [['studio',studios],['videoStudio',videos]]){
+        const expected=scenario[type],saved=collection.find(item=>item.id===expected.sceneId)
+        assert.ok(saved,`${scenario.id} ${type} scene disappeared after restart`)
+        const element=saved.elements.find(item=>item.kind==='character'&&item.characterId===scenario.characterId)
+        assert.ok(element,`${scenario.id} ${type} character binding disappeared after restart`)
+        const asset=saved.assets.find(item=>item.id===element.assetId)
+        const png=Buffer.from(asset.dataUrl.slice('data:image/png;base64,'.length),'base64')
+        assert.equal(createHash('sha256').update(png).digest('hex'),expected.sourceSnapshotSha256,
+          `${scenario.id} ${type} persisted image changed after restart`)
+        const hash=type==='studio'?'/estudio':'/video-studio',cardSelector=type==='studio'?'.studio-card-open':'.video-studio-card-open'
+        const editorSelector=type==='studio'?'.studio-editor':'.video-studio-editor'
+        const imageSelector=type==='studio'?'.studio-element-character img':'.video-studio-element-character img'
+        await window.webContents.executeJavaScript('location.hash="/opcoes"')
+        await waitForDom(window,'Boolean(document.querySelector("main.blank-page"))',`${scenario.id} restart editor remount`)
+        await window.webContents.executeJavaScript(`location.hash=${JSON.stringify(hash)}`)
+        await waitForDom(window,'[...document.querySelectorAll('+JSON.stringify(cardSelector)+')].some(card=>card.textContent.includes('+JSON.stringify(expected.title)+'))',`${scenario.id} persisted editor scene card`)
+        await window.webContents.executeJavaScript(`[...document.querySelectorAll(${JSON.stringify(cardSelector)})].find(card=>card.textContent.includes(${JSON.stringify(expected.title)})).click()`)
+        await waitForDom(window,'Boolean(document.querySelector('+JSON.stringify(editorSelector)+'))&&Boolean(document.querySelector('+JSON.stringify(imageSelector)+')?.complete&&document.querySelector('+JSON.stringify(imageSelector)+')?.naturalWidth>0)',`${scenario.id} editor render after restart`,60000)
+        const displayed=await window.webContents.executeJavaScript(`(async()=>{await document.fonts.ready;await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));return document.querySelector(${JSON.stringify(imageSelector)}).src})()`)
+        const displayedPng=Buffer.from(displayed.slice('data:image/png;base64,'.length),'base64')
+        const renderedComparison=screenshotComparison(png,displayedPng,{channelTolerance:0,maxChangedPixelRatio:0})
+        assert.equal(renderedComparison.metrics.passed,true,
+          `${scenario.id} ${type} rendered appearance changed in the real editor after restart: ${JSON.stringify(renderedComparison.metrics)}`)
+        restartComparisons.push({scenarioId:scenario.id,consumer:type,storedSnapshotSha256:expected.sourceSnapshotSha256,
+          renderedPngSha256:createHash('sha256').update(displayedPng).digest('hex'),pixelComparison:renderedComparison.metrics})
+        const settled=await captureSettled(window,`${scenario.id}-restart-${type}-stage`)
+        assert.equal(settled.settled,true,`${scenario.id} ${type} stage did not settle after restart`)
+        await writeFile(join(folder,`${scenario.id}-restart-${type}-stage.png`),settled.png)
+      }
+    }
+    assert.equal(manifestHash(),first.ownership.characterManifestSha256,'Reopening authored AF13 scenes after restart modified characters')
+    assert.equal(treeHash(fabricatorPath),first.ownership.fabricatorTreeSha256,'Reopening authored AF13 scenes after restart modified Fabricador')
+    await writeFile(join(folder,'restart.json'),JSON.stringify({schemaVersion:1,status:'passed',freshElectronProcess:true,
+      scenarioCount:first.scenarios.length,reopenedFinalActorStates:restartScenarios.length,
+      studioSnapshotsRetained:true,videoStudioSnapshotsRetained:true,
+      characterManifestUnchanged:true,fabricatorTreeUnchanged:true,characterManifestSha256:first.ownership.characterManifestSha256,
+      fabricatorTreeSha256:first.ownership.fabricatorTreeSha256,restartComparisons},null,2))
+    return
+  }
+
+  const api=code=>window.webContents.executeJavaScript(code)
+  const model=await api('window.desktop.loadFabricatorSlot(1)')
+  assert.ok(model&&model.parts.length>=10,'Authored AF13 must use the model created by the Entrega B UI test')
+  const poses=await api('window.desktop.listFabricatorPoseSlots(1)')
+  const poseMetadata=poses.filter(pose=>pose&&[1,2].includes(pose.slot))
+  assert.equal(poseMetadata.length,2,'Authored AF13 requires the two UI-authored poses from Entrega B')
+  const wardrobeSummary=(await api('window.desktop.listWardrobeSets(1)')).find(set=>set.name===AUTHORED_WARDROBE_NAME)
+  assert.ok(wardrobeSummary,'Authored AF13 wardrobe must come from the real Roupas Dev UI save')
+  const wardrobe=await api('window.desktop.loadWardrobeSet(1,'+JSON.stringify(wardrobeSummary.id)+')')
+  assert.equal(wardrobe.components.length,9,'Authored AF13 requires camisa, coxas, canelas, sapatos e luvas created by UI')
+  const partByName=name=>model.parts.find(part=>part.name.toLowerCase()===name.toLowerCase())
+  const requiredTargets=['Tronco','Coxa esquerda','Coxa direita','Canela esquerda','Canela direita','Antebraço esquerdo','Antebraço direito']
+  const bindings=wardrobe.components.map(component=>({id:component.id,category:component.category,partId:component.attachedPartId,
+    partName:model.parts.find(part=>part.id===component.attachedPartId)?.name??null}))
+  for(const target of requiredTargets)assert.ok(bindings.some(binding=>binding.partName===target),`Authored wardrobe is missing a valid binding to ${target}`)
+  assert.equal(bindings.filter(binding=>binding.category==='sapato').length,2,'Both authored shoes must be present')
+  assert.equal(bindings.filter(binding=>binding.category==='calca-coxa').length,2,'Both authored thigh pieces must be present')
+  assert.equal(bindings.filter(binding=>binding.category==='calca-canela').length,2,'Both authored calf pieces must be present')
+  let characters=await api('window.desktop.listCustomizerCharacters()')
+  let actorA=characters.find(character=>character.name===AUTHORED_ACTOR_A)
+  let actorB=characters.find(character=>character.name===AUTHORED_ACTOR_B)
+  assert.ok(actorA&&actorB,'Authored AF13 requires the two real characters created through Customizer UI')
+  const wardrobeIds=new Set(wardrobe.components.map(component=>component.id))
+  for(const actor of [actorA,actorB]){
+    assert.equal(actor.customization.modelSlot,1,`${actor.name} must inherit authored model 1`)
+    assert.deepEqual(new Set(actor.customization.wardrobeGroups.filter(group=>group.setId===wardrobe.id).map(group=>group.componentId)),wardrobeIds,
+      `${actor.name} must use every UI-authored wardrobe component`)
+  }
+  const withDefaults=character=>({...character,customization:{...character.customization,wardrobeGroups:character.customization.wardrobeGroups.map(group=>group.setId===wardrobe.id
+    ?{...group,offsetX:0,offsetY:0,scaleX:1,scaleY:1,rotation:0}:group)}})
+  actorA=withDefaults(actorA)
+  await api('window.desktop.saveCustomizerCharacter('+JSON.stringify(actorA)+')')
+  actorB=withDefaults(actorB)
+  const leftThigh=wardrobe.components.find(component=>component.category==='calca-coxa'&&/esquerda/i.test(component.name))
+  assert.ok(leftThigh,'Authored wardrobe lacks a named left thigh component for actor B override')
+  const bThigh=actorB.customization.wardrobeGroups.find(group=>group.setId===wardrobe.id&&group.componentId===leftThigh.id)
+  assert.ok(bThigh,'Actor B must have its own left thigh group')
+  // Keep B visibly distinct while retaining knee coverage; the stronger displacement
+  // belongs to actor A's dedicated off-body scenario below.
+  Object.assign(bThigh,{offsetX:8,offsetY:0,scaleX:.98,rotation:1})
+  await api('window.desktop.saveCustomizerCharacter('+JSON.stringify(actorB)+')')
+  await window.webContents.executeJavaScript('location.hash="/opcoes"')
+  await waitForDom(window,'Boolean(document.querySelector("main.blank-page"))','Authored AF13 remount after synthetic actor overrides')
+  characters=await api('window.desktop.listCustomizerCharacters()')
+  actorA=characters.find(character=>character.name===AUTHORED_ACTOR_A)
+  actorB=characters.find(character=>character.name===AUTHORED_ACTOR_B)
+  assert.equal(actorA.customization.wardrobeGroups.find(group=>group.setId===wardrobe.id&&group.category==='camisa').offsetX,0)
+  assert.equal(actorB.customization.wardrobeGroups.find(group=>group.setId===wardrobe.id&&group.componentId===leftThigh.id).offsetX,8)
+  const fabricatorBefore=treeHash(fabricatorPath)
+  const scenarios=[]
+  for(const scenario of [
+    {id:'actor-a-factory-pose1',name:AUTHORED_ACTOR_A,poseSlot:1,category:'Parado',kind:'factory'},
+    {id:'actor-a-factory-pose2',name:AUTHORED_ACTOR_A,poseSlot:2,category:'Sentado',kind:'factory'},
+    {id:'actor-a-displaced-pose1',name:AUTHORED_ACTOR_A,poseSlot:1,category:'Parado',kind:'displaced'},
+    {id:'actor-a-displaced-pose2',name:AUTHORED_ACTOR_A,poseSlot:2,category:'Sentado',kind:'displaced'},
+    {id:'actor-b-own-override-pose1',name:AUTHORED_ACTOR_B,poseSlot:1,category:'Parado',kind:'actor-b'},
+    {id:'actor-b-own-override-pose2',name:AUTHORED_ACTOR_B,poseSlot:2,category:'Sentado',kind:'actor-b'}
+  ]){
+    if(scenario.kind==='displaced'){
+      actorA=(await api('window.desktop.listCustomizerCharacters()')).find(character=>character.name===AUTHORED_ACTOR_A)
+      const shirt=wardrobe.components.find(component=>component.category==='camisa')
+      const group=actorA.customization.wardrobeGroups.find(item=>item.setId===wardrobe.id&&item.componentId===shirt.id)
+      Object.assign(group,{offsetX:220,scaleX:1.05,rotation:1})
+      await api('window.desktop.saveCustomizerCharacter('+JSON.stringify(actorA)+')')
+    }
+    const customized=await authoredCustomizerCapture(window,scenario.name,scenario.poseSlot,scenario.category,folder,scenario.id)
+    const currentCharacters=await api('window.desktop.listCustomizerCharacters()')
+    const current=currentCharacters.find(character=>character.name===scenario.name)
+    assert.equal(current.customization.poseSlot,scenario.poseSlot,`${scenario.id}: saved character pose differs`)
+    const groups=current.customization.wardrobeGroups.filter(group=>group.setId===wardrobe.id)
+    const scenarioCharHash=manifestHash()
+    const scenarioFabricatorHash=treeHash(fabricatorPath)
+    const studio=await authoredStageCapture(window,scenario.name,false,`AF13 ${scenario.id}`,folder,scenario.id)
+    const videoStudio=await authoredStageCapture(window,scenario.name,true,`AF13 ${scenario.id}`,folder,scenario.id)
+    assert.equal(manifestHash(),scenarioCharHash,`${scenario.id}: Studio/Video Studio modified Customizer character data`)
+    assert.equal(treeHash(fabricatorPath),scenarioFabricatorHash,`${scenario.id}: Studio/Video Studio modified Fabricador libraries`)
+    assert.equal(studio.characterId,current.id,`${scenario.id}: Studio points to another character`)
+    assert.equal(videoStudio.characterId,current.id,`${scenario.id}: Video Studio points to another character`)
+    const studioPng=readFileSync(join(folder,studio.imageName)),videoPng=readFileSync(join(folder,videoStudio.imageName))
+    const compareStudio=screenshotComparison(customized.png,studioPng,{channelTolerance:3,maxChangedPixelRatio:.001})
+    const compareVideo=screenshotComparison(customized.png,videoPng,{channelTolerance:3,maxChangedPixelRatio:.001})
+    const compareStudios=screenshotComparison(studioPng,videoPng,{channelTolerance:3,maxChangedPixelRatio:.001})
+    for(const [type,result] of [['customizer-vs-studio',compareStudio],['customizer-vs-video-studio',compareVideo],['studio-vs-video-studio',compareStudios]]){
+      if(result.diffPng)await writeFile(join(folder,`${scenario.id}-${type}-diff.png`),result.diffPng)
+      assert.equal(result.metrics.passed,true,`${scenario.id} ${type} differs: ${JSON.stringify(result.metrics)}`)
+    }
+    const markers=Object.fromEntries(wardrobe.components.map(component=>[component.id,dominantRgba(Buffer.from(component.dataUrl.split(',')[1],'base64'))]))
+    const markerGeometry=Object.fromEntries(Object.entries(markers).map(([id,color])=>[id,{
+      customizer:coloredBounds(customized.png,color),studio:coloredBounds(studioPng,color),videoStudio:coloredBounds(videoPng,color)}]))
+    for(const [id,measured] of Object.entries(markerGeometry)){
+      for(const consumer of ['customizer','studio','videoStudio'])assert.ok(measured[consumer].count>12&&measured[consumer].bounds,`${scenario.id}: garment component ${id} missing in ${consumer}`)
+      assert.deepEqual(measured.studio.bounds,measured.customizer.bounds,`${scenario.id}: ${id} geometry shifted in Studio`)
+      assert.deepEqual(measured.videoStudio.bounds,measured.customizer.bounds,`${scenario.id}: ${id} geometry shifted in Video Studio`)
+    }
+    if(scenario.kind==='actor-b'){
+      const actorABaseline=scenarios.find(item=>item.id===`actor-a-factory-pose${scenario.poseSlot}`)
+      assert.ok(actorABaseline,`${scenario.id}: actor A baseline for the same pose is missing`)
+      assert.notDeepEqual(markerGeometry[leftThigh.id].customizer.bounds,
+        actorABaseline.markerGeometry[leftThigh.id].customizer.bounds,
+        `${scenario.id}: actor B override did not change its own left thigh geometry`)
+    }
+    const pieceByBone=bone=>wardrobe.components.find(component=>component.attachedPartId===model.parts.find(part=>part.name===bone)?.id)
+    const kneeCoverage={}
+    for(const side of ['esquerda','direita']){
+      const thigh=pieceByBone(`Coxa ${side}`),calf=pieceByBone(`Canela ${side}`)
+      const thighBounds=markerGeometry[thigh.id].customizer.bounds,calfBounds=markerGeometry[calf.id].customizer.bounds
+      const overlapY=Math.min(thighBounds.y+thighBounds.height,calfBounds.y+calfBounds.height)-Math.max(thighBounds.y,calfBounds.y)
+      const overlapX=Math.min(thighBounds.x+thighBounds.width,calfBounds.x+calfBounds.width)-Math.max(thighBounds.x,calfBounds.x)
+      kneeCoverage[side]={thighId:thigh.id,calfId:calf.id,projectedOverlapX:overlapX,projectedOverlapY:overlapY,
+        projectedBoundsIntersect:overlapX>0&&overlapY>0}
+      assert.equal(kneeCoverage[side].projectedBoundsIntersect,true,`${scenario.id}: no projected garment overlap at ${side} knee`)
+    }
+    scenarios.push({id:scenario.id,characterName:scenario.name,characterId:current.id,poseSlot:scenario.poseSlot,
+      outfitState:scenario.kind==='factory'?'fabricator-default-fit':scenario.kind==='displaced'?'character-shirt-displaced':'character-left-thigh-overridden',
+      characterCustomizationSha256:createHash('sha256').update(JSON.stringify(current.customization)).digest('hex'),
+      customizer:{sha256:customized.sha256,size:customized.size,alphaBounds:customized.alphaBounds,layers:customized.layers,
+        stageScreenshotSha256:customized.fullScreenshotSha256},
+      studio,videoStudio,comparisons:{customizerVsStudio:compareStudio.metrics,customizerVsVideoStudio:compareVideo.metrics,
+        studioVsVideoStudio:compareStudios.metrics},markerGeometry,kneeCoverage,
+      immutableSources:{characterManifestSha256:scenarioCharHash,fabricatorTreeSha256:scenarioFabricatorHash}})
+  }
+  const characterManifestSha256=manifestHash(),fabricatorTreeSha256=treeHash(fabricatorPath)
+  assert.equal(fabricatorTreeSha256,fabricatorBefore,'AF13 consumer scenarios altered the authored Fabricador libraries')
+  const report={schemaVersion:1,status:'passed',adapter:'production-React+preload+Electron-IPC',fixtureSource:'model/poses/wardrobe/characters actually authored by asset-ui-authoring.cjs through the UI',
+    scenarioCount:scenarios.length,scenarios,sourceAssets:{modelSlot:model.slot,modelPartIds:model.parts.map(part=>part.id),poseSlots:poseMetadata.map(pose=>pose.slot),
+      wardrobeSetId:wardrobe.id,componentBindings:bindings,componentCount:wardrobe.components.length,
+      includesHairOrHeadAccessories:false,reason:'Entrega B UI fixture authors clothing/model/poses; it does not publish hair or head-accessory assets'},
+    ownership:{studioAndVideoDidNotModifyCharacters:true,studioAndVideoDidNotModifyFabricador:true,
+      actorAAndActorBIndependent:true,characterManifestSha256,fabricatorTreeSha256},
+    comparisonPolicy:{channelTolerance:3,maxChangedPixelRatio:.001,characterImagesComparedAtNativeResolution:true,alphaTrimOnly:true},
+    caveats:['Studio and Video Studio preserve character images as scene snapshots; these tests prove source capture and snapshot persistence, not automatic live refresh of an already captured scene after later Customizer edits.',
+      'The synthetic model has rectangular separated parts; knee overlap reports are projected bounds, not a pixel-level skin-visibility oracle for arbitrary real body art.']}
+  await writeFile(join(folder,'report.json'),JSON.stringify(report,null,2))
   return report
 }
 
@@ -1572,13 +1914,15 @@ async function main() {
       return
     }
   }
-  if (!['asset-ui-authoring', 'asset-ui-verify-restart', 'seed', 'verify-restart', 'area-smoke', 'close-pending', 'verify-close-pending', 'delete', 'private-character-preview', 'private-character-edit', 'private-character-verify-edits', 'private-character-compare'].includes(mode)) throw new Error('Modo inválido.')
+  if (!['asset-ui-authoring', 'asset-ui-verify-restart', 'af13-authored', 'af13-authored-restart', 'seed', 'verify-restart', 'area-smoke', 'close-pending', 'verify-close-pending', 'delete', 'private-character-preview', 'private-character-edit', 'private-character-verify-edits', 'private-character-compare'].includes(mode)) throw new Error('Modo inválido.')
   const uiPrepared = mode === 'asset-ui-authoring' ? await assetUiAuthoring.prepare(sandbox) : null
   await import(pathToFileURL(join(ROOT, 'out', 'main', 'main.js')).href)
   await app.whenReady()
   const window = await waitForWindow()
   if (mode === 'asset-ui-authoring') await assetUiAuthoring.run(window,sandbox,output,uiPrepared,treeHash)
   else if (mode === 'asset-ui-verify-restart') await assetUiAuthoring.verifyAfterRestart(window,sandbox,output,treeHash)
+  else if (mode === 'af13-authored') await authoredAf13(window,output,false)
+  else if (mode === 'af13-authored-restart') await authoredAf13(window,output,true)
   else if (mode === 'seed') await seed(window)
   else if (mode === 'verify-restart') await verifyRestart(window)
   else if (mode === 'area-smoke') await areaSmoke(window)

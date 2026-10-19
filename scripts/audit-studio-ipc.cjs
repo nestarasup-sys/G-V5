@@ -49,7 +49,8 @@ function runElectron(mode, sandboxOverride = sandbox) {
     const finish = (result) => { if (done) return; done = true; clearTimeout(timer); resolveRun(result) }
     child.stdout.on('data', (data) => { stdout = (stdout + data.toString('utf8')).slice(-50_000) })
     child.stderr.on('data', (data) => { stderr = (stderr + data.toString('utf8')).slice(-50_000) })
-    const timeoutMs = mode === 'area-smoke' ? 480_000 : mode === 'asset-ui-authoring' ? 300_000 : 90_000
+    const timeoutMs = mode === 'area-smoke' ? 480_000 : mode === 'asset-ui-authoring' ? 300_000
+      : mode === 'af13-authored' ? 480_000 : 180_000
     const timer = setTimeout(() => {
       if (process.platform === 'win32' && child.pid) {
         const killer = spawn('taskkill.exe', ['/PID', String(child.pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' })
@@ -87,6 +88,10 @@ async function main() {
   if (authoring.exitCode !== 0 || !existsSync(join(artifacts,'asset-ui-authoring','report.json'))) throw new Error('UI asset authoring failed ('+authoring.exitCode+'): stdout='+authoring.stdout+'; stderr='+authoring.stderr)
   const authoringRestart = await runElectron('asset-ui-verify-restart')
   if (authoringRestart.exitCode !== 0 || !existsSync(join(artifacts,'asset-ui-authoring','restart.json'))) throw new Error('UI authored asset restart failed ('+authoringRestart.exitCode+'): stdout='+authoringRestart.stdout+'; stderr='+authoringRestart.stderr)
+  const authoredAf13 = await runElectron('af13-authored')
+  if (authoredAf13.exitCode !== 0 || !existsSync(join(artifacts,'af13-authored','report.json'))) throw new Error('AF13 with UI-authored assets failed ('+authoredAf13.exitCode+'): stdout='+authoredAf13.stdout+'; stderr='+authoredAf13.stderr)
+  const authoredAf13Restart = await runElectron('af13-authored-restart')
+  if (authoredAf13Restart.exitCode !== 0 || !existsSync(join(artifacts,'af13-authored','restart.json'))) throw new Error('AF13 after Electron restart failed ('+authoredAf13Restart.exitCode+'): stdout='+authoredAf13Restart.stdout+'; stderr='+authoredAf13Restart.stderr)
   const invalidRoot = await runElectron('invalid-root', join(sandbox, 'not-authorized'))
   if (invalidRoot.exitCode !== 0 || !invalidRoot.stdout.includes('invalidRootRejected')) throw new Error(`Main não rejeitou de forma controlada um root DEV AI inválido: stdout=${invalidRoot.stdout}; stderr=${invalidRoot.stderr}`)
   const seeds = JSON.parse(readFileSync(join(artifacts, 'seed-result.json'), 'utf8'))
@@ -97,6 +102,8 @@ async function main() {
   const deleted = JSON.parse(readFileSync(join(artifacts, 'delete-result.json'), 'utf8'))
   const uiAuthoring = JSON.parse(readFileSync(join(artifacts, 'asset-ui-authoring', 'report.json'), 'utf8'))
   const uiAuthoringRestart = JSON.parse(readFileSync(join(artifacts, 'asset-ui-authoring', 'restart.json'), 'utf8'))
+  const authoredAf13Result = JSON.parse(readFileSync(join(artifacts,'af13-authored','report.json'),'utf8'))
+  const authoredAf13RestartResult = JSON.parse(readFileSync(join(artifacts,'af13-authored','restart.json'),'utf8'))
   const measuredMetrics = {
     schemaVersion: 1, status: 'partial', adapter: 'production-preload-real-ipc', realIpcCovered: true,
     commit: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: ROOT, encoding: 'utf8' }).trim(),
@@ -130,13 +137,16 @@ async function main() {
       { id: 'namespace-delete', status: 'passed', exitCode: deletion.exitCode },
       { id: 'invalid-root-rejected', status: 'passed', exitCode: invalidRoot.exitCode },
       { id: 'asset-ui-authoring', status:'passed',exitCode:authoring.exitCode },
-      { id: 'asset-ui-restart', status:'passed',exitCode:authoringRestart.exitCode }
+      { id: 'asset-ui-restart', status:'passed',exitCode:authoringRestart.exitCode },
+      { id: 'af13-ui-authored-assets', status:'passed',exitCode:authoredAf13.exitCode },
+      { id: 'af13-ui-authored-restart', status:'passed',exitCode:authoredAf13Restart.exitCode }
     ], results: { seed: seeds, areaSmoke: smoke, restart: restarted,
       closePending: closePendingResult, verifyClosePending: verifyClosePendingResult,
-      deletion: deleted, uiAuthoring, uiAuthoringRestart, invalidRootRejected: true },
+      deletion: deleted, uiAuthoring, uiAuthoringRestart, authoredAf13:authoredAf13Result,
+      authoredAf13Restart:authoredAf13RestartResult, invalidRootRejected: true },
     metricsArtifact: 'metrics.json',
     userDataRoot: 'out/dev-ai/runs/<run-id>/sandbox/electron-user-data',
-    limitations: ['outsideSandboxWritesObserved=0 significa que as APIs testadas só resolveram os diretórios validados; não é monitoramento global do filesystem.', 'A nova fase asset-ui-authoring exercita importação real por UI, worker, duas poses, roupa e equipamento sintéticos; não cobre AF completo nem Golden dos Studios.'] }
+    limitations: ['outsideSandboxWritesObserved=0 significa que as APIs testadas só resolveram os diretórios validados; não é monitoramento global do filesystem.', 'AF13 com assets realmente criados pela UI cobre roupas, dois personagens e duas poses, mas cabelo e acessórios de cabeça não são incluídos porque a fixture de autoria não os produz; AF-13 integral permanece aberto.'] }
   writeFileSync(join(output, 'report.json'), JSON.stringify(report, null, 2))
   console.log(JSON.stringify({ status: report.status, adapter: report.adapter, realIpcCovered: true, phases: report.phases }))
 }
