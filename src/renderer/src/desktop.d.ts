@@ -1,6 +1,7 @@
 import type { FabricatorDesktopApi } from '../../shared/fabricator'
 import type { CustomizerDesktopApi } from '../../shared/customizer'
 import type { StudioDesktopApi, VideoStudioDesktopApi } from '../../shared/studio'
+import type { VideoExportSurfaceBootstrap, VideoExportSurfaceFrameReady, VideoExportSurfaceRenderRequest } from '../../shared/videoExportSurface'
 
 declare global {
   interface Window {
@@ -27,6 +28,9 @@ declare global {
       verifyDataBackup: (id: string) => Promise<{ id: string; valid: boolean; fileCount: number; byteLength: number; createdAt: string; verifiedAt: string; databaseSchema: number }>
       restoreDataBackup: (id: string) => Promise<{ cancelled?: boolean; safetyBackupId?: string; restoreId?: string; backupId?: string; fileCount?: number; byteLength?: number }>
       deleteDataBackup: (id: string) => Promise<{ deleted: boolean }>
+      prepareVideoExportSurface: (jobId: string) => Promise<VideoExportSurfaceBootstrap>
+      onVideoExportSurfaceRender: (callback: (request: VideoExportSurfaceRenderRequest) => void) => () => void
+      reportVideoExportSurfaceFrame: (ready: VideoExportSurfaceFrameReady) => void
     } & FabricatorDesktopApi & CustomizerDesktopApi & StudioDesktopApi & VideoStudioDesktopApi
   }
 }
