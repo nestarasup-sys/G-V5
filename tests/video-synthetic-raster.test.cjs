@@ -55,7 +55,7 @@ test('cancellation stops before the next frame and rejects invalid dimensions', 
   assert.equal(completed, 2)
   assert.throws(() => renderSyntheticBgraFrame(-1, 4, 4), RangeError)
   assert.throws(() => renderSyntheticBgraFrame(1, 0, 4), RangeError)
-  assert.throws(() => feedSyntheticFrames({ startFrame: 5, endFrameExclusive: 5, width: 4, height: 4 }, { async writeFrame() {} }), RangeError)
+  await assert.rejects(feedSyntheticFrames({ startFrame: 5, endFrameExclusive: 5, width: 4, height: 4 }, { async writeFrame() {} }), RangeError)
 })
 
 test('single-worker synthetic BGRA frames reach the existing writer without reorder', async (t) => {
