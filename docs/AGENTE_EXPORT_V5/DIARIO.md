@@ -274,3 +274,18 @@ _Atualizações posteriores devem registrar o SHA real do gate e nunca declarar 
 - Executado com o FFmpeg WinGet local v8.1.2 Gyan full build. Resultado observado: H.264, 1920×1080, 60/1 FPS, duração 1 s, 60/60 frames lidos, decode integral aprovado, tamanho 1.810.830 bytes, SHA-256 `e3f953be9bdfce958063ba71f315d52b17026d4ca0b1793a2836fb0630eeecc6`.
 - O binário usado tem `--enable-gpl`; a saída do harness marca `gplBuild: true` e `redistributionValidated: false`. Ele serve apenas para teste local e não pode ser empacotado/selecionado pelo app sem resolver licença e build compatível.
 - Limite: os pixels vêm de `renderSyntheticBgraFrame()`, não de cena/personagens do V5. Não houve Electron, áudio/AAC, interface, cancelamento, recuperação, pipeline VFR, dois modos nem comparação preview/export. Isto prova só a interoperabilidade sintética do writer e deste encoder local, não fecha M2/V515 ou a exportação do produto.
+
+
+## 2026-10-19 — Continuação independente após 16 commits do Codex
+
+**Base GitHub observada:** `afc0531197ffb52b27c6b24ba804f445a019f5c7` em `master-desenvolvimento` — 16 commits do Codex desde `05a262b6`; feitos semantic scene IR, lookups/transition, pinned assets, job manifest upgrades e testes sintéticos. **Ainda não há MP4 real / compositor completo / UI de export comprovada**.
+
+**Mudanças commitadas nesta continuação:**
+1. `src/shared/videoCharacterTimeline.ts` — `VideoCharacterTimelineLookup.stateKeys`: indexa somente keys com estado visual. `videoCharacterStateAt` faz binary search sobre `stateKeys`, eliminando busca reversa linear por grandes sequências de eventos sem artwork; mantém regra de desempate de keyframe no mesmo frame e stage transform. Commit `c0f5734a`.
+2. `tests/video-timeline-index.test.cjs` — teste sintético com **12.000 metadata keys**, boundaries, ties de authored state e seek reverso, sem tocar dados reais. Commit `e1b62a41`.
+3. `src/shared/videoSceneIR.ts` — validação runtime de `RenderVariant`; recusa valores inválidos de input deserializado em vez de habilitar efeitos implicitamente. Commit `6afd65a7`.
+4. `tests/video-scene-ir.test.cjs` — guarda contra variante desconhecida/nula e mantém variantes válidas. Commit `a52fe977`.
+
+**Estado de evidências:** análise do código + commits via GitHub, verificação estática das mudanças. **Não** rodei Node/typecheck/build/Electron/FFmpeg/CI ou benchmarks nesta continuação; commits de código aguardam gate local ou Actions no HEAD. A melhora assintótica é demonstrável pela estrutura de busca, mas o ganho de tempo real **não foi medido**.
+
+**Próximo passo de maior valor:** integrar `VideoSceneIR` aos assets/renderer real e capturar still canônico; depois gerar MP4 serial válido com probe/FFprobe/áudio antes de Turbo. Seguir V505/V507/V509/V512-V518, preservar contratos e dois modos da modernização.
