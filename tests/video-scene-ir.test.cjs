@@ -175,3 +175,12 @@ test('animated blink is deterministic by absolute frame and disabled in static-c
   assert.equal(animated.characters[0].automaticBlink, true)
   assert.equal(staticCharacters.characters[0].automaticBlink, false)
 })
+
+
+test('unknown export render variants are rejected instead of silently enabling animations', () => {
+  const snapshot = snapshotModule.createVideoExportSnapshot(fixture())
+  assert.throws(() => compileVideoScene(snapshot, 'unrecognized-mode'), /Variante de renderização de vídeo inválida/)
+  assert.throws(() => compileVideoScene(snapshot, null), /Variante de renderização de vídeo inválida/)
+  assert.doesNotThrow(() => compileVideoScene(snapshot, 'animated'))
+  assert.doesNotThrow(() => compileVideoScene(snapshot, 'static-characters'))
+})
