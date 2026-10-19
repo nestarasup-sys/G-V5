@@ -13,6 +13,7 @@ const { app, BrowserWindow, nativeImage } = require('electron')
 const { compareBitmaps, evaluateVisualComparison } = require('./visual-regression.cjs')
 const { boundComponentBounds, compareBounds, expectedPoseDifference, headLocalBounds } = require('./raster-geometry.cjs')
 const rasterFixture = require('./asset-flow-raster-fixture.cjs')
+const assetUiAuthoring = require('./asset-ui-authoring.cjs')
 const AF13_STUDIO_ID = 'af130001-7da4-4e28-9566-63dbf9401301'
 const AF13_VIDEO_ID = 'af130001-7da4-4e28-9566-63dbf9401302'
 
@@ -1571,11 +1572,14 @@ async function main() {
       return
     }
   }
-  if (!['seed', 'verify-restart', 'area-smoke', 'close-pending', 'verify-close-pending', 'delete', 'private-character-preview', 'private-character-edit', 'private-character-verify-edits', 'private-character-compare'].includes(mode)) throw new Error('Modo inválido.')
+  if (!['asset-ui-authoring', 'asset-ui-verify-restart', 'seed', 'verify-restart', 'area-smoke', 'close-pending', 'verify-close-pending', 'delete', 'private-character-preview', 'private-character-edit', 'private-character-verify-edits', 'private-character-compare'].includes(mode)) throw new Error('Modo inválido.')
+  const uiPrepared = mode === 'asset-ui-authoring' ? await assetUiAuthoring.prepare(sandbox) : null
   await import(pathToFileURL(join(ROOT, 'out', 'main', 'main.js')).href)
   await app.whenReady()
   const window = await waitForWindow()
-  if (mode === 'seed') await seed(window)
+  if (mode === 'asset-ui-authoring') await assetUiAuthoring.run(window,sandbox,output,uiPrepared,treeHash)
+  else if (mode === 'asset-ui-verify-restart') await assetUiAuthoring.verifyAfterRestart(window,sandbox,output,treeHash)
+  else if (mode === 'seed') await seed(window)
   else if (mode === 'verify-restart') await verifyRestart(window)
   else if (mode === 'area-smoke') await areaSmoke(window)
   else if (mode === 'private-character-preview') await privateCharacterPreview(window)

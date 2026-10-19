@@ -111,6 +111,9 @@ jobs:
             out/dev-ai/runs/**/studio-ipc-real-artifacts/*result.json
             out/dev-ai/runs/**/studio-ipc-real-artifacts/real-ipc-visual-comparison.json
             out/dev-ai/runs/**/studio-ipc-real-artifacts/real-ipc-studio-*.png
+            out/dev-ai/runs/**/studio-ipc-real-artifacts/asset-ui-authoring/*.png
+            out/dev-ai/runs/**/studio-ipc-real-artifacts/asset-ui-authoring/report.json
+            out/dev-ai/runs/**/studio-ipc-real-artifacts/asset-ui-authoring/restart.json
             out/dev-ai/runs/**/studio-ipc-real-artifacts/af13/*.png
             out/dev-ai/runs/**/studio-ipc-real-artifacts/raster-asset-flow/*.png
             out/dev-ai/runs/**/studio-ipc-real-artifacts/raster-asset-flow/report.json
