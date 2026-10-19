@@ -2,6 +2,7 @@
 
 const assert = require('node:assert/strict')
 const { createHash } = require('node:crypto')
+const { createServer, get } = require('node:http')
 const { existsSync, lstatSync, readdirSync, readFileSync } = require('node:fs')
 const { mkdir, rm, writeFile } = require('node:fs/promises')
 const { performance } = require('node:perf_hooks')
@@ -460,8 +461,44 @@ async function verifyClosePending(window) {
     normalTitlePersisted: normal[0].title, videoTitleUnchanged: video[0].title }, null, 2))
 }
 
+async function verifyRendererNetworkBlock(window) {
+  // Bind a synthetic-only loopback server and validate it is reachable from
+  // Node before asserting Electron's renderer cannot contact it.
+  let hits = 0
+  const server = createServer((_request, response) => {
+    hits++
+    response.writeHead(200, { 'Content-Type': 'text/plain' })
+    response.end('synthetic')
+  })
+  await new Promise((resolveStarted, rejectStarted) => {
+    server.once('error', rejectStarted)
+    server.listen(0, '127.0.0.1', resolveStarted)
+  })
+  try {
+    const url = `http://127.0.0.1:${server.address().port}/synthetic`
+    await new Promise((resolveGet, rejectGet) => {
+      get(url, response => {
+        response.resume()
+        response.once('end', resolveGet)
+      }).once('error', rejectGet)
+    })
+    assert.equal(hits, 1, 'Servidor loopback de controle não foi atingido por Node')
+    const blocked = await window.webContents.executeJavaScript(
+      `fetch(${JSON.stringify(url)}, { mode: 'no-cors' }).then(() => false, () => true)`
+    )
+    assert.equal(blocked, true, 'Renderer DEV AI conseguiu solicitar a rede')
+    await new Promise(resolveDelay => setTimeout(resolveDelay, 150))
+    assert.equal(hits, 1, 'Uma requisição do renderer alcançou o servidor, apesar da barreira')
+    return { status: 'passed', barrier: 'Electron defaultSession.webRequest', probe: 'loopback-synthetic',
+      serverControlRequests: 1, rendererRequestsObserved: 0, osFirewallEnforced: false }
+  } finally {
+    await new Promise(resolveClosed => server.close(resolveClosed))
+  }
+}
+
 async function areaSmoke(window) {
   const diagnostics = []
+  const rendererNetworkBarrier = await verifyRendererNetworkBlock(window)
   window.webContents.on('render-process-gone', (_event, details) => diagnostics.push({ type: 'gone', reason: details.reason, exitCode: details.exitCode }))
   window.webContents.on('console-message', (_event, ...args) => {
     const details = args[0]
@@ -694,7 +731,7 @@ async function areaSmoke(window) {
     memorySamples: { unit: 'KB', source: 'Electron app.getAppMetrics().memory.workingSetSize',
       beforeNavigation: memoryBeforeNavigation, afterNavigation: memoryAfterNavigation,
       samples: 2, leakConclusion: 'not determined; two samples cannot establish a leak' },
-    environment: runtimeEnvironment(), rendererErrors: diagnostics }
+    rendererNetworkBarrier, environment: runtimeEnvironment(), rendererErrors: diagnostics }
   await writeFile(join(output, 'area-smoke-result.json'), JSON.stringify(result, null, 2))
   console.log(JSON.stringify(result))
 }
