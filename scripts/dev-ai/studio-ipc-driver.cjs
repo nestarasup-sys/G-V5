@@ -314,6 +314,42 @@ async function seed(window) {
 
   // Test the real delete handlers with colliding IDs; only the selected
   // workspace directory may be removed. Then reopen verifies absence/presence.
+  // Asset-flow ownership IPC invariant: a new Customizer actor starts with
+  // model/pose preference, and outfit adjustments belong exclusively to its
+  // character document. No Fabricator authoring API is invoked by this test.
+  const fabricatorRoot = join(userData, 'fabricator')
+  const fabricatorBeforeCharacterSave = treeHash(fabricatorRoot)
+  const [actorA, actorB] = await Promise.all([
+    api("window.desktop.createCustomizerCharacter('DEV AI Actor A')"),
+    api("window.desktop.createCustomizerCharacter('DEV AI Actor B')")
+  ])
+  assert.notEqual(actorA.id, actorB.id)
+  assert.equal(actorA.customization.modelSlot, 1)
+  assert.equal(actorA.customization.poseSlot, 1)
+  assert.equal(actorB.customization.modelSlot, 1)
+  assert.equal(actorB.customization.poseSlot, 1)
+  const syntheticGarmentId = 'ba8a8f4a-d74a-4b91-a7c4-73408f0add11'
+  const actorWithFittedGarment = {
+    ...actorA, customization: {
+      ...actorA.customization,
+      wardrobeGroups: [{
+        modelSlot: 1, setId: syntheticGarmentId, category: 'sapato',
+        componentId: 'synthetic-shoe-left', offsetX: 12, offsetY: -5,
+        scaleX: 1.2, scaleY: 1, rotation: 8
+      }]
+    }
+  }
+  await api(`window.desktop.saveCustomizerCharacter(${JSON.stringify(actorWithFittedGarment)})`)
+  const persistedActors = await api('window.desktop.listCustomizerCharacters()')
+  assert.equal(persistedActors.length, 2)
+  const storedA = persistedActors.find(character => character.id === actorA.id)
+  const storedB = persistedActors.find(character => character.id === actorB.id)
+  assert.equal(storedA.customization.wardrobeGroups[0].offsetX, 12)
+  assert.equal(storedA.customization.wardrobeGroups[0].rotation, 8)
+  assert.deepEqual(storedB.customization, actorB.customization,
+    'Alteração de ajuste no personagem A contaminou personagem B')
+  assert.equal(treeHash(fabricatorRoot), fabricatorBeforeCharacterSave,
+    'Salvar personagem no Customizador modificou a biblioteca Fabricador Dev')
   const result = { schemaVersion: 1, adapter: 'production-preload-real-ipc', realIpcCovered: true,
     sameDocumentIdBothNamespaces: true, validMutations: { studio: normalMutations, videoStudio: videoMutations },
     concurrentOperations: { simultaneousCrossNamespace: concurrentNormal.length + concurrentVideo.length,
@@ -321,6 +357,10 @@ async function seed(window) {
     malformedCallsRejected: 5, ioFailuresSimulated: { read: 1, write: 1 },
     saveLatencyMs: { studio: summarizeSamples(saveLatency.studio), videoStudio: summarizeSamples(saveLatency.videoStudio),
       fixture: 'documento sintético sem assets, 1 elemento de dados; IPC real + escrita local confirmada' },
+    customizerCharacterOwnership: {
+      charactersCreated: 2, updatedCharacters: 1, siblingCustomizationUnchanged: true,
+      fabricatorLibraryHashUnchanged: true, testedReference: 'synthetic garment locator (no garment rendering)'
+    },
     deleteOperations: 0, outsideSandboxWritesObserved: 0,
     sandboxRoot: 'out/dev-ai/runs/<run-id>/sandbox',
     relativeNamespaces: ['electron-user-data/studios/Studio Principal', 'electron-user-data/studios/Video Studio'] }
@@ -366,9 +406,18 @@ async function verifyRestart(window) {
   assert.ok(video[0].title.startsWith('IPC video edit '))
   assert.ok(normal[0].videoTimeline === undefined)
   assert.ok(video[0].videoTimeline)
+  const actors = await window.webContents.executeJavaScript('window.desktop.listCustomizerCharacters()')
+  assert.equal(actors.length, 2)
+  const fitted = actors.find(character => character.name === 'DEV AI Actor A')
+  const unchanged = actors.find(character => character.name === 'DEV AI Actor B')
+  assert.equal(fitted?.customization.wardrobeGroups?.[0]?.offsetX, 12)
+  assert.equal(fitted?.customization.wardrobeGroups?.[0]?.rotation, 8)
+  assert.deepEqual(unchanged?.customization.wardrobeGroups ?? [], [],
+    'Após restart, personagem B herdou alterações do personagem A')
   const result = { mode, status: 'passed', adapter: 'production-preload-real-ipc', realIpcCovered: true,
     restartedProcess: true, normalDocuments: normal.length, videoStudioDocuments: video.length,
-    sameIdStillIsolated: true, dataRoot: 'out/dev-ai/runs/<run-id>/sandbox' }
+    sameIdStillIsolated: true, customizerCharacterDeltasPersisted: true,
+    dataRoot: 'out/dev-ai/runs/<run-id>/sandbox' }
   await writeFile(join(output, 'restart-result.json'), JSON.stringify(result, null, 2))
   console.log(JSON.stringify(result))
 }
