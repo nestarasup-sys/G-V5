@@ -11,6 +11,7 @@ const { basename, dirname, join, relative, resolve, sep } = require('node:path')
 const { pathToFileURL } = require('node:url')
 const { app, BrowserWindow, nativeImage } = require('electron')
 const { compareBitmaps, evaluateVisualComparison } = require('./visual-regression.cjs')
+const { boundComponentBounds, compareBounds, expectedPoseDifference, headLocalBounds } = require('./raster-geometry.cjs')
 const rasterFixture = require('./asset-flow-raster-fixture.cjs')
 
 const ROOT = resolve(__dirname, '../..')
@@ -422,25 +423,33 @@ async function seed(window) {
   assert.equal(actorB.customization.modelSlot, 1)
   assert.equal(actorB.customization.poseSlot, 1)
   const syntheticGarmentId = rasterFixture.SET_ID
+  const neutralGroups = [{
+    modelSlot: 9, setId: syntheticGarmentId, category: 'sapato', componentId: 'shoe-left',
+    offsetX: 0, offsetY: 0, scaleX: 1, scaleY: 1, rotation: 0
+  }, {
+    modelSlot: 9, setId: syntheticGarmentId, category: 'oculos', componentId: 'glasses',
+    offsetX: 0, offsetY: 0, scaleX: 1, scaleY: 1, rotation: 0
+  }]
+  const neutralCustomization = {
+    ...actorA.customization, modelSlot: 9, poseSlot: 1,
+    hairAppearance: { modelSlot: 9, frontStyleId: rasterFixture.HAIR_ID, backStyleId: null },
+    faceAppearance: { modelSlot: 9, eyeState: 0, eyebrows: true, noseIndex: 0, expressionIndex: 0,
+      mouthOpen: false, headExtras: { 'head-accessory': rasterFixture.EXTRA_ID } },
+    wardrobeGroups: neutralGroups, partOverrides: {}
+  }
+  const siblingSameModel = { ...actorB, customization: neutralCustomization }
   const actorWithFittedGarment = {
     ...actorA, customization: {
-      ...actorA.customization, modelSlot:9,poseSlot:1,
-      hairAppearance:{modelSlot:9,frontStyleId:rasterFixture.HAIR_ID,backStyleId:null},
-      faceAppearance:{modelSlot:9,eyeState:0,eyebrows:true,noseIndex:0,expressionIndex:0,
-        mouthOpen:false,headExtras:{'head-accessory':rasterFixture.EXTRA_ID}},
-      wardrobeGroups: [{
-        modelSlot: 9, setId: syntheticGarmentId, category: 'sapato',
-        componentId: 'shoe-left', offsetX: 12, offsetY: -5,
-        scaleX: 1.2, scaleY: 1, rotation: 8
-      }, {
-        modelSlot: 9, setId: syntheticGarmentId, category: 'oculos',
-        componentId: 'glasses', offsetX: 0, offsetY: 0,
-        scaleX: 1, scaleY: 1, rotation: 0
-      }]
+      ...neutralCustomization,
+      wardrobeGroups: [
+        { ...neutralGroups[0], offsetX: 12, offsetY: -5, scaleX: 1.2, rotation: 8 },
+        { ...neutralGroups[1], offsetX: 5, offsetY: -2, scaleX: 1.1, rotation: 4 }
+      ],
+      partOverrides: {
+        'head:rearHair': { x: 5, y: -3, scaleX: 1.1, scaleY: 1, rotation: 4 },
+        'head:acessorio-cabeca': { x: 3, y: 2, scaleX: 1, scaleY: 1, rotation: 5 }
+      }
     }
-  }
-  const siblingSameModel = {
-    ...actorB, customization: { ...actorB.customization, modelSlot:9,poseSlot:1 }
   }
   await api(`window.desktop.saveCustomizerCharacter(${JSON.stringify(siblingSameModel)})`)
   await api(`window.desktop.saveCustomizerCharacter(${JSON.stringify(actorWithFittedGarment)})`)
@@ -450,9 +459,11 @@ async function seed(window) {
   const storedB = persistedActors.find(character => character.id === actorB.id)
   assert.equal(storedA.customization.wardrobeGroups[0].offsetX, 12)
   assert.equal(storedA.customization.wardrobeGroups[0].rotation, 8)
+  assert.equal(storedA.customization.wardrobeGroups[0].scaleX, 1.2)
   assert.equal(storedA.customization.wardrobeGroups[1].componentId,'glasses')
-  assert.equal(storedA.customization.wardrobeGroups[1].offsetX,0)
-  assert.equal(storedA.customization.wardrobeGroups[1].rotation,0)
+  assert.equal(storedA.customization.wardrobeGroups[1].offsetX,5)
+  assert.equal(storedA.customization.wardrobeGroups[1].rotation,4)
+  assert.equal(storedA.customization.partOverrides['head:rearHair'].x,5)
   assert.equal(storedA.customization.hairAppearance.frontStyleId,rasterFixture.HAIR_ID)
   assert.equal(storedA.customization.faceAppearance.headExtras['head-accessory'],rasterFixture.EXTRA_ID)
   // Electron IPC structured clone may materialize optional undefined fields.
@@ -471,7 +482,9 @@ async function seed(window) {
       fixture: 'documento sintético sem assets, 1 elemento de dados; IPC real + escrita local confirmada' },
     customizerCharacterOwnership: {
       charactersCreated: 2, updatedCharacters: 2, siblingCustomizationUnchanged: true,
-      fabricatorLibraryHashUnchanged: true, testedReference: 'persisted raster wardrobe v2, full renderer golden pending',
+      bothCharactersUseSameSyntheticAssets: true, characterADeltasPersistedSeparately: true,
+      characterBRemainsAtPublishedDefaults: true, fabricatorLibraryHashUnchanged: true,
+      testedReference: 'persisted raster wardrobe v2, geometric Customizer oracle enabled; cross-Studio canonical golden remains pending',
       rasterSourceSheetSha256: rasterEvidence.sourceSheetSha256
     },
     deleteOperations: 0, outsideSandboxWritesObserved: 0,
@@ -524,19 +537,30 @@ async function verifyRestart(window) {
   const fitted = actors.find(character => character.name === 'DEV AI Actor A')
   const unchanged = actors.find(character => character.name === 'DEV AI Actor B')
   assert.equal(fitted?.customization.wardrobeGroups?.[0]?.offsetX, 12)
+  assert.equal(fitted?.customization.wardrobeGroups?.[0]?.offsetY, -5)
+  assert.equal(fitted?.customization.wardrobeGroups?.[0]?.scaleX, 1.2)
   assert.equal(fitted?.customization.wardrobeGroups?.[0]?.modelSlot,9)
   assert.equal(fitted?.customization.wardrobeGroups?.[0]?.setId,rasterFixture.SET_ID)
   assert.equal((await window.webContents.executeJavaScript('window.desktop.loadFabricatorPose(9,1)'))?.parts.length,10)
   assert.equal(fitted?.customization.wardrobeGroups?.[0]?.rotation, 8)
   assert.equal(fitted?.customization.wardrobeGroups?.[1]?.componentId,'glasses')
+  assert.equal(fitted?.customization.wardrobeGroups?.[1]?.offsetX, 5)
+  assert.equal(fitted?.customization.partOverrides?.['head:rearHair']?.x, 5)
   assert.equal(fitted?.customization.hairAppearance?.frontStyleId,rasterFixture.HAIR_ID)
   assert.equal(fitted?.customization.faceAppearance?.headExtras?.['head-accessory'],rasterFixture.EXTRA_ID)
   assert.equal(unchanged?.customization.modelSlot, 9)
-  assert.deepEqual(unchanged?.customization.wardrobeGroups ?? [], [],
+  assert.equal(unchanged?.customization.wardrobeGroups?.length, 2)
+  assert.ok(unchanged?.customization.wardrobeGroups?.every(group => group.offsetX === 0 && group.offsetY === 0
+    && group.scaleX === 1 && group.scaleY === 1 && group.rotation === 0),
     'Após restart, personagem B herdou alterações do personagem A')
+  assert.deepEqual(unchanged?.customization.partOverrides ?? {}, {},
+    'Overrides de cabelo/cabeça do personagem A vazaram para B após restart')
+  assert.equal(unchanged?.customization.hairAppearance?.frontStyleId, rasterFixture.HAIR_ID)
+  assert.equal(unchanged?.customization.faceAppearance?.headExtras?.['head-accessory'], rasterFixture.EXTRA_ID)
   const result = { mode, status: 'passed', adapter: 'production-preload-real-ipc', realIpcCovered: true,
     restartedProcess: true, normalDocuments: normal.length, videoStudioDocuments: video.length,
     sameIdStillIsolated: true, customizerCharacterDeltasPersisted: true,
+    siblingSameEquipmentAtNeutralDefaults: true,
     dataRoot: 'out/dev-ai/runs/<run-id>/sandbox' }
   await writeFile(join(output, 'restart-result.json'), JSON.stringify(result, null, 2))
   console.log(JSON.stringify(result))
@@ -616,9 +640,8 @@ async function verifyRendererNetworkBlock(window) {
 }
 
 async function verifyCustomizerRasterPreview(window,poseLabel='pose1') {
-  // A real production Customizer page consumes the saved Fabricator model,
-  // real pose and V2 wardrobe PNGs. We assert that the equipped raster has
-  // been decoded and composited; do not call this a cross-Studio golden test.
+  // Sample distinct synthetic colors in production Customizer layer rasters;
+  // alpha totals alone cannot prove that a part is attached to the right bone.
   const waitForCharacter = async (name, expectOutfit) =>
     window.webContents.executeJavaScript(`(async()=>{
       const name=${JSON.stringify(name)}
@@ -638,37 +661,62 @@ async function verifyCustomizerRasterPreview(window,poseLabel='pose1') {
         const aboveHair=document.querySelector('.customizer-wardrobe-above-hair-overlay')
         const frontHair=document.querySelector('.customizer-front-hair-overlay')
         const face=document.querySelector('.customizer-face-overlay')
-        const renderedPixels=(img)=>{
-          if(!img || !img.complete || !img.naturalWidth || !img.naturalHeight) return 0
+        const raster=(img)=>{
+          if(!img || !img.complete || !img.naturalWidth || !img.naturalHeight) return null
           const canvas=document.createElement('canvas')
           canvas.width=img.naturalWidth;canvas.height=img.naturalHeight
           const context=canvas.getContext('2d',{willReadFrequently:true})
-          if(!context) return 0
+          if(!context) return null
           context.drawImage(img,0,0)
-          const rgba=context.getImageData(0,0,canvas.width,canvas.height).data
-          let pixels=0
-          for(let i=3;i<rgba.length;i+=4)if(rgba[i]>=32)pixels++
-          return pixels
+          return {width:canvas.width,height:canvas.height,data:context.getImageData(0,0,canvas.width,canvas.height).data}
+        }
+        const alphaBounds=(image)=>{
+          if(!image) return null
+          const {width,height,data}=image
+          let pixels=0,minX=width,minY=height,maxX=-1,maxY=-1
+          for(let i=0;i<data.length;i+=4){
+            if(data[i+3]<32) continue
+            pixels++
+            const pixel=i/4,x=pixel%width,y=Math.floor(pixel/width)
+            minX=Math.min(minX,x);minY=Math.min(minY,y);maxX=Math.max(maxX,x);maxY=Math.max(maxY,y)
+          }
+          return {pixels,bounds:pixels?{x:minX,y:minY,width:maxX-minX+1,height:maxY-minY+1}:null,
+            raster:{width,height}}
+        }
+        const differenceBounds=(left,right,tolerance=4)=>{
+          if(!left||!right||left.width!==right.width||left.height!==right.height) return null
+          let pixels=0,minX=left.width,minY=left.height,maxX=-1,maxY=-1,maxChannelDelta=0
+          for(let i=0;i<left.data.length;i+=4){
+            let delta=0
+            for(let channel=0;channel<4;channel++)delta=Math.max(delta,Math.abs(left.data[i+channel]-right.data[i+channel]))
+            maxChannelDelta=Math.max(maxChannelDelta,delta)
+            if(delta<=tolerance)continue
+            pixels++
+            const pixel=i/4,x=pixel%left.width,y=Math.floor(pixel/left.width)
+            minX=Math.min(minX,x);minY=Math.min(minY,y);maxX=Math.max(maxX,x);maxY=Math.max(maxY,y)
+          }
+          return {pixels,bounds:pixels?{x:minX,y:minY,width:maxX-minX+1,height:maxY-minY+1}:null,
+            raster:{width:left.width,height:left.height},channelTolerance:tolerance,maxChannelDelta}
         }
         const alerts=[...document.querySelectorAll('[role=alert]')].map(e=>e.textContent.trim()).filter(Boolean)
-        const shoePixels=expected?renderedPixels(wardrobe):0
-        const glassesPixels=expected?renderedPixels(aboveHair):0
-        const frontHairPixels=expected?renderedPixels(frontHair):0
-        const headExtraPixels=expected?renderedPixels(face):0
+        const shoe=expected?differenceBounds(raster(model),raster(wardrobe)):null
+        const glasses=expected?alphaBounds(raster(aboveHair)):null
+        const frontHairBounds=expected?alphaBounds(raster(frontHair)):null
+        const headExtra=expected?alphaBounds(raster(face)):null
         last={selected,modelReady:!!model && model.complete && model.naturalWidth>0,
           wardrobeReady:!!wardrobe && wardrobe.complete && wardrobe.naturalWidth>0,
           glassesReady:!!aboveHair && aboveHair.complete && aboveHair.naturalWidth>0,
           frontHairReady:!!frontHair && frontHair.complete && frontHair.naturalWidth>0,
           headExtraReady:!!face && face.complete && face.naturalWidth>0,
-          shoeOpaquePixels:shoePixels,glassesOpaquePixels:glassesPixels,
-          frontHairOpaquePixels:frontHairPixels,headExtraOpaquePixels:headExtraPixels,
+          rasterGeometry:{shoe,glasses,frontHair:frontHairBounds,headExtra},
           outfitPresent:!!wardrobe,glassesPresent:!!aboveHair,
           hairPresent:!!frontHair,headExtraPresent:!!face,
           alerts,modelNaturalSize:model?[model.naturalWidth,model.naturalHeight]:null,
           outfitNaturalSize:wardrobe?[wardrobe.naturalWidth,wardrobe.naturalHeight]:null}
+        const allAssetsMeasured=[shoe,glasses,frontHairBounds,headExtra].every(item=>item?.pixels>100 && item.bounds)
         if(selected===name && last.modelReady
           && (expected?(last.wardrobeReady && last.glassesReady && last.frontHairReady && last.headExtraReady
-             && shoePixels>100 && glassesPixels>100 && frontHairPixels>100 && headExtraPixels>100)
+             && allAssetsMeasured)
             :(!last.outfitPresent&&!last.glassesPresent&&!last.hairPresent&&!last.headExtraPresent))
           && alerts.length===0){
           await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))
@@ -681,18 +729,70 @@ async function verifyCustomizerRasterPreview(window,poseLabel='pose1') {
   const outfit = await waitForCharacter('DEV AI Actor A',true)
   const artifactsFolder=join(output,'raster-asset-flow')
   await mkdir(artifactsFolder,{recursive:true})
-  const screenshotA=(await window.webContents.capturePage()).toPNG()
-  await writeFile(join(artifactsFolder,'customizer-actor-a-outfit-'+poseLabel+'.png'),screenshotA)
-  const sibling = await waitForCharacter('DEV AI Actor B',false)
-  await writeFile(join(artifactsFolder,'customizer-actor-b-default-'+poseLabel+'.png'),
-    (await window.webContents.capturePage()).toPNG())
+  const captureCanonicalCharacter=async(name,fileName)=>{
+    const dataUrl=await window.webContents.executeJavaScript(`(async()=>{
+      const name=${JSON.stringify(name)}
+      const deadline=Date.now()+10000
+      while(Date.now()<deadline){
+        const selected=(document.querySelector('.customizer-preview-character-name')?.textContent||'').trim()
+        if(selected===name)break
+        await new Promise(resolve=>setTimeout(resolve,50))
+      }
+      const selectors=['.customizer-selected-artwork','.customizer-wardrobe-overlay',
+        '.customizer-face-overlay','.customizer-front-hair-overlay','.customizer-wardrobe-above-hair-overlay']
+      const layers=selectors.map(selector=>document.querySelector(selector)).filter(Boolean)
+      if(!layers.length||layers.some(image=>!image.complete||!image.naturalWidth))return null
+      const canvas=document.createElement('canvas')
+      canvas.width=layers[0].naturalWidth;canvas.height=layers[0].naturalHeight
+      const context=canvas.getContext('2d')
+      for(const layer of layers)context.drawImage(layer,0,0,canvas.width,canvas.height)
+      return canvas.toDataURL('image/png')
+    })()`)
+    assert.ok(dataUrl?.startsWith('data:image/png;base64,'),`Captura canônica ausente para ${name}`)
+    await writeFile(join(artifactsFolder,fileName),Buffer.from(dataUrl.slice('data:image/png;base64,'.length),'base64'))
+  }
+  await captureCanonicalCharacter('DEV AI Actor A','customizer-actor-a-canonical-'+poseLabel+'.png')
+  const sibling = await waitForCharacter('DEV AI Actor B',true)
+  await captureCanonicalCharacter('DEV AI Actor B','customizer-actor-b-canonical-'+poseLabel+'.png')
+  const fixture=rasterFixture.manifest(nativeImage)
+  const pose=poseLabel==='pose2'?fixture.pose2:fixture.pose1
+  const sourceHead=rasterFixture.FRAMES.find(part=>part.id==='head')
+  const targetHead=pose.parts.find(part=>part.id==='head')
+  const actorAOverrides={
+    shoe:{offsetX:12,offsetY:-5,scaleX:1.2,scaleY:1,rotation:8},
+    glasses:{offsetX:5,offsetY:-2,scaleX:1.1,scaleY:1,rotation:4},
+    hair:{x:5,y:-3,scaleX:1.1,scaleY:1,rotation:4},
+    headExtra:{x:3,y:2,scaleX:1,scaleY:1,rotation:5}
+  }
+  const expectedFor=(actor)=>{
+    const override=actor==='A'
+    const groups=override?actorAOverrides:{shoe:{},glasses:{}}
+    const merged=(base,delta)=>({...base,x:base.x+(delta.x??0),y:base.y+(delta.y??0),
+      scaleX:base.scaleX*(delta.scaleX??1),scaleY:base.scaleY*(delta.scaleY??1),rotation:base.rotation+(delta.rotation??0)})
+    return {
+      shoe:boundComponentBounds(fixture.set.components.find(component=>component.id==='shoe-left'),
+        pose.parts.find(part=>part.id==='leg-left'),groups.shoe),
+      glasses:boundComponentBounds(fixture.set.components.find(component=>component.id==='glasses'),
+        targetHead,groups.glasses),
+      frontHair:headLocalBounds(fixture.hairStyle.front,{...merged(fixture.hairStyle.transforms.front,override?actorAOverrides.hair:{}),relativeToHead:true},sourceHead,targetHead),
+      headExtra:headLocalBounds(fixture.extraAsset,merged(fixture.extraAsset.defaultTransform,override?actorAOverrides.headExtra:{}),sourceHead,targetHead)
+    }
+  }
+  const validateGeometry=(actual,actor)=>Object.fromEntries(Object.entries(expectedFor(actor)).map(([key,expected])=>[
+    key,compareBounds(actual.rasterGeometry?.[key]?.bounds,expected,3)
+  ]))
+  const outfitGeometry=validateGeometry(outfit,'A')
+  const siblingGeometry=validateGeometry(sibling,'B')
+  const geometryWithinTolerance=[...Object.values(outfitGeometry),...Object.values(siblingGeometry)].every(result=>result.passed)
   const report={schemaVersion:1,adapter:'production-customizer-real-dom',
-    status:outfit.status==='passed'&&sibling.status==='passed'?'passed':'failed',
-    configuredFixture:'raster model-9, pose-1, wardrobe-v2 with shoe-left',
-    characterA:outfit,characterB:sibling,sourceLibraryWrites:0,
-    limitations:'Real DOM and PNG decode: not a quantitative Fabricador/Studio golden image'}
+    status:outfit.status==='passed'&&sibling.status==='passed'&&geometryWithinTolerance?'passed':'failed',
+    configuredFixture:`synthetic-only: DEV AI Actor A/B; raster model-9, ${poseLabel}, wardrobe-v2, head-local hair and head-extra`,
+    capture:'canonical character composite only; excludes application navigation and seeded demo characters',
+    characterA:{...outfit,geometry:outfitGeometry},characterB:{...sibling,geometry:siblingGeometry},
+    geometryWithinTolerance,tolerancePixels:3,sourceLibraryWrites:0,
+    limitations:'Geometric Customizer oracle over production DOM layer rasters; synthetic fixtures only; not a cross-Studio canonical golden image'}
   await writeFile(join(artifactsFolder,'customizer-render-result-'+poseLabel+'.json'),JSON.stringify(report,null,2))
-  assert.equal(report.status,'passed',`Customizer não representou os assets sintéticos corretamente: ${JSON.stringify(report)}`)
+  assert.equal(report.status,'passed',`Customizer não respeitou os bindings/defaultTransforms sintéticos: ${JSON.stringify(report)}`)
   return report
 }
 
@@ -746,32 +846,39 @@ async function areaSmoke(window) {
   assert.ok(navigationPendingAtRouteChange > 0, 'O teste de navegação precisa iniciar com salvamentos pendentes')
   const customizer = await route('/customizar', '.home-layout', 'Customizer')
   const customizerRasterPose1 = await verifyCustomizerRasterPreview(window,'pose1')
-  // Actual renderer+IPC test: switch the same saved actor to pose 2 while
-  // keeping wardrobe, head-local hair, and head-extra preferences unchanged.
+  // Actual renderer+IPC test: switch both actors to pose 2 while preserving
+  // equipment and actor-specific transforms, so geometry remains comparable.
   // Navigate away/back to force fresh document hydration (not a cached mock).
   const fabricatorBeforePoseChange=treeHash(join(app.getPath('userData'),'fabricator'))
-  const actorToPose = (await window.webContents.executeJavaScript('window.desktop.listCustomizerCharacters()'))
-    .find(actor => actor.name === 'DEV AI Actor A')
-  assert.ok(actorToPose,'Synthetic actor A missing before pose 2')
-  await window.webContents.executeJavaScript(`window.desktop.saveCustomizerCharacter(${JSON.stringify({
-    ...actorToPose,customization:{...actorToPose.customization,poseSlot:2}
-  })})`)
+  const actorsToPose = (await window.webContents.executeJavaScript('window.desktop.listCustomizerCharacters()'))
+    .filter(actor => ['DEV AI Actor A','DEV AI Actor B'].includes(actor.name))
+  assert.equal(actorsToPose.length,2,'Os dois personagens sintéticos precisam existir antes da pose 2')
+  await Promise.all(actorsToPose.map(actor=>window.webContents.executeJavaScript(`window.desktop.saveCustomizerCharacter(${JSON.stringify({
+    ...actor,customization:{...actor.customization,poseSlot:2}
+  })})`)))
   assert.equal(treeHash(join(app.getPath('userData'),'fabricator')),fabricatorBeforePoseChange,
     'Changing the Customizer character pose altered Fabricador assets')
   await route('/opcoes','main.blank-page','Opções / renderer reset')
   await route('/customizar','.home-layout','Customizer pose 2')
   const customizerRasterPose2 = await verifyCustomizerRasterPreview(window,'pose2')
   const rasterScreenshots=join(output,'raster-asset-flow')
-  const aPixels=readFileSync(join(rasterScreenshots,'customizer-actor-a-outfit-pose1.png'))
-  const bPixels=readFileSync(join(rasterScreenshots,'customizer-actor-a-outfit-pose2.png'))
+  const aPixels=readFileSync(join(rasterScreenshots,'customizer-actor-a-canonical-pose1.png'))
+  const bPixels=readFileSync(join(rasterScreenshots,'customizer-actor-a-canonical-pose2.png'))
   const difference=screenshotComparison(aPixels,bPixels,{channelTolerance:3,maxChangedPixelRatio:0})
   await writeFile(join(rasterScreenshots,'pose-1-vs-2-diff.png'),difference.diffPng)
-  await writeFile(join(rasterScreenshots,'pose-comparison.json'),JSON.stringify(difference.metrics,null,2))
-  assert.ok(difference.metrics.changedPixelRatio>0.005,
+  const poseOutcome=expectedPoseDifference(difference.metrics.changedPixelRatio,0.005)
+  const geometryWithinTolerance=customizerRasterPose1.geometryWithinTolerance&&customizerRasterPose2.geometryWithinTolerance
+  const poseReport={schemaVersion:2,comparison:'expected-pose-change',...poseOutcome,geometryWithinTolerance,
+    visualDifference:{changedPixels:difference.metrics.changedPixels,
+      changedPixelRatio:difference.metrics.changedPixelRatio,changeBounds:difference.metrics.changeBounds,
+      channelTolerance:difference.metrics.channelTolerance}}
+  await writeFile(join(rasterScreenshots,'pose-comparison.json'),JSON.stringify(poseReport,null,2))
+  assert.equal(poseOutcome.passed,true,
     'Pose 2 deve alterar visualmente o modelo, preservando o pré-ajuste de roupas/cabelo')
+  assert.equal(geometryWithinTolerance,true,'Bindings, transformações de cabelo ou acessório saíram da tolerância')
   assert.equal(treeHash(join(app.getPath('userData'),'fabricator')),fabricatorBeforePoseChange)
   const customizerRasterRender={pose1:customizerRasterPose1,pose2:customizerRasterPose2,
-    poseChangedWithoutSourceWrites:true,poseScreenshotChangeRatio:difference.metrics.changedPixelRatio}
+    poseChangedWithoutSourceWrites:true,poseComparison:poseReport,geometryWithinTolerance}
   await window.webContents.executeJavaScript('Promise.all(window.__devAiNavigationSaves.map(entry => entry.promise))')
   const navigationSaveErrors = await window.webContents.executeJavaScript('window.__devAiNavigationSaves.filter(entry => entry.error).map(entry => entry.error)')
   assert.deepEqual(navigationSaveErrors, [])
