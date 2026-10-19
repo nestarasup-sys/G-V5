@@ -54,3 +54,30 @@
 - [FFmpeg licensing](https://ffmpeg.org/legal.html): configuração de build, GPL/nonfree, origem e distribuição devem ser verificadas.
 
 _Atualizações posteriores devem registrar o SHA real do gate e nunca declarar conclusão a partir de código compilado._
+
+
+## 2026-10-19 — Rodada 03: reanálise independente e consolidação documental
+
+**Escopo executado:** revisão estática do código do G-V5 master-desenvolvimento e do EDITOR-V4 oai/aggressive-export-v5. Branch inicial observada G-V5: 71183cc5cc56840c7d6390d98146a9032d7d79d3. V4 observado b951b4d2cbb360e3cfef7769e457894337bbc83e. Leitura por GitHub; nenhum Electron/FFmpeg iniciado, nenhum benchmark local, nenhum projeto ou asset privado acessado.
+
+**Entregas commitadas nesta branch:**
+- 932fdbf63b5ebeb1605d9062935acda7084a44f3 — AUDITORIA_CODIGO_2026-10-19.md
+- 66bc40ff430350865cfc968e11f349898ada12c0 — CONTRATOS_ENGINE_E_TESTES.md
+- 00f246f4d6f9dd907bfc0e913172133d3965f121 — BACKLOG_EXECUTAVEL.md
+- bbd160d26f81e860dcecba58fa45569203c0533f — README.md
+- PLANO_MESTRE.md — atualizado nesta rodada para cruzar os quatro documentos; SHA no log do GitHub.
+
+**Fatos novos encontrados:**
+1. useCharacterTransitions.ts condiciona samples interpolados a playing; export em frame arbitrário exige comportamento canônico.
+2. transitionRenderer.ts busca modelos, poses e catálogo externo assíncrono; freeze do Studio não equivale a snapshot de assets.
+3. videoExportSnapshot.ts cria apenas seleção temporal e sourceFrame em ticks de 1/60 s, sem frame de mídia nem compositor completo.
+4. videoExportJobs.ts tem checkpoint sequencial e SHA, não valida decodificação ou conclusão fora de ordem para Turbo.
+5. videoRawFrameWriter.ts espera callback por frame, de modo que maxInFlight=2 não prova pipeline realmente paralelo; confirmar com benchmark.
+6. O áudio gerado é plano FFmpeg, não mux executado; VideoExportLibrary publica arquivo com metadados, não certifica codec/duração/PTS por conta própria.
+7. O CI sintético permite typecheck/build no Windows, mas não cobre paridade raster, decoder, Electron ou FFmpeg real.
+
+**Gates desta rodada:** leitura e escrita confirmadas pelo GitHub. Testes de unidade, typecheck, build, Windows Actions, MP4 real e visual parity: **NÃO EXECUTADOS nesta rodada**; não herdar sucesso de SHA anterior como prova da revisão documental atual.
+
+**Próxima ação técnica:** E01 (manifest de dependências) + E02 (frame evaluator com transições) + E03 (fixture visual); depois surface/encoder serial antes de chunks Turbo. Não publicar componente de export como funcional antecipadamente.
+
+**Rollback:** documentos não alteraram runtime nem projeto; qualquer implementação futura permanece atrás de gate até provas Electron/FFmpeg, com serial estável antes de Turbo.
