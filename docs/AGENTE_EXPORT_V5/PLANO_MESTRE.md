@@ -63,14 +63,14 @@ Os contratos `StudioDocument` e `VideoTimelineDocument` permanecem autoritativos
 ### M0 — Registro e base sintética [em andamento]
 - [x] Auditar superfícies, contratos e lacunas da engine V5 sem acessar dados privados.
 - [x] Separar conhecimento V4 de arquitetura V5.
-- [ ] Criar helper de snapshot serializável e isolado do estado `playing/playhead` com defesa contra mutações.
-- [ ] Criar plano temporal determinístico de vídeos/textos/gaps por frame, com testes de boundary, sem afirmar paridade raster.
-- [ ] Habilitar CI mínimo apenas para testes sintéticos, typecheck e build (sem DEV AI/audit scripts).
+- [x] Criar helper de snapshot isolado do estado `playing/playhead` com defesa contra mutações (`videoExportSnapshot.ts`; serialização/hash de job persistido ainda pendente).
+- [x] Criar plano temporal determinístico de vídeos/textos/gaps por frame, com testes de boundary, sem afirmar paridade raster.
+- [x] Habilitar CI mínimo apenas para testes sintéticos, typecheck e build (sem DEV AI/audit scripts). Gate base `e8b98b2`: [success](https://github.com/nestarasup-sys/G-V5/actions/runs/39323448321).
 **Aceite:** testes isolados passando no SHA exato, nenhuma alteração em document/preview/dados reais, prova de repetibilidade em frames 0, 1, boundaries e último.
 
 ### M1 — Frame sintético determinístico
-- [ ] Rasterizador **sintético** independente de assets privados: BGRA, geometria e layers em pixels previsíveis.
-- [ ] Teste de tamanho exato `1920*1080*4`, determinismo bit a bit, contagem, seek aleatório, memória/ownership.
+- [x] Rasterizador **sintético** independente de assets privados: BGRA com padrão e marcador móvel em pixels previsíveis; **não** é compositor V5.
+- [ ] Teste de tamanho exato `1920*1080*4`, determinismo bit a bit, contagem, seek aleatório, memória/ownership. *Implementados checks BGRA/determinismo/contagem/intervalos/transporte; benchmark de memória e ownership real ainda faltam. CI M1 pendente.*
 - [ ] Separar teste puramente funcional de smoke Electron. Sem declarar visual V5 compatível antes da prova.
 **Aceite:** hashes de PNG/BGRA estáveis por frame e sem frames antigos reusados.
 
