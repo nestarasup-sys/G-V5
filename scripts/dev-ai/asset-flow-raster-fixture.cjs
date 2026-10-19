@@ -7,6 +7,8 @@ const { createHash } = require('node:crypto')
 const WIDTH = 1122, HEIGHT = 1402, MODEL_SLOT = 9
 const SOURCE_NAME = 'source-00000000-0000-4000-8000-000000000009.png'
 const SET_ID = '09ed9e10-1000-4000-8000-000000000009'
+const HAIR_ID = '09ed9e10-1000-4000-8000-000000000019'
+const EXTRA_ID = '09ed9e10-1000-4000-8000-000000000029'
 const FRAMES = Object.freeze([
   { id: 'head', name: 'Cabeça', x: 399, y: 29, width: 319, height: 294 },
   { id: 'arm-left', name: 'Braço esquerdo', x: 238, y: 306, width: 119, height: 194 },
@@ -60,6 +62,8 @@ function manifest(nativeImage) {
   const sourceBytes = asPng(nativeImage, WIDTH, HEIGHT, source)
   const shoe = pngData(nativeImage, 58, 34, [8, 220, 235, 255], true)
   const glasses = pngData(nativeImage, 76, 20, [240, 40, 195, 255], true)
+  const frontHair = pngData(nativeImage, 106, 70, [45, 100, 235, 255], true)
+  const headExtra = pngData(nativeImage, 70, 22, [235, 180, 12, 255], true)
   const parts = FRAMES.map((f,index) => ({
     ...f, x: 65+(index%3)*270, y: 50+Math.floor(index/3)*260,
     rotation: 0, sourceTransform: {
@@ -95,7 +99,18 @@ function manifest(nativeImage) {
   const set = { schemaVersion:1,edition:2,id:SET_ID,modelSlot:MODEL_SLOT,modelName:base.name,
     name:'DEV AI Outfit',width:WIDTH,height:HEIGHT,updatedAt:now,
     components:components.map(c=>({...c,binding:binding(c)})) }
+  const frontHairTransform = { x: 159.5, y: 100, scaleX: 1.2, scaleY: 1.1, rotation:0 }
+  const neutralHairTransform = { x:0,y:0,scaleX:1,scaleY:1,rotation:0 }
+  const hairStyle={schemaVersion:1,id:HAIR_ID,modelSlot:MODEL_SLOT,name:'DEV AI front hair',
+    front:{width:106,height:70},back:null,
+    transforms:{front:frontHairTransform,back:neutralHairTransform},
+    createdAt:now,updatedAt:now}
+  const extraAsset={schemaVersion:1,id:EXTRA_ID,modelSlot:MODEL_SLOT,
+    kind:'head-extra',name:'DEV AI glasses',width:70,height:22,
+    defaultTransform:{x:160,y:105,scaleX:1.1,scaleY:1,rotation:0},
+    updatedAt:now}
   return { model:base, pose1:pose(1), pose2:pose(2), set, assets, shoe, glasses,
+    hairStyle,frontHair,extraAsset,headExtra,
     sourceBytes, sourceHash:createHash('sha256').update(sourceBytes).digest('hex') }
 }
-module.exports = { WIDTH, HEIGHT, MODEL_SLOT, SOURCE_NAME, SET_ID, FRAMES, pixelBuffer, manifest }
+module.exports = { WIDTH, HEIGHT, MODEL_SLOT, SOURCE_NAME, SET_ID, HAIR_ID, EXTRA_ID, FRAMES, pixelBuffer, manifest }
