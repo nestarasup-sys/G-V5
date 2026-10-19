@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, protocol, shell, type IpcMainInvokeEvent } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, Menu, protocol, session, shell, type IpcMainInvokeEvent } from 'electron'
 import { createReadStream, existsSync, lstatSync, mkdirSync, readFileSync, realpathSync } from 'node:fs'
 import { mkdir, readFile, writeFile, readdir, unlink, rename, stat, access, rm, copyFile } from 'node:fs/promises'
 import { basename, dirname, extname, join, relative, resolve, sep } from 'node:path'
@@ -2376,6 +2376,16 @@ function registerVideoBackgroundProtocol(): void {
 }
 
 app.whenReady().then(async () => {
+  if (process.env.GACHA_DEV_AI_TEST === '1') {
+    // Defense in depth for fixture-only Electron tests: no renderer-originated
+    // HTTP(S), WebSocket or FTP traffic, including images or fetch calls.
+    // This is NOT an OS firewall and does not confine Node subprocesses.
+    session.defaultSession.webRequest.onBeforeRequest((details, callback) => {
+      const blocked = /^(?:https?|wss?|ftp):/i.test(details.url)
+      callback({ cancel: blocked })
+    })
+    session.defaultSession.setPermissionRequestHandler((_contents, _permission, callback) => callback(false))
+  }
   registerVideoAssetProtocol()
   registerVideoBackgroundProtocol()
   await registerFabricatorHandlers()
