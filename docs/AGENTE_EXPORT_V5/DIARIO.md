@@ -116,3 +116,19 @@ _Atualizações posteriores devem registrar o SHA real do gate e nunca declarar 
 **Gates realizados nesta rodada:** leitura e gravação de arquivos via GitHub, comparação estática e links oficiais. **NÃO realizados:** testes Node/typecheck/build, CI do novo HEAD, execução Windows/Electron/FFmpeg, FFprobe, A/B, benchmarks ou paridade real. Workflows de docs não iniciam validação sintética por padrão.
 
 **Próxima sequência executável:** V501/V502 (fixtures e oracle) → V505/V507 (estado por frame) → V509 (manifest pinned) → V508/V510 (texto/layers) → V512–V518 (MP4 serial verdadeiro) → preview/proxy/cache → Turbo. Registrar resultados por tarefa; não marcar concluído sem evidência.
+
+
+## 2026-10-19 — Rodada 05: metas de implementação Codex e dois modos de export
+
+**Nova autorização do usuário:** modernização profunda do Video Studio, incluindo reconstrução de implementação interna caso seja tecnicamente melhor, sempre preservando funcionalidades, projetos e dados; extensibilidade obrigatória para adicionar features no futuro; dois modos de export com nomes provisórios Turbo 2× e Turbo 2× sem animações; Codex deverá sincronizar a branch `master-desenvolvimento` e desenvolver tudo localmente com autonomia e pesquisa open source. Persistir objetivo até gates, não encerrar em documentação.
+
+**Documentos novos:**
+- `docs/VIDEO_STUDIO_V5_MODERNIZACAO/07_MODOS_DE_EXPORTACAO.md` — enum de `animated` e `static-characters`, preservação de keys authored, vídeos e áudio, desligamento apenas de transições automáticas/blink/mouth em modo estático.
+- `docs/VIDEO_STUDIO_V5_MODERNIZACAO/08_ARQUITETURA_EXTENSIVEL_E_RECONSTRUCAO.md` — interfaces e estrutura modular, substituição controlada/retrocompatibilidade, autorização condicionada de rebuild, teste de novo layer.
+- `docs/VIDEO_STUDIO_V5_MODERNIZACAO/09_MISSAO_CODEX_AUTONOMA.md` — instruções operacionais completas para Codex local, sincronização segura, fases, testes, commits, pesquisa e critérios objetivos de conclusão.
+
+**Revisados:** README, Plano Diretor, Arquitetura Canônica, Backlog, ADR, Plano Mestre antigo, specs de export, laboratório, diário e índice antigo para evitar objetivos conflitantes. As ideias originais de Smart Scene Compiler, cache semântico persistente, GPU Pixi, MLT/FFmpeg como candidatos, proxy, recuperação, autotuner, benchmark invisível e Smart Export continuam explicitamente exigidas.
+
+**Evidência:** commits documentais na branch `master-desenvolvimento`; consultar head final. **Não ocorreu desenvolvimento da engine, export MP4, CI, benchmarks ou validação gráfica nesta rodada**. Documentação não é prova de aplicação funcional.
+
+**Próximo agente/Codex:** seguir `09_MISSAO_CODEX_AUTONOMA.md`, inventariar código e funções antes de deletar arquivos, implementar e testar os dois modos e arquitetura extensível; progresso medido por gates e benchmarks reais, não por estética de código.
