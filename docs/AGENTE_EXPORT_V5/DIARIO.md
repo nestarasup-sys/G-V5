@@ -235,3 +235,28 @@ _Atualizações posteriores devem registrar o SHA real do gate e nunca declarar 
 - O workflow sintético passou a observar mudanças em `CustomizerPage.tsx` além do provider e renderer.
 - Validação local: `npm test` — 70/70; `npm run test:export:synthetic` — 40/40; `npm run typecheck`; `npm run build`; `git diff --check` passaram.
 - Limite V509: ainda falta coletar todas as dependências realmente usadas por um personagem/transição, construir um provider completo só de snapshot e persistir/hasear/pinar esses bytes no job para reabertura. O preview continua usando a origem viva; não houve Electron visual, MP4, reinício ou teste de paridade.
+
+## 2026-10-19 — Rodada 16: captura e pinagem transitiva de assets de personagem (base `5ba0ed3`)
+
+### Alterações
+
+- `src/shared/videoCharacterRenderAssets.ts`: substituiu o snapshot restrito ao núcleo por um provider gravador para toda a superfície Fabricador/Customizer já encaminhada ao renderizador. Leituras repetidas compartilham a mesma Promise; valores são clonados/congelados; snapshot JSON é ordenado e versionado; parse valida referências; um provider reaberto falha explicitamente quando a composição pede uma leitura não capturada.
+- `src/renderer/src/features/videoStudio/videoCharacterAssetCapture.ts`: novo capturador sequencial percorre cada sample intermediário de transição com `TransitionRenderer`, registra o progresso e permite cancelar entre renders. Falta conectar esse capturador ao fluxo real de preflight/IPC de export.
+- `electron/videoExportSnapshotAssets.ts`: a extração e hidratação por SHA-256 agora servem a qualquer payload JSON compatível com imagens PNG/JPEG/WebP; helpers antigos de snapshot continuam disponíveis.
+- `electron/videoExportJobs.ts`: o job pode persistir `character-assets.json`, calcular seu hash, pin imagens em `assets/images/` por conteúdo e reidratar o provider após reabertura. Arquivos visuais idênticos entre o snapshot do Studio e os assets do personagem compartilham o mesmo blob físico. Os campos são opcionais para preservar leitura dos jobs legados.
+- `tests/video-character-render-assets.test.cjs` e `tests/video-export-jobs.test.cjs`: cobrem memoização, JSON estável, mutação da origem depois da captura, referências ausentes/incompatíveis, captura sequencial e progresso, pinagem/hidratação após reabrir, deduplicação de PNG e rejeição de hash alterado.
+- `.github/workflows/video-export-synthetic.yml`: paths da captura e do helper de persistência adicionados ao filtro do gate sintético.
+- `docs/VIDEO_STUDIO_V5_MODERNIZACAO/06_BACKLOG_DE_EXECUCAO.md`: V509 atualizado como parcial, com fronteiras restantes.
+
+### Validação local
+
+- `node --test tests/video-character-render-assets.test.cjs tests/video-export-jobs.test.cjs`: 11/11 passaram.
+- `npm test`: 72/72 passaram; `npm run test:export:synthetic`: 42/42 passaram.
+- `npm run typecheck`, `npm run build` e `git diff --check`: passaram.
+- Os testes de captura isolam `TransitionRenderer` com um provider sintético; o teste de `TransitionRenderer` também usa stubs de Customizer. Isso verifica contratos e passagem de provider, não executa pixels do Customizer real nem o runtime Electron.
+
+### Estado e pendências
+
+- V509 avançou em captura/serialização/pinagem e reabertura sintética, mas não está concluído. Não há chamada de produção que crie job com `characterAssets`, nenhum IPC/runner usa o provider reaberto, e nenhuma saída MP4 depende dele ainda.
+- A captura atual renderiza todos os samples internos de transição de forma serial; seu custo precisa ser medido em projetos sintéticos longos e pode ser reduzido somente preservando cobertura de todas as dependências.
+- Nenhum dado pessoal ou biblioteca local foi aberto ou modificado. Nenhum teste DEV AI/auditoria foi executado.

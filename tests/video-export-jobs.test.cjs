@@ -28,6 +28,10 @@ new Function('require', 'module', 'exports', snapshotAssetsCompiled)((name) => {
   if (name === '../src/shared/videoExportSnapshot') return loadedSnapshot.exports
   return require(name)
 }, loadedSnapshotAssets, loadedSnapshotAssets.exports)
+const characterAssetsSource = fsSync.readFileSync(path.join(__dirname, '../src/shared/videoCharacterRenderAssets.ts'), 'utf8')
+const characterAssetsCompiled = ts.transpile(characterAssetsSource, { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 })
+const loadedCharacterAssets = { exports: {} }
+new Function('require', 'module', 'exports', characterAssetsCompiled)(require, loadedCharacterAssets, loadedCharacterAssets.exports)
 const assetsSource = fsSync.readFileSync(path.join(__dirname, '../electron/videoExportAssets.ts'), 'utf8')
 const assetsCompiled = ts.transpile(assetsSource, { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 })
 const loadedAssets = { exports: {} }
@@ -35,12 +39,14 @@ new Function('require', 'module', 'exports', assetsCompiled)(require, loadedAsse
 new Function('require', 'module', 'exports', compiled)((name) => {
   if (name === './videoExportAssets') return loadedAssets.exports
   if (name === './videoExportSnapshotAssets') return loadedSnapshotAssets.exports
+  if (name === '../src/shared/videoCharacterRenderAssets') return loadedCharacterAssets.exports
   if (name === '../src/shared/videoExportSnapshot') return loadedSnapshot.exports
   return require(name)
 }, loaded, loaded.exports)
 const { VideoExportJobStore } = loaded.exports
 const { createVideoExportSnapshot } = loadedSnapshot.exports
 const { prepareVideoExportSnapshot } = loadedSnapshotAssets.exports
+const { createVideoCharacterRenderAssetSnapshot, createVideoCharacterRenderSnapshotProvider } = loadedCharacterAssets.exports
 
 const studioId = '360d7ac8-27c8-4aab-b8be-2397e1c46a76'
 const jobId = 'f3c40c08-5be8-476f-8132-4dafca4f3d57'
@@ -151,6 +157,42 @@ test('job persists and restores the immutable scene snapshot and render variant'
   await fs.appendFile(path.join(root, jobId, 'snapshot.json'), 'tampered')
   await assert.rejects(store.readSnapshot(jobId), /hash do manifesto/)
   await assert.rejects(store.reopen(jobId, expected), /hash do manifesto/)
+})
+
+test('job pins and restores character supplier images independently from the live libraries', async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'gacha-video-job-character-assets-'))
+  t.after(() => fs.rm(root, { recursive: true, force: true }))
+  const store = new VideoExportJobStore(root)
+  const source = syntheticStudio()
+  const snapshot = createVideoExportSnapshot(source)
+  const characterAssets = createVideoCharacterRenderAssetSnapshot([{
+    method: 'loadFabricatorSlot', args: [1], value: {
+      slot: 1, parts: [{ id: 'torso', dataUrl: source.videoTimeline.characterKeys[0].state.imageDataUrl }],
+    },
+  }])
+  const expected = {
+    studioId, snapshotSha256: hashSnapshot(snapshot), mediaSha256: [], durationFrames: 30,
+    renderVariant: 'animated',
+  }
+  const manifest = await store.create({ jobId, ...parameters, ...expected, snapshot, characterAssets, renderVariant: expected.renderVariant })
+  assert.equal(manifest.characterAssetsFile, 'character-assets.json')
+  assert.match(manifest.characterAssetsSha256, /^[a-f0-9]{64}$/)
+  assert.equal(manifest.characterAssetImageDependencies.length, 1)
+  const serialized = await fs.readFile(path.join(root, jobId, 'character-assets.json'), 'utf8')
+  assert.equal(serialized.includes('data:image/'), false)
+  assert.equal((await fs.readdir(path.join(root, jobId, 'assets', 'images'))).length, 1, 'identical scene/character PNG bytes share one physical job blob')
+
+  const restored = await store.readCharacterAssets(jobId)
+  assert.equal(restored.entries[0].value.parts[0].dataUrl, source.videoTimeline.characterKeys[0].state.imageDataUrl)
+  const offlineProvider = createVideoCharacterRenderSnapshotProvider(restored)
+  assert.equal((await offlineProvider.loadFabricatorSlot(1)).parts[0].dataUrl, source.videoTimeline.characterKeys[0].state.imageDataUrl)
+  await assert.rejects(offlineProvider.loadFabricatorPose(1, 9), /não capturada no snapshot/)
+  source.videoTimeline.characterKeys[0].state.imageDataUrl = 'data:image/png;base64,CHANGED-AFTER-JOB'
+  assert.equal((await store.reopen(jobId, { ...expected, characterAssetsSha256: manifest.characterAssetsSha256 })).characterAssets.entries[0].value.parts[0].dataUrl,
+    'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a4uoAAAAASUVORK5CYII=')
+  await assert.rejects(store.reopen(jobId, { ...expected, characterAssetsSha256: 'f'.repeat(64) }), /assets de personagem mudaram/)
+  await fs.appendFile(path.join(root, jobId, 'character-assets.json'), 'tampered')
+  await assert.rejects(store.readCharacterAssets(jobId), /hash do manifesto/)
 })
 
 test('export jobs copy referenced media into their folder and resume from pinned bytes', async (t) => {

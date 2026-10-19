@@ -16,49 +16,124 @@ function loadPureTs(file, deps = {}) {
   return mod.exports
 }
 
-const { createVideoCharacterTransitionCoreAssetSnapshot, createVideoCharacterTransitionCoreSnapshotProvider } = loadPureTs('../src/shared/videoCharacterRenderAssets.ts')
+const assetModule = loadPureTs('../src/shared/videoCharacterRenderAssets.ts')
+const {
+  createVideoCharacterRenderAssetSnapshot, createRecordingVideoCharacterRenderAssetProvider,
+  createVideoCharacterRenderSnapshotProvider, serializeVideoCharacterRenderAssetSnapshot,
+  parseVideoCharacterRenderAssetSnapshot,
+} = assetModule
 
-function snapshotInput() {
-  return {
-    models: [{ modelSlot: 1, value: { slot: 1, parts: [{ id: 'torso', dataUrl: 'data:image/png;base64,MODEL-A' }] } }],
-    poses: [{ modelSlot: 1, poseSlot: 2, value: { sourceModelSlot: 1, slot: 2, parts: [{ id: 'arm', dataUrl: 'data:image/png;base64,POSE-A' }] } }],
-    faceComponents: [{ modelSlot: 1, id: 'eye-a', value: { modelSlot: 1, id: 'eye-a', dataUrl: 'data:image/png;base64,EYE-A' } }],
-    faceCatalogItems: [{ modelSlot: 1, id: 'face-a', value: { modelSlot: 1, id: 'face-a', sheet: { dataUrl: 'data:image/png;base64,FACE-A' } } }],
-    standardExpressionEffects: [{ modelSlot: 1, value: { 0: { blush: { enabled: false, opacity: 0 } } } }],
+function syntheticAssetProvider() {
+  const source = {
+    model: { slot: 1, parts: [{ id: 'torso', dataUrl: 'data:image/png;base64,MODEL-A' }] },
+    pose: { sourceModelSlot: 1, slot: 2, parts: [{ id: 'arm', dataUrl: 'data:image/png;base64,POSE-A' }] },
+    hair: { modelSlot: 1, id: 'hair-a', front: { dataUrl: 'data:image/png;base64,HAIR-A' } },
+    wardrobe: { modelSlot: 1, id: 'wardrobe-a', components: [{ id: 'shirt', dataUrl: 'data:image/png;base64,SHIRT-A' }] },
+    faceSet: { modelSlot: 1, id: 'face-set-a', pieces: [{ id: 'mouth', dataUrl: 'data:image/png;base64,MOUTH-A' }] },
+    faceComponentSummary: { modelSlot: 1, id: 'eye-a', kind: 'eye' },
+    faceComponent: { modelSlot: 1, id: 'eye-a', kind: 'eye', dataUrl: 'data:image/png;base64,EYE-A' },
+    faceCatalogSummary: { modelSlot: 1, id: 'face-a', name: 'Synthetic face' },
+    faceCatalog: { modelSlot: 1, id: 'face-a', transforms: { eyes: { x: 1, y: 2, scaleX: 3, scaleY: 4, rotation: 5 } } },
+    presetSummary: { modelSlot: 1, id: 'preset-a', expressionIndex: 0 },
+    preset: { modelSlot: 1, id: 'preset-a', effects: { blush: { enabled: false, opacity: 0 } } },
   }
+  let calls = 0
+  const sourceProvider = {
+    loadFabricatorSlot: async () => { calls += 1; return source.model },
+    loadFabricatorPose: async () => { calls += 1; return source.pose },
+    loadHairStyle: async () => { calls += 1; return source.hair },
+    loadWardrobeSet: async () => { calls += 1; return source.wardrobe },
+    loadFaceSet: async () => { calls += 1; return source.faceSet },
+    listFaceComponentAssets: async (_slot, kind) => { calls += 1; return !kind || kind === source.faceComponentSummary.kind ? [source.faceComponentSummary] : [] },
+    loadFaceComponentAsset: async () => { calls += 1; return source.faceComponent },
+    listFaceCatalog: async () => { calls += 1; return [source.faceCatalogSummary] },
+    loadFaceCatalogItem: async () => { calls += 1; return source.faceCatalog },
+    listFaceExpressionPresets: async () => { calls += 1; return [source.presetSummary] },
+    loadFaceExpressionPreset: async () => { calls += 1; return source.preset },
+  }
+  return { source, sourceProvider, getCalls: () => calls }
 }
 
-test('asset snapshot provider stays detached from later supplier edits', async () => {
-  const source = snapshotInput()
-  const snapshot = createVideoCharacterTransitionCoreAssetSnapshot(source)
-  const provider = createVideoCharacterTransitionCoreSnapshotProvider(snapshot)
+test('recording provider deduplicates reads and produces a detached full-character snapshot', async () => {
+  const synthetic = syntheticAssetProvider()
+  const recorder = createRecordingVideoCharacterRenderAssetProvider(synthetic.sourceProvider)
+  const provider = recorder.provider
+  const modelReads = await Promise.all([provider.loadFabricatorSlot(1), provider.loadFabricatorSlot(1)])
+  assert.strictEqual(modelReads[0], modelReads[1])
+  await Promise.all([
+    provider.loadFabricatorPose(1, 2), provider.loadHairStyle(1, 'hair-a'), provider.loadWardrobeSet(1, 'wardrobe-a'),
+    provider.loadFaceSet(1, 'face-set-a'), provider.listFaceComponentAssets(1, undefined), provider.listFaceComponentAssets(1, 'eye'),
+    provider.loadFaceComponentAsset(1, 'eye-a'), provider.listFaceCatalog(1), provider.loadFaceCatalogItem(1, 'face-a'),
+    provider.listFaceExpressionPresets(1), provider.loadFaceExpressionPreset(1, 'preset-a'),
+  ])
+  assert.equal(synthetic.getCalls(), 12, 'the second identical model read is served from the recorder cache')
 
-  source.models[0].value.parts[0].dataUrl = 'data:image/png;base64,MODEL-CHANGED'
-  source.poses[0].value.parts[0].dataUrl = 'data:image/png;base64,POSE-CHANGED'
-  source.faceComponents[0].value.dataUrl = 'data:image/png;base64,EYE-CHANGED'
+  const snapshot = recorder.snapshot()
+  assert.equal(snapshot.entries.length, 12)
+  assert.equal(Object.isFrozen(snapshot), true)
+  const json = serializeVideoCharacterRenderAssetSnapshot(snapshot)
+  assert.equal(serializeVideoCharacterRenderAssetSnapshot(parseVideoCharacterRenderAssetSnapshot(json)), json, 'canonical snapshot JSON is stable after reopen')
+  const reopened = createVideoCharacterRenderSnapshotProvider(parseVideoCharacterRenderAssetSnapshot(json))
 
-  assert.equal((await provider.loadModel(1)).parts[0].dataUrl, 'data:image/png;base64,MODEL-A')
-  assert.equal((await provider.loadPose(1, 2)).parts[0].dataUrl, 'data:image/png;base64,POSE-A')
-  assert.equal((await provider.loadFaceComponent(1, 'eye-a')).dataUrl, 'data:image/png;base64,EYE-A')
-  assert.equal((await provider.loadFaceCatalogItem(1, 'face-a')).id, 'face-a')
-  assert.equal((await provider.loadStandardExpressionEffects(1))[0].blush.opacity, 0)
-  assert.equal(await provider.loadModel(9), null)
-  assert.equal(await provider.loadPose(1, 99), null)
+  synthetic.source.model.parts[0].dataUrl = 'data:image/png;base64,MODEL-CHANGED'
+  synthetic.source.hair.front.dataUrl = 'data:image/png;base64,HAIR-CHANGED'
+  synthetic.source.faceCatalog.transforms.eyes.x = 999
+  assert.equal((await reopened.loadFabricatorSlot(1)).parts[0].dataUrl, 'data:image/png;base64,MODEL-A')
+  assert.equal((await reopened.loadHairStyle(1, 'hair-a')).front.dataUrl, 'data:image/png;base64,HAIR-A')
+  assert.equal((await reopened.loadFaceCatalogItem(1, 'face-a')).transforms.eyes.x, 1)
 })
 
-test('asset snapshot is deeply frozen and rejects ambiguous or incompatible references', () => {
-  const snapshot = createVideoCharacterTransitionCoreAssetSnapshot(snapshotInput())
-  assert.equal(Object.isFrozen(snapshot), true)
-  assert.equal(Object.isFrozen(snapshot.models[0].value.parts), true)
-  assert.throws(() => { snapshot.models[0].value.parts[0].dataUrl = 'tampered' }, TypeError)
+test('asset snapshots reject duplicate/incompatible entries and report uncaptured references', async () => {
+  const recorder = createRecordingVideoCharacterRenderAssetProvider(syntheticAssetProvider().sourceProvider)
+  await recorder.provider.loadFabricatorSlot(1)
+  const snapshot = recorder.snapshot()
+  assert.equal(Object.isFrozen(snapshot.entries[0].value.parts), true)
+  assert.throws(() => { snapshot.entries[0].value.parts[0].dataUrl = 'tampered' }, TypeError)
+  assert.throws(() => createVideoCharacterRenderAssetSnapshot([snapshot.entries[0], snapshot.entries[0]]), /leitura duplicada/)
+  const wrongModel = { ...snapshot.entries[0], value: { slot: 9, parts: [] } }
+  assert.throws(() => createVideoCharacterRenderAssetSnapshot([wrongModel]), /modelo incompatível/)
+  assert.throws(() => createVideoCharacterRenderAssetSnapshot([{ method: 'loadFaceCatalogItem', args: [1, 'face-a'], value: { modelSlot: 1, transforms: {} } }]), /Referência incompatível/)
+  const reopened = createVideoCharacterRenderSnapshotProvider(snapshot)
+  await assert.rejects(reopened.loadFabricatorSlot(9), /não capturada no snapshot/)
+})
 
-  const duplicate = snapshotInput()
-  duplicate.models.push(duplicate.models[0])
-  assert.throws(() => createVideoCharacterTransitionCoreAssetSnapshot(duplicate), /duplicada ou inválida/)
-
-  const mismatched = snapshotInput()
-  mismatched.poses[0].value.slot = 3
-  assert.throws(() => createVideoCharacterTransitionCoreAssetSnapshot(mismatched), /pose com referência incompatível/)
+test('character asset capture walks every transition sample and freezes the supplier reads', async () => {
+  const synthetic = syntheticAssetProvider()
+  const progress = []
+  let renderCalls = 0
+  const transition = {
+    elementId: 'actor', startFrame: 4, boundaryFrame: 7,
+    from: { element: { characterId: 'character-a' } }, to: { element: { characterId: 'character-a' } },
+  }
+  const capture = loadPureTs('../src/renderer/src/features/videoStudio/videoCharacterAssetCapture.ts', {
+    '../../../../shared/videoCharacterRenderAssets': assetModule,
+    './characterTransitions': { compileCharacterTransitions: () => [transition], transitionSampleFrames: () => [5, 6] },
+    './transitionRenderer': { TransitionRenderer: class {
+      constructor(provider) { this.provider = provider }
+      async render() {
+        renderCalls += 1
+        await Promise.all([
+          this.provider.loadFabricatorSlot(1), this.provider.loadFabricatorPose(1, 2), this.provider.loadHairStyle(1, 'hair-a'),
+          this.provider.loadWardrobeSet(1, 'wardrobe-a'), this.provider.loadFaceSet(1, 'face-set-a'),
+          this.provider.listFaceComponentAssets(1, undefined), this.provider.listFaceComponentAssets(1, 'eye'),
+          this.provider.loadFaceComponentAsset(1, 'eye-a'), this.provider.listFaceCatalog(1),
+          this.provider.loadFaceCatalogItem(1, 'face-a'), this.provider.listFaceExpressionPresets(1),
+          this.provider.loadFaceExpressionPreset(1, 'preset-a'),
+        ])
+      }
+    } },
+  })
+  const snapshot = await capture.captureVideoCharacterRenderAssets({}, [{ id: 'character-a' }], synthetic.sourceProvider, {
+    onProgress: (completed, total) => progress.push([completed, total]),
+  })
+  assert.equal(renderCalls, 2)
+  assert.deepEqual(progress, [[1, 2], [2, 2]])
+  assert.equal(snapshot.entries.length, 12)
+  assert.equal(synthetic.getCalls(), 12, 'the capture memoizes repeated reads across transition frames')
+  const aborted = new AbortController()
+  aborted.abort()
+  await assert.rejects(capture.captureVideoCharacterRenderAssets({}, [{ id: 'character-a' }], synthetic.sourceProvider, { signal: aborted.signal }), { name: 'AbortError' })
+  assert.equal(renderCalls, 2, 'an aborted capture does not render another transition sample')
 })
 
 test('transition renderer forwards one injected provider through model, pose, face, effects and Customizer rendering', async () => {

@@ -20,6 +20,11 @@ export type PreparedVideoExportSnapshot = Readonly<{
   images: ReadonlyArray<VideoExportSnapshotImage>
 }>
 
+export type PreparedVideoExportImagePayload = Readonly<{
+  serialized: string
+  images: ReadonlyArray<VideoExportSnapshotImage>
+}>
+
 function assertImageBytes(bytes: Buffer, mimeType: string): asserts mimeType is keyof typeof mimeToExtension {
   const valid = mimeType === 'image/png'
     ? bytes.length >= 8 && bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))
@@ -48,17 +53,8 @@ function imageReference(sha256: string, mimeType: string): string {
 
 function imageKey(sha256: string, mimeType: string): string { return `${sha256}:${mimeType}` }
 
-/** Removes non-rendering card art and externalizes embedded raster bytes by content digest. */
-export function prepareVideoExportSnapshot(snapshot: VideoExportSnapshot): PreparedVideoExportSnapshot {
-  const timelineInput = snapshot.studio.videoTimeline
-  const studio = {
-    ...snapshot.studio,
-    ...(timelineInput ? { videoTimeline: { ...timelineInput } } : {}),
-  } as Record<string, unknown>
-  delete studio.thumbnailDataUrl
-  const timeline = studio.videoTimeline as Record<string, unknown> | undefined
-  if (timeline) delete timeline.coverDataUrl
-
+/** Externalizes every embedded PNG/JPEG/WebP in a JSON payload by content digest. */
+export function prepareVideoExportImagePayload(payload: unknown): PreparedVideoExportImagePayload {
   const unique = new Map<string, VideoExportSnapshotImage>()
   const visit = (value: unknown): unknown => {
     if (typeof value === 'string') {
@@ -79,21 +75,28 @@ export function prepareVideoExportSnapshot(snapshot: VideoExportSnapshot): Prepa
     return value
   }
 
-  const externalStudio = visit(studio)
-  const payload = {
-    schemaVersion: 1,
-    studio: externalStudio,
-    frameRate: snapshot.frameRate,
-    durationFrames: snapshot.durationFrames,
-  }
   return {
-    serialized: canonicalVideoExportJson(payload),
+    serialized: canonicalVideoExportJson(visit(payload)),
     images: [...unique.values()].sort((left, right) => left.sha256 < right.sha256 ? -1 : left.sha256 > right.sha256 ? 1 : 0),
   }
 }
 
+/** Removes non-rendering card art and externalizes the scene snapshot's raster bytes. */
+export function prepareVideoExportSnapshot(snapshot: VideoExportSnapshot): PreparedVideoExportSnapshot {
+  const studio = structuredClone(snapshot.studio) as Record<string, unknown>
+  delete studio.thumbnailDataUrl
+  const timeline = studio.videoTimeline as Record<string, unknown> | undefined
+  if (timeline) delete timeline.coverDataUrl
+  return prepareVideoExportImagePayload({
+    schemaVersion: 1,
+    studio,
+    frameRate: snapshot.frameRate,
+    durationFrames: snapshot.durationFrames,
+  })
+}
+
 /** Rehydrates image references only from the job's verified pinned image set. */
-export function hydrateVideoExportSnapshotImages(
+export function hydrateVideoExportImagePayload(
   serialized: string,
   dependencies: ReadonlyArray<PinnedVideoExportSnapshotImage>,
   resolveBytes: (dependency: PinnedVideoExportSnapshotImage) => Buffer,
@@ -129,4 +132,13 @@ export function hydrateVideoExportSnapshotImages(
   const hydrated = visit(payload)
   if (used.size !== dependencyByKey.size) throw new Error('O manifesto contém imagens pinadas que não pertencem ao snapshot.')
   return canonicalVideoExportJson(hydrated)
+}
+
+/** Backwards-compatible scene snapshot helper retained for existing job readers. */
+export function hydrateVideoExportSnapshotImages(
+  serialized: string,
+  dependencies: ReadonlyArray<PinnedVideoExportSnapshotImage>,
+  resolveBytes: (dependency: PinnedVideoExportSnapshotImage) => Buffer,
+): string {
+  return hydrateVideoExportImagePayload(serialized, dependencies, resolveBytes)
 }
