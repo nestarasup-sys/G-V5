@@ -4,7 +4,7 @@
 **Base de código antes desta etapa:** `2b1bbcf` (continuação de `9ba244e`).  
 **SHA validado pela suíte completa:** `5b82b5a9c4f5b9dda402d30e290517e00f51d2e5` (árvore limpa).
 **Ambiente:** Windows, Node/Electron do checkout local.  
-**Escopo:** reexecução dos gates DEV AI, fluxo sintético Fabricador → Customizador, isolamento entre Studios e renderização dos personagens Ayla/Chloe em cópias privadas. Evidências privadas continuam fora do repositório; o código e a documentação desta branch serão publicados sob autorização explícita posterior do usuário.
+**Escopo:** reexecução dos gates DEV AI, fluxo sintético Fabricador → Customizador, isolamento entre Studios e renderização dos personagens Ayla/Chloe em cópias privadas. Evidências privadas continuam fora do repositório; código e documentação foram publicados na branch de continuação após autorização explícita do usuário.
 
 ## Resultado dos comandos
 

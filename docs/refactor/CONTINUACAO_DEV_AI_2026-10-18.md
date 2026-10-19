@@ -17,6 +17,8 @@ Esta branch contém cinco commits locais após a base:
 
 O commit `4aff45d71746a536baca22780e71e769f772ddec` foi o SHA do código testado por `npm run audit:all`. A branch `master` não foi modificada. O usuário pediu explicitamente para publicar esta branch; a publicação não autoriza merge nem alteração de `master`.
 
+**Publicação confirmada:** `origin/codex/finalizar-dev-ai-local` foi criada e recebeu esta continuação. Não foi aberto PR, feito merge ou alterado `master`. O workflow `dev-ai-foundation.yml` só dispara em branches `ci/dev-ai-*` e `feat/dev-ai-*`; portanto esta publicação não executou Actions. A aprovação remota para o SHA publicado continua pendente e não deve ser inferida dos testes locais.
+
 ## Trabalho comprovado
 
 - A fixture raster sintética tem modelo e partes com retângulos estáveis, duas poses, roupas, sapato, cabelo, rosto, óculos e dois atores. Geometria de sapato/acessório é verificada sem usar capturas de personagens reais nos testes automatizados.
