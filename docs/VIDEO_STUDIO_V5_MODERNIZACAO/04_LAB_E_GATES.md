@@ -145,3 +145,14 @@ A documentação V4 `docs/EXPORT_V5_STATUS_2026-09-21.md` relata no V4 180s a 30
 CI pode registrar checksums/JSON de estatísticas/fixtures geradas sem dados privados. Antes de criar workflow com upload, revisar se usuário mantém política "sem artefatos" — o workflow atual não os envia; manter esta política até decisão explícita. O bench real do PC deve rodar local e anexar apenas relatório sanitizado por ação autorizada. Não iniciar/reativar DEV AI ou auditorias desativadas.
 
 **Fases e responsáveis técnicos** estão em [00_PLANO_DIRETOR.md](./00_PLANO_DIRETOR.md); escolha de motores em [01_ESTUDO_DE_MOTORES.md](./01_ESTUDO_DE_MOTORES.md).
+
+
+## GATE DE PRODUTO OBRIGATÓRIO: comparação dos dois modos de exportação
+
+**Completo vs Sem animações de personagem:** capturar frame 0, intermediários de transição, boundaries de key, fala, blink, vídeo com contador e áudio com click; garantir que Completo mantenha animações elegíveis e Sem animações preserve todas as keys authored como cortes, desligando somente transição automática/blink/boca. Ambos devem manter PNGs base, transformações, balões, fundo, vídeos importados com movimento e AV-sync. Não comparar apenas médias SSIM. Rodar serial e Turbo quando disponível. Mesmo `RenderVariant` deve produzir pixels equivalentes em serial/Turbo, exceto diferenças explicáveis por H.264. RenderVariant entra no digest de cache/checkpoint.
+
+**Gate de extensibilidade:** em fixture, adicionar `SceneElement` sintético (novo tipo com 3 keys/efeito), registrar nas interfaces, verificar preview/print/export/ambos os modos sem mudança espalhada em monólito; rejeitar arquitetura que exige editar a UI inteira a cada kind novo.
+
+**Gate de substituição do editor:** inventário de recursos atuais completo, projetos v1 reabertos e editados, undo/redo/autosave/exportPrint/import/dedup/face/pose/transforms/UI mouse/teclado assegurados. Remover implementação antiga apenas depois desse gate. Ver [07_MODOS_DE_EXPORTACAO.md](./07_MODOS_DE_EXPORTACAO.md) e [08_ARQUITETURA_EXTENSIVEL_E_RECONSTRUCAO.md](./08_ARQUITETURA_EXTENSIVEL_E_RECONSTRUCAO.md).
+
+A conclusão da missão local depende de testes reais no PC alvo, não apenas da matriz sintética; [09_MISSAO_CODEX_AUTONOMA.md](./09_MISSAO_CODEX_AUTONOMA.md).
