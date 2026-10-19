@@ -82,6 +82,12 @@ function treeHash(folder) {
   return digest.digest('hex')
 }
 
+function stableData(value) {
+  if (Array.isArray(value)) return value.map(stableData)
+  if (!value || typeof value !== 'object') return value
+  return Object.fromEntries(Object.keys(value).sort().map(key => [key, stableData(value[key])]))
+}
+
 function screenshotPixels(buffer) {
   const image = nativeImage.createFromBuffer(buffer)
   const size = image.getSize()
@@ -971,6 +977,81 @@ async function privateCharacterPreview(window) {
   })), noPersistentWrites }))
 }
 
+async function privateCharacterEdit(window) {
+  const name = process.env.GACHA_DEV_AI_PRIVATE_TARGET
+  assert.ok(['Ayla', 'Chloe'].includes(name), 'Personagem alvo privado inválido')
+  const beforeList = await window.webContents.executeJavaScript('window.desktop.listCustomizerCharacters()')
+  const targetMatches = beforeList.filter(character => character.name === name)
+  assert.equal(targetMatches.length, 1, `A cópia privada deve conter exatamente um personagem ${name}`)
+  const targetBefore = targetMatches[0]
+  const otherBefore = beforeList.find(character => character.name !== name)
+  assert.ok(otherBefore && ['Ayla', 'Chloe'].includes(otherBefore.name))
+  const groupIndex = (targetBefore.customization.wardrobeGroups ?? []).findIndex(group =>
+    group.componentId && !group.hidden && group.modelSlot === targetBefore.customization.modelSlot)
+  assert.ok(groupIndex >= 0, `${name} não tem um grupo equipado para testar o ajuste individual`)
+  const manifestPath = join(sandbox, 'customizer', 'characters', 'characters.json')
+  const manifestHashBefore = createHash('sha256').update(readFileSync(manifestPath)).digest('hex')
+  const fabricatorHashBefore = treeHash(join(sandbox, 'fabricator'))
+  const expected = structuredClone(targetBefore)
+  const group = expected.customization.wardrobeGroups[groupIndex]
+  const offsetXBefore = group.offsetX ?? 0
+  group.offsetX = offsetXBefore + 5
+  expected.updatedAt = new Date().toISOString()
+  const saved = await window.webContents.executeJavaScript(`window.desktop.saveCustomizerCharacter(${JSON.stringify(expected)})`)
+  assert.notEqual(saved, false, 'IPC rejeitou o salvamento do personagem de teste')
+  const afterList = await window.webContents.executeJavaScript('window.desktop.listCustomizerCharacters()')
+  const targetAfter = afterList.find(character => character.name === name)
+  const otherAfter = afterList.find(character => character.name === otherBefore.name)
+  assert.ok(targetAfter && otherAfter)
+  assert.equal(targetAfter.customization.wardrobeGroups[groupIndex].offsetX, offsetXBefore + 5)
+  const expectedAfter = structuredClone(expected)
+  expectedAfter.updatedAt = targetAfter.updatedAt
+  assert.deepEqual(stableData(targetAfter), stableData(expectedAfter),
+    `${name}: save IPC alterou dados além do transform individual solicitado`)
+  assert.deepEqual(stableData(otherAfter), stableData(otherBefore),
+    `${name}: salvar este personagem também alterou o outro personagem`)
+  const manifestHashAfter = createHash('sha256').update(readFileSync(manifestPath)).digest('hex')
+  const fabricatorHashAfter = treeHash(join(sandbox, 'fabricator'))
+  assert.notEqual(manifestHashAfter, manifestHashBefore, 'O salvamento IPC não alterou o manifest privado do personagem')
+  assert.equal(fabricatorHashAfter, fabricatorHashBefore, 'O ajuste individual alterou a biblioteca Fabricador')
+  const report = { schemaVersion: 1, status: 'passed', operation: 'production-preload customizer save IPC',
+    actor: name, otherActor: otherBefore.name, groupIndex, category: group.category,
+    componentId: group.componentId, offsetXBefore, offsetXAfter: offsetXBefore + 5,
+    otherActorUnchanged: true, fabricatorUnchanged: true,
+    characterManifestHashBefore: manifestHashBefore, characterManifestHashAfter: manifestHashAfter }
+  await writeFile(join(output, 'private-character-edit.json'), JSON.stringify(report, null, 2))
+  console.log(JSON.stringify(report))
+}
+
+async function privateCharacterVerifyEdits(window) {
+  const expected = JSON.parse(process.env.GACHA_DEV_AI_PRIVATE_EXPECTED_EDITS ?? '{}')
+  assert.deepEqual(Object.keys(expected).sort(), ['Ayla', 'Chloe'])
+  const characters = await window.webContents.executeJavaScript('window.desktop.listCustomizerCharacters()')
+  const actual = {}
+  for (const name of ['Ayla', 'Chloe']) {
+    const matches = characters.filter(character => character.name === name)
+    assert.equal(matches.length, 1, `A cópia privada deve conter exatamente um personagem ${name}`)
+    const character = matches[0]
+    const group = character.customization.wardrobeGroups?.find(item => item.setId === expected[name].setId
+      && item.componentId === expected[name].componentId && item.category === expected[name].category)
+    assert.ok(group, `${name}: grupo ajustado não persistiu após reiniciar o processo Electron`)
+    assert.equal(group.offsetX, expected[name].offsetX,
+      `${name}: offset individual não persistiu após reiniciar o processo Electron`)
+    actual[name] = { groupIndex: character.customization.wardrobeGroups.indexOf(group),
+      category: group.category, setId: group.setId, componentId: group.componentId,
+      offsetX: group.offsetX, updatedAt: character.updatedAt }
+  }
+  const fabricatorHash = treeHash(join(sandbox, 'fabricator'))
+  assert.equal(fabricatorHash, process.env.GACHA_DEV_AI_PRIVATE_EXPECTED_FABRICATOR_HASH,
+    'Fabricador mudou entre salvamento e reabertura do teste privado')
+  const report = { schemaVersion: 1, status: 'passed', restartedElectronProcess: true,
+    actorOverridesPersisted: actual, fabricatorUnchanged: true, fabricatorHash }
+  await writeFile(join(output, 'private-character-edit-restart.json'), JSON.stringify(report, null, 2))
+  console.log(JSON.stringify({ mode, status: report.status, restartedElectronProcess: true,
+    actors: Object.fromEntries(Object.entries(actual).map(([name, item]) => [name, { category: item.category, offsetX: item.offsetX }])),
+    fabricatorUnchanged: true }))
+}
+
 async function areaSmoke(window) {
   const diagnostics = []
   const rendererNetworkBarrier = await verifyRendererNetworkBlock(window)
@@ -1247,6 +1328,7 @@ async function areaSmoke(window) {
 }
 
 async function comparePrivateCharacterCaptures(window) {
+  const comparisonKind = process.env.GACHA_DEV_AI_PRIVATE_COMPARE_KIND ?? 'fit-reset'
   const baselineRoot = resolve(process.env.GACHA_DEV_AI_PRIVATE_ROOT ?? '')
   const resetRoot = resolve(process.env.GACHA_DEV_AI_PRIVATE_COMPARE_ROOT ?? '')
   const allowedRoot = resolve(process.env.GACHA_DEV_AI_PRIVATE_ALLOWED_ROOT ?? '')
@@ -1269,7 +1351,7 @@ async function comparePrivateCharacterCaptures(window) {
   assert.equal(marker?.schemaVersion, 1)
   assert.equal(marker?.privateDataCopy, true)
   assert.equal(marker?.verifiedSha256, true)
-  assert.equal(marker?.copyMode, 'wardrobe-reset')
+  assert.equal(marker?.copyMode, comparisonKind === 'actor-edit' ? 'baseline' : 'wardrobe-reset')
   assert.equal(realpathSync(resetRoot).toLowerCase(), resetRoot.toLowerCase())
   assert.equal(realpathSync(resetOutput).toLowerCase(), resetOutput.toLowerCase())
   const baselineReportPath = join(output, 'private-character-preview.json')
@@ -1285,8 +1367,12 @@ async function comparePrivateCharacterCaptures(window) {
     const before = baselineReport.actors.find(actor => actor.name === name)
     const after = resetReport.actors.find(actor => actor.name === name)
     assert.ok(before && after)
-    assert.ok(before.adjustedWardrobeGroupCount > 0, `${name} não possui ajuste privado a comparar`)
-    assert.equal(after.adjustedWardrobeGroupCount, 0, `${name} ainda tem delta de roupa após reset da cópia`)
+    assert.ok(before.adjustedWardrobeGroupCount > 0 || comparisonKind === 'actor-edit', `${name} não possui ajuste privado a comparar`)
+    if (comparisonKind === 'fit-reset') {
+      assert.equal(after.adjustedWardrobeGroupCount, 0, `${name} ainda tem delta de roupa após reset da cópia`)
+    } else {
+      assert.ok(after.adjustedWardrobeGroupCount > 0, `${name}: edição IPC não deixou um ajuste visual salvo`)
+    }
     const beforePng = readFileSync(join(output, before.screenshot))
     const afterPng = readFileSync(join(resetOutput, after.screenshot))
     const difference = await window.webContents.executeJavaScript(`(async()=>{
@@ -1322,9 +1408,12 @@ async function comparePrivateCharacterCaptures(window) {
       schemaVersion: 1, status: 'in-progress', actors: results
     }, null, 2))
   }
-  const report = { schemaVersion: 1, status: 'passed', comparison: 'same production Customizer; private baseline vs copied wardrobe-fit resets',
+  const report = { schemaVersion: 1, status: 'passed', comparison: comparisonKind === 'actor-edit'
+      ? 'same production Customizer; private character-only IPC edits persisted across process restart'
+      : 'same production Customizer; private baseline vs copied wardrobe-fit resets',
     userProfileModified: false, fabricatorLibrariesEqual: true, actors: results,
-    privacy: { baselineCopy: true, resetCopy: true, artifactsOutsideRepository: true } }
+    privacy: { baselineCopy: true, resetCopy: comparisonKind === 'fit-reset',
+      samePrivateCopy: comparisonKind === 'actor-edit', artifactsOutsideRepository: true } }
   await writeFile(join(output, 'private-character-comparison.json'), JSON.stringify(report, null, 2))
   console.log(JSON.stringify({ mode, status: report.status,
     actors: results.map(actor => ({ name: actor.name, adjustedGroupsBefore: actor.adjustedGroupsBefore,
@@ -1346,7 +1435,7 @@ async function main() {
       return
     }
   }
-  if (!['seed', 'verify-restart', 'area-smoke', 'close-pending', 'verify-close-pending', 'delete', 'private-character-preview', 'private-character-compare'].includes(mode)) throw new Error('Modo inválido.')
+  if (!['seed', 'verify-restart', 'area-smoke', 'close-pending', 'verify-close-pending', 'delete', 'private-character-preview', 'private-character-edit', 'private-character-verify-edits', 'private-character-compare'].includes(mode)) throw new Error('Modo inválido.')
   await import(pathToFileURL(join(ROOT, 'out', 'main', 'main.js')).href)
   await app.whenReady()
   const window = await waitForWindow()
@@ -1354,6 +1443,8 @@ async function main() {
   else if (mode === 'verify-restart') await verifyRestart(window)
   else if (mode === 'area-smoke') await areaSmoke(window)
   else if (mode === 'private-character-preview') await privateCharacterPreview(window)
+  else if (mode === 'private-character-edit') await privateCharacterEdit(window)
+  else if (mode === 'private-character-verify-edits') await privateCharacterVerifyEdits(window)
   else if (mode === 'private-character-compare') await comparePrivateCharacterCaptures(window)
   else if (mode === 'close-pending') await closeWithPendingSaves(window)
   else if (mode === 'verify-close-pending') await verifyClosePending(window)
