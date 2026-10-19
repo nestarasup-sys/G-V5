@@ -40,16 +40,16 @@ function deepFreeze<T>(value: T, visited = new WeakSet<object>()): T {
   return Object.freeze(value)
 }
 
-function canonicalJson(value: unknown): string {
+export function canonicalVideoExportJson(value: unknown): string {
   if (value === null || typeof value === 'string' || typeof value === 'boolean') return JSON.stringify(value)
   if (typeof value === 'number') {
     if (!Number.isFinite(value)) throw new Error('Snapshot contém um número inválido.')
     return JSON.stringify(value)
   }
-  if (Array.isArray(value)) return `[${value.map((entry) => canonicalJson(entry)).join(',')}]`
+  if (Array.isArray(value)) return `[${value.map((entry) => canonicalVideoExportJson(entry)).join(',')}]`
   if (typeof value === 'object') {
     const entries = Object.entries(value).filter(([, entry]) => entry !== undefined).sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0)
-    return `{${entries.map(([key, entry]) => `${JSON.stringify(key)}:${canonicalJson(entry)}`).join(',')}}`
+    return `{${entries.map(([key, entry]) => `${JSON.stringify(key)}:${canonicalVideoExportJson(entry)}`).join(',')}}`
   }
   throw new Error('Snapshot contém um valor que não pode ser persistido.')
 }
@@ -99,7 +99,7 @@ export function serializeVideoExportSnapshot(snapshot: VideoExportSnapshot): str
     frameRate: snapshot.frameRate,
     durationFrames: snapshot.durationFrames,
   }
-  return canonicalJson(payload)
+  return canonicalVideoExportJson(payload)
 }
 
 /** Reconstructs the frozen runtime view from its pinned on-disk representation. */

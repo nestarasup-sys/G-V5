@@ -3,8 +3,9 @@ import { copyFile, mkdir, lstat, readFile, realpath, rename, rm, writeFile } fro
 import { createHash, randomUUID } from 'node:crypto'
 import { basename, join, relative, resolve, sep } from 'node:path'
 import { verifyVideoExportMediaManifest, type ResolveVideoExportMedia, type VideoExportMediaDependency } from './videoExportAssets'
-import { parseVideoExportSnapshot, serializeVideoExportSnapshot, type VideoExportSnapshot } from '../src/shared/videoExportSnapshot'
+import { parseVideoExportSnapshot, type VideoExportSnapshot } from '../src/shared/videoExportSnapshot'
 import type { RenderVariant } from '../src/shared/videoSceneIR'
+import { hydrateVideoExportSnapshotImages, prepareVideoExportSnapshot, type PinnedVideoExportSnapshotImage, type VideoExportSnapshotImage } from './videoExportSnapshotAssets'
 
 const idPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const shaPattern = /^[a-f0-9]{64}$/
@@ -25,6 +26,8 @@ export type VideoExportManifest = {
   snapshotFile?: 'snapshot.json'
   /** Semantic renderer mode bound to the snapshot. */
   renderVariant?: RenderVariant
+  /** Content-addressed raster inputs extracted from the persisted scene JSON. */
+  snapshotImageDependencies?: PinnedVideoExportSnapshotImage[]
   durationFrames: number
   frameRate: 60
   width: 1920
@@ -76,6 +79,65 @@ export class VideoExportJobStore {
     await rename(temp, path)
   }
 
+  private async pinSnapshotImage(folder: string, image: VideoExportSnapshotImage): Promise<PinnedVideoExportSnapshotImage> {
+    const filename = `assets/images/${image.sha256}.${image.extension}`
+    const imageFolder = join(folder, 'assets', 'images')
+    const destination = join(folder, filename)
+    const temporary = `${destination}.${randomUUID()}.tmp`
+    await mkdir(imageFolder, { recursive: true })
+    try {
+      await writeFile(temporary, image.bytes, { flag: 'wx' })
+      const info = await lstat(temporary)
+      if (!info.isFile() || info.isSymbolicLink() || info.size !== image.sizeBytes
+        || await this.hashFile(temporary) !== image.sha256) throw new Error('A imagem copiada para o job não confere com o snapshot.')
+      await rename(temporary, destination)
+    } finally {
+      await rm(temporary, { force: true }).catch(() => undefined)
+    }
+    return {
+      sha256: image.sha256, mimeType: image.mimeType, extension: image.extension,
+      sizeBytes: image.sizeBytes, filename,
+    }
+  }
+
+  private async readPinnedSnapshotImages(folder: string, dependencies: ReadonlyArray<PinnedVideoExportSnapshotImage>): Promise<Map<string, Buffer>> {
+    if (!Array.isArray(dependencies)) throw new Error('Manifesto de imagens do snapshot inválido.')
+    const bytesByReference = new Map<string, Buffer>()
+    const canonicalFolder = await realpath(folder)
+    let canonicalAssetsFolder: string | undefined
+    if (dependencies.length) {
+      const imageFolder = join(folder, 'assets', 'images')
+      const directoryInfo = await lstat(imageFolder).catch(() => null)
+      if (!directoryInfo?.isDirectory() || directoryInfo.isSymbolicLink()) throw new Error('Pasta de imagens pinadas do job inválida.')
+      canonicalAssetsFolder = await realpath(imageFolder)
+      if (relative(canonicalFolder, canonicalAssetsFolder) !== join('assets', 'images')) throw new Error('Pasta de imagens pinadas saiu do diretório do job.')
+    }
+    const validFormats = {
+      'image/png': 'png',
+      'image/jpeg': 'jpg',
+      'image/webp': 'webp',
+    } as const
+    for (const dependency of dependencies) {
+      const reference = `${dependency.sha256}:${dependency.mimeType}`
+      const filename = `assets/images/${dependency.sha256}.${dependency.extension}`
+      if (!shaPattern.test(dependency.sha256) || !Object.hasOwn(validFormats, dependency.mimeType)
+        || validFormats[dependency.mimeType as keyof typeof validFormats] !== dependency.extension
+        || !Number.isSafeInteger(dependency.sizeBytes) || dependency.sizeBytes < 1 || dependency.filename !== filename
+        || bytesByReference.has(reference)) throw new Error('Dependência de imagem do snapshot inválida.')
+      const path = join(folder, filename)
+      const info = await lstat(path).catch(() => null)
+      const canonicalPath = await realpath(path).catch(() => null)
+      if (!info?.isFile() || info.isSymbolicLink() || info.size !== dependency.sizeBytes || !canonicalPath
+        || relative(canonicalAssetsFolder!, canonicalPath) !== `${dependency.sha256}.${dependency.extension}`) {
+        throw new Error('Uma imagem pinada do snapshot está ausente ou inválida.')
+      }
+      const bytes = await readFile(path)
+      if (createHash('sha256').update(bytes).digest('hex') !== dependency.sha256) throw new Error('Uma imagem pinada do snapshot está corrompida.')
+      bytesByReference.set(reference, bytes)
+    }
+    return bytesByReference
+  }
+
   private async readSnapshotFromFolder(folder: string, manifest: VideoExportManifest): Promise<VideoExportSnapshot> {
     if (manifest.snapshotFile !== 'snapshot.json') throw new Error('Este job legado não contém um snapshot persistido.')
     if (!manifest.renderVariant || !['animated', 'static-characters'].includes(manifest.renderVariant)) {
@@ -90,7 +152,13 @@ export class VideoExportJobStore {
     if (createHash('sha256').update(serialized).digest('hex') !== manifest.snapshotSha256) {
       throw new Error('Snapshot persistido não confere com o hash do manifesto.')
     }
-    const snapshot = parseVideoExportSnapshot(serialized)
+    const images = await this.readPinnedSnapshotImages(folder, manifest.snapshotImageDependencies ?? [])
+    const hydrated = hydrateVideoExportSnapshotImages(serialized, manifest.snapshotImageDependencies ?? [], (dependency) => {
+      const bytes = images.get(`${dependency.sha256}:${dependency.mimeType}`)
+      if (!bytes) throw new Error('Uma imagem referenciada pelo snapshot não foi carregada.')
+      return bytes
+    })
+    const snapshot = parseVideoExportSnapshot(hydrated)
     if (snapshot.studio.id !== manifest.studioId || snapshot.durationFrames !== manifest.durationFrames) {
       throw new Error('Snapshot persistido não corresponde ao projeto ou à duração do job.')
     }
@@ -170,11 +238,11 @@ export class VideoExportJobStore {
       if (!this.resolveMedia) throw new Error('Não há resolvedor confiável para fixar as mídias deste job.')
       await verifyVideoExportMediaManifest(dependencies, input.studioId, this.resolveMedia)
     }
-    let serializedSnapshot: string | undefined
+    let preparedSnapshot: ReturnType<typeof prepareVideoExportSnapshot> | undefined
     if (input.snapshot) {
       if (!input.renderVariant || !['animated', 'static-characters'].includes(input.renderVariant)) throw new Error('O job com snapshot exige um modo de renderização válido.')
-      serializedSnapshot = serializeVideoExportSnapshot(input.snapshot)
-      const serializedHash = createHash('sha256').update(serializedSnapshot).digest('hex')
+      preparedSnapshot = prepareVideoExportSnapshot(input.snapshot)
+      const serializedHash = createHash('sha256').update(preparedSnapshot.serialized).digest('hex')
       if (serializedHash !== input.snapshotSha256 || input.snapshot.studio.id !== input.studioId
         || input.snapshot.durationFrames !== input.durationFrames) throw new Error('Snapshot imutável não corresponde ao hash, projeto ou duração do job.')
     } else if (input.renderVariant) {
@@ -185,16 +253,19 @@ export class VideoExportJobStore {
     try {
       const pinnedDependencies: PinnedVideoExportMediaDependency[] = []
       for (const dependency of dependencies) pinnedDependencies.push(await this.pinMedia(folder, input.studioId, dependency))
+      const pinnedSnapshotImages: PinnedVideoExportSnapshotImage[] = []
+      for (const image of preparedSnapshot?.images ?? []) pinnedSnapshotImages.push(await this.pinSnapshotImage(folder, image))
       const now = new Date().toISOString()
       const manifest: VideoExportManifest = {
         schemaVersion: 1, jobId: input.jobId, studioId: input.studioId, snapshotSha256: input.snapshotSha256,
         mediaSha256: [...new Set(input.mediaSha256)].sort(), ...(pinnedDependencies.length ? { mediaDependencies: pinnedDependencies } : {}),
-        ...(serializedSnapshot ? { snapshotFile: 'snapshot.json' as const, renderVariant: input.renderVariant } : {}),
+        ...(preparedSnapshot ? { snapshotFile: 'snapshot.json' as const, renderVariant: input.renderVariant,
+          ...(pinnedSnapshotImages.length ? { snapshotImageDependencies: pinnedSnapshotImages } : {}) } : {}),
         durationFrames: input.durationFrames, frameRate: 60, width: 1920, height: 1080,
         chunkFrames: chunkSize, createdAt: now, updatedAt: now, chunks: []
       }
       await this.verifyPinnedMediaInFolder(folder, manifest)
-      if (serializedSnapshot) await this.writeSnapshot(folder, serializedSnapshot)
+      if (preparedSnapshot) await this.writeSnapshot(folder, preparedSnapshot.serialized)
       await this.writeManifest(folder, manifest)
       return manifest
     } catch (error) {

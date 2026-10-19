@@ -161,6 +161,17 @@ _Atualizações posteriores devem registrar o SHA real do gate e nunca declarar 
 - Revalidação depois da recuperação: `npm test` — 63/63; `npm run test:export:synthetic` — 33/33; `npm run typecheck`, `npm run build` e `git diff --check` passaram. O GitHub Actions no SHA `edc0bdf0dba9ba6db145471fc407ad50f83e3c65` passou no Windows, mas antecede este refinamento e não conta como CI desta revisão.
 - Limites: o `VideoExportJobStore` ainda não é chamado por um orquestrador IPC/runner de produção; assets de personagem, pose, face, roupa, fontes e fundos não estão materializados como dependências pinadas (algumas imagens seguem embutidas como Data URL no documento); não existe renderer/encoder V5 conectado. A retomada persistente foi testada somente no store sintético, não por reinício real do Electron, e a prova de paridade continua aberta. V509 permanece parcial.
 
+## 2026-10-19 — Rodada 11: imagens do snapshot deduplicadas e pinadas por conteúdo
+
+- Base: `c542088becaa95100156e1d76bca5bb76df328db`, branch `master-desenvolvimento`.
+- Problema medido estruturalmente: snapshots do Studio podem repetir as mesmas imagens em `assets`, `characterBases` e `characterKeys`; manter cada Data URL no JSON do job multiplicava o tamanho do documento e as miniaturas/capas não são entradas da cena.
+- `electron/videoExportSnapshotAssets.ts` agora extrai Data URLs raster PNG/JPEG/WebP, valida a correspondência básica MIME/magic bytes, calcula SHA-256, deduplica por conteúdo, e serializa referências `gacha-export-asset:<sha>:<mime>`. SVG, formatos desconhecidos, base64 inválido ou bytes com MIME incorreto falham explicitamente.
+- `VideoExportJobStore.create()` grava uma cópia única por conteúdo em `assets/images/<sha>.<ext>` dentro do job, valida tamanho/hash e armazena referências no snapshot. `thumbnailDataUrl` e `videoTimeline.coverDataUrl` são removidos da projeção persistida por serem artwork de catálogo, não entradas de render.
+- `readSnapshot()` e `reopen()` verificam path, symlink, MIME/extensão, tamanho e SHA de cada imagem; conferem que cada referência tem exatamente um arquivo pinado e reidratam Data URLs para o renderer. Jobs v1 anteriores continuam sendo lidos sem migração; JSON antigo com Data URLs inline funciona com lista de imagens ausente.
+- A fixture sintética usa o mesmo PNG em asset, base e key: o job contém somente um arquivo raster, o JSON não contém Data URLs, leitura restaura as URLs necessárias, capas/miniaturas são omitidas, e adulteração de imagem é rejeitada.
+- Validação local final desta implementação: `node --test tests/video-export-jobs.test.cjs tests/video-export-snapshot.test.cjs` — 9/9; `npm test` — 63/63; `npm run test:export:synthetic` — 33/33; `npm run typecheck`, `npm run build` e `git diff --check` passaram. CI desta rodada aguarda o push; nenhum gate Electron/FFmpeg foi executado.
+- Limites: somente imagens já embutidas no `StudioDocument` são pinadas por este caminho. Dependências resolvidas durante transições via Fabricador/Customizer (modelos, poses, componentes, catálogos e efeitos) ainda não são capturadas; nenhuma exportação real foi executada. V509 permanece parcial.
+
 ## 2026-10-19 — Rodada 07: compilador de transições compartilhado
 
 - Base: `f9a0302a333cd2b1f819eb3aa85a5de368fa8a2d`, branch `master-desenvolvimento`.
