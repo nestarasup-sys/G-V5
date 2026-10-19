@@ -55,7 +55,7 @@ function positiveNumber(value: unknown, label: string): number {
 
 function rate(value: string | undefined): number | null {
   if (!value || value === '0/0') return null
-  const [n, d = '1'] = value.split('/').map(Number)
+  const [n, d = 1] = value.split('/').map(Number)
   return Number.isFinite(n) && Number.isFinite(d) && d !== 0 && n > 0 ? n / d : null
 }
 
