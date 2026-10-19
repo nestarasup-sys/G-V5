@@ -751,7 +751,9 @@ async function renderWardrobeOverlay(
         const targetContext = renderAboveHair && aboveHairContext ? aboveHairContext : outputContext
         if (highlightMatchesClothing || highlightMatchesHeadExtra) drawGarment(targetContext, true)
         drawGarment(targetContext)
-      } catch { /* Keep rendering the remaining layers when one image is unavailable. */ }
+      } catch {
+        throw new Error(`A imagem da peça ${garment.component.name} não pôde ser renderizada. Verifique o asset no Fabricador Dev sem alterar o personagem.`)
+      }
     }
   }
   const aboveHairImageUrl = hasAboveHairAccessories && aboveHairCanvas ? aboveHairCanvas.toDataURL('image/png') : null
@@ -1317,7 +1319,8 @@ export async function prepareSavedCharacterRenderer(character: CustomizerCharact
     const key = `${group.modelSlot}:${group.setId}`
     if (details[key]) return
     const set = await window.desktop.loadWardrobeSet(group.modelSlot, group.setId)
-    if (set) details[key] = set
+    if (!set) throw new Error(`O personagem referencia um conjunto de roupa indisponível (${key}). A fonte não será modificada.`)
+    details[key] = set
   }))
   const wardrobe = await renderWardrobeOverlay(groups, details, artwork, modelSlot, source, character.customization.modelSkinTone)
 
@@ -2142,6 +2145,9 @@ export function CustomizerPage() {
         const set = await window.desktop.loadWardrobeSet(group.modelSlot, group.setId)
         return { group, key, set }
       }))
+      if (!cancelled && restored.some(({ set }) => !set)) {
+        setCatalogError(`Há roupas equipadas sem conjunto disponível no Fabricador Dev: ${restored.filter(({ set }) => !set).map(({ key }) => key).join(', ')}. Verifique a biblioteca antes de editar o personagem.`)
+      }
       if (cancelled) return
       setWardrobeDetails((current) => {
         const next = { ...current }
