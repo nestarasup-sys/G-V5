@@ -2,7 +2,8 @@ import type { CustomizerCharacter, CustomizerFaceAppearance, FaceComponentPartId
 import type { FaceCatalogItem, FaceComponentAsset, FaceElementKind, FaceExpressionEffects, FaceTransform, FabricatorProject } from '../../../../shared/fabricator'
 import type { StudioFaceTransforms, VideoCharacterState } from '../../../../shared/studio'
 import { faceRenderGeometry, trimTransparentImage } from './characterGeometry'
-import { mixAppearance, mixEffects, mixPoseArtwork, mixStageElement, mixStudioTransforms, smoothProgress, transitionProgress, type CharacterTransition, type PoseArtwork } from './characterTransitions'
+import { mixAppearance, mixEffects, mixPoseArtwork, mixStageElement, mixStudioTransforms, smoothProgress, transitionProgress, type PoseArtwork } from '../../../../shared/videoCharacterInterpolation'
+import type { CharacterTransition } from './characterTransitions'
 
 /** Resolve the same visible defaults as the ordinary character compositor. */
 function visibleEffects(appearance: CustomizerFaceAppearance | undefined, effects: FaceExpressionEffects | undefined): FaceExpressionEffects {

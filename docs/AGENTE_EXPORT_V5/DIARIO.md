@@ -207,3 +207,12 @@ _Atualizações posteriores devem registrar o SHA real do gate e nunca declarar 
 **Evidência:** commits documentais na branch `master-desenvolvimento`; consultar head final. **Não ocorreu desenvolvimento da engine, export MP4, CI, benchmarks ou validação gráfica nesta rodada**. Documentação não é prova de aplicação funcional.
 
 **Próximo agente/Codex:** seguir `09_MISSAO_CODEX_AUTONOMA.md`, inventariar código e funções antes de deletar arquivos, implementar e testar os dois modos e arquitetura extensível; progresso medido por gates e benchmarks reais, não por estética de código.
+
+## 2026-10-19 — Rodada 13: matemática de transição de personagem movida para shared
+
+- Base: `705357f90a6172060c6738de2e87033aaedab31c`, branch `master-desenvolvimento`, sincronizada com `origin` antes das alterações.
+- `mixPoseArtwork`, interpolação de articulações, transforms da cena/rosto, efeitos faciais, aparência e easing foram extraídos para `src/shared/videoCharacterInterpolation.ts`. O preview manteve o wrapper `characterTransitions.ts` e os imports existentes; o `TransitionRenderer` passou a consumir diretamente o módulo shared.
+- Teste sintético novo cobre rotação pela menor distância angular, limites de frame, transforms de palco, seleção de propriedades discretas no meio, interpolação de membro articulado, repeatabilidade e não mutação das poses de origem.
+- Estado: V507 avançou na extração da matemática pura compartilhável, mas segue parcial. O `VideoSceneIR` ainda publica descriptor de transição e o renderer de preview ainda resolve assets e rasteriza via Customizer; não há consumidor de render/export usando o interpolador shared, nem prova pixel-equivalente ou execução visual Electron.
+- Validação final: `npm test` — 67/67; `npm run test:export:synthetic` — 37/37; `npm run typecheck`; `npm run build`; `git diff --check` passaram. A suíte encontrou e corrigiu a simulação de dependência do wrapper no teste de Scene IR após a extração.
+- Limite: somente testes Node sintéticos/build foram executados. Não houve execução visual do Electron, comparação de pixels, export MP4 ou benchmark de performance; nenhum dado pessoal ou mídia real foi usado.
