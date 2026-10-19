@@ -4,6 +4,7 @@ import { buildStudioExpressionAppearance, buildStudioExpressionTransforms, resol
 import { Icon } from '../../ui/components/Icon'
 import { CharacterPortrait } from '../../ui/components/CharacterPortrait'
 import { resolveStudioTalkMouthId, videoCharacterTrackColor } from '../../../../shared/studio'
+import { fitStudioCharacterToStage } from '../../../../shared/studioCharacterGeometry'
 import type { StudioAsset, StudioDocument, StudioElement, StudioFaceMode, StudioFaceTransform, StudioFaceTransforms, VideoAudioSettings, VideoMediaClip, VideoTimelineDocument } from '../../../../shared/studio'
 import { defaultVideoTransform, editVideoMediaClip, isValidVideoMediaClip, splitVideoMediaClip as splitMediaClip } from '../../../../shared/videoMedia'
 import { faceRenderGeometry, trimTransparentImage, type TrimmedImage } from './characterGeometry'
@@ -150,20 +151,6 @@ function studioElementSize(element: StudioElement) {
     width: element.width * scale * (element.characterWidthScale ?? 100) / 100,
     height: element.height * scale * (element.characterHeightScale ?? 100) / 100
   }
-}
-
-function fitStudioCharacterToStage(rendered: { width: number; height: number }, cropWidth: number, cropHeight: number, stageWidth: number, stageHeight: number) {
-  const safeRenderedWidth = Math.max(1, rendered.width)
-  const safeCropWidth = Math.max(1, cropWidth)
-  const safeCropHeight = Math.max(1, cropHeight)
-  const widthAtLimit = 20
-  const heightAtWidthLimit = widthAtLimit * stageWidth / Math.max(1, stageHeight) * safeCropHeight / safeCropWidth
-  const fitScale = Math.min(1, 82 / Math.max(1, heightAtWidthLimit))
-  const visibleWidth = widthAtLimit * fitScale
-  const characterCanvasWidth = visibleWidth * safeRenderedWidth / safeCropWidth
-  const width = characterCanvasWidth * safeCropWidth / safeRenderedWidth
-  const height = characterCanvasWidth * stageWidth / Math.max(1, stageHeight) * safeCropHeight / safeRenderedWidth
-  return { characterCanvasWidth, width, height }
 }
 
 function makeElement(kind: StudioElement['kind'], zIndex: number): StudioElement {
@@ -1693,8 +1680,13 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
         const imageData = crop?.dataUrl ?? rendered.dataUrl
         const imageWidth = crop?.width ?? rendered.width
         const imageHeight = crop?.height ?? rendered.height
+        const referenceCharacter = character.customization.poseSlot === null ? character : { ...character, customization: { ...character.customization, poseSlot: null } }
+        const referenceRendered = referenceCharacter === character ? rendered : await renderSavedCharacter(referenceCharacter, undefined, undefined, 'idle')
+        const referenceCrop = referenceCharacter === character ? crop : await trimTransparentImage(referenceRendered.dataUrl)
+        const referenceWidth = referenceCrop?.width ?? referenceRendered.width
+        const referenceHeight = referenceCrop?.height ?? referenceRendered.height
         const asset: StudioAsset = { id: crypto.randomUUID(), category: 'character', name: character.name, mimeType: 'image/png', dataUrl: imageData }
-        const { width, height, characterCanvasWidth } = fitStudioCharacterToStage(rendered, imageWidth, imageHeight, stageWidth, stageHeight)
+        const { width, height, characterCanvasWidth } = fitStudioCharacterToStage(referenceRendered, { width: referenceWidth, height: referenceHeight }, rendered, { width: imageWidth, height: imageHeight }, stageWidth, stageHeight)
         assets.push(asset)
         elements.push({ id: crypto.randomUUID(), kind: 'character', assetId: asset.id, characterId: character.id, characterSourceUpdatedAt: character.updatedAt, faceRendererVersion: STUDIO_FACE_RENDER_VERSION, activeExpressionCollectionId: 'standard', activeExpressionPresetId: null, activeFaceMode: 'idle', positionLocked: activeStudio.videoTimeline?.characterPositionsLocked ?? false, characterScale: 100, characterWidthScale: 100, characterHeightScale: 100, ...(character.customization.faceAppearance ? { expressionBase: { appearance: structuredClone(character.customization.faceAppearance), transforms: {} } } : {}), characterCanvasWidth, text: character.name, x: 0, y: 0, width, height, rotation: 0, zIndex: ++zIndex })
       }
