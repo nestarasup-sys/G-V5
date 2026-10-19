@@ -193,8 +193,10 @@ async function run(win, sandbox, output, prepared, treeHash) {
   await clickText(win, '.customizer-top-tabs button', 'Roupas', 'Open clothes tab')
   await wait(win, 'Boolean(document.querySelector(".customizer-upper-wardrobe-piece"))', 'Clothes panel visible', 25000)
   await click(win, '.customizer-wardrobe-piece-shirt button[aria-label^="Abrir biblioteca de"]', 'Open shirt library from its labelled category')
-  await wait(win, 'Boolean(document.querySelector(".customizer-hair-library-grid [title]"))', 'Shirt library loaded', 25000)
-  await clickText(win, '.customizer-hair-library-grid button[title]', 'Camisa', 'Equip UI-authored shirt')
+  // Library tiles use title/aria-label; their textContent is empty. Wait for
+  // the exact saved piece, not merely the always-present blank library slot.
+  await wait(win, 'Boolean(document.querySelector(".customizer-hair-library-grid button[title=\\\"Camisa\\\"]"))', 'UI-authored shirt loaded in catalog', 35000)
+  await click(win, '.customizer-hair-library-grid button[title="Camisa"]', 'Equip UI-authored shirt')
   await wait(win, 'window.desktop.listCustomizerCharacters().then(items=>items.find(c=>c.name===' + JSON.stringify(CHARACTER_NAME) + ')?.customization.wardrobeGroups?.some(g=>g.setId===' + JSON.stringify(set.id) + '))', 'Character equipment persisted', 45000)
   await wait(win, 'Boolean(document.querySelector(".customizer-wardrobe-overlay")?.complete)', 'Rendered clothing appears on character', 35000)
   const characters = await api('window.desktop.listCustomizerCharacters()')
