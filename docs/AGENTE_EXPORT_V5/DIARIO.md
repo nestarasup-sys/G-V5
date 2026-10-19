@@ -172,6 +172,16 @@ _Atualizações posteriores devem registrar o SHA real do gate e nunca declarar 
 - Validação local final desta implementação: `node --test tests/video-export-jobs.test.cjs tests/video-export-snapshot.test.cjs` — 9/9; `npm test` — 63/63; `npm run test:export:synthetic` — 33/33; `npm run typecheck`, `npm run build` e `git diff --check` passaram. CI desta rodada aguarda o push; nenhum gate Electron/FFmpeg foi executado.
 - Limites: somente imagens já embutidas no `StudioDocument` são pinadas por este caminho. Dependências resolvidas durante transições via Fabricador/Customizer (modelos, poses, componentes, catálogos e efeitos) ainda não são capturadas; nenhuma exportação real foi executada. V509 permanece parcial.
 
+## 2026-10-19 — Rodada 12: vídeos idênticos compartilham um objeto pinado por hash
+
+- Base: `fefb1b8a34717278feb7eb93c43b7e088d0b84ae`, branch `master-desenvolvimento`.
+- Problema: o manifesto já deduplicava clips que referenciam o mesmo `assetId`, mas duas entradas lógicas com bytes idênticos ainda eram copiadas separadamente para cada job.
+- `VideoExportJobStore` grava novas cópias pinadas em `assets/<sha256>`, reusa o objeto após validar tipo regular, tamanho e SHA-256, e mantém `assetId` como identidade lógica independente no manifesto. A lista/assinatura de dependências continua preservando cada ID.
+- Compatibilidade: o verificador aceita tanto o layout content-addressed quanto caminhos antigos `assets/<assetId>.<extension>`; não reescreve jobs existentes.
+- Fixture sintética cria duas dependências com IDs distintos e o mesmo conteúdo: o manifesto mantém as duas referências, há apenas um arquivo no job, e a retomada valida os bytes. Fixture separada reabre job legado no caminho por ID; adulteração continua rejeitada.
+- Revalidação local: `node --test tests/video-export-jobs.test.cjs` — 6/6; `npm test` — 64/64; `npm run test:export:synthetic` — 34/34; `npm run typecheck`, `npm run build` e `git diff --check` passaram. Nenhum Electron, FFmpeg, MP4 ou dado pessoal foi utilizado.
+- Limites: redução estrutural comprovada para IDs duplicados no fixture, mas sem benchmark de armazenamento ou export real. V509 continua parcial; fornecedores externos de personagem e integração do job com IPC/runner permanecem pendentes.
+
 ## 2026-10-19 — Rodada 07: compilador de transições compartilhado
 
 - Base: `f9a0302a333cd2b1f819eb3aa85a5de368fa8a2d`, branch `master-desenvolvimento`.

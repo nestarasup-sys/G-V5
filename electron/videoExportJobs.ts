@@ -175,11 +175,19 @@ export class VideoExportJobStore {
     const sourceInfo = await lstat(source.path)
     if (!sourceInfo.isFile() || sourceInfo.isSymbolicLink() || sourceInfo.size !== dependency.sizeBytes) throw new Error(`A mídia ${dependency.assetId} mudou antes de ser fixada no job.`)
 
-    const filename = `assets/${dependency.assetId}.${dependency.extension}`
+    const filename = `assets/${dependency.sha256}`
     const assetFolder = join(folder, 'assets')
     const destination = join(folder, filename)
     const temporary = `${destination}.${randomUUID()}.tmp`
-    await mkdir(assetFolder)
+    await mkdir(assetFolder, { recursive: true })
+    const existing = await lstat(destination).catch(() => null)
+    if (existing) {
+      if (!existing.isFile() || existing.isSymbolicLink() || existing.size !== dependency.sizeBytes
+        || await this.hashFile(destination) !== dependency.sha256) {
+        throw new Error('Uma mídia com o mesmo hash já está pinada, mas seus bytes não conferem.')
+      }
+      return { ...dependency, filename }
+    }
     try {
       await copyFile(canonicalSource, temporary, constants.COPYFILE_EXCL)
       const info = await lstat(temporary)
@@ -208,16 +216,19 @@ export class VideoExportJobStore {
     }
     const dependencyHashes: string[] = []
     for (const dependency of dependencies) {
-      const expectedFilename = `assets/${dependency.assetId}.${dependency.extension}`
+      const contentAddressedFilename = `assets/${dependency.sha256}`
+      const legacyFilename = `assets/${dependency.assetId}.${dependency.extension}`
+      const expectedFilename = dependency.filename
       if (!idPattern.test(dependency.assetId) || !shaPattern.test(dependency.sha256)
-        || !Number.isSafeInteger(dependency.sizeBytes) || dependency.sizeBytes < 1 || dependency.filename !== expectedFilename
+        || !Number.isSafeInteger(dependency.sizeBytes) || dependency.sizeBytes < 1
+        || (expectedFilename !== contentAddressedFilename && expectedFilename !== legacyFilename)
         || !Object.hasOwn(mimeByExtension, dependency.extension)
         || mimeByExtension[dependency.extension as keyof typeof mimeByExtension] !== dependency.mimeType) throw new Error('Dependência pinada do job tem metadados inválidos.')
       const path = join(folder, expectedFilename)
       const info = await lstat(path).catch(() => null)
       const canonicalPath = await realpath(path).catch(() => null)
       if (!info?.isFile() || info.isSymbolicLink() || info.size !== dependency.sizeBytes || !canonicalPath
-        || relative(canonicalAssetsRoot!, canonicalPath) !== `${dependency.assetId}.${dependency.extension}`
+        || relative(canonicalAssetsRoot!, canonicalPath) !== expectedFilename.slice('assets/'.length)
         || await this.hashFile(path) !== dependency.sha256) throw new Error(`A cópia pinada da mídia ${dependency.assetId} está ausente ou corrompida.`)
       dependencyHashes.push(dependency.sha256)
     }

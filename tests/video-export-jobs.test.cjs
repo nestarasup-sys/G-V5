@@ -164,12 +164,14 @@ test('export jobs copy referenced media into their folder and resume from pinned
     assetId: 'a1a82b6d-7bf1-44fc-9ff5-173f59f17bf0', extension: 'mp4', mimeType: 'video/mp4',
     sizeBytes: mediaBytes.length, sha256: require('node:crypto').createHash('sha256').update(mediaBytes).digest('hex'),
   }
+  const duplicateDependency = { ...dependency, assetId: 'a1a82b6d-7bf1-44fc-9ff5-173f59f17bf1' }
   const resolveMedia = async () => ({ path: mediaPath, trustedRoot: sourceRoot })
   const store = new VideoExportJobStore(root, resolveMedia)
-  const expected = { ...parameters, mediaSha256: [dependency.sha256], mediaDependencies: [dependency] }
+  const expected = { ...parameters, mediaSha256: [dependency.sha256], mediaDependencies: [dependency, duplicateDependency] }
   const manifest = await store.create({ jobId, ...expected })
-  const pinnedPath = path.join(root, jobId, 'assets', `${dependency.assetId}.mp4`)
-  assert.equal(manifest.mediaDependencies[0].filename, `assets/${dependency.assetId}.mp4`)
+  const pinnedPath = path.join(root, jobId, 'assets', dependency.sha256)
+  assert.deepEqual(manifest.mediaDependencies.map((item) => item.filename), [`assets/${dependency.sha256}`, `assets/${dependency.sha256}`])
+  assert.deepEqual(await fs.readdir(path.join(root, jobId, 'assets')), [dependency.sha256])
   assert.deepEqual(await fs.readFile(pinnedPath), mediaBytes)
 
   await fs.writeFile(mediaPath, 'source-changed-after-job')
@@ -179,6 +181,31 @@ test('export jobs copy referenced media into their folder and resume from pinned
   await fs.writeFile(pinnedPath, 'tampered-pinned-media')
   await assert.rejects(store.verifyPinnedMedia(jobId), /ausente ou corrompida/)
   await assert.rejects(store.reopen(jobId, expected), /ausente ou corrompida/)
+})
+
+test('export jobs continue to reopen legacy assetId-addressed media files', async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'gacha-video-job-legacy-media-'))
+  const sourceRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'gacha-video-source-'))
+  t.after(async () => { await fs.rm(root, { recursive: true, force: true }); await fs.rm(sourceRoot, { recursive: true, force: true }) })
+  const mediaBytes = Buffer.from('synthetic-legacy-pinned-video')
+  const mediaPath = path.join(sourceRoot, 'source.mp4')
+  await fs.writeFile(mediaPath, mediaBytes)
+  const dependency = {
+    assetId: 'a1a82b6d-7bf1-44fc-9ff5-173f59f17bf0', extension: 'mp4', mimeType: 'video/mp4',
+    sizeBytes: mediaBytes.length, sha256: require('node:crypto').createHash('sha256').update(mediaBytes).digest('hex'),
+  }
+  const store = new VideoExportJobStore(root, async () => ({ path: mediaPath, trustedRoot: sourceRoot }))
+  const expected = { ...parameters, mediaSha256: [dependency.sha256], mediaDependencies: [dependency] }
+  const created = await store.create({ jobId: otherJobId, ...expected })
+  const jobFolder = path.join(root, otherJobId)
+  const contentPath = path.join(jobFolder, 'assets', dependency.sha256)
+  const legacyPath = path.join(jobFolder, 'assets', `${dependency.assetId}.mp4`)
+  await fs.rename(contentPath, legacyPath)
+  const legacyManifest = { ...created, mediaDependencies: [{ ...created.mediaDependencies[0], filename: `assets/${dependency.assetId}.mp4` }] }
+  await fs.writeFile(path.join(jobFolder, 'manifest.json'), JSON.stringify(legacyManifest))
+
+  await store.verifyPinnedMedia(otherJobId)
+  assert.equal((await store.reopen(otherJobId, expected)).nextChunkIndex, 0)
 })
 
 test('job creation rolls back its own folder when source media no longer matches the manifest', async (t) => {

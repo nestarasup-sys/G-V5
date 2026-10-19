@@ -30,7 +30,7 @@ Versão 1 · 2026-10-19. Tarefas ordenadas por pré-requisito e separadas por do
 | V510 | Resolver estável de z-order e vídeo/layers V5 | V505 | ordem vídeo z=1 vs atores zIndex+2 preservada |
 | V511 | `Print` e still canônico no mesmo compositor/evaluator | V507,V508,V510 | mesmo frame/geom/texto sem CSS viewport divergente |
 
-**Estado de V509 (parcial, não concluído):** o código calcula manifesto/hash de dependências de vídeo, fixa os bytes de vídeo e imagens embutidas no diretório do job por SHA-256, e persiste/restaura o JSON canônico do `StudioDocument` com `RenderVariant`. Ainda faltam a integração num orquestrador IPC/runner usado pelo produto, snapshots transitivos de fornecedores do Fabricador/Customizer (modelos, poses, face, cabelo/efeitos), assets prontos para render e testes após reiniciar o Electron. Ver `../AGENTE_EXPORT_V5/DIARIO.md` (Rodadas 08–11). Não considerar esse avanço como exportação end-to-end ou V509 fechado.
+**Estado de V509 (parcial, não concluído):** o código calcula manifesto/hash de dependências de vídeo, fixa os bytes por SHA-256 no job (IDs lógicos diferentes com conteúdo idêntico compartilham o mesmo arquivo), fixa imagens raster embutidas e persiste/restaura o JSON canônico do `StudioDocument` com `RenderVariant`. Manifestos antigos com arquivos nomeados por `assetId` continuam legíveis. Ainda faltam a integração num orquestrador IPC/runner usado pelo produto, snapshots transitivos de fornecedores do Fabricador/Customizer (modelos, poses, face, cabelo/efeitos), assets prontos para render e testes após reiniciar o Electron. Ver `../AGENTE_EXPORT_V5/DIARIO.md` (Rodadas 08–12). Não considerar esse avanço como exportação end-to-end ou V509 fechado.
 
 ## Tranche T2 — Serial MP4 real
 
