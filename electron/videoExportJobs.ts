@@ -7,6 +7,7 @@ import { parseVideoExportSnapshot, type VideoExportSnapshot } from '../src/share
 import type { RenderVariant } from '../src/shared/videoSceneIR'
 import { hydrateVideoExportImagePayload, hydrateVideoExportSnapshotImages, prepareVideoExportImagePayload, prepareVideoExportSnapshot, type PinnedVideoExportSnapshotImage, type VideoExportSnapshotImage } from './videoExportSnapshotAssets'
 import { parseVideoCharacterRenderAssetSnapshot, serializeVideoCharacterRenderAssetSnapshot, type VideoCharacterRenderAssetSnapshot } from '../src/shared/videoCharacterRenderAssets'
+import { parseVideoExportCharacterSnapshot, serializeVideoExportCharacterSnapshot, type VideoExportCharacterSnapshot } from '../src/shared/videoExportCharacters'
 
 const idPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const shaPattern = /^[a-f0-9]{64}$/
@@ -33,6 +34,9 @@ export type VideoExportManifest = {
   characterAssetsFile?: 'character-assets.json'
   characterAssetsSha256?: string
   characterAssetImageDependencies?: PinnedVideoExportSnapshotImage[]
+  /** Complete Customizer character definitions pinned for transition rendering. */
+  charactersFile?: 'characters.json'
+  charactersSha256?: string
   durationFrames: number
   frameRate: 60
   width: 1920
@@ -80,6 +84,13 @@ export class VideoExportJobStore {
   private async writeSnapshot(folder: string, serialized: string): Promise<void> {
     const path = join(folder, 'snapshot.json')
     const temp = join(folder, `.snapshot-${randomUUID()}.tmp`)
+    await writeFile(temp, serialized, { flag: 'wx' })
+    await rename(temp, path)
+  }
+
+  private async writeCharacters(folder: string, serialized: string): Promise<void> {
+    const path = join(folder, 'characters.json')
+    const temp = join(folder, `.characters-${randomUUID()}.tmp`)
     await writeFile(temp, serialized, { flag: 'wx' })
     await rename(temp, path)
   }
@@ -289,7 +300,7 @@ export class VideoExportJobStore {
     if (dependencies.length && dependencyHashes.some((hash) => !manifest.mediaSha256.includes(hash))) throw new Error('Os hashes pinados não correspondem ao manifesto do job.')
   }
 
-  async create(input: { jobId: string; studioId: string; snapshotSha256: string; mediaSha256: string[]; mediaDependencies?: ReadonlyArray<VideoExportMediaDependency>; durationFrames: number; snapshot?: VideoExportSnapshot; characterAssets?: VideoCharacterRenderAssetSnapshot; renderVariant?: RenderVariant }): Promise<VideoExportManifest> {
+  async create(input: { jobId: string; studioId: string; snapshotSha256: string; mediaSha256: string[]; mediaDependencies?: ReadonlyArray<VideoExportMediaDependency>; durationFrames: number; snapshot?: VideoExportSnapshot; characterAssets?: VideoCharacterRenderAssetSnapshot; characters?: VideoExportCharacterSnapshot; renderVariant?: RenderVariant }): Promise<VideoExportManifest> {
     const folder = this.pathFor(input.jobId)
     const dependencies = [...(input.mediaDependencies ?? [])].sort((left, right) => left.assetId.localeCompare(right.assetId))
     if (!idPattern.test(input.studioId) || !shaPattern.test(input.snapshotSha256) || !input.mediaSha256.every((hash) => shaPattern.test(hash))
@@ -305,6 +316,7 @@ export class VideoExportJobStore {
     }
     let preparedSnapshot: ReturnType<typeof prepareVideoExportSnapshot> | undefined
     let preparedCharacterAssets: ReturnType<typeof prepareVideoExportImagePayload> | undefined
+    let serializedCharacters: string | undefined
     if (input.snapshot) {
       if (!input.renderVariant || !['animated', 'static-characters'].includes(input.renderVariant)) throw new Error('O job com snapshot exige um modo de renderização válido.')
       preparedSnapshot = prepareVideoExportSnapshot(input.snapshot)
@@ -313,6 +325,10 @@ export class VideoExportJobStore {
         || input.snapshot.durationFrames !== input.durationFrames) throw new Error('Snapshot imutável não corresponde ao hash, projeto ou duração do job.')
     } else if (input.renderVariant) {
       throw new Error('Modo de renderização exige um snapshot completo persistido.')
+    }
+    if (input.characters) {
+      if (!preparedSnapshot || !input.renderVariant) throw new Error('Personagens pinados exigem snapshot e modo de renderização do mesmo job.')
+      serializedCharacters = serializeVideoExportCharacterSnapshot(input.characters)
     }
     if (input.characterAssets) {
       if (!preparedSnapshot || !input.renderVariant) throw new Error('Assets de personagem exigem snapshot e modo de renderização do mesmo job.')
@@ -334,6 +350,10 @@ export class VideoExportJobStore {
         mediaSha256: [...new Set(input.mediaSha256)].sort(), ...(pinnedDependencies.length ? { mediaDependencies: pinnedDependencies } : {}),
         ...(preparedSnapshot ? { snapshotFile: 'snapshot.json' as const, renderVariant: input.renderVariant,
           ...(pinnedSnapshotImages.length ? { snapshotImageDependencies: pinnedSnapshotImages } : {}) } : {}),
+        ...(serializedCharacters ? {
+          charactersFile: 'characters.json' as const,
+          charactersSha256: createHash('sha256').update(serializedCharacters).digest('hex'),
+        } : {}),
         ...(preparedCharacterAssets ? {
           characterAssetsFile: 'character-assets.json' as const,
           characterAssetsSha256: createHash('sha256').update(preparedCharacterAssets.serialized).digest('hex'),
@@ -344,6 +364,7 @@ export class VideoExportJobStore {
       }
       await this.verifyPinnedMediaInFolder(folder, manifest)
       if (preparedSnapshot) await this.writeSnapshot(folder, preparedSnapshot.serialized)
+      if (serializedCharacters) await this.writeCharacters(folder, serializedCharacters)
       if (preparedCharacterAssets) await this.writeCharacterAssets(folder, preparedCharacterAssets.serialized)
       await this.writeManifest(folder, manifest)
       return manifest
@@ -353,7 +374,7 @@ export class VideoExportJobStore {
     }
   }
 
-  async reopen(jobId: string, expected?: { studioId: string; snapshotSha256: string; mediaSha256: string[]; mediaDependencies?: ReadonlyArray<VideoExportMediaDependency>; durationFrames: number; renderVariant?: RenderVariant; characterAssetsSha256?: string }): Promise<{ manifest: VideoExportManifest; nextChunkIndex: number; snapshot?: VideoExportSnapshot; characterAssets?: VideoCharacterRenderAssetSnapshot }> {
+  async reopen(jobId: string, expected?: { studioId: string; snapshotSha256: string; mediaSha256: string[]; mediaDependencies?: ReadonlyArray<VideoExportMediaDependency>; durationFrames: number; renderVariant?: RenderVariant; characterAssetsSha256?: string; charactersSha256?: string }): Promise<{ manifest: VideoExportManifest; nextChunkIndex: number; snapshot?: VideoExportSnapshot; characterAssets?: VideoCharacterRenderAssetSnapshot }> {
     const folder = this.pathFor(jobId)
     const info = await lstat(folder)
     if (!info.isDirectory() || info.isSymbolicLink()) throw new Error('Pasta do job inválida.')
@@ -367,6 +388,8 @@ export class VideoExportJobStore {
       || !Array.isArray(manifest.characterAssetImageDependencies ?? [])
       || (manifest.characterAssetsFile !== undefined && (manifest.characterAssetsFile !== 'character-assets.json' || !shaPattern.test(manifest.characterAssetsSha256 ?? '')))
       || (manifest.characterAssetsFile === undefined && (manifest.characterAssetsSha256 !== undefined || (manifest.characterAssetImageDependencies?.length ?? 0) > 0))
+      || (manifest.charactersFile !== undefined && (manifest.charactersFile !== 'characters.json' || !shaPattern.test(manifest.charactersSha256 ?? '')))
+      || (manifest.charactersFile === undefined && manifest.charactersSha256 !== undefined)
       || (expected !== undefined && (manifest.studioId !== expected.studioId
         || manifest.snapshotSha256 !== expected.snapshotSha256 || JSON.stringify(manifest.mediaSha256) !== JSON.stringify(expectedMedia)
         || manifest.durationFrames !== expected.durationFrames))
@@ -375,6 +398,7 @@ export class VideoExportJobStore {
       || manifest.chunkFrames !== chunkSize || !Array.isArray(manifest.chunks)) throw new Error('O projeto ou a mídia mudou; este job não pode ser retomado com o snapshot atual.')
     let snapshot: VideoExportSnapshot | undefined
     let characterAssets: VideoCharacterRenderAssetSnapshot | undefined
+    let characters: VideoExportCharacterSnapshot | undefined
     if (manifest.snapshotFile !== undefined) {
       if (manifest.snapshotFile !== 'snapshot.json' || !manifest.renderVariant
         || !['animated', 'static-characters'].includes(manifest.renderVariant)
@@ -382,6 +406,15 @@ export class VideoExportJobStore {
       snapshot = await this.readSnapshotFromFolder(folder, manifest)
     } else if (!expected || expected.renderVariant !== undefined) {
       throw new Error('Job legado sem snapshot não pode ser recuperado sem identidade externa do projeto.')
+    }
+    if (manifest.charactersFile !== undefined) {
+      if (expected?.charactersSha256 !== undefined && expected.charactersSha256 !== manifest.charactersSha256) throw new Error('As definições dos personagens mudaram desde o snapshot de exportação.')
+      const characterPath = join(folder, 'characters.json')
+      const serializedCharacters = await readFile(characterPath, 'utf8')
+      if (createHash('sha256').update(serializedCharacters).digest('hex') !== manifest.charactersSha256) throw new Error('Snapshot de personagens não confere com o hash do manifesto.')
+      characters = parseVideoExportCharacterSnapshot(serializedCharacters)
+    } else if (expected?.charactersSha256 !== undefined) {
+      throw new Error('Este job não contém o snapshot esperado dos personagens.')
     }
     if (manifest.characterAssetsFile !== undefined) {
       if (expected?.characterAssetsSha256 !== undefined && expected.characterAssetsSha256 !== manifest.characterAssetsSha256) throw new Error('Os assets de personagem mudaram desde o snapshot de exportação.')
@@ -416,7 +449,7 @@ export class VideoExportJobStore {
       repaired.updatedAt = new Date().toISOString()
       await this.writeManifest(folder, repaired)
     }
-    return { manifest: repaired, nextChunkIndex: contiguous.length, ...(snapshot ? { snapshot } : {}), ...(characterAssets ? { characterAssets } : {}) }
+    return { manifest: repaired, nextChunkIndex: contiguous.length, ...(snapshot ? { snapshot } : {}), ...(characters ? { characters } : {}), ...(characterAssets ? { characterAssets } : {}) }
   }
 
   async readSnapshot(jobId: string): Promise<VideoExportSnapshot> {
@@ -426,6 +459,19 @@ export class VideoExportJobStore {
     const manifest = JSON.parse(await readFile(join(folder, 'manifest.json'), 'utf8')) as VideoExportManifest
     if (manifest.jobId !== jobId) throw new Error('O job não é proprietário desta pasta.')
     return this.readSnapshotFromFolder(folder, manifest)
+  }
+
+  async readCharacters(jobId: string): Promise<VideoExportCharacterSnapshot> {
+    const folder = this.pathFor(jobId)
+    const info = await lstat(folder)
+    if (!info.isDirectory() || info.isSymbolicLink()) throw new Error('Pasta do job inválida.')
+    const manifest = JSON.parse(await readFile(join(folder, 'manifest.json'), 'utf8')) as VideoExportManifest
+    if (manifest.jobId !== jobId || manifest.charactersFile !== 'characters.json' || !shaPattern.test(manifest.charactersSha256 ?? '')) {
+      throw new Error('O job não contém snapshot válido dos personagens.')
+    }
+    const serialized = await readFile(join(folder, 'characters.json'), 'utf8')
+    if (createHash('sha256').update(serialized).digest('hex') !== manifest.charactersSha256) throw new Error('Snapshot de personagens está corrompido.')
+    return parseVideoExportCharacterSnapshot(serialized)
   }
 
   async readCharacterAssets(jobId: string): Promise<VideoCharacterRenderAssetSnapshot> {
