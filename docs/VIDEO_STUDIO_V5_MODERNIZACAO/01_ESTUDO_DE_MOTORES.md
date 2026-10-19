@@ -28,7 +28,7 @@ Se um candidato falha uma condição e só atende uma subfunção (por ex. OTIO)
 | **PixiJS WebGPU** | backend visual experimental | caminho moderno; recurso avançado | documentação oficial recomenda WebGL em produção; compatibilidade e paridade variáveis | **Laboratório, não default** |
 | **WebCodecs + Mediabunny** | decoder/encoder/container em Chromium | VideoFrame, VideoDecoder/Encoder; media mux/demux via Mediabunny TS | codecs e suporte variáveis; cor e sincronização; worker/frame lifecycle; integração do áudio; MPL-2.0 | **Spike de preview/proxy e encode curto; não assumir substituição FFmpeg** |
 | **Electron offscreen bitmap** | capturar superfície HTML/CSS com paridade | composição Chromium e eventos de paint | GPU readback caro; dirtyRects; frames estáticos não pintam; stale-frame se handshake incorreto | **Caminho inicial de correção/paridade** |
-| **Electron offscreen shared texture** | evitar cópia GPU→CPU para consumer nativo | API experimental compartilha handle GPU; versões recentes suportam formatos específicos | exige módulo nativo e import texture, lifetime \`release()\`, formato/color; zero-copy end-to-end depende do encoder | **Pesquisa avançada após medição** |
+| **Electron offscreen shared texture** | evitar cópia GPU→CPU para consumer nativo | API experimental compartilha handle GPU; versões recentes suportam formatos específicos | exige módulo nativo e import texture, lifetime `release()`, formato/color; zero-copy end-to-end depende do encoder | **Pesquisa avançada após medição** |
 | **Remotion** | vídeo declarativo React | DX React, timeline programática e player | custo comercial atual para ferramentas de automação; ainda renderização React; semântica autoral diferente | **Não priorizar** |
 | **OpenTimelineIO** | intercâmbio de decisões de edição | tracks, clips, time abstractions e adapters | não renderiza frames nem mídia; integração a formatos externos | **Possível export/import de timeline futuro** |
 | **Olive / OBS libobs / Shotcut / Kdenlive** | estudo de código/algoritmos | experiência em edição/composição | apps inteiros, licenças, plugins/UI e modelo mental distintos; Olive avisa alpha instável | **Consultar ideias, não incorporar aplicativo** |
@@ -39,25 +39,25 @@ Se um candidato falha uma condição e só atende uma subfunção (por ex. OTIO)
 - probe de codec, fps nominal/real, base temporal, PTS e streams;
 - decoder confiável e normalização de mídia para preview/proxy;
 - concat e encode H.264 com perfil explícito; audio filtergraph por plano de clips;
-- mux MP4 e validação \`ffprobe\` + decodificação completa no gate final.
+- mux MP4 e validação `ffprobe` + decodificação completa no gate final.
 
-**O que evitar:** gerar 54 mil imagens PNG de um vídeo de 15min em disco, entregar todos os frames brutos por IPC sem limitação ou construir um único filtergraph que precisa de uma camada por frame. O modelo ideal explora segmentos estáticos/camadas, preservando render per-frame nas regiões dinâmicas. \`overlay\` e framesync trabalham com timestamps e alpha; têm particularidades de PTS e conversão que exigem oráculo.
+**O que evitar:** gerar 54 mil imagens PNG de um vídeo de 15min em disco, entregar todos os frames brutos por IPC sem limitação ou construir um único filtergraph que precisa de uma camada por frame. O modelo ideal explora segmentos estáticos/camadas, preservando render per-frame nas regiões dinâmicas. `overlay` e framesync trabalham com timestamps e alpha; têm particularidades de PTS e conversão que exigem oráculo.
 
-**GPU:** D3D11VA, AMF, QSV, NVENC e filtros de overlay em dispositivos diferentes **não implicam** pipeline zero-copy. Qualquer \`hwdownload\`, \`hwupload\`, conversão de pixel, codificação e driver podem mudar o gargalo. Fazer capability probe e comparar latência+qualidade; Windows AMD alvo só após medição local.
+**GPU:** D3D11VA, AMF, QSV, NVENC e filtros de overlay em dispositivos diferentes **não implicam** pipeline zero-copy. Qualquer `hwdownload`, `hwupload`, conversão de pixel, codificação e driver podem mudar o gargalo. Fazer capability probe e comparar latência+qualidade; Windows AMD alvo só após medição local.
 
-**Licença:** FFmpeg pode ser LGPL ou GPL conforme configuração e bibliotecas habilitadas. Verificar origem/hash exato/configuração do binário e obrigações de redistribuição; filtro textual \`--enable-gpl\` é triagem, não auditoria jurídica completa. H.264 também pode suscitar considerações de patentes/licenciamento em certos usos/jurisdições: verificar na distribuição.
+**Licença:** FFmpeg pode ser LGPL ou GPL conforme configuração e bibliotecas habilitadas. Verificar origem/hash exato/configuração do binário e obrigações de redistribuição; filtro textual `--enable-gpl` é triagem, não auditoria jurídica completa. H.264 também pode suscitar considerações de patentes/licenciamento em certos usos/jurisdições: verificar na distribuição.
 
 ### B. MLT — melhor motor NLE completo para benchmark concorrente
 
-O MLT descreve producers, filters, transitions, consumers, XML e um consumidor avformat que usa FFmpeg; oferece ferramenta \`melt\` executável, e modo headless. Isso facilita um teste isolado com 3 vídeos sintéticos, overlay de PNG e mixagem, independente do React.
+O MLT descreve producers, filters, transitions, consumers, XML e um consumidor avformat que usa FFmpeg; oferece ferramenta `melt` executável, e modo headless. Isso facilita um teste isolado com 3 vídeos sintéticos, overlay de PNG e mixagem, independente do React.
 
 **Porém:** o G-V5 não tem 50 filtros genéricos como requisito central. Ter uma NLE genérica não garante que frame de pose/expressão interpolada, mouth e CSS sejam reproduzidos. Para V5, MLT continuaria a consumir raster/IR do personagem. O overhead nativo e a integração com módulos/Qt podem superar o benefício.
 
-**Prova requerida:** Windows empacotado ou runner semelhante, \`melt\`/MLT com vídeo A/V + alpha + range + texto rasterizado pelo próprio V5, saída 60fps validada, instalação reproduzível, BOM de plugins LGPL/GPL clara e mediana cold/warm. Não adotar apenas porque editor final conhecido usa MLT.
+**Prova requerida:** Windows empacotado ou runner semelhante, `melt`/MLT com vídeo A/V + alpha + range + texto rasterizado pelo próprio V5, saída 60fps validada, instalação reproduzível, BOM de plugins LGPL/GPL clara e mediana cold/warm. Não adotar apenas porque editor final conhecido usa MLT.
 
 ### C. GES — robusto para NLE, custoso para bridge
 
-GStreamer Editing Services é uma biblioteca LGPL para edição com \`GESTimeline\` (track/layer) e \`GESPipeline\` que pode alternar preview e encode. A documentação oficial alerta que APIs GES devem ser chamadas na thread onde \`ges_init\` foi invocado; não é garantida thread-safety.
+GStreamer Editing Services é uma biblioteca LGPL para edição com `GESTimeline` (track/layer) e `GESPipeline` que pode alternar preview e encode. A documentação oficial alerta que APIs GES devem ser chamadas na thread onde `ges_init` foi invocado; não é garantida thread-safety.
 
 **Prova requerida:** suporte Windows às plugins e codecs necessários, worker próprio com serialização de comandos (não expor ponte de métodos GObject arbitrários ao renderer), tempo de seek em 60fps e manejo de lifecycle/cancelamento.
 
@@ -71,24 +71,24 @@ libopenshot é C++ LGPL-3.0-or-later, com alternativa comercial reportada pelo p
 
 ### E. PixiJS — compositor potencialmente excelente com risco de tipografia
 
-O PixiJS recomenda WebGL para produção; render groups e cacheAsTexture são oportunidades para personagem estático, cenas de fundos e sprites. A documentação também alerta que \`cacheAsTexture\` em conteúdos grandes depende de limites de GPU e precisa de invalidação, e que render groups em excesso podem piorar desempenho.
+O PixiJS recomenda WebGL para produção; render groups e cacheAsTexture são oportunidades para personagem estático, cenas de fundos e sprites. A documentação também alerta que `cacheAsTexture` em conteúdos grandes depende de limites de GPU e precisa de invalidação, e que render groups em excesso podem piorar desempenho.
 
-**Foco de spike:** sprite PNG, 2 personagens, cabelo/roupa/faces, flip/scale/rotation/z-order; efeitos sombra/alpha e balão idêntico à DOM. *Não assumir* que o renderer \`Text\` quebra linhas, pesa fontes, borda, tail de balões e hinting igual ao CSS atual.
+**Foco de spike:** sprite PNG, 2 personagens, cabelo/roupa/faces, flip/scale/rotation/z-order; efeitos sombra/alpha e balão idêntico à DOM. *Não assumir* que o renderer `Text` quebra linhas, pesa fontes, borda, tail de balões e hinting igual ao CSS atual.
 
 **Possíveis soluções de paridade:** manter balão como textura raster SVG/canvas com layout canônico; escolher motor de layout tipográfico único e testado; render de personagens Pixi + texto canônico em camada separada. A composição pode usar WebGL no preview e offscreen, desde que seja testada sem readback excessivo.
 
 ### F. WebCodecs/Mediabunny — bom para candidatos sem DLLs
 
-MDN confirma que WebCodecs fornece acesso a VideoDecoder/VideoEncoder/VideoFrame e **não** faz demux/mux de container. Mediabunny cobre containers como MP4/WebM/MOV e é **MPL-2.0**, não MIT. Integração em Electron é atraente para decoder no renderer, porém suporte H.264 e comportamento de GPU/cores são dependentes de plataforma e Chromium. Timestamp \`VideoFrame\` em microssegundos exige política racional de arredondamento e PTS.
+MDN confirma que WebCodecs fornece acesso a VideoDecoder/VideoEncoder/VideoFrame e **não** faz demux/mux de container. Mediabunny cobre containers como MP4/WebM/MOV e é **MPL-2.0**, não MIT. Integração em Electron é atraente para decoder no renderer, porém suporte H.264 e comportamento de GPU/cores são dependentes de plataforma e Chromium. Timestamp `VideoFrame` em microssegundos exige política racional de arredondamento e PTS.
 
-**Spike:** decodificar mídia sintética 24/25/29.97/60/VFR, buscar frames arbitrários incluindo B-frames; testar encode H.264+AAC+MP4 e memória com \`VideoFrame.close()\`; comparar ffprobe e tela com pipeline FFmpeg. Usar para proxies/scrub se vencer, mesmo que export final fique no FFmpeg.
+**Spike:** decodificar mídia sintética 24/25/29.97/60/VFR, buscar frames arbitrários incluindo B-frames; testar encode H.264+AAC+MP4 e memória com `VideoFrame.close()`; comparar ffprobe e tela com pipeline FFmpeg. Usar para proxies/scrub se vencer, mesmo que export final fique no FFmpeg.
 
 ### G. Electron OSR bitmap vs textura compartilhada
 
 A documentação Electron esclarece:
-- \`paint\` entrega região suja; página parada não emite paint; não use como relógio de export.
-- Bitmap via \`NativeImage\` pode copiar GPU→CPU; \`useSharedTexture\` (experimental) pode fornecer handle de textura a consumidor nativo.
-- A textura deve ser liberada via \`release()\` quando concluída; formatos/cor reais devem ser lidos de \`textureInfo\`.
+- `paint` entrega região suja; página parada não emite paint; não use como relógio de export.
+- Bitmap via `NativeImage` pode copiar GPU→CPU; `useSharedTexture` (experimental) pode fornecer handle de textura a consumidor nativo.
+- A textura deve ser liberada via `release()` quando concluída; formatos/cor reais devem ser lidos de `textureInfo`.
 - Zero-copy de compositor até encoder **só** após bridge nativa que prove compatibilidade de handle, device, sincronização e tempo de vida; não declarar capacidade do Video Studio atual.
 
 Caminho de menor risco: OSR bitmap com requestId/capture barrier correto. Só experimentar shared texture se profiling mostrar o readback como gargalo, quando MP4 serial já funcionar.
@@ -114,7 +114,7 @@ Caminho de menor risco: OSR bitmap com requestId/capture barrier correto. Só ex
 | W1 (WebCodecs+Mediabunny) | 24/25/29.97/60/VFR | PTS, frame accuracy, encode + mux | apenas subfunções que vencerem |
 | O1 (Electron sharedTexture) | R2 vs OSR bitmap | cópias GPU/CPU, throughput, lifecycle | zero-copy lab se ROI medido |
 
-**Classificação:** \`CANDIDATO\` → \`SPIKE\` → \`PARIDADE APROVADA\` → \`PERFORMANCE APROVADA\` → \`LICENÇA/BUNDLE APROVADOS\` → \`PROMOVIDO\`. Ausência de qualquer gate = não promovido.
+**Classificação:** `CANDIDATO` → `SPIKE` → `PARIDADE APROVADA` → `PERFORMANCE APROVADA` → `LICENÇA/BUNDLE APROVADOS` → `PROMOVIDO`. Ausência de qualquer gate = não promovido.
 
 ## Fontes primárias (consultadas em 2026-10-19)
 
