@@ -13,10 +13,12 @@ on:
       - 'electron/videoExportJobs.ts'
       - 'electron/videoExports.ts'
       - 'electron/videoRawFrameWriter.ts'
+      - 'electron/videoSyntheticRaster.ts'
       - 'tests/video-export-*.test.cjs'
       - 'tests/video-frame-determinism.test.cjs'
       - 'tests/video-studio-audio-plan.test.cjs'
       - 'tests/video-raw-frame-writer.test.cjs'
+      - 'tests/video-synthetic-raster.test.cjs'
   workflow_dispatch:
 
 permissions:
