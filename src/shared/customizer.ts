@@ -141,6 +141,8 @@ export type CustomizerWardrobeGroup = {
   scaleX: number
   scaleY: number
   rotation: number
+  /** Bone frame in which this character-only adjustment was authored. */
+  adjustmentReference?: { version: 1; boneId: string; width: number; height: number; rotation: number }
   /** Per-character dimming used to temporarily de-emphasize one garment piece. */
   opacity?: number
   /** Soft deletion from Adjust: omit this component from the preview while keeping it restorable. */

@@ -38,6 +38,12 @@ G-V5/
 
 **Magnitude estática (não desempenho):** `electron/main.ts` 2.300 linhas / 75 chamadas `ipcMain.handle` / ~15 ocorrências `app.getPath('userData')`; `CustomizerPage.tsx` 3.983 linhas; `VideoStudioEditor.tsx` 2.542; `StudioPage.tsx` 1.653; `FabricatorPage.tsx` 1.085; `FaceComponentsWorkspace.tsx` 1.204; `src/renderer/src/ui/styles.css` ~269 KB e 2.317 linhas, `VideoStudioEditor.css` ~56 KB. Tamanho sinaliza concentração, mas não mede gargalo por si.
 
+## Atualização de execução local — 2026-10-19
+
+A revisão estática acima continua sendo um retrato histórico da base `master@5b848345`. Na branch de continuação `codex/finalizar-dev-ai-local`, testes executáveis foram revalidados; não substituir retroativamente as afirmações históricas por evidência nova. O `npm run audit:all` passou 13/13 casos no SHA limpo `5b82b5a9c4f5b9dda402d30e290517e00f51d2e5` (typecheck, build, nove auditorias rápidas, isolamento Studio e IPC real). O gate AST passou sem imports não resolvidos e sem novas arestas; as 10 arestas legadas continuam classificadas como dívida permitida. Detalhes, comandos e limites em [VALIDACAO_LOCAL_2026-10-19.md](AUDITORIAS/VALIDACAO_LOCAL_2026-10-19.md).
+
+O teste privado de Ayla/Chloe foi executado com backup SHA verificado e cópias independentes. Ambos os renders canônicos mudaram ao zerar transforms exclusivamente na cópia de teste; a biblioteca Fabricador permaneceu idêntica entre as cópias. Evidências visuais e relatórios com dados privados estão fora do repositório. Isso ainda não fecha AF-01–AF-20, ISO-01–ISO-15, nem equivalência entre Customizador e Studios.
+
 ## II. Afirmações do plano x implementação — matriz de evidências
 
 | ID / estado | Afirmação e observação verificável | Fonte / implicação |

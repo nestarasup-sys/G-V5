@@ -17,8 +17,10 @@
     "audit:isolation": "node scripts/dev-ai/baseline.cjs --suite isolation",
     "audit:ipc": "node scripts/dev-ai/baseline.cjs --suite ipc",
     "audit:all": "node scripts/dev-ai/baseline.cjs --suite all",
-    "test": "node --test tests/dev-ai-baseline.test.cjs",
-    "audit:boundaries": "node scripts/dev-ai/boundary-scan.cjs"
+    "test": "node --test tests/dev-ai-baseline.test.cjs tests/dev-ai-visual.test.cjs tests/dev-ai-ast-boundaries.test.cjs tests/dev-ai-boundary-gate.test.cjs tests/dev-ai-raster-fixture.test.cjs",
+    "audit:boundaries": "node scripts/dev-ai/boundary-scan.cjs",
+    "audit:boundaries:ast": "node scripts/dev-ai/boundary-ast.cjs",
+    "audit:boundaries:gate": "node scripts/dev-ai/feature-boundary-gate.cjs"
   },
   "dependencies": {
     "react": "^19.2.0",

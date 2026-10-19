@@ -28,7 +28,7 @@ type DragState = { id: string; pointerId: number; startX: number; startY: number
 type AutomaticMouthFrame = { dataUrl: string; geometry: Pick<StudioElement, 'width' | 'height' | 'characterCanvasWidth'> }
 type AutomaticMouthAnimation = { frames: AutomaticMouthFrame[]; cycleFrames: number; speechStartFrame: number }
 
-const STUDIO_FACE_RENDER_VERSION = 4
+const STUDIO_FACE_RENDER_VERSION = 6
 const studioColor = (number: number) => `hsl(${(number * 137.508) % 360} 45% 78%)`
 
 function captureVideoPoster(videoId: string, sourceFrame = 0): Promise<string | null> {
