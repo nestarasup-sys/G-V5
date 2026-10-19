@@ -190,3 +190,65 @@ test('transition renderer forwards one injected provider through model, pose, fa
   assert.ok(calls.some(([kind, _model, id]) => kind === 'face-item' && id === 'eye-a'))
   assert.ok(calls.some(([kind]) => kind === 'effects'))
 })
+
+
+test('character asset capture plans every authored face state and records automatic blink/talk dependencies', async () => {
+  const synthetic = syntheticAssetProvider()
+  const calls = []
+  const capture = loadPureTs('../src/renderer/src/features/videoStudio/videoCharacterAssetCapture.ts', {
+    '../../../../shared/videoCharacterRenderAssets': assetModule,
+    './characterTransitions': { compileCharacterTransitions: () => [], transitionSampleFrames: () => [] },
+    './transitionRenderer': { TransitionRenderer: class {
+      constructor(provider) { this.provider = provider }
+      async render(transition) {
+        const mode = transition.from.element.activeFaceMode
+        calls.push(mode)
+        await this.provider.loadFabricatorSlot(1)
+        await this.provider.loadFabricatorPose(1, 2)
+        if (mode === 'blink') {
+          await this.provider.listFaceComponentAssets(1, 'eye-closed')
+          await this.provider.loadFaceComponentAsset(1, 'eye-a')
+        }
+        if (mode === 'talk') {
+          await this.provider.listFaceCatalog(1)
+          await this.provider.loadFaceCatalogItem(1, 'face-a')
+        }
+      }
+    } },
+  })
+  const stateA = {
+    imageDataUrl: 'data:image/png;base64,A',
+    element: { id: 'actor', kind: 'character', characterId: 'character-a', poseSlot: 2, faceAppearance: { modelSlot: 1 } },
+  }
+  const stateB = {
+    imageDataUrl: 'data:image/png;base64,B',
+    element: { id: 'actor', kind: 'character', characterId: 'character-a', poseSlot: 2, faceAppearance: { modelSlot: 1 } },
+  }
+  const studio = {
+    elements: [{ id: 'actor', kind: 'character', characterId: 'character-a' }],
+    videoTimeline: {
+      characterBases: { actor: stateA },
+      characterKeys: [
+        { id: 'same-object', elementId: 'actor', frame: 10, state: stateA },
+        { id: 'new-state', elementId: 'actor', frame: 20, state: stateB },
+      ],
+    },
+  }
+  const planned = capture.collectAutomaticFaceCaptureStates(studio)
+  assert.deepEqual(planned.map((item) => item.state.imageDataUrl), ['data:image/png;base64,A', 'data:image/png;base64,B'])
+
+  const progress = []
+  const snapshot = await capture.captureVideoCharacterRenderAssets(
+    studio,
+    [{ id: 'character-a', customization: { modelSlot: 1 } }],
+    synthetic.sourceProvider,
+    { onProgress: (completed, total) => progress.push([completed, total]) },
+  )
+  assert.deepEqual(calls, ['blink', 'talk', 'blink', 'talk'])
+  assert.deepEqual(progress.at(-1), [5, 5], 'one catalog preload plus two automatic recipes per authored state')
+  const methods = snapshot.entries.map((entry) => entry.method)
+  assert.ok(methods.includes('listFaceCatalog'))
+  assert.ok(methods.includes('listFaceComponentAssets'))
+  assert.ok(methods.includes('loadFaceCatalogItem'))
+  assert.ok(methods.includes('loadFaceComponentAsset'))
+})
