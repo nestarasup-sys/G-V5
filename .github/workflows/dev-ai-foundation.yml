@@ -3,6 +3,7 @@ name: G-V5 DEV AI Foundation
 on:
   push:
     branches:
+      - master
       - 'ci/dev-ai-*'
       - 'feat/dev-ai-*'
   workflow_dispatch:
