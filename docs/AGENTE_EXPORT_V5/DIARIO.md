@@ -56,6 +56,19 @@
 _Atualizações posteriores devem registrar o SHA real do gate e nunca declarar conclusão a partir de código compilado._
 
 
+## 2026-10-19 — Rodada 06: evaluator semântico absoluto e variantes
+
+**Base:** branch `master-desenvolvimento`, sincronizada por fast-forward do SHA `a5a488f5a6803350cd397c4f4fed351bcebbe75f` para `05a262b6b851b3bf72024bebe471eb86b320d8ba`. A tree estava limpa antes da implementação.
+
+**Alterações locais:** `src/shared/videoCharacterTimeline.ts` centraliza o índice/lookup de estado de personagem, e `characterTrack.ts::characterStateAt()` (consumido pela preview atual) delega ao shared. `src/shared/videoSceneIR.ts` adiciona `compileVideoScene()` e `evaluateVideoSceneFrame()` puros: reusa o mesmo lookup/cache e compila spans de transição, intervalos de gaps/text/video com prefix-max-end, assets/elementos por ID e ordem combinada de camadas V5. A avaliação retorna estado authored, transição/progresso absoluto, variantes, mouth/blink, gaps, clips de texto, ticks/timestamps de vídeo, fundo e layer order. O documento permanece imutável. Testes com fixtures sintéticas comparam seleção de intervalo contra o seletor existente em todos os frames e verificam lookup/transform da preview. `package.json` inclui o novo teste nos comandos apropriados.
+
+**Estado de cobertura:** V505/V507/V542 **parciais**. Este IR é semântico, não rasteriza PNG nem reproduz `transitionRenderer`; também não resolve dependências externas do Fabricador/Customizer, não fixa bytes, não captura Electron e não produz MP4. O modo completo ainda precisa ser conectado à composição visual sem alterar regras do editor; o modo estático ainda precisa de comparação MP4/pixels.
+
+**Validações nesta rodada:** antes da implementação, `npm run test:export:synthetic` passou com 20 testes no HEAD sincronizado. Após a implementação: `npm run test:export:synthetic` passou (25 testes, 0 falhas/skips); `npm test` passou (55 testes, 0 falhas/skips); `npm run typecheck` passou; `npm run build` passou. O teste de evaluator foi incluído nos dois comandos de teste aplicáveis. `node --test tests/video-scene-ir.test.cjs tests/video-timeline-index.test.cjs` passou (12/12); comparação de intervalos do IR com o seletor antigo cobre cada frame de 0 a 59 na fixture sintética. `npm run bench:video-timeline` executado separadamente: microbench existente reportou indexed-query speedups de 12,81×/60,3×/1009,86× em 100/1.000/10.000 eventos e playback lookup 3,92×/19,37×/90,13×; estes números comparam apenas funções sintéticas in-memory, **não** o novo IR, React preview, Electron, nem tempo real do app. `git diff --check` passou. Não executar DEV AI/auditorias desligadas. Nenhum perfil real, assets privados, Electron gráfico, FFmpeg instalado ou export real foi acessado nesta rodada.
+
+**Próximo item:** integrar o evaluator com `characterTrack` sem manter regras duplicadas e construir resolução/pinning de dependências antes de tentar rasterização de ator. Em seguida, produzir oráculo de imagem sintético e um surface isolado.
+
+
 ## 2026-10-19 — Rodada 03: reanálise independente e consolidação documental
 
 **Escopo executado:** revisão estática do código do G-V5 master-desenvolvimento e do EDITOR-V4 oai/aggressive-export-v5. Branch inicial observada G-V5: 71183cc5cc56840c7d6390d98146a9032d7d79d3. V4 observado b951b4d2cbb360e3cfef7769e457894337bbc83e. Leitura por GitHub; nenhum Electron/FFmpeg iniciado, nenhum benchmark local, nenhum projeto ou asset privado acessado.

@@ -1,41 +1,8 @@
 import type { StudioDocument, StudioElement, VideoCharacterState, VideoTimelineDocument } from '../../../../shared/studio'
+import { videoCharacterStateAt, videoCharacterTimelineLookup } from '../../../../shared/videoCharacterTimeline'
 
 type CharacterTransform = Pick<StudioElement, 'x' | 'y' | 'width' | 'height' | 'rotation' | 'flipX' | 'characterScale' | 'characterWidthScale' | 'characterHeightScale' | 'zIndex'>
 const transformFields = ['x', 'y', 'width', 'height', 'rotation', 'flipX', 'characterScale', 'characterWidthScale', 'characterHeightScale', 'zIndex'] as const
-
-type CharacterTimelineIndex = {
-  keysByElement: Map<string, VideoTimelineDocument['characterKeys']>
-  firstStateKeyByElement: Map<string, VideoTimelineDocument['characterKeys'][number] | undefined>
-  transformsByElement: Map<string, CharacterTransform | undefined>
-}
-
-// Timeline documents are immutable revisions. A weak key keeps derived playback indexes
-// reusable across preview renders without extending the lifetime of old project revisions.
-const characterTimelineIndexes = new WeakMap<VideoTimelineDocument, CharacterTimelineIndex>()
-
-function characterTimelineIndex(timeline: VideoTimelineDocument): CharacterTimelineIndex {
-  let index = characterTimelineIndexes.get(timeline)
-  if (index) return index
-  const keysByElement = new Map<string, VideoTimelineDocument['characterKeys']>()
-  for (const key of timeline.characterKeys) {
-    const keys = keysByElement.get(key.elementId)
-    if (keys) keys.push(key)
-    else keysByElement.set(key.elementId, [key])
-  }
-  for (const keys of keysByElement.values()) keys.sort((left, right) => left.frame - right.frame)
-  const firstStateKeyByElement = new Map<string, VideoTimelineDocument['characterKeys'][number] | undefined>()
-  for (const [elementId, keys] of keysByElement) {
-    let first: VideoTimelineDocument['characterKeys'][number] | undefined
-    for (const key of keys) {
-      if (!key.state) continue
-      if (!first || key.frame <= first.frame) first = key
-    }
-    firstStateKeyByElement.set(elementId, first)
-  }
-  index = { keysByElement, firstStateKeyByElement, transformsByElement: new Map() }
-  characterTimelineIndexes.set(timeline, index)
-  return index
-}
 
 function pickTransform(element: StudioElement): CharacterTransform {
   return Object.fromEntries(transformFields.filter((field) => element[field] !== undefined).map((field) => [field, element[field]])) as CharacterTransform
@@ -49,23 +16,13 @@ function equalTransform(left: CharacterTransform | undefined, right: CharacterTr
 function firstCharacterTransform(timeline: VideoTimelineDocument, elementId: string, fallback?: StudioElement): CharacterTransform | undefined {
   const global = timeline.characterTransforms?.[elementId]
   if (global && [global.x, global.y, global.width, global.height, global.rotation, global.zIndex].every(Number.isFinite)) return global
-  const index = characterTimelineIndex(timeline)
   if (fallback) {
     const source = fallback
-    if (!source) return undefined
     const transform = pickTransform(source)
     const legacyPosition = timeline.characterPositions?.[elementId]
     return legacyPosition ? { ...transform, x: legacyPosition.x, y: legacyPosition.y } : transform
   }
-  if (index.transformsByElement.has(elementId)) return index.transformsByElement.get(elementId)
-  const first = index.firstStateKeyByElement.get(elementId)
-  const source = (first?.frame === 0 ? first.state!.element : timeline.characterBases?.[elementId]?.element ?? first?.state?.element)
-  if (!source) return undefined
-  const transform = pickTransform(source)
-  const legacyPosition = timeline.characterPositions?.[elementId]
-  const result = legacyPosition ? { ...transform, x: legacyPosition.x, y: legacyPosition.y } : transform
-  index.transformsByElement.set(elementId, result)
-  return result
+  return videoCharacterTimelineLookup(timeline, elementId).stageTransform as CharacterTransform | undefined
 }
 
 function transformedElement(element: StudioElement, transform: CharacterTransform): StudioElement {
@@ -157,23 +114,7 @@ export function captureVideoCharacter(studio: StudioDocument, element: StudioEle
 }
 
 export function characterStateAt(timeline: VideoTimelineDocument, elementId: string, frame: number): VideoCharacterState | undefined {
-  let current = timeline.characterBases?.[elementId]
-  const keys = characterTimelineIndex(timeline).keysByElement.get(elementId) ?? []
-  // Upper-bound lookup avoids filtering, sorting, and replaying earlier keys on each frame.
-  let low = 0, high = keys.length
-  while (low < high) {
-    const middle = (low + high) >>> 1
-    if (keys[middle].frame <= frame) low = middle + 1
-    else high = middle
-  }
-  for (let index = low - 1; index >= 0; index -= 1) {
-    if (keys[index].state) {
-      current = keys[index].state
-      break
-    }
-  }
-  const transform = firstCharacterTransform(timeline, elementId)
-  return current && transform ? transformedState(current, transform) : current
+  return videoCharacterStateAt(timeline, elementId, frame)
 }
 
 export function restoreVideoTracks(studio: StudioDocument, frame: number): StudioDocument {

@@ -15,7 +15,15 @@ const characterTrackPath = path.join(__dirname, '../src/renderer/src/features/vi
 const characterTrackSource = fs.readFileSync(characterTrackPath, 'utf8')
 const characterTrackCompiled = ts.transpile(characterTrackSource, { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 })
 const loadedCharacterTrack = { exports: {} }
-new Function('require', 'module', 'exports', characterTrackCompiled)(require, loadedCharacterTrack, loadedCharacterTrack.exports)
+const characterTimelinePath = path.join(__dirname, '../src/shared/videoCharacterTimeline.ts')
+const characterTimelineSource = fs.readFileSync(characterTimelinePath, 'utf8')
+const characterTimelineCompiled = ts.transpile(characterTimelineSource, { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 })
+const loadedCharacterTimeline = { exports: {} }
+new Function('require', 'module', 'exports', characterTimelineCompiled)(require, loadedCharacterTimeline, loadedCharacterTimeline.exports)
+new Function('require', 'module', 'exports', characterTrackCompiled)((name) => {
+  if (name === '../../../../shared/videoCharacterTimeline') return loadedCharacterTimeline.exports
+  return require(name)
+}, loadedCharacterTrack, loadedCharacterTrack.exports)
 const { characterStateAt } = loadedCharacterTrack.exports
 
 function timeline(overrides = {}) {
@@ -112,4 +120,19 @@ test('character preview state lookup preserves same-frame key order and frame bo
   assert.equal(characterStateAt(doc, 'actor', 20).element.pose, 'first', 'a key without a state does not clear the preceding appearance')
   assert.equal(characterStateAt(doc, 'actor', 29).element.pose, 'first')
   assert.equal(characterStateAt(doc, 'actor', 30).element.pose, 'next')
+})
+
+test('shared absolute character resolver preserves legacy position and global transform priority', () => {
+  const state = { imageDataUrl: 'data:synthetic', element: { id: 'actor', kind: 'character', x: 1, y: 2, width: 100, height: 80, rotation: 0, zIndex: 3 } }
+  const legacy = timeline({ characterBases: { actor: state }, characterPositions: { actor: { x: 12, y: 34 } } })
+  assert.equal(characterStateAt(legacy, 'actor', 0).element.x, 12)
+  assert.equal(characterStateAt(legacy, 'actor', 0).element.y, 34)
+
+  const global = timeline({
+    characterBases: { actor: state },
+    characterPositions: { actor: { x: 12, y: 34 } },
+    characterTransforms: { actor: { x: 80, y: 90, width: 200, height: 160, rotation: 25, zIndex: 9 } }
+  })
+  const transformed = characterStateAt(global, 'actor', 0).element
+  assert.deepEqual([transformed.x, transformed.y, transformed.width, transformed.height, transformed.rotation, transformed.zIndex], [80, 90, 200, 160, 25, 9])
 })

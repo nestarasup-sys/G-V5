@@ -33,6 +33,7 @@ Transformar o Video Studio num editor de reação/animação 2D com **preview re
 | `videoMediaPlayback.ts` usa `currentTime` e tolerância de drift | Playback nativo não é decoder frame-exato para export; usar PTS/decoder controlado. |
 | `videoLibrary.ts` mantém original + `copyVerified` em `projectMediaPath` no attach | Há cópias físicas por projeto. Não converter para CAS/global sem migração, integridade, isolamento, delete e backup testados. |
 | `videoExportSnapshot.ts` resolve texto/gaps/vídeos/blink, não pixels/estado completo | Fundação parcial. |
+| `videoCharacterTimeline.ts` contém o índice/lookup absoluto usado por `characterTrack.ts` e por `videoSceneIR.ts`; IR também indexa gaps/text/video por intervalos | Resolve estado authored comum aos dois caminhos e passa comparação contra seletor legado em fixture; IR ainda não substitui composição/transição raster da preview e não resolve assets externos. |
 | `videoRawFrameWriter.ts`, `videoExportJobs.ts`, `videoExports.ts` | Infra de transporte, checkpoint e catálogo, mas ainda sem renderer real, FFmpeg comprovado, FFprobe, API start/cancel/progress. |
 | `package.json`: Electron/React/sharp, sem FFmpeg empacotado | Não existe encoder disponível garantido no instalador. |
 

@@ -132,3 +132,14 @@ Próximo item desbloqueado:
 **Dependências recomendadas:** V541 antes de eliminar legado; V542 depende de V505/V507; V543 depende de V515–V517; V544 depende de V542/V543; V545 depende de V518/V543/V544; V546 depende de V505/V510/V512, validado antes de V540; V547 é transversal e só conclui após V541/V546/V538; V548 é gate final e depende das demais.
 
 Todos os conceitos originais aprovados (Smart Scene Compiler, cache persistente, paralelismo, proxies, hardware autodetect, Smart Export, preview/export unificado e A/B open source) continuam requisitos; não reduza a tarefa a portar Turbo V4. O documento [09_MISSAO_CODEX_AUTONOMA.md](./09_MISSAO_CODEX_AUTONOMA.md) é o **brief de execução** para o agente local.
+
+## Diário de implementação local
+
+### 2026-10-19 — primeiro avaliador semântico de cena
+
+- Base sincronizada: `05a262b6b851b3bf72024bebe471eb86b320d8ba`, branch `master-desenvolvimento`.
+- Implementado parcialmente: `src/shared/videoSceneIR.ts` compila índices derivados de keys/transições e avalia frame absoluto. O IR declara personagem authored, intervalo/progresso de transição, mouth/blink automáticos, gaps, textos, vídeos em ticks racionais de 1/60 (inclui transforms), fundo e ordenação atual de layers. Inclui `animated` e `static-characters`; o segundo preserva keys e desliga somente automações de personagem.
+- `src/shared/videoCharacterTimeline.ts` é agora a implementação comum do índice e lookup de estado authored; `characterTrack.ts` (usado pela preview) delega a ela e `videoSceneIR.ts` reaproveita o mesmo lookup/cache. O IR compila índices de intervalos por prefixo de fim para gaps, texto e vídeo, além de maps de assets/elementos.
+- Testes sintéticos: `tests/video-scene-ir.test.cjs` cobre seek A-B-A, authored key boundary, transição, precedência de fala, blink, gaps, sobreposições, texto, source tick, z-order e preferência de animação. Compara seleção compilada com `resolveVideoFrameSelection()` em cada frame da fixture (incluindo intervals sobrepostos). `tests/video-timeline-index.test.cjs` verifica ordem de keys e transforms globais/legadas pelo lookup que a preview consome.
+- Verificações: `npm test` (55/55), `npm run test:export:synthetic` (25/25), `npm run typecheck`, `npm run build` e `git diff --check` passaram.
+- Limite: ainda não compõe transição em PNG, não resolve bytes externos pinados, não captura preview/print e não está ligado ao renderizador React ou à exportação. V505/V507/V542 permanecem parciais; nenhum gate visual ou MP4 passa por este IR ainda.

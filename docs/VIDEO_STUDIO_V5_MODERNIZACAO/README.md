@@ -14,7 +14,7 @@ Este diretório é o **plano estratégico independente** solicitado para moderni
 
 ## Estado factual e limites
 
-**Já existe no código:** Video Studio v1 (React/Electron), timeline a 60 FPS, personagens com keyframes/transições, vídeos/áudio no preview, snapshot lógico parcial, frame raster sintético, writer BGRA, catálogo de exports e checkpoints de chunks.
+**Já existe no código:** Video Studio v1 (React/Electron), timeline a 60 FPS, personagens com keyframes/transições, vídeos/áudio no preview, snapshot lógico parcial, busca de personagem compartilhada pelo preview e pelo avaliador, avaliador semântico de cena absoluto (ainda não integrado como compositor à preview), frame raster sintético, writer BGRA, catálogo de exports e checkpoints de chunks.
 
 **Ainda NÃO existe/foi comprovado:** MP4 serial de ponta a ponta no V5 com render real de personagens e mídia; paridade visual preview/export; FFmpeg redistribuído/sondado; API completa start/cancel/progress; Turbo 2×; CAS compartilhado seguro; PixiJS/MLT/GES/libopenshot integrados.
 

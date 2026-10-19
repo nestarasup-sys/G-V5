@@ -13,10 +13,10 @@
     "prepreview": "node scripts/prepare-app-data.cjs",
     "preview": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "node --test tests/app-data-migration.test.cjs tests/studio-character-geometry.test.cjs tests/data-platform.test.cjs tests/video-timeline-index.test.cjs tests/video-frame-determinism.test.cjs tests/video-export-library.test.cjs tests/video-export-jobs.test.cjs tests/video-studio-audio-plan.test.cjs tests/video-raw-frame-writer.test.cjs",
+    "test": "node --test tests/app-data-migration.test.cjs tests/studio-character-geometry.test.cjs tests/data-platform.test.cjs tests/video-timeline-index.test.cjs tests/video-frame-determinism.test.cjs tests/video-export-snapshot.test.cjs tests/video-scene-ir.test.cjs tests/video-synthetic-raster.test.cjs tests/video-export-library.test.cjs tests/video-export-jobs.test.cjs tests/video-studio-audio-plan.test.cjs tests/video-raw-frame-writer.test.cjs",
     "bench:video-timeline": "node scripts/bench-video-timeline.cjs",
     "test:data-runtime": "node scripts/test-data-runtime.cjs",
-    "test:export:synthetic": "node --test tests/video-frame-determinism.test.cjs tests/video-export-snapshot.test.cjs tests/video-export-jobs.test.cjs tests/video-studio-audio-plan.test.cjs tests/video-raw-frame-writer.test.cjs tests/video-export-library.test.cjs tests/video-synthetic-raster.test.cjs"
+    "test:export:synthetic": "node --test tests/video-frame-determinism.test.cjs tests/video-export-snapshot.test.cjs tests/video-scene-ir.test.cjs tests/video-export-jobs.test.cjs tests/video-studio-audio-plan.test.cjs tests/video-raw-frame-writer.test.cjs tests/video-export-library.test.cjs tests/video-synthetic-raster.test.cjs"
   },
   "dependencies": {
     "better-sqlite3": "^13.0.3",
