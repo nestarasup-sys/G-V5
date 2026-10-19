@@ -10,6 +10,7 @@ import { resolveStudioTalkMouthId, type StudioFaceMode, type StudioFaceTransform
 import { usePreviewBackground } from '../fabricator/usePreviewBackground'
 import { DesignBanner } from '../fabricator/DesignWorkspace'
 import { mapWardrobeComponentToPose } from '../fabricator/wardrobe/poseTransform'
+import { validateWardrobeFlow } from '../../../../shared/assetFlow'
 import { eyeInteriorMask } from '../fabricator/face/eyeInteriorMask'
 import { applyCharacterBodyShape } from './bodyShape'
 import { tintSkinPixels } from './skinTint'
@@ -661,7 +662,17 @@ async function renderWardrobeOverlay(
       .find((category) => category.id === group.category)?.source
     if (!accepted) continue
     const components = set.components.filter((component) => accepted.includes(component.category) && (!group.componentId || group.componentId === component.id))
-    if (!components.length) continue
+    if (!components.length) {
+      // A saved character references a component that is no longer found;
+      // silently omitting it makes the Customizer appear miscalibrated.
+      throw new Error(`O conjunto de roupa ${group.setId} não possui mais a peça selecionada (${group.componentId ?? group.category}). Reabra a biblioteca e confira o encaixe.`)
+    }
+    const checked = validateWardrobeFlow({ ...set, components }, source,
+      { sourceModelSlot: modelSlot, sourceModelUpdatedAt: source.updatedAt, parts: artwork.parts }, [group])
+    const errors = checked.issues.filter((issue) => issue.severity === 'error')
+    if (errors.length) {
+      throw new Error(`O pré-ajuste da roupa ${group.setId} não é compatível com este modelo/pose: ${errors.map((issue) => `${issue.code}:${issue.componentId ?? '-'}`).join(', ')}. Corrija o vínculo no Fabricador Dev; o personagem não será alterado.`)
+    }
     const mapped: Array<{ component: WardrobeSet['components'][number]; transform: ReturnType<typeof mapWardrobeComponentToPose>; center: { x: number; y: number }; sequence: number }> = []
     for (const component of components) {
       const sourceBone = source.parts.find((part) => part.id === component.attachedPartId)
@@ -2180,7 +2191,11 @@ export function CustomizerPage() {
         setSelectedWardrobeAboveHairUrl(result.aboveHairImageUrl)
       }
     }).catch((reason: unknown) => {
-      if (!cancelled) setCatalogError(reason instanceof Error ? reason.message : 'Não foi possível compor as roupas do personagem.')
+      if (!cancelled) {
+        setSelectedWardrobeUrl(null)
+        setSelectedWardrobeAboveHairUrl(null)
+        setCatalogError(reason instanceof Error ? reason.message : 'Não foi possível compor as roupas do personagem.')
+      }
     })
     return () => { cancelled = true }
   }, [selectedCharacter?.id, selectedCharacter?.customization.modelSkinTone, selectedCharacter?.customization.wardrobeGroups, wardrobeDetails, displayArtworkProject, selectedCatalogModelSlot, selectedSourceModelProject, selectedClothing?.modelSlot, selectedClothing?.setId, selectedClothing?.category, selectedClothing?.componentId, wardrobeTransformDraft, previewExtent, customizerPreviewZoom, activeWardrobePreviewHighlight])
