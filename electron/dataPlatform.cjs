@@ -487,19 +487,26 @@ class DataPlatform {
     return result
   }
 
-  async storeGeneratedPng(bytes) {
+  async storeGeneratedImage(bytes) {
     const sharp = require('sharp')
     const buffer = Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes ?? [])
-    if (!buffer.length || buffer.length > 50 * 1024 * 1024) throw new Error('PNG gerado vazio ou acima do limite permitido.')
+    if (!buffer.length || buffer.length > 50 * 1024 * 1024) throw new Error('Imagem gerada vazia ou acima do limite permitido.')
     let metadata
     try { metadata = await sharp(buffer, { limitInputPixels: 32_000_000, failOn: 'error', animated: true }).metadata() }
-    catch (reason) { throw new Error(`PNG gerado inválido ou corrompido: ${reason?.message ?? 'erro de decodificação'}`) }
-    if (metadata.format !== 'png' || (metadata.pages ?? 1) !== 1 || !metadata.width || !metadata.height
+    catch (reason) { throw new Error(`Imagem gerada inválida ou corrompida: ${reason?.message ?? 'erro de decodificação'}`) }
+    if (!['png', 'jpeg', 'webp'].includes(metadata.format) || (metadata.pages ?? 1) !== 1 || !metadata.width || !metadata.height
       || metadata.width * metadata.height > 32_000_000) throw new Error('A saída gerada precisa ser PNG estático dentro do limite de pixels.')
-    const object = await new ContentAddressedStore(this.root).putObject(buffer, { mimeType: 'image/png', extension: '.png' })
+    let png = buffer
+    if (metadata.format !== 'png') {
+      png = await sharp(buffer, { limitInputPixels: 32_000_000, failOn: 'error' }).rotate().toColourspace('srgb')
+        .ensureAlpha().png({ compressionLevel: 9, adaptiveFiltering: true, palette: false }).toBuffer()
+      if (png.length > 50 * 1024 * 1024) throw new Error('O PNG gerado excede o limite permitido.')
+    }
+    const object = await new ContentAddressedStore(this.root).putObject(png, { mimeType: 'image/png', extension: '.png' })
     this.assertReady().prepare(`INSERT OR IGNORE INTO objects(sha256, byte_length, mime_type, extension, relative_path, created_at)
       VALUES (?, ?, ?, ?, ?, ?)`).run(object.sha256, object.byteLength, object.mimeType, object.extension, object.relativePath, new Date().toISOString())
-    return { sha256: object.sha256, byteLength: object.byteLength, width: metadata.width, height: metadata.height, reused: object.reused }
+    const output = await sharp(png, { limitInputPixels: 32_000_000, failOn: 'error' }).metadata()
+    return { sha256: object.sha256, byteLength: object.byteLength, width: output.width, height: output.height, reused: object.reused }
   }
 
   async readObject(hash) {
