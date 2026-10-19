@@ -7,6 +7,10 @@ declare global {
     desktop: {
       platform: string
       appName: string
+      getAppDataStorageSummary: () => Promise<{
+        disk: { measuredAt: string; groups: Record<string, { files: number; bytes: number; unreadable: number }> }
+        catalog: { assets: number; archivedAssets: number; uniqueObjects: number; referencedObjects: number; objectBytes: number; unreferencedObjects: number }
+      }>
     } & FabricatorDesktopApi & CustomizerDesktopApi & StudioDesktopApi & VideoStudioDesktopApi
   }
 }

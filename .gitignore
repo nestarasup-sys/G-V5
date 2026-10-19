@@ -9,3 +9,4 @@ release/
 .DS_Store
 Thumbs.db
 app-data/
+/tools-local/

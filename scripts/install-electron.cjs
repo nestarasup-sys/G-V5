@@ -15,3 +15,19 @@ if (installResult.error) {
 if (installResult.status !== 0) {
   process.exit(installResult.status ?? 1)
 }
+
+const rebuildScript = join(__dirname, '..', 'node_modules', '@electron', 'rebuild', 'lib', 'cli.js')
+const rebuildResult = spawnSync(process.execPath, [rebuildScript, '-f', '-w', 'better-sqlite3'], {
+  cwd: join(__dirname, '..'),
+  stdio: 'inherit',
+  windowsHide: true
+})
+
+if (rebuildResult.error) {
+  console.error(`Falha ao compilar better-sqlite3 para o Electron: ${rebuildResult.error.message}`)
+  process.exit(1)
+}
+
+if (rebuildResult.status !== 0) {
+  process.exit(rebuildResult.status ?? 1)
+}

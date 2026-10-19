@@ -101,6 +101,7 @@ const videoStudioApi: VideoStudioDesktopApi = {
 contextBridge.exposeInMainWorld('desktop', {
   platform: process.platform,
   appName: 'Gacha Nymi',
+  getAppDataStorageSummary: () => ipcRenderer.invoke('app:data-storage-summary'),
   ...fabricatorApi,
   ...customizerApi,
   ...studioApi,

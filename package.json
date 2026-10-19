@@ -13,14 +13,19 @@
     "prepreview": "node scripts/prepare-app-data.cjs",
     "preview": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "node --test tests/app-data-migration.test.cjs tests/studio-character-geometry.test.cjs"
+    "test": "node --test tests/app-data-migration.test.cjs tests/studio-character-geometry.test.cjs tests/data-platform.test.cjs",
+    "test:data-runtime": "node scripts/test-data-runtime.cjs"
   },
   "dependencies": {
+    "better-sqlite3": "^13.0.3",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
-    "react-router": "^8.4.0"
+    "react-router": "^8.4.0",
+    "sharp": "^0.35.5"
   },
   "devDependencies": {
+    "@electron/rebuild": "^4.2.1",
+    "@types/better-sqlite3": "^9.6.0",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "@vitejs/plugin-react": "^5.0.0",

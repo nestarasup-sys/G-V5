@@ -20,6 +20,10 @@ app-data/
   migration-manifest.json    # inventário/hash da migração local
 ```
 
+## Evolução escalável do layout
+
+A estrutura expandida, o catálogo SQLite, os objetos por conteúdo, as miniaturas, a retenção e a migração gradual estão especificados em [APP_DATA_ESCALAVEL.md](./APP_DATA_ESCALAVEL.md). O app agora cria `database/catalog.sqlite` e diretórios vazios de destino no próximo boot. **Isso não importa, move nem reescreve os dados atuais em `user-data`**; a organização vigente permanece a fonte canônica até migrações por domínio serem validadas e reversíveis.
+
 As áreas continuam com ownership separado: Fabricador publica bibliotecas e vínculos; Customizador guarda personagens e overrides; Studio normal e Video Studio salvam seus próprios projetos. A troca da raiz não altera os caminhos relativos nem os contratos entre essas áreas.
 
 ## Migração do perfil Electron legado

@@ -18,6 +18,7 @@ import { isValidVideoMediaClip } from '../src/shared/videoMedia'
 import { isValidVideoAudioSettings } from '../src/shared/videoAudio'
 import { VideoLibraryStore } from './videoLibrary'
 import { VideoBackgroundLibraryStore } from './backgroundLibrary'
+import { DataPlatform, getAppDataUsage } from './dataPlatform.cjs'
 import { readAssetImage, writeAssetImageSource } from './assetImageOverrides'
 import { legacyStandardExpressionEffects } from '../src/shared/legacyExpressionEffects'
 
@@ -144,6 +145,10 @@ function configureLocalAppDataRoot(): void {
 }
 
 configureLocalAppDataRoot()
+
+// The catalog starts empty and does not scan or rewrite legacy libraries.
+// Existing JSON/file stores remain authoritative until each domain is migrated.
+const dataPlatform = new DataPlatform(dirname(app.getPath('userData')))
 
 protocol.registerSchemesAsPrivileged([
   { scheme: 'gacha-video', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true } },
@@ -2561,6 +2566,11 @@ function registerVideoBackgroundProtocol(): void {
 }
 
 app.whenReady().then(async () => {
+  dataPlatform.initialize()
+  ipcMain.handle('app:data-storage-summary', async (event) => {
+    assertTrustedSender(event)
+    return { disk: await getAppDataUsage(app.getPath('appData')), catalog: dataPlatform.storageSummary() }
+  })
   if (process.env.GACHA_DEV_AI_TEST === '1') {
     // Defense in depth for fixture-only Electron tests: no renderer-originated
     // HTTP(S), WebSocket or FTP traffic, including images or fetch calls.
@@ -2609,6 +2619,7 @@ app.on('before-quit', (event) => {
       return
     }
     persistenceWritesDrainedForQuit = true
+    dataPlatform.close()
     app.quit()
   })
 })
