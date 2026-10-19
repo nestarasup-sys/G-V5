@@ -73,6 +73,7 @@ test('export job store checkpoints 600-frame chunks and resumes only matching sn
   assert.deepEqual([reopened.manifest.chunks[0].startFrame, reopened.manifest.chunks[0].endFrame], [0, 600])
   await assert.rejects(store.reopen(jobId, { ...parameters, snapshotSha256: 'd'.repeat(64) }), /mudou/)
   await assert.rejects(store.reopen(jobId, { ...parameters, mediaSha256: ['e'.repeat(64)] }), /mudou/)
+  await assert.rejects(store.reopen(jobId), /identidade externa/)
 })
 
 test('resume drops a damaged checkpoint and cancellation removes only its own job', async (t) => {
@@ -117,6 +118,9 @@ test('job persists and restores the immutable scene snapshot and render variant'
   const reopened = await store.reopen(jobId, expected)
   assert.equal(reopened.nextChunkIndex, 0)
   assert.equal(serializeVideoExportSnapshot(reopened.snapshot), serialized)
+  const recoveredAfterRestart = await store.reopen(jobId)
+  assert.equal(recoveredAfterRestart.manifest.renderVariant, 'static-characters')
+  assert.equal(serializeVideoExportSnapshot(recoveredAfterRestart.snapshot), serialized)
   await assert.rejects(store.reopen(jobId, { ...expected, renderVariant: 'animated' }), /modo ou o formato/)
 
   await fs.appendFile(path.join(root, jobId, 'snapshot.json'), 'tampered')

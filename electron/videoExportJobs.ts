@@ -203,27 +203,34 @@ export class VideoExportJobStore {
     }
   }
 
-  async reopen(jobId: string, expected: { studioId: string; snapshotSha256: string; mediaSha256: string[]; mediaDependencies?: ReadonlyArray<VideoExportMediaDependency>; durationFrames: number; renderVariant?: RenderVariant }): Promise<{ manifest: VideoExportManifest; nextChunkIndex: number; snapshot?: VideoExportSnapshot }> {
+  async reopen(jobId: string, expected?: { studioId: string; snapshotSha256: string; mediaSha256: string[]; mediaDependencies?: ReadonlyArray<VideoExportMediaDependency>; durationFrames: number; renderVariant?: RenderVariant }): Promise<{ manifest: VideoExportManifest; nextChunkIndex: number; snapshot?: VideoExportSnapshot }> {
     const folder = this.pathFor(jobId)
     const info = await lstat(folder)
     if (!info.isDirectory() || info.isSymbolicLink()) throw new Error('Pasta do job inválida.')
     const manifest = JSON.parse(await readFile(join(folder, 'manifest.json'), 'utf8')) as VideoExportManifest
-    const expectedMedia = [...new Set(expected.mediaSha256)].sort()
-    if (manifest.schemaVersion !== 1 || manifest.jobId !== jobId || manifest.studioId !== expected.studioId
-      || manifest.snapshotSha256 !== expected.snapshotSha256 || JSON.stringify(manifest.mediaSha256) !== JSON.stringify(expectedMedia)
-      || manifest.durationFrames !== expected.durationFrames || manifest.frameRate !== 60 || manifest.width !== 1920 || manifest.height !== 1080
+    const expectedMedia = [...new Set(expected?.mediaSha256 ?? manifest.mediaSha256 ?? [])].sort()
+    if (manifest.schemaVersion !== 1 || manifest.jobId !== jobId || !idPattern.test(manifest.studioId)
+      || !shaPattern.test(manifest.snapshotSha256) || !Array.isArray(manifest.mediaSha256)
+      || manifest.mediaSha256.some((hash) => !shaPattern.test(hash))
+      || JSON.stringify(manifest.mediaSha256) !== JSON.stringify([...new Set(manifest.mediaSha256)].sort())
+      || !Array.isArray(manifest.mediaDependencies ?? [])
+      || (expected !== undefined && (manifest.studioId !== expected.studioId
+        || manifest.snapshotSha256 !== expected.snapshotSha256 || JSON.stringify(manifest.mediaSha256) !== JSON.stringify(expectedMedia)
+        || manifest.durationFrames !== expected.durationFrames))
+      || !Number.isSafeInteger(manifest.durationFrames) || manifest.durationFrames < 1 || manifest.durationFrames > 60 * 60 * 24 * 60
+      || manifest.frameRate !== 60 || manifest.width !== 1920 || manifest.height !== 1080
       || manifest.chunkFrames !== chunkSize || !Array.isArray(manifest.chunks)) throw new Error('O projeto ou a mídia mudou; este job não pode ser retomado com o snapshot atual.')
     let snapshot: VideoExportSnapshot | undefined
     if (manifest.snapshotFile !== undefined) {
       if (manifest.snapshotFile !== 'snapshot.json' || !manifest.renderVariant
         || !['animated', 'static-characters'].includes(manifest.renderVariant)
-        || (expected.renderVariant !== undefined && expected.renderVariant !== manifest.renderVariant)) throw new Error('O modo ou o formato do snapshot do job não corresponde à solicitação.')
+        || (expected?.renderVariant !== undefined && expected.renderVariant !== manifest.renderVariant)) throw new Error('O modo ou o formato do snapshot do job não corresponde à solicitação.')
       snapshot = await this.readSnapshotFromFolder(folder, manifest)
-    } else if (expected.renderVariant !== undefined) {
-      throw new Error('Job legado sem snapshot não pode retomar uma exportação com modo semântico.')
+    } else if (!expected || expected.renderVariant !== undefined) {
+      throw new Error('Job legado sem snapshot não pode ser recuperado sem identidade externa do projeto.')
     }
-    const expectedDependencies = [...(expected.mediaDependencies ?? [])].sort((a, b) => a.assetId.localeCompare(b.assetId))
     const manifestDependencies = [...(manifest.mediaDependencies ?? [])].map(({ filename: _filename, ...dependency }) => dependency).sort((a, b) => a.assetId.localeCompare(b.assetId))
+    const expectedDependencies = [...(expected ? (expected.mediaDependencies ?? []) : manifestDependencies)].sort((a, b) => a.assetId.localeCompare(b.assetId))
     const signature = (items: ReadonlyArray<VideoExportMediaDependency>) => items.map((item) => [item.assetId, item.extension, item.mimeType, item.sizeBytes, item.sha256].join('\0')).join('\n')
     if (signature(manifestDependencies) !== signature(expectedDependencies)) throw new Error('As dependências do job não correspondem ao snapshot atual.')
     await this.verifyPinnedMediaInFolder(folder, manifest)
