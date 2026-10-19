@@ -13,7 +13,8 @@
     "prepreview": "node scripts/prepare-app-data.cjs",
     "preview": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "node --test tests/app-data-migration.test.cjs tests/studio-character-geometry.test.cjs tests/data-platform.test.cjs",
+    "test": "node --test tests/app-data-migration.test.cjs tests/studio-character-geometry.test.cjs tests/data-platform.test.cjs tests/video-timeline-index.test.cjs",
+    "bench:video-timeline": "node scripts/bench-video-timeline.cjs",
     "test:data-runtime": "node scripts/test-data-runtime.cjs"
   },
   "dependencies": {

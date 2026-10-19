@@ -1,12 +1,14 @@
-import { useEffect, useEffectEvent, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from 'react'
+import { useEffect, useEffectEvent, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from 'react'
 import { VideoAudioControls } from './VideoAudioControls'
 import { Icon } from '../../ui/components/Icon'
 import { videoCharacterTrackColor } from '../../../../shared/studio'
 import type { StudioDocument, VideoTimelineDocument } from '../../../../shared/studio'
 import { editVideoMediaClip, type VideoClipEditMode } from '../../../../shared/videoMedia'
 import type { VideoAudioSettings, VideoMediaClip } from '../../../../shared/studio'
+import { characterKeysForFrameRange, characterSegmentAtFrame, clipsForFrameRange, indexVideoTimeline, nearestTimelineSnapFrame } from './videoTimelineIndex'
 
 const DEFAULT_DURATION_FRAMES = 10 * 60 * 60
+const EMPTY_TRACK_SETTINGS: NonNullable<VideoTimelineDocument['trackSettings']> = {}
 const DEFAULT_TIMELINE: VideoTimelineDocument = {
   schemaVersion: 1, frameRate: 60, durationFrames: DEFAULT_DURATION_FRAMES,
   playheadFrame: 0, playing: false, characterKeys: [], textClips: [], saveMarkers: []
@@ -30,17 +32,6 @@ function formatTime(frame: number): string {
   const seconds = Math.floor(frame / 60)
   const minutes = Math.floor(seconds / 60)
   return `${String(minutes).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}:${String(frame % 60).padStart(2, '0')}`
-}
-
-function characterSegmentAtFrame(timeline: VideoTimelineDocument, elementId: string, frame: number, duration: number): { startFrame: number; endFrame: number } | null {
-  const starts = timeline.characterKeys.filter((key) => key.elementId === elementId).map((key) => key.frame).sort((a, b) => a - b)
-  const stateStart = starts.filter((start) => start <= frame).at(-1) ?? 0
-  const stateEnd = starts.find((start) => start > stateStart) ?? duration
-  const gaps = timeline.characterGaps?.filter((gap) => gap.elementId === elementId) ?? []
-  if (gaps.some((gap) => gap.startFrame <= frame && frame < gap.endFrame)) return null
-  const precedingGap = gaps.filter((gap) => gap.endFrame <= frame && gap.endFrame > stateStart).sort((a, b) => b.endFrame - a.endFrame)[0]
-  const followingGap = gaps.filter((gap) => gap.startFrame > frame && gap.startFrame < stateEnd).sort((a, b) => a.startFrame - b.startFrame)[0]
-  return { startFrame: precedingGap?.endFrame ?? stateStart, endFrame: followingGap?.startFrame ?? stateEnd }
 }
 
 export function VideoTimeline({ preparing, onEnterFullscreen, canUndo, canRedo, onUndo, onRedo, selectedCanvasId, studio, playheadFrame, playing, height, presetNames, onSeek, onSelectElement, onTogglePlayback, onSaveFrame, onSplitCharacter, onSplitTextClip, onSplitVideoClip, onUpdateTextClip, onUpdateVideoClip, onChangeVideoAudio, onBeginAudioEdit, onDuplicateVideoClip, onDeleteTextClip, onDeleteVideoClip, onDeleteTextElement, onDeleteCharacterSegment, onDuplicateTextClip, onMoveCharacterBoundary, onChangeDuration, onResize, onAddText, onAddVideo, onChangeTrackSettings, onSetCharacterAnimationsEnabled, onMoveCharacterTrack, onSetCharacterPositionsLocked, onChangeTimelineView }: {
@@ -90,6 +81,8 @@ export function VideoTimeline({ preparing, onEnterFullscreen, canUndo, canRedo, 
   const boundaryDragRef = useRef<BoundaryDrag | null>(null)
   const suppressClipClickRef = useRef(false)
   const timelineScrollRef = useRef<HTMLDivElement>(null)
+  const scrollMeasureFrameRef = useRef<number | null>(null)
+  const [scrollViewport, setScrollViewport] = useState({ left: 0, width: 1200 })
   const [selection, setSelection] = useState<TrackSelection>(null)
   const characterTrackClickRef = useRef<string | null>(null)
   const [previewTextClip, setPreviewTextClip] = useState<TextClip | null>(null)
@@ -98,6 +91,28 @@ export function VideoTimeline({ preparing, onEnterFullscreen, canUndo, canRedo, 
   const [trackMenuOpen, setTrackMenuOpen] = useState(false)
   const [pixelsPerSecond, setPixelsPerSecond] = useState(() => Math.max(1, Math.min(120, studio.videoTimeline?.timelineZoom ?? 37)))
   const timeline = videoTimelineFor(studio)
+  const timelineIndex = useMemo(() => indexVideoTimeline(timeline), [timeline.characterKeys, timeline.characterGaps, timeline.textClips, timeline.videoClips, timeline.saveMarkers])
+  useEffect(() => {
+    const node = timelineScrollRef.current
+    if (!node) return
+    const measure = () => {
+      if (scrollMeasureFrameRef.current !== null) return
+      scrollMeasureFrameRef.current = requestAnimationFrame(() => {
+        scrollMeasureFrameRef.current = null
+        setScrollViewport({ left: node.scrollLeft, width: node.clientWidth })
+      })
+    }
+    node.addEventListener('scroll', measure, { passive: true })
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure)
+    observer?.observe(node)
+    measure()
+    return () => {
+      node.removeEventListener('scroll', measure)
+      observer?.disconnect()
+      if (scrollMeasureFrameRef.current !== null) cancelAnimationFrame(scrollMeasureFrameRef.current)
+      scrollMeasureFrameRef.current = null
+    }
+  }, [])
   const characterAnimationsEnabled = timeline.animateCharacterTransitions !== false
   useEffect(() => {
     setPixelsPerSecond(Math.max(1, Math.min(120, studio.videoTimeline?.timelineZoom ?? 37)))
@@ -106,12 +121,12 @@ export function VideoTimeline({ preparing, onEnterFullscreen, canUndo, canRedo, 
   useEffect(() => {
     if (selectedCanvasId === undefined) return
     const clipId = selectedCanvasId?.startsWith('video:') ? selectedCanvasId.slice(6) : null
-    const clip = timeline.videoClips?.find((item) => item.id === clipId)
+    const clip = clipId ? timelineIndex.videoClipsById.get(clipId) : undefined
     setSelection((current) => clip
       ? { kind: 'video', clipId: clip.id, startFrame: clip.startFrame, endFrame: clip.endFrame }
       : current?.kind === 'video' ? null : current)
-  }, [selectedCanvasId, timeline.videoClips])
-  const trackSettings = timeline.trackSettings ?? {}
+  }, [selectedCanvasId, timelineIndex])
+  const trackSettings = timeline.trackSettings ?? EMPTY_TRACK_SETTINGS
   const isLocked = (id: string) => trackSettings[id]?.locked === true
   const duration = Math.max(1, timeline.durationFrames)
   const timelineSeconds = duration / 60
@@ -119,10 +134,18 @@ export function VideoTimeline({ preparing, onEnterFullscreen, canUndo, canRedo, 
   const contentWidth = timelineWidth + 96
   const tickSeconds = pixelsPerSecond >= 16 ? 5 : Math.max(1, Math.ceil(80 / pixelsPerSecond))
   const tickCount = Math.floor(timelineSeconds / tickSeconds)
-  const characters = studio.elements.filter((element) => element.kind === 'character').sort((left, right) => (trackSettings[left.id]?.order ?? studio.elements.indexOf(left)) - (trackSettings[right.id]?.order ?? studio.elements.indexOf(right)))
+  const overscanPixels = 360
+  const visibleStartFrame = Math.max(0, Math.floor((scrollViewport.left - 96 - overscanPixels) / pixelsPerSecond * 60))
+  const visibleEndFrame = Math.min(duration, Math.ceil((scrollViewport.left + scrollViewport.width - 96 + overscanPixels) / pixelsPerSecond * 60))
+  const firstVisibleTick = Math.max(0, Math.floor(visibleStartFrame / 60 / tickSeconds))
+  const lastVisibleTick = Math.min(tickCount, Math.ceil(visibleEndFrame / 60 / tickSeconds))
+  const characters = useMemo(() => studio.elements.map((element, originalIndex) => ({ element, originalIndex }))
+    .filter(({ element }) => element.kind === 'character')
+    .sort((left, right) => (trackSettings[left.element.id]?.order ?? left.originalIndex) - (trackSettings[right.element.id]?.order ?? right.originalIndex))
+    .map(({ element }) => element), [studio.elements, trackSettings])
   const characterPositionsLocked = timeline.characterPositionsLocked ?? (characters.length > 0 && characters.every((character) => character.positionLocked === true))
-  const selectedTextClip = selection?.kind === 'text' ? timeline.textClips.find((clip) => clip.id === selection.clipId) : undefined
-  const selectedVideoClip = selection?.kind === 'video' ? timeline.videoClips?.find((clip) => clip.id === selection.clipId) : undefined
+  const selectedTextClip = selection?.kind === 'text' ? timelineIndex.textClipsById.get(selection.clipId) : undefined
+  const selectedVideoClip = selection?.kind === 'video' ? timelineIndex.videoClipsById.get(selection.clipId) : undefined
   const canDeleteSelection = selection?.kind === 'character'
     ? !isLocked(selection.elementId) && characters.some((character) => character.id === selection.elementId)
     : selection?.kind === 'text'
@@ -154,15 +177,16 @@ export function VideoTimeline({ preparing, onEnterFullscreen, canUndo, canRedo, 
   useEffect(() => {
     const sampledFrame = Math.min(playheadFrame, duration - 1)
     if (selection?.kind !== 'character' || selection.startFrame <= sampledFrame && sampledFrame < selection.endFrame) return
-    const segment = characterSegmentAtFrame(timeline, selection.elementId, sampledFrame, duration)
+    const segment = characterSegmentAtFrame(timelineIndex, selection.elementId, sampledFrame, duration)
     setSelection(segment ? { kind: 'character', elementId: selection.elementId, ...segment } : null)
-  }, [playheadFrame, selection, timeline.characterKeys, timeline.characterGaps, duration])
+  }, [playheadFrame, selection, timelineIndex, duration])
   const textTracks = (['speech', 'thought'] as const).map((kind) => ({
     kind,
     label: kind === 'speech' ? 'Falas' : 'Pensamentos',
     clips: studio.elements.filter((element) => element.kind === kind).flatMap((element) => {
-      const savedClips = timeline.textClips.filter((item) => item.elementId === element.id)
-      return (savedClips.length ? savedClips : [{ id: `legacy:${element.id}`, elementId: element.id, kind, startFrame: 0, endFrame: Math.min(duration, 300) }])
+      const allSavedClips = timelineIndex.textClipsByElement.get(element.id) ?? []
+      const savedClips = clipsForFrameRange(allSavedClips, timelineIndex.textClipPrefixMaxEndByElement.get(element.id) ?? [], visibleStartFrame, visibleEndFrame)
+      return (allSavedClips.length ? savedClips : [{ id: `legacy:${element.id}`, elementId: element.id, kind, startFrame: 0, endFrame: Math.min(duration, 300) }])
         .map((clip) => ({ element, clip: previewTextClip?.id === clip.id ? previewTextClip : clip }))
     })
   }))
@@ -173,9 +197,12 @@ export function VideoTimeline({ preparing, onEnterFullscreen, canUndo, canRedo, 
     onResize(Math.max(150, Math.min(maximum, drag.startHeight + drag.startY - event.clientY)))
   }
   const finishResize = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (resizePointer.current?.id !== event.pointerId) return
+    const drag = resizePointer.current
+    if (drag?.id !== event.pointerId) return
     resizePointer.current = null
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
+    const maximum = Math.max(220, Math.floor(window.innerHeight * 0.65))
+    onChangeTimelineView({ height: Math.max(150, Math.min(maximum, drag.startHeight + drag.startY - event.clientY)) })
   }
   const setZoom = (value: number) => {
     const zoom = Math.max(1, Math.min(120, value))
@@ -197,18 +224,13 @@ export function VideoTimeline({ preparing, onEnterFullscreen, canUndo, canRedo, 
   const selectOrSeekCharacterTrack = (elementId: string, frame: number) => {
     const secondClickOnTrack = characterTrackClickRef.current === elementId
     characterTrackClickRef.current = elementId
-    const segment = characterSegmentAtFrame(timeline, elementId, frame, duration)
+    const segment = characterSegmentAtFrame(timelineIndex, elementId, frame, duration)
     setSelection(segment ? { kind: 'character', elementId, ...segment } : null)
     onSelectElement(elementId)
     if (secondClickOnTrack) onSeek(frame)
   }
   const snapFrame = (frame: number, excludedClipId?: string) => {
-    const candidates = [playheadFrame, Math.round(frame / 60) * 60,
-      ...timeline.characterKeys.map((key) => key.frame),
-      ...timeline.textClips.filter((clip) => clip.id !== excludedClipId).flatMap((clip) => [clip.startFrame, clip.endFrame]),
-      ...(timeline.videoClips ?? []).filter((clip) => clip.id !== excludedClipId).flatMap((clip) => [clip.startFrame, clip.endFrame])]
-    const nearest = candidates.reduce((best, candidate) => Math.abs(candidate - frame) < Math.abs(best - frame) ? candidate : best, candidates[0] ?? frame)
-    return Math.abs(nearest - frame) / 60 * pixelsPerSecond <= 8 ? nearest : frame
+    return nearestTimelineSnapFrame(timelineIndex, frame, playheadFrame, pixelsPerSecond, excludedClipId)
   }
   const selectedTrackId = selection?.kind === 'video' ? 'video' : selection?.kind === 'character' ? selection.elementId : selectedTextClip?.kind ?? 'speech'
   const canSplitSelection = Boolean(selection && !isLocked(selectedTrackId) && playheadFrame > selection.startFrame && playheadFrame < selection.endFrame)
@@ -362,7 +384,7 @@ export function VideoTimeline({ preparing, onEnterFullscreen, canUndo, canRedo, 
       </div>
       <div className="video-timeline-resize" role="separator" aria-label="Redimensionar altura da timeline" aria-orientation="horizontal" aria-valuemin={150} aria-valuemax={Math.max(220, Math.floor(window.innerHeight * 0.65))} aria-valuenow={height} tabIndex={0}
         onKeyDown={(event) => { if (event.key === 'ArrowUp' || event.key === 'ArrowDown') { event.preventDefault(); const nextHeight = Math.max(150, Math.min(Math.floor(window.innerHeight * 0.65), height + (event.key === 'ArrowUp' ? 24 : -24))); onResize(nextHeight); onChangeTimelineView({ height: nextHeight }) } }}
-        onPointerDown={(event) => { event.preventDefault(); resizePointer.current = { id: event.pointerId, startY: event.clientY, startHeight: height }; event.currentTarget.setPointerCapture(event.pointerId) }} onPointerMove={(event) => { resizeTimeline(event); const drag = resizePointer.current; if (drag?.id === event.pointerId) onChangeTimelineView({ height: Math.max(150, Math.min(Math.floor(window.innerHeight * 0.65), drag.startHeight + drag.startY - event.clientY)) }) }} onPointerUp={finishResize} onPointerCancel={finishResize}>
+        onPointerDown={(event) => { event.preventDefault(); resizePointer.current = { id: event.pointerId, startY: event.clientY, startHeight: height }; event.currentTarget.setPointerCapture(event.pointerId) }} onPointerMove={resizeTimeline} onPointerUp={finishResize} onPointerCancel={finishResize}>
         <span /><span /><span />
       </div>
     </header>
@@ -383,7 +405,7 @@ export function VideoTimeline({ preparing, onEnterFullscreen, canUndo, canRedo, 
         <div className="video-timeline-ruler-row">
           <span className="video-track-label video-ruler-label">Faixas<button type="button" className={`video-track-settings-toggle${trackMenuOpen ? ' active' : ''}`} aria-label="Configurar faixas" aria-expanded={trackMenuOpen} title="Configurar faixas" onClick={() => setTrackMenuOpen((value) => !value)}>⚙</button></span>
           <div className="video-timeline-ruler" style={{ width: `${timelineWidth}px`, backgroundSize: `${tickSeconds * pixelsPerSecond}px 100%` }} aria-label="Posição do playhead">
-            {Array.from({ length: tickCount + 1 }, (_, index) => index * tickSeconds).map((second) => <span key={second} style={{ left: `${second * pixelsPerSecond}px` }}>{`${String(Math.floor(second / 60)).padStart(2, '0')}:${String(second % 60).padStart(2, '0')}`}</span>)}
+            {Array.from({ length: Math.max(0, lastVisibleTick - firstVisibleTick + 1) }, (_, index) => (firstVisibleTick + index) * tickSeconds).map((second) => <span key={second} style={{ left: `${second * pixelsPerSecond}px` }}>{`${String(Math.floor(second / 60)).padStart(2, '0')}:${String(second % 60).padStart(2, '0')}`}</span>)}
             <input aria-label="Mover playhead" type="range" min={0} max={duration} step={1} value={Math.min(playheadFrame, duration)} onChange={(event) => onSeek(Number(event.currentTarget.value))} />
           </div>
         </div>
@@ -391,7 +413,7 @@ export function VideoTimeline({ preparing, onEnterFullscreen, canUndo, canRedo, 
           {trackSettings.video?.visible !== false && <div className={`video-track-row video-master-track${trackSettings.video?.collapsed ? ' collapsed' : ''}`}>
             <span className="video-track-label"><i className="video-track-badge video">V</i><span>{trackSettings.video?.label ?? 'Vídeo'}</span></span>
             <div className="video-track-lane video-master-lane" style={{ backgroundSize: `${tickSeconds * pixelsPerSecond}px 100%` }} aria-label="Faixa de vídeo do projeto" onClick={seekToLanePosition}>
-              {(timeline.videoClips ?? []).map((savedClip) => {
+              {clipsForFrameRange(timelineIndex.videoClips, timelineIndex.videoClipPrefixMaxEnd, visibleStartFrame, visibleEndFrame).map((savedClip) => {
                 const clip = previewVideoClip?.id === savedClip.id ? previewVideoClip : savedClip
                 const asset = timeline.videoAssets?.find((item) => item.id === clip.assetId)
                 const selected = selection?.kind === 'video' && selection.clipId === clip.id
@@ -416,8 +438,8 @@ export function VideoTimeline({ preparing, onEnterFullscreen, canUndo, canRedo, 
           {textTracks.filter(({ kind }) => trackSettings[kind]?.visible !== false).map(({ kind, label, clips }) => <div className={`video-track-row${trackSettings[kind]?.collapsed ? ' collapsed' : ''}`} key={kind}>
             <span className="video-track-label"><i className={`video-track-badge ${kind}`}>{kind === 'speech' ? 'F' : 'P'}</i><span>{trackSettings[kind]?.label ?? label}</span></span>
             <div className={`video-track-lane ${kind}-lane`} style={{ backgroundSize: `${tickSeconds * pixelsPerSecond}px 100%` }} aria-label={`Faixa de ${label.toLowerCase()}`} onClick={seekToLanePosition}>
-              {timeline.saveMarkers.filter((marker) => clips.some(({ element }) => marker.affectedTrackIds?.includes(element.id))).map((marker) => <i className="video-saved-marker" key={marker.id} style={{ left: `${marker.frame / 60 * pixelsPerSecond}px` }} title={`Frame salvo · ${formatTime(marker.frame)}`} />)}
-              {clips.map(({ element, clip }) => {
+              {timeline.saveMarkers.filter((marker) => marker.frame >= visibleStartFrame && marker.frame <= visibleEndFrame && clips.some(({ element }) => marker.affectedTrackIds?.includes(element.id))).map((marker) => <i className="video-saved-marker" key={marker.id} style={{ left: `${marker.frame / 60 * pixelsPerSecond}px` }} title={`Frame salvo · ${formatTime(marker.frame)}`} />)}
+              {clips.filter(({ clip }) => clip.endFrame >= visibleStartFrame && clip.startFrame <= visibleEndFrame).map(({ element, clip }) => {
                 const selected = selection?.kind === 'text' && selection.clipId === clip.id
                 const start = clip.startFrame
                 const end = clip.endFrame
@@ -439,7 +461,7 @@ export function VideoTimeline({ preparing, onEnterFullscreen, canUndo, canRedo, 
             </div>
           </div>)}
           {characters.filter((character) => trackSettings[character.id]?.visible !== false).map((character) => {
-            const keys = timeline.characterKeys.filter((key) => key.elementId === character.id).map((key) => previewBoundary?.elementId === character.id && previewBoundary.keyId === key.id ? { ...key, frame: previewBoundary.frame } : key).sort((a, b) => a.frame - b.frame)
+            const keys = characterKeysForFrameRange(timelineIndex.characterKeysByElement.get(character.id) ?? [], visibleStartFrame, visibleEndFrame).map((key) => previewBoundary?.elementId === character.id && previewBoundary.keyId === key.id ? { ...key, frame: previewBoundary.frame } : key)
             const name = character.text || studio.assets.find((asset) => asset.id === character.assetId)?.name || 'Personagem'
             const color = videoCharacterTrackColor(character.id, character.timelineColor)
             const basePresetId = timeline.characterBases?.[character.id]?.element.activeExpressionPresetId
@@ -447,7 +469,7 @@ export function VideoTimeline({ preparing, onEnterFullscreen, canUndo, canRedo, 
             const states = keys.length
               ? [...(keys[0].frame > 0 ? [{ id: `base:${character.id}`, start: 0, end: keys[0].frame, label: baseLabel }] : []), ...keys.map((key, index) => ({ id: key.id, start: key.frame, end: keys[index + 1]?.frame ?? duration, label: key.expressionPresetId ? presetNames[key.expressionPresetId] ?? 'Expressão' : key.faceMode === 'idle' ? 'Base' : key.faceMode === 'blink' ? 'Blink' : 'Talk' }))]
               : [{ id: `base:${character.id}`, start: 0, end: duration, label: baseLabel }]
-            const gaps = (timeline.characterGaps ?? []).filter((gap) => gap.elementId === character.id).sort((a, b) => a.startFrame - b.startFrame)
+            const gaps = timelineIndex.characterGapsByElement.get(character.id) ?? []
             const visibleStates = states.flatMap((state) => {
               let parts = [{ start: state.start, end: state.end }]
               for (const gap of gaps) parts = parts.flatMap((part) => {
@@ -458,7 +480,7 @@ export function VideoTimeline({ preparing, onEnterFullscreen, canUndo, canRedo, 
                 ]
               })
               return parts.map((part) => ({ ...state, start: part.start, end: part.end, renderId: `${state.id}:${part.start}` }))
-            })
+            }).filter((state) => state.end > visibleStartFrame && state.start < visibleEndFrame)
             return <div className={`video-track-row${trackSettings[character.id]?.collapsed ? ' collapsed' : ''}`} key={character.id}>
               <span className="video-track-label" title={name}><i className="video-track-badge" style={{ backgroundColor: color }}>{name.slice(0, 1).toUpperCase()}</i><span>{trackSettings[character.id]?.label ?? name}</span></span>
               <div className="video-track-lane character-lane" style={{ backgroundSize: `${tickSeconds * pixelsPerSecond}px 100%` }} aria-label={`Faixa de ${name}`} onClick={(event) => {
@@ -477,8 +499,8 @@ export function VideoTimeline({ preparing, onEnterFullscreen, canUndo, canRedo, 
                   }} title={`${name} · ${state.label} · clique para selecionar; clique novamente na faixa para mover o playhead`}><span>{state.label}</span></button>
                 })}
                 {keys.map((key, index) => key.frame > 0 && <button type="button" key={`boundary:${key.id}`} className="video-character-boundary" style={{ left: `${key.frame / 60 * pixelsPerSecond}px` }} aria-label={`Mover divisão de ${name}`} title="Arraste para ajustar a duração deste estado" onPointerDown={(event) => beginBoundaryDrag(event, character.id, key.id, key.frame, (keys[index - 1]?.frame ?? 0) + 1, (keys[index + 1]?.frame ?? duration) - 1)} onPointerMove={moveBoundaryDrag} onPointerUp={finishBoundaryDrag} onPointerCancel={finishBoundaryDrag} />)}
-                {timeline.saveMarkers.filter((marker) => marker.affectedTrackIds?.includes(character.id)).map((marker) => <i className="video-saved-marker" key={marker.id} style={{ left: `${marker.frame / 60 * pixelsPerSecond}px` }} title={`Frame salvo · ${formatTime(marker.frame)}`} />)}
-                {keys.map((key) => <button type="button" className="video-keyframe" key={key.id} style={{ left: `${key.frame / 60 * pixelsPerSecond}px` }} title={`${formatTime(key.frame)} · ${key.faceMode}`} onClick={() => { characterTrackClickRef.current = null; const segment = characterSegmentAtFrame(timeline, character.id, key.frame, duration); setSelection(segment ? { kind: 'character', elementId: character.id, ...segment } : null); onSelectElement(character.id); onSeek(key.frame) }} aria-label={`Ir ao frame ${formatTime(key.frame)} de ${name}`} />)}
+                {(timelineIndex.saveMarkersByTrack.get(character.id) ?? []).filter((marker) => marker.frame >= visibleStartFrame && marker.frame <= visibleEndFrame).map((marker) => <i className="video-saved-marker" key={marker.id} style={{ left: `${marker.frame / 60 * pixelsPerSecond}px` }} title={`Frame salvo · ${formatTime(marker.frame)}`} />)}
+                {keys.map((key) => <button type="button" className="video-keyframe" key={key.id} style={{ left: `${key.frame / 60 * pixelsPerSecond}px` }} title={`${formatTime(key.frame)} · ${key.faceMode}`} onClick={() => { characterTrackClickRef.current = null; const segment = characterSegmentAtFrame(timelineIndex, character.id, key.frame, duration); setSelection(segment ? { kind: 'character', elementId: character.id, ...segment } : null); onSelectElement(character.id); onSeek(key.frame) }} aria-label={`Ir ao frame ${formatTime(key.frame)} de ${name}`} />)}
                 <i className="video-lane-playhead" style={{ left: `${playheadFrame / 60 * pixelsPerSecond}px` }} />
               </div>
             </div>
