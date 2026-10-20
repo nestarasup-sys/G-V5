@@ -1,4 +1,4 @@
-import { resizeTimelineBlock, type TimelineBlockTarget } from '../../../../shared/videoTimelineEditing'
+import { findTimelineBlockStart, resizeTimelineBlock, timelineBlockOverlaps, type TimelineBlockTarget } from '../../../../shared/videoTimelineEditing'
 import './VideoStudioEditor.css'
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import { buildStudioExpressionAppearance, buildStudioExpressionTransforms, resolveStudioExpressionBase, studioExpressionCollection } from '../studio/expressionTransforms'
@@ -1209,11 +1209,14 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
       if (studio.id !== studioId) return studio
       const timeline = videoTimelineFor(studio)
       let cursor = videoPlayheadFrame
-      const clips = assets.map((asset) => {
+      const clips: VideoMediaClip[] = []
+      for (const asset of assets) {
+        const placementTimeline = { ...timeline, videoClips: [...(timeline.videoClips ?? []), ...clips] }
+        cursor = findTimelineBlockStart(placementTimeline, 'video', cursor, asset.durationFrames)
         const clip: VideoMediaClip = { id: crypto.randomUUID(), assetId: asset.id, startFrame: cursor, endFrame: cursor + asset.durationFrames, sourceStartFrame: 0, sourceEndFrame: asset.durationFrames }
+        clips.push(clip)
         cursor = clip.endFrame
-        return clip
-      })
+      }
       const videoAssets = [...(timeline.videoAssets ?? [])]
       for (const asset of assets) if (!videoAssets.some((item) => item.id === asset.id)) videoAssets.push(asset)
       return { ...studio, videoTimeline: { ...timeline, ...(timeline.coverDataUrl || !coverDataUrl ? {} : { coverDataUrl }), durationFrames: Math.max(timeline.durationFrames, cursor), videoAssets, videoClips: [...(timeline.videoClips ?? []), ...clips] }, updatedAt: new Date().toISOString() }
@@ -1244,7 +1247,13 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
         speakerColor: videoCharacterTrackColor(selectedSpeaker.id, selectedSpeaker.timelineColor)
       } : {})
     }
-    changeScene((studio) => ({ ...studio, elements: [...studio.elements, element], ...(isVideoWorkspace && kind !== 'narrator' ? { videoTimeline: { ...videoTimelineFor(studio), textClips: [...videoTimelineFor(studio).textClips, { id: crypto.randomUUID(), elementId: element.id, kind, startFrame: Math.min(videoPlayheadFrame, videoTimelineFor(studio).durationFrames - 1), endFrame: Math.min(videoTimelineFor(studio).durationFrames, Math.min(videoPlayheadFrame, videoTimelineFor(studio).durationFrames - 1) + 300), state: structuredClone(element) }] } } : {}), updatedAt: new Date().toISOString() }))
+    changeScene((studio) => {
+      if (!isVideoWorkspace || kind === 'narrator') return { ...studio, elements: [...studio.elements, element], updatedAt: new Date().toISOString() }
+      const timeline = videoTimelineFor(studio)
+      const startFrame = findTimelineBlockStart(timeline, kind, Math.min(videoPlayheadFrame, timeline.durationFrames - 1), 300)
+      const endFrame = startFrame + 300
+      return { ...studio, elements: [...studio.elements, element], videoTimeline: { ...timeline, durationFrames: Math.max(timeline.durationFrames, endFrame), textClips: [...timeline.textClips, { id: crypto.randomUUID(), elementId: element.id, kind, startFrame, endFrame, state: structuredClone(element) }] }, updatedAt: new Date().toISOString() }
+    })
     setSelectedElementId(element.id)
     setInspectorOpen(true)
     setInspectorTab('editor')
@@ -1452,7 +1461,8 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
       const previous = timeline.videoClips?.find((item) => item.id === clip.id)
       const asset = timeline.videoAssets?.find((item) => item.id === clip.assetId)
       if (!previous || previous.assetId !== clip.assetId || !asset || timeline.trackSettings?.video?.locked
-        || !isValidVideoMediaClip(clip, asset.durationFrames, timeline.durationFrames)) return studio
+        || !isValidVideoMediaClip(clip, asset.durationFrames, timeline.durationFrames)
+        || timelineBlockOverlaps(timeline, { kind: 'video', clipId: clip.id }, clip.startFrame, clip.endFrame)) return studio
       return { ...studio, videoTimeline: { ...timeline, videoClips: timeline.videoClips!.map((item) => item.id === clip.id ? clip : item) }, updatedAt: new Date().toISOString() }
     })
   }
@@ -1468,9 +1478,11 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
       const timeline = videoTimelineFor(studio)
       const clip = timeline.videoClips?.find((item) => item.id === selected.id)
       const asset = timeline.videoAssets?.find((item) => item.id === clip?.assetId)
-      if (!clip || !asset || timeline.trackSettings?.video?.locked || clip.endFrame * 2 - clip.startFrame > timeline.durationFrames) return studio
-      const duplicate = editVideoMediaClip({ ...clip, id: crypto.randomUUID() }, 'move', clip.endFrame, asset.durationFrames, timeline.durationFrames)
-      return { ...studio, videoTimeline: { ...timeline, videoClips: [...timeline.videoClips!, duplicate] }, updatedAt: new Date().toISOString() }
+      if (!clip || !asset || timeline.trackSettings?.video?.locked) return studio
+      const length = clip.endFrame - clip.startFrame
+      const startFrame = findTimelineBlockStart(timeline, 'video', clip.endFrame, length)
+      const duplicate = editVideoMediaClip({ ...clip, id: crypto.randomUUID() }, 'move', startFrame, asset.durationFrames, Math.max(timeline.durationFrames, startFrame + length))
+      return { ...studio, videoTimeline: { ...timeline, durationFrames: Math.max(timeline.durationFrames, duplicate.endFrame), videoClips: [...timeline.videoClips!, duplicate] }, updatedAt: new Date().toISOString() }
     })
   }
 
@@ -1487,6 +1499,7 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
     changeScene((studio) => {
       const current = videoTimelineFor(studio)
       const exists = current.textClips.some((item) => item.id === clip.id)
+      if (exists && timelineBlockOverlaps(current, { kind: 'text', clipId: clip.id }, clip.startFrame, clip.endFrame)) return studio
       return { ...studio, videoTimeline: { ...current, textClips: exists ? current.textClips.map((item) => item.id === clip.id ? clip : item) : [...current.textClips, clip] }, updatedAt: new Date().toISOString() }
     })
   }
@@ -1524,8 +1537,9 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
       const timeline = videoTimelineFor(studio)
       if (timeline.trackSettings?.[clip.kind]?.locked) return studio
       const length = clip.endFrame - clip.startFrame
-      if (clip.endFrame + length > timeline.durationFrames) return studio
-      return { ...studio, videoTimeline: { ...timeline, textClips: [...timeline.textClips, { ...clip, id: crypto.randomUUID(), startFrame: clip.endFrame, endFrame: clip.endFrame + length, state: clip.state ? structuredClone(clip.state) : undefined }] }, updatedAt: new Date().toISOString() }
+      const startFrame = findTimelineBlockStart(timeline, clip.kind, clip.endFrame, length)
+      const endFrame = startFrame + length
+      return { ...studio, videoTimeline: { ...timeline, durationFrames: Math.max(timeline.durationFrames, endFrame), textClips: [...timeline.textClips, { ...clip, id: crypto.randomUUID(), startFrame, endFrame, state: clip.state ? structuredClone(clip.state) : undefined }] }, updatedAt: new Date().toISOString() }
     })
   }
 

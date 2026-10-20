@@ -8,6 +8,51 @@ export type TimelineBlockTarget =
 type Interval = { startFrame: number; endFrame: number }
 type CharacterKey = VideoTimelineDocument['characterKeys'][number]
 
+function blockLane(timeline: VideoTimelineDocument, target: Exclude<TimelineBlockTarget, { kind: 'character' }>) {
+  if (target.kind === 'video') return 'video'
+  return timeline.textClips.find((clip) => clip.id === target.clipId)?.kind
+}
+
+function laneIntervals(timeline: VideoTimelineDocument, lane: string, excludedId?: string): Array<Interval & { id: string }> {
+  if (lane === 'video') return (timeline.videoClips ?? []).filter((clip) => clip.id !== excludedId).map(({ id, startFrame, endFrame }) => ({ id, startFrame, endFrame })).sort((a, b) => a.startFrame - b.startFrame)
+  return timeline.textClips.filter((clip) => clip.kind === lane && clip.id !== excludedId).map(({ id, startFrame, endFrame }) => ({ id, startFrame, endFrame })).sort((a, b) => a.startFrame - b.startFrame)
+}
+
+/** Find the first free position at or after the requested frame in one lane. */
+export function findTimelineBlockStart(timeline: VideoTimelineDocument, lane: 'video' | 'speech' | 'thought', requestedStartFrame: number, lengthFrames: number, excludedId?: string): number {
+  if (!Number.isSafeInteger(requestedStartFrame) || !Number.isSafeInteger(lengthFrames) || lengthFrames < 1) return Math.max(0, requestedStartFrame || 0)
+  let startFrame = Math.max(0, requestedStartFrame)
+  const intervals = laneIntervals(timeline, lane, excludedId)
+  while (true) {
+    const collision = intervals.find((interval) => startFrame < interval.endFrame && startFrame + lengthFrames > interval.startFrame)
+    if (!collision) return startFrame
+    startFrame = collision.endFrame
+  }
+}
+
+/** Keep body-dragging inside the neighbouring free space; edge resizing consumes neighbours separately. */
+export function clampTimelineBlockMove(timeline: VideoTimelineDocument, target: Exclude<TimelineBlockTarget, { kind: 'character' }>, requestedStartFrame: number): number {
+  const selected = target.kind === 'video'
+    ? timeline.videoClips?.find((clip) => clip.id === target.clipId)
+    : timeline.textClips.find((clip) => clip.id === target.clipId)
+  const lane = blockLane(timeline, target)
+  if (!selected || !lane || !Number.isSafeInteger(requestedStartFrame)) return selected?.startFrame ?? 0
+  const length = selected.endFrame - selected.startFrame
+  const intervals = laneIntervals(timeline, lane, selected.id)
+  const previous = intervals.filter((interval) => interval.endFrame <= selected.startFrame).at(-1)
+  const following = intervals.find((interval) => interval.startFrame >= selected.endFrame)
+  const minimum = previous?.endFrame ?? 0
+  const maximum = Math.max(minimum, Math.min(timeline.durationFrames - length, following ? following.startFrame - length : timeline.durationFrames - length))
+  return Math.max(minimum, Math.min(maximum, requestedStartFrame))
+}
+
+export function timelineBlockOverlaps(timeline: VideoTimelineDocument, target: Exclude<TimelineBlockTarget, { kind: 'character' }>, startFrame: number, endFrame: number): boolean {
+  const selectedId = target.kind === 'video' ? target.clipId : target.clipId
+  const lane = blockLane(timeline, target)
+  if (!lane || endFrame <= startFrame) return true
+  return laneIntervals(timeline, lane, selectedId).some((interval) => startFrame < interval.endFrame && endFrame > interval.startFrame)
+}
+
 function subtract(interval: Interval, occupied: Interval): Interval[] {
   if (interval.endFrame <= occupied.startFrame || interval.startFrame >= occupied.endFrame) return [interval]
   return [

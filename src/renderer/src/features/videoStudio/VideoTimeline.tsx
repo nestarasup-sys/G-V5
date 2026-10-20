@@ -5,7 +5,7 @@ import { videoCharacterTrackColor } from '../../../../shared/studio'
 import type { StudioDocument, VideoTimelineDocument } from '../../../../shared/studio'
 import { editVideoMediaClip, type VideoClipEditMode } from '../../../../shared/videoMedia'
 import type { VideoAudioSettings, VideoMediaClip } from '../../../../shared/studio'
-import { resizeTimelineBlock, type TimelineBlockTarget } from '../../../../shared/videoTimelineEditing'
+import { clampTimelineBlockMove, resizeTimelineBlock, type TimelineBlockTarget } from '../../../../shared/videoTimelineEditing'
 import { DEFAULT_VIDEO_DURATION_FRAMES, fitVideoTimelineDuration } from '../../../../shared/videoTimelineDuration'
 import { characterKeysForFrameRange, characterSegmentAtFrame, clipsForFrameRange, indexVideoTimeline, nearestTimelineSnapFrame } from './videoTimelineIndex'
 
@@ -361,6 +361,10 @@ export function VideoTimeline({ preparing, onEnterFullscreen, onExport, canUndo,
     const delta = Math.round((event.clientX - drag.originX + (timelineScrollRef.current?.scrollLeft ?? 0) - drag.scrollLeft) / pixelsPerSecond * 60)
     const origin = drag.mode === 'end' ? drag.clip.endFrame : drag.clip.startFrame
     drag.latest = editVideoMediaClip(drag.clip, drag.mode, drag.mode === 'move' ? snapFrame(origin + delta, drag.clip.id) : origin + delta, asset.durationFrames, Math.max(duration, origin + delta))
+    if (drag.mode === 'move' && dragSourceRef.current) {
+      const startFrame = clampTimelineBlockMove(dragSourceRef.current, { kind: 'video', clipId: drag.clip.id }, drag.latest.startFrame)
+      drag.latest = { ...drag.latest, startFrame, endFrame: startFrame + (drag.clip.endFrame - drag.clip.startFrame) }
+    }
     schedulePreviewUpdate(() => {
       setPreviewVideoClip(drag.latest)
       if (drag.mode !== 'move') setPreviewEdit(resizeTimelineBlock(dragSourceRef.current!, { kind: 'video', clipId: drag.clip.id }, drag.latest.startFrame, drag.latest.endFrame, characters.map((character) => character.id)))
@@ -392,6 +396,10 @@ export function VideoTimeline({ preparing, onEnterFullscreen, onExport, canUndo,
     if (drag.mode === 'move') {
       startFrame = Math.max(0, Math.min(duration - (drag.endFrame - drag.startFrame), snapFrame(drag.startFrame + delta, drag.clip.id)))
       endFrame = startFrame + (drag.endFrame - drag.startFrame)
+      if (dragSourceRef.current) {
+        startFrame = clampTimelineBlockMove(dragSourceRef.current, { kind: 'text', clipId: drag.clip.id }, startFrame)
+        endFrame = startFrame + (drag.endFrame - drag.startFrame)
+      }
     } else if (drag.mode === 'start') startFrame = Math.max(0, Math.min(drag.endFrame - 1, drag.startFrame + delta))
     else endFrame = Math.max(drag.startFrame + 1, drag.endFrame + delta)
     drag.latestStartFrame = startFrame
