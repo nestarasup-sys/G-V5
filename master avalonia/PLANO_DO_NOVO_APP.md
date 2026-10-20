@@ -67,6 +67,12 @@ Avalonia é a camada da interface e o cliente da engine do G5; não será a engi
 
 Construir estas capacidades em fatias finas junto com Fabricador, Customizador e Studio. “Desde cedo” significa contratos e um primeiro fluxo confiável, aprofundados conforme casos reais surgirem; não significa criar subsistemas genéricos completos antes de usá-los.
 
+#### Camadas de prioridade
+
+- **Obrigatório desde o começo:** contratos e IDs estáveis, engine gráfica, coordenadas/cores canônicas, dados versionados, isolamento dos módulos e fixtures mínimas de fidelidade visual.
+- **Durante Fabricador e Customizador:** grafo de dependências, publicação imutável de revisões, modificadores não destrutivos, renderização incremental, undo/redo, autosave, cache e diagnóstico.
+- **Depois do primeiro fluxo vertical completo:** workspaces avançados e multi-monitor, pacote portátil `.gv5project`, inspetor/reparo avançado de projetos e ferramentas opcionais de desenvolvimento. Seus formatos e contratos podem ser planejados antes; não antecipar implementação grande.
+
 1. **DataPlatform (`GV5.Data`):** única porta para SQLite, arquivos, AssetStore, thumbnails, hashes, migrations, backups e restauração. Nenhuma feature inventa seu formato de persistência ou caminho de arquivo. Módulos declaram seus esquemas/migrations pelos contratos centrais; a plataforma coordena transações e recuperação.
 2. **Design System (`GV5.DesignSystem`):** tokens de cor, tipografia, espaçamento e estados, mais botões, painéis, dialogs, inputs, tabs, toolbars e cards reutilizáveis. Módulos podem compor controles próprios sem duplicar estilos globais.
 3. **Undo/Redo por workspace:** comandos reversíveis e escopos claros desde Fabricador, Customizador e Studio. Um gesto contínuo vira uma ação; armazenar deltas quando seguros, com snapshots limitados apenas quando necessário, em vez de snapshots gigantes por padrão.
@@ -79,6 +85,8 @@ Construir estas capacidades em fatias finas junto com Fabricador, Customizador e
 10. **Shell e serviços do sistema:** `.bat` é launcher de desenvolvimento, nunca parte da arquitetura de runtime; o G-V5 continua sendo um executável normal. Abstrair seleção de arquivos, clipboard, notificações e consulta de hardware por interfaces como `IFilePicker`, `IClipboard`, `INotificationService` e `IHardwareInfo`.
 11. **Dados e versões:** manter dados fora do executável/repositório em diretório por usuário, com `database/`, `assets/`, `thumbnails/`, `projects/`, `backups/`, `cache/`, `logs/` e `temp/`. Definir versionamento de produto (SemVer) separado das versões de schema/migrations, desde as primeiras distribuições.
 12. **Ferramentas internas:** um painel de diagnóstico, oculto/desativado por padrão e habilitado explicitamente em desenvolvimento, poderá inspecionar banco, assets, cache, jobs, revisões, memória e eventos. Ele observa o sistema por APIs de diagnóstico; não altera dados de produção diretamente.
+
+Prioridade de engenharia entre essas frentes: **dependências entre assets, revisões publicadas imutáveis e renderização incremental**. Elas devem começar durante Fabricador/Customizador, depois de assentar os contratos mínimos; workspaces avançados, pacote portátil e reparação sofisticada ficam para depois do primeiro fluxo vertical.
 
 Filosofia do produto: **tela não é dona do sistema**. A tela apresenta estado e envia comandos; dados, engine gráfica, assets, jobs e módulos têm responsabilidades e contratos próprios.
 
@@ -170,7 +178,9 @@ Fixar versões do SDK e dos pacotes compatíveis na criação da solução. Atua
 
 O Fabricador usa controles próprios de edição gráfica, mas os controles não são a engine. Um `FabricatorCanvas` pode desenhar peças, joints, pivôs, seleção, limites de transformação e grid. `ModelPartVisual`, `JointVisual`, `SelectionOverlay`, `TransformHandles` e `GridOverlay` são conceitos de apresentação; a geometria e as regras continuam em Core/Rendering.
 
-Operações de usuário entram como comandos pequenos: `MovePartCommand`, `RotatePartCommand`, `ResizePartCommand`, `AttachJointCommand` e `PublishPoseCommand`. Um gesto contínuo de drag deve consolidar uma mudança em um único passo de undo/redo. O histórico armazena deltas reversíveis quando forem suficientes; snapshots limitados podem ser usados quando o estado relacionado não puder ser representado com segurança por um delta. Não impor delta a todo custo.
+Operações de usuário entram como comandos pequenos: `MovePartCommand`, `RotatePartCommand`, `ResizePartCommand`, `AttachJointCommand` e `PublishPoseCommand`. Um gesto contínuo de drag deve consolidar uma mudança em um único passo de undo/redo. Publicar não altera a revisão que consumidores já usam: cria uma revisão imutável e identificável por ID/hash. O histórico armazena deltas reversíveis quando forem suficientes; snapshots limitados podem ser usados quando o estado relacionado não puder ser representado com segurança por um delta. Não impor delta a todo custo.
+
+Cada asset editável tem rascunho e pode ter revisões publicadas. Personagens e cenas salvam a revisão publicada que usaram. Ao publicar uma revisão nova, o app consulta o grafo de dependências reverso e mostra personagens/cenas afetados; o usuário escolhe manter a revisão anterior, atualizar referências de forma controlada ou comparar diferenças antes da atualização.
 
 O canvas recebe identificadores e uma cena pronta para apresentação, e emite intenções com coordenadas normalizadas. O módulo converte a intenção em comandos de domínio. A tela não altera arrays de peças compartilhados diretamente, nem salva cada evento de mouse como se fosse uma ação independente.
 
@@ -194,6 +204,8 @@ Trocar uma roupa altera uma seleção ou `CharacterWardrobeOverride`; o resolver
 
 `CharacterResolver` não desenha. Ele recebe Character, Model, Pose, Wardrobe, Hair, Face, Expression e Overrides e produz `ResolvedCharacter`. Essa resolução inclui as camadas e transformações necessárias para construir uma descrição de cena reutilizável pelo Fabricador, Customizador, Studio e Video Studio.
 
+O personagem referencia `ModelId`, `PoseId`, `WardrobeId`, `HairId`, `FaceId` e `ExpressionId` com revisões publicadas explícitas. Ajustes do Customizador são modificadores não destrutivos, ordenados e removíveis (por exemplo, escala da cabeça, roupa selecionada ou expressão); não sobrescrevem a definição global publicada. O resolver aplica base + modificadores em ordem documentada.
+
 ## 6. Geometria independente da interface
 
 `GV5.Geometry` contém as regras matemáticas em C# puro, sem Avalonia ou SkiaSharp:
@@ -201,7 +213,8 @@ Trocar uma roupa altera uma seleção ou `CharacterWardrobeOverride`; o resolver
 - Matrix, Transform2D, bounds, pivô e crop.
 - Joints, bones e transformações locais/ancestrais.
 - Hit testing, seleção, snap e validação geométrica.
-- Conversões entre coordenadas do modelo, da cena, do canvas e da tela ficam em adaptadores explícitos; zoom e pan de visualização não alteram transformações salvas.
+- Um padrão canônico de unidade, origem, eixo X/Y, sentido de rotação, ordem de transformações e conversão entre modelo/cena/canvas/tela; zoom e pan de visualização nunca alteram transformações salvas.
+- Convenção canônica para cores (espaço de cor, canal alpha e conversões na entrada/render/export), para que Fabricador, Customizador, Studio e export interpretem o mesmo valor da mesma forma.
 
 Fabricador, Studio e Video Studio podem consultar a mesma geometria, por exemplo para descobrir qual peça está sob o cursor. O input do mouse vem da UI; a resposta espacial é calculada pela biblioteca de geometria.
 
@@ -210,6 +223,8 @@ Fabricador, Studio e Video Studio podem consultar a mesma geometria, por exemplo
 `GV5.Scene` descreve o que deve aparecer. `CharacterRenderSceneBuilder` converte um personagem resolvido em `RenderScene`, uma lista ordenada de layers. Cada layer contém `AssetId`, Transform, Opacity, Crop, Flip, ZIndex e BlendMode. Scene também representa Background, Character, Image, Text, SpeechBubble e Effect com IDs, visibilidade, seleção e transformações próprias.
 
 `GV5.Rendering` começa com `SkiaRenderer`, implementado em C#/.NET sobre SkiaSharp. Ele recebe uma cena pronta e desenha a composição. Regras de personagem, hit testing, timeline e persistência não entram no renderer. FabricatorCanvas pode pedir `engine.GetScene(...)`, receber uma cena imutável e solicitar nova apresentação quando seus dados mudarem.
+
+A composição e a invalidação são incrementais. A engine acompanha dependências entre dados e resultados derivados; uma alteração de boca invalida os nós faciais e composições dependentes, sem decodificar ou resolver novamente roupa, cabelo e corpo que não mudaram. Cache de render usa revisão/hash dos inputs e parâmetros de saída; dependências inválidas propagam invalidação apenas aos consumidores afetados. O primeiro objetivo de performance é correctness-equivalent incremental output: o resultado final deve coincidir com uma renderização completa.
 
 No app interativo, um controle Avalonia usa a integração de desenho customizado: `DrawingContext` para desenho comum ou `ICustomDrawOperation` com a lease de Skia que Avalonia fornece, quando o canvas complexo precisar de `SKCanvas`. Isso deixa Avalonia como cliente e superfície de apresentação; o contrato de `RenderScene` e o código do SkiaRenderer pertencem à engine. O desenho customizado deve permanecer rápido, reutilizar recursos e não decodificar mídia nem resolver roupas dentro do callback. A documentação informa que `Control.Render()` roda na UI thread e recomenda mantê-lo leve; o caminho de Skia e os callbacks de composição têm contratos próprios de thread e recurso, que devem ser respeitados. Referência: [custom rendering no Avalonia](https://docs.avaloniaui.net/docs/graphics-animation/custom-rendering).
 
@@ -231,6 +246,8 @@ stream → ImageDecoder → DecodedImageCache → SkiaRenderer
 
 O armazenamento mantém o original, thumbnails derivados, metadados, hash de conteúdo e cache local. Vários personagens referenciam o mesmo `AssetId`; a mesma imagem decodificada pode ser compartilhada, evitando decodificar um PNG de 4 MB vinte vezes. Cache de bitmaps tem LRU, orçamento de memória, invalidação por hash/versão do decoder e leases/referências de uso para não liberar um recurso ainda em desenho. **512 MB é um teto inicial para benchmark, não configuração garantida**; o limite final será medido no hardware e poderá ser configurável. Objetos GPU possuem regras de descarte específicas e não vivem para sempre só porque há referências no documento.
 
+Um grafo de dependências registra relações entre revisão de asset, personagens, cenas e resultados derivados. Ele permite responder “quem usa esta revisão?”, prevenir mudanças invisíveis e calcular invalidação incremental. O DataPlatform mantém a fonte persistente do grafo; a engine pode manter índices/cache em memória regeneráveis.
+
 Catálogos não abrem imagens originais para desenhar cartões. `ThumbnailService` gera miniaturas, por exemplo 256×256, em background, mantém cache em disco por hash do original e versão das transformações, e entrega o thumbnail para a UI. Gerar thumbnail novamente só quando não existe ou quando original/transformação mudou.
 
 A composição usada pela prévia e pelo export compartilha `RenderScene` e regras visuais, embora possa usar superfícies distintas. A implementação raster CPU em SkiaSharp pode ser usada em trabalhos isolados e testáveis. GPU offscreen fica para depois de confirmar como contexts e superfícies serão geridos; nunca criar/destruir recursos GPU por item ou dentro de cada frame.
@@ -245,6 +262,8 @@ A composição usada pela prévia e pelo export compartilha `RenderScene` e regr
 - ExportVideo, Backup e Migration.
 
 Cada job tem ID, prioridade, progresso, `CancellationToken`, status e erro/result. Limitar concorrência e aplicar contrapressão; thumbnail em segundo plano não deve impedir uma prévia interativa. Decodificação, análise de assets, cálculo de geometria derivada e preparação de cenas ocorrem em workers apropriados. Resultados retornam como dados imutáveis; só a UI atualiza ViewModels e controles pelo Dispatcher.
+
+O scheduler funciona também como coordenador de recursos: reserva CPU/memória para trabalho ativo, prioriza interação e render visível, limita tarefas simultâneas e posterga/cancela thumbnail, importação ou análise de baixa prioridade quando competirem com a ação atual. Limites começam simples e são ajustados por medições, não por um sistema distribuído de recursos prematuro.
 
 Renderizações são identificadas pela versão/assinatura da entrada. Quando o usuário escolhe Pose 1, 2, 3, 4 e rapidamente chega à Pose 5, jobs ainda não iniciados ou canceláveis das quatro poses anteriores são cancelados; somente o resultado ainda atual pode substituir a prévia. Cancelamento em trabalho já iniciado é cooperativo nos pontos seguros. A UI ignora resultados atrasados mesmo quando uma biblioteca não pode interromper a operação imediatamente.
 
@@ -324,7 +343,9 @@ GV5Data/
   temp/
 ```
 
-A localização real será resolvida por um serviço de armazenamento sob a pasta de dados do usuário no Windows. Não depender da pasta atual do terminal, do executável ou do repositório. Um modo portátil poderá ser criado depois, com seleção explícita de diretório.
+A localização real será resolvida por um serviço de armazenamento sob a pasta de dados do usuário no Windows. Não depender da pasta atual do terminal, do executável ou do repositório.
+
+Depois do primeiro fluxo vertical persistente, definir o formato portátil `.gv5project`: manifesto com versão, objetos/revisões usados, dependências e hashes; assets podem ser incluídos para arquivamento/transferência e verificados na importação. O pacote deve abrir sem depender de caminhos locais da máquina de origem. Não implementar o contêiner completo antes de validar os modelos de dados e dependências.
 
 Entidades iniciais previstas: modelos, peças, articulações, poses, personagens, roupas, conjuntos de rosto, recursos e referências entre eles. Cada domínio deve detalhar seu esquema antes de implementar suas gravações. Evitar tanto uma tabela gigante de JSON quanto fragmentar cada pequeno valor em tabelas desnecessárias. JSON versionado pode servir para configurações flexíveis que não precisem de consultas relacionais.
 
@@ -337,10 +358,12 @@ Regras essenciais:
 - Migrações numeradas e backup consistente antes de atualizações de esquema.
 - Backups versionados com manifesto de formato, versão do produto e schema, inventário de conteúdo e hashes; criação consistente para SQLite, sem copiar apenas o arquivo principal durante gravações/WAL ativos.
 - Restore de backup verificado em ambiente isolado antes de considerar a operação concluída; relatório de itens restaurados e incompatíveis.
-- Exportação e importação de projeto com manifesto versionado e verificação de integridade.
+- Quando o formato portátil `.gv5project` entrar após o primeiro fluxo vertical, ele terá manifesto versionado e verificação de integridade.
 - Nenhuma exclusão de arquivo compartilhado enquanto houver referências válidas.
 
 Banco e arquivos não participam da mesma transação automaticamente. A importação deve preparar o recurso em área temporária, validar, publicar o arquivo e confirmar suas referências no banco, com recuperação de operações interrompidas. A limpeza de recursos órfãos será uma operação explícita e recuperável.
+
+Antes de abrir/exportar projeto, uma verificação de integridade pode apontar assets ausentes, referências quebradas, revisões incompatíveis, arquivos corrompidos e migrações pendentes. Reparos são propostas revisáveis; nunca modificar ou descartar arquivos automaticamente quando houver risco de perda.
 
 ## 13. Edição, desfazer e salvamento
 
@@ -350,6 +373,8 @@ O estado de edição deve distinguir alterações temporárias e dados confirmad
 
 Agrupar mudanças rápidas e gravar apenas os registros necessários, dentro de transações. Usar uma política de escrita coordenada para evitar duas telas sobrescrevendo a mesma revisão. Não guardar um histórico ilimitado de imagens para implementar desfazer.
 
+Manter também um registro compacto e recuperável de operações significativas (comando, alvo, revisão, horário, resultado e correlation ID). Agrupar gestos/transações e evitar gravar cada evento de mouse; esse registro ajuda a explicar falhas e restaurar um estado confirmado sem substituir o histórico de undo/redo da sessão.
+
 Exclusões comuns podem ir para uma lixeira com restauração. Exclusão permanente é uma ação separada. Recursos necessários a uma sessão ou exportação em andamento não podem ser removidos silenciosamente.
 
 ## 14. Interface e novas áreas
@@ -357,6 +382,8 @@ Exclusões comuns podem ir para uma lixeira com restauração. Exclusão permane
 Usar MVVM com ViewModels pequenos por tela ou painel e bindings compilados onde forem adequados. A composição da aplicação registra os serviços e as áreas disponíveis. Evitar um ViewModel global que conheça todos os detalhes do produto.
 
 Cada nova área declara rota, título, permissões de edição quando necessárias, ViewModel e casos de uso. A navegação precisa liberar inscrições de eventos, cancelar tarefas e descartar recursos ao encerrar a sessão.
+
+Layouts básicos podem começar fixos e responsivos. Depois dos primeiros fluxos, oferecer workspaces por área com painéis redimensionáveis, abas reorganizáveis, layouts nomeados/restauráveis, atalhos configuráveis e suporte a múltiplos monitores. Persistir preferências de layout separadas dos documentos e permitir redefinição segura.
 
 Criar desde cedo um conjunto consistente de cores, espaçamentos, tipografia, botões, formulários, estados de carregamento e mensagens de erro. Suportar escala de tela, atalhos com contexto, foco de teclado e textos acessíveis. `GV5.DesignSystem` será a fonte única de tokens e controles visuais compartilhados.
 
@@ -366,7 +393,7 @@ Ordem oficial das áreas reconstruídas: Fabricador → Customizador → Studio 
 
 Quando forem implementadas, as áreas adicionais seguem estes limites:
 
-- **Studio:** uma cena contém entidades com IDs e transformações próprias: fundo, personagem, imagem, objeto, fala, pensamento e texto. Consumirá personagens por contratos de Core/Characters/Rendering e não poderá importar classes de View, controle ou ViewModel do Fabricador ou Customizador. Alterar `Transform.X`/`Transform.Y` atualiza o item e sua visualização, preservando o restante da cena.
+- **Studio:** uma cena contém entidades com IDs e transformações próprias: fundo, personagem, imagem, objeto, fala, pensamento e texto. Consumirá personagens por contratos de Core/Characters/Rendering e não poderá importar classes de View, controle ou ViewModel do Fabricador ou Customizador. Alterar `Transform.X`/`Transform.Y` atualiza o item e sua visualização, preservando o restante da cena. Transformações e overrides pertencem à cena/personagem local e não modificam a revisão publicada de origem.
 - **Base de Vídeos:** biblioteca própria com `VideoAsset` (ID estável, arquivo original/AssetId, hash, duração, resolução, FPS, codecs, data de criação, categorias/tags, thumbnail e estado de proxy), além de `VideoLibraryService`, `VideoMetadataService` e `ThumbnailService`. Metadados e arquivos são geridos pela plataforma de dados/assets; não pertencem ao módulo Roteiros.
 - **Roteiros:** entidades próprias como `Roteiro`, Sections, TikToks, Dialogues, Reactions, CharacterReferences e VideoReferences. Referenciar vídeos da biblioteca por `VideoId`, sem copiar nem persistir a biblioteca dentro do roteiro. Persistir alterações por entidade/ID/revisão (por exemplo `RoteiroId`, `SectionId`, `BlockId`, `Revision`), agrupando mudanças rápidas e gravando apenas o que mudou.
 - **Video Studio:** última grande área da reconstrução. `TimelineControl` apresenta faixas de vídeo, áudio, texto, personagem, keyframes e playhead. Edição de timeline vive em regras testáveis; playback, frame decode e exportação usam serviços/jobs separados da View. FFmpeg pode ser encapsulado para processamento de vídeo.
@@ -398,7 +425,7 @@ Erros esperados devem ter resultado tipado: arquivo ausente, formato inválido, 
 
 Logs locais devem incluir operação, duração, módulo e identificador de correlação, com rotação e limite de tamanho. Métricas internas registram tempos de abertura, renderização, queries, jobs, memória e erros. Não registrar imagens, textos privados, segredos ou caminhos pessoais completos por padrão. Um relatório de diagnóstico exportável deve permitir revisão antes de compartilhar.
 
-Falhas inesperadas precisam preservar o último estado confirmado e informar quando uma operação ficou incompleta. Não usar um capturador global de exceções para fingir que uma operação foi concluída. Em falhas repetidas na abertura, oferecer modo seguro: iniciar shell mínimo, suspender autoabertura do último projeto, ignorar caches regeneráveis e desabilitar áreas opcionais para permitir diagnóstico e recuperação.
+Falhas inesperadas precisam preservar o último estado confirmado e informar quando uma operação ficou incompleta. Não usar um capturador global de exceções para fingir que uma operação foi concluída. Em falhas repetidas na abertura, oferecer modo seguro: iniciar shell mínimo, suspender autoabertura do último projeto, ignorar caches regeneráveis e desabilitar áreas opcionais para permitir diagnóstico e recuperação. Um inspetor de projeto avançado e reparações assistidas entram após os primeiros fluxos completos; validações básicas de integridade são obrigatórias desde as primeiras importações.
 
 Ferramentas internas podem expor banco, assets, cache, jobs, revisões, memória e eventos em um painel oculto, desativado por padrão e habilitado explicitamente em desenvolvimento. O painel observa e exporta diagnósticos; não altera diretamente dados de produção.
 
@@ -408,6 +435,9 @@ Ferramentas internas podem expor banco, assets, cache, jobs, revisões, memória
 - Persistência: criar, editar, fechar, reabrir, migrar e recuperar uma gravação interrompida.
 - Contratos: comandos e arquivos exportados continuam compatíveis.
 - Comparação visual com referências aprovadas para o motor de personagem.
+- Testes de fidelidade visual com imagens douradas de fixtures canônicas; diferenças de pixels usam tolerâncias explícitas e justificadas, além de diagnósticos de geometria/transparência.
+- Contrato de compatibilidade Fabricador → Customizador → Studio → persistência: publicar modelo/pose/roupa/expressão, criar personagem com as revisões, carregar e editar no Studio, fechar/reabrir e comparar o resultado visual.
+- Regressão de revisão: publicar alteração nova no Fabricador e verificar que personagens/cenas existentes mantêm a revisão fixada até uma atualização controlada.
 - Interface: fluxos essenciais, atalhos, desfazer e fechar com mudanças pendentes.
 - Desempenho: o mesmo cenário antes e depois da mudança, com quantidades de peças e personagens documentadas.
 - Arquitetura: dependências entre projetos respeitam os limites definidos.
@@ -428,13 +458,15 @@ Antes de excluir o legado, provar que uma cópia contendo somente `master avalon
 
 ## 19. Primeiras entregas, na ordem
 
-1. **Plataforma transversal:** solução e shell Avalonia, DataPlatform/SQLite/migrations, AssetStore, Geometry, DesignSystem, Jobs, cache limitado, autosave/recuperação base, logs/métricas, feature flags iniciais e serviços de sistema por interfaces; pipeline `RenderScene`/SkiaRenderer em fatias pequenas. Critério: app abre, salva o primeiro conteúdo editável, recupera uma edição interrompida e renderiza um asset real sem depender do legado. Testes de arquitetura e fixtures mínimas protegem os limites já criados.
-2. **Fabricador:** modelos, parts/layers, joints/pivôs/transformações, poses, roupas, cabelo, face/expressões, animações, importação/chroma, undo/redo e publicação de assets. Critério: criar/editar/publicar e reabrir conteúdo preservando geometria, transparência, vínculos e aparência.
-3. **Customizador:** consumir por IDs estáveis (`ModelId`, `PoseId`, `WardrobeId`, `HairId`, `FaceId`, `ExpressionId`), montar `Character` por `CharacterResolver` e salvar overrides próprios sem alterar assets globais. Critério: Fabricador e Customizador renderizam o mesmo conteúdo de forma consistente.
+1. **Contratos mínimos da plataforma:** shell, IDs/revisões e dados versionados, padrão de coordenadas/cores, DataPlatform inicial, limites entre módulos, Geometry/Assets e o primeiro pipeline `RenderScene`/SkiaRenderer. Criar fixtures visuais mínimas e verificações de arquitetura desde já. Critério: app compila, persiste o primeiro objeto e renderiza um asset sem dependência do legado. Não antecipar painel de diagnóstico completo, updater, sistema sofisticado de plugins ou layouts avançados.
+2. **Fabricador:** modelos, parts/layers, joints/pivôs/transformações, poses, roupas, cabelo, face/expressões, animações, importação/chroma, undo/redo e publicação de assets imutáveis. Priorizar grafo de dependências/reverse lookup e renderização incremental. Critério: criar/editar/publicar/reabrir preservando geometria, transparência, vínculos e aparência; nova revisão não altera consumidores existentes silenciosamente.
+3. **Customizador:** consumir por IDs e revisões estáveis (`ModelId`, `PoseId`, `WardrobeId`, `HairId`, `FaceId`, `ExpressionId`), montar `Character` por `CharacterResolver` e salvar modificadores próprios sem alterar assets globais. Priorizar atualização seletiva do render e testar que mudanças localizadas recalculam apenas dependências afetadas. Critério: Fabricador e Customizador renderizam o mesmo conteúdo de forma consistente.
 4. **Studio:** reutilizar `CharacterResolver` e `RenderingEngine`; adicionar Scene Engine e entidades de fundo, personagem, imagem, objeto, texto, fala e pensamento. Critério: montar uma cena com personagens salvos, reabrir e obter o mesmo resultado visual; confirmar por teste de arquitetura que Studio não referencia nenhum assembly/classe de UI do Fabricador ou Customizador. Este é o primeiro grande marco de validação da plataforma compartilhada.
 5. **Base de Vídeos:** implementar biblioteca e serviços de metadados/miniaturas, categorias/tags, IDs, arquivos originais e integridade. Critério: importar, catalogar, reabrir, localizar e remover referências sem misturar a biblioteca com roteiros.
 6. **Roteiros:** construir seções/blocos e referências a personagens e `VideoId`; salvar incrementalmente por entidade/revisão. Critério: editar texto e vínculos sem regravar a biblioteca nem o roteiro inteiro por tecla; fechar/reabrir preserva a estrutura.
 7. **Video Studio, por último:** iniciar timeline, playback/frame decoder, áudio, keyframes, transições e export somente após as etapas anteriores estarem persistentes e utilizáveis. Escolher backends com a prova de conceito da seção de mídia.
+
+Após o gate Fabricador → Customizador → Studio, evoluir o empacotamento `.gv5project`, inspetor/reparo avançado, workspaces personalizados e laboratório interno completo. Jobs, autosave, cache, backups e diagnósticos básicos crescem junto com a primeira operação real que precisar deles; as versões avançadas seguem as prioridades acima.
 
 ### Gate obrigatório antes do Video Studio
 
