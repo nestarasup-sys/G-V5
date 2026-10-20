@@ -42,7 +42,7 @@ export function buildVideoStudioAudioPlan(
   planned.forEach((source, index) => {
     inputArgs.push('-ss', seconds(source.sourceStartFrame), '-t', seconds(source.durationFrames), '-i', source.path)
     const delayMs = Math.round(source.startFrame / 60 * 1000)
-    filters.push(`[${source.inputIndex}:a:0]atrim=duration=${seconds(source.durationFrames)},asetpts=PTS-STARTPTS,aresample=48000,volume=${source.gain.toFixed(6)},adelay=${delayMs}:all=1[a${index}]`)
+    filters.push(`[${source.inputIndex}:a:0]atrim=duration=${seconds(source.durationFrames)},asetpts=PTS-STARTPTS,aresample=48000,volume=${source.gain.toFixed(6)},adelay=delays=${delayMs}:all=1[a${index}]`)
   })
   const projectDuration = seconds(timeline.durationFrames)
   if (planned.length === 1) filters.push(`[a0]apad=whole_dur=${projectDuration},atrim=duration=${projectDuration}[aout]`)
