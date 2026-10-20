@@ -157,7 +157,7 @@ app.whenReady().then(async () => {
       run(ffmpeg, ['-v', 'error', '-i', outputPath, '-f', 'null', '-'])
       const sample = run(ffmpeg, [
         '-v', 'error', '-i', outputPath, '-frames:v', '1',
-        '-vf', 'crop=1:1:100:100', '-pix_fmt', 'rgb24', '-f', 'rawvideo', 'pipe:1',
+        '-vf', 'crop=2:2:100:100', '-pix_fmt', 'rgb24', '-f', 'rawvideo', 'pipe:1',
       ], null)
       const [red, green, blue] = sample.subarray(0, 3)
       if (!(blue > red + 25 && green > red + 10)) {
