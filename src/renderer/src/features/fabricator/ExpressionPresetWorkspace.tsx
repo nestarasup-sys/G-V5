@@ -612,8 +612,28 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
     setNoseOpacity(composition.nose ? catalogItems[composition.nose.catalogId]?.opacity ?? 1 : 1)
     setEffects(defaultExpressionEffects())
   }
-  const selectExpression = async (index: number) => {
-    if (index === selectedExpressionIndex || switchingExpression || saving) return
+  const turnPupilsLeft = (sourceComposition: ExpressionComposition, sourceTransforms: FaceExpressionTransforms): FaceExpressionTransforms => {
+    const next = cloneTransforms(sourceTransforms)
+    if (!head) return next
+    for (const side of ['left', 'right'] as const) {
+      const eye = sourceComposition.eyes[side] ? componentAssets[sourceComposition.eyes[side]!] : undefined
+      const pupil = sourceComposition.pupils[side] ? componentAssets[sourceComposition.pupils[side]!] : undefined
+      if (!eye || !pupil) continue
+      const eyeTransform = next[layerKey('eye', side)]
+      const key = layerKey('pupil', side)
+      // The right logical slot is mirrored when its asset is not physically right-sided.
+      // Compensate for that so both pupils move toward the same (left) side of the preview.
+      const pointsLeft = side === 'left' || pupil.rightSidePositioned === true
+      next[key] = { ...next[key], x: (pointsLeft ? -1 : 1) * eye.width * eyeTransform.scaleX * .16 }
+    }
+    return next
+  }
+  const selectExpression = async (index: number, pupilsLeft = false) => {
+    if (switchingExpression || saving) return
+    if (index === selectedExpressionIndex) {
+      if (pupilsLeft) setTransforms((current) => turnPupilsLeft(composition, current))
+      return
+    }
     setSwitchingExpression(true)
     setError(null)
     const currentKey = expressionWorkingCopyKey(selectedCollectionId, selectedExpressionIndex)
@@ -625,13 +645,13 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
     try {
       const workingCopy = workingCopies[targetKey]
       if (workingCopy) {
-        setPresetId(workingCopy.id); setComposition(workingCopy.composition); setTransforms(cloneTransforms(workingCopy.transforms)); setNoseOpacity(workingCopy.noseOpacity); setEffects(cloneEffects(workingCopy.effects))
+        setPresetId(workingCopy.id); setComposition(workingCopy.composition); setTransforms(pupilsLeft ? turnPupilsLeft(workingCopy.composition, workingCopy.transforms) : cloneTransforms(workingCopy.transforms)); setNoseOpacity(workingCopy.noseOpacity); setEffects(cloneEffects(workingCopy.effects))
         return
       }
       const summary = expressionPresetByIndex.get(index)
       const saved = summary ? await window.desktop.loadFaceExpressionPreset(modelSlot, summary.id) : null
       if (saved) {
-        setPresetId(saved.id); setComposition(saved.selections); setTransforms(saved.transforms); setNoseOpacity(saved.noseOpacity); setEffects(cloneEffects(saved.effects))
+        setPresetId(saved.id); setComposition(saved.selections); setTransforms(pupilsLeft ? turnPupilsLeft(saved.selections, saved.transforms) : saved.transforms); setNoseOpacity(saved.noseOpacity); setEffects(cloneEffects(saved.effects))
         return
       }
       const nextComposition = structuredClone(baseComposition)
@@ -639,7 +659,7 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
         const mouth = catalogItems[nextComposition.mouth.catalogId]
         if (mouth?.pieces.some((piece) => piece.index === index)) nextComposition.mouth.index = index
       }
-      setPresetId(crypto.randomUUID()); setComposition(nextComposition); setTransforms(cloneTransforms(baseTransforms)); setNoseOpacity(baseNoseOpacity); setEffects(defaultExpressionEffects())
+      setPresetId(crypto.randomUUID()); setComposition(nextComposition); setTransforms(pupilsLeft ? turnPupilsLeft(nextComposition, baseTransforms) : cloneTransforms(baseTransforms)); setNoseOpacity(baseNoseOpacity); setEffects(defaultExpressionEffects())
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Não foi possível abrir esta expressão.')
     } finally {
@@ -881,18 +901,24 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
           const saved = expressionPresetByIndex.has(index)
           const cached = workingCopies[expressionWorkingCopyKey(selectedCollectionId, index)]
           const isActive = selectedExpressionIndex === index
-          return <button key={name} type="button" className={`expression-sequence-item${isActive ? ' active' : ''}`} aria-pressed={isActive} disabled={loading || switchingExpression || saving} onClick={() => void selectExpression(index)}>
-            <b>{String(index + 1).padStart(2, '0')}</b><span>{name}</span><small>{isActive ? 'Editando' : saved ? 'Salvo' : cached ? 'Rascunho' : 'Vazio'}</small>
-          </button>
+          return <div className="expression-sequence-row" key={name}>
+            <button type="button" className={`expression-sequence-item${isActive ? ' active' : ''}`} aria-pressed={isActive} disabled={loading || switchingExpression || saving} onClick={() => void selectExpression(index)}>
+              <b>{String(index + 1).padStart(2, '0')}</b><span>{name}</span><small>{isActive ? 'Editando' : saved ? 'Salvo' : cached ? 'Rascunho' : 'Vazio'}</small>
+            </button>
+            <button className="expression-sequence-look-left" type="button" title={`Carregar ${name} com as pupilas voltadas à esquerda`} aria-label={`Pupilas à esquerda: ${name}`} disabled={loading || switchingExpression || saving} onClick={() => void selectExpression(index, true)}>pt</button>
+          </div>
         })}
         {customExpressionIndices.map((index) => {
           const saved = expressionPresetByIndex.has(index)
           const cached = workingCopies[expressionWorkingCopyKey(selectedCollectionId, index)]
           const isActive = selectedExpressionIndex === index
           const name = collectionExpressionNames[index] ?? expressionPresetByIndex.get(index)?.name ?? `Nova expressão ${index - STANDARD_EXPRESSIONS.length + 1}`
-          return <button key={`custom-${index}`} type="button" className={`expression-sequence-item expression-sequence-item-custom${isActive ? ' active' : ''}`} aria-pressed={isActive} disabled={loading || switchingExpression || saving} onClick={() => void selectExpression(index)}>
-            <b>+</b><span>{name}</span><small>{isActive ? 'Editando' : saved ? 'Salvo' : cached ? 'Rascunho' : 'Vazio'}</small>
-          </button>
+          return <div className="expression-sequence-row" key={`custom-${index}`}>
+            <button type="button" className={`expression-sequence-item expression-sequence-item-custom${isActive ? ' active' : ''}`} aria-pressed={isActive} disabled={loading || switchingExpression || saving} onClick={() => void selectExpression(index)}>
+              <b>+</b><span>{name}</span><small>{isActive ? 'Editando' : saved ? 'Salvo' : cached ? 'Rascunho' : 'Vazio'}</small>
+            </button>
+            <button className="expression-sequence-look-left" type="button" title={`Carregar ${name} com as pupilas voltadas à esquerda`} aria-label={`Pupilas à esquerda: ${name}`} disabled={loading || switchingExpression || saving} onClick={() => void selectExpression(index, true)}>pt</button>
+          </div>
         })}
       </nav>
     </aside>
