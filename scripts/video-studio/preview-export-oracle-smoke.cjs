@@ -52,8 +52,12 @@ let activeWindow=null
 let currentMode=''
 let pendingResolve=null
 let timer
+let settled=false
+const intentionalClose=new WeakSet()
 
 function fail(reason){
+  if(settled)return
+  settled=true
   clearTimeout(timer)
   try{ipcMain.removeHandler('video-studio:export-surface:prepare')}catch{}
   ipcMain.removeAllListeners('video-studio:export-surface:ready')
@@ -68,7 +72,7 @@ function createWindow(offscreen){
     show:false,frame:false,resizable:false,width,height,useContentSize:true,backgroundColor:'#000000',
     webPreferences:{preload:preloadPath,contextIsolation:true,nodeIntegration:false,sandbox:true,backgroundThrottling:false,offscreen},
   })
-  win.webContents.on('render-process-gone',(_event,details)=>fail(new Error(`Oracle renderer encerrou: ${details.reason}`)))
+  win.webContents.on('render-process-gone',(_event,details)=>{if(!intentionalClose.has(win))fail(new Error(`Oracle renderer encerrou: ${details.reason}`))})
   activeWindow=win
   return win
 }
@@ -112,7 +116,7 @@ app.whenReady().then(async()=>{
   const domReady=new Promise((resolve,reject)=>{pendingResolve={resolve,reject,win:dom}})
   await dom.loadFile(rendererFile,{hash:`/video-preview-oracle?jobId=${jobId}`})
   const domPixels=await domReady
-  allowed.delete(dom.webContents.id);dom.destroy()
+  allowed.delete(dom.webContents.id);intentionalClose.add(dom);dom.destroy()
 
   const canvas=createWindow(true)
   allowed.add(canvas.webContents.id)
@@ -133,7 +137,9 @@ app.whenReady().then(async()=>{
   if(metrics.extension.meanAbsoluteError>3||metrics.extension.changedPixelRatio>0.04)throw new Error(`Plugin V546 divergiu entre preview/export: ${JSON.stringify(metrics.extension)}`)
   if(metrics.full.meanAbsoluteError>25||metrics.full.changedPixelRatio>0.22)throw new Error(`Preview/export divergiu além do gate inicial: ${JSON.stringify(metrics.full)}`)
   console.log(JSON.stringify({ok:true,frame:0,metrics},null,2))
+  settled=true
   clearTimeout(timer)
+  intentionalClose.add(canvas)
   canvas.destroy()
   app.exit(0)
 }).catch(fail)
