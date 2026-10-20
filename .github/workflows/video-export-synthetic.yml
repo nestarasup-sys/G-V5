@@ -39,6 +39,7 @@ on:
       - 'electron/videoLibrary.ts'
       - 'electron/videoExports.ts'
       - 'electron/videoRawFrameWriter.ts'
+      - 'electron/videoPixelFormat.ts'
       - 'electron/videoSyntheticRaster.ts'
       - 'electron/videoFfmpegCapabilities.ts'
       - 'electron/videoSerialChunkEncoder.ts'
@@ -64,7 +65,9 @@ on:
       - 'tests/video-output-verifier.test.cjs'
       - 'tests/video-media-probe.test.cjs'
       - 'tests/video-stage-geometry.test.cjs'
+      - 'tests/video-pixel-format.test.cjs'
       - 'scripts/video-studio/export-surface-electron-smoke.cjs'
+      - 'scripts/video-studio/export-e2e-electron-smoke.cjs'
   workflow_dispatch:
 
 permissions:
@@ -110,3 +113,21 @@ jobs:
         if: always() && steps.install.outcome == 'success'
         shell: pwsh
         run: npm run test:export:electron-surface
+      - name: Resolve FFmpeg tools for real end-to-end smoke
+        if: always() && steps.install.outcome == 'success'
+        shell: pwsh
+        run: |
+          $ffmpeg = Get-Command ffmpeg -ErrorAction SilentlyContinue
+          $ffprobe = Get-Command ffprobe -ErrorAction SilentlyContinue
+          if (-not $ffmpeg -or -not $ffprobe) {
+            choco install ffmpeg -y --no-progress
+            $ffmpeg = Get-Command ffmpeg -ErrorAction Stop
+            $ffprobe = Get-Command ffprobe -ErrorAction Stop
+          }
+          "GACHA_FFMPEG_PATH=$($ffmpeg.Source)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "GACHA_FFPROBE_PATH=$($ffprobe.Source)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          & $ffmpeg.Source -hide_banner -encoders | Select-String 'h264_mf'
+      - name: Run real Electron to H264 end-to-end smoke
+        if: always() && steps.install.outcome == 'success'
+        shell: pwsh
+        run: npm run test:export:e2e-electron
