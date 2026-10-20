@@ -69,13 +69,11 @@ app.whenReady().then(async () => {
       return
     }
     try {
-      const image = await window.webContents.capturePage({ x: 0, y: 0, width: 1920, height: 1080 })
-      const size = image.getSize()
-      const bitmap = image.toBitmap()
-      if (size.width !== 1920 || size.height !== 1080) throw new Error(`Captura inesperada: ${size.width}x${size.height}`)
-      if (bitmap.byteLength !== 1920 * 1080 * 4) throw new Error(`Bitmap inesperado: ${bitmap.byteLength} bytes`)
-      if (!bitmap.some((value) => value !== 0)) throw new Error('Bitmap da surface veio completamente vazio.')
-      console.log(JSON.stringify({ ok: true, width: size.width, height: size.height, bytes: bitmap.byteLength }))
+      const pixels = ready.pixels
+      if (!(pixels instanceof Uint8Array)) throw new Error('Surface não retornou Uint8Array RGBA.')
+      if (pixels.byteLength !== 1920 * 1080 * 4) throw new Error(`Bitmap inesperado: ${pixels.byteLength} bytes`)
+      if (!pixels.some((value) => value !== 0)) throw new Error('Bitmap da surface veio completamente vazio.')
+      console.log(JSON.stringify({ ok: true, width: 1920, height: 1080, bytes: pixels.byteLength }))
       cleanup()
       app.exit(0)
     } catch (reason) {
