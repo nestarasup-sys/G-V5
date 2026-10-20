@@ -18,6 +18,7 @@ import { encodeVideoStudioSerialChunk } from './videoSerialChunkEncoder'
 import { assembleVideoStudioOutput } from './videoExportAssembler'
 import { probeVideoMedia } from './videoMediaProbe'
 import { verifyVideoStudioOutput } from './videoOutputVerifier'
+import { rgbaToBgra } from './videoPixelFormat'
 
 type ActiveExport = {
   jobId: string
@@ -189,7 +190,8 @@ export class VideoExportCoordinator {
           reusedFrames += 1
           return cachedPixels.pixels
         }
-        const pixels = await active.surface!.renderFrame(frame)
+        const rgba = await active.surface!.renderFrame(frame)
+        const pixels = rgbaToBgra(rgba)
         cachedPixels = { key: semantic, pixels }
         return pixels
       }, {
