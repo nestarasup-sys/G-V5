@@ -2083,22 +2083,6 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
     exitFullView()
   }
 
-  const exportPrint = async () => {
-    if (!activeStudio) return
-    try {
-      if (!await saveStudio(activeStudio)) return
-      const image = await makeCanvasPrint(activeStudio)
-      const path = await persistence.savePrint(activeStudio.id, image)
-      if (path) { setError(null); setNotice(`Print salvo em ${path}`) }
-    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível gerar o print.') }
-  }
-
-  const openPrints = async () => {
-    if (!activeStudio) return
-    try { await persistence.openPrints(activeStudio.id) }
-    catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível abrir a pasta de prints.') }
-  }
-
   const startVideoExport = async () => {
     if (!activeStudio || exportPreparing || (exportProgress && !['done', 'failed', 'cancelled'].includes(exportProgress.stage))) return
     setExportPreparing(true)
@@ -2370,8 +2354,6 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
             <button className="video-studio-tool-button" onClick={() => addTextElement('thought')} disabled={selectedElement?.kind !== 'character'} title={selectedElement?.kind === 'character' ? `Criar pensamento de ${selectedElement.text}` : 'Selecione um personagem para criar um pensamento'} type="button"><Icon name="face" /><span>Pensamento</span><i aria-hidden="true">✦</i></button>
             <span className="video-studio-tool-separator" />
             <button className="video-studio-tool-button video-studio-export-button" onClick={() => setExportDialogOpen(true)} type="button"><Icon name="download" /><span>Exportar vídeo</span><i aria-hidden="true">▶</i></button>
-            <button className="video-studio-tool-button" onClick={() => void exportPrint()} type="button"><Icon name="download" /><span>Print</span><i aria-hidden="true">✦</i></button>
-            <button className="video-studio-tool-button" onClick={() => void openPrints()} type="button"><Icon name="folder" /><span>Pasta</span><i aria-hidden="true">✦</i></button>
             <button className="video-studio-tool-button video-studio-view-button" onClick={() => enterFullView()} type="button"><Icon name="expand" /><span>View</span></button>
           </nav>
           <small className={`video-studio-save-indicator${saved ? '' : ' unsaved'}`}><i />{saved ? 'Salvo automaticamente' : 'Salvando alterações…'}</small>
