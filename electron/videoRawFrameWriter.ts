@@ -38,6 +38,8 @@ export class VideoRawFrameWriter {
   private readyResolve!: () => void
   private readyReject!: (error: Error) => void
   private readonly exitPromise: Promise<{ code: number | null; signal: NodeJS.Signals | null }>
+  private readonly processClosedPromise: Promise<void>
+  private processClosedResolve!: () => void
   private exitResolve!: (value: { code: number | null; signal: NodeJS.Signals | null }) => void
   private exitReject!: (error: Error) => void
 
@@ -51,13 +53,15 @@ export class VideoRawFrameWriter {
     this.maxInFlight = Math.max(1, Math.min(2, Math.floor(options.maxInFlight ?? 2)))
     this.readyPromise = new Promise<void>((resolvePromise, rejectPromise) => { this.readyResolve = resolvePromise; this.readyReject = rejectPromise })
     this.exitPromise = new Promise((resolvePromise, rejectPromise) => { this.exitResolve = resolvePromise; this.exitReject = rejectPromise })
+    this.processClosedPromise = new Promise<void>((resolvePromise) => { this.processClosedResolve = resolvePromise })
     void this.exitPromise.catch(() => undefined)
     this.process = spawn(options.executable, options.args, { shell: false, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] })
     this.process.stdout.resume()
     this.process.once('spawn', () => this.readyResolve())
     this.process.stderr.on('data', (chunk) => { this.stderr = `${this.stderr}${String(chunk)}`.slice(-16_000) })
-    this.process.once('error', (error) => this.fail(error))
+    this.process.once('error', (error) => { this.processClosedResolve(); this.fail(error) })
     this.process.once('exit', (code, signal) => {
+      this.processClosedResolve()
       if (code === 0) this.exitResolve({ code, signal })
       else {
         const error = new Error(`O encoder falhou (${code ?? signal ?? 'desconhecido'}). ${this.stderr}`)
@@ -115,10 +119,16 @@ export class VideoRawFrameWriter {
   }
 
   async cancel(): Promise<void> {
+    if (this.ended && (this.process.exitCode !== null || this.process.signalCode !== null)) return
     this.ended = true
     try { this.process.stdin.destroy() } catch { /* process may already be closed */ }
     try { this.process.kill('SIGKILL') } catch { /* best effort */ }
     this.fail(new Error('Exportação cancelada.'))
+    const timeout = new Promise<never>((_resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('FFmpeg não encerrou em até 5 segundos após o cancelamento.')), 5000)
+      timer.unref?.()
+    })
+    await Promise.race([this.processClosedPromise, timeout])
   }
 
   private fail(error: Error): void {
