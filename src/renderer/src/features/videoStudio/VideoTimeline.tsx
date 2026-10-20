@@ -247,8 +247,8 @@ export function VideoTimeline({ preparing, onEnterFullscreen, onExport, canUndo,
     onSelectElement(elementId)
     if (secondClickOnTrack) onSeek(frame)
   }
-  const snapFrame = (frame: number, excludedClipId?: string) => {
-    return nearestTimelineSnapFrame(timelineIndex, frame, playheadFrame, pixelsPerSecond, excludedClipId)
+  const snapFrame = (frame: number, excludedClipId?: string, includePlayhead = true) => {
+    return nearestTimelineSnapFrame(timelineIndex, frame, playheadFrame, pixelsPerSecond, excludedClipId, includePlayhead)
   }
   const schedulePreviewUpdate = (update: () => void) => {
     previewUpdateRef.current = update
@@ -407,7 +407,7 @@ export function VideoTimeline({ preparing, onEnterFullscreen, onExport, canUndo,
   const moveBoundaryDrag = (event: ReactPointerEvent<HTMLButtonElement>) => {
     const drag = boundaryDragRef.current
     if (!drag || drag.pointerId !== event.pointerId) return
-    const frame = Math.max(drag.minFrame, Math.min(drag.maxFrame, snapFrame(drag.startFrame + Math.round((event.clientX - drag.originX) / pixelsPerSecond * 60), drag.keyId)))
+    const frame = Math.max(drag.minFrame, Math.min(drag.maxFrame, snapFrame(drag.startFrame + Math.round((event.clientX - drag.originX) / pixelsPerSecond * 60), drag.keyId, false)))
     drag.latestFrame = frame
     schedulePreviewUpdate(() => setPreviewBoundary({ elementId: drag.elementId, keyId: drag.keyId, frame: drag.latestFrame }))
   }

@@ -175,10 +175,10 @@ function nearestUsableStaticFrame(index: VideoTimelineIndex, target: number, exc
   return undefined
 }
 
-export function nearestTimelineSnapFrame(index: VideoTimelineIndex, frame: number, playheadFrame: number, pixelsPerSecond: number, excludedClipId?: string): number {
+export function nearestTimelineSnapFrame(index: VideoTimelineIndex, frame: number, playheadFrame: number, pixelsPerSecond: number, excludedClipId?: string, includePlayhead = true): number {
   const staticFrame = nearestUsableStaticFrame(index, frame, excludedClipId)
   const secondFrame = Math.round(frame / 60) * 60
-  const candidates = [playheadFrame, secondFrame, ...(staticFrame === undefined ? [] : [staticFrame])]
+  const candidates = [...(includePlayhead ? [playheadFrame] : []), secondFrame, ...(staticFrame === undefined ? [] : [staticFrame])]
   const nearest = candidates.slice(1).reduce((best, candidate) => Math.abs(candidate - frame) < Math.abs(best - frame) ? candidate : best, candidates[0] ?? frame)
   return Math.abs(nearest - frame) / 60 * pixelsPerSecond <= 8 ? nearest : frame
 }
