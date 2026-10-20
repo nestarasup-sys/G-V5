@@ -88,7 +88,7 @@ test('proxy cache quota evicts older derivatives while preserving the freshly ge
       return {code:0,stdout:'',stderr:''}
     }
   }})
-  const store=new mod.VideoPreviewProxyStore(path.join(root,'cache'),3000)
+  const store=new mod.VideoPreviewProxyStore(path.join(root,'cache'),5000)
   const ffmpeg={executable:path.resolve(process.execPath),videoEncoder:'h264_mf',smokeEncoded:true}
   try{
     const first=await store.ensure({sourcePath:sourceA,ffmpeg})
@@ -97,7 +97,7 @@ test('proxy cache quota evicts older derivatives while preserving the freshly ge
     assert.equal(await store.read(first.sourceSha256),null,'old derivative is evicted once quota is exceeded')
     assert.ok(await store.read(second.sourceSha256),'freshly generated derivative remains available')
     const pruned=await store.prune(second.sourceSha256)
-    assert.ok(pruned.bytes<=3000)
+    assert.ok(pruned.bytes<=5000)
   }finally{fs.rmSync(root,{recursive:true,force:true})}
 })
 
