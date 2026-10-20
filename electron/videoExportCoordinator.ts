@@ -4,7 +4,7 @@ import type { StudioDocument, VideoExportRecord as SharedVideoExportRecord } fro
 import { createVideoExportSnapshot } from '../src/shared/videoExportSnapshot'
 import { createVideoExportCharacterSnapshot } from '../src/shared/videoExportCharacters'
 import type { VideoCharacterRenderAssetSnapshot } from '../src/shared/videoCharacterRenderAssets'
-import type { RenderVariant } from '../src/shared/videoSceneIR'
+import { compileVideoScene, evaluateVideoSceneFrame, type RenderVariant } from '../src/shared/videoSceneIR'
 import type { VideoExportProgress } from '../src/shared/videoExportRuntime'
 import { buildVideoStudioAudioPlan, type VideoStudioAudioSource } from '../src/shared/videoStudioAudioPlan'
 import { buildVideoExportMediaManifest, type ResolveVideoExportMedia } from './videoExportAssets'
@@ -168,6 +168,9 @@ export class VideoExportCoordinator {
     })
     active.surface = await this.surfaceHost.open(active.jobId)
     this.abort(active)
+    const sceneProgram = compileVideoScene(snapshot, renderVariant)
+    let cachedPixels: { key: string; pixels: Buffer } | null = null
+    let reusedFrames = 0
 
     for (let index = reopened.nextChunkIndex; index < chunkCount; index += 1) {
       this.abort(active)
@@ -181,7 +184,14 @@ export class VideoExportCoordinator {
         endFrameExclusive,
       }, async (frame) => {
         this.abort(active)
-        return active.surface!.renderFrame(frame)
+        const semantic = evaluateVideoSceneFrame(sceneProgram, frame).reuseKey
+        if (cachedPixels?.key === semantic) {
+          reusedFrames += 1
+          return cachedPixels.pixels
+        }
+        const pixels = await active.surface!.renderFrame(frame)
+        cachedPixels = { key: semantic, pixels }
+        return pixels
       }, {
         signal: active.controller.signal,
         onProgress: ({ completedFrames }) => {
@@ -190,6 +200,7 @@ export class VideoExportCoordinator {
             chunkIndex: index,
             chunkCount,
             completedFrames: startFrame + completedFrames,
+            reusedFrames,
             message: `Renderizando trecho ${index + 1}/${chunkCount}…`,
           })
         },
@@ -213,6 +224,7 @@ export class VideoExportCoordinator {
     this.update(active, {
       stage: 'assembling',
       completedFrames: timeline.durationFrames,
+      reusedFrames,
       message: 'Montando vídeo e áudio…',
     })
     const finalPath = this.jobs.finalOutputPath(active.jobId)
@@ -263,6 +275,7 @@ export class VideoExportCoordinator {
     this.update(active, {
       stage: 'done',
       completedFrames: timeline.durationFrames,
+      reusedFrames,
       message: 'Exportação concluída e verificada.',
       record: sharedRecord,
     })
