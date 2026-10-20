@@ -22,12 +22,15 @@ type RoteiroTikTok = { id: string; title: string; videoTitle: string }
 type SidebarRoteiro = { id: string; title: string; videoTitle: string; characterIds: string[]; tiktoks: RoteiroTikTok[] }
 
 function RoteiroWorkspace({ roteiro, onBack, onUpdate }: { roteiro: SidebarRoteiro; onBack: () => void; onUpdate: (next: SidebarRoteiro) => void }) {
+  const [activeContentId, setActiveContentId] = useState('opening')
   const [editingTikTok, setEditingTikTok] = useState<RoteiroTikTok | null>(null)
   const [editingTitle, setEditingTitle] = useState('')
   const [editingVideoTitle, setEditingVideoTitle] = useState('')
   const addTikTok = () => {
     const number = roteiro.tiktoks.length + 1
-    onUpdate({ ...roteiro, tiktoks: [...roteiro.tiktoks, { id: crypto.randomUUID(), title: 'TikTok ' + number, videoTitle: 'Vídeo ' + String(number).padStart(2, '0') }] })
+    const item = { id: crypto.randomUUID(), title: 'TikTok ' + number, videoTitle: 'Vídeo ' + String(number).padStart(2, '0') }
+    onUpdate({ ...roteiro, tiktoks: [...roteiro.tiktoks, item] })
+    setActiveContentId(item.id)
   }
   const moveTikTok = (index: number, direction: -1 | 1) => {
     const destination = index + direction
@@ -47,15 +50,31 @@ function RoteiroWorkspace({ roteiro, onBack, onUpdate }: { roteiro: SidebarRotei
       <button className="roteiro-back-button" onClick={onBack} type="button"><span aria-hidden="true">←</span>Voltar</button>
       <section className="roteiro-tiktoks-panel" aria-label="TikToks deste roteiro">
         <header><strong>TIKTOKS</strong><button onClick={addTikTok} title="Adicionar TikTok" aria-label="Adicionar TikTok" type="button"><Icon name="plus" /></button></header>
-        <div className="roteiro-tiktoks-list">{roteiro.tiktoks.map((item, index) => <article className="roteiro-tiktok-card" key={item.id}>
-          <span className="roteiro-tiktok-number">{index + 1}</span>
-          <div className="roteiro-tiktok-info"><strong>{item.title}</strong><span>{item.videoTitle}</span></div>
-          <span className="roteiro-tiktok-cast">{roteiro.characterIds.length}/{roteiro.characterIds.length}</span>
-          <div className="roteiro-tiktok-actions"><button onClick={() => moveTikTok(index, -1)} disabled={index === 0} aria-label={'Mover ' + item.title + ' para cima'} type="button">↑</button><button onClick={() => moveTikTok(index, 1)} disabled={index === roteiro.tiktoks.length - 1} aria-label={'Mover ' + item.title + ' para baixo'} type="button">↓</button><button onClick={() => { setEditingTikTok(item); setEditingTitle(item.title); setEditingVideoTitle(item.videoTitle) }} type="button">Editar</button></div>
+        <div className="roteiro-tiktoks-list">
+          <article className={`roteiro-tiktok-card roteiro-opening-card${activeContentId === 'opening' ? ' active' : ''}`}>
+            <button className="roteiro-tiktok-open" onClick={() => setActiveContentId('opening')} aria-current={activeContentId === 'opening' ? 'page' : undefined} type="button">
+              <span className="roteiro-tiktok-number" aria-hidden="true">↗</span>
+              <span className="roteiro-tiktok-info"><strong>Abertura</strong><span>Início do roteiro</span></span>
+              <span className="roteiro-tiktok-cast">{roteiro.characterIds.length}/{roteiro.characterIds.length}</span>
+            </button>
+          </article>
+          {roteiro.tiktoks.map((item, index) => <article className={`roteiro-tiktok-card${activeContentId === item.id ? ' active' : ''}`} key={item.id}>
+            <button className="roteiro-tiktok-open" onClick={() => setActiveContentId(item.id)} aria-current={activeContentId === item.id ? 'page' : undefined} type="button">
+              <span className="roteiro-tiktok-number" aria-hidden="true">{index + 1}</span>
+              <span className="roteiro-tiktok-info"><strong>{item.title}</strong><span>{item.videoTitle}</span></span>
+              <span className="roteiro-tiktok-cast">{roteiro.characterIds.length}/{roteiro.characterIds.length}</span>
+            </button>
+            <div className="roteiro-tiktok-actions"><button onClick={() => moveTikTok(index, -1)} disabled={index === 0} aria-label={'Mover ' + item.title + ' para cima'} type="button">↑</button><button onClick={() => moveTikTok(index, 1)} disabled={index === roteiro.tiktoks.length - 1} aria-label={'Mover ' + item.title + ' para baixo'} type="button">↓</button><button onClick={() => { setEditingTikTok(item); setEditingTitle(item.title); setEditingVideoTitle(item.videoTitle) }} type="button">Editar</button></div>
         </article>)}</div>
       </section>
     </aside>
-    <main className="roteiro-workspace-empty" aria-label={'Conteúdo do roteiro ' + roteiro.title} />
+    <main className="roteiro-workspace-empty" aria-label={'Conteúdo do roteiro ' + roteiro.title}>
+      <header className="roteiro-content-heading">
+        <strong>{activeContentId === 'opening' ? 'Abertura' : roteiro.tiktoks.find((item) => item.id === activeContentId)?.title ?? 'TikTok'}</strong>
+        <span>{activeContentId === 'opening' ? 'Início do roteiro' : roteiro.tiktoks.find((item) => item.id === activeContentId)?.videoTitle}</span>
+      </header>
+      <section className="roteiro-content-canvas" aria-label={activeContentId === 'opening' ? 'Subárea da abertura' : 'Subárea do TikTok selecionado'} />
+    </main>
     {editingTikTok && <div className="roteiro-modal-backdrop" onPointerDown={(event) => { if (event.target === event.currentTarget) setEditingTikTok(null) }}><section className="roteiro-video-title-modal" role="dialog" aria-modal="true" aria-labelledby="roteiro-tiktok-edit-heading"><header><strong id="roteiro-tiktok-edit-heading">Editar TikTok</strong><button onClick={() => setEditingTikTok(null)} aria-label="Fechar" type="button">×</button></header><label>Nome do TikTok<input autoFocus value={editingTitle} onChange={(event) => setEditingTitle(event.target.value)} maxLength={100} /></label><label>Título do vídeo<input value={editingVideoTitle} onChange={(event) => setEditingVideoTitle(event.target.value)} maxLength={100} /></label><footer><button onClick={() => setEditingTikTok(null)} type="button">Cancelar</button><button className="roteiro-create-confirm" onClick={saveTikTok} disabled={!editingTitle.trim() || !editingVideoTitle.trim()} type="button"><Icon name="check" />Salvar</button></footer></section></div>}
   </div>
 }
