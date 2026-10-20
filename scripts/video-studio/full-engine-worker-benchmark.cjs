@@ -31,7 +31,6 @@ function loadTs(relativePath){
  const mod={exports:{}};new Function('require','module','exports',compiled)(require,mod,mod.exports);return mod.exports
 }
 const raw=loadTs('electron/videoRawFrameWriter.ts')
-const pixel=loadTs('electron/videoPixelFormat.ts')
 function run(exe,args,encoding='utf8'){return execFileSync(exe,args,{encoding,timeout:300000,windowsHide:true,maxBuffer:32*1024*1024})}
 function serve(request,file){
  const info=fs.statSync(file),range=request.headers.get('range')
@@ -110,7 +109,7 @@ app.whenReady().then(async()=>{
  const allowed=new Set(),sessions=new Map()
  ipcMain.handle('video-studio:export-surface:prepare',(event,id)=>{if(id!==jobId||!allowed.has(event.sender.id))throw new Error('sender inválido');return bootstrap})
  ipcMain.on('video-studio:export-surface:ready',(event,ready)=>{const session=sessions.get(event.sender.id);if(!session)return;if(ready.error)session.reject(new Error(ready.error));else{session.ready=true;session.resolveReady()}})
- ipcMain.on('video-studio:export-surface:frame-ready',(event,ready)=>{const s=sessions.get(event.sender.id);const p=s?.pending.get(ready.requestId);if(!p)return;s.pending.delete(ready.requestId);if(ready.error)p.reject(new Error(ready.error));else if(!(ready.pixels instanceof Uint8Array))p.reject(new Error('pixels ausentes'));else p.resolve({pixels:pixel.rgbaToBgra(ready.pixels),timings:ready.timings||{composeMs:0,readbackMs:0},layerCache:ready.layerCache||null})})
+ ipcMain.on('video-studio:export-surface:frame-ready',(event,ready)=>{const s=sessions.get(event.sender.id);const p=s?.pending.get(ready.requestId);if(!p)return;s.pending.delete(ready.requestId);if(ready.error)p.reject(new Error(ready.error));else if(!(ready.pixels instanceof Uint8Array))p.reject(new Error('pixels ausentes'));else p.resolve({pixels:Buffer.from(ready.pixels.buffer,ready.pixels.byteOffset,ready.pixels.byteLength),timings:ready.timings||{composeMs:0,readbackMs:0},layerCache:ready.layerCache||null})})
 
  async function openSurface(layerCacheEnabled=true){
   const win=new BrowserWindow({show:false,width,height,useContentSize:true,backgroundColor:'#000',webPreferences:{preload:preloadPath,contextIsolation:true,nodeIntegration:false,sandbox:true,backgroundThrottling:false,offscreen:true}})
@@ -167,7 +166,7 @@ app.whenReady().then(async()=>{
   let layerCacheHits=0,layerCacheMisses=0,layerCacheEvictions=0,layerCacheBytes=0,layerCacheMaxBytes=0
   const createWriter=async(index)=>{
    const start=index*chunkFrames,end=Math.min(totalFrames,start+chunkFrames),out=path.join(dir,`chunk-${index}.mp4`)
-   const writer=new raw.VideoRawFrameWriter({executable:ffmpeg,args:raw.buildVideoStudioChunkArgs(out,end-start,'bgra','h264_mf'),outputPath:out,frameBytes:width*height*4,frameCount:end-start})
+   const writer=new raw.VideoRawFrameWriter({executable:ffmpeg,args:raw.buildVideoStudioChunkArgs(out,end-start,'rgba','h264_mf'),outputPath:out,frameBytes:width*height*4,frameCount:end-start})
    activeWriters.add(writer)
    const readyStarted=performance.now()
    await writer.ready()
@@ -187,14 +186,17 @@ app.whenReady().then(async()=>{
       for(let chunkIndex=0;chunkIndex<chunks.length;chunkIndex++){
         const index=chunks[chunkIndex],start=index*chunkFrames,end=Math.min(totalFrames,start+chunkFrames)
         if(chunkIndex>0)writer=await createWriter(index)
+        const requestFrame=(frame)=>{const requested=performance.now();return surface.frame(frame).then(result=>({result,acquireMs:performance.now()-requested}))}
+        let pendingFrame=requestFrame(start)
         for(let frame=start;frame<end;frame++){
-          const frameStarted=performance.now();const result=await surface.frame(frame);frameAcquireMs+=performance.now()-frameStarted
+          const awaited=await pendingFrame,result=awaited.result;frameAcquireMs+=awaited.acquireMs
           composeMs+=result.timings.composeMs;readbackMs+=result.timings.readbackMs
           if(result.layerCache){layerCacheHits+=Math.max(0,result.layerCache.hits-previousLayerStats.hits);layerCacheMisses+=Math.max(0,result.layerCache.misses-previousLayerStats.misses);layerCacheEvictions+=Math.max(0,result.layerCache.evictions-previousLayerStats.evictions);layerCacheBytes=Math.max(layerCacheBytes,result.layerCache.bytes);layerCacheMaxBytes=Math.max(layerCacheMaxBytes,result.layerCache.maxBytes);previousLayerStats=result.layerCache}
           rawFrameHash.update(result.pixels)
           if(runLayerCacheAb&&workerCount===1&&parityFrames.has(frame)){
             if(layerCacheEnabled)cachedParitySamples.set(frame,Buffer.from(result.pixels))
           }
+          if(frame+1<end)pendingFrame=requestFrame(frame+1)
           const writeStarted=performance.now();await writer.writeFrame(result.pixels,{copy:false});frameWriteMs+=performance.now()-writeStarted;rendered++
         }
         const finishStarted=performance.now()
