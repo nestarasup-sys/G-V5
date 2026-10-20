@@ -146,6 +146,7 @@ button:focus-visible, input:focus-visible { outline: 3px solid #ed8caf; outline-
 .base-video-send { width:calc(100% - 22px);min-height:43px;display:flex;align-items:center;justify-content:center;margin:0 11px 12px;padding:7px 12px;border:1px solid #d7c5ed;border-radius:10px;background:linear-gradient(180deg,#faf7ff,#f0e8fb);color:#68439b;font-size:14px;font-weight:850;cursor:pointer;transition:.15s ease; }
 .base-video-send:hover:not(:disabled) { transform:translateY(-1px);border-color:#9b7acb;background:linear-gradient(180deg,#f4edff,#e8dcfa);box-shadow:0 4px 10px #704ab426; }
 .base-video-send:disabled { opacity:.55;cursor:default; }
+.base-video-publish-error { margin:-4px 12px 12px;padding:8px 10px;border:1px solid #f1c5ce;border-radius:8px;background:#fff3f5;color:#ae304b;font-size:12px;line-height:1.4; }
 .base-video-notes-panel { width:100%;max-width:none;border:0;border-top:1px solid #eee8f0;border-radius:0;box-shadow:none; }
 .base-video-notes-panel .roteiro-video-stage { max-height:none; }
 .base-video-notes-panel .roteiro-video-description { padding:12px 13px 10px; }

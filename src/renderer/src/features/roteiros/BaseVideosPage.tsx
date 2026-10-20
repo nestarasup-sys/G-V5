@@ -34,6 +34,7 @@ export function BaseVideosPage() {
   const [loaded, setLoaded] = useState(false)
   const [activeView, setActiveView] = useState<'main' | 'drafts'>('main')
   const [busy, setBusy] = useState(false)
+  const [publishErrors, setPublishErrors] = useState<Record<string, string>>({})
   const [error, setError] = useState<string | null>(null)
   const [deleteMode, setDeleteMode] = useState(false)
   const [selectedIds, setSelectedIds] = useState<string[]>([])
@@ -111,12 +112,14 @@ export function BaseVideosPage() {
 
   const sendToBase = async (videoId: string) => {
     setBusy(true); setError(null)
+    setPublishErrors((current) => ({ ...current, [videoId]: '' }))
     try {
       const videoNumber = await window.desktop.publishBaseVideo(videoId)
       setDetailsById((current) => ({ ...current, [videoId]: { ...(current[videoId] ?? emptyDetails(videoId)), videoNumber } }))
       setActiveView('main')
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'Não foi possível enviar o vídeo para a Base.')
+      const message = reason instanceof Error ? reason.message : 'Não foi possível enviar o vídeo para a Base.'
+      setPublishErrors((current) => ({ ...current, [videoId]: message }))
     } finally { setBusy(false) }
   }
 
@@ -188,7 +191,7 @@ export function BaseVideosPage() {
               <section className="roteiro-group-reaction first"><header><strong>Primeira reação em grupo</strong><span>REAÇÃO 1</span></header><div className="roteiro-timing-input"><input aria-label={`Primeira reação de ${item.name} em segundos`} type="number" min="0" max="86400" step="0.01" value={details.firstGroupReactionSeconds ?? ''} onChange={(event) => updateSeconds(item.id, 'firstGroupReactionSeconds', event.target.value)} placeholder="0" /><button type="button" onClick={(event) => captureTime(item.id, 'firstGroupReactionSeconds', event.currentTarget.closest('.base-video-card')?.querySelector('video') ?? null)}>Tempo real</button><small>segundos</small></div></section>
               <section className="roteiro-group-reaction second"><header><strong>Segunda reação em grupo</strong><span>REAÇÃO 2</span></header><div className="roteiro-timing-input"><input aria-label={`Segunda reação de ${item.name} em segundos`} type="number" min="0" max="86400" step="0.01" value={details.secondGroupReactionSeconds ?? ''} onChange={(event) => updateSeconds(item.id, 'secondGroupReactionSeconds', event.target.value)} placeholder="0" /><button type="button" onClick={(event) => captureTime(item.id, 'secondGroupReactionSeconds', event.currentTarget.closest('.base-video-card')?.querySelector('video') ?? null)}>Tempo real</button><small>segundos</small></div></section>
             </div>
-            {activeView === 'drafts' && !deleteMode && <button className="base-video-send" type="button" disabled={busy || !item.available} onClick={() => void sendToBase(item.id)}>{busy ? 'Enviando…' : 'Enviar para base de vídeos'}</button>}
+            {activeView === 'drafts' && !deleteMode && <><button className="base-video-send" type="button" disabled={busy} onClick={() => void sendToBase(item.id)}>{busy ? 'Enviando…' : 'Enviar para base de vídeos'}</button>{publishErrors[item.id] && <p className="base-video-publish-error" role="alert">{publishErrors[item.id]}</p>}</>}
           </div>
         </article>
       })}</div>{visibleItems.length > visibleCount && <button className="base-videos-load-more" type="button" onClick={() => setVisibleCount((current) => current + 18)}>Carregar mais vídeos ({visibleItems.length - visibleCount} restantes)</button>}</> : <div className="base-videos-empty"><span className="base-videos-empty-icon"><Icon name={activeView === 'main' ? 'frame' : 'edit'} /></span><strong>{activeView === 'main' ? 'A Base de vídeos está vazia' : 'Nenhum rascunho'}</strong><span>{activeView === 'main' ? 'Envie vídeos a partir da área Rascunhos para gerar a numeração permanente.' : 'Adicione um vídeo para começar a organizar os rascunhos.'}</span></div>}
