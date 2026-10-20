@@ -17,6 +17,7 @@ try {
   if ($actual -ne ([string]$manifest.sha256).ToLowerInvariant()) {
     throw "SHA-256 do pacote FFmpeg não confere. Esperado $($manifest.sha256), recebido $actual."
   }
+
   Expand-Archive -LiteralPath $zip -DestinationPath $expanded -Force
   $ffmpeg = Get-ChildItem -Path $expanded -Recurse -File -Filter 'ffmpeg.exe' | Select-Object -First 1
   $ffprobe = Get-ChildItem -Path $expanded -Recurse -File -Filter 'ffprobe.exe' | Select-Object -First 1
@@ -26,6 +27,7 @@ try {
   foreach ($flag in $manifest.forbiddenConfigureFlags) {
     if ($buildconf -match [regex]::Escape([string]$flag)) { throw "Build FFmpeg contém flag proibida: $flag" }
   }
+
   $encoders = (& $ffmpeg.FullName -hide_banner -encoders 2>&1 | Out-String)
   foreach ($encoder in $manifest.requiredEncoders) {
     if ($encoders -notmatch ("\b" + [regex]::Escape([string]$encoder) + "\b")) { throw "Encoder obrigatório ausente: $encoder" }
@@ -37,26 +39,12 @@ try {
   New-Item -ItemType Directory -Path $OutputDirectory | Out-Null
   Copy-Item -LiteralPath $ffmpeg.FullName -Destination (Join-Path $OutputDirectory 'ffmpeg.exe')
   Copy-Item -LiteralPath $ffprobe.FullName -Destination (Join-Path $OutputDirectory 'ffprobe.exe')
-  $license = Get-ChildItem $extract -Recurse -File | Where-Object { $_.Name -match '^(LICENSE|COPYING)(\.txt)?  $version = (& $ffmpeg.FullName -hide_banner -version 2>&1 | Select-Object -First 1)
-  $info = [ordered]@{
-    schemaVersion = 1
-    provider = $manifest.provider
-    assetName = $manifest.assetName
-    assetSha256 = $actual
-    versionLine = [string]$version
-    license = $manifest.license
-    h264Encoders = $h264
-    preparedAtUtc = [DateTime]::UtcNow.ToString('o')
-    redistributionStatus = 'runtime validated; release still requires FFmpeg LGPL source/compliance checklist'
+
+  $license = Get-ChildItem $expanded -Recurse -File | Where-Object { $_.Name -match '^(LICENSE|COPYING)(\.txt)?$' } | Select-Object -First 1
+  if ($license) {
+    Copy-Item -LiteralPath $license.FullName -Destination (Join-Path $OutputDirectory 'FFMPEG_LICENSE.txt')
   }
-  $info | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $OutputDirectory 'BUILD_INFO.json') -Encoding UTF8
-  Write-Host ($info | ConvertTo-Json -Compress)
-}
-finally {
-  if (Test-Path -LiteralPath $temp) { Remove-Item -LiteralPath $temp -Recurse -Force }
-}
- } | Select-Object -First 1
-  if ($license) { Copy-Item -LiteralPath $license.FullName -Destination (Join-Path $OutputDirectory 'FFMPEG_LICENSE.txt') }
+
   @"
 Pinned FFmpeg source/compliance information
 Upstream source: https://ffmpeg.org/releases/
@@ -64,6 +52,7 @@ Build scripts/source provider: https://github.com/BtbN/FFmpeg-Builds
 Pinned binary URL and SHA-256: see video-tools.manifest.json and BUILD_INFO.json.
 A final release should preserve the applicable LGPL text/source-compliance information.
 "@ | Set-Content -LiteralPath (Join-Path $OutputDirectory 'SOURCE_INFO.txt') -Encoding UTF8
+
   $version = (& $ffmpeg.FullName -hide_banner -version 2>&1 | Select-Object -First 1)
   $info = [ordered]@{
     schemaVersion = 1
