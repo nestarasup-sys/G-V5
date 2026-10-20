@@ -1318,7 +1318,7 @@ async function renderFaceCatalogOverlay(artwork: CatalogArtwork, source: Fabrica
 }
 
 /** Render the selected Customizer character as one self-contained Studio actor image. */
-export async function prepareSavedCharacterRenderer(character: CustomizerCharacter, renderSource?: { artwork: CatalogArtwork; source: FabricatorProject; assetProvider?: VideoCharacterRenderAssetProvider }): Promise<{ width: number; height: number; render: (appearance?: CustomizerFaceAppearance, studioFaceTransforms?: StudioFaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: StudioFaceMode) => Promise<{ dataUrl: string; width: number; height: number }>; renderHeadshot: () => Promise<{ dataUrl: string; width: number; height: number }> }> {
+export async function prepareSavedCharacterRenderer(character: CustomizerCharacter, renderSource?: { artwork: CatalogArtwork; source: FabricatorProject; assetProvider?: VideoCharacterRenderAssetProvider }): Promise<{ width: number; height: number; render: (appearance?: CustomizerFaceAppearance, studioFaceTransforms?: StudioFaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: StudioFaceMode) => Promise<{ dataUrl: string; width: number; height: number }> }> {
   const modelSlot = character.customization.modelSlot ?? 1
   const assetProvider = renderSource?.assetProvider ?? window.desktop
   const source = renderSource?.source ?? await assetProvider.loadFabricatorSlot(modelSlot)
@@ -1407,7 +1407,6 @@ export async function prepareSavedCharacterRenderer(character: CustomizerCharact
   if (context) configureCharacterSampling(context)
   if (!context) throw new Error('Não foi possível preparar a imagem do personagem.')
   const shapeScale = characterShapeScale(proportions)
-  const headPart = artwork.parts.find((part) => /cabe[çc]a|head/i.test(part.name))
   const outputWidth = Math.max(canvas.width, Math.ceil(canvas.width * shapeScale.x))
   const outputHeight = Math.max(canvas.height, Math.ceil(canvas.height * shapeScale.y))
   const render = async (currentAppearance: CustomizerFaceAppearance | undefined = appearance, studioFaceTransforms?: StudioFaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: StudioFaceMode) => {
@@ -1468,45 +1467,12 @@ export async function prepareSavedCharacterRenderer(character: CustomizerCharact
     outputContext.drawImage(canvas, -canvas.width / 2, -canvas.height / 2)
     return { dataUrl: output.toDataURL('image/png'), width: outputWidth, height: outputHeight }
   }
-  const renderHeadshot = async () => {
-    const characterImage = await render()
-    const image = await loadCachedImage(characterImage.dataUrl)
-    const headshot = document.createElement('canvas')
-    headshot.width = 160
-    headshot.height = 160
-    const headshotContext = headshot.getContext('2d')
-    if (!headshotContext) throw new Error(`Não foi possível recortar a cabeça de ${character.name}.`)
-    let cropSize: number
-    let cropX: number
-    let cropY: number
-    if (headPart) {
-      const radians = headPart.rotation * Math.PI / 180
-      const rotatedWidth = Math.abs(Math.cos(radians)) * headPart.width + Math.abs(Math.sin(radians)) * headPart.height
-      const rotatedHeight = Math.abs(Math.sin(radians)) * headPart.width + Math.abs(Math.cos(radians)) * headPart.height
-      const centerX = (headPart.x + headPart.width / 2 - artwork.width / 2) * shapeScale.x + characterImage.width / 2
-      const centerY = (headPart.y + headPart.height / 2 - artwork.height / 2) * shapeScale.y + characterImage.height / 2
-      cropSize = Math.max(rotatedWidth * shapeScale.x * 1.75, rotatedHeight * shapeScale.y * 1.65)
-      cropX = centerX - cropSize / 2
-      cropY = centerY - cropSize * .56
-    } else {
-      cropSize = Math.min(characterImage.width, Math.max(1, characterImage.height * .3))
-      cropX = (characterImage.width - cropSize) / 2
-      cropY = 0
-    }
-    headshotContext.drawImage(image, cropX, cropY, cropSize, cropSize, 0, 0, headshot.width, headshot.height)
-    return { dataUrl: headshot.toDataURL('image/png'), width: headshot.width, height: headshot.height }
-  }
-  return { width: outputWidth, height: outputHeight, render, renderHeadshot }
+  return { width: outputWidth, height: outputHeight, render }
 }
 
 export async function renderSavedCharacter(character: CustomizerCharacter, studioFaceTransforms?: StudioFaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: StudioFaceMode): Promise<{ dataUrl: string; width: number; height: number }> {
   const renderer = await prepareSavedCharacterRenderer(character)
   return renderer.render(character.customization.faceAppearance, studioFaceTransforms, expressionEffects, studioFaceMode)
-}
-
-export async function renderSavedCharacterHeadshot(character: CustomizerCharacter): Promise<{ dataUrl: string; width: number; height: number }> {
-  const renderer = await prepareSavedCharacterRenderer(character)
-  return renderer.renderHeadshot()
 }
 
 const modules: { name: string; icon: IconName; detail: string }[] = [

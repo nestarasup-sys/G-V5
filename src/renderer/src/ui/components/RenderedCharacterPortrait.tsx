@@ -13,7 +13,7 @@ export function RenderedCharacterPortrait({ character, className = '' }: { chara
     let rendered = portraitCache.get(key)
     if (!rendered) {
       rendered = import('../../features/customizer/CustomizerPage')
-        .then(({ renderSavedCharacterHeadshot }) => renderSavedCharacterHeadshot(character))
+        .then(({ renderSavedCharacter }) => renderSavedCharacter(character))
         .then((result) => result.dataUrl)
         .catch(() => null)
       portraitCache.set(key, rendered)
