@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { performance } from 'node:perf_hooks'
+import { cpus, freemem, totalmem } from 'node:os'
 import type { CustomizerCharacter } from '../src/shared/customizer'
 import type { StudioDocument, VideoExportRecord as SharedVideoExportRecord } from '../src/shared/studio'
 import { createVideoExportSnapshot } from '../src/shared/videoExportSnapshot'
@@ -21,6 +22,7 @@ import { probeVideoMedia } from './videoMediaProbe'
 import { verifyVideoStudioOutput } from './videoOutputVerifier'
 import { rgbaToBgra } from './videoPixelFormat'
 import { VideoSemanticFrameCache } from './videoSemanticFrameCache'
+import { chooseVideoExportWorkerCount, videoExportWorkerOverride } from './videoExportAutoTuner'
 
 type ReopenedVideoExportJob = Awaited<ReturnType<VideoExportJobStore['reopen']>>
 
@@ -123,7 +125,7 @@ export class VideoExportCoordinator {
     if (!reopened.snapshot || !reopened.characters || !reopened.characterAssets || !reopened.manifest.renderVariant) {
       throw new Error('Job não possui snapshots suficientes para retomada segura.')
     }
-    const completedFrames = reopened.manifest.chunks.at(-1)?.endFrame ?? 0
+    const completedFrames = reopened.manifest.chunks.reduce((sum, chunk) => sum + (chunk.endFrame - chunk.startFrame), 0)
     const initial: VideoExportProgress = Object.freeze({
       jobId,
       stage: 'queued',
@@ -246,12 +248,23 @@ export class VideoExportCoordinator {
     }
 
     const renderStarted = performance.now()
-    const workerCount = Math.min(2, Math.max(1, reopened.missingChunkIndexes.length))
+    const tune = chooseVideoExportWorkerCount({
+      pendingChunks: reopened.missingChunkIndexes.length,
+      durationFrames: timeline.durationFrames,
+      logicalCpuCount: cpus().length,
+      totalMemoryBytes: totalmem(),
+      freeMemoryBytes: freemem(),
+      videoEncoder: ffmpeg.videoEncoder,
+      overrideWorkers: videoExportWorkerOverride(process.env.GACHA_VIDEO_EXPORT_WORKERS),
+    })
+    let workerCount: 1 | 2 = tune.workerCount
+    let workerStrategy = tune.reason
+    let fallbackCount = 0
     this.update(active, {
       stage: 'rendering',
       chunkCount,
       message: workerCount > 1 ? 'Inicializando Turbo com 2 workers…' : 'Inicializando compositor canônico…',
-      metrics: applyMetrics({ prepareMs: renderStarted - prepareStarted, workerCount }),
+      metrics: applyMetrics({ prepareMs: renderStarted - prepareStarted, workerCount, workerStrategy, fallbackCount }),
     })
 
     const surfaces = await Promise.all(
@@ -270,7 +283,6 @@ export class VideoExportCoordinator {
     let renderedFrames = 0
     let encodedChunkBytes = completedChunkBytes(reopened.manifest)
     const frameBytes = 1920 * 1080 * 4
-    let nextPendingCursor = 0
 
     const aggregateCompletedFrames = () => [...completedByChunk.values()].reduce((sum, value) => sum + value, 0)
     const updateRenderMetrics = () => {
@@ -287,6 +299,8 @@ export class VideoExportCoordinator {
         cacheBytes: stats.bytes,
         cacheMaxBytes: stats.maxBytes,
         workerCount,
+        workerStrategy,
+        fallbackCount,
       })
     }
 
@@ -315,12 +329,17 @@ export class VideoExportCoordinator {
       return rendering
     }
 
-    const runWorker = async (surface: VideoExportSurfaceSession, workerIndex: number): Promise<void> => {
+    const runWorker = async (
+      surface: VideoExportSurfaceSession,
+      workerIndex: number,
+      pendingIndexes: ReadonlyArray<number>,
+      cursorRef: { value: number },
+    ): Promise<void> => {
       while (true) {
         this.abort(active)
-        const cursor = nextPendingCursor
-        nextPendingCursor += 1
-        const index = reopened.missingChunkIndexes[cursor]
+        const cursor = cursorRef.value
+        cursorRef.value += 1
+        const index = pendingIndexes[cursor]
         if (index === undefined) return
         const startFrame = index * reopened.manifest.chunkFrames
         const endFrameExclusive = Math.min(timeline.durationFrames, startFrame + reopened.manifest.chunkFrames)
@@ -364,7 +383,42 @@ export class VideoExportCoordinator {
       }
     }
 
-    await Promise.all(surfaces.map((surface, index) => runWorker(surface, index)))
+    const runWorkerBatch = async (
+      batchSurfaces: ReadonlyArray<VideoExportSurfaceSession>,
+      pendingIndexes: ReadonlyArray<number>,
+    ): Promise<void> => {
+      const cursorRef = { value: 0 }
+      const workers = batchSurfaces.map((surface, index) => runWorker(surface, index, pendingIndexes, cursorRef))
+      await Promise.all(workers)
+    }
+
+    try {
+      await runWorkerBatch(surfaces, reopened.missingChunkIndexes)
+    } catch (reason) {
+      await this.disposeSurfaces(active)
+      this.abort(active)
+      if (workerCount === 1) throw reason
+      const fallback = await this.jobs.reopen(active.jobId)
+      if (!fallback.missingChunkIndexes.length) {
+        workerStrategy = `${workerStrategy}; Turbo worker failed after all chunks were checkpointed`
+      } else {
+        workerCount = 1
+        fallbackCount += 1
+        workerStrategy = `${workerStrategy}; fallback serial after Turbo failure`
+        completedByChunk.clear()
+        for (const chunk of fallback.manifest.chunks) completedByChunk.set(chunk.index, chunk.endFrame - chunk.startFrame)
+        encodedChunkBytes = completedChunkBytes(fallback.manifest)
+        const fallbackSurface = await this.surfaceHost.open(active.jobId)
+        active.surfaces.add(fallbackSurface)
+        this.update(active, {
+          stage: 'rendering',
+          completedFrames: aggregateCompletedFrames(),
+          message: 'Turbo indisponível neste job; retomando automaticamente em modo serial…',
+          metrics: updateRenderMetrics(),
+        })
+        await runWorkerBatch([fallbackSurface], fallback.missingChunkIndexes)
+      }
+    }
     this.abort(active)
     await this.disposeSurfaces(active)
 
