@@ -23,11 +23,11 @@ function appendBounded(current: string, chunk: unknown, max = 256_000): string {
 export async function runVideoStudioProcess(
   executable: string,
   args: ReadonlyArray<string>,
-  options: { input?: Buffer; timeoutMs?: number } = {},
+  options: { input?: Buffer; timeoutMs?: number; signal?: AbortSignal } = {},
 ): Promise<ProcessResult> {
   if (!isAbsolute(executable)) throw new Error('O executável de mídia precisa usar caminho absoluto.')
   if (!args.every((arg) => typeof arg === 'string' && !arg.includes('\0'))) throw new Error('Argumentos de processo inválidos.')
-  const timeoutMs = Math.max(1_000, Math.min(60_000, Math.round(options.timeoutMs ?? 15_000)))
+  const timeoutMs = Math.max(1_000, Math.min(30 * 60_000, Math.round(options.timeoutMs ?? 15_000)))
   return await new Promise<ProcessResult>((resolvePromise, rejectPromise) => {
     let stdout = '', stderr = '', settled = false
     const child = spawn(executable, [...args], { shell: false, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] })
@@ -35,12 +35,20 @@ export async function runVideoStudioProcess(
       if (settled) return
       settled = true
       clearTimeout(timer)
+      options.signal?.removeEventListener('abort', onAbort)
       fn()
+    }
+    const onAbort = () => {
+      try { child.kill('SIGKILL') } catch { /* best effort */ }
+      const reason = options.signal?.reason
+      finish(() => rejectPromise(reason instanceof Error ? reason : new Error('Processo de mídia cancelado.')))
     }
     const timer = setTimeout(() => {
       try { child.kill('SIGKILL') } catch { /* best effort */ }
       finish(() => rejectPromise(new Error(`Processo de mídia excedeu ${timeoutMs} ms. ${stderr}`)))
     }, timeoutMs)
+    if (options.signal?.aborted) { onAbort(); return }
+    options.signal?.addEventListener('abort', onAbort, { once: true })
     child.stdout.on('data', (chunk) => { stdout = appendBounded(stdout, chunk) })
     child.stderr.on('data', (chunk) => { stderr = appendBounded(stderr, chunk) })
     child.once('error', (error) => finish(() => rejectPromise(error)))
