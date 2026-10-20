@@ -1,5 +1,6 @@
+import { randomUUID } from 'node:crypto'
 import { isAbsolute, join, resolve } from 'node:path'
-import { mkdtemp, rm, stat } from 'node:fs/promises'
+import { mkdtemp, rename, rm, stat } from 'node:fs/promises'
 import type { VideoTimelineDocument } from '../src/shared/studio'
 import { buildVideoStudioAudioPlan, type VideoStudioAudioSource } from '../src/shared/videoStudioAudioPlan'
 import { runVideoStudioProcess, type VideoStudioFfmpegCapabilities } from './videoFfmpegCapabilities'
@@ -94,6 +95,7 @@ export async function assembleVideoStudioOutput(
   if (input.chunks.some((chunk) => resolve(chunk.path) === outputPath)) throw new Error('Saída final não pode sobrescrever um chunk de origem.')
   const timeoutMs = Math.max(10_000, Math.min(30 * 60_000, input.timeoutMs ?? 10 * 60_000))
   const folder = await mkdtemp(join(resolve(input.tempRoot), 'gacha-video-assemble-'))
+  const finalTemp = `${outputPath}.assemble-${randomUUID()}.tmp.mp4`
   const videoInput = input.chunks.length === 1 ? input.chunks[0].path : join(folder, 'joined-video.mp4')
   try {
     if (input.chunks.length > 1) await concatenateChunks(input.ffmpeg, input.chunks, videoInput, timeoutMs, input.signal)
@@ -106,12 +108,17 @@ export async function assembleVideoStudioOutput(
       '-map', '0:v:0', '-c:v', 'copy',
       ...audio.outputArgs,
       '-t', (input.timeline.durationFrames / 60).toFixed(6),
-      '-movflags', '+faststart', '-f', 'mp4', outputPath,
+      '-movflags', '+faststart', '-f', 'mp4', finalTemp,
     ]
     const mux = await runVideoStudioProcess(input.ffmpeg.executable, args, { timeoutMs, signal: input.signal })
     if (mux.code !== 0) throw new Error(`Mux final de vídeo/áudio falhou. ${mux.stderr}`)
-    const final = await stat(outputPath).catch(() => null)
-    if (!final?.isFile() || final.size < 128) throw new Error('Mux final não produziu MP4 válido em tamanho mínimo.')
+    const temporaryFinal = await stat(finalTemp).catch(() => null)
+    if (!temporaryFinal?.isFile() || temporaryFinal.size < 128) throw new Error('Mux final não produziu MP4 válido em tamanho mínimo.')
+    // A crash during mux may leave only the unique temp file. Promote to the
+    // canonical job/final.mp4 name only after FFmpeg has closed it cleanly.
+    await rm(outputPath, { force: true }).catch(() => undefined)
+    await rename(finalTemp, outputPath)
+    const final = await stat(outputPath)
     return {
       outputPath,
       audio: audio.enabled,
@@ -120,6 +127,7 @@ export async function assembleVideoStudioOutput(
       outputBytes: final.size,
     }
   } finally {
+    await rm(finalTemp, { force: true }).catch(() => undefined)
     await rm(folder, { recursive: true, force: true }).catch(() => undefined)
   }
 }
