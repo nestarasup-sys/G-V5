@@ -3,8 +3,8 @@ import type { StudioElement, VideoCharacterState } from '../../../../shared/stud
 import type { VideoSceneFrame, VideoSceneLayer } from '../../../../shared/videoSceneIR'
 
 export type VideoVisualPluginContext = Readonly<{
-  frame: VideoSceneFrame
-  layer: Extract<VideoSceneLayer,{type:'element'}>
+  frame?: VideoSceneFrame
+  layer?: Extract<VideoSceneLayer,{type:'element'}>
   element: StudioElement
   imageDataUrl?: string
   characterState?: VideoCharacterState
