@@ -344,12 +344,14 @@ export class VideoExportCoordinator {
         reusedFrames += 1
         return cached
       }
-      const persistent = await persistentFrameCache.get(semantic, frameBytes)
-      if (persistent) {
-        persistentCacheHits += 1
-        reusedFrames += 1
-        frameCache.set(semantic, persistent)
-        return persistent
+      if (persistentFrameCache.has(semantic, frameBytes)) {
+        const persistent = await persistentFrameCache.get(semantic, frameBytes)
+        if (persistent) {
+          persistentCacheHits += 1
+          reusedFrames += 1
+          frameCache.set(semantic, persistent)
+          return persistent
+        }
       }
       persistentCacheMisses += 1
       renderedFrames += 1
