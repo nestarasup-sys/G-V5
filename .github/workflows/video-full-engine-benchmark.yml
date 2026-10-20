@@ -10,6 +10,7 @@ on:
       - 'electron/videoExportAutoTuner.ts'
       - 'src/renderer/src/features/videoStudio/videoCanvasCompositor.ts'
       - 'src/renderer/src/features/videoStudio/videoCanvasLayerCache.ts'
+      - 'src/renderer/src/features/videoStudio/videoExportMediaFramePool.ts'
       - '.github/workflows/video-full-engine-benchmark.yml'
   workflow_dispatch:
 
