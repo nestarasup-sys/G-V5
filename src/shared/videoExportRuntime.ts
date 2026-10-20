@@ -16,6 +16,12 @@ export type VideoExportMetrics = Readonly<{
   rawFrameBytes?: number
   encodedChunkBytes?: number
   finalBytes?: number
+  cacheHits?: number
+  cacheMisses?: number
+  cacheEvictions?: number
+  cacheEntries?: number
+  cacheBytes?: number
+  cacheMaxBytes?: number
 }>
 
 export type VideoExportStage =
