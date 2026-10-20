@@ -184,3 +184,43 @@ test('unknown export render variants are rejected instead of silently enabling a
   assert.doesNotThrow(() => compileVideoScene(snapshot, 'animated'))
   assert.doesNotThrow(() => compileVideoScene(snapshot, 'static-characters'))
 })
+
+
+test('semantic reuse key stays equal only while canonical pixels are guaranteed equal', () => {
+  const source = fixture()
+  const staticProgram = program(source, 'static-characters')
+  assert.equal(
+    evaluateVideoSceneFrame(staticProgram, 1).reuseKey,
+    evaluateVideoSceneFrame(staticProgram, 2).reuseKey,
+    'consecutive static frames may reuse one raster',
+  )
+  assert.notEqual(
+    evaluateVideoSceneFrame(staticProgram, 14).reuseKey,
+    evaluateVideoSceneFrame(staticProgram, 15).reuseKey,
+    'authored key boundary invalidates reuse even without interpolation',
+  )
+  assert.notEqual(
+    evaluateVideoSceneFrame(staticProgram, 12).reuseKey,
+    evaluateVideoSceneFrame(staticProgram, 13).reuseKey,
+    'video source tick invalidates reuse conservatively',
+  )
+
+  const animatedSource = fixture()
+  animatedSource.videoTimeline.videoClips = []
+  const animated = program(animatedSource, 'animated')
+  assert.equal(
+    evaluateVideoSceneFrame(animated, 16).reuseKey,
+    evaluateVideoSceneFrame(animated, 17).reuseKey,
+    'same automatic mouth hold-frame recipe can reuse raster',
+  )
+  assert.notEqual(
+    evaluateVideoSceneFrame(animated, 15).reuseKey,
+    evaluateVideoSceneFrame(animated, 16).reuseKey,
+    'mouth phase changes invalidate reuse',
+  )
+  assert.notEqual(
+    evaluateVideoSceneFrame(animated, 7).reuseKey,
+    evaluateVideoSceneFrame(animated, 8).reuseKey,
+    'interpolated transition frames never collapse together',
+  )
+})
