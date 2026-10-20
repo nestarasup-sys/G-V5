@@ -943,7 +943,7 @@ export function StudioPage() {
     } finally { setStudioExpressionBusy(false) }
   }
 
-  const applyStudioExpressionPreset = async (summary: FaceExpressionPresetSummary) => {
+  const applyStudioExpressionPreset = async (summary: FaceExpressionPresetSummary, pupilsLeft = false) => {
     if (!selectedStudioCharacter || !selectedElement || selectedElement.kind !== 'character' || studioExpressionBusy || studioFaceBusy) return
     setStudioExpressionBusy(true)
     setError(null)
@@ -964,6 +964,31 @@ export function StudioPage() {
         (id) => window.desktop.loadFaceComponentAsset(preset.modelSlot, id),
         (id) => window.desktop.loadFaceCatalogItem(preset.modelSlot, id)
       )
+      if (pupilsLeft) {
+        for (const side of ['left', 'right'] as const) {
+          const pupilPart = `pupil-${side}` as const
+          const eyePart = `eye-${side}` as const
+          const transformKey = `expression-component:${pupilPart}`
+          const current = faceTransforms[transformKey]
+          const pupilId = nextAppearance.components?.[pupilPart]?.assetId
+          const eyeId = nextAppearance.components?.[eyePart]?.assetId
+          if (!current?.sourceTransformOverride || !pupilId || !eyeId) continue
+          const [pupilAsset, eyeAsset] = await Promise.all([
+            window.desktop.loadFaceComponentAsset(preset.modelSlot, pupilId),
+            window.desktop.loadFaceComponentAsset(preset.modelSlot, eyeId)
+          ])
+          if (!pupilAsset || !eyeAsset) continue
+          const eyeTransform = nextAppearance.components?.[eyePart]?.transform ?? eyeAsset.defaultTransform
+          const pointsLeft = side === 'left' || pupilAsset.rightSidePositioned === true
+          faceTransforms[transformKey] = {
+            ...current,
+            sourceTransformOverride: {
+              ...current.sourceTransformOverride,
+              x: (pointsLeft ? -1 : 1) * eyeAsset.width * eyeTransform.scaleX * .16
+            }
+          }
+        }
+      }
 
       await applyStudioFaceAppearance(nextAppearance, faceTransforms, true, { expressionBase: base, activeExpressionPresetId: preset.id, activeExpressionPresetUpdatedAt: preset.updatedAt, activeExpressionCollectionId: preset.collectionId ?? 'standard', activeExpressionEffects: preset.effects, activeFaceMode: faceMode })
     } catch (reason) {
@@ -1424,9 +1449,12 @@ export function StudioPage() {
             return <div className="studio-expression-selected">
               <div className="studio-expression-list">
                 <button className={`studio-expression-option${!selectedElement.activeExpressionPresetId ? ' selected' : ''}`} type="button" onClick={() => void applyStudioBaseExpression()} disabled={studioExpressionBusy || studioFaceBusy} aria-pressed={!selectedElement.activeExpressionPresetId}><b>•</b><span>Base</span></button>
-                {expressions.map((preset) => <button className={`studio-expression-option${selectedElement.activeExpressionPresetId === preset.id ? ' selected' : ''}`} key={preset.id} type="button" aria-pressed={selectedElement.activeExpressionPresetId === preset.id} onClick={() => void applyStudioExpressionPreset(preset)} disabled={studioExpressionBusy || studioFaceBusy}>
-                  <b>{String((preset.expressionIndex ?? 0) + 1).padStart(2, '0')}</b><span>{preset.name}</span>
-                </button>)}
+                {expressions.map((preset) => <div className="studio-expression-row" key={preset.id}>
+                  <button className={`studio-expression-option${selectedElement.activeExpressionPresetId === preset.id ? ' selected' : ''}`} type="button" aria-pressed={selectedElement.activeExpressionPresetId === preset.id} onClick={() => void applyStudioExpressionPreset(preset)} disabled={studioExpressionBusy || studioFaceBusy}>
+                    <b>{String((preset.expressionIndex ?? 0) + 1).padStart(2, '0')}</b><span>{preset.name}</span>
+                  </button>
+                  <button className="studio-expression-look-left" type="button" title={`Aplicar ${preset.name} com as pupilas voltadas à esquerda`} aria-label={`Pupilas à esquerda: ${preset.name}`} onClick={() => void applyStudioExpressionPreset(preset, true)} disabled={studioExpressionBusy || studioFaceBusy}>pt</button>
+                </div>)}
                 {!expressions.length && <p className="studio-custom-hint">Nenhuma expressão salva neste conjunto. Salve expressões no Expressão Dev para listá-las aqui.</p>}
               </div>
             </div>
