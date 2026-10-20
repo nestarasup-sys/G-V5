@@ -339,15 +339,23 @@ function RoteiroWorkspace({ roteiro, onBack, onUpdate, onDeleteDraftVideo, chara
   const addTikTok = () => {
     const number = roteiro.tiktoks.length + 1
     const item = { id: crypto.randomUUID(), title: 'TikTok ' + number, videoTitle: 'Vídeo ' + String(number).padStart(2, '0') }
-    onUpdate({ ...roteiro, tiktoks: [...roteiro.tiktoks, item] })
+    onUpdate({ ...roteiro, tiktoks: renumberDefaultTikTokLabels([...roteiro.tiktoks, item]) })
     setActiveContentId(item.id)
   }
+  const renumberDefaultTikTokLabels = (items: RoteiroTikTok[]) => items.map((item, index) => {
+    const number = index + 1
+    return {
+      ...item,
+      title: /^TikTok\s+\d+$/i.test(item.title) ? `TikTok ${number}` : item.title,
+      videoTitle: /^V[ií]deo\s+\d+$/i.test(item.videoTitle) ? `Vídeo ${String(number).padStart(2, '0')}` : item.videoTitle
+    }
+  })
   const moveTikTok = (index: number, direction: -1 | 1) => {
     const destination = index + direction
     if (destination < 0 || destination >= roteiro.tiktoks.length) return
     const next = [...roteiro.tiktoks]
     ;[next[index], next[destination]] = [next[destination], next[index]]
-    onUpdate({ ...roteiro, tiktoks: next })
+    onUpdate({ ...roteiro, tiktoks: renumberDefaultTikTokLabels(next) })
   }
   const saveTikTok = () => {
     if (!editingTikTok || !editingTitle.trim() || !editingVideoTitle.trim()) return
@@ -357,7 +365,7 @@ function RoteiroWorkspace({ roteiro, onBack, onUpdate, onDeleteDraftVideo, chara
   const confirmDeleteTikTok = () => {
     if (!deletingTikTok) return
     const deletedId = deletingTikTok.id
-    onUpdate({ ...roteiro, tiktoks: roteiro.tiktoks.filter((item) => item.id !== deletedId) })
+    onUpdate({ ...roteiro, tiktoks: renumberDefaultTikTokLabels(roteiro.tiktoks.filter((item) => item.id !== deletedId)) })
     if (activeContentId === deletedId) setActiveContentId('opening')
     if (editingTikTok?.id === deletedId) setEditingTikTok(null)
     setDeletingTikTok(null)
