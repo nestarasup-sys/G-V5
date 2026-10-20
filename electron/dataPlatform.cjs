@@ -139,7 +139,7 @@ class DataPlatform {
     this.database = new Database(dbPath, { timeout: 5000 })
     this.database.pragma('foreign_keys = ON')
     const currentSchema = this.database.pragma('user_version', { simple: true })
-    if (currentSchema > 13) {
+    if (currentSchema > 14) {
       this.database.close()
       this.database = null
       throw new Error(`O catálogo usa schema ${currentSchema}, mais novo que esta versão do app.`)
@@ -257,6 +257,17 @@ class DataPlatform {
         additional_context TEXT NOT NULL DEFAULT '',
         updated_at TEXT NOT NULL
       ) WITHOUT ROWID;
+      CREATE TABLE IF NOT EXISTS base_video_categories (
+        category_id TEXT PRIMARY KEY,
+        name TEXT NOT NULL COLLATE NOCASE UNIQUE,
+        created_at TEXT NOT NULL
+      ) WITHOUT ROWID;
+      CREATE TABLE IF NOT EXISTS base_video_category_assignments (
+        video_id TEXT PRIMARY KEY REFERENCES base_video_details(video_id) ON DELETE CASCADE,
+        category_id TEXT NOT NULL REFERENCES base_video_categories(category_id) ON DELETE CASCADE,
+        assigned_at TEXT NOT NULL
+      ) WITHOUT ROWID;
+      CREATE INDEX IF NOT EXISTS base_video_category_by_category ON base_video_category_assignments(category_id);
       CREATE TABLE IF NOT EXISTS base_video_sequence (
         sequence_id INTEGER PRIMARY KEY CHECK(sequence_id = 1),
         next_number INTEGER NOT NULL CHECK(next_number > 0)
@@ -368,12 +379,14 @@ class DataPlatform {
       .run(sha256('gacha-roteiro-ai-additional-context-schema-v12'), now)
     this.database.prepare("INSERT OR IGNORE INTO schema_migrations(version, name, checksum, applied_at) VALUES (13, 'roteiro-preview-details-collapsed', ?, ?)")
       .run(sha256('gacha-roteiro-preview-details-collapsed-schema-v13'), now)
-    if (currentSchema < 13) this.database.pragma('user_version = 13')
+    this.database.prepare("INSERT OR IGNORE INTO schema_migrations(version, name, checksum, applied_at) VALUES (14, 'base-video-categories', ?, ?)")
+      .run(sha256('gacha-base-video-categories-schema-v14'), now)
+    if (currentSchema < 14) this.database.pragma('user_version = 14')
     const insertDomain = this.database.prepare(`INSERT OR IGNORE INTO domains(domain_id, schema_version, manifest_json, updated_at) VALUES (?, 1, '{}', ?)`)
     const registerBuiltins = this.database.transaction(() => BUILTIN_DOMAINS.forEach((id) => insertDomain.run(id, now)))
     registerBuiltins()
     this.database.prepare("INSERT OR IGNORE INTO app_metadata(key, value) VALUES ('schema_version', '1')").run()
-    this.database.prepare("UPDATE app_metadata SET value='13' WHERE key='schema_version'").run()
+    this.database.prepare("UPDATE app_metadata SET value='14' WHERE key='schema_version'").run()
     this.migrateRoteirosJson()
     return this
   }

@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { BaseVideoDetails, RoteiroTimeline } from '../../../../shared/roteiros'
+import type { BaseVideoCategory, BaseVideoDetails, RoteiroTimeline } from '../../../../shared/roteiros'
 import type { VideoLibraryItem } from '../../../../shared/studio'
 import { Icon } from '../../ui/components/Icon'
 
-const emptyDetails = (videoId: string): BaseVideoDetails => ({ videoId, description: '', additionalContext: '', timeline: 'unspecified' })
+const emptyDetails = (videoId: string): BaseVideoDetails => ({ videoId, categoryId: null, description: '', additionalContext: '', timeline: 'unspecified' })
 const formatDuration = (frames: number | null) => {
   if (frames === null) return 'Duração não reconhecida'
   const seconds = Math.floor(frames / 60)
@@ -36,6 +36,7 @@ async function recognizeDuration(item: VideoLibraryItem): Promise<VideoLibraryIt
 export function BaseVideosPage() {
   const [items, setItems] = useState<VideoLibraryItem[]>([])
   const [detailsById, setDetailsById] = useState<Record<string, BaseVideoDetails>>({})
+  const [categories, setCategories] = useState<BaseVideoCategory[]>([])
   const [loaded, setLoaded] = useState(false)
   const [activeView, setActiveView] = useState<'main' | 'drafts'>('main')
   const [busy, setBusy] = useState(false)
@@ -50,6 +51,11 @@ export function BaseVideosPage() {
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [renameTarget, setRenameTarget] = useState<VideoLibraryItem | null>(null)
   const [renameValue, setRenameValue] = useState('')
+  const [categoryVideoId, setCategoryVideoId] = useState<string | null>(null)
+  const [categoryName, setCategoryName] = useState('')
+  const [categoryEditingId, setCategoryEditingId] = useState<string | null>(null)
+  const [categoryEditValue, setCategoryEditValue] = useState('')
+  const [categoryError, setCategoryError] = useState<string | null>(null)
   const [saveStatusById, setSaveStatusById] = useState<Record<string, 'saving' | 'saved' | 'error'>>({})
   const pendingSaves = useRef(new Map<string, BaseVideoDetails>())
   const saveTimers = useRef(new Map<string, number>())
@@ -57,12 +63,13 @@ export function BaseVideosPage() {
 
   useEffect(() => {
     let cancelled = false
-    void Promise.all([window.desktop.listVideoLibrary(), window.desktop.listBaseVideoDetails()]).then(([library, saved]) => {
+    void Promise.all([window.desktop.listVideoLibrary(), window.desktop.listBaseVideoDetails(), window.desktop.listBaseVideoCategories()]).then(([library, saved, loadedCategories]) => {
       if (cancelled) return
       const savedById = Object.fromEntries(saved.map((entry) => [entry.videoId, entry]))
       const merged = Object.fromEntries(library.map((item) => [item.id, savedById[item.id] ?? emptyDetails(item.id)]))
       setItems(library)
       setDetailsById(merged)
+      setCategories(loadedCategories)
       setLoaded(true)
     }).catch((reason: unknown) => {
       if (!cancelled) { setError(reason instanceof Error ? reason.message : 'Não foi possível abrir a Base de vídeos.'); setLoaded(true) }
@@ -82,11 +89,12 @@ export function BaseVideosPage() {
       if (event.key !== 'Escape') return
       if (deleteConfirmOpen) { setDeleteConfirmOpen(false); return }
       if (renameTarget) { setRenameTarget(null); return }
+      if (categoryVideoId) { setCategoryVideoId(null); setCategoryError(null); return }
       if (deleteMode) { setDeleteMode(false); setSelectedIds([]) }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [deleteConfirmOpen, renameTarget, deleteMode])
+  }, [deleteConfirmOpen, renameTarget, categoryVideoId, deleteMode])
 
   const scheduleSave = (details: BaseVideoDetails) => {
     setSaveStatusById((current) => ({ ...current, [details.videoId]: 'saving' }))
@@ -106,6 +114,41 @@ export function BaseVideosPage() {
     const next = { ...(detailsById[videoId] ?? emptyDetails(videoId)), ...patch, videoId }
     scheduleSave(next)
     setDetailsById((current) => ({ ...current, [videoId]: next }))
+  }
+
+  const createCategory = async () => {
+    if (!categoryVideoId || !categoryName.trim() || busy) return
+    setBusy(true); setCategoryError(null)
+    try {
+      const category = await window.desktop.createBaseVideoCategory(categoryName)
+      setCategories((current) => [...current, category].sort((a, b) => a.name.localeCompare(b.name, 'pt-BR')))
+      updateDetails(categoryVideoId, { categoryId: category.id })
+      setCategoryName('')
+    } catch (reason) { setCategoryError(reason instanceof Error ? reason.message : 'Não foi possível criar a categoria.') }
+    finally { setBusy(false) }
+  }
+
+  const renameCategory = async (id: string) => {
+    if (!categoryEditValue.trim() || busy) return
+    setBusy(true); setCategoryError(null)
+    try {
+      const renamed = await window.desktop.renameBaseVideoCategory(id, categoryEditValue)
+      setCategories((current) => current.map((category) => category.id === id ? renamed : category).sort((a, b) => a.name.localeCompare(b.name, 'pt-BR')))
+      setCategoryEditingId(null)
+    } catch (reason) { setCategoryError(reason instanceof Error ? reason.message : 'Não foi possível renomear a categoria.') }
+    finally { setBusy(false) }
+  }
+
+  const deleteCategory = async (category: BaseVideoCategory) => {
+    if (busy) return
+    setBusy(true); setCategoryError(null)
+    try {
+      await window.desktop.deleteBaseVideoCategory(category.id)
+      setCategories((current) => current.filter((entry) => entry.id !== category.id))
+      for (const [videoId, details] of Object.entries(detailsById)) if (details.categoryId === category.id) updateDetails(videoId, { categoryId: null })
+      if (categoryEditingId === category.id) setCategoryEditingId(null)
+    } catch (reason) { setCategoryError(reason instanceof Error ? reason.message : 'Não foi possível excluir a categoria.') }
+    finally { setBusy(false) }
   }
 
   const flushPendingSave = async (videoId: string) => {
@@ -265,13 +308,14 @@ export function BaseVideosPage() {
       {!loaded ? <div className="base-videos-grid base-videos-skeleton-grid" aria-label="Carregando vídeos">{Array.from({ length: 6 }, (_, index) => <div className="base-videos-skeleton-card" key={index}><i /><b /><span /><span /></div>)}</div> : visibleItems.length ? <><div className="base-videos-grid">{visibleItems.slice(0, visibleCount).map((item) => {
         const details = detailsById[item.id] ?? emptyDetails(item.id)
         const selected = selectedIds.includes(item.id)
+        const currentCategory = categories.find((category) => category.id === details.categoryId)
         return <article className={`base-video-card${deleteMode ? ' selecting' : ''}${selected ? ' selected' : ''}`} key={item.id}>
           {deleteMode && <button className="base-video-select" type="button" aria-pressed={selected} onClick={() => setSelectedIds((current) => selected ? current.filter((id) => id !== item.id) : [...current, item.id])}><span>{selected ? '✓' : ''}</span>{selected ? 'Selecionado' : 'Selecionar'}</button>}
           <div className="roteiro-video-preview-panel base-video-notes-panel">
             <header className="base-video-card-heading"><div><strong title={item.name}>{item.name}</strong><small>{details.videoNumber === undefined ? 'RASCUNHO' : `VÍDEO ${String(details.videoNumber).padStart(2, '0')}`} · {formatDuration(item.durationFrames)} · {(item.size / 1024 ** 2).toFixed(1)} MB</small></div><button type="button" disabled={busy} onClick={() => { setRenameTarget(item); setRenameValue(item.name) }} aria-label={`Renomear ${item.name}`} title="Renomear vídeo"><Icon name="edit" /></button></header>
             <div className="roteiro-video-stage"><video src={`gacha-video://library/${item.id}`} controls playsInline preload="metadata" onLoadedMetadata={(event) => recognizeCardDuration(item, event.currentTarget)} aria-label={`Prévia de ${item.name}`} />{details.videoNumber !== undefined && <span className="base-video-number" title={`ID ${item.id}`}>VÍDEO {String(details.videoNumber).padStart(2, '0')}</span>}<span className="base-video-duration-overlay">{formatDuration(item.durationFrames)}</span></div>
             {item.durationFrames === null && <p className="base-video-duration-warning" role="status"><Icon name="warning" /> Duração não reconhecida; carregue a prévia para tentar identificá-la automaticamente.</p>}
-            <div className={`base-video-save-status ${saveStatusById[item.id] ?? 'saved'}`} role="status">{saveStatusById[item.id] === 'saving' ? 'Salvando alterações…' : saveStatusById[item.id] === 'error' ? 'Erro ao salvar' : saveStatusById[item.id] === 'saved' ? 'Alterações salvas' : 'Pronto para editar'}</div>
+            <div className="base-video-category-row"><span className={`base-video-category-current${saveStatusById[item.id] === 'error' ? ' save-error' : ''}`} role="status">{saveStatusById[item.id] === 'saving' ? 'Salvando alterações…' : saveStatusById[item.id] === 'error' ? 'Erro ao salvar' : <><span className="base-video-category-dot" />{currentCategory?.name ?? 'Sem categoria'}</>}</span><button className="base-video-category-button" type="button" disabled={busy} onClick={() => { setCategoryVideoId(item.id); setCategoryName(''); setCategoryEditingId(null); setCategoryError(null) }}>Categoria</button></div>
             <label className="roteiro-video-description"><span>Descrição do que acontece no vídeo</span><textarea value={details.description} disabled={busy} onChange={(event) => updateDetails(item.id, { description: event.target.value })} placeholder="Descreva o que acontece neste vídeo…" maxLength={20000} /></label>
             <div className="roteiro-scene-settings">
               <label className="roteiro-timeline-field"><span>Linha do tempo</span><select disabled={busy} value={details.timeline} onChange={(event) => updateDetails(item.id, { timeline: event.target.value as RoteiroTimeline })}><option value="unspecified">Indefinido</option><option value="past">Passado</option><option value="present">Presente</option><option value="future">Futuro</option></select></label>
@@ -287,5 +331,6 @@ export function BaseVideosPage() {
     </div>
     {deleteConfirmOpen && <div className="roteiro-modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) setDeleteConfirmOpen(false) }}><section className="base-video-confirm-modal" role="alertdialog" aria-modal="true" aria-labelledby="base-video-confirm-title"><span className="base-video-confirm-icon"><Icon name="trash" /></span><h2 id="base-video-confirm-title">Excluir {selectedIds.length} vídeo(s)?</h2><p>Os arquivos selecionados e seus dados da Base serão removidos. Vídeos ainda usados em roteiros não poderão ser excluídos.</p><footer><button type="button" disabled={busy} onClick={() => setDeleteConfirmOpen(false)}>Cancelar</button><button className="danger" type="button" disabled={busy} onClick={() => void confirmDelete()}>{busy ? 'Excluindo…' : `Excluir ${selectedIds.length} vídeo(s)`}</button></footer></section></div>}
     {renameTarget && <div className="roteiro-modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) setRenameTarget(null) }}><section className="base-video-confirm-modal rename" role="dialog" aria-modal="true" aria-labelledby="base-video-rename-title"><h2 id="base-video-rename-title">Renomear vídeo</h2><p>Isso altera apenas o nome mostrado no app; o arquivo original permanece intacto.</p><label>Novo nome<input autoFocus maxLength={255} value={renameValue} onChange={(event) => setRenameValue(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void renameVideo() }} /></label><footer><button type="button" disabled={busy} onClick={() => setRenameTarget(null)}>Cancelar</button><button className="primary" type="button" disabled={busy || !renameValue.trim()} onClick={() => void renameVideo()}>{busy ? 'Salvando…' : 'Salvar nome'}</button></footer></section></div>}
+    {categoryVideoId && <div className="roteiro-modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) { setCategoryVideoId(null); setCategoryError(null) } }}><section className="base-video-category-modal" role="dialog" aria-modal="true" aria-labelledby="base-video-category-title"><header><div><span className="base-video-category-modal-icon"><Icon name="frame" /></span><div><h2 id="base-video-category-title">Categoria do vídeo</h2><p>{items.find((item) => item.id === categoryVideoId)?.name ?? 'Organize este vídeo em uma categoria.'}</p></div></div><button type="button" aria-label="Fechar" disabled={busy} onClick={() => { setCategoryVideoId(null); setCategoryError(null) }}>×</button></header><div className="base-video-category-create"><label htmlFor="base-video-category-name">Nova categoria</label><div><input id="base-video-category-name" autoFocus maxLength={60} value={categoryName} placeholder="Ex.: Reações, Aberturas, Humor" onChange={(event) => setCategoryName(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void createCategory() }} /><button type="button" disabled={busy || !categoryName.trim()} onClick={() => void createCategory()}>{busy ? 'Salvando…' : 'Criar'}</button></div><small>O vídeo recebe automaticamente a categoria criada.</small></div>{categoryError && <p className="base-video-category-error" role="alert">{categoryError}</p>}<div className="base-video-category-list"><button className={`base-video-category-option${!detailsById[categoryVideoId]?.categoryId ? ' active' : ''}`} type="button" disabled={busy} onClick={() => updateDetails(categoryVideoId, { categoryId: null })}><span><i className="uncategorized" />Sem categoria</span>{!detailsById[categoryVideoId]?.categoryId && <b>Selecionada</b>}</button>{categories.map((category) => <div className={`base-video-category-option${detailsById[categoryVideoId]?.categoryId === category.id ? ' active' : ''}`} key={category.id}>{categoryEditingId === category.id ? <div className="base-video-category-rename"><input autoFocus maxLength={60} value={categoryEditValue} onChange={(event) => setCategoryEditValue(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void renameCategory(category.id); if (event.key === 'Escape') setCategoryEditingId(null) }} /><button type="button" disabled={busy || !categoryEditValue.trim()} onClick={() => void renameCategory(category.id)}>Salvar</button><button type="button" disabled={busy} onClick={() => setCategoryEditingId(null)}>Cancelar</button></div> : <><button className="base-video-category-assign" type="button" disabled={busy} onClick={() => updateDetails(categoryVideoId, { categoryId: category.id })}><span><i />{category.name}</span>{detailsById[categoryVideoId]?.categoryId === category.id && <b>Selecionada</b>}</button><div className="base-video-category-tools"><button type="button" title="Renomear categoria" aria-label={`Renomear ${category.name}`} disabled={busy} onClick={() => { setCategoryEditingId(category.id); setCategoryEditValue(category.name) }}><Icon name="edit" /></button><button className="danger" type="button" title="Excluir categoria" aria-label={`Excluir ${category.name}`} disabled={busy} onClick={() => void deleteCategory(category)}><Icon name="trash" /></button></div></>}</div>)}</div><footer><span>{categories.length} categoria{categories.length === 1 ? '' : 's'}</span><button type="button" disabled={busy} onClick={() => { setCategoryVideoId(null); setCategoryError(null) }}>Concluir</button></footer></section></div>}
   </main>
 }

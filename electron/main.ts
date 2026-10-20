@@ -27,7 +27,7 @@ import { VideoPreviewProxyStore } from './videoPreviewProxyStore'
 import { resolveVideoStudioTools } from './videoToolsResolver'
 import { probeVideoStudioFfmpeg, type VideoStudioFfmpegCapabilities } from './videoFfmpegCapabilities'
 import type { VideoExportProgress, VideoExportStartRequest } from '../src/shared/videoExportRuntime'
-import type { BaseVideoDetails, RoteiroDocument, RoteiroExportCharacterInfo, RoteiroReactionBlock, RoteiroSectionContent, RoteiroTikTok, RoteiroVideoReference } from '../src/shared/roteiros'
+import type { BaseVideoCategory, BaseVideoDetails, RoteiroDocument, RoteiroExportCharacterInfo, RoteiroReactionBlock, RoteiroSectionContent, RoteiroTikTok, RoteiroVideoReference } from '../src/shared/roteiros'
 import { RoteiroCharacterExportStore } from './roteiroCharacterExport'
 import { RoteiroProjectExportStore } from './roteiroProjectExport'
 import { serializeVideoCharacterRenderAssetSnapshot } from '../src/shared/videoCharacterRenderAssets'
@@ -2233,11 +2233,53 @@ async function registerFabricatorHandlers(): Promise<void> {
     assertTrustedSender(event)
     const db = dataPlatform.database
     if (!db) throw new Error('Catálogo de dados não inicializado.')
-    const rows = db.prepare('SELECT video_id, video_number, description_text, timeline, scene_end_seconds, first_group_reaction_seconds, second_group_reaction_seconds, additional_context FROM base_video_details ORDER BY CASE WHEN video_number IS NULL THEN 1 ELSE 0 END, video_number, updated_at DESC').all() as Array<{ video_id: string; video_number: number | null; description_text: string; timeline: BaseVideoDetails['timeline']; scene_end_seconds: number | null; first_group_reaction_seconds: number | null; second_group_reaction_seconds: number | null; additional_context: string }>
+    const rows = db.prepare('SELECT d.video_id, d.video_number, d.description_text, d.timeline, d.scene_end_seconds, d.first_group_reaction_seconds, d.second_group_reaction_seconds, d.additional_context, a.category_id FROM base_video_details d LEFT JOIN base_video_category_assignments a ON a.video_id=d.video_id ORDER BY CASE WHEN d.video_number IS NULL THEN 1 ELSE 0 END, d.video_number, d.updated_at DESC').all() as Array<{ video_id: string; video_number: number | null; description_text: string; timeline: BaseVideoDetails['timeline']; scene_end_seconds: number | null; first_group_reaction_seconds: number | null; second_group_reaction_seconds: number | null; additional_context: string; category_id: string | null }>
     return rows.map((row) => ({ videoId: row.video_id, ...(row.video_number === null ? {} : { videoNumber: row.video_number }), description: row.description_text, timeline: row.timeline,
+      ...(row.category_id === null ? {} : { categoryId: row.category_id }),
       ...(row.scene_end_seconds === null ? {} : { sceneEndSeconds: row.scene_end_seconds }),
       ...(row.first_group_reaction_seconds === null ? {} : { firstGroupReactionSeconds: row.first_group_reaction_seconds }),
       ...(row.second_group_reaction_seconds === null ? {} : { secondGroupReactionSeconds: row.second_group_reaction_seconds }), additionalContext: row.additional_context }))
+  })
+
+  ipcMain.handle('base-videos:categories:list', async (event): Promise<BaseVideoCategory[]> => {
+    assertTrustedSender(event)
+    const db = dataPlatform.database
+    if (!db) throw new Error('Catálogo de dados não inicializado.')
+    return (db.prepare('SELECT category_id, name, created_at FROM base_video_categories ORDER BY name COLLATE NOCASE, created_at').all() as Array<{ category_id: string; name: string; created_at: string }>).map((row) => ({ id: row.category_id, name: row.name, createdAt: row.created_at }))
+  })
+
+  ipcMain.handle('base-videos:categories:create', async (event, value: unknown): Promise<BaseVideoCategory> => {
+    assertTrustedSender(event)
+    const name = typeof value === 'string' ? value.trim() : ''
+    if (!name || name.length > 60) throw new Error('O nome da categoria deve ter de 1 a 60 caracteres.')
+    const db = dataPlatform.database
+    if (!db) throw new Error('Catálogo de dados não inicializado.')
+    const category = { id: randomUUID(), name, createdAt: new Date().toISOString() }
+    try { db.prepare('INSERT INTO base_video_categories(category_id, name, created_at) VALUES (?, ?, ?)').run(category.id, category.name, category.createdAt) }
+    catch (reason) { if (String(reason).includes('UNIQUE')) throw new Error('Já existe uma categoria com esse nome.'); throw reason }
+    return category
+  })
+
+  ipcMain.handle('base-videos:categories:rename', async (event, id: unknown, value: unknown): Promise<BaseVideoCategory> => {
+    assertTrustedSender(event)
+    if (typeof id !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)) throw new Error('Identificador de categoria inválido.')
+    const name = typeof value === 'string' ? value.trim() : ''
+    if (!name || name.length > 60) throw new Error('O nome da categoria deve ter de 1 a 60 caracteres.')
+    const db = dataPlatform.database
+    if (!db) throw new Error('Catálogo de dados não inicializado.')
+    try { db.prepare('UPDATE base_video_categories SET name=? WHERE category_id=?').run(name, id) }
+    catch (reason) { if (String(reason).includes('UNIQUE')) throw new Error('Já existe uma categoria com esse nome.'); throw reason }
+    const row = db.prepare('SELECT category_id, name, created_at FROM base_video_categories WHERE category_id=?').get(id) as { category_id: string; name: string; created_at: string } | undefined
+    if (!row) throw new Error('Categoria não encontrada.')
+    return { id: row.category_id, name: row.name, createdAt: row.created_at }
+  })
+
+  ipcMain.handle('base-videos:categories:delete', async (event, id: unknown): Promise<void> => {
+    assertTrustedSender(event)
+    if (typeof id !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)) throw new Error('Identificador de categoria inválido.')
+    const db = dataPlatform.database
+    if (!db) throw new Error('Catálogo de dados não inicializado.')
+    db.prepare('DELETE FROM base_video_categories WHERE category_id=?').run(id)
   })
 
   ipcMain.handle('base-videos:save-details', async (event, value: unknown): Promise<void> => {
@@ -2248,16 +2290,27 @@ async function registerFabricatorHandlers(): Promise<void> {
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(details.videoId)
       || typeof details.description !== 'string' || details.description.length > 20000
       || details.additionalContext !== undefined && (typeof details.additionalContext !== 'string' || details.additionalContext.length > 20000)
+      || details.categoryId !== undefined && details.categoryId !== null && (typeof details.categoryId !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(details.categoryId))
       || !['unspecified', 'past', 'present', 'future'].includes(details.timeline)
       || !secondsValid(details.sceneEndSeconds) || !secondsValid(details.firstGroupReactionSeconds) || !secondsValid(details.secondGroupReactionSeconds)) throw new Error('Dados do vídeo inválidos.')
     const db = dataPlatform.database
     if (!db) throw new Error('Catálogo de dados não inicializado.')
     const next = roteirosSaveQueue.catch(() => undefined).then(() => {
-      db.prepare(`INSERT INTO base_video_details(video_id, description_text, timeline, scene_end_seconds, first_group_reaction_seconds, second_group_reaction_seconds, additional_context, updated_at)
+      const saveDetails = db.prepare(`INSERT INTO base_video_details(video_id, description_text, timeline, scene_end_seconds, first_group_reaction_seconds, second_group_reaction_seconds, additional_context, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(video_id) DO UPDATE SET description_text=excluded.description_text, timeline=excluded.timeline,
         scene_end_seconds=excluded.scene_end_seconds, first_group_reaction_seconds=excluded.first_group_reaction_seconds,
         second_group_reaction_seconds=excluded.second_group_reaction_seconds, additional_context=excluded.additional_context, updated_at=excluded.updated_at`)
-        .run(details.videoId, details.description, details.timeline, details.sceneEndSeconds ?? null, details.firstGroupReactionSeconds ?? null, details.secondGroupReactionSeconds ?? null, details.additionalContext ?? '', new Date().toISOString())
+      const save = db.transaction(() => {
+        saveDetails.run(details.videoId, details.description, details.timeline, details.sceneEndSeconds ?? null, details.firstGroupReactionSeconds ?? null, details.secondGroupReactionSeconds ?? null, details.additionalContext ?? '', new Date().toISOString())
+        if (details.categoryId !== undefined) {
+          if (details.categoryId === null) db.prepare('DELETE FROM base_video_category_assignments WHERE video_id=?').run(details.videoId)
+          else {
+            if (!db.prepare('SELECT 1 FROM base_video_categories WHERE category_id=?').get(details.categoryId)) throw new Error('A categoria selecionada não existe mais.')
+            db.prepare('INSERT INTO base_video_category_assignments(video_id, category_id, assigned_at) VALUES (?, ?, ?) ON CONFLICT(video_id) DO UPDATE SET category_id=excluded.category_id, assigned_at=excluded.assigned_at').run(details.videoId, details.categoryId, new Date().toISOString())
+          }
+        }
+      })
+      save()
     })
     roteirosSaveQueue = next
     await next

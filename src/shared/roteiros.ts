@@ -46,6 +46,7 @@ export type RoteiroTimeline = 'unspecified' | 'past' | 'present' | 'future'
 export type BaseVideoDetails = {
   videoId: string
   videoNumber?: number
+  categoryId?: string | null
   description: string
   timeline: RoteiroTimeline
   sceneEndSeconds?: number
@@ -53,6 +54,8 @@ export type BaseVideoDetails = {
   secondGroupReactionSeconds?: number
   additionalContext?: string
 }
+
+export type BaseVideoCategory = { id: string; name: string; createdAt: string }
 
 export type RoteiroDocument = {
   id: string
@@ -85,6 +88,10 @@ export type RoteirosDesktopApi = {
   saveRoteiros: (roteiros: RoteiroDocument[]) => Promise<void>
   listBaseVideoDetails: () => Promise<BaseVideoDetails[]>
   saveBaseVideoDetails: (details: BaseVideoDetails) => Promise<void>
+  listBaseVideoCategories: () => Promise<BaseVideoCategory[]>
+  createBaseVideoCategory: (name: string) => Promise<BaseVideoCategory>
+  renameBaseVideoCategory: (id: string, name: string) => Promise<BaseVideoCategory>
+  deleteBaseVideoCategory: (id: string) => Promise<void>
   deleteBaseVideoDetails: (videoId: string) => Promise<void>
   deleteBaseVideo: (videoId: string) => Promise<void>
   publishBaseVideo: (videoId: string) => Promise<number>
