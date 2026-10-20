@@ -29,7 +29,9 @@
     "test:video:character-media-oracle": "electron scripts/video-studio/character-media-oracle-smoke.cjs",
     "bench:video:workers": "electron scripts/video-studio/full-engine-worker-benchmark.cjs",
     "bench:video:cache": "electron scripts/video-studio/persistent-cache-benchmark.cjs",
-    "package:windows:portable": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/video-studio/package-windows-portable.ps1"
+    "package:windows:portable": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/video-studio/package-windows-portable.ps1",
+    "test:export:full-engine-soak:90": "electron scripts/video-studio/full-engine-soak.cjs 90",
+    "test:export:full-engine-soak:900": "electron scripts/video-studio/full-engine-soak.cjs 900"
   },
   "dependencies": {
     "better-sqlite3": "^13.0.3",
