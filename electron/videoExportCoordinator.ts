@@ -323,6 +323,7 @@ export class VideoExportCoordinator {
         .finally(() => pendingPersistentWrites.delete(write))
       pendingPersistentWrites.add(write)
     }
+    let surfaceRoundTripMs = 0, composeMs = 0, readbackMs = 0, surfaceOtherMs = 0
     let writerWaitMs = 0, writerPeakInFlight = 0
     const frameBytes = 1920 * 1080 * 4
 
@@ -344,6 +345,10 @@ export class VideoExportCoordinator {
         persistentCacheMisses,
         persistentCacheWrites,
         persistentCacheWriteSkips,
+        surfaceRoundTripMs,
+        composeMs,
+        readbackMs,
+        surfaceOtherMs,
         writerWaitMs,
         writerPeakInFlight,
         workerCount,
@@ -376,8 +381,12 @@ export class VideoExportCoordinator {
       }
       persistentCacheMisses += 1
       renderedFrames += 1
-      const rendering = surface.renderFrame(frame)
-        .then((rgba) => {
+      const rendering = surface.renderFrameDetailed(frame)
+        .then(({ pixels: rgba, timings, roundTripMs }) => {
+          surfaceRoundTripMs += roundTripMs
+          composeMs += timings.composeMs
+          readbackMs += timings.readbackMs
+          surfaceOtherMs += Math.max(0, roundTripMs - timings.composeMs - timings.readbackMs)
           frameCache.set(semantic, rgba)
           schedulePersistentWrite(semantic, rgba)
           return rgba
@@ -514,6 +523,10 @@ export class VideoExportCoordinator {
         persistentCacheMisses,
         persistentCacheWrites,
         persistentCacheWriteSkips,
+        surfaceRoundTripMs,
+        composeMs,
+        readbackMs,
+        surfaceOtherMs,
         workerCount,
         workerStrategy,
         fallbackCount,
@@ -593,6 +606,10 @@ export class VideoExportCoordinator {
         persistentCacheMisses,
         persistentCacheWrites,
         persistentCacheWriteSkips,
+        surfaceRoundTripMs,
+        composeMs,
+        readbackMs,
+        surfaceOtherMs,
         workerCount,
         workerStrategy,
         fallbackCount,
