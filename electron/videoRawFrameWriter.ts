@@ -2,6 +2,9 @@ import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { isAbsolute } from 'node:path'
 import { stat } from 'node:fs/promises'
 
+export type VideoStudioH264Encoder = 'h264_mf' | 'h264_nvenc' | 'h264_qsv' | 'h264_amf'
+export const videoStudioH264EncoderPreference: ReadonlyArray<VideoStudioH264Encoder> = ['h264_mf', 'h264_nvenc', 'h264_qsv', 'h264_amf']
+
 export type RawFrameWriterResult = { code: 0; stderr: string; bytesWritten: number; framesWritten: number }
 export type RawFrameWriterOptions = {
   executable: string
@@ -120,12 +123,12 @@ export class VideoRawFrameWriter {
 }
 
 /** V4-style rawvideo input, adapted to a fixed V5 export profile and encoder. */
-export function buildVideoStudioChunkArgs(outputPath: string, frameCount: number, pixelFormat: 'bgra' | 'rgba' = 'bgra'): string[] {
-  if (!isAbsolute(outputPath) || !Number.isSafeInteger(frameCount) || frameCount < 1 || frameCount > 600) throw new Error('Parâmetros do chunk inválidos.')
+export function buildVideoStudioChunkArgs(outputPath: string, frameCount: number, pixelFormat: 'bgra' | 'rgba' = 'bgra', videoEncoder: VideoStudioH264Encoder = 'h264_mf'): string[] {
+  if (!isAbsolute(outputPath) || !Number.isSafeInteger(frameCount) || frameCount < 1 || frameCount > 600 || !videoStudioH264EncoderPreference.includes(videoEncoder)) throw new Error('Parâmetros do chunk inválidos.')
   return [
     '-hide_banner', '-loglevel', 'warning', '-nostdin', '-y',
     '-f', 'rawvideo', '-pixel_format', pixelFormat, '-video_size', '1920x1080', '-framerate', '60', '-i', 'pipe:0',
-    '-an', '-c:v', 'h264_mf', '-b:v', '12M', '-pix_fmt', 'yuv420p', '-fps_mode', 'cfr', '-frames:v', String(frameCount),
+    '-an', '-c:v', videoEncoder, '-b:v', '12M', '-pix_fmt', 'yuv420p', '-fps_mode', 'cfr', '-frames:v', String(frameCount),
     '-color_primaries', 'bt709', '-color_trc', 'bt709', '-colorspace', 'bt709', '-color_range', 'tv',
     '-movflags', '+faststart', '-f', 'mp4', outputPath
   ]
@@ -135,5 +138,8 @@ export function buildVideoStudioChunkArgs(outputPath: string, frameCount: number
 export function assertCompatibleFfmpegBuild(buildConfiguration: string, encoderList: string): void {
   const configuration = buildConfiguration.toLowerCase()
   if (configuration.includes('--enable-gpl') || configuration.includes('--enable-nonfree')) throw new Error('Este build FFmpeg usa componentes GPL ou nonfree e não pode ser distribuído com esta configuração do aplicativo.')
-  if (!/\bh264_mf\b/i.test(encoderList) || !/\baac\b/i.test(encoderList)) throw new Error('O build FFmpeg precisa oferecer h264_mf e AAC para o perfil do Video Studio.')
+  if (!/\baac\b/i.test(encoderList)) throw new Error('O build FFmpeg precisa oferecer AAC para o perfil do Video Studio.')
+  if (!videoStudioH264EncoderPreference.some((encoder) => new RegExp(`\\b${encoder}\\b`, 'i').test(encoderList))) {
+    throw new Error('O build FFmpeg precisa oferecer ao menos um encoder H.264 compatível com o Video Studio.')
+  }
 }
