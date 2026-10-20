@@ -1,0 +1,48 @@
+name: Video Studio renderer/media experiments
+
+on:
+  push:
+    branches: [master-desenvolvimento]
+    paths:
+      - 'scripts/video-studio/pixi-webgl-ab.cjs'
+      - 'scripts/video-studio/mediabunny-webcodecs-ab.cjs'
+      - '.github/workflows/video-render-experiments.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: video-render-experiments-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ab-windows:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install locked app dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Install experiment-only packages without changing lockfile
+        run: npm install --no-save --ignore-scripts pixi.js@8.21.0 mediabunny@1.61.6
+      - name: Install Electron runtime
+        shell: pwsh
+        run: npm rebuild electron
+      - name: Resolve FFmpeg
+        shell: pwsh
+        run: |
+          $ffmpeg = Get-Command ffmpeg -ErrorAction SilentlyContinue
+          if (-not $ffmpeg) {
+            choco install ffmpeg -y --no-progress
+            $ffmpeg = Get-Command ffmpeg -ErrorAction Stop
+          }
+          "GACHA_FFMPEG_PATH=$($ffmpeg.Source)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+      - name: Canvas2D vs PixiJS WebGL including RGBA readback
+        run: electron scripts/video-studio/pixi-webgl-ab.cjs
+      - name: HTMLVideo vs Mediabunny WebCodecs random seek
+        run: electron scripts/video-studio/mediabunny-webcodecs-ab.cjs
