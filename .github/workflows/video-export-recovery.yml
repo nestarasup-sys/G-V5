@@ -28,17 +28,17 @@ jobs:
           cache: npm
       - name: Install locked dependencies
         run: npm ci --ignore-scripts --no-audit --no-fund
-      - name: Resolve FFmpeg tools
+      - name: Prepare the exact pinned LGPL runtime used by production
         shell: pwsh
         run: |
-          $ffmpeg = Get-Command ffmpeg -ErrorAction SilentlyContinue
-          $ffprobe = Get-Command ffprobe -ErrorAction SilentlyContinue
-          if (-not $ffmpeg -or -not $ffprobe) {
-            choco install ffmpeg -y --no-progress
-            $ffmpeg = Get-Command ffmpeg -ErrorAction Stop
-            $ffprobe = Get-Command ffprobe -ErrorAction Stop
-          }
-          "GACHA_FFMPEG_PATH=$($ffmpeg.Source)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
-          "GACHA_FFPROBE_PATH=$($ffprobe.Source)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          ./scripts/video-studio/prepare-ffmpeg-lgpl.ps1
+          $ffmpeg = (Resolve-Path ./resources/video-tools/ffmpeg.exe).Path
+          $ffprobe = (Resolve-Path ./resources/video-tools/ffprobe.exe).Path
+          "GACHA_FFMPEG_PATH=$ffmpeg" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "GACHA_FFPROBE_PATH=$ffprobe" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
       - name: Kill fragmented MP4 and recover by remux
         run: npm run test:export:hybrid-recovery
+      - name: Remove downloaded runtime
+        if: always()
+        shell: pwsh
+        run: Remove-Item ./resources/video-tools -Recurse -Force -ErrorAction SilentlyContinue
