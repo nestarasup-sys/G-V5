@@ -67,7 +67,7 @@ function captureVideoPoster(videoId: string, sourceFrame = 0): Promise<string | 
     const capture = () => {
       try {
         if (!video.videoWidth || !video.videoHeight) return finish(null)
-        const width = 640, height = 360
+        const width = 320, height = 180
         const canvas = document.createElement('canvas')
         canvas.width = width; canvas.height = height
         const context = canvas.getContext('2d')
@@ -638,6 +638,7 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
 
   useEffect(() => {
     let cancelled = false
+    const startedAt = performance.now()
     void (async () => {
       try {
         const loaded = await persistence.list()
@@ -646,6 +647,7 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
         if (cancelled) return
         setStudioCards(loaded)
         setStudioFolder(folder)
+        console.info(`[Video Studio perf] lista: ${(performance.now() - startedAt).toFixed(1)} ms · ${loaded.length} cartões`)
       } catch (reason) {
         if (!cancelled) setError(reason instanceof Error ? reason.message : 'Não foi possível carregar os Studios.')
       } finally {
@@ -939,6 +941,7 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
   }, [activeStudio, availableCharacters, normalizedStudioVersion, sceneExpressionPresetVersions, assetLibraryRevision])
 
   const openStudio = async (card: VideoStudioCardSummary) => {
+    const startedAt = performance.now()
     setError(null)
     setSelectedId(card.id)
     const cached = studios.find((studio) => studio.id === card.id)
@@ -949,6 +952,7 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
       if (!loaded) throw new Error(`Não foi possível encontrar ${card.title}.`)
       setStudios((current) => current.some((studio) => studio.id === loaded.id) ? current : [...current, normalizeVideoCharacterTransforms(loaded)])
       setActiveStudioId(card.id)
+      console.info(`[Video Studio perf] abrir projeto: ${(performance.now() - startedAt).toFixed(1)} ms · ${loaded.videoTimeline?.characterKeys.length ?? 0} quadros-chave`)
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Não foi possível abrir o Video Studio.')
     } finally { setOpeningStudioId(null) }
@@ -1029,8 +1033,10 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
   const saveStudio = useCallback(async (document = activeStudio) => {
     if (!document) return true
     const generation = ++saveGenerationRef.current
+    const startedAt = performance.now()
     try {
       await persistence.save({ ...document, updatedAt: new Date().toISOString() })
+      console.info(`[Video Studio perf] salvar projeto: ${(performance.now() - startedAt).toFixed(1)} ms · ${document.videoTimeline?.characterKeys.length ?? 0} quadros-chave`)
       if (generation === saveGenerationRef.current) {
         setSaved(true)
         setError(null)
@@ -1374,8 +1380,10 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
     setVideoPlaying(false)
     setVideoPlayheadFrame(startFrame)
     setAnimationPreparing(true)
+    const startedAt = performance.now()
     try {
       const currentSession = await characterAnimation.preparePlayback(startFrame)
+      console.info(`[Video Studio perf] preparar prévia: ${(performance.now() - startedAt).toFixed(1)} ms · quadro ${startFrame}`)
       if (currentSession && request === animationPlayRequestRef.current) { setError(null); setVideoPlaying(true) }
     } catch (reason) {
       if (request === animationPlayRequestRef.current) setError(reason instanceof Error ? reason.message : 'Não foi possível preparar as animações.')

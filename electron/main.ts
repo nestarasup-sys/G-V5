@@ -1341,9 +1341,40 @@ async function readStudio(id: string, workspace: StudioWorkspaceStorage = 'studi
         if (!state?.imageDataUrl.startsWith('@video-frame:')) return
         const hash = state.imageDataUrl.slice('@video-frame:'.length)
         if (!/^[0-9a-f]{64}$/.test(hash)) throw new Error('Quadro de vídeo inválido.')
-        const bytes = await readFile(join(folder, 'assets', 'video-frames', `${hash}.png`))
-        if (createHash('sha256').update(bytes).digest('hex') !== hash) throw new Error('Quadro de vídeo corrompido.')
-        state.imageDataUrl = `data:image/png;base64,${bytes.toString('base64')}`
+        const cached = videoFrameDataUrlCache.get(hash)
+        if (cached) {
+          videoFrameDataUrlCache.delete(hash)
+          videoFrameDataUrlCache.set(hash, cached)
+          state.imageDataUrl = cached
+          return
+        }
+        let pending = videoFrameDataUrlLoads.get(hash)
+        if (!pending) {
+          pending = (async () => {
+            const bytes = await readFile(join(folder, 'assets', 'video-frames', `${hash}.png`))
+            if (createHash('sha256').update(bytes).digest('hex') !== hash) throw new Error('Quadro de vídeo corrompido.')
+            return `data:image/png;base64,${bytes.toString('base64')}`
+          })()
+          videoFrameDataUrlLoads.set(hash, pending)
+        }
+        try {
+          const dataUrl = await pending
+          const weight = dataUrl.length * 2
+          if (!videoFrameDataUrlCache.has(hash) && weight <= VIDEO_FRAME_DATA_URL_CACHE_LIMIT) {
+            videoFrameDataUrlCache.set(hash, dataUrl)
+            videoFrameDataUrlCacheWeight += weight
+            while (videoFrameDataUrlCacheWeight > VIDEO_FRAME_DATA_URL_CACHE_LIMIT && videoFrameDataUrlCache.size) {
+              const oldestHash = videoFrameDataUrlCache.keys().next().value
+              if (!oldestHash) break
+              const oldest = videoFrameDataUrlCache.get(oldestHash)!
+              videoFrameDataUrlCache.delete(oldestHash)
+              videoFrameDataUrlCacheWeight -= oldest.length * 2
+            }
+          }
+          state.imageDataUrl = dataUrl
+        } finally {
+          videoFrameDataUrlLoads.delete(hash)
+        }
       }
       await Promise.all([
         ...Object.values(normalized.videoTimeline.characterBases ?? {}).map(restoreImage),
@@ -1358,6 +1389,11 @@ async function readStudio(id: string, workspace: StudioWorkspaceStorage = 'studi
     throw reason
   }
 }
+
+const VIDEO_FRAME_DATA_URL_CACHE_LIMIT = 96 * 1024 * 1024
+const videoFrameDataUrlCache = new Map<string, string>()
+const videoFrameDataUrlLoads = new Map<string, Promise<string>>()
+let videoFrameDataUrlCacheWeight = 0
 
 async function writeStudio(studio: StudioDocument, workspace: StudioWorkspaceStorage = 'studio'): Promise<void> {
   if (!isStudioDocument(studio)) throw new Error('Dados do Studio inválidos.')
