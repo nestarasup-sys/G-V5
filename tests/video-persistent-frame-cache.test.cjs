@@ -59,3 +59,23 @@ test('persistent cache enforces disk budget and repair removes interrupted temp 
     assert.equal(fs.existsSync(path.join(root,'frames','.interrupted.tmp')),false)
   }finally{fs.rmSync(root,{recursive:true,force:true})}
 })
+
+
+test('persistent cache rejects a frame whose authenticated RGBA checksum no longer matches',async()=>{
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),'gv5-persistent-sha-'))
+  try{
+    const pixels=Buffer.alloc(512*1024,23)
+    const cache=new VideoPersistentFrameCache(root,64*1024*1024)
+    await cache.set('scene-authenticated',pixels)
+    const frameDir=path.join(root,'frames')
+    const file=path.join(frameDir,fs.readdirSync(frameDir)[0])
+    const bytes=fs.readFileSync(file)
+    // Keep the compressed payload intact and corrupt only the persisted SHA-256.
+    // The legacy sparse rolling checksum could not provide this full-frame guarantee.
+    bytes[8]^=0xff
+    fs.writeFileSync(file,bytes)
+    assert.equal(await cache.get('scene-authenticated',pixels.length),undefined)
+    assert.equal(fs.existsSync(file),false)
+    assert.match(VIDEO_RENDERER_CACHE_VERSION,/sha256/)
+  }finally{fs.rmSync(root,{recursive:true,force:true})}
+})
