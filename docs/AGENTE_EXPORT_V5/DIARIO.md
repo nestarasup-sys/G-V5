@@ -305,3 +305,13 @@ _Atualizações posteriores devem registrar o SHA real do gate e nunca declarar 
 - Evidência: A-B-A binário em ambas as superfícies/variantes. Hashes e métricas de ROI estão em `docs/VIDEO_STUDIO_V5_MODERNIZACAO/04_LAB_E_GATES.md`. ROI de vídeo pior: MAE 0.931, changed ratio 7.68%, p95 1, máximo bruto 107, consistente com o limite documentado para dois decoders diferentes.
 - Verificações locais: `npm test` 117/117, `npm run typecheck`, `npm run build` e `GACHA_FFMPEG_PATH=<ffmpeg local> npm run test:video:character-media-oracle` passaram. `git diff --check` é repetido antes do commit. O Actions deste novo SHA ainda deve ser verificado depois do push.
 - Escopo continua parcial: prova sintética preview DOM ↔ Canvas não fecha paridade MP4/print/Studio normal nem os critérios completos de V501/V502/V504, V508/V510 e V546. Nenhum gate de release foi marcado como concluído.
+
+### 2026-10-20 — benchmark serial/Turbo da superfície completa (amostra curta)
+
+- Base local: `d44f5dabc87a7ad4a2723160fd4138d2e1078010`, branch `master-desenvolvimento`. Nenhum fetch, push, PR ou merge foi feito nesta etapa.
+- `scripts/video-studio/full-engine-worker-benchmark.cjs` agora mede o tempo de parede completo (abertura da superfície, render/encode, montagem e validação), composição e readback, aquisição/escrita de frames, working set dos processos Electron, contagem/decodificação dos frames e SHA-256. Aceita durações de 5, 30 ou 90 segundos. Falhas são propagadas em vez de terminarem como sucesso.
+- Corrigido encerramento antecipado do Electron: fechar a janela do benchmark serial fazia o host sair antes de iniciar Turbo. O ciclo serial e os dois workers agora completam na mesma execução.
+- Amostra local sintética de 5 s, Windows, Ryzen 5 4600G, 12 processadores lógicos, 16 GB RAM. Serial: 17,14 s, 17,50 fps, working set Electron inicial/pico 94/102 MB. Dois workers: 12,11 s, 24,78 fps, working set Electron inicial/pico 947/1.425 MB. A aceleração observada nesta única amostra foi 1,42×. Processos FFmpeg externos não entram na métrica de RAM.
+- Integridade: ambos os MP4 têm H.264, 1920×1080, 60/1, 300 frames lidos e decodificação integral aprovada; tamanho igual (2.948.685 bytes) e SHA-256 igual (`5d354b46dd589efa2344cbac7ef5aaea3a73c731dce4ec093dc9770991c5c2a2`).
+- Interpretação: a amostra prova que os dois caminhos executaram e produziram o mesmo arquivo nesta fixture. Uma duração de 5 s e um cenário não satisfazem os benchmarks longos nem os gates de estabilidade/performance; Turbo permanece sem recomendação até repetição em 30/90 s, perfis adicionais e medição de memória incluindo FFmpeg.
+- Nenhum dado pessoal, biblioteca de assets ou projeto foi usado. A mídia foi gerada sinteticamente em diretório temporário.

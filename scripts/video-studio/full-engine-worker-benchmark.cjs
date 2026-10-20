@@ -2,6 +2,7 @@
 
 const { app, BrowserWindow, ipcMain, protocol }=require('electron')
 const { execFileSync }=require('node:child_process')
+const { createHash }=require('node:crypto')
 const { createReadStream }=require('node:fs')
 const fs=require('node:fs')
 const os=require('node:os')
@@ -15,7 +16,7 @@ const ffmpeg=process.env.GACHA_FFMPEG_PATH
 const ffprobe=process.env.GACHA_FFPROBE_PATH
 const rendererFile=path.resolve(__dirname,'../../out/renderer/index.html')
 const preloadPath=path.resolve(__dirname,'../../out/preload/video-export-preload.cjs')
-const width=1920,height=1080,totalFrames=240,chunkFrames=60
+const width=1920,height=1080,durationSeconds=Number(process.env.GACHA_BENCH_SECONDS||5),totalFrames=durationSeconds*60,chunkFrames=60
 const jobId='726e2b84-aa60-4cf5-95b0-8d2557d9447f'
 const studioId='f2ff96c8-ce44-45fc-9251-34e89ad4c45f'
 const assetId='a64b7ec2-7597-48ac-b87c-c5d487830982'
@@ -49,9 +50,25 @@ const studio={schemaVersion:1,id:studioId,title:'Full engine benchmark',color:'#
  assets:[],elements:[actor,narrator],videoTimeline:timeline}
 const bootstrap={jobId,snapshot:{studio,timeline,frameRate:60,durationFrames:totalFrames},characters:{schemaVersion:1,characters:[]},characterAssets:{schemaVersion:1,entries:[]},renderVariant:'static-characters'}
 
+if(![5,30,90].includes(durationSeconds))throw new Error('GACHA_BENCH_SECONDS deve ser 5, 30 ou 90.')
+
+function appWorkingSetBytes(){
+ const total=app.getAppMetrics().reduce((sum,metric)=>sum+Number(metric.memory?.workingSetSize||0),0)
+ return total>0?total*1024:process.memoryUsage().rss
+}
+function createMemorySampler(){
+ const initialBytes=appWorkingSetBytes();let peakBytes=initialBytes
+ const timer=setInterval(()=>{peakBytes=Math.max(peakBytes,appWorkingSetBytes())},100);timer.unref?.()
+ return{initialBytes,stop(){clearInterval(timer);peakBytes=Math.max(peakBytes,appWorkingSetBytes());return peakBytes}}
+}
+function sha256File(file){return createHash('sha256').update(fs.readFileSync(file)).digest('hex')}
+
 app.disableHardwareAcceleration()
 app.commandLine.appendSwitch('disable-background-timer-throttling')
 app.commandLine.appendSwitch('force-device-scale-factor','1')
+// The benchmark deliberately destroys each worker window between serial and
+// Turbo runs. Keep the Electron host alive until both measurements complete.
+app.on('window-all-closed',()=>{})
 
 app.whenReady().then(async()=>{
  if(!ffmpeg||!ffprobe)throw new Error('FFmpeg/FFprobe obrigatórios.')
@@ -67,47 +84,102 @@ app.whenReady().then(async()=>{
  ipcMain.on('video-studio:export-surface:frame-ready',(event,ready)=>{const s=sessions.get(event.sender.id);const p=s?.pending.get(ready.requestId);if(!p)return;s.pending.delete(ready.requestId);if(ready.error)p.reject(new Error(ready.error));else if(!(ready.pixels instanceof Uint8Array))p.reject(new Error('pixels ausentes'));else p.resolve({pixels:pixel.rgbaToBgra(ready.pixels),timings:ready.timings||{composeMs:0,readbackMs:0}})})
 
  async function openSurface(){
-  const win=new BrowserWindow({show:false,frame:false,width,height,useContentSize:true,webPreferences:{preload:preloadPath,contextIsolation:true,nodeIntegration:false,sandbox:true,backgroundThrottling:false,offscreen:true}})
+  const win=new BrowserWindow({show:false,width,height,useContentSize:true,backgroundColor:'#000',webPreferences:{preload:preloadPath,contextIsolation:true,nodeIntegration:false,sandbox:true,backgroundThrottling:false,offscreen:true}})
   allowed.add(win.webContents.id)
+  const diagnostics=[]
+  win.webContents.on('did-fail-load',(_event,errorCode,errorDescription,url,isMainFrame)=>diagnostics.push({errorCode,errorDescription,url,isMainFrame}))
+  win.webContents.on('render-process-gone',(_event,details)=>diagnostics.push({renderProcessGone:details}))
   let resolveReady,rejectReady;const readyPromise=new Promise((resolve,reject)=>{resolveReady=resolve;rejectReady=reject})
   const session={win,pending:new Map(),ready:false,resolveReady,reject:rejectReady}
   sessions.set(win.webContents.id,session)
-  await win.loadFile(rendererFile,{hash:`/video-export-surface?jobId=${jobId}`});await readyPromise
+  const timeout=setTimeout(()=>rejectReady(new Error('timeout aguardando ready da surface')),30000)
+  try{await Promise.all([win.loadFile(rendererFile,{hash:`/video-export-surface?jobId=${jobId}`}),readyPromise])}catch(error){await new Promise(resolve=>setTimeout(resolve,100));throw new Error(`${error.message}; renderer=${JSON.stringify(diagnostics)}`)}finally{clearTimeout(timeout)}
   return{win,async frame(frame){const requestId=`${win.webContents.id}-${frame}-${Math.random()}`;return new Promise((resolve,reject)=>{session.pending.set(requestId,{resolve,reject});win.webContents.send('video-studio:export-surface:render',{requestId,frame})})},close(){allowed.delete(win.webContents.id);sessions.delete(win.webContents.id);win.destroy()}}
  }
 
  async function benchmark(workerCount){
   const dir=path.join(root,`w${workerCount}`);fs.mkdirSync(dir,{recursive:true})
-  const surfaces=await Promise.all(Array.from({length:workerCount},()=>openSurface()))
+  const started=performance.now(),memory=createMemorySampler()
   const indexes=Array.from({length:Math.ceil(totalFrames/chunkFrames)},(_,i)=>i)
-  const cursor={value:0};let rendered=0,composeMs=0,readbackMs=0
-  const started=performance.now()
-  async function worker(surface){
-    while(true){const at=cursor.value++;const index=indexes[at];if(index===undefined)return
-      const start=index*chunkFrames,end=Math.min(totalFrames,start+chunkFrames),out=path.join(dir,`chunk-${index}.mp4`)
-      const writer=new raw.VideoRawFrameWriter({executable:ffmpeg,args:raw.buildVideoStudioChunkArgs(out,end-start,'bgra','h264_mf'),outputPath:out,frameBytes:width*height*4,frameCount:end-start})
-      await writer.ready()
-      for(let frame=start;frame<end;frame++){const result=await surface.frame(frame);composeMs+=result.timings.composeMs;readbackMs+=result.timings.readbackMs;await writer.writeFrame(result.pixels,{copy:false});rendered++}
-      await writer.finish()
-    }
+  const workerChunks=Array.from({length:workerCount},(_,workerIndex)=>indexes.filter(index=>index%workerCount===workerIndex))
+  const activeWriters=new Set()
+  let rendered=0,composeMs=0,readbackMs=0,frameAcquireMs=0,encoderReadyMs=0,frameWriteMs=0,writerFinishMs=0
+  const createWriter=async(index)=>{
+   const start=index*chunkFrames,end=Math.min(totalFrames,start+chunkFrames),out=path.join(dir,`chunk-${index}.mp4`)
+   const writer=new raw.VideoRawFrameWriter({executable:ffmpeg,args:raw.buildVideoStudioChunkArgs(out,end-start,'bgra','h264_mf'),outputPath:out,frameBytes:width*height*4,frameCount:end-start})
+   activeWriters.add(writer)
+   const readyStarted=performance.now()
+   await writer.ready()
+   encoderReadyMs+=performance.now()-readyStarted
+   return writer
   }
-  await Promise.all(surfaces.map(worker));surfaces.forEach(s=>s.close())
-  const elapsedMs=performance.now()-started
-  const list=path.join(dir,'concat.txt');fs.writeFileSync(list,indexes.map(i=>`file '${path.join(dir,`chunk-${i}.mp4`).replace(/\\/g,'/')}'`).join('\n')+'\n')
-  const final=path.join(dir,'final.mp4');run(ffmpeg,['-hide_banner','-loglevel','error','-y','-f','concat','-safe','0','-i',list,'-c','copy','-an',final])
-  const probe=JSON.parse(run(ffprobe,['-v','error','-count_frames','-select_streams','v:0','-show_entries','stream=codec_name,width,height,r_frame_rate,nb_read_frames','-of','json',final]))
-  if(Number(probe.streams?.[0]?.nb_read_frames)!==totalFrames)throw new Error('benchmark final perdeu frames')
-  return{workerCount,elapsedMs,throughputFps:totalFrames/(elapsedMs/1000),realtimeFactor:(totalFrames/60)/(elapsedMs/1000),rendered,composeMs,readbackMs,readbackRatio:(composeMs+readbackMs)>0?readbackMs/(composeMs+readbackMs):0,bytes:fs.statSync(final).size}
+  const surfaces=[]
+  try{
+    const initialWriters=await Promise.all(workerChunks.map(chunks=>createWriter(chunks[0])))
+    const surfaceStart=performance.now()
+    for(let index=0;index<workerCount;index++)surfaces.push(await openSurface())
+    const surfaceStartupMs=performance.now()-surfaceStart
+    const renderEncodeStarted=performance.now()
+    async function worker(surface,chunks,initialWriter){
+      let writer=initialWriter
+      for(let chunkIndex=0;chunkIndex<chunks.length;chunkIndex++){
+        const index=chunks[chunkIndex],start=index*chunkFrames,end=Math.min(totalFrames,start+chunkFrames)
+        if(chunkIndex>0)writer=await createWriter(index)
+        for(let frame=start;frame<end;frame++){
+          const frameStarted=performance.now();const result=await surface.frame(frame);frameAcquireMs+=performance.now()-frameStarted
+          composeMs+=result.timings.composeMs;readbackMs+=result.timings.readbackMs
+          const writeStarted=performance.now();await writer.writeFrame(result.pixels,{copy:false});frameWriteMs+=performance.now()-writeStarted;rendered++
+        }
+        const finishStarted=performance.now()
+        await writer.finish()
+        writerFinishMs+=performance.now()-finishStarted
+        activeWriters.delete(writer)
+      }
+    }
+    await Promise.all(surfaces.map((surface,index)=>worker(surface,workerChunks[index],initialWriters[index])))
+    const renderEncodeWallMs=performance.now()-renderEncodeStarted
+    const list=path.join(dir,'concat.txt');fs.writeFileSync(list,indexes.map(i=>`file '${path.join(dir,`chunk-${i}.mp4`).replace(/\\/g,'/')}'`).join('\n')+'\n')
+    const final=path.join(dir,'final.mp4'),assembleStarted=performance.now()
+    run(ffmpeg,['-hide_banner','-loglevel','error','-y','-f','concat','-safe','0','-i',list,'-c','copy','-an',final])
+    const assembleMs=performance.now()-assembleStarted
+    const verifyStarted=performance.now()
+    const probe=JSON.parse(run(ffprobe,['-v','error','-count_frames','-select_streams','v:0','-show_entries','stream=codec_name,width,height,r_frame_rate,nb_read_frames','-of','json',final]))
+    const stream=probe.streams?.[0]
+    if(stream?.codec_name!=='h264'||Number(stream.width)!==width||Number(stream.height)!==height||stream.r_frame_rate!=='60/1'||Number(stream.nb_read_frames)!==totalFrames)throw new Error(`benchmark final inválido: ${JSON.stringify(stream)}`)
+    run(ffmpeg,['-hide_banner','-loglevel','error','-xerror','-i',final,'-map','0:v:0','-f','null','-'])
+    const verifyMs=performance.now()-verifyStarted
+    const elapsedMs=performance.now()-started
+    const peakBytes=memory.stop()
+    if(rendered!==totalFrames)throw new Error(`benchmark enviou ${rendered}/${totalFrames} frames`)
+    return{
+     workerCount,durationSeconds,frames:totalFrames,elapsedMs,throughputFps:totalFrames/(elapsedMs/1000),realtimeFactor:durationSeconds/(elapsedMs/1000),
+     surfaceStartupMs,renderEncodeWallMs,composeMs,readbackMs,frameAcquireMs,encoderReadyMs,frameWriteMs,writerFinishMs,assembleMs,verifyMs,
+     readbackRatio:(composeMs+readbackMs)>0?readbackMs/(composeMs+readbackMs):0,
+     ramInitialBytes:memory.initialBytes,ramPeakBytes:peakBytes,ramScope:'Electron process tree working set; external FFmpeg process memory is not included',
+     rendered,chunkCount:indexes.length,codec:stream.codec_name,width:Number(stream.width),height:Number(stream.height),frameRate:stream.r_frame_rate,outputBytes:fs.statSync(final).size,outputSha256:sha256File(final),
+    }
+  }catch(error){
+    await Promise.all([...activeWriters].map(writer=>writer.cancel().catch(()=>{})))
+    memory.stop()
+    throw error
+  }finally{
+    surfaces.forEach(surface=>surface.close())
+  }
  }
 
  try{
   const serial=await benchmark(1)
   const turbo=await benchmark(2)
   const speedup=serial.elapsedMs/turbo.elapsedMs
-  console.log(JSON.stringify({ok:true,totalFrames,serial,turbo,speedup},null,2))
+  const report=JSON.stringify({ok:true,profile:'mixed-realistic',durationSeconds,dimensions:`${width}x${height}`,frameRate:60,totalFrames,serial,turbo,speedup},null,2)
+  await new Promise((resolve,reject)=>process.stdout.write(`${report}\n`,error=>error?reject(error):resolve()))
  }finally{
   for(const w of BrowserWindow.getAllWindows())if(!w.isDestroyed())w.destroy()
   try{fs.rmSync(root,{recursive:true,force:true,maxRetries:12,retryDelay:150})}catch(error){console.warn('Temp cleanup warning:',error.message)}
-  app.exit(0)
  }
-}).catch(error=>{console.error(error.stack||error.message);process.exitCode=1;app.exit(1)})
+ app.exit(0)
+}).catch(error=>{
+ const message=`${error.stack||error.message}\n`
+ process.exitCode=1
+ process.stderr.write(message,()=>app.exit(1))
+})
