@@ -168,6 +168,15 @@ export class VideoExportCoordinator {
     await active.task.catch(() => undefined)
   }
 
+  async discardRecovery(jobId: string): Promise<void> {
+    const active = this.active.get(jobId)
+    if (active && !['done', 'failed', 'cancelled'].includes(active.progress.stage)) {
+      throw new Error('Não é possível descartar um job de exportação ainda ativo.')
+    }
+    this.active.delete(jobId)
+    await this.jobs.cleanup(jobId)
+  }
+
   private abort(active: ActiveExport): void {
     if (active.controller.signal.aborted) {
       throw active.controller.signal.reason instanceof Error
