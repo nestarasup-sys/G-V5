@@ -44,7 +44,7 @@ function RoteiroCharacterPortrait({ character }: { character: CustomizerCharacte
   }, [character])
 
   return image
-    ? <img className="roteiro-reaction-avatar" src={image} alt={character.name} />
+    ? <span className="roteiro-reaction-avatar"><img src={image} alt={character.name} /></span>
     : <span className="roteiro-reaction-avatar-fallback" aria-label={`Carregando imagem de ${character.name}`}><CharacterPortrait character={character} /></span>
 }
 
