@@ -4,9 +4,10 @@ import { basename, dirname, extname, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import type { StudioDocument, VideoLibraryItem, VideoStudioAsset } from '../src/shared/studio'
 import type { DomainFileSystem } from './domainFileSystem.cjs'
-import { VideoCasShadow } from './videoCasShadow'
+import { sha256File } from './videoCasShadow'
 
 type StorageAdapter = Pick<DomainFileSystem, 'access' | 'copyFile' | 'mkdir' | 'readFile' | 'readdir' | 'rename' | 'stat' | 'unlink' | 'writeFile'>
+  & Partial<Pick<DomainFileSystem, 'resolvePhysicalPath'>>
 let storage: StorageAdapter = { access: nativeAccess, copyFile: nativeCopyFile, mkdir: nativeMkdir, readFile: nativeReadFile,
   readdir: nativeReaddir, rename: nativeRename, stat: nativeStat, unlink: nativeUnlink, writeFile: nativeWriteFile }
 export function configureVideoLibraryStorage(adapter: StorageAdapter) { storage = adapter }
@@ -50,9 +51,16 @@ export class VideoLibraryStore {
   private queue: Promise<unknown> = Promise.resolve()
   constructor(private readonly workspacePath: () => string) {}
   private libraryPath() { return join(this.workspacePath(), 'media-library') }
-  private cas() { return new VideoCasShadow(join(this.libraryPath(), 'cas')) }
   private mediaPath(item: Pick<Entry, 'id' | 'extension'>) { return join(this.libraryPath(), 'videos', `${item.id}.${item.extension}`) }
   private projectMediaPath(studioId: string, item: Pick<Entry, 'id' | 'extension'>) { return join(this.workspacePath(), `studio-${studioId}`, 'videos', `${item.id}.${item.extension}`) }
+  private async hashStoredFile(filePath: string, expectedSha?: string) {
+    // Active app-data domains expose logical paths, so resolve the content-addressed
+    // file before using Node's native stream APIs. For legacy storage the path is physical.
+    const physicalPath = await storage.resolvePhysicalPath?.(filePath) ?? filePath
+    const sha256 = await sha256File(physicalPath)
+    if (expectedSha && expectedSha !== sha256) throw new Error('Fonte mudou antes de entrar no catálogo de vídeos.')
+    return sha256
+  }
   private run<T>(operation: () => Promise<T>): Promise<T> {
     const next = this.queue.catch(() => undefined).then(operation)
     this.queue = next
@@ -118,9 +126,9 @@ export class VideoLibraryStore {
       const existing = catalog.items.find((item) => item.id === asset.id)
       if (existing && (existing.extension !== asset.extension || existing.size !== asset.size)) continue
       await this.copyVerified(source, this.mediaPath(asset), asset.size)
-      const shadow = await this.cas().mirror(this.mediaPath(asset), existing?.sha256)
-      if (!existing) { catalog.items.push({ ...asset, createdAt: project.createdAt, sha256: shadow.sha256 }); changed = true }
-      else if (!existing.sha256) { existing.sha256 = shadow.sha256; changed = true }
+      const sha256 = await this.hashStoredFile(this.mediaPath(asset), existing?.sha256)
+      if (!existing) { catalog.items.push({ ...asset, createdAt: project.createdAt, sha256 }); changed = true }
+      else if (!existing.sha256) { existing.sha256 = sha256; changed = true }
     }
     if (changed) await this.writeCatalog(catalog)
     // A playing preview can temporarily hold a deleted file open on Windows.
@@ -146,10 +154,18 @@ export class VideoLibraryStore {
       const item: Entry = { id: randomUUID(), name: basename(source), extension, mimeType: formats[extension], size: file.size, durationFrames: null, createdAt: new Date().toISOString() }
       const catalog = await this.readCatalog()
       await this.copyVerified(source, this.mediaPath(item), item.size)
-      const shadow = await this.cas().mirror(this.mediaPath(item))
-      item.sha256 = shadow.sha256
-      catalog.items.push(item)
-      await this.writeCatalog(catalog)
+      const mediaPath = this.mediaPath(item)
+      try {
+        item.sha256 = await this.hashStoredFile(mediaPath)
+        catalog.items.push(item)
+        await this.writeCatalog(catalog)
+      } catch (error) {
+        // Do not leave an unlisted media object after a failed import. If the catalog
+        // was committed despite a later I/O error, preserve the referenced file.
+        const catalogContainsItem = await this.readCatalog().then((current) => current.items.some((entry) => entry.id === item.id)).catch(() => true)
+        if (!catalogContainsItem) await unlink(mediaPath).catch(() => undefined)
+        throw error
+      }
       return { ...item, available: true, studios: [] }
     })
   }
