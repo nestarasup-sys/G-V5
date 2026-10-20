@@ -26,7 +26,8 @@
     "test:export:turbo-e2e": "electron scripts/video-studio/turbo-e2e-electron-smoke.cjs",
     "test:export:soak:90": "node scripts/video-studio/export-soak-local.cjs 90",
     "test:export:soak:900": "node scripts/video-studio/export-soak-local.cjs 900",
-    "test:video:character-media-oracle": "electron scripts/video-studio/character-media-oracle-smoke.cjs"
+    "test:video:character-media-oracle": "electron scripts/video-studio/character-media-oracle-smoke.cjs",
+    "bench:video:workers": "electron scripts/video-studio/full-engine-worker-benchmark.cjs"
   },
   "dependencies": {
     "better-sqlite3": "^13.0.3",
