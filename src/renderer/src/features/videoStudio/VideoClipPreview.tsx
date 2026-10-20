@@ -89,7 +89,11 @@ export function VideoStudioClipPreview({ studioId, asset, clip, playheadFrame, p
       if (!media || disposed || !onFramePresented || presentationReported
         || media.readyState < HTMLMediaElement.HAVE_CURRENT_DATA || !Number.isFinite(media.duration)
         || !withinTarget(media.currentTime)) return
-      if (typeof media.requestVideoFrameCallback === 'function') {
+      // A paused media element is allowed to complete a seek without ever
+      // presenting another requestVideoFrameCallback. For oracle/scrub mode,
+      // seeked + decoded current data + exact currentTime is the stable barrier.
+      // rVFC remains useful only while playback is actually running.
+      if (playing && typeof media.requestVideoFrameCallback === 'function') {
         armVideoFrameBarrier()
         return
       }
@@ -99,13 +103,14 @@ export function VideoStudioClipPreview({ studioId, asset, clip, playheadFrame, p
     media?.addEventListener('loadeddata', reportPresentedFallback)
     media?.addEventListener('seeked', reportPresentedFallback)
     media?.addEventListener('timeupdate', reportPresentedFallback)
-    if (media && onFramePresented && typeof media.requestVideoFrameCallback === 'function') {
-      // Arm before update()/currentTime so the callback observes the actual
-      // seek presentation instead of waiting for a non-existent next frame.
-      armVideoFrameBarrier()
+    if (media && onFramePresented) {
+      if (playing && typeof media.requestVideoFrameCallback === 'function') {
+        // During real playback, rVFC confirms the presented mediaTime.
+        armVideoFrameBarrier()
+      }
       presentationTimeout = window.setTimeout(() => {
-        if (!disposed && !presentationReported) onPlaybackError('O decoder não apresentou o frame solicitado em até 4 segundos.')
-      }, 4000)
+        if (!disposed && !presentationReported) onPlaybackError('O decoder não apresentou o frame solicitado em até 8 segundos.')
+      }, 8000)
     }
     playbackRef.current?.update({ clip, frame: playheadFrame, playing, masterAudio })
     reportPresentedFallback()
