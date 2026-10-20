@@ -82,6 +82,16 @@ export function BaseVideosPage() {
     setDetailsById((current) => ({ ...current, [videoId]: next }))
   }
 
+  const flushPendingSave = async (videoId: string) => {
+    const timer = saveTimers.current.get(videoId)
+    if (timer !== undefined) window.clearTimeout(timer)
+    saveTimers.current.delete(videoId)
+    const pending = pendingSaves.current.get(videoId)
+    if (!pending) return
+    await window.desktop.saveBaseVideoDetails(pending)
+    if (pendingSaves.current.get(videoId) === pending) pendingSaves.current.delete(videoId)
+  }
+
   const visibleItems = useMemo(() => items.filter((item) => {
     const details = detailsById[item.id] ?? emptyDetails(item.id)
     return activeView === 'drafts' ? details.videoNumber === undefined : details.videoNumber !== undefined
@@ -99,12 +109,17 @@ export function BaseVideosPage() {
     try {
       const imported = await window.desktop.importVideoLibrary()
       if (!imported) return
-      const ready = await recognizeDuration(imported)
-      const details = emptyDetails(ready.id)
+      const details = emptyDetails(imported.id)
       await window.desktop.saveBaseVideoDetails(details)
-      setItems((current) => [ready, ...current.filter((item) => item.id !== ready.id)])
-      setDetailsById((current) => ({ ...current, [ready.id]: details }))
+      setItems((current) => [imported, ...current.filter((item) => item.id !== imported.id)])
+      setDetailsById((current) => ({ ...current, [imported.id]: details }))
       setActiveView('drafts')
+      try {
+        const ready = await recognizeDuration(imported)
+        setItems((current) => current.map((item) => item.id === ready.id ? ready : item))
+      } catch (reason) {
+        setError(reason instanceof Error ? reason.message : 'O vídeo foi importado como rascunho, mas não foi possível reconhecer sua duração.')
+      }
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Não foi possível adicionar o vídeo.')
     } finally { setBusy(false) }
@@ -114,6 +129,7 @@ export function BaseVideosPage() {
     setBusy(true); setError(null)
     setPublishErrors((current) => ({ ...current, [videoId]: '' }))
     try {
+      await flushPendingSave(videoId)
       const videoNumber = await window.desktop.publishBaseVideo(videoId)
       setDetailsById((current) => ({ ...current, [videoId]: { ...(current[videoId] ?? emptyDetails(videoId)), videoNumber } }))
       setActiveView('main')
@@ -167,11 +183,11 @@ export function BaseVideosPage() {
     <header className="base-videos-subbar">
       <div className="base-videos-heading"><span className="base-videos-heading-icon"><Icon name="frame" /></span><div><h1>Base de vídeos</h1><small>Descrições e tempos compartilhados com os roteiros</small></div></div>
       <div className="base-videos-actions">
-        <button className="base-videos-add" type="button" onClick={() => void addVideo()} disabled={busy}>{busy ? 'Importando…' : 'Adicionar'}</button>
-        <button className={deleteMode ? 'base-videos-cancel-delete' : 'base-videos-delete'} type="button" onClick={() => void handleDelete()} disabled={busy || (!deleteMode && !items.length) || (deleteMode && !selectedIds.length)}>{deleteMode ? `Confirmar (${selectedIds.length})` : 'Excluir'}</button>
-        {deleteMode && <button className="base-videos-cancel" type="button" disabled={busy} onClick={() => { setDeleteMode(false); setSelectedIds([]) }}>Cancelar</button>}
+        <button className="base-videos-add" type="button" onClick={() => void addVideo()} disabled={busy || !loaded}>{busy ? 'Importando…' : 'Adicionar'}</button>
+        <button className={deleteMode ? 'base-videos-cancel-delete' : 'base-videos-delete'} type="button" onClick={() => void handleDelete()} disabled={!loaded || busy || (!deleteMode && !items.length) || (deleteMode && !selectedIds.length)}>{deleteMode ? `Confirmar (${selectedIds.length})` : 'Excluir'}</button>
+        {deleteMode && <button className="base-videos-cancel" type="button" disabled={busy || !loaded} onClick={() => { setDeleteMode(false); setSelectedIds([]) }}>Cancelar</button>}
         <span className="base-videos-action-divider" />
-        <button className={`base-videos-view${activeView === 'drafts' ? ' active' : ''}`} type="button" onClick={() => { setActiveView((view) => view === 'main' ? 'drafts' : 'main'); setDeleteMode(false); setSelectedIds([]) }}>{activeView === 'drafts' ? 'Vídeos' : 'Rascunhos'} <span>{items.filter((item) => detailsById[item.id]?.videoNumber === undefined).length}</span></button>
+        <button className={`base-videos-view${activeView === 'drafts' ? ' active' : ''}`} type="button" disabled={!loaded} onClick={() => { setActiveView((view) => view === 'main' ? 'drafts' : 'main'); setDeleteMode(false); setSelectedIds([]) }}>{activeView === 'drafts' ? 'Vídeos' : 'Rascunhos'} <span>{items.filter((item) => detailsById[item.id]?.videoNumber === undefined).length}</span></button>
       </div>
     </header>
     <div className="base-videos-content">
@@ -184,12 +200,12 @@ export function BaseVideosPage() {
           {deleteMode && <button className="base-video-select" type="button" aria-pressed={selected} onClick={() => setSelectedIds((current) => selected ? current.filter((id) => id !== item.id) : [...current, item.id])}><span>{selected ? '✓' : ''}</span>{selected ? 'Selecionado' : 'Selecionar'}</button>}
           <div className="roteiro-video-preview-panel base-video-notes-panel">
             <div className="roteiro-video-stage"><video src={`gacha-video://library/${item.id}`} controls playsInline preload="none" aria-label={`Prévia de ${item.name}`} />{details.videoNumber !== undefined && <span className="base-video-number" title={`ID ${item.id}`}>VÍDEO {String(details.videoNumber).padStart(2, '0')}</span>}</div>
-            <label className="roteiro-video-description"><span>Descrição do que acontece no vídeo</span><textarea value={details.description} onChange={(event) => updateDetails(item.id, { description: event.target.value })} placeholder="Descreva o que acontece neste vídeo…" maxLength={20000} /></label>
+            <label className="roteiro-video-description"><span>Descrição do que acontece no vídeo</span><textarea value={details.description} disabled={busy} onChange={(event) => updateDetails(item.id, { description: event.target.value })} placeholder="Descreva o que acontece neste vídeo…" maxLength={20000} /></label>
             <div className="roteiro-scene-settings">
-              <label className="roteiro-timeline-field"><span>Linha do tempo</span><select value={details.timeline} onChange={(event) => updateDetails(item.id, { timeline: event.target.value as RoteiroTimeline })}><option value="unspecified">Indefinido</option><option value="past">Passado</option><option value="present">Presente</option><option value="future">Futuro</option></select></label>
-              <label className="roteiro-scene-end-field"><span>Fim da cena da descrição</span><div className="roteiro-timing-input"><input aria-label={`Fim da descrição de ${item.name} em segundos`} type="number" min="0" max="86400" step="0.01" value={details.sceneEndSeconds ?? ''} onChange={(event) => updateSeconds(item.id, 'sceneEndSeconds', event.target.value)} placeholder="0" /><small>segundos</small></div></label>
-              <section className="roteiro-group-reaction first"><header><strong>Primeira reação em grupo</strong><span>REAÇÃO 1</span></header><div className="roteiro-timing-input"><input aria-label={`Primeira reação de ${item.name} em segundos`} type="number" min="0" max="86400" step="0.01" value={details.firstGroupReactionSeconds ?? ''} onChange={(event) => updateSeconds(item.id, 'firstGroupReactionSeconds', event.target.value)} placeholder="0" /><button type="button" onClick={(event) => captureTime(item.id, 'firstGroupReactionSeconds', event.currentTarget.closest('.base-video-card')?.querySelector('video') ?? null)}>Tempo real</button><small>segundos</small></div></section>
-              <section className="roteiro-group-reaction second"><header><strong>Segunda reação em grupo</strong><span>REAÇÃO 2</span></header><div className="roteiro-timing-input"><input aria-label={`Segunda reação de ${item.name} em segundos`} type="number" min="0" max="86400" step="0.01" value={details.secondGroupReactionSeconds ?? ''} onChange={(event) => updateSeconds(item.id, 'secondGroupReactionSeconds', event.target.value)} placeholder="0" /><button type="button" onClick={(event) => captureTime(item.id, 'secondGroupReactionSeconds', event.currentTarget.closest('.base-video-card')?.querySelector('video') ?? null)}>Tempo real</button><small>segundos</small></div></section>
+              <label className="roteiro-timeline-field"><span>Linha do tempo</span><select disabled={busy} value={details.timeline} onChange={(event) => updateDetails(item.id, { timeline: event.target.value as RoteiroTimeline })}><option value="unspecified">Indefinido</option><option value="past">Passado</option><option value="present">Presente</option><option value="future">Futuro</option></select></label>
+              <label className="roteiro-scene-end-field"><span>Fim da cena da descrição</span><div className="roteiro-timing-input"><input disabled={busy} aria-label={`Fim da descrição de ${item.name} em segundos`} type="number" min="0" max="86400" step="0.01" value={details.sceneEndSeconds ?? ''} onChange={(event) => updateSeconds(item.id, 'sceneEndSeconds', event.target.value)} placeholder="0" /><small>segundos</small></div></label>
+              <section className="roteiro-group-reaction first"><header><strong>Primeira reação em grupo</strong><span>REAÇÃO 1</span></header><div className="roteiro-timing-input"><input disabled={busy} aria-label={`Primeira reação de ${item.name} em segundos`} type="number" min="0" max="86400" step="0.01" value={details.firstGroupReactionSeconds ?? ''} onChange={(event) => updateSeconds(item.id, 'firstGroupReactionSeconds', event.target.value)} placeholder="0" /><button disabled={busy} type="button" onClick={(event) => captureTime(item.id, 'firstGroupReactionSeconds', event.currentTarget.closest('.base-video-card')?.querySelector('video') ?? null)}>Tempo real</button><small>segundos</small></div></section>
+              <section className="roteiro-group-reaction second"><header><strong>Segunda reação em grupo</strong><span>REAÇÃO 2</span></header><div className="roteiro-timing-input"><input disabled={busy} aria-label={`Segunda reação de ${item.name} em segundos`} type="number" min="0" max="86400" step="0.01" value={details.secondGroupReactionSeconds ?? ''} onChange={(event) => updateSeconds(item.id, 'secondGroupReactionSeconds', event.target.value)} placeholder="0" /><button disabled={busy} type="button" onClick={(event) => captureTime(item.id, 'secondGroupReactionSeconds', event.currentTarget.closest('.base-video-card')?.querySelector('video') ?? null)}>Tempo real</button><small>segundos</small></div></section>
             </div>
             {activeView === 'drafts' && !deleteMode && <><button className="base-video-send" type="button" disabled={busy} onClick={() => void sendToBase(item.id)}>{busy ? 'Enviando…' : 'Enviar para base de vídeos'}</button>{publishErrors[item.id] && <p className="base-video-publish-error" role="alert">{publishErrors[item.id]}</p>}</>}
           </div>

@@ -188,7 +188,7 @@ function RoteiroSectionEditor({ title, subtitle, content, characters, characterI
     } finally { setBusy(false) }
   }
 
-  return <main className="roteiro-workspace-editor" aria-label={'Área de edição: ' + title}>
+  return <><main className="roteiro-workspace-editor" aria-label={'Área de edição: ' + title}>
     <header className="roteiro-editor-subbar"><div><strong>{title}</strong><span>{subtitle}</span></div></header>
     {error && <p className="roteiro-editor-error" role="alert">{error}</p>}
     <section className="roteiro-video-stage-wrap" aria-label="Preview 1920 por 1080">
@@ -240,7 +240,7 @@ function RoteiroSectionEditor({ title, subtitle, content, characters, characterI
       </button>) : <p>Nenhum vídeo publicado na Base. Os rascunhos não aparecem aqui.</p>}</div>
       <footer><button type="button" onClick={() => setPickerOpen(false)}>Fechar</button></footer>
     </section>
-  </div>}
+  </div>}</>
 }
 
 function RoteiroWorkspace({ roteiro, onBack, onUpdate, onDeleteDraftVideo, characters }: { roteiro: SidebarRoteiro; onBack: () => void; onUpdate: (next: SidebarRoteiro) => void; onDeleteDraftVideo: (next: SidebarRoteiro, videoId: string) => Promise<boolean>; characters: CustomizerCharacter[] }) {

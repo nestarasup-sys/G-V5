@@ -192,12 +192,12 @@ export class VideoLibraryStore {
       return items.map(({ createdAt: _createdAt, ...item }) => ({ ...item, durationFrames: item.durationFrames! }))
     })
   }
-  async resolveMedia(id: string): Promise<{ path: string; extension: Entry['extension'] }> {
+  async resolveMedia(id: string): Promise<{ path: string; extension: Entry['extension']; durationFrames: Entry['durationFrames'] }> {
     requireId(id)
     return this.run(async () => {
       const item = (await this.readCatalog()).items.find((entry) => entry.id === id)
       if (!item) throw new Error('Vídeo não encontrado na biblioteca.')
-      return { path: this.mediaPath(item), extension: item.extension }
+      return { path: this.mediaPath(item), extension: item.extension, durationFrames: item.durationFrames }
     })
   }
   /** Resolves a referenced copy from this saved project, never a same-named asset in another project. */

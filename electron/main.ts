@@ -2111,6 +2111,7 @@ async function registerFabricatorHandlers(): Promise<void> {
     assertTrustedSender(event)
     if (typeof videoId !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(videoId)) throw new Error('Identificador de vídeo inválido.')
     const media = await videoLibrary.resolveMedia(videoId)
+    if (media.durationFrames === null) throw new Error('A duração deste vídeo ainda não foi reconhecida. Reabra a prévia ou importe o arquivo novamente antes de enviá-lo à Base.')
     // Library paths are virtual when media is in the content-addressed catalog; resolve those
     // references before using native filesystem APIs. Legacy files still use their logical path.
     const physicalMediaPath = await dataFileSystem.resolvePhysicalPath(media.path)
