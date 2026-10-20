@@ -52,7 +52,7 @@ window.__resultPromise=(async()=>{const native=await htmlVideo();const mediabunn
   const win=new BrowserWindow({show:false,width:640,height:360,webPreferences:{contextIsolation:true,nodeIntegration:false,sandbox:false,backgroundThrottling:false}})
   try{
     await win.loadFile(html)
-    const result=await win.webContents.executeJavaScript('window.__resultPromise',true)
+    const result=await win.webContents.executeJavaScript('(async()=>{while(!window.__resultPromise)await new Promise(r=>setTimeout(r,10));return await window.__resultPromise})()',true)
     if(!result?.ok)throw new Error('Mediabunny A/B did not return result.')
     console.log(JSON.stringify(result,null,2))
   }finally{
