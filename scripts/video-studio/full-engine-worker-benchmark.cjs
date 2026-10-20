@@ -64,7 +64,7 @@ app.whenReady().then(async()=>{
  const allowed=new Set(),sessions=new Map()
  ipcMain.handle('video-studio:export-surface:prepare',(event,id)=>{if(id!==jobId||!allowed.has(event.sender.id))throw new Error('sender inválido');return bootstrap})
  ipcMain.on('video-studio:export-surface:ready',(event,ready)=>{const session=sessions.get(event.sender.id);if(!session)return;if(ready.error)session.reject(new Error(ready.error));else{session.ready=true;session.resolveReady()}})
- ipcMain.on('video-studio:export-surface:frame-ready',(event,ready)=>{const s=sessions.get(event.sender.id);const p=s?.pending.get(ready.requestId);if(!p)return;s.pending.delete(ready.requestId);if(ready.error)p.reject(new Error(ready.error));else if(!(ready.pixels instanceof Uint8Array))p.reject(new Error('pixels ausentes'));else p.resolve(pixel.rgbaToBgra(ready.pixels))})
+ ipcMain.on('video-studio:export-surface:frame-ready',(event,ready)=>{const s=sessions.get(event.sender.id);const p=s?.pending.get(ready.requestId);if(!p)return;s.pending.delete(ready.requestId);if(ready.error)p.reject(new Error(ready.error));else if(!(ready.pixels instanceof Uint8Array))p.reject(new Error('pixels ausentes'));else p.resolve({pixels:pixel.rgbaToBgra(ready.pixels),timings:ready.timings||{composeMs:0,readbackMs:0}})})
 
  async function openSurface(){
   const win=new BrowserWindow({show:false,frame:false,width,height,useContentSize:true,webPreferences:{preload:preloadPath,contextIsolation:true,nodeIntegration:false,sandbox:true,backgroundThrottling:false,offscreen:true}})
@@ -80,14 +80,14 @@ app.whenReady().then(async()=>{
   const dir=path.join(root,`w${workerCount}`);fs.mkdirSync(dir,{recursive:true})
   const surfaces=await Promise.all(Array.from({length:workerCount},()=>openSurface()))
   const indexes=Array.from({length:Math.ceil(totalFrames/chunkFrames)},(_,i)=>i)
-  const cursor={value:0};let rendered=0
+  const cursor={value:0};let rendered=0,composeMs=0,readbackMs=0
   const started=performance.now()
   async function worker(surface){
     while(true){const at=cursor.value++;const index=indexes[at];if(index===undefined)return
       const start=index*chunkFrames,end=Math.min(totalFrames,start+chunkFrames),out=path.join(dir,`chunk-${index}.mp4`)
       const writer=new raw.VideoRawFrameWriter({executable:ffmpeg,args:raw.buildVideoStudioChunkArgs(out,end-start,'bgra','h264_mf'),outputPath:out,frameBytes:width*height*4,frameCount:end-start})
       await writer.ready()
-      for(let frame=start;frame<end;frame++){const pixels=await surface.frame(frame);await writer.writeFrame(pixels,{copy:false});rendered++}
+      for(let frame=start;frame<end;frame++){const result=await surface.frame(frame);composeMs+=result.timings.composeMs;readbackMs+=result.timings.readbackMs;await writer.writeFrame(result.pixels,{copy:false});rendered++}
       await writer.finish()
     }
   }
@@ -97,7 +97,7 @@ app.whenReady().then(async()=>{
   const final=path.join(dir,'final.mp4');run(ffmpeg,['-hide_banner','-loglevel','error','-y','-f','concat','-safe','0','-i',list,'-c','copy','-an',final])
   const probe=JSON.parse(run(ffprobe,['-v','error','-count_frames','-select_streams','v:0','-show_entries','stream=codec_name,width,height,r_frame_rate,nb_read_frames','-of','json',final]))
   if(Number(probe.streams?.[0]?.nb_read_frames)!==totalFrames)throw new Error('benchmark final perdeu frames')
-  return{workerCount,elapsedMs,throughputFps:totalFrames/(elapsedMs/1000),realtimeFactor:(totalFrames/60)/(elapsedMs/1000),rendered,bytes:fs.statSync(final).size}
+  return{workerCount,elapsedMs,throughputFps:totalFrames/(elapsedMs/1000),realtimeFactor:(totalFrames/60)/(elapsedMs/1000),rendered,composeMs,readbackMs,readbackRatio:(composeMs+readbackMs)>0?readbackMs/(composeMs+readbackMs):0,bytes:fs.statSync(final).size}
  }
 
  try{
