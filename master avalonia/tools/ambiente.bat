@@ -1,0 +1,10 @@
+@echo off
+set "DOTNET_ROOT=%~dp0..\.tools\dotnet"
+set "DOTNET_CLI_HOME=%~dp0..\.tools\cli-home"
+set "NUGET_PACKAGES=%~dp0..\.packages"
+set "NUGET_HTTP_CACHE_PATH=%~dp0..\.tools\nuget-http-cache"
+set "NUGET_PLUGINS_CACHE_PATH=%~dp0..\.tools\nuget-plugins-cache"
+set "DOTNET_CLI_TELEMETRY_OPTOUT=1"
+set "DOTNET_NOLOGO=1"
+set "DOTNET_CLI_UI_LANGUAGE=en-US"
+set "PATH=%DOTNET_ROOT%;%PATH%"

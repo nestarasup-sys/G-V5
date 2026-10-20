@@ -2,6 +2,21 @@
 
 Status: proposta de arquitetura, antes da implementação.
 
+## Ambiente de desenvolvimento sem Visual Studio
+
+A escolha é C# + Avalonia + SDK .NET portátil, com scripts `.bat`. O Visual Studio não será requisito. O SDK fica em `.tools/dotnet`, o perfil da CLI e os templates em `.tools/cli-home`, e o cache de pacotes em `.packages`, todos dentro desta pasta e ignorados pelo Git.
+
+Versões iniciais fixadas: .NET SDK **10.0.402** (linha .NET 10 LTS) e templates Avalonia **12.1.4**. O `global.json` exige o SDK escolhido. O SDK inclui runtime, compilador e ferramentas de compilação; não é preciso instalar um runtime separado para desenvolver.
+
+- `Preparar.bat`: baixa o SDK do servidor oficial, verifica SHA-512 e instala os templates Avalonia no perfil local.
+- `Desenvolver.bat`: usa o SDK local e inicia `dotnet watch` quando o projeto Desktop existir. Antes disso, informa que a criação do app ainda está pendente.
+- Os pacotes do aplicativo serão fixados e restaurados conforme seus projetos forem criados. Não instalar ferramentas globais, workloads móveis ou bibliotecas sem uso definido.
+- `.tools` e `.packages` são arquivos locais reproduzíveis, não conteúdo para enviar ao GitHub.
+
+A instalação inicial precisa de internet. Depois, a disponibilidade offline depende dos pacotes já restaurados. `dotnet watch` aplica as alterações suportadas e pode reiniciar o aplicativo quando necessário; isso não promete atualizar qualquer mudança sem reinício.
+
+Fontes oficiais: [releases .NET 10](https://builds.dotnet.microsoft.com/dotnet/release-metadata/10.0/releases.json) e [instalação Avalonia](https://docs.avaloniaui.net/docs/get-started/install-avalonia).
+
 ## 1. Objetivo e fronteira do novo aplicativo
 
 Construir um aplicativo novo em C# e Avalonia, começando pelo Fabricador e pelo Customizador. Aproveitar o conhecimento do produto e os arquivos úteis do aplicativo antigo, sem transportar sua organização interna automaticamente.
