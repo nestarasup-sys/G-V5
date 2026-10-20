@@ -18,7 +18,7 @@ const mimeByExtension = { mp4: 'video/mp4', webm: 'video/webm', mov: 'video/quic
 export type VideoExportChunk = { index: number; startFrame: number; endFrame: number; filename: string; sizeBytes: number; sha256: string }
 export type PinnedVideoExportMediaDependency = VideoExportMediaDependency & { filename: string }
 export type VideoExportManifest = {
-  schemaVersion: 1
+  schemaVersion: 1 | 2
   jobId: string
   studioId: string
   snapshotSha256: string
@@ -50,6 +50,7 @@ export type VideoExportManifest = {
 
 export class VideoExportJobStore {
   readonly root: string
+  private readonly manifestMutationQueues = new Map<string, Promise<void>>()
   constructor(root: string, private readonly resolveMedia?: ResolveVideoExportMedia) { this.root = resolve(root) }
 
   private pathFor(jobId: string): string {
@@ -347,7 +348,7 @@ export class VideoExportJobStore {
       for (const image of preparedCharacterAssets?.images ?? []) pinnedCharacterImages.push(await this.pinSnapshotImage(folder, image))
       const now = new Date().toISOString()
       const manifest: VideoExportManifest = {
-        schemaVersion: 1, jobId: input.jobId, studioId: input.studioId, snapshotSha256: input.snapshotSha256,
+        schemaVersion: 2, jobId: input.jobId, studioId: input.studioId, snapshotSha256: input.snapshotSha256,
         mediaSha256: [...new Set(input.mediaSha256)].sort(), ...(pinnedDependencies.length ? { mediaDependencies: pinnedDependencies } : {}),
         ...(preparedSnapshot ? { snapshotFile: 'snapshot.json' as const, renderVariant: input.renderVariant,
           ...(pinnedSnapshotImages.length ? { snapshotImageDependencies: pinnedSnapshotImages } : {}) } : {}),
@@ -375,13 +376,13 @@ export class VideoExportJobStore {
     }
   }
 
-  async reopen(jobId: string, expected?: { studioId: string; snapshotSha256: string; mediaSha256: string[]; mediaDependencies?: ReadonlyArray<VideoExportMediaDependency>; durationFrames: number; renderVariant?: RenderVariant; characterAssetsSha256?: string; charactersSha256?: string }): Promise<{ manifest: VideoExportManifest; nextChunkIndex: number; snapshot?: VideoExportSnapshot; characters?: VideoExportCharacterSnapshot; characterAssets?: VideoCharacterRenderAssetSnapshot }> {
+  async reopen(jobId: string, expected?: { studioId: string; snapshotSha256: string; mediaSha256: string[]; mediaDependencies?: ReadonlyArray<VideoExportMediaDependency>; durationFrames: number; renderVariant?: RenderVariant; characterAssetsSha256?: string; charactersSha256?: string }): Promise<{ manifest: VideoExportManifest; nextChunkIndex: number; missingChunkIndexes: number[]; snapshot?: VideoExportSnapshot; characters?: VideoExportCharacterSnapshot; characterAssets?: VideoCharacterRenderAssetSnapshot }> {
     const folder = this.pathFor(jobId)
     const info = await lstat(folder)
     if (!info.isDirectory() || info.isSymbolicLink()) throw new Error('Pasta do job inválida.')
     const manifest = JSON.parse(await readFile(join(folder, 'manifest.json'), 'utf8')) as VideoExportManifest
     const expectedMedia = [...new Set(expected?.mediaSha256 ?? manifest.mediaSha256 ?? [])].sort()
-    if (manifest.schemaVersion !== 1 || manifest.jobId !== jobId || !idPattern.test(manifest.studioId)
+    if (![1, 2].includes(manifest.schemaVersion) || manifest.jobId !== jobId || !idPattern.test(manifest.studioId)
       || !shaPattern.test(manifest.snapshotSha256) || !Array.isArray(manifest.mediaSha256)
       || manifest.mediaSha256.some((hash) => !shaPattern.test(hash))
       || JSON.stringify(manifest.mediaSha256) !== JSON.stringify([...new Set(manifest.mediaSha256)].sort())
@@ -447,17 +448,35 @@ export class VideoExportJobStore {
       validChunks.push(chunk)
     }
     validChunks.sort((left, right) => left.index - right.index)
-    const contiguous: VideoExportChunk[] = []
-    for (const chunk of validChunks) {
-      if (chunk.index !== contiguous.length) break
-      contiguous.push(chunk)
+    const deduplicated = validChunks.filter((chunk, index) => index === 0 || chunk.index !== validChunks[index - 1].index)
+    const totalChunks = Math.ceil(manifest.durationFrames / manifest.chunkFrames)
+    let retained: VideoExportChunk[]
+    if (manifest.schemaVersion === 1) {
+      const contiguous: VideoExportChunk[] = []
+      for (const chunk of deduplicated) {
+        if (chunk.index !== contiguous.length) break
+        contiguous.push(chunk)
+      }
+      retained = contiguous
+    } else {
+      retained = deduplicated.filter((chunk) => chunk.index < totalChunks)
     }
-    const repaired = { ...manifest, chunks: contiguous }
-    if (contiguous.length !== manifest.chunks.length) {
+    const completedIndexes = new Set(retained.map((chunk) => chunk.index))
+    const missingChunkIndexes = Array.from({ length: totalChunks }, (_, index) => index).filter((index) => !completedIndexes.has(index))
+    const nextChunkIndex = missingChunkIndexes[0] ?? totalChunks
+    const repaired = { ...manifest, chunks: retained }
+    if (JSON.stringify(retained) !== JSON.stringify(manifest.chunks)) {
       repaired.updatedAt = new Date().toISOString()
       await this.writeManifest(folder, repaired)
     }
-    return { manifest: repaired, nextChunkIndex: contiguous.length, ...(snapshot ? { snapshot } : {}), ...(characters ? { characters } : {}), ...(characterAssets ? { characterAssets } : {}) }
+    return {
+      manifest: repaired,
+      nextChunkIndex,
+      missingChunkIndexes,
+      ...(snapshot ? { snapshot } : {}),
+      ...(characters ? { characters } : {}),
+      ...(characterAssets ? { characterAssets } : {}),
+    }
   }
 
   async readSnapshot(jobId: string): Promise<VideoExportSnapshot> {
@@ -541,19 +560,43 @@ export class VideoExportJobStore {
     return { path: canonicalPath, extension: dependency.extension, mimeType: dependency.mimeType, sizeBytes: dependency.sizeBytes }
   }
 
+  private async serializeManifestMutation<T>(jobId: string, mutation: () => Promise<T>): Promise<T> {
+    const previous = this.manifestMutationQueues.get(jobId) ?? Promise.resolve()
+    let release!: () => void
+    const barrier = new Promise<void>((resolve) => { release = resolve })
+    const queued = previous.catch(() => undefined).then(() => barrier)
+    this.manifestMutationQueues.set(jobId, queued)
+    await previous.catch(() => undefined)
+    try {
+      return await mutation()
+    } finally {
+      release()
+      if (this.manifestMutationQueues.get(jobId) === queued) this.manifestMutationQueues.delete(jobId)
+    }
+  }
+
   async recordChunk(jobId: string, index: number): Promise<VideoExportManifest> {
-    const folder = this.pathFor(jobId)
-    const manifest = JSON.parse(await readFile(join(folder, 'manifest.json'), 'utf8')) as VideoExportManifest
-    if (index !== manifest.chunks.length) throw new Error('Os trechos precisam ser confirmados em ordem, sem lacunas ou duplicações.')
-    const range = this.expectedRange(manifest, index)
-    const filename = `chunk-${String(index).padStart(6, '0')}.mp4`
-    const path = join(folder, filename)
-    const info = await lstat(path)
-    if (!info.isFile() || info.isSymbolicLink() || info.size < 1) throw new Error('Trecho temporário ausente ou inválido.')
-    const chunk: VideoExportChunk = { index, ...range, filename, sizeBytes: info.size, sha256: await this.hashFile(path) }
-    const updated = { ...manifest, updatedAt: new Date().toISOString(), chunks: [...manifest.chunks, chunk] }
-    await this.writeManifest(folder, updated)
-    return updated
+    return this.serializeManifestMutation(jobId, async () => {
+      const folder = this.pathFor(jobId)
+      const manifest = JSON.parse(await readFile(join(folder, 'manifest.json'), 'utf8')) as VideoExportManifest
+      const range = this.expectedRange(manifest, index)
+      if (manifest.schemaVersion === 1 && index !== manifest.chunks.length) {
+        throw new Error('Jobs v1 exigem trechos confirmados em ordem.')
+      }
+      if (manifest.chunks.some((chunk) => chunk.index === index)) throw new Error('Este trecho já foi confirmado no manifesto.')
+      const filename = `chunk-${String(index).padStart(6, '0')}.mp4`
+      const path = join(folder, filename)
+      const info = await lstat(path)
+      if (!info.isFile() || info.isSymbolicLink() || info.size < 1) throw new Error('Trecho temporário ausente ou inválido.')
+      const chunk: VideoExportChunk = { index, ...range, filename, sizeBytes: info.size, sha256: await this.hashFile(path) }
+      const updated = {
+        ...manifest,
+        updatedAt: new Date().toISOString(),
+        chunks: [...manifest.chunks, chunk].sort((left, right) => left.index - right.index),
+      }
+      await this.writeManifest(folder, updated)
+      return updated
+    })
   }
 
   async listRecoverable(): Promise<VideoExportRecoveryRecord[]> {
