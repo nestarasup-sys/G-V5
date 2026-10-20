@@ -320,14 +320,13 @@ export function FabricatorPage() {
     if (!element) return
     const measure = () => {
       const bounds = element.getBoundingClientRect()
-      setStageSize({ width: bounds.width, height: bounds.height })
+      setStageSize((previous) => previous.width === bounds.width && previous.height === bounds.height ? previous : { width: bounds.width, height: bounds.height })
     }
     measure()
     const observer = new ResizeObserver(measure)
     observer.observe(element)
-    window.addEventListener('resize', measure)
-    return () => { observer.disconnect(); window.removeEventListener('resize', measure) }
-  }, [activeSection, project])
+    return () => { observer.disconnect() }
+  }, [activeSection])
 
   useEffect(() => {
     if (!project) { setSaveState('saved'); return }
@@ -348,7 +347,8 @@ export function FabricatorPage() {
 
   const selectedPartIds = selectedIds
   const selectedPart = project?.parts.find((part) => part.id === selectedPartIds[0]) ?? null
-  const visibleParts = useMemo(() => (project?.parts ?? []).filter((part) => part.name.toLowerCase().includes(filter.toLowerCase())), [project, filter])
+  const normalizedPartFilter = useMemo(() => filter.toLowerCase(), [filter])
+  const visibleParts = useMemo(() => (project?.parts ?? []).filter((part) => part.name.toLowerCase().includes(normalizedPartFilter)), [project, normalizedPartFilter])
   const canvasParts = useMemo(() => project ? orderedParts(project.parts, project.layerOrder) : [], [project])
   const frontToBackLayers = useMemo(() => canvasParts.slice().reverse(), [canvasParts])
   const jointedParts = useMemo(() => {
