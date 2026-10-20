@@ -256,6 +256,7 @@ function RoteiroSectionEditor({ title, subtitle, content, characters, characterI
           <section className="roteiro-group-reaction second"><header><strong>Segunda reação em grupo</strong><span>REAÇÃO 2</span></header><div className="roteiro-timing-input"><input aria-label="Segunda reação em grupo em segundos" type="number" min="0" max="86400" step="0.01" value={content.secondGroupReactionSeconds ?? ''} onChange={(event) => updateSeconds('secondGroupReactionSeconds', event.target.value)} placeholder="0" /><button type="button" onClick={() => captureReactionTime('secondGroupReactionSeconds')}>Tempo real</button><small>segundos</small></div></section>
         </div>
         {video && [content.sceneEndSeconds, content.firstGroupReactionSeconds, content.secondGroupReactionSeconds].some((seconds) => seconds !== undefined && seconds > video.durationFrames / 60) && <p className="roteiro-time-warning" role="status"><Icon name="warning" /> Um ou mais tempos ultrapassam a duração do vídeo ({(video.durationFrames / 60).toFixed(2)} s).</p>}
+        <label className="roteiro-additional-context"><span>Contexto adicional para IA</span><textarea value={content.additionalContext ?? ''} onChange={(event) => onUpdate({ ...content, additionalContext: event.target.value })} placeholder="Adicione informações, regras ou detalhes que a IA deve considerar…" maxLength={20000} /></label>
       </div>
     </section>
     <section className="roteiro-reaction-sequence" aria-label="Sequência de reações">
@@ -277,7 +278,6 @@ function RoteiroSectionEditor({ title, subtitle, content, characters, characterI
         </div>
       </article>)}</div>}
     </section>
-    <label className="roteiro-additional-context"><span>Contexto adicional para IA</span><textarea value={content.additionalContext ?? ''} onChange={(event) => onUpdate({ ...content, additionalContext: event.target.value })} placeholder="Adicione informações, regras ou detalhes que a IA deve considerar…" maxLength={20000} /></label>
   </main>{pickerOpen && <div className="roteiro-modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setPickerOpen(false) }}>
     <section className="roteiro-video-picker-modal" role="dialog" aria-modal="true" aria-labelledby="roteiro-video-picker-title">
       <header><div><span>BASE DE VÍDEOS</span><h2 id="roteiro-video-picker-title">Selecionar vídeo</h2><p>Escolha um vídeo publicado para vincular a esta seção.</p></div><button type="button" aria-label="Fechar" onClick={() => setPickerOpen(false)}>×</button></header>
