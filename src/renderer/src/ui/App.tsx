@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { Navigate, Route, Routes, useLocation } from 'react-router'
 import { TopBar } from './components/TopBar'
 import { AppErrorBoundary } from './components/AppErrorBoundary'
@@ -23,7 +23,7 @@ const roteiroAreas = [
 
 type SidebarRoteiro = RoteiroDocument
 
-const emptyRoteiroContent = (): RoteiroSectionContent => ({ video: null, blocks: [], description: '' })
+const emptyRoteiroContent = (): RoteiroSectionContent => ({ video: null, blocks: [], description: '', timeline: 'unspecified' })
 
 function roteiroVideoReference(item: VideoLibraryItem): RoteiroVideoReference {
   if (item.durationFrames === null) throw new Error('A duração do vídeo ainda não foi reconhecida.')
@@ -41,6 +41,7 @@ function RoteiroSectionEditor({ title, subtitle, content, characters, characterI
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [blocksCollapsed, setBlocksCollapsed] = useState(false)
+  const previewRef = useRef<HTMLVideoElement>(null)
   const addVideo = async () => {
     setBusy(true)
     setError(null)
@@ -82,6 +83,20 @@ function RoteiroSectionEditor({ title, subtitle, content, characters, characterI
     id: crypto.randomUUID(), characterId: characterIds[0] ?? '', kind: 'fala', expression: '', textPortuguese: '', textEnglish: ''
   }] })
   const video = content.video
+  const captureReactionTime = (field: 'firstGroupReactionSeconds' | 'secondGroupReactionSeconds') => {
+    const currentTime = previewRef.current?.currentTime
+    if (typeof currentTime !== 'number' || !Number.isFinite(currentTime) || currentTime < 0) {
+      setError('Adicione um vídeo e pause na posição desejada para registrar o tempo real.')
+      return
+    }
+    setError(null)
+    onUpdate({ ...content, [field]: Number(currentTime.toFixed(2)) })
+  }
+  const updateSeconds = (field: 'sceneEndSeconds' | 'firstGroupReactionSeconds' | 'secondGroupReactionSeconds', value: string) => {
+    const seconds = value === '' ? undefined : Number(value)
+    if (seconds !== undefined && (!Number.isFinite(seconds) || seconds < 0 || seconds > 86400)) return
+    onUpdate({ ...content, [field]: seconds })
+  }
 
   return <main className="roteiro-workspace-editor" aria-label={'Área de edição: ' + title}>
     <header className="roteiro-editor-subbar"><div><strong>{title}</strong><span>{subtitle}</span></div><div className="roteiro-video-actions">
@@ -92,9 +107,15 @@ function RoteiroSectionEditor({ title, subtitle, content, characters, characterI
     <section className="roteiro-video-stage-wrap" aria-label="Preview 1920 por 1080">
       <div className="roteiro-video-preview-panel">
         <div className="roteiro-video-stage">
-          {video ? <video key={video.id} src={`gacha-video://library/${video.id}`} controls playsInline preload="metadata" aria-label={'Prévia de ' + video.name} /> : <div className="roteiro-video-placeholder"><Icon name="camera" /><strong>Preview 1920 × 1080</strong><span>Adicione um vídeo para visualizar esta seção.</span></div>}
+          {video ? <video ref={previewRef} key={video.id} src={`gacha-video://library/${video.id}`} controls playsInline preload="metadata" aria-label={'Prévia de ' + video.name} /> : <div className="roteiro-video-placeholder"><Icon name="camera" /><strong>Preview 1920 × 1080</strong><span>Adicione um vídeo para visualizar esta seção.</span></div>}
         </div>
         <label className="roteiro-video-description"><span>Descrição do que acontece no vídeo</span><textarea value={content.description ?? ''} onChange={(event) => onUpdate({ ...content, description: event.target.value })} placeholder="Descreva o que acontece neste vídeo…" maxLength={20000} /></label>
+        <div className="roteiro-scene-settings">
+          <label className="roteiro-timeline-field"><span>Linha do tempo</span><select value={content.timeline ?? 'unspecified'} onChange={(event) => onUpdate({ ...content, timeline: event.target.value as RoteiroSectionContent['timeline'] })}><option value="unspecified">Indefinido</option><option value="past">Passado</option><option value="present">Presente</option><option value="future">Futuro</option></select></label>
+          <label className="roteiro-scene-end-field"><span>Fim da cena da descrição</span><div className="roteiro-timing-input"><input aria-label="Fim da cena da descrição em segundos" type="number" min="0" max="86400" step="0.01" value={content.sceneEndSeconds ?? ''} onChange={(event) => updateSeconds('sceneEndSeconds', event.target.value)} placeholder="0" /><small>segundos</small></div></label>
+          <section className="roteiro-group-reaction first"><header><strong>Primeira reação em grupo</strong><span>REAÇÃO 1</span></header><div className="roteiro-timing-input"><input aria-label="Primeira reação em grupo em segundos" type="number" min="0" max="86400" step="0.01" value={content.firstGroupReactionSeconds ?? ''} onChange={(event) => updateSeconds('firstGroupReactionSeconds', event.target.value)} placeholder="0" /><button type="button" onClick={() => captureReactionTime('firstGroupReactionSeconds')}>Tempo real</button><small>segundos</small></div></section>
+          <section className="roteiro-group-reaction second"><header><strong>Segunda reação em grupo</strong><span>REAÇÃO 2</span></header><div className="roteiro-timing-input"><input aria-label="Segunda reação em grupo em segundos" type="number" min="0" max="86400" step="0.01" value={content.secondGroupReactionSeconds ?? ''} onChange={(event) => updateSeconds('secondGroupReactionSeconds', event.target.value)} placeholder="0" /><button type="button" onClick={() => captureReactionTime('secondGroupReactionSeconds')}>Tempo real</button><small>segundos</small></div></section>
+        </div>
       </div>
     </section>
     <section className="roteiro-reaction-sequence" aria-label="Sequência de reações">
@@ -126,10 +147,10 @@ function RoteiroWorkspace({ roteiro, onBack, onUpdate, characters }: { roteiro: 
   const [editingTitle, setEditingTitle] = useState('')
   const [editingVideoTitle, setEditingVideoTitle] = useState('')
   const activeTikTok = roteiro.tiktoks.find((item) => item.id === activeContentId)
-  const activeContent = activeContentId === 'opening' ? roteiro.opening ?? emptyRoteiroContent() : { video: activeTikTok?.video ?? null, blocks: activeTikTok?.blocks ?? [], description: activeTikTok?.description ?? '' }
+  const activeContent = activeContentId === 'opening' ? roteiro.opening ?? emptyRoteiroContent() : { video: activeTikTok?.video ?? null, blocks: activeTikTok?.blocks ?? [], description: activeTikTok?.description ?? '', timeline: activeTikTok?.timeline ?? 'unspecified', sceneEndSeconds: activeTikTok?.sceneEndSeconds, firstGroupReactionSeconds: activeTikTok?.firstGroupReactionSeconds, secondGroupReactionSeconds: activeTikTok?.secondGroupReactionSeconds }
   const updateActiveContent = (content: RoteiroSectionContent) => {
     if (activeContentId === 'opening') onUpdate({ ...roteiro, opening: content })
-    else onUpdate({ ...roteiro, tiktoks: roteiro.tiktoks.map((item) => item.id === activeContentId ? { ...item, video: content.video, blocks: content.blocks, description: content.description ?? '' } : item) })
+    else onUpdate({ ...roteiro, tiktoks: roteiro.tiktoks.map((item) => item.id === activeContentId ? { ...item, video: content.video, blocks: content.blocks, description: content.description ?? '', timeline: content.timeline, sceneEndSeconds: content.sceneEndSeconds, firstGroupReactionSeconds: content.firstGroupReactionSeconds, secondGroupReactionSeconds: content.secondGroupReactionSeconds } : item) })
   }
   const addTikTok = () => {
     const number = roteiro.tiktoks.length + 1

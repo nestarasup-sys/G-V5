@@ -139,7 +139,7 @@ class DataPlatform {
     this.database = new Database(dbPath, { timeout: 5000 })
     this.database.pragma('foreign_keys = ON')
     const currentSchema = this.database.pragma('user_version', { simple: true })
-    if (currentSchema > 7) {
+    if (currentSchema > 8) {
       this.database.close()
       this.database = null
       throw new Error(`O catálogo usa schema ${currentSchema}, mais novo que esta versão do app.`)
@@ -235,6 +235,10 @@ class DataPlatform {
         video_asset_json TEXT,
         blocks_json TEXT NOT NULL DEFAULT '[]',
         description_text TEXT NOT NULL DEFAULT '',
+        timeline TEXT NOT NULL DEFAULT 'unspecified' CHECK(timeline IN ('unspecified', 'past', 'present', 'future')),
+        scene_end_seconds REAL,
+        first_group_reaction_seconds REAL,
+        second_group_reaction_seconds REAL,
         updated_at TEXT NOT NULL
       ) WITHOUT ROWID;
       CREATE INDEX IF NOT EXISTS roteiro_sections_by_parent ON roteiro_sections(roteiro_id, section_kind);
@@ -318,12 +322,18 @@ class DataPlatform {
     if (!sectionColumns.has('description_text')) this.database.exec("ALTER TABLE roteiro_sections ADD COLUMN description_text TEXT NOT NULL DEFAULT ''")
     this.database.prepare("INSERT OR IGNORE INTO schema_migrations(version, name, checksum, applied_at) VALUES (7, 'roteiro-section-video-description', ?, ?)")
       .run(sha256('gacha-roteiro-section-video-description-schema-v7'), now)
-    if (currentSchema < 7) this.database.pragma('user_version = 7')
+    if (!sectionColumns.has('timeline')) this.database.exec("ALTER TABLE roteiro_sections ADD COLUMN timeline TEXT NOT NULL DEFAULT 'unspecified' CHECK(timeline IN ('unspecified', 'past', 'present', 'future'))")
+    if (!sectionColumns.has('scene_end_seconds')) this.database.exec('ALTER TABLE roteiro_sections ADD COLUMN scene_end_seconds REAL')
+    if (!sectionColumns.has('first_group_reaction_seconds')) this.database.exec('ALTER TABLE roteiro_sections ADD COLUMN first_group_reaction_seconds REAL')
+    if (!sectionColumns.has('second_group_reaction_seconds')) this.database.exec('ALTER TABLE roteiro_sections ADD COLUMN second_group_reaction_seconds REAL')
+    this.database.prepare("INSERT OR IGNORE INTO schema_migrations(version, name, checksum, applied_at) VALUES (8, 'roteiro-section-timeline-and-reaction-timing', ?, ?)")
+      .run(sha256('gacha-roteiro-section-timeline-and-reaction-timing-schema-v8'), now)
+    if (currentSchema < 8) this.database.pragma('user_version = 8')
     const insertDomain = this.database.prepare(`INSERT OR IGNORE INTO domains(domain_id, schema_version, manifest_json, updated_at) VALUES (?, 1, '{}', ?)`)
     const registerBuiltins = this.database.transaction(() => BUILTIN_DOMAINS.forEach((id) => insertDomain.run(id, now)))
     registerBuiltins()
     this.database.prepare("INSERT OR IGNORE INTO app_metadata(key, value) VALUES ('schema_version', '1')").run()
-    this.database.prepare("UPDATE app_metadata SET value='7' WHERE key='schema_version'").run()
+    this.database.prepare("UPDATE app_metadata SET value='8' WHERE key='schema_version'").run()
     this.migrateRoteirosJson()
     return this
   }
