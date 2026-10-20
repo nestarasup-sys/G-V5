@@ -1,0 +1,51 @@
+name: Video Studio full-engine benchmark
+
+on:
+  push:
+    branches: [master-desenvolvimento]
+    paths:
+      - 'scripts/video-studio/full-engine-worker-benchmark.cjs'
+      - 'electron/videoExportAutoTuner.ts'
+      - 'src/renderer/src/features/videoStudio/videoCanvasCompositor.ts'
+      - 'src/renderer/src/features/videoStudio/videoCanvasLayerCache.ts'
+      - '.github/workflows/video-full-engine-benchmark.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: video-full-engine-benchmark-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  benchmark-windows:
+    runs-on: windows-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Build
+        run: npm run build
+      - name: Install Electron runtime
+        shell: pwsh
+        run: npm rebuild electron
+      - name: Resolve FFmpeg tools
+        shell: pwsh
+        run: |
+          $ffmpeg = Get-Command ffmpeg -ErrorAction SilentlyContinue
+          $ffprobe = Get-Command ffprobe -ErrorAction SilentlyContinue
+          if (-not $ffmpeg -or -not $ffprobe) {
+            choco install ffmpeg -y --no-progress
+            $ffmpeg = Get-Command ffmpeg -ErrorAction Stop
+            $ffprobe = Get-Command ffprobe -ErrorAction Stop
+          }
+          "GACHA_FFMPEG_PATH=$($ffmpeg.Source)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "GACHA_FFPROBE_PATH=$($ffprobe.Source)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+      - name: Benchmark serial vs Turbo
+        run: npm run bench:video:workers
