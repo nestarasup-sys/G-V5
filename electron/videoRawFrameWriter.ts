@@ -120,11 +120,11 @@ export class VideoRawFrameWriter {
 }
 
 /** V4-style rawvideo input, adapted to a fixed V5 export profile and encoder. */
-export function buildVideoStudioChunkArgs(outputPath: string, frameCount: number): string[] {
+export function buildVideoStudioChunkArgs(outputPath: string, frameCount: number, pixelFormat: 'bgra' | 'rgba' = 'bgra'): string[] {
   if (!isAbsolute(outputPath) || !Number.isSafeInteger(frameCount) || frameCount < 1 || frameCount > 600) throw new Error('Parâmetros do chunk inválidos.')
   return [
     '-hide_banner', '-loglevel', 'warning', '-nostdin', '-y',
-    '-f', 'rawvideo', '-pixel_format', 'bgra', '-video_size', '1920x1080', '-framerate', '60', '-i', 'pipe:0',
+    '-f', 'rawvideo', '-pixel_format', pixelFormat, '-video_size', '1920x1080', '-framerate', '60', '-i', 'pipe:0',
     '-an', '-c:v', 'h264_mf', '-b:v', '12M', '-pix_fmt', 'yuv420p', '-fps_mode', 'cfr', '-frames:v', String(frameCount),
     '-color_primaries', 'bt709', '-color_trc', 'bt709', '-colorspace', 'bt709', '-color_range', 'tv',
     '-movflags', '+faststart', '-f', 'mp4', outputPath
