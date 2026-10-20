@@ -48,10 +48,12 @@ export function VideoExportSurfacePage() {
       if (!canvas) throw new Error('Canvas da surface não foi montado.')
       canvas.width = VIDEO_STAGE_WIDTH
       canvas.height = VIDEO_STAGE_HEIGHT
-      const layerCacheEnabled = surfaceQuery().get('layerCache') !== '0'
+      const query = surfaceQuery()
+      const layerCacheEnabled = query.get('layerCache') !== '0'
+      const readbackOptimized = query.get('readbackCpu') !== '0'
       if (layerCacheEnabled) layerCacheRef.current ??= new VideoCanvasLayerCache()
       else layerCacheRef.current = null
-      return { program, canvas }
+      return { program, canvas, readbackOptimized }
     })()
 
     unsubscribe = window.desktop.onVideoExportSurfaceRender((request) => {
@@ -66,7 +68,7 @@ export function VideoExportSurfacePage() {
           ])
           if (disposed) throw new DOMException('Surface descartada.', 'AbortError')
           const composeStarted = performance.now()
-          const context = await renderVideoSceneFrameToCanvas(scene, runtime.canvas, { characterStates: characters, videoFrames: videos, layerCache: layerCacheRef.current ?? undefined })
+          const context = await renderVideoSceneFrameToCanvas(scene, runtime.canvas, { characterStates: characters, videoFrames: videos, layerCache: layerCacheRef.current ?? undefined, willReadFrequently: runtime.readbackOptimized })
           const composeMs = performance.now() - composeStarted
           const readbackStarted = performance.now()
           const rgba = context.getImageData(0, 0, VIDEO_STAGE_WIDTH, VIDEO_STAGE_HEIGHT).data
