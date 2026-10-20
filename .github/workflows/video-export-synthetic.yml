@@ -26,6 +26,7 @@ on:
       - 'src/renderer/src/features/videoStudio/videoCharacterAssetCapture.ts'
       - 'src/renderer/src/features/videoStudio/useCharacterTransitions.ts'
       - 'src/renderer/src/features/videoStudio/videoCanvasCompositor.ts'
+      - 'src/renderer/src/features/videoStudio/videoVisualPluginRegistry.tsx'
       - 'src/renderer/src/features/videoStudio/videoCharacterFrameRenderer.ts'
       - 'src/renderer/src/features/videoStudio/videoExportMediaFramePool.ts'
       - 'src/renderer/src/features/videoStudio/VideoExportSurfacePage.tsx'
@@ -86,6 +87,7 @@ on:
       - 'scripts/video-studio/av-fixture-smoke.cjs'
       - 'scripts/video-studio/audio-assembly-smoke.cjs'
       - 'scripts/video-studio/preview-export-oracle-smoke.cjs'
+      - 'scripts/video-studio/character-media-oracle-smoke.cjs'
       - 'scripts/video-studio/turbo-e2e-electron-smoke.cjs'
   workflow_dispatch:
 
