@@ -25,7 +25,7 @@ function EmptyRoteirosPage() {
         {roteiroAreas.map((area) => <button key={area.id} className={`roteiros-subnav-button${activeArea === area.id ? ' active' : ''}`} onClick={() => setActiveArea(area.id)} aria-current={activeArea === area.id ? 'page' : undefined} type="button"><Icon name={area.icon} /><span>{area.label}</span></button>)}
       </nav>
     </aside>
-    <section className="roteiros-main-empty" aria-label={`Área ${active.label}`}><h1>{active.label}</h1></section>
+    <section className="roteiros-main-empty" aria-label={`Área ${active.label}`}><header className="roteiros-area-titlebar"><h1>{active.label}</h1></header></section>
   </div>
 }
 
