@@ -1,4 +1,5 @@
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Profiler, Suspense, useEffect, useMemo, useRef, useState } from 'react'
+import { installUiPerformanceDiagnostics, recordUiCommit } from './performanceDiagnostics'
 import { Navigate, Route, Routes, useLocation } from 'react-router'
 import { TopBar } from './components/TopBar'
 import { AppErrorBoundary } from './components/AppErrorBoundary'
@@ -826,6 +827,8 @@ export function App() {
   const location = useLocation()
   const [videoEditorActive, setVideoEditorActive] = useState(false)
 
+  useEffect(() => installUiPerformanceDiagnostics(), [])
+
   useEffect(() => {
     if (location.pathname !== '/video-studio') setVideoEditorActive(false)
   }, [location.pathname])
@@ -836,6 +839,7 @@ export function App() {
       <div className="route-content">
         <AppErrorBoundary key={location.pathname}>
           <Suspense fallback={<div className="blank-page" aria-busy="true">Carregando área…</div>}>
+            <Profiler id={location.pathname} onRender={recordUiCommit}>
             <Routes>
               <Route path="/" element={<Navigate to="/customizar" replace />} />
               <Route path="/customizar" element={<LazyCustomizerPage />} />
@@ -847,6 +851,7 @@ export function App() {
               <Route path="/fabricador-dev" element={<LazyFabricatorPage />} />
               <Route path="*" element={<Navigate to="/customizar" replace />} />
             </Routes>
+            </Profiler>
           </Suspense>
         </AppErrorBoundary>
       </div>
