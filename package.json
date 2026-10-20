@@ -23,7 +23,9 @@
     "test:export:audio-assembly": "node scripts/video-studio/audio-assembly-smoke.cjs",
     "test:export:preview-oracle": "electron scripts/video-studio/preview-export-oracle-smoke.cjs",
     "prepare:video-tools": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/video-studio/prepare-ffmpeg-lgpl.ps1",
-    "test:export:turbo-e2e": "electron scripts/video-studio/turbo-e2e-electron-smoke.cjs"
+    "test:export:turbo-e2e": "electron scripts/video-studio/turbo-e2e-electron-smoke.cjs",
+    "test:export:soak:90": "node scripts/video-studio/export-soak-local.cjs 90",
+    "test:export:soak:900": "node scripts/video-studio/export-soak-local.cjs 900"
   },
   "dependencies": {
     "better-sqlite3": "^13.0.3",
