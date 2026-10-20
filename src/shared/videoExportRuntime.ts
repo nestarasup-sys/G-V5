@@ -22,6 +22,7 @@ export type VideoExportMetrics = Readonly<{
   cacheEntries?: number
   cacheBytes?: number
   cacheMaxBytes?: number
+  workerCount?: number
 }>
 
 export type VideoExportStage =
