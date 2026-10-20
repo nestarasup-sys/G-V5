@@ -1,0 +1,33 @@
+name: Architecture and performance regression
+
+on:
+  push:
+    branches: [oai/architecture-performance-v1]
+  pull_request:
+    branches: [master-desenvolvimento]
+
+concurrency:
+  group: architecture-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Code and integration checks
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: node scripts/architecture/performance-audit.cjs --check
+      - run: node --test tests/architecture-audit.test.cjs
+      - run: npm run typecheck
+      - run: npm run build
+      - run: npm run test:export:synthetic
