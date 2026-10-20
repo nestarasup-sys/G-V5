@@ -33,7 +33,7 @@ type ActiveExport = {
   variant: RenderVariant
   controller: AbortController
   progress: VideoExportProgress
-  surface: VideoExportSurfaceSession | null
+  surfaces: Set<VideoExportSurfaceSession>
   task: Promise<void>
 }
 
@@ -91,7 +91,7 @@ export class VideoExportCoordinator {
       variant: input.renderVariant,
       controller: new AbortController(),
       progress: initial,
-      surface: null,
+      surfaces: new Set(),
       task: Promise.resolve(),
     }
     this.active.set(jobId, active)
@@ -103,9 +103,7 @@ export class VideoExportCoordinator {
         message: reason instanceof Error ? reason.message : String(reason),
       })
     }).finally(async () => {
-      const surface = active.surface
-      active.surface = null
-      await surface?.dispose().catch(() => undefined)
+      await this.disposeSurfaces(active)
       if (active.controller.signal.aborted) await this.jobs.cleanup(jobId).catch(() => undefined)
     })
     return jobId
@@ -141,7 +139,7 @@ export class VideoExportCoordinator {
       variant: reopened.manifest.renderVariant,
       controller: new AbortController(),
       progress: initial,
-      surface: null,
+      surfaces: new Set(),
       task: Promise.resolve(),
     }
     this.active.set(jobId, active)
@@ -159,9 +157,7 @@ export class VideoExportCoordinator {
         message: reason instanceof Error ? reason.message : String(reason),
       })
     }).finally(async () => {
-      const surface = active.surface
-      active.surface = null
-      await surface?.dispose().catch(() => undefined)
+      await this.disposeSurfaces(active)
       if (active.controller.signal.aborted) await this.jobs.cleanup(jobId).catch(() => undefined)
     })
     return jobId
@@ -172,7 +168,7 @@ export class VideoExportCoordinator {
     if (!active) throw new Error('Job de exportação não encontrado.')
     if (['done', 'failed', 'cancelled'].includes(active.progress.stage)) return
     active.controller.abort(new Error('Exportação cancelada pelo usuário.'))
-    await active.surface?.dispose().catch(() => undefined)
+    await this.disposeSurfaces(active)
     await active.task.catch(() => undefined)
   }
 
@@ -183,6 +179,12 @@ export class VideoExportCoordinator {
     }
     this.active.delete(jobId)
     await this.jobs.cleanup(jobId)
+  }
+
+  private async disposeSurfaces(active: ActiveExport): Promise<void> {
+    const surfaces = [...active.surfaces]
+    active.surfaces.clear()
+    await Promise.allSettled(surfaces.map((surface) => surface.dispose()))
   }
 
   private abort(active: ActiveExport): void {
@@ -244,75 +246,127 @@ export class VideoExportCoordinator {
     }
 
     const renderStarted = performance.now()
+    const workerCount = Math.min(2, Math.max(1, reopened.missingChunkIndexes.length))
     this.update(active, {
       stage: 'rendering',
       chunkCount,
-      message: 'Inicializando compositor canônico…',
-      metrics: applyMetrics({ prepareMs: renderStarted - prepareStarted }),
+      message: workerCount > 1 ? 'Inicializando Turbo com 2 workers…' : 'Inicializando compositor canônico…',
+      metrics: applyMetrics({ prepareMs: renderStarted - prepareStarted, workerCount }),
     })
-    active.surface = await this.surfaceHost.open(active.jobId)
+
+    const surfaces = await Promise.all(
+      Array.from({ length: workerCount }, () => this.surfaceHost.open(active.jobId)),
+    )
+    surfaces.forEach((surface) => active.surfaces.add(surface))
     this.abort(active)
+
     const sceneProgram = compileVideoScene(snapshot, renderVariant)
     const frameCache = new VideoSemanticFrameCache()
+    const inFlightFrames = new Map<string, Promise<Buffer>>()
+    const completedByChunk = new Map<number, number>(
+      reopened.manifest.chunks.map((chunk) => [chunk.index, chunk.endFrame - chunk.startFrame]),
+    )
     let reusedFrames = 0
+    let renderedFrames = 0
     let encodedChunkBytes = completedChunkBytes(reopened.manifest)
-    let rawFrameBytes = reopened.manifest.chunks.reduce((sum, chunk) => sum + (chunk.endFrame - chunk.startFrame) * 1920 * 1080 * 4, 0)
+    const frameBytes = 1920 * 1080 * 4
+    let nextPendingCursor = 0
 
-    for (const index of reopened.missingChunkIndexes) {
-      this.abort(active)
-      const startFrame = index * reopened.manifest.chunkFrames
-      const endFrameExclusive = Math.min(timeline.durationFrames, startFrame + reopened.manifest.chunkFrames)
-      const outputPath = this.jobs.chunkOutputPath(active.jobId, index)
-      const encodedChunk = await encodeVideoStudioSerialChunk({
-        ffmpeg,
-        outputPath,
-        startFrame,
-        endFrameExclusive,
-      }, async (frame) => {
-        this.abort(active)
-        const semantic = evaluateVideoSceneFrame(sceneProgram, frame).reuseKey
-        const cached = frameCache.get(semantic)
-        if (cached) {
-          reusedFrames += 1
-          return cached
-        }
-        const rgba = await active.surface!.renderFrame(frame)
-        const pixels = rgbaToBgra(rgba)
-        frameCache.set(semantic, pixels)
-        return pixels
-      }, {
-        signal: active.controller.signal,
-        onProgress: ({ completedFrames }) => {
-          this.update(active, {
-            stage: 'rendering',
-            chunkIndex: index,
-            chunkCount,
-            completedFrames: startFrame + completedFrames,
-            reusedFrames,
-            metrics: applyMetrics({
-              renderedFrames: startFrame + completedFrames - reusedFrames,
-              reusedFrames,
-              rawFrameBytes: rawFrameBytes + completedFrames * 1920 * 1080 * 4,
-              encodedChunkBytes,
-              cacheHits: frameCache.stats().hits,
-              cacheMisses: frameCache.stats().misses,
-              cacheEvictions: frameCache.stats().evictions,
-              cacheEntries: frameCache.stats().entries,
-              cacheBytes: frameCache.stats().bytes,
-              cacheMaxBytes: frameCache.stats().maxBytes,
-            }),
-            message: `Renderizando trecho ${index + 1}/${chunkCount}…`,
-          })
-        },
+    const aggregateCompletedFrames = () => [...completedByChunk.values()].reduce((sum, value) => sum + value, 0)
+    const updateRenderMetrics = () => {
+      const stats = frameCache.stats()
+      return applyMetrics({
+        renderedFrames,
+        reusedFrames,
+        rawFrameBytes: aggregateCompletedFrames() * frameBytes,
+        encodedChunkBytes,
+        cacheHits: stats.hits,
+        cacheMisses: stats.misses,
+        cacheEvictions: stats.evictions,
+        cacheEntries: stats.entries,
+        cacheBytes: stats.bytes,
+        cacheMaxBytes: stats.maxBytes,
+        workerCount,
       })
-      encodedChunkBytes += encodedChunk.outputBytes
-      rawFrameBytes += encodedChunk.writer.bytesWritten
-      await this.jobs.recordChunk(active.jobId, index)
     }
 
+    const renderSemanticFrame = async (surface: VideoExportSurfaceSession, frame: number): Promise<Buffer> => {
+      this.abort(active)
+      const semantic = evaluateVideoSceneFrame(sceneProgram, frame).reuseKey
+      const pending = inFlightFrames.get(semantic)
+      if (pending) {
+        reusedFrames += 1
+        return pending
+      }
+      const cached = frameCache.get(semantic)
+      if (cached) {
+        reusedFrames += 1
+        return cached
+      }
+      renderedFrames += 1
+      const rendering = surface.renderFrame(frame)
+        .then((rgba) => {
+          const pixels = rgbaToBgra(rgba)
+          frameCache.set(semantic, pixels)
+          return pixels
+        })
+        .finally(() => inFlightFrames.delete(semantic))
+      inFlightFrames.set(semantic, rendering)
+      return rendering
+    }
+
+    const runWorker = async (surface: VideoExportSurfaceSession, workerIndex: number): Promise<void> => {
+      while (true) {
+        this.abort(active)
+        const cursor = nextPendingCursor
+        nextPendingCursor += 1
+        const index = reopened.missingChunkIndexes[cursor]
+        if (index === undefined) return
+        const startFrame = index * reopened.manifest.chunkFrames
+        const endFrameExclusive = Math.min(timeline.durationFrames, startFrame + reopened.manifest.chunkFrames)
+        const outputPath = this.jobs.chunkOutputPath(active.jobId, index)
+        const encodedChunk = await encodeVideoStudioSerialChunk({
+          ffmpeg,
+          outputPath,
+          startFrame,
+          endFrameExclusive,
+        }, (frame) => renderSemanticFrame(surface, frame), {
+          signal: active.controller.signal,
+          onProgress: ({ completedFrames }) => {
+            completedByChunk.set(index, completedFrames)
+            this.update(active, {
+              stage: 'rendering',
+              chunkIndex: index,
+              chunkCount,
+              completedFrames: aggregateCompletedFrames(),
+              reusedFrames,
+              metrics: updateRenderMetrics(),
+              message: workerCount > 1
+                ? `Turbo worker ${workerIndex + 1}: trecho ${index + 1}/${chunkCount}…`
+                : `Renderizando trecho ${index + 1}/${chunkCount}…`,
+            })
+          },
+        })
+        encodedChunkBytes += encodedChunk.outputBytes
+        completedByChunk.set(index, endFrameExclusive - startFrame)
+        await this.jobs.recordChunk(active.jobId, index)
+        this.update(active, {
+          stage: 'rendering',
+          chunkIndex: index,
+          chunkCount,
+          completedFrames: aggregateCompletedFrames(),
+          reusedFrames,
+          metrics: updateRenderMetrics(),
+          message: workerCount > 1
+            ? `Turbo confirmou trecho ${index + 1}/${chunkCount}.`
+            : `Trecho ${index + 1}/${chunkCount} confirmado.`,
+        })
+      }
+    }
+
+    await Promise.all(surfaces.map((surface, index) => runWorker(surface, index)))
     this.abort(active)
-    await active.surface.dispose()
-    active.surface = null
+    await this.disposeSurfaces(active)
 
     const completed = await this.jobs.reopen(active.jobId)
     if (completed.manifest.chunks.length !== chunkCount) throw new Error('Nem todos os chunks foram confirmados antes da montagem.')
@@ -330,9 +384,9 @@ export class VideoExportCoordinator {
       reusedFrames,
       metrics: applyMetrics({
         renderMs: renderEnded - renderStarted,
-        renderedFrames: timeline.durationFrames - reusedFrames,
+        renderedFrames,
         reusedFrames,
-        rawFrameBytes,
+        rawFrameBytes: aggregateCompletedFrames() * frameBytes,
         encodedChunkBytes,
         cacheHits: frameCache.stats().hits,
         cacheMisses: frameCache.stats().misses,
