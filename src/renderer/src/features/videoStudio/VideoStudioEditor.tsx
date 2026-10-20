@@ -6,7 +6,7 @@ import { Icon } from '../../ui/components/Icon'
 import { CharacterPortrait } from '../../ui/components/CharacterPortrait'
 import { resolveStudioTalkMouthId, videoCharacterTrackColor } from '../../../../shared/studio'
 import { fitStudioCharacterToStage } from '../../../../shared/studioCharacterGeometry'
-import type { StudioAsset, StudioDocument, StudioElement, StudioFaceMode, StudioFaceTransform, StudioFaceTransforms, VideoAudioSettings, VideoMediaClip, VideoTimelineDocument } from '../../../../shared/studio'
+import type { StudioAsset, StudioDocument, StudioElement, StudioFaceMode, StudioFaceTransform, StudioFaceTransforms, VideoAudioSettings, VideoMediaClip, VideoStudioCardSummary, VideoTimelineDocument } from '../../../../shared/studio'
 import { automaticBlinkFrameFor, resolveVideoFrameSelection } from '../../../../shared/videoFrame'
 import { defaultVideoTransform, editVideoMediaClip, isValidVideoMediaClip, splitVideoMediaClip as splitMediaClip } from '../../../../shared/videoMedia'
 import { videoStageCssTransform } from '../../../../shared/videoStageGeometry'
@@ -163,7 +163,8 @@ function makeElement(kind: StudioElement['kind'], zIndex: number): StudioElement
 }
 
 type VideoStudioPersistence = {
-  list: () => Promise<StudioDocument[]>
+  list: () => Promise<VideoStudioCardSummary[]>
+  load: (id: string) => Promise<StudioDocument | null>
   save: (studio: StudioDocument) => Promise<void>
   delete: (id: string) => Promise<void>
   getFolder: () => Promise<string>
@@ -174,10 +175,22 @@ function videoStudioPersistence(): VideoStudioPersistence {
   const desktop = window.desktop
   return {
     list: desktop.listVideoStudios,
+    load: desktop.loadVideoStudio,
     save: desktop.saveVideoStudio,
     delete: desktop.deleteVideoStudio,
     getFolder: desktop.getVideoStudioFolder,
     importImage: desktop.importVideoStudioImage
+  }
+}
+
+function studioCardFromDocument(studio: StudioDocument): VideoStudioCardSummary {
+  return {
+    id: studio.id,
+    title: studio.title,
+    color: studio.color,
+    createdAt: studio.createdAt,
+    updatedAt: studio.updatedAt,
+    ...(studio.videoTimeline?.coverDataUrl ? { coverDataUrl: studio.videoTimeline.coverDataUrl } : {})
   }
 }
 
@@ -190,6 +203,8 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
   const videoEditorStyle = isVideoWorkspace ? { '--video-timeline-height': `${videoTimelineHeight}px` } as CSSProperties : undefined
   const persistence = useMemo(videoStudioPersistence, [])
   const [studios, setStudios] = useState<StudioCard[]>([])
+  const [studioCards, setStudioCards] = useState<VideoStudioCardSummary[]>([])
+  const [openingStudioId, setOpeningStudioId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
@@ -261,7 +276,7 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
   const expressionSaveSignatureRef = useRef<{ studioId: string; value: string } | null>(null)
   const normalizedStudioIdsRef = useRef(new Set<string>())
   const nextStudioNumber = useRef(1)
-  const selectedStudio = studios.find((studio) => studio.id === selectedId) ?? null
+  const selectedStudio = studioCards.find((studio) => studio.id === selectedId) ?? null
   const activeStudio = studios.find((studio) => studio.id === activeStudioId) ?? null
   const videoPreviewFrame = Math.min(videoPlayheadFrame, Math.max(0, (activeStudio?.videoTimeline?.durationFrames ?? 1) - 1))
   const videoFrameSelection = isVideoWorkspace && activeStudio ? resolveVideoFrameSelection(videoTimelineFor(activeStudio), videoPreviewFrame) : null
@@ -628,18 +643,8 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
         const loaded = await persistence.list()
         const folder = await persistence.getFolder()
         if (cancelled) return
-        const prepared = await Promise.all(loaded.map(async (studio) => {
-          const timeline = studio.videoTimeline
-          if (timeline?.coverDataUrl || !timeline?.videoClips?.length) return studio
-          const firstClip = [...timeline.videoClips].sort((left, right) => left.startFrame - right.startFrame)[0]
-          const coverDataUrl = await captureVideoPoster(firstClip.assetId, firstClip.sourceStartFrame)
-          if (!coverDataUrl || cancelled) return studio
-          const updated = { ...studio, videoTimeline: { ...timeline, coverDataUrl }, updatedAt: new Date().toISOString() }
-          await persistence.save(updated)
-          return updated
-        }))
         if (cancelled) return
-        setStudios(prepared.map(normalizeVideoCharacterTransforms))
+        setStudioCards(loaded)
         setStudioFolder(folder)
       } catch (reason) {
         if (!cancelled) setError(reason instanceof Error ? reason.message : 'Não foi possível carregar os Studios.')
@@ -649,6 +654,22 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
     })()
     return () => { cancelled = true }
   }, [isVideoWorkspace, persistence])
+
+  useEffect(() => {
+    if (!studios.length) return
+    setStudioCards((current) => {
+      const loaded = new Map(studios.map((studio) => [studio.id, studioCardFromDocument(studio)]))
+      let changed = false
+      const next = current.map((card) => {
+        const updated = loaded.get(card.id)
+        if (!updated) return card
+        if (card.title === updated.title && card.color === updated.color && card.coverDataUrl === updated.coverDataUrl) return card
+        changed = true
+        return updated
+      })
+      return changed ? next : current
+    })
+  }, [studios])
 
   useEffect(() => {
     let cancelled = false
@@ -917,8 +938,24 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
     return () => { cancelled = true }
   }, [activeStudio, availableCharacters, normalizedStudioVersion, sceneExpressionPresetVersions, assetLibraryRevision])
 
+  const openStudio = async (card: VideoStudioCardSummary) => {
+    setError(null)
+    setSelectedId(card.id)
+    const cached = studios.find((studio) => studio.id === card.id)
+    if (cached) { setActiveStudioId(card.id); return }
+    setOpeningStudioId(card.id)
+    try {
+      const loaded = await persistence.load(card.id)
+      if (!loaded) throw new Error(`Não foi possível encontrar ${card.title}.`)
+      setStudios((current) => current.some((studio) => studio.id === loaded.id) ? current : [...current, normalizeVideoCharacterTransforms(loaded)])
+      setActiveStudioId(card.id)
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Não foi possível abrir o Video Studio.')
+    } finally { setOpeningStudioId(null) }
+  }
+
   const allocateNumber = () => {
-    const highest = studios.reduce((max, studio) => Math.max(max, Number(studio.title.match(/Studio\s+(\d+)$/i)?.[1] ?? 0)), 0)
+    const highest = studioCards.reduce((max, studio) => Math.max(max, Number(studio.title.match(/Studio\s+(\d+)$/i)?.[1] ?? 0)), 0)
     const number = Math.max(nextStudioNumber.current, highest + 1)
     nextStudioNumber.current = number + 1
     return number
@@ -938,16 +975,19 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
       setError(null)
       await persistence.save(studio)
       setStudios((current) => [...current, studio])
+      setStudioCards((current) => [...current, studioCardFromDocument(studio)])
       setSelectedId(studio.id)
       setSaved(true)
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível criar o Studio.') }
   }
 
-  const duplicateStudio = async (source: StudioCard | null = selectedStudio) => {
-    if (!source) return
+  const duplicateStudio = async (card: VideoStudioCardSummary | null = selectedStudio) => {
+    if (!card) return
+    const source = studios.find((studio) => studio.id === card.id) ?? await persistence.load(card.id)
+    if (!source) { setError(`Não foi possível carregar ${card.title} para duplicar.`); return }
     const number = allocateNumber()
     const now = new Date().toISOString()
-    const duplicate: StudioCard = {
+    const duplicate: StudioDocument = {
       ...source, id: crypto.randomUUID(), title: `${workspaceTitle} ${String(number).padStart(2, '0')}`,
       color: studioColor(number), createdAt: now, updatedAt: now,
       assets: source.assets.map((asset) => ({ ...asset, id: crypto.randomUUID() })),
@@ -980,6 +1020,7 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
       setError(null)
       await persistence.save(duplicate)
       setStudios((current) => [...current, duplicate])
+      setStudioCards((current) => [...current, studioCardFromDocument(duplicate)])
       setSelectedId(duplicate.id)
       setSaved(true)
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível duplicar o Studio.') }
@@ -1997,11 +2038,12 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
     }
   }
 
-  const deleteStudio = async (target: StudioCard | null = selectedStudio) => {
+  const deleteStudio = async (target: VideoStudioCardSummary | null = selectedStudio) => {
     if (!target || !window.confirm(`Excluir ${target.title}?`)) return
     try {
       await persistence.delete(target.id)
       setStudios((current) => current.filter((studio) => studio.id !== target.id))
+      setStudioCards((current) => current.filter((studio) => studio.id !== target.id))
       setSelectedId((current) => current === target.id ? null : current)
       setSaved(true)
       setError(null)
@@ -2455,11 +2497,11 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
         <button className="video-studio-action video-studio-action-primary" onClick={() => void createStudio()} disabled={loading} type="button"><Icon name="plus" />Criar</button>
       </div>
       {error && <p className="video-studio-error-message" role="alert">{error}</p>}
-      {loading ? <section className="video-studio-empty-state"><strong>Carregando {workspacePlural}…</strong></section> : studios.length ? (
+      {loading ? <section className="video-studio-empty-state"><strong>Carregando {workspacePlural}…</strong></section> : studioCards.length ? (
         <section className="video-studio-grid" aria-label={`${workspacePlural} criados`}>
-          {studios.map((studio) => <article className={`video-studio-card${selectedId === studio.id ? ' selected' : ''}`} key={studio.id}>
-            <header className="video-studio-card-heading"><button className="video-studio-card-open" onClick={() => { setSelectedId(studio.id); setActiveStudioId(studio.id) }} aria-label={`Abrir ${studio.title}`} type="button">{studio.title}</button><div className="video-studio-card-actions"><button className="video-studio-card-action" onClick={() => void duplicateStudio(studio)} aria-label={`Duplicar ${studio.title}`} title={`Duplicar ${studio.title}`} type="button"><span className="video-studio-duplicate-icon" aria-hidden="true">▢</span></button><button className="video-studio-card-action danger" onClick={() => void deleteStudio(studio)} aria-label={`Excluir ${studio.title}`} title={`Excluir ${studio.title}`} type="button"><Icon name="trash" /></button></div></header>
-            <button className="video-studio-cover" style={{ backgroundColor: studio.color, ...(studio.videoTimeline?.coverDataUrl ? { backgroundImage: `url(${studio.videoTimeline.coverDataUrl})` } : {}) }} onClick={() => { setSelectedId(studio.id); setActiveStudioId(studio.id) }} aria-label={`Abrir ${studio.title}`} type="button" />
+          {studioCards.map((studio) => <article className={`video-studio-card${selectedId === studio.id ? ' selected' : ''}`} key={studio.id}>
+            <header className="video-studio-card-heading"><button className="video-studio-card-open" onClick={() => void openStudio(studio)} disabled={openingStudioId === studio.id} aria-label={`Abrir ${studio.title}`} type="button">{openingStudioId === studio.id ? 'Abrindo…' : studio.title}</button><div className="video-studio-card-actions"><button className="video-studio-card-action" onClick={() => void duplicateStudio(studio)} aria-label={`Duplicar ${studio.title}`} title={`Duplicar ${studio.title}`} type="button"><span className="video-studio-duplicate-icon" aria-hidden="true">▢</span></button><button className="video-studio-card-action danger" onClick={() => void deleteStudio(studio)} aria-label={`Excluir ${studio.title}`} title={`Excluir ${studio.title}`} type="button"><Icon name="trash" /></button></div></header>
+            <button className="video-studio-cover" style={{ backgroundColor: studio.color, ...(studio.coverDataUrl ? { backgroundImage: `url(${studio.coverDataUrl})` } : {}) }} onClick={() => void openStudio(studio)} aria-label={`Abrir ${studio.title}`} type="button" />
           </article>)}
         </section>
       ) : <section className="video-studio-empty-state"><span><Icon name="camera" /></span><strong>Nenhum {workspaceTitle} criado</strong><small>Crie um {workspaceTitle} para começar sua coleção.</small></section>}

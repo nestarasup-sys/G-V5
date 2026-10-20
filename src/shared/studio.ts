@@ -274,8 +274,13 @@ export type StudioDesktopApi = {
 }
 
 /** Independent persistence boundary for the Video Studio workspace. */
+export type VideoStudioCardSummary = Pick<StudioDocument, 'id' | 'title' | 'color' | 'createdAt' | 'updatedAt'> & {
+  coverDataUrl?: string
+}
+
 export type VideoStudioDesktopApi = {
-  listVideoStudios: () => Promise<StudioDocument[]>
+  listVideoStudios: () => Promise<VideoStudioCardSummary[]>
+  loadVideoStudio: (id: string) => Promise<StudioDocument | null>
   saveVideoStudio: (studio: StudioDocument) => Promise<void>
   deleteVideoStudio: (id: string) => Promise<void>
   getVideoStudioFolder: () => Promise<string>

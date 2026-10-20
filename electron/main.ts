@@ -11,7 +11,7 @@ import { hairCategories } from '../src/shared/hairCategories'
 import type { CustomizerCharacter, CustomizerFaceAppearance, CustomizerWardrobePaletteKey, HairColorOverrides } from '../src/shared/customizer'
 import { characterBodyDimensionLimits, characterProportionLimits } from '../src/shared/customizer'
 import { validWardrobeAdjustmentReference } from '../src/shared/wardrobeAdjustment'
-import type { StudioAsset, StudioDocument, VideoStudioAsset, VideoTimelineDocument } from '../src/shared/studio'
+import type { StudioAsset, StudioDocument, VideoStudioAsset, VideoStudioCardSummary, VideoTimelineDocument } from '../src/shared/studio'
 import { applyModelHeadShape } from '../src/shared/headShape'
 import { isStudioExpressionEffects, isStudioFaceTransforms } from '../src/shared/studio'
 import { isValidVideoMediaClip } from '../src/shared/videoMedia'
@@ -1416,6 +1416,10 @@ async function writeStudio(studio: StudioDocument, workspace: StudioWorkspaceSto
         await new Promise((resolveDelay) => setTimeout(resolveDelay, 20 * (2 ** (attempt - 1))))
       }
     }
+    if (workspace === 'video') {
+      const card = videoStudioCardSummary(savedMetadata as unknown as Record<string, unknown>, studio.id)
+      await writeFile(join(folder, 'studio-card.json'), JSON.stringify(card), 'utf8')
+    }
   } finally {
     // Only this save operation owns the UUID-named temporary manifest.
     // Never touch the prior committed studio.json on a failed rename.
@@ -1435,6 +1439,43 @@ async function listStudios(workspace: StudioWorkspaceStorage = 'studio'): Promis
     .filter((entry) => entry.isDirectory() && /^studio-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(entry.name))
     .map((entry) => readStudio(entry.name.slice('studio-'.length), workspace)))
   return documents.filter((studio): studio is StudioDocument => studio !== null)
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.title.localeCompare(b.title))
+}
+
+function videoStudioCardSummary(value: Record<string, unknown>, id: string): VideoStudioCardSummary {
+  const timeline = value.videoTimeline && typeof value.videoTimeline === 'object' ? value.videoTimeline as Record<string, unknown> : null
+  return {
+    id,
+    title: String(value.title ?? 'Video Studio').slice(0, 100),
+    color: typeof value.color === 'string' ? value.color : '#d7b5cd',
+    createdAt: String(value.createdAt ?? new Date(0).toISOString()),
+    updatedAt: String(value.updatedAt ?? new Date(0).toISOString()),
+    ...(typeof timeline?.coverDataUrl === 'string' && timeline.coverDataUrl.length <= 1_500_000 ? { coverDataUrl: timeline.coverDataUrl } : {})
+  }
+}
+
+async function listVideoStudioCards(): Promise<VideoStudioCardSummary[]> {
+  const libraryPath = studioLibraryPath('video')
+  await mkdir(libraryPath, { recursive: true })
+  const entries = await readdir(libraryPath, { withFileTypes: true })
+  const cards = await Promise.all(entries
+    .filter((entry) => entry.isDirectory() && /^studio-([0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/i.test(entry.name))
+    .map(async (entry) => {
+      const id = entry.name.slice('studio-'.length)
+      const cardPath = join(libraryPath, entry.name, 'studio-card.json')
+      try {
+        const card = JSON.parse(await readFile(cardPath, 'utf8')) as VideoStudioCardSummary
+        return card.id === id ? card : null
+      } catch (reason) {
+        if ((reason as NodeJS.ErrnoException).code !== 'ENOENT') throw reason
+        const raw = JSON.parse(await readFile(join(libraryPath, entry.name, 'studio.json'), 'utf8')) as Record<string, unknown>
+        const card = videoStudioCardSummary(raw, id)
+        // Migrate the light card manifest once, without hydrating timeline images or video data.
+        await writeFile(cardPath, JSON.stringify(card), 'utf8')
+        return card
+      }
+    }))
+  return cards.filter((card): card is VideoStudioCardSummary => card !== null)
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.title.localeCompare(b.title))
 }
 
@@ -1825,9 +1866,16 @@ async function registerFabricatorHandlers(): Promise<void> {
   })
 
   const registerStudioWorkspace = (workspace: StudioWorkspaceStorage, channel: 'studio' | 'video-studio') => {
-    ipcMain.handle(`${channel}:list`, async (event): Promise<StudioDocument[]> => {
+    ipcMain.handle(`${channel}:list`, async (event): Promise<StudioDocument[] | VideoStudioCardSummary[]> => {
       assertTrustedSender(event)
-      return listStudios(workspace)
+      return workspace === 'video' ? listVideoStudioCards() : listStudios(workspace)
+    })
+
+    if (workspace === 'video') ipcMain.handle('video-studio:get', async (event, id: string): Promise<StudioDocument | null> => {
+      assertTrustedSender(event)
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)) throw new Error('Identificador de Video Studio inválido.')
+      await studioSaveQueues.video
+      return readStudio(id, 'video')
     })
 
     ipcMain.handle(`${channel}:save`, async (event, studio: StudioDocument): Promise<void> => {

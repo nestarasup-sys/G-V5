@@ -85,6 +85,7 @@ const studioApi: StudioDesktopApi = {
 
 const videoStudioApi: VideoStudioDesktopApi = {
   listVideoStudios: () => ipcRenderer.invoke('video-studio:list'),
+  loadVideoStudio: (id) => ipcRenderer.invoke('video-studio:get', id),
   saveVideoStudio: (studio) => ipcRenderer.invoke('video-studio:save', studio),
   deleteVideoStudio: (id) => ipcRenderer.invoke('video-studio:delete', id),
   getVideoStudioFolder: () => ipcRenderer.invoke('video-studio:folder'),
