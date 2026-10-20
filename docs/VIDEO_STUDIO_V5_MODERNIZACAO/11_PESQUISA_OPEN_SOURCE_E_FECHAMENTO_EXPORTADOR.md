@@ -261,6 +261,18 @@ Isso cria uma hipótese útil para exports longos, mas **não substitui automati
 
 Também manter como alternativa de laboratório Matroska para temporários, pois clusters têm limites explícitos de tempo/tamanho; porém a entrega final continua MP4/H.264/AAC.
 
+
+### 3.14 Resultado do EXP-07 — hybrid fragmented REJEITADO (2026-10-20)
+
+Execução GitHub Actions `39479796555`, Windows, usando o **FFmpeg LGPL pinado de produção** (binário direto, sem shim do Chocolatey):
+
+- o MP4 interrompido permaneceu parseável;
+- o remux `-c:v copy` produziu um arquivo;
+- porém o decode estrito falhou com `Invalid NAL unit size` / `Error splitting the input into NAL units`;
+- causa prática: um kill pode interromper o bitstream H.264 dentro de um NAL mesmo quando a estrutura fragmentada do container é recuperável.
+
+Decisão: **não adotar `hybrid_fragmented` como mecanismo de recovery do Video Studio V5**. O desenho de chunks independentes + checkpoint + validação por chunk é superior porque permite descartar/refazer apenas unidades completas e não depende de recuperar uma unidade H.264 cortada no meio. O experimento foi removido do CI após registrar a evidência para evitar um gate permanentemente vermelho.
+
 ## 4. Prioridade revisada — FINALIZAR EXPORTADOR
 
 ### P0 — Determinismo/paridade
@@ -393,15 +405,8 @@ Mesma sequência A-B-A de timestamps contra pool atual.
 ### EXP-06 — packaged clean machine
 Não é benchmark; é gate operacional obrigatório.
 
-### EXP-07 — hybrid fragmented serial recovery
-Comparar o temporário serial atual com MP4 `hybrid_fragmented`:
-- tempo/overhead;
-- kill sem trailer;
-- remux de recuperação;
-- ffprobe/decode;
-- compatibilidade do arquivo final;
-- nenhum publish antes do verifier.
-Só adotar se simplificar recuperação sem regressão de throughput/compatibilidade.
+### EXP-07 — hybrid fragmented serial recovery — **REJEITADO**
+Resultado registrado na seção 3.14. Não integrar ao runtime.
 
 ## 8. Métricas mínimas por export
 
