@@ -52,8 +52,11 @@ jobs:
           }
           "GACHA_FFMPEG_PATH=$($ffmpeg.Source)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           "GACHA_FFPROBE_PATH=$($ffprobe.Source)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
-      - name: Benchmark serial vs Turbo and layer-cache A/B
+      - name: Benchmark serial vs Turbo on mixed scene
+        run: npm run bench:video:workers
+      - name: Benchmark layer cache ON vs OFF without decoder noise
         env:
+          GACHA_BENCH_PROFILE: 'static-heavy'
           GACHA_BENCH_LAYER_CACHE_AB: '1'
         run: npm run bench:video:workers
       - name: Benchmark cold vs persistent warm cache
