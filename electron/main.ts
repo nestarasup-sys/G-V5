@@ -48,6 +48,7 @@ let videoExportCoordinator: VideoExportCoordinator | null = null
 let videoPreviewProxyStore: VideoPreviewProxyStore | null = null
 let videoPreviewToolsPromise: Promise<{ ffmpeg: VideoStudioFfmpegCapabilities }> | null = null
 const videoExportJobOwners = new Map<string, number>()
+const videoExportTerminalCleanupTimers = new Map<string, NodeJS.Timeout>()
 let roteirosSaveQueue: Promise<void> = Promise.resolve()
 let roteiroCharacterExportStore: RoteiroCharacterExportStore | null = null
 let roteiroProjectExportStore: RoteiroProjectExportStore | null = null
@@ -1926,6 +1927,11 @@ async function registerFabricatorHandlers(): Promise<void> {
       ipcMain.handle('video-studio:export:resume', async (event, jobId: string) => {
         assertTrustedSender(event)
         if (!videoExportCoordinator) throw new Error('Coordenador de exportação ainda não foi inicializado.')
+        const existingCleanup = videoExportTerminalCleanupTimers.get(jobId)
+        if (existingCleanup) {
+          clearTimeout(existingCleanup)
+          videoExportTerminalCleanupTimers.delete(jobId)
+        }
         const resumed = await videoExportCoordinator.resume(jobId)
         videoExportJobOwners.set(resumed, event.sender.id)
         const current = videoExportCoordinator.status(resumed)
@@ -1938,6 +1944,9 @@ async function registerFabricatorHandlers(): Promise<void> {
         const owner = videoExportJobOwners.get(jobId)
         if (owner !== undefined && owner !== event.sender.id) throw new Error('Job de exportação pertence a outra janela.')
         await videoExportCoordinator.discardRecovery(jobId)
+        const cleanupTimer = videoExportTerminalCleanupTimers.get(jobId)
+        if (cleanupTimer) clearTimeout(cleanupTimer)
+        videoExportTerminalCleanupTimers.delete(jobId)
         videoExportJobOwners.delete(jobId)
       })
       ipcMain.handle('video-studio:video-library:list', async (event) => { assertTrustedSender(event); return videoLibrary.list() })
@@ -3465,6 +3474,17 @@ app.whenReady().then(async () => {
       const ownerId = videoExportJobOwners.get(progress.jobId)
       const owner = ownerId === undefined ? undefined : BrowserWindow.getAllWindows().find((candidate) => candidate.webContents.id === ownerId)
       if (owner && !owner.isDestroyed()) owner.webContents.send('video-studio:export:progress', progress)
+      if (['done', 'failed', 'cancelled'].includes(progress.stage)) {
+        const previousTimer = videoExportTerminalCleanupTimers.get(progress.jobId)
+        if (previousTimer) clearTimeout(previousTimer)
+        const timer = setTimeout(() => {
+          videoExportJobOwners.delete(progress.jobId)
+          videoExportTerminalCleanupTimers.delete(progress.jobId)
+          try { videoExportCoordinator?.forgetTerminal(progress.jobId) } catch { /* job may have resumed */ }
+        }, 10 * 60_000)
+        timer.unref?.()
+        videoExportTerminalCleanupTimers.set(progress.jobId, timer)
+      }
     },
   )
   registerVideoAssetProtocol()
