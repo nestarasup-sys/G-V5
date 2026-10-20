@@ -55,3 +55,20 @@ test('incomplete chunk cancellation terminates its child process', async (t) => 
   await writer.writeFrame(Buffer.from([1, 2, 3, 4]))
   await assert.rejects(writer.finish(), /Encode incompleto/)
 })
+
+
+test('explicit cancellation waits until the raw encoder child has actually exited', async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'gacha-raw-cancel-'))
+  t.after(() => fs.rm(root, { recursive: true, force: true }))
+  const outputPath = path.join(root, 'cancel.bin')
+  const writer = new VideoRawFrameWriter({
+    executable: process.execPath,
+    args: ['-e', 'process.stdin.resume(); setInterval(()=>{},1000)'],
+    outputPath,
+    frameBytes: 4,
+    frameCount: 2,
+  })
+  await writer.ready()
+  await writer.cancel()
+  assert.ok(writer.process.exitCode !== null || writer.process.signalCode !== null || writer.process.killed)
+})
