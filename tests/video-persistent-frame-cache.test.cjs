@@ -1,0 +1,61 @@
+'use strict'
+const test=require('node:test')
+const assert=require('node:assert/strict')
+const fs=require('node:fs')
+const os=require('node:os')
+const path=require('node:path')
+const ts=require('typescript')
+
+const source=fs.readFileSync(path.resolve(__dirname,'../electron/videoPersistentFrameCache.ts'),'utf8')
+const compiled=ts.transpile(source,{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022})
+const mod={exports:{}}
+new Function('require','module','exports',compiled)(require,mod,mod.exports)
+const {VideoPersistentFrameCache,VIDEO_RENDERER_CACHE_VERSION}=mod.exports
+
+test('persistent semantic cache survives a new instance and returns exact bytes',async()=>{
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),'gv5-persistent-cache-'))
+  try{
+    const pixels=Buffer.alloc(1920*16*4,7)
+    const cold=new VideoPersistentFrameCache(root,64*1024*1024)
+    assert.equal(await cold.get('scene-a',pixels.length),undefined)
+    await cold.set('scene-a',pixels)
+    const warm=new VideoPersistentFrameCache(root,64*1024*1024)
+    assert.deepEqual(await warm.get('scene-a',pixels.length),pixels)
+    const stats=await warm.stats()
+    assert.equal(stats.hits,1)
+    assert.equal(stats.entries,1)
+    assert.equal(typeof VIDEO_RENDERER_CACHE_VERSION,'string')
+  }finally{fs.rmSync(root,{recursive:true,force:true})}
+})
+
+test('corrupt persistent entries fail closed and are removed',async()=>{
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),'gv5-persistent-corrupt-'))
+  try{
+    const pixels=Buffer.alloc(1024*1024,11)
+    const cache=new VideoPersistentFrameCache(root,64*1024*1024)
+    await cache.set('scene-corrupt',pixels)
+    const frameDir=path.join(root,'frames')
+    const file=fs.readdirSync(frameDir)[0]
+    fs.writeFileSync(path.join(frameDir,file),Buffer.from('corrupt'))
+    assert.equal(await cache.get('scene-corrupt',pixels.length),undefined)
+    assert.equal(fs.existsSync(path.join(frameDir,file)),false)
+  }finally{fs.rmSync(root,{recursive:true,force:true})}
+})
+
+test('persistent cache enforces disk budget and repair removes interrupted temp files',async()=>{
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),'gv5-persistent-budget-'))
+  try{
+    const cache=new VideoPersistentFrameCache(root,64*1024*1024)
+    for(let i=0;i<20;i++){
+      const pixels=Buffer.alloc(4*1024*1024)
+      for(let j=0;j<pixels.length;j+=4096)pixels[j]=(i+j)%251
+      await cache.set('scene-'+i,pixels)
+    }
+    fs.mkdirSync(path.join(root,'frames'),{recursive:true})
+    fs.writeFileSync(path.join(root,'frames','.interrupted.tmp'),'x')
+    await cache.repair()
+    const stats=await cache.stats()
+    assert.ok(stats.bytes<=stats.maxBytes)
+    assert.equal(fs.existsSync(path.join(root,'frames','.interrupted.tmp')),false)
+  }finally{fs.rmSync(root,{recursive:true,force:true})}
+})
