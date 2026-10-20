@@ -18,6 +18,7 @@ const rendererFile=path.resolve(__dirname,'../../out/renderer/index.html')
 const preloadPath=path.resolve(__dirname,'../../out/preload/video-export-preload.cjs')
 const width=1920,height=1080,durationSeconds=Number(process.env.GACHA_BENCH_SECONDS||5),totalFrames=durationSeconds*60,chunkFrames=60
 const profile=process.env.GACHA_BENCH_PROFILE||'mixed-realistic'
+const runLayerCacheAb=process.env.GACHA_BENCH_LAYER_CACHE_AB==='1'
 const machine={platform:process.platform,release:os.release(),cpuModel:os.cpus()[0]?.model??'unknown',logicalCpuCount:os.cpus().length,totalMemoryBytes:os.totalmem(),freeMemoryBytesAtStart:os.freemem()}
 const jobId='726e2b84-aa60-4cf5-95b0-8d2557d9447f'
 const studioId='f2ff96c8-ce44-45fc-9251-34e89ad4c45f'
@@ -111,7 +112,7 @@ app.whenReady().then(async()=>{
  ipcMain.on('video-studio:export-surface:ready',(event,ready)=>{const session=sessions.get(event.sender.id);if(!session)return;if(ready.error)session.reject(new Error(ready.error));else{session.ready=true;session.resolveReady()}})
  ipcMain.on('video-studio:export-surface:frame-ready',(event,ready)=>{const s=sessions.get(event.sender.id);const p=s?.pending.get(ready.requestId);if(!p)return;s.pending.delete(ready.requestId);if(ready.error)p.reject(new Error(ready.error));else if(!(ready.pixels instanceof Uint8Array))p.reject(new Error('pixels ausentes'));else p.resolve({pixels:pixel.rgbaToBgra(ready.pixels),timings:ready.timings||{composeMs:0,readbackMs:0},layerCache:ready.layerCache||null})})
 
- async function openSurface(){
+ async function openSurface(layerCacheEnabled=true){
   const win=new BrowserWindow({show:false,width,height,useContentSize:true,backgroundColor:'#000',webPreferences:{preload:preloadPath,contextIsolation:true,nodeIntegration:false,sandbox:true,backgroundThrottling:false,offscreen:true}})
   allowed.add(win.webContents.id)
   const diagnostics=[]
@@ -121,11 +122,11 @@ app.whenReady().then(async()=>{
   const session={win,pending:new Map(),ready:false,resolveReady,reject:rejectReady}
   sessions.set(win.webContents.id,session)
   const timeout=setTimeout(()=>rejectReady(new Error('timeout aguardando ready da surface')),30000)
-  try{await Promise.all([win.loadFile(rendererFile,{hash:`/video-export-surface?jobId=${jobId}`}),readyPromise])}catch(error){await new Promise(resolve=>setTimeout(resolve,100));throw new Error(`${error.message}; renderer=${JSON.stringify(diagnostics)}`)}finally{clearTimeout(timeout)}
+  try{await Promise.all([win.loadFile(rendererFile,{hash:`/video-export-surface?jobId=${jobId}&layerCache=${layerCacheEnabled?'1':'0'}`}),readyPromise])}catch(error){await new Promise(resolve=>setTimeout(resolve,100));throw new Error(`${error.message}; renderer=${JSON.stringify(diagnostics)}`)}finally{clearTimeout(timeout)}
   return{win,async frame(frame){const requestId=`${win.webContents.id}-${frame}-${Math.random()}`;return new Promise((resolve,reject)=>{session.pending.set(requestId,{resolve,reject});win.webContents.send('video-studio:export-surface:render',{requestId,frame})})},close(){allowed.delete(win.webContents.id);sessions.delete(win.webContents.id);win.destroy()}}
  }
 
- async function benchmark(workerCount){
+ async function benchmark(workerCount,layerCacheEnabled=true){
   const dir=path.join(root,`w${workerCount}`);fs.mkdirSync(dir,{recursive:true})
   const started=performance.now(),memory=createMemorySampler()
   const indexes=Array.from({length:Math.ceil(totalFrames/chunkFrames)},(_,i)=>i)
@@ -146,7 +147,7 @@ app.whenReady().then(async()=>{
   try{
     const initialWriters=await Promise.all(workerChunks.map(chunks=>createWriter(chunks[0])))
     const surfaceStart=performance.now()
-    for(let index=0;index<workerCount;index++)surfaces.push(await openSurface())
+    for(let index=0;index<workerCount;index++)surfaces.push(await openSurface(layerCacheEnabled))
     const surfaceStartupMs=performance.now()-surfaceStart
     const renderEncodeStarted=performance.now()
     async function worker(surface,chunks,initialWriter){
@@ -183,7 +184,7 @@ app.whenReady().then(async()=>{
     const peakBytes=memory.stop()
     if(rendered!==totalFrames)throw new Error(`benchmark enviou ${rendered}/${totalFrames} frames`)
     return{
-     workerCount,durationSeconds,frames:totalFrames,elapsedMs,throughputFps:totalFrames/(elapsedMs/1000),realtimeFactor:durationSeconds/(elapsedMs/1000),
+     workerCount,layerCacheEnabled,durationSeconds,frames:totalFrames,elapsedMs,throughputFps:totalFrames/(elapsedMs/1000),realtimeFactor:durationSeconds/(elapsedMs/1000),
      surfaceStartupMs,renderEncodeWallMs,composeMs,readbackMs,frameAcquireMs,encoderReadyMs,frameWriteMs,writerFinishMs,assembleMs,verifyMs,
      readbackRatio:(composeMs+readbackMs)>0?readbackMs/(composeMs+readbackMs):0,
      layerCache:{hits:layerCacheHits,misses:layerCacheMisses,evictions:layerCacheEvictions,bytesPeak:layerCacheBytes,maxBytes:layerCacheMaxBytes,avoidedLayerDraws:layerCacheHits},
@@ -200,10 +201,13 @@ app.whenReady().then(async()=>{
  }
 
  try{
-  const serial=await benchmark(1)
-  const turbo=await benchmark(2)
+  const serial=await benchmark(1,true)
+  const turbo=await benchmark(2,true)
   const speedup=serial.elapsedMs/turbo.elapsedMs
-  const report=JSON.stringify({ok:true,profile,durationSeconds,dimensions:`${width}x${height}`,frameRate:60,totalFrames,machine,fixture:profileCounts.counts,serial,turbo,speedup},null,2)
+  const cacheOffSerial=runLayerCacheAb?await benchmark(1,false):null
+  const layerCacheSpeedup=cacheOffSerial?cacheOffSerial.elapsedMs/serial.elapsedMs:null
+  if(cacheOffSerial&&cacheOffSerial.outputSha256!==serial.outputSha256)throw new Error('Layer cache ON/OFF produziu bytes finais diferentes.')
+  const report=JSON.stringify({ok:true,profile,durationSeconds,dimensions:`${width}x${height}`,frameRate:60,totalFrames,machine,fixture:profileCounts.counts,serial,turbo,speedup,cacheOffSerial,layerCacheSpeedup},null,2)
   await new Promise((resolve,reject)=>process.stdout.write(`${report}\n`,error=>error?reject(error):resolve()))
  }finally{
   for(const w of BrowserWindow.getAllWindows())if(!w.isDestroyed())w.destroy()
