@@ -22,6 +22,7 @@ export type VideoExportSurfaceFrameReady = Readonly<{
   error?: string
   /** Canonical Canvas RGBA bytes; present only on successful frame acknowledgements. */
   pixels?: Uint8Array
+  timings?: Readonly<{ composeMs: number; readbackMs: number }>
 }>
 
 export type VideoExportSurfaceReady = Readonly<{
