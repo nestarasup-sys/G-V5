@@ -6,6 +6,9 @@ param(
 $ErrorActionPreference = 'Stop'
 $manifest = Get-Content -Raw -LiteralPath $ManifestPath | ConvertFrom-Json
 if ($manifest.schemaVersion -ne 1 -or -not $manifest.url -or -not $manifest.sha256) { throw 'Manifesto FFmpeg inválido.' }
+if (-not $manifest.releaseTag -or [string]$manifest.releaseTag -eq 'latest') { throw 'Runtime FFmpeg precisa usar releaseTag imutável; alias latest é proibido.' }
+if (-not ([string]$manifest.url).Contains('/' + [string]$manifest.releaseTag + '/')) { throw 'URL do runtime FFmpeg não corresponde ao releaseTag pinado.' }
+if ([string]$manifest.assetName -match '(^|-)latest(-|\.)') { throw 'assetName do runtime FFmpeg precisa ser versionado, não um alias latest.' }
 
 $temp = Join-Path ([System.IO.Path]::GetTempPath()) ("gacha-v5-ffmpeg-" + [guid]::NewGuid())
 $zip = Join-Path $temp $manifest.assetName
@@ -57,6 +60,7 @@ A final release should preserve the applicable LGPL text/source-compliance infor
   $info = [ordered]@{
     schemaVersion = 1
     provider = $manifest.provider
+    releaseTag = $manifest.releaseTag
     assetName = $manifest.assetName
     assetSha256 = $actual
     versionLine = [string]$version
