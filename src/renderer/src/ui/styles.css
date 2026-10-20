@@ -58,7 +58,6 @@ button:focus-visible, input:focus-visible { outline: 3px solid #ed8caf; outline-
 .roteiro-thumbnail-placeholder { color:#a38abb; }
 .roteiro-thumbnail-placeholder svg { width:32px;height:32px; }
 .roteiro-sidebar-thumbnail>strong { overflow:hidden;color:#514355;font-size:11px;text-overflow:ellipsis;white-space:nowrap; }
-.roteiro-sidebar-empty-hint { margin:0;padding:11px 8px;border:1px dashed #e4dce9;border-radius:8px;color:#978c9d;font-size:10px;line-height:1.4;text-align:center; }
 .roteiro-modal-backdrop { position:fixed;z-index:1600;inset:0;display:grid;place-items:center;padding:18px;background:#21182b70;backdrop-filter:blur(3px); }
 .roteiro-create-modal,.roteiro-video-title-modal { width:min(520px,100%);max-height:min(680px,92vh);display:flex;flex-direction:column;overflow:hidden;border:1px solid #e5dced;border-radius:15px;background:#fff;box-shadow:0 22px 75px #20152c42; }
 .roteiro-create-modal>header,.roteiro-video-title-modal>header { display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:17px 19px 12px;border-bottom:1px solid #eee8f2; }
@@ -87,10 +86,12 @@ button:focus-visible, input:focus-visible { outline: 3px solid #ed8caf; outline-
 .roteiros-area-titlebar { min-height:58px;display:flex;align-items:center;justify-content:flex-end;padding:8px 24px;border-bottom:1px solid #e9e2ee;background:#fff; }
 .roteiros-title-content { display:flex;align-items:center;gap:12px; }
 .roteiros-title-actions { display:flex;align-items:center;gap:7px; }
-.roteiros-title-actions button { width:34px;height:34px;display:grid;place-items:center;border:1px solid #e5dced;border-radius:9px;background:#fff;color:#7652b5;cursor:pointer; }
-.roteiros-title-actions button:hover:not(:disabled) { border-color:#c8b3e4;background:#f7f2fc; }
-.roteiros-title-actions button:disabled { opacity:.4;cursor:default; }
-.roteiros-title-actions button svg { width:16px;height:16px; }
+.roteiros-title-actions button { min-height:36px;padding:0 15px;border:1px solid transparent;border-radius:8px;color:#fff;font-size:12px;font-weight:750;cursor:pointer; }
+.roteiros-title-actions button.add { background:#3478e5; }
+.roteiros-title-actions button.add:hover { background:#2868cf; }
+.roteiros-title-actions button.delete { background:#d9434f; }
+.roteiros-title-actions button.delete:hover:not(:disabled) { background:#c3323e; }
+.roteiros-title-actions button:disabled { opacity:.45;cursor:default; }
 .roteiros-area-titlebar h1 { margin:0;color:#342e36;font:800 26px/1.25 Manrope,sans-serif;letter-spacing:-.4px; }
 .blank-page { min-width: 0; min-height: 0; flex: 1; display: grid; place-items: center; background: #f5f3f4; color: #8a7280; }
 .app-recovery { min-height: 100vh; display: grid; place-items: center; padding: 24px; background: #f5f3f4; color: #352530; }
