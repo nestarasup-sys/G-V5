@@ -20,7 +20,6 @@ import { encodeVideoStudioSerialChunk } from './videoSerialChunkEncoder'
 import { assembleVideoStudioOutput } from './videoExportAssembler'
 import { probeVideoMedia } from './videoMediaProbe'
 import { verifyVideoStudioOutput } from './videoOutputVerifier'
-import { rgbaToBgra } from './videoPixelFormat'
 import { VideoSemanticFrameCache } from './videoSemanticFrameCache'
 import { VideoPersistentFrameCache } from './videoPersistentFrameCache'
 import { chooseVideoExportWorkerCount, videoExportWorkerOverride } from './videoExportAutoTuner'
@@ -385,7 +384,7 @@ export class VideoExportCoordinator {
           outputPath,
           startFrame,
           endFrameExclusive,
-        }, async (frame) => rgbaToBgra(await renderSemanticFrame(surface, frame)), {
+        }, async (frame) => renderSemanticFrame(surface, frame), {
           signal: active.controller.signal,
           onProgress: ({ completedFrames }) => {
             completedByChunk.set(index, completedFrames)
