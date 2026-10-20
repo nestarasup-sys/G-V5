@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
 import { lstat, mkdir, readFile, readdir, realpath, rename, rm, writeFile } from 'node:fs/promises'
 import { basename, dirname, join, relative, resolve, sep } from 'node:path'
 
@@ -29,7 +29,6 @@ function safeDisplayName(value: unknown, label: string): string {
   return value.trim()
 }
 
-function sha256(data: Uint8Array): string { return createHash('sha256').update(data).digest('hex') }
 function samePath(left: string, right: string): boolean { return process.platform === 'win32' ? left.toLowerCase() === right.toLowerCase() : left === right }
 
 async function exists(path: string): Promise<boolean> {
@@ -176,6 +175,8 @@ export class RoteiroCharacterExportStore {
     } else {
       await assertSafePath(dirname(job.projectFolder), job.projectFolder)
       const created: string[] = []
+      const backups: Array<{ original: string; backup: string }> = []
+      const replaced: string[] = []
       try {
         const currentProjectPath = join(job.projectFolder, projectFile)
         await assertSafePath(job.projectFolder, currentProjectPath)
@@ -183,10 +184,25 @@ export class RoteiroCharacterExportStore {
         if (await exists(currentProjectPath)) {
           const existing = JSON.parse(await readFile(currentProjectPath, 'utf8')) as Record<string, any>
           if (!existing || typeof existing !== 'object' || !existing.characters || typeof existing.characters !== 'object' || Array.isArray(existing.characters)) throw new Error('O arquivo de projeto existente não tem uma estrutura compatível; preservei a pasta sem alteração.')
-          for (const [name, config] of Object.entries(characters)) if (Object.hasOwn(existing.characters, name) && JSON.stringify(existing.characters[name]) !== JSON.stringify(config)) throw new Error(`O personagem “${name}” já existe neste projeto com outra configuração. Nenhum arquivo foi sobrescrito.`)
-          mergedProject = { ...existing, characters: { ...existing.characters, ...characters }, initial_state: { ...(existing.initial_state ?? {}), ...Object.fromEntries(Object.entries(initialState).filter(([name]) => !Object.hasOwn(existing.initial_state ?? {}, name))) } } as typeof projectDocument
+          mergedProject = { ...existing, characters: { ...existing.characters, ...characters }, initial_state: { ...(existing.initial_state ?? {}), ...initialState } } as typeof projectDocument
         }
         const files = await walkFiles(job.stageFolder)
+        const stagedRelativePaths = new Set(files.map((file) => file.slice(job.stageFolder.length + 1)))
+        const exportedCharacterRoots = [...job.namesById.values()].map(({ folderName }) => join('assets', 'characters', folderName))
+        // Remove stale expressions and poses for characters in this export, while leaving
+        // every other character and project asset untouched.
+        for (const relativeRoot of exportedCharacterRoots) {
+          const rootPath = resolve(job.projectFolder, relativeRoot)
+          await assertSafePath(job.projectFolder, rootPath)
+          if (!await exists(rootPath)) continue
+          for (const oldFile of await walkFiles(rootPath)) {
+            const rel = oldFile.slice(job.projectFolder.length + 1)
+            if (stagedRelativePaths.has(rel)) continue
+            const backup = `${oldFile}.${job.id}.bak`
+            await rename(oldFile, backup)
+            backups.push({ original: oldFile, backup })
+          }
+        }
         for (const stagedFile of files) {
           const rel = stagedFile.slice(job.stageFolder.length + 1)
           const destination = resolve(job.projectFolder, rel)
@@ -194,15 +210,16 @@ export class RoteiroCharacterExportStore {
           await assertSafePath(job.projectFolder, destination)
           if (rel === projectFile) continue
           if (await exists(destination)) {
-            const [oldBytes, newBytes] = await Promise.all([readFile(destination), readFile(stagedFile)])
-            if (sha256(oldBytes) !== sha256(newBytes)) throw new Error(`Já existe um arquivo diferente em ${rel}; nenhum arquivo existente foi sobrescrito.`)
-            continue
+            const backup = `${destination}.${job.id}.bak`
+            await rename(destination, backup)
+            backups.push({ original: destination, backup })
           }
           await mkdir(dirname(destination), { recursive: true })
           const temp = `${destination}.${job.id}.tmp`
           await writeFile(temp, await readFile(stagedFile), { flag: 'wx' })
           await rename(temp, destination)
-          created.push(destination)
+          replaced.push(destination)
+          if (!backups.some(({ original }) => original === destination)) created.push(destination)
         }
         if (!await exists(join(job.projectFolder, '.nymi-script.json'))) {
           const stagedManifest = await readFile(join(job.stageFolder, '.nymi-script.json'))
@@ -216,13 +233,17 @@ export class RoteiroCharacterExportStore {
         if (await exists(currentProjectPath)) {
           const backup = `${currentProjectPath}.${job.id}.bak`
           await rename(currentProjectPath, backup)
-          try { await rename(projectTemp, currentProjectPath) } catch (error) { await rename(backup, currentProjectPath); throw error }
-          await rm(backup, { force: true })
+          backups.push({ original: currentProjectPath, backup })
+          await rename(projectTemp, currentProjectPath)
         } else {
           await rename(projectTemp, currentProjectPath); created.push(currentProjectPath)
         }
+        // The new project is now complete; discard rollback copies only after every
+        // replacement has succeeded.
+        await Promise.allSettled(backups.map(({ backup }) => rm(backup, { force: true })))
       } catch (error) {
-        for (const path of created.reverse()) await rm(path, { force: true }).catch(() => undefined)
+        for (const path of [...created, ...replaced].reverse()) await rm(path, { force: true }).catch(() => undefined)
+        for (const { original, backup } of backups.reverse()) if (await exists(backup)) await rename(backup, original).catch(() => undefined)
         throw error
       }
       await rm(job.stageFolder, { recursive: true, force: true })
