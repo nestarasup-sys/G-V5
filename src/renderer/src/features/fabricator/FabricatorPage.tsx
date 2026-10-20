@@ -326,7 +326,7 @@ export function FabricatorPage() {
     const observer = new ResizeObserver(measure)
     observer.observe(element)
     return () => { observer.disconnect() }
-  }, [activeSection])
+  }, [activeSection, project])
 
   useEffect(() => {
     if (!project) { setSaveState('saved'); return }
