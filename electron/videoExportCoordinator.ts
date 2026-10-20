@@ -3,6 +3,7 @@ import { performance } from 'node:perf_hooks'
 import { cpus, freemem, totalmem } from 'node:os'
 import type { CustomizerCharacter } from '../src/shared/customizer'
 import type { StudioDocument, VideoExportRecord as SharedVideoExportRecord } from '../src/shared/studio'
+import { fitVideoTimelineDuration } from '../src/shared/videoTimelineDuration'
 import { createVideoExportSnapshot } from '../src/shared/videoExportSnapshot'
 import { createVideoExportCharacterSnapshot } from '../src/shared/videoExportCharacters'
 import type { VideoCharacterRenderAssetSnapshot } from '../src/shared/videoCharacterRenderAssets'
@@ -78,8 +79,17 @@ export class VideoExportCoordinator {
   start(input: VideoExportCoordinatorInput): string {
     if (!input?.studio?.videoTimeline) throw new Error('Exportação exige um projeto do Video Studio.')
     if (input.renderVariant !== 'animated' && input.renderVariant !== 'static-characters') throw new Error('Modo de exportação inválido.')
+    const exportTimeline = input.studio.videoTimeline
+    const exportDurationFrames = fitVideoTimelineDuration(exportTimeline)
+    const exportInput: VideoExportCoordinatorInput = {
+      ...input,
+      studio: {
+        ...input.studio,
+        videoTimeline: { ...exportTimeline, durationFrames: exportDurationFrames },
+      },
+    }
     const jobId = randomUUID()
-    const totalFrames = input.studio.videoTimeline.durationFrames
+    const totalFrames = exportDurationFrames
     const initial: VideoExportProgress = Object.freeze({
       jobId,
       stage: 'queued',
@@ -98,7 +108,7 @@ export class VideoExportCoordinator {
     }
     this.active.set(jobId, active)
     this.onProgress(initial)
-    active.task = this.run(active, input).catch((reason: unknown) => {
+    active.task = this.run(active, exportInput).catch((reason: unknown) => {
       const cancelled = active.controller.signal.aborted
       this.update(active, {
         stage: cancelled ? 'cancelled' : 'failed',
