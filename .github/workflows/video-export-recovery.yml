@@ -1,0 +1,42 @@
+name: Video Studio interrupted MP4 recovery
+
+on:
+  push:
+    branches: [master-desenvolvimento]
+    paths:
+      - 'package.json'
+      - 'resources/video-tools.manifest.json'
+      - 'scripts/video-studio/prepare-ffmpeg-lgpl.ps1'
+      - 'scripts/video-studio/hybrid-fragmented-recovery-smoke.cjs'
+      - '.github/workflows/video-export-recovery.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: video-export-recovery-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  hybrid-recovery-windows:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Prepare pinned LGPL FFmpeg runtime
+        shell: pwsh
+        run: npm run prepare:video-tools
+      - name: Resolve prepared tools
+        shell: pwsh
+        run: |
+          "GACHA_FFMPEG_PATH=$((Resolve-Path ./resources/video-tools/ffmpeg.exe).Path)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "GACHA_FFPROBE_PATH=$((Resolve-Path ./resources/video-tools/ffprobe.exe).Path)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+      - name: Kill fragmented MP4 and recover by remux
+        run: npm run test:export:hybrid-recovery
