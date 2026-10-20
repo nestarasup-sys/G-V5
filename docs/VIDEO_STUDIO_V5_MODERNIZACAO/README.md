@@ -1,46 +1,98 @@
-# Video Studio V5 — Modernização Integral (2026-10-19)
+# Video Studio V5 — Modernização Integral
 
-Este diretório é o **plano estratégico independente** solicitado para modernizar TODO o Video Studio do G-V5 (edição, preview, personagens, vídeos, armazenamento e exportação). O plano antigo `docs/AGENTE_EXPORT_V5/` permanece como documentação **tática de exportação**, subordinada aqui em caso de divergência.
+Diretório canônico da modernização do **Video Studio do G-V5**. Nesta trilha, **Roteiros e Base de Vídeos são domínios separados e ficam fora do escopo**, salvo contratos mínimos usados pelo Video Studio para consumir mídia. O caminho crítico atual é **finalizar o exportador**, endurecer estabilidade e medir otimizações de preview/export.
 
-## Comece por este roteiro
+O plano antigo `docs/AGENTE_EXPORT_V5/` permanece como histórico/backlog tático. Em divergência, o estado real do código + CI + documentos deste diretório prevalecem.
 
-1. **[00_PLANO_DIRETOR.md](./00_PLANO_DIRETOR.md)** — visão, arquitetura, P0-P6, decisões provisórias e metas.
-2. **[01_ESTUDO_DE_MOTORES.md](./01_ESTUDO_DE_MOTORES.md)** — estudo profundo de FFmpeg, MLT, GES, libopenshot, PixiJS, WebCodecs/Mediabunny, Electron OSR/shared texture e concorrentes.
-3. **[02_ARQUITETURA_CANONICA.md](./02_ARQUITETURA_CANONICA.md)** — RenderIR, Smart Scene Compiler, cache, transições, áudio, PTS, paridade e GPU.
-4. **[03_MIGRACAO_E_DADOS.md](./03_MIGRACAO_E_DADOS.md)** — biblioteca de vídeo com cópias físicas por projeto, migração CAS/proxies, segurança, backup e recuperação.
-5. **[04_LAB_E_GATES.md](./04_LAB_E_GATES.md)** — fixtures, experimentos A/B, qualidade, benchmarking e gates G0–G6.
-6. **[05_DECISOES_ADR.md](./05_DECISOES_ADR.md)** — decisões, hipóteses reversíveis e critérios de adoção.
-7. **[06_BACKLOG_DE_EXECUCAO.md](./06_BACKLOG_DE_EXECUCAO.md)** — 40 cartões executáveis V501–V540, com dependências.
+## Ordem de leitura atual
 
-## Estado factual e limites
+1. **[00_PLANO_DIRETOR.md](./00_PLANO_DIRETOR.md)** — visão e arquitetura.
+2. **[11_PESQUISA_OPEN_SOURCE_E_FECHAMENTO_EXPORTADOR.md](./11_PESQUISA_OPEN_SOURCE_E_FECHAMENTO_EXPORTADOR.md)** — pesquisa externa atual, matriz de engines, padrões extraídos e ordem revisada para fechar o exportador.
+3. **[10_RELEASE_CHECKLIST.md](./10_RELEASE_CHECKLIST.md)** — gate final de release.
+4. **[04_LAB_E_GATES.md](./04_LAB_E_GATES.md)** — fixtures, benchmarks, paridade e evidências.
+5. **[05_DECISOES_ADR.md](./05_DECISOES_ADR.md)** — ADRs e hipóteses reversíveis.
+6. **[06_BACKLOG_DE_EXECUCAO.md](./06_BACKLOG_DE_EXECUCAO.md)** — backlog técnico; pode conter status histórico, portanto código/CI vencem caixas antigas.
+7. **[02_ARQUITETURA_CANONICA.md](./02_ARQUITETURA_CANONICA.md)** — RenderIR, Scene Compiler, cache, PTS, áudio e GPU.
+8. **[07_MODOS_DE_EXPORTACAO.md](./07_MODOS_DE_EXPORTACAO.md)** — `animated` e `static-characters`.
+9. **[08_ARQUITETURA_EXTENSIVEL_E_RECONSTRUCAO.md](./08_ARQUITETURA_EXTENSIVEL_E_RECONSTRUCAO.md)** — modularidade/extensibilidade.
+10. **[09_MISSAO_CODEX_AUTONOMA.md](./09_MISSAO_CODEX_AUTONOMA.md)** — brief de execução autônoma.
+11. **[01_ESTUDO_DE_MOTORES.md](./01_ESTUDO_DE_MOTORES.md)** — pesquisa original de engines.
+12. **[03_MIGRACAO_E_DADOS.md](./03_MIGRACAO_E_DADOS.md)** — dados, mídia derivada, CAS e segurança.
 
-**Já existe no código:** Video Studio v1 (React/Electron), timeline a 60 FPS, personagens com keyframes/transições, vídeos/áudio no preview, snapshot lógico parcial, busca de personagem compartilhada pelo preview e pelo avaliador, avaliador semântico de cena absoluto (ainda não integrado como compositor à preview), frame raster sintético, writer BGRA, catálogo de exports e checkpoints de chunks.
+## Estado factual atual — 2026-10-20
 
-**Ainda NÃO existe/foi comprovado:** MP4 serial de ponta a ponta no V5 com render real de personagens e mídia; paridade visual preview/export; FFmpeg redistribuído/sondado; API completa start/cancel/progress; Turbo 2×; CAS compartilhado seguro; PixiJS/MLT/GES/libopenshot integrados.
+O Video Studio já não está na fase descrita pelos primeiros documentos de 2026-10-19. Já existem no código, entre outros:
 
-**Pesquisa realizada:** leitura estática dos dois repositórios no GitHub e documentação oficial de engines. **Nenhum teste runtime/GPU/FFmpeg/benchmark novo** foi executado nesta rodada. Nenhum dado real de usuário foi acessado. As alternativas de engines são candidatas, não decisões implementadas.
+- SceneIR/evaluator absoluto por frame;
+- variantes `animated` e `static-characters`;
+- snapshot e dependências pinadas por SHA-256;
+- ExportSurface Electron;
+- compositor Canvas;
+- personagem, transição, blink e mouth;
+- vídeo importado com pool dedicado;
+- FFmpeg capability probing;
+- H.264/AAC, concat, FFprobe e full decode verification;
+- serial e Turbo de dois workers com fallback;
+- coordinator, cancel e recovery;
+- cache semântico L1 e persistente L2;
+- layer cache;
+- preview seek scheduler latest-only;
+- proxy/waveform;
+- CAS shadow;
+- registry V546;
+- full-engine benchmark;
+- gates 90 s e 15 min;
+- preparação de runtime FFmpeg LGPL;
+- experimentos PixiJS e Mediabunny/WebCodecs.
 
-## Direção preferida (provisória)
+Portanto, **não reconstruir fundações já existentes só porque documentos históricos ainda dizem “falta implementar”**.
 
-- **Semântica única:** `StudioDocument v1 → AssetManifest → RenderIR → RenderSurface → encoder`.
-- **Motor baseline:** compositor especializado no G-V5 e FFmpeg testado; PixiJS WebGL compete pela camada visual, MLT/libopenshot/GES competem por media/NLE se houver benefício.
-- **Melhorias maiores:** preview 2D determinístico, cache por estado, mídia correta por PTS, controle de memória/GPU, Smart Export, serial robusto, Turbo com fallback e retenção segura de dados.
-- **Não há promessa de velocidade em "x"** antes de medições; "Turbo 2×" denota até dois trabalhadores simultâneos.
+## Caminho crítico atual
 
-## Governança
+1. determinismo Preview/Canvas/MP4, especialmente seek A-B-A;
+2. serial como oracle de correção;
+3. recovery/crash torture completo;
+4. memória bounded e backpressure;
+5. Turbo/autotuner sem oversubscription;
+6. packaging Windows limpo com FFmpeg/FFprobe próprios;
+7. hardware gate no PC alvo;
+8. decisões Pixi/WebCodecs/sharedTexture baseadas em medição;
+9. release checklist com evidência no HEAD final.
 
-Escrita **somente** em `nestarasup-sys/G-V5/master-desenvolvimento`. Editor V4 `oai/aggressive-export-v5` é referência de leitura. Não usar mídia, personagens ou projetos privados em CI; não executar DEV AI e auditorias desativadas. Não tocar em master, pastas do usuário ou trabalhos concorrentes.
+## Direção tecnológica após nova pesquisa
 
-A implementação deve avançar em commits pequenos, com PR/merge apenas quando autorizado, gates sintéticos/Electron/PC alvo e rollback por feature flag. A documentação original e os fatos antigos ficam em [../AGENTE_EXPORT_V5/README.md](../AGENTE_EXPORT_V5/README.md) e [../AGENTE_EXPORT_V5/DIARIO.md](../AGENTE_EXPORT_V5/DIARIO.md).
+O backbone preferido continua:
 
+```text
+Studio -> pinned AssetManifest -> Scene Compiler / RenderIR
+       -> compositor determinístico -> scheduler serial/Turbo
+       -> FFmpeg encode/audio/mux -> ffprobe/full decode -> atomic publish
+```
 
-## Atualização de direção — reconstrução extensível e dois modos de export (2026-10-19)
+Não trocar por uma engine NLE completa sem evidência. MLT, GES, libopenshot, Shotcut, Kdenlive, mpv, VapourSynth, AviSynth+, Natron, Blender, GStreamer e outros são usados principalmente para **extrair padrões maduros** de frame evaluation, cache, proxy, backpressure, isolamento e recovery. Consulte o documento 11.
 
-A visão originalmente aprovada — **Smart Scene Compiler**, reutilização inteligente de estados, GPU quando vantajosa, cache persistente, preview/export no mesmo motor, proxies, jobs retomáveis, autotuning, benchmark embutido e Smart Export por tipo de cena — permanece integralmente. O usuário autorizou ainda **reconstruir o Video Studio internamente**, desde que o projeto e as funções atuais sejam preservados, e solicitou dois modos de exportação.
+## Regras
 
-**Leia obrigatoriamente também:**
-- [07_MODOS_DE_EXPORTACAO.md](./07_MODOS_DE_EXPORTACAO.md): contrato dos modos Completo (interpolações e automatismos) e Sem animações de personagem (trocas authored preservadas, automações desligadas, vídeos/áudio preservados).
-- [08_ARQUITETURA_EXTENSIVEL_E_RECONSTRUCAO.md](./08_ARQUITETURA_EXTENSIVEL_E_RECONSTRUCAO.md): novo desenho modular, interfaces/registries para novos elementos e autorização condicionada de rebuild.
-- [09_MISSAO_CODEX_AUTONOMA.md](./09_MISSAO_CODEX_AUTONOMA.md): instruções de sync local e loop de implementação autônoma até passar os gates, sem parar após documentação/POC.
+- Escrita apenas em `nestarasup-sys/G-V5/master-desenvolvimento`.
+- Editor V4 é somente referência.
+- Sem mídia/projetos privados em CI.
+- Não executar DEV AI/auditorias desativadas.
+- Não otimizar sacrificando frames, áudio, transições, personagem ou deterministicidade.
+- Serial continua fallback e referência de correção.
+- Nenhuma promessa de “2×” sem benchmark.
+- sharedTexture, Pixi, WebCodecs, NodeAV ou qualquer engine externa entram somente após A/B, licença, Windows packaging e fallback.
 
-**Prioridade operacional:** implementar e testar uma engine, não produzir planos indefinidamente. A meta termina por evidência de paridade, MP4 real, dois modos, resiliência, Windows e extensibilidade — não por alegação de "perfeito".
+## Definição prática de conclusão
+
+O Video Studio não está concluído porque existe uma arquitetura ou um MP4. Está concluído quando o HEAD final provar:
+
+- paridade/determinismo;
+- MP4 H.264/AAC válido;
+- serial e Turbo estáveis;
+- recovery/cancel;
+- 90 s/15 min;
+- memória bounded;
+- pacote Windows sem FFmpeg global;
+- hardware alvo;
+- nenhum output parcial publicado;
+- decisões experimentais documentadas por dados.
