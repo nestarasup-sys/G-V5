@@ -28,7 +28,7 @@ export function App() {
               <Route path="/customizar" element={<LazyCustomizerPage />} />
               <Route path="/estudio" element={<LazyStudioPage />} />
               <Route path="/video-studio" element={<LazyVideoStudioPage onEditorActiveChange={setVideoEditorActive} />} />
-              <Route path="/roteiros" element={<div className="blank-page" aria-label="Roteiros" />} />
+              <Route path="/roteiros" element={<div className="roteiros-layout"><aside className="roteiros-sidebar-empty" aria-label="Painel de roteiros" /><section className="blank-page" aria-label="Área de roteiros" /></div>} />
               <Route path="/opcoes" element={<LazyOptionsPage />} />
               <Route path="/fabricador-dev" element={<LazyFabricatorPage />} />
               <Route path="*" element={<Navigate to="/customizar" replace />} />
