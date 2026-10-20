@@ -93,8 +93,15 @@ async function main(){
       expected:{width:1920,height:1080,frameRate:60,durationFrames:300,audio:true},
       timeoutMs:180000,
     })
+    const timingProbe=JSON.parse(run(ffprobe,[
+      '-v','error','-show_entries','stream=codec_type,start_time,duration,sample_rate,channels','-of','json',output
+    ]))
+    const audioStream=timingProbe.streams?.find((stream)=>stream.codec_type==='audio')
+    if(!audioStream)throw new Error('FFprobe não encontrou stream de áudio para validar timing.')
     const pcm=run(ffmpeg,[
-      '-v','error','-i',output,'-map','0:a:0','-f','s16le','-acodec','pcm_s16le','-ar','48000','-ac','2','-'
+      '-v','error','-i',output,'-map','0:a:0',
+      '-af','aresample=48000:first_pts=0',
+      '-f','s16le','-acodec','pcm_s16le','-ar','48000','-ac','2','-'
     ],null)
     const bytes=Buffer.from(pcm)
     const samples=new Int16Array(bytes.buffer,bytes.byteOffset,Math.floor(bytes.byteLength/2))
@@ -104,7 +111,7 @@ async function main(){
     if(before>25) throw new Error(`Áudio apareceu antes do clip: RMS=${before}`)
     if(active<100) throw new Error(`Áudio não apareceu no intervalo do clip: RMS=${active}`)
     if(after>25) throw new Error(`Áudio continuou depois do clip: RMS=${after}`)
-    console.log(JSON.stringify({ok:true,verified,rms:{before,active,after},outputBytes:fs.statSync(output).size}))
+    console.log(JSON.stringify({ok:true,verified,audioStream,rms:{before,active,after},outputBytes:fs.statSync(output).size}))
   }finally{
     fs.rmSync(root,{recursive:true,force:true})
   }
