@@ -124,7 +124,7 @@ export function parseVideoMediaProbe(path: string, payload: ProbePayload): Video
 export async function probeVideoMedia(
   ffprobeExecutable: string,
   path: string,
-  options: { timeoutMs?: number } = {},
+  options: { timeoutMs?: number; signal?: AbortSignal } = {},
 ): Promise<VideoMediaProbeInfo> {
   if (!isAbsolute(ffprobeExecutable) || !isAbsolute(path)) throw new Error('FFprobe e mídia precisam usar caminhos absolutos.')
   const info = await stat(path).catch(() => null)
@@ -133,7 +133,7 @@ export async function probeVideoMedia(
     '-v', 'error',
     '-show_entries', 'format=duration:stream=codec_type,codec_name,width,height,time_base,avg_frame_rate,r_frame_rate,start_time,duration,sample_rate,channels',
     '-of', 'json', path,
-  ], { timeoutMs: options.timeoutMs ?? 30_000 })
+  ], { timeoutMs: options.timeoutMs ?? 30_000, signal: options.signal })
   if (result.code !== 0) throw new Error(`FFprobe falhou ao analisar mídia. ${result.stderr}`)
   let payload: ProbePayload
   try { payload = JSON.parse(result.stdout) as ProbePayload }
