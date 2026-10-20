@@ -26,6 +26,10 @@ export type VideoExportMetrics = Readonly<{
   persistentCacheMisses?: number
   persistentCacheWrites?: number
   persistentCacheWriteSkips?: number
+  surfaceRoundTripMs?: number
+  composeMs?: number
+  readbackMs?: number
+  surfaceOtherMs?: number
   writerWaitMs?: number
   writerPeakInFlight?: number
   workerCount?: number
