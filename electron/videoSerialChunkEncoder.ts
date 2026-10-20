@@ -61,6 +61,7 @@ export async function encodeVideoStudioSerialChunk(
   if (options.signal?.aborted) relayAbort()
   else options.signal?.addEventListener('abort', relayAbort, { once: true })
 
+  let pendingRender: Promise<Buffer> | null = null
   const writer = new VideoRawFrameWriter({
     executable: ffmpeg.executable,
     args: buildVideoStudioChunkArgs(outputPath, frameCount, 'rgba', ffmpeg.videoEncoder),
@@ -72,7 +73,7 @@ export async function encodeVideoStudioSerialChunk(
     await writer.ready()
     // Keep exactly one render ahead of the writer. This overlaps Canvas/IPC
     // composition with FFmpeg stdin without allowing an unbounded frame queue.
-    let pendingRender = renderFrame(startFrame, controller.signal)
+    pendingRender = renderFrame(startFrame, controller.signal)
     for (let absoluteFrame = startFrame; absoluteFrame < endFrameExclusive; absoluteFrame += 1) {
       if (controller.signal.aborted) throw controller.signal.reason instanceof Error
         ? controller.signal.reason : new Error('Exportação cancelada.')
@@ -96,6 +97,7 @@ export async function encodeVideoStudioSerialChunk(
     return { startFrame, endFrameExclusive, frameCount, outputPath, writer: writerResult, outputBytes: output.size }
   } catch (error) {
     await writer.cancel().catch(() => undefined)
+    await pendingRender?.catch(() => undefined)
     throw error
   } finally {
     options.signal?.removeEventListener('abort', relayAbort)
