@@ -79,6 +79,7 @@ on:
       - 'scripts/video-studio/av-fixture-smoke.cjs'
       - 'scripts/video-studio/audio-assembly-smoke.cjs'
       - 'scripts/video-studio/preview-export-oracle-smoke.cjs'
+      - 'scripts/video-studio/turbo-e2e-electron-smoke.cjs'
   workflow_dispatch:
 
 permissions:
@@ -154,3 +155,7 @@ jobs:
         if: always() && steps.install.outcome == 'success'
         shell: pwsh
         run: npm run test:export:preview-oracle
+      - name: Run two-worker Turbo surface/encoder concat smoke
+        if: always() && steps.install.outcome == 'success'
+        shell: pwsh
+        run: npm run test:export:turbo-e2e
