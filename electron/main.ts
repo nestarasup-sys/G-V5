@@ -1905,7 +1905,7 @@ async function registerFabricatorHandlers(): Promise<void> {
   const registerStudioWorkspace = (workspace: StudioWorkspaceStorage, channel: 'studio' | 'video-studio') => {
     ipcMain.handle(`${channel}:list`, async (event): Promise<StudioDocument[] | VideoStudioCardSummary[]> => {
       assertTrustedSender(event)
-      return measureIpc(`${channel}:list`, () => workspace === 'video' ? listVideoStudioCards() : listStudios(workspace))
+      return measureIpc<StudioDocument[] | VideoStudioCardSummary[]>(`${channel}:list`, () => workspace === 'video' ? listVideoStudioCards() : listStudios(workspace))
     })
 
     if (workspace === 'video') ipcMain.handle('video-studio:get', async (event, id: string): Promise<StudioDocument | null> => {
