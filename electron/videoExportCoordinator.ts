@@ -186,6 +186,15 @@ export class VideoExportCoordinator {
     await active.task.catch(() => undefined)
   }
 
+  forgetTerminal(jobId: string): void {
+    const active = this.active.get(jobId)
+    if (!active) return
+    if (!['done', 'failed', 'cancelled'].includes(active.progress.stage)) {
+      throw new Error('Job de exportação ainda está ativo.')
+    }
+    this.active.delete(jobId)
+  }
+
   async discardRecovery(jobId: string): Promise<void> {
     const active = this.active.get(jobId)
     if (active && !['done', 'failed', 'cancelled'].includes(active.progress.stage)) {
