@@ -604,9 +604,15 @@ export class VideoExportJobStore {
     const rootInfo = await lstat(this.root)
     if (!rootInfo.isDirectory() || rootInfo.isSymbolicLink()) throw new Error('Raiz de jobs de exportação inválida.')
     const records: VideoExportRecoveryRecord[] = []
-    const entries = (await readdir(this.root, { withFileTypes: true }))
+    const candidates = (await readdir(this.root, { withFileTypes: true }))
       .filter((entry) => entry.isDirectory() && !entry.isSymbolicLink() && idPattern.test(entry.name))
+    const entries = (await Promise.all(candidates.map(async (entry) => ({
+      entry,
+      mtimeMs: (await lstat(join(this.root, entry.name)).catch(() => null))?.mtimeMs ?? 0,
+    }))))
+      .sort((left, right) => right.mtimeMs - left.mtimeMs)
       .slice(0, 100)
+      .map(({ entry }) => entry)
     for (const entry of entries) {
       try {
         const reopened = await this.reopen(entry.name)
