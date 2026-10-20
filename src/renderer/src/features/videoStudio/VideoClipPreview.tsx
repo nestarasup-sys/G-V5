@@ -53,14 +53,46 @@ export function VideoStudioClipPreview({ studioId, asset, clip, playheadFrame, p
   useEffect(() => {
     const media = mediaRef.current
     let disposed = false
-    const reportPresented = () => {
-      if (!media || disposed || !onFramePresented || media.readyState < HTMLMediaElement.HAVE_CURRENT_DATA || !Number.isFinite(media.duration)) return
-      const sourceTime = (clip.sourceStartFrame + playheadFrame - clip.startFrame) / 60
-      const target = Math.max(0, Math.min(sourceTime, media.duration - 0.001))
-      if (Math.abs(media.currentTime - target) > 0.001) return
+    let frameCallback: number | null = null
+    let presentationTimeout: number | null = null
+    let presentationPending = false
+    const sourceTime = (clip.sourceStartFrame + playheadFrame - clip.startFrame) / 60
+    const target = media && Number.isFinite(media.duration) ? Math.max(0, Math.min(sourceTime, media.duration - 0.001)) : sourceTime
+    const finishPresented = () => {
       requestAnimationFrame(() => requestAnimationFrame(() => {
-        if (!disposed && media === mediaRef.current && Math.abs(media.currentTime - target) <= 0.001) onFramePresented(playheadFrame, clip.id)
+        if (!disposed && media === mediaRef.current && Math.abs(media.currentTime - target) <= 0.001) onFramePresented?.(playheadFrame, clip.id)
       }))
+    }
+    const reportPresented = () => {
+      if (!media || disposed || !onFramePresented || presentationPending
+        || media.readyState < HTMLMediaElement.HAVE_CURRENT_DATA || !Number.isFinite(media.duration)
+        || Math.abs(media.currentTime - target) > 0.001) return
+      // For the isolated oracle, currentTime/seeked alone is not a presentation
+      // barrier: Chromium can expose the target timestamp while capturePage still
+      // contains the previously decoded frame. requestVideoFrameCallback confirms
+      // that a frame for the sought media time reached the compositor.
+      if (typeof media.requestVideoFrameCallback === 'function') {
+        presentationPending = true
+        presentationTimeout = window.setTimeout(() => {
+          presentationPending = false
+          presentationTimeout = null
+          if (!disposed) onPlaybackError('O decoder não apresentou o frame solicitado em até 2 segundos.')
+        }, 2000)
+        frameCallback = media.requestVideoFrameCallback((_now, metadata) => {
+          frameCallback = null
+          presentationPending = false
+          if (presentationTimeout !== null) window.clearTimeout(presentationTimeout)
+          presentationTimeout = null
+          if (disposed || Math.abs(media.currentTime - target) > 0.001) return
+          if (Math.abs(metadata.mediaTime - target) > 1 / 120 + 0.001) {
+            reportPresented()
+            return
+          }
+          finishPresented()
+        })
+        return
+      }
+      finishPresented()
     }
     media?.addEventListener('loadeddata', reportPresented)
     media?.addEventListener('seeked', reportPresented)
@@ -69,6 +101,8 @@ export function VideoStudioClipPreview({ studioId, asset, clip, playheadFrame, p
     reportPresented()
     return () => {
       disposed = true
+      if (frameCallback !== null && media && typeof media.cancelVideoFrameCallback === 'function') media.cancelVideoFrameCallback(frameCallback)
+      if (presentationTimeout !== null) window.clearTimeout(presentationTimeout)
       media?.removeEventListener('loadeddata', reportPresented)
       media?.removeEventListener('seeked', reportPresented)
       media?.removeEventListener('timeupdate', reportPresented)
