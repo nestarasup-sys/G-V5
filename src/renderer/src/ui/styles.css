@@ -60,6 +60,7 @@ button:focus-visible, input:focus-visible { outline: 3px solid #ed8caf; outline-
 .roteiro-character-strip,.roteiro-thumbnail-placeholder { width:104px;height:96px;grid-column:1;grid-row:1/4;display:flex;align-items:center;gap:5px;overflow-x:auto;overflow-y:hidden;padding:7px;border-radius:8px; }
 .roteiro-character-strip { scrollbar-width:thin;scrollbar-color:#ffffffa8 transparent; }
 .roteiro-character-mini { width:50px;height:68px;flex:0 0 50px;display:grid;place-items:center;overflow:hidden;border:1px solid #ffffffb8;border-radius:8px;background:#ffffffa8;box-shadow:0 1px 3px #45345118; }
+.roteiro-character-mini-portrait { width:100%;height:100%;display:block;overflow:hidden;border-radius:7px;background:#fff; }
 .roteiro-character-mini>.portrait-art { width:100%;height:100%;border-radius:7px;background:transparent; }
 .roteiro-character-mini>.portrait-art svg { width:100%;height:100%; }
 .roteiro-character-mini .portrait-initial { display:none; }
