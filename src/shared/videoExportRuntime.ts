@@ -15,6 +15,7 @@ export type VideoExportProgress = Readonly<{
   totalFrames: number
   chunkIndex?: number
   chunkCount?: number
+  reusedFrames?: number
   message?: string
   record?: VideoExportRecord
 }>
