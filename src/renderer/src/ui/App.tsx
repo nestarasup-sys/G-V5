@@ -40,13 +40,11 @@ function roteiroVideoReference(item: VideoLibraryItem): RoteiroVideoReference {
   return { id: item.id, name: item.name, mimeType: item.mimeType, extension: item.extension, size: item.size, durationFrames: item.durationFrames }
 }
 
-function RoteiroSectionEditor({ title, subtitle, content, characters, characterIds, saveStatus, onUpdate, onDeleteDraftVideo }: {
+function RoteiroSectionEditor({ title, content, characters, characterIds, onUpdate, onDeleteDraftVideo }: {
   title: string
-  subtitle: string
   content: RoteiroSectionContent
   characters: CustomizerCharacter[]
   characterIds: string[]
-  saveStatus: 'saving' | 'saved' | 'error'
   onUpdate: (content: RoteiroSectionContent) => void
   onDeleteDraftVideo: (videoId: string, content: RoteiroSectionContent) => Promise<boolean>
 }) {
@@ -233,7 +231,6 @@ function RoteiroSectionEditor({ title, subtitle, content, characters, characterI
   }
 
   return <><main className="roteiro-workspace-editor" aria-label={'Área de edição: ' + title}>
-    <header className="roteiro-editor-subbar"><div><strong>{title}</strong><span>{subtitle}</span></div><span className={`roteiro-save-indicator ${saveStatus}`} role="status">{saveStatus === 'saving' ? 'Salvando roteiro…' : saveStatus === 'error' ? 'Falha ao salvar roteiro' : 'Roteiro salvo'}</span></header>
     {error && <p className="roteiro-editor-error" role="alert">{error}</p>}
     <section className="roteiro-video-stage-wrap" aria-label="Preview 1920 por 1080">
       <div className="roteiro-video-preview-panel">
@@ -297,7 +294,7 @@ function RoteiroSectionEditor({ title, subtitle, content, characters, characterI
   </div>}</>
 }
 
-function RoteiroWorkspace({ roteiro, onBack, onUpdate, onDeleteDraftVideo, characters, saveStatus }: { roteiro: SidebarRoteiro; onBack: () => void; onUpdate: (next: SidebarRoteiro) => void; onDeleteDraftVideo: (next: SidebarRoteiro, videoId: string) => Promise<boolean>; characters: CustomizerCharacter[]; saveStatus: 'saving' | 'saved' | 'error' }) {
+function RoteiroWorkspace({ roteiro, onBack, onUpdate, onDeleteDraftVideo, characters }: { roteiro: SidebarRoteiro; onBack: () => void; onUpdate: (next: SidebarRoteiro) => void; onDeleteDraftVideo: (next: SidebarRoteiro, videoId: string) => Promise<boolean>; characters: CustomizerCharacter[] }) {
   const [activeContentId, setActiveContentId] = useState('opening')
   const [editingTikTok, setEditingTikTok] = useState<RoteiroTikTok | null>(null)
   const [editingTitle, setEditingTitle] = useState('')
@@ -587,7 +584,7 @@ function RoteiroWorkspace({ roteiro, onBack, onUpdate, onDeleteDraftVideo, chara
           </article>)}{roteiro.tiktoks.length === 0 && <div className="roteiro-first-tiktok"><Icon name="message" /><strong>Seu roteiro começa aqui</strong><span>Adicione o primeiro TikTok quando estiver pronto.</span><button type="button" onClick={addTikTok}>Adicionar primeiro TikTok</button></div>}</div>
       </section>
     </aside>
-    <RoteiroSectionEditor title={activeContentId === 'opening' ? 'Abertura' : activeTikTok?.title ?? 'TikTok'} subtitle={activeContentId === 'opening' ? 'Início do roteiro' : activeTikTok?.videoTitle ?? ''} content={activeContent} characters={characters} characterIds={roteiro.characterIds} saveStatus={saveStatus} onUpdate={updateActiveContent} onDeleteDraftVideo={removeDraftVideo} />
+    <RoteiroSectionEditor title={activeContentId === 'opening' ? 'Abertura' : activeTikTok?.title ?? 'TikTok'} content={activeContent} characters={characters} characterIds={roteiro.characterIds} onUpdate={updateActiveContent} onDeleteDraftVideo={removeDraftVideo} />
     <aside className="roteiro-workspace-empty-panel" aria-label="Ferramentas do roteiro">
       <button className="roteiro-export-characters" type="button" onClick={() => void exportCharacters()} disabled={exportingCharacters || !roteiro.characterIds.length}>
         {exportingCharacters ? 'Exportando personagens…' : 'Exportar personagens'}
@@ -762,7 +759,7 @@ function EmptyRoteirosPage() {
   const visibleRoteiros = roteiros.filter((roteiro) => !roteiroSearch.trim() || roteiro.title.toLocaleLowerCase('pt-BR').includes(roteiroSearch.trim().toLocaleLowerCase('pt-BR')) || roteiro.videoTitle.toLocaleLowerCase('pt-BR').includes(roteiroSearch.trim().toLocaleLowerCase('pt-BR')))
   const availableVideoIds = new Set(libraryItems.filter((item) => item.available).map((item) => item.id))
 
-  if (openedRoteiro) return <RoteiroWorkspace roteiro={openedRoteiro} characters={characters} saveStatus={roteiroSaveStatus} onBack={() => setOpenedRoteiroId(null)} onUpdate={(updated) => setRoteiros((current) => current.map((item) => item.id === updated.id ? updated : item))} onDeleteDraftVideo={deleteDraftVideoFromRoteiro} />
+  if (openedRoteiro) return <RoteiroWorkspace roteiro={openedRoteiro} characters={characters} onBack={() => setOpenedRoteiroId(null)} onUpdate={(updated) => setRoteiros((current) => current.map((item) => item.id === updated.id ? updated : item))} onDeleteDraftVideo={deleteDraftVideoFromRoteiro} />
 
   return <div className="roteiros-layout">
     <aside className="roteiros-sidebar-empty" aria-label="Navegação de roteiros">
