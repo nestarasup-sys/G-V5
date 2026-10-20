@@ -17,9 +17,12 @@ const ffprobe=process.env.GACHA_FFPROBE_PATH
 const rendererFile=path.resolve(__dirname,'../../out/renderer/index.html')
 const preloadPath=path.resolve(__dirname,'../../out/preload/video-export-preload.cjs')
 const width=1920,height=1080,durationSeconds=Number(process.env.GACHA_BENCH_SECONDS||5),totalFrames=durationSeconds*60,chunkFrames=60
+const profile=process.env.GACHA_BENCH_PROFILE||'mixed-realistic'
+const machine={platform:process.platform,release:os.release(),cpuModel:os.cpus()[0]?.model??'unknown',logicalCpuCount:os.cpus().length,totalMemoryBytes:os.totalmem(),freeMemoryBytesAtStart:os.freemem()}
 const jobId='726e2b84-aa60-4cf5-95b0-8d2557d9447f'
 const studioId='f2ff96c8-ce44-45fc-9251-34e89ad4c45f'
 const assetId='a64b7ec2-7597-48ac-b87c-c5d487830982'
+const {createCharacterMediaFixture}=require('./character-media-oracle-fixture.cjs')
 
 function loadTs(relativePath){
  const source=fs.readFileSync(path.resolve(__dirname,'../..',relativePath),'utf8')
@@ -37,20 +40,44 @@ function serve(request,file){
  headers.set('content-length',String(info.size));return new Response(Readable.toWeb(createReadStream(file)),{status:200,headers})
 }
 
-const image='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M/wHwAF/gL+3F6WAAAAAElFTkSuQmCC'
-const actor={id:'benchmark-actor',kind:'character',characterId:'bench-char',text:'Bench',x:-22,y:4,width:22,height:44,rotation:0,zIndex:4}
-const state={element:actor,imageDataUrl:image}
-const narrator={id:'bench-text',kind:'narrator',text:'FULL ENGINE BENCHMARK',x:0,y:-35,width:42,height:11,rotation:0,zIndex:5}
-const timeline={schemaVersion:1,frameRate:60,durationFrames:totalFrames,playheadFrame:0,playing:false,animateCharacterTransitions:false,
- characterBases:{[actor.id]:state},characterKeys:[],textClips:[{id:'n',elementId:narrator.id,kind:'narrator',startFrame:0,endFrame:totalFrames}],
- videoAssets:[{id:assetId,name:'dynamic.mp4',mimeType:'video/mp4',extension:'mp4',size:1,durationFrames:totalFrames}],
- videoClips:[{id:'dynamic-clip',assetId,startFrame:0,endFrame:totalFrames,sourceStartFrame:0,sourceEndFrame:totalFrames,transform:{x:20,y:14,width:42,height:38,rotation:3}}],saveMarkers:[]}
-const studio={schemaVersion:1,id:studioId,title:'Full engine benchmark',color:'#333',createdAt:'2026-01-01T00:00:00.000Z',updatedAt:'2026-01-01T00:00:00.000Z',
- backgroundColor:'#17283d',backgroundAssetId:null,backgroundX:0,backgroundY:0,backgroundWidth:100,backgroundHeight:100,backgroundRotation:0,
- assets:[],elements:[actor,narrator],videoTimeline:timeline}
-const bootstrap={jobId,snapshot:{studio,timeline,frameRate:60,durationFrames:totalFrames},characters:{schemaVersion:1,characters:[]},characterAssets:{schemaVersion:1,entries:[]},renderVariant:'static-characters'}
-
 if(![5,30,90].includes(durationSeconds))throw new Error('GACHA_BENCH_SECONDS deve ser 5, 30 ou 90.')
+const profileOptions={
+ 'static-heavy':{actors:10,transitions:false,texts:2,videos:0},
+ 'transition-heavy':{actors:2,transitions:true,texts:2,videos:0},
+ 'imported-video-heavy':{actors:1,transitions:false,texts:2,videos:4},
+ 'text-heavy':{actors:1,transitions:false,texts:40,videos:0},
+ 'mixed-realistic':{actors:2,transitions:true,texts:6,videos:1},
+}
+if(!Object.hasOwn(profileOptions,profile))throw new Error(`GACHA_BENCH_PROFILE inválido: ${profile}`)
+
+function configureProfile(bootstrap,sourcePath){
+ const options=profileOptions[profile],{studio,timeline}=bootstrap.snapshot
+ const baseActor=studio.elements.find(element=>element.kind==='character')
+ const baseState=timeline.characterBases[baseActor.id]
+ const firstKey=timeline.characterKeys[0]
+ const alternateState=firstKey.state
+ if(profile==='static-heavy'){timeline.characterKeys=[];timeline.animateCharacterTransitions=false}
+ else if(options.transitions){timeline.animateCharacterTransitions=true;timeline.characterKeys=[firstKey]
+  for(let frame=60;frame<totalFrames;frame+=30){const alternate=timeline.characterKeys.length%2===1
+   timeline.characterKeys.push({id:`bench-pose-${frame}`,elementId:baseActor.id,frame,poseSlot:alternate?1:2,expressionCollectionId:null,expressionPresetId:null,faceMode:'idle',state:alternate?baseState:alternateState})
+  }
+ }else timeline.characterKeys=[]
+ for(let index=studio.elements.filter(element=>element.kind==='character').length;index<options.actors;index++){
+  const element={...baseActor,id:`bench-actor-${index}`,x:baseActor.x+(index%5)*13-26,y:baseActor.y+Math.floor(index/5)*10,zIndex:baseActor.zIndex+index}
+  studio.elements.push(element);timeline.characterBases[element.id]={...baseState,element}
+ }
+ const narrator=studio.elements.find(element=>element.kind==='narrator')
+ const narratorClip=timeline.textClips.find(clip=>clip.kind==='narrator')
+ for(let index=studio.elements.filter(element=>element.kind==='narrator').length;index<options.texts;index++){
+  const element={...narrator,id:`bench-text-${index}`,text:`Synthetic title ${index+1} — ação, você`,x:(index%8)*20-70,y:-42+Math.floor(index/8)*8,zIndex:narrator.zIndex+index}
+  studio.elements.push(element);timeline.textClips.push({id:`bench-text-clip-${index}`,elementId:element.id,kind:'narrator',startFrame:0,endFrame:totalFrames})
+ }
+ narratorClip.endFrame=totalFrames
+ const originalVideo=timeline.videoClips[0],originalAsset=timeline.videoAssets[0]
+ timeline.videoClips=options.videos?Array.from({length:options.videos},(_,index)=>({...originalVideo,id:`bench-video-clip-${index}`,assetId:index===0?assetId:`bench-video-${index}`,transform:{...originalVideo.transform,x:originalVideo.transform.x+(index%2)*30,y:originalVideo.transform.y+Math.floor(index/2)*25}})):[]
+ timeline.videoAssets=options.videos?Array.from({length:options.videos},(_,index)=>({...originalAsset,id:index===0?assetId:`bench-video-${index}`,name:`synthetic-video-${index}.mp4`,size:fs.statSync(sourcePath).size,durationFrames:totalFrames})):[]
+ return{sourceByAssetId:new Map(timeline.videoAssets.map(asset=>[asset.id,sourcePath])),counts:{characters:options.actors,textClips:timeline.textClips.length,videoClips:timeline.videoClips.length,transitions:timeline.characterKeys.length}}
+}
 
 function appWorkingSetBytes(){
  const total=app.getAppMetrics().reduce((sum,metric)=>sum+Number(metric.memory?.workingSetSize||0),0)
@@ -75,8 +102,9 @@ app.whenReady().then(async()=>{
  const root=fs.mkdtempSync(path.join(os.tmpdir(),'gv5-full-engine-bench-'))
  const source=path.join(root,'dynamic.mp4')
  run(ffmpeg,['-hide_banner','-loglevel','error','-y','-f','lavfi','-i',`testsrc2=size=640x360:rate=60:duration=${totalFrames/60}`,'-an','-c:v','h264_mf','-b:v','3M','-pix_fmt','yuv420p','-movflags','+faststart',source])
- bootstrap.snapshot.timeline.videoAssets[0].size=fs.statSync(source).size
- protocol.handle('gacha-video',(request)=>{const u=new URL(request.url);return u.hostname==='export-job'&&u.pathname===`/${jobId}/${assetId}`?serve(request,source):new Response('not found',{status:404})})
+ const bootstrap=await createCharacterMediaFixture({jobId,studioId,assetId,durationFrames:totalFrames})
+ const profileCounts=configureProfile(bootstrap,source)
+ protocol.handle('gacha-video',(request)=>{const u=new URL(request.url),[requestedJob,id]=u.pathname.split('/').filter(Boolean),file=profileCounts.sourceByAssetId.get(id);return u.hostname==='export-job'&&requestedJob===jobId&&file?serve(request,file):new Response('not found',{status:404})})
 
  const allowed=new Set(),sessions=new Map()
  ipcMain.handle('video-studio:export-surface:prepare',(event,id)=>{if(id!==jobId||!allowed.has(event.sender.id))throw new Error('sender inválido');return bootstrap})
@@ -171,7 +199,7 @@ app.whenReady().then(async()=>{
   const serial=await benchmark(1)
   const turbo=await benchmark(2)
   const speedup=serial.elapsedMs/turbo.elapsedMs
-  const report=JSON.stringify({ok:true,profile:'mixed-realistic',durationSeconds,dimensions:`${width}x${height}`,frameRate:60,totalFrames,serial,turbo,speedup},null,2)
+  const report=JSON.stringify({ok:true,profile,durationSeconds,dimensions:`${width}x${height}`,frameRate:60,totalFrames,machine,fixture:profileCounts.counts,serial,turbo,speedup},null,2)
   await new Promise((resolve,reject)=>process.stdout.write(`${report}\n`,error=>error?reject(error):resolve()))
  }finally{
   for(const w of BrowserWindow.getAllWindows())if(!w.isDestroyed())w.destroy()

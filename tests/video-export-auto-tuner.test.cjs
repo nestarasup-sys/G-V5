@@ -19,6 +19,8 @@ test('autotuner promotes two workers only with enough chunks CPU and memory',()=
   assert.equal(chooseVideoExportWorkerCount({...base,logicalCpuCount:4}).workerCount,1)
   assert.equal(chooseVideoExportWorkerCount({...base,freeMemoryBytes:2*GiB}).workerCount,1)
   assert.equal(chooseVideoExportWorkerCount({...base,totalMemoryBytes:6*GiB}).workerCount,1)
+  assert.deepEqual(chooseVideoExportWorkerCount({...base,sceneComplexityUnits:12}),{workerCount:1,reason:'complex scene memory guard'})
+  assert.equal(chooseVideoExportWorkerCount({...base,sceneComplexityUnits:11}).workerCount,2)
 })
 
 test('diagnostic worker override is explicit and bounded',()=>{

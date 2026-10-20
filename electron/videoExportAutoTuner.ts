@@ -7,6 +7,8 @@ export type VideoExportAutoTuneInput = Readonly<{
   totalMemoryBytes: number
   freeMemoryBytes: number
   videoEncoder: VideoStudioH264Encoder
+  /** Conservative count of visible elements, video clips and transition groups. */
+  sceneComplexityUnits?: number
   overrideWorkers?: 1 | 2
 }>
 
@@ -24,6 +26,7 @@ export function chooseVideoExportWorkerCount(input: VideoExportAutoTuneInput): V
   if (input.overrideWorkers) return { workerCount: input.overrideWorkers, reason: 'diagnostic override' }
   if (input.pendingChunks < 2) return { workerCount: 1, reason: 'single pending chunk' }
   if (input.durationFrames < 1200) return { workerCount: 1, reason: 'short project' }
+  if ((input.sceneComplexityUnits ?? 0) >= 12) return { workerCount: 1, reason: 'complex scene memory guard' }
   if (input.logicalCpuCount < 6) return { workerCount: 1, reason: 'limited logical CPU headroom' }
   if (input.totalMemoryBytes < 8 * GIB || input.freeMemoryBytes < 2.5 * GIB) {
     return { workerCount: 1, reason: 'limited memory headroom' }

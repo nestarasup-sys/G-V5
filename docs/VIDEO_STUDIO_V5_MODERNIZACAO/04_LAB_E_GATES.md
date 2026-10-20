@@ -154,6 +154,23 @@ A documentação V4 `docs/EXPORT_V5_STATUS_2026-09-21.md` relata no V4 180s a 30
 
 CI pode registrar checksums/JSON de estatísticas/fixtures geradas sem dados privados. Antes de criar workflow com upload, revisar se usuário mantém política "sem artefatos" — o workflow atual não os envia; manter esta política até decisão explícita. O bench real do PC deve rodar local e anexar apenas relatório sanitizado por ação autorizada. Não iniciar/reativar DEV AI ou auditorias desativadas.
 
+## 12. Benchmark full-engine serial/Turbo por perfil (5 s, amostra única)
+
+- Comando: `$env:GACHA_BENCH_SECONDS=5; $env:GACHA_BENCH_PROFILE='<perfil>'; npm run bench:video:workers`, com caminhos explícitos de FFmpeg/FFprobe. O harness agora usa o mesmo fixture sintético completo do oráculo de personagem: modelo e duas poses do Fabricador, personagem com rosto/olhos/boca, fala/pensamento, blink, vídeo importado e extensão V546. Serial e dois workers recebem a mesma cena; o relatório inclui configuração da máquina, número de itens, tempos por etapa, contagem/decode, working set do Electron e hash final.
+- Resultados medidos no Windows, Ryzen 5 4600G/12 processadores lógicos/16 GB. Cada célula é uma execução curta, não mediana de 3+ repetições:
+
+| Perfil | Carga sintética | Serial | 2 workers | Speedup observado | Pico working set Electron serial/Turbo |
+| --- | --- | ---: | ---: | ---: | ---: |
+| `mixed-realistic` | 2 personagens, 8 text clips, 1 vídeo, 9 transições | 21,01 s | 14,80 s | 1,42× | 1,19 / 1,66 GB |
+| `static-heavy` | 10 personagens, 4 text clips, sem vídeo/transição | 29,26 s | 21,55 s | 1,36× | 1,76 / 3,18 GB |
+| `transition-heavy` | 2 personagens, 4 text clips, 9 transições | 14,88 s | 12,19 s | 1,22× | 0,81 / 1,18 GB |
+| `imported-video-heavy` | 1 personagem, 4 text clips, 4 decoders de vídeo | 32,53 s | 20,88 s | 1,56× | 1,39 / 1,85 GB |
+| `text-heavy` | 1 personagem, 42 text clips, sem vídeo/transição | 57,80 s | 42,31 s | 1,37× | 4,30 / 6,07 GB |
+
+- Em cada perfil, os dois arquivos passaram FFprobe (H.264, 1920×1080, 60/1, número exato de frames) e decode integral; os hashes serial/Turbo foram iguais por perfil. A razão `readbackMs/(composeMs+readbackMs)` variou de 3,8% no perfil texto a 32,5% no perfil transição, portanto sharedTexture não é justificada por este conjunto curto e heterogêneo.
+- Limitações: uma amostra por perfil, apenas 5 s, um encoder e uma máquina. A métrica de RAM soma processos Electron e **omite os subprocessos FFmpeg**; não é RAM total do job. Os perfis 30/90 s, amostras repetidas, carga de áudio e outros encoders ainda não foram medidos. Não promover Turbo com base nesses números.
+- O perfil `text-heavy` consumiu até 6,07 GB de working set Electron com dois workers; `static-heavy` chegou a 3,18 GB. O autotuner recebeu um guard conservador de complexidade da cena (elementos + vídeos + grupos de transição); com 12 unidades ou mais escolhe serial. Este limite é uma proteção provisória derivada dessas amostras, não uma calibragem final de performance, e deve ser revisto após os testes de 30/90 s e memória total incluindo FFmpeg.
+
 **Fases e responsáveis técnicos** estão em [00_PLANO_DIRETOR.md](./00_PLANO_DIRETOR.md); escolha de motores em [01_ESTUDO_DE_MOTORES.md](./01_ESTUDO_DE_MOTORES.md).
 
 

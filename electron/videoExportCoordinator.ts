@@ -256,6 +256,7 @@ export class VideoExportCoordinator {
       totalMemoryBytes: totalmem(),
       freeMemoryBytes: freemem(),
       videoEncoder: ffmpeg.videoEncoder,
+      sceneComplexityUnits: studio.elements.length + (timeline.videoClips?.length ?? 0) + Math.ceil(timeline.characterKeys.length / 4),
       overrideWorkers: videoExportWorkerOverride(process.env.GACHA_VIDEO_EXPORT_WORKERS),
     })
     let workerCount: 1 | 2 = tune.workerCount

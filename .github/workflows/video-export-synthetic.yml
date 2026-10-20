@@ -89,6 +89,7 @@ on:
       - 'scripts/video-studio/audio-assembly-smoke.cjs'
       - 'scripts/video-studio/preview-export-oracle-smoke.cjs'
       - 'scripts/video-studio/character-media-oracle-smoke.cjs'
+      - 'scripts/video-studio/character-media-oracle-fixture.cjs'
       - 'scripts/video-studio/turbo-e2e-electron-smoke.cjs'
   workflow_dispatch:
 

@@ -5,6 +5,7 @@ on:
     branches: [master-desenvolvimento]
     paths:
       - 'scripts/video-studio/full-engine-worker-benchmark.cjs'
+      - 'scripts/video-studio/character-media-oracle-fixture.cjs'
       - 'scripts/video-studio/persistent-cache-benchmark.cjs'
       - 'electron/videoPersistentFrameCache.ts'
       - 'electron/videoExportAutoTuner.ts'
