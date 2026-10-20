@@ -53,7 +53,6 @@ app.whenReady().then(async () => {
   requireTool(preloadPath, 'Preload do smoke')
 
   const rawWriter = loadPureTs('electron/videoRawFrameWriter.ts')
-  const pixels = loadPureTs('electron/videoPixelFormat.ts')
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'gacha-v5-e2e-'))
   const outputPath = path.join(tempRoot, 'surface-e2e.mp4')
 
@@ -118,7 +117,7 @@ app.whenReady().then(async () => {
       if (ready.jobId !== jobId || ready.error) throw new Error(ready.error || 'Surface pronta respondeu com job diferente.')
       writer = new rawWriter.VideoRawFrameWriter({
         executable: ffmpeg,
-        args: rawWriter.buildVideoStudioChunkArgs(outputPath, frameCount),
+        args: rawWriter.buildVideoStudioChunkArgs(outputPath, frameCount, 'rgba'),
         outputPath,
         frameBytes: width * height * 4,
         frameCount,
@@ -135,8 +134,8 @@ app.whenReady().then(async () => {
       if (!(ready.pixels instanceof Uint8Array) || ready.pixels.byteLength !== width * height * 4) {
         throw new Error(`Surface devolveu ${ready.pixels?.byteLength ?? 0} bytes RGBA.`)
       }
-      const bgra = pixels.rgbaToBgra(ready.pixels)
-      await writer.writeFrame(bgra)
+      const rgba = Buffer.from(ready.pixels.buffer, ready.pixels.byteOffset, ready.pixels.byteLength)
+      await writer.writeFrame(rgba, { copy: false })
       renderedFrames += 1
       nextFrame += 1
       if (nextFrame < frameCount) {
@@ -156,12 +155,21 @@ app.whenReady().then(async () => {
         throw new Error(`MP4 end-to-end inválido: ${JSON.stringify(probe)}`)
       }
       run(ffmpeg, ['-v', 'error', '-i', outputPath, '-f', 'null', '-'])
+      const sample = run(ffmpeg, [
+        '-v', 'error', '-i', outputPath, '-frames:v', '1',
+        '-vf', 'crop=1:1:100:100', '-pix_fmt', 'rgb24', '-f', 'rawvideo', 'pipe:1',
+      ], null)
+      const [red, green, blue] = sample.subarray(0, 3)
+      if (!(blue > red + 25 && green > red + 10)) {
+        throw new Error(`Canal RGBA foi trocado no encode/decode: rgb=${red},${green},${blue}`)
+      }
 
       console.log(JSON.stringify({
         ok: true,
-        pipeline: 'Electron ExportSurface -> Canvas RGBA -> BGRA -> VideoRawFrameWriter -> FFmpeg -> FFprobe/decode',
+        pipeline: 'Electron ExportSurface -> Canvas RGBA -> VideoRawFrameWriter -> FFmpeg -> FFprobe/decode',
         width, height, frameRate: 60, renderedFrames,
         mp4Bytes: fs.statSync(outputPath).size,
+        sampledBackgroundRgb: [red, green, blue],
         ffprobe: stream,
       }))
       cleanup()
