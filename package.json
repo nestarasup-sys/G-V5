@@ -22,7 +22,8 @@
     "test:export:av-fixtures": "node scripts/video-studio/av-fixture-smoke.cjs",
     "test:export:audio-assembly": "node scripts/video-studio/audio-assembly-smoke.cjs",
     "test:export:preview-oracle": "electron scripts/video-studio/preview-export-oracle-smoke.cjs",
-    "prepare:video-tools": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/video-studio/prepare-ffmpeg-lgpl.ps1"
+    "prepare:video-tools": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/video-studio/prepare-ffmpeg-lgpl.ps1",
+    "test:export:turbo-e2e": "electron scripts/video-studio/turbo-e2e-electron-smoke.cjs"
   },
   "dependencies": {
     "better-sqlite3": "^13.0.3",
