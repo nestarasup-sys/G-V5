@@ -10,6 +10,15 @@ function run(exe,args){return execFileSync(exe,args,{encoding:'utf8',timeout:180
 app.commandLine.appendSwitch('disable-background-timer-throttling')
 app.whenReady().then(async()=>{
   if(!ffmpeg||!path.isAbsolute(ffmpeg))throw new Error('GACHA_FFMPEG_PATH obrigatório.')
+  const gpuInfo=await app.getGPUInfo('basic').catch(()=>null)
+  const gpuFeatures=app.getGPUFeatureStatus()
+  const gpuText=JSON.stringify({gpuInfo,gpuFeatures}).toLowerCase()
+  const noEligibleAcceleration=gpuFeatures.gpu_compositing==='disabled_software'
+    || /swiftshader|microsoft basic render|software/.test(gpuText)
+  if(noEligibleAcceleration){
+    console.log(JSON.stringify({ok:true,supported:false,reason:'Hosted runner has no eligible accelerated media/GPU path',gpuFeatures,gpuInfo},null,2))
+    app.exit(0);return
+  }
   const root=fs.mkdtempSync(path.join(os.tmpdir(),'gv5-mediabunny-ab-'))
   const media=path.join(root,'source.mp4')
   run(ffmpeg,['-hide_banner','-loglevel','error','-y','-f','lavfi','-i','testsrc2=size=640x360:rate=60:duration=5','-an','-c:v','h264_mf','-b:v','3M','-pix_fmt','yuv420p','-movflags','+faststart',media])
@@ -71,7 +80,6 @@ window.__resultPromise=(async()=>{
       new Promise((_,reject)=>setTimeout(()=>reject(new Error('Mediabunny/WebCodecs A/B excedeu 90 segundos.')),90000)),
     ])
     if(!result?.ok)throw new Error('Mediabunny A/B did not return result.')
-    const gpuInfo=await app.getGPUInfo('basic').catch(()=>null)
     console.log(JSON.stringify({...result,machine:{platform:process.platform,release:os.release(),cpu:os.cpus()[0]?.model??'unknown',logicalCpuCount:os.cpus().length,totalMemoryBytes:os.totalmem()},gpuInfo},null,2))
   }finally{
     if(!win.isDestroyed())win.destroy()
