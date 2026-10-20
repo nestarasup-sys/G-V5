@@ -34,7 +34,7 @@ export type VideoSerialChunkResult = Readonly<{
 /**
  * Serial chunk encoder used as the correctness oracle before Turbo workers.
  * It knows nothing about React or scene composition; the caller provides one
- * exact BGRA frame for each absolute frame in [start,end).
+ * exact RGBA frame for each absolute frame in [start,end).
  */
 export async function encodeVideoStudioSerialChunk(
   request: VideoSerialChunkRequest,
@@ -63,7 +63,7 @@ export async function encodeVideoStudioSerialChunk(
 
   const writer = new VideoRawFrameWriter({
     executable: ffmpeg.executable,
-    args: buildVideoStudioChunkArgs(outputPath, frameCount, 'bgra', ffmpeg.videoEncoder),
+    args: buildVideoStudioChunkArgs(outputPath, frameCount, 'rgba', ffmpeg.videoEncoder),
     outputPath,
     frameBytes,
     frameCount,
@@ -74,9 +74,9 @@ export async function encodeVideoStudioSerialChunk(
       if (controller.signal.aborted) throw controller.signal.reason instanceof Error
         ? controller.signal.reason : new Error('Exportação cancelada.')
       const pixels = await renderFrame(absoluteFrame, controller.signal)
-      if (!Buffer.isBuffer(pixels)) throw new Error(`Renderer não devolveu Buffer BGRA no frame ${absoluteFrame}.`)
+      if (!Buffer.isBuffer(pixels)) throw new Error(`Renderer não devolveu Buffer RGBA no frame ${absoluteFrame}.`)
       if (pixels.byteLength !== frameBytes) throw new Error(`Renderer devolveu ${pixels.byteLength} bytes no frame ${absoluteFrame}; esperava ${frameBytes}.`)
-      await writer.writeFrame(pixels)
+      await writer.writeFrame(pixels, { copy: false })
       options.onProgress?.({
         startFrame,
         endFrameExclusive,
