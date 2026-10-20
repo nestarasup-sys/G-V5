@@ -22,6 +22,9 @@ export type VideoExportMetrics = Readonly<{
   cacheEntries?: number
   cacheBytes?: number
   cacheMaxBytes?: number
+  persistentCacheHits?: number
+  persistentCacheMisses?: number
+  persistentCacheWrites?: number
   workerCount?: number
   workerStrategy?: string
   fallbackCount?: number
