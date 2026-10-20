@@ -8,6 +8,7 @@ on:
       - 'src/renderer/src/features/videoStudio/VideoExportSurfacePage.tsx'
       - 'src/renderer/src/features/videoStudio/videoCanvasCompositor.ts'
       - 'src/renderer/src/features/videoStudio/videoCanvasLayerCache.ts'
+      - 'src/renderer/src/features/videoStudio/videoExportMediaFramePool.ts'
       - '.github/workflows/video-full-engine-soak-15min.yml'
   workflow_dispatch:
 
