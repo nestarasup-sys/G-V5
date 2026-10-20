@@ -28,7 +28,8 @@
     "test:export:soak:900": "node scripts/video-studio/export-soak-local.cjs 900",
     "test:video:character-media-oracle": "electron scripts/video-studio/character-media-oracle-smoke.cjs",
     "bench:video:workers": "electron scripts/video-studio/full-engine-worker-benchmark.cjs",
-    "bench:video:cache": "electron scripts/video-studio/persistent-cache-benchmark.cjs"
+    "bench:video:cache": "electron scripts/video-studio/persistent-cache-benchmark.cjs",
+    "package:windows:portable": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/video-studio/package-windows-portable.ps1"
   },
   "dependencies": {
     "better-sqlite3": "^13.0.3",
