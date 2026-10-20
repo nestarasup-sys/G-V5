@@ -39,6 +39,7 @@ import { configureAssetImageStorage, readAssetImage, writeAssetImageSource } fro
 import { legacyStandardExpressionEffects } from '../src/shared/legacyExpressionEffects'
 import { migrateElectronProfile } from './electronProfileMigration.cjs'
 import { normalizeImageBuffer } from './imageIngestion.cjs'
+import { measureIpc } from './ipcPerformance'
 
 let configuredAppDataRoot: string | null = null
 let videoExportLibrary: VideoExportLibrary | null = null
@@ -1904,21 +1905,21 @@ async function registerFabricatorHandlers(): Promise<void> {
   const registerStudioWorkspace = (workspace: StudioWorkspaceStorage, channel: 'studio' | 'video-studio') => {
     ipcMain.handle(`${channel}:list`, async (event): Promise<StudioDocument[] | VideoStudioCardSummary[]> => {
       assertTrustedSender(event)
-      return workspace === 'video' ? listVideoStudioCards() : listStudios(workspace)
+      return measureIpc(`${channel}:list`, () => workspace === 'video' ? listVideoStudioCards() : listStudios(workspace))
     })
 
     if (workspace === 'video') ipcMain.handle('video-studio:get', async (event, id: string): Promise<StudioDocument | null> => {
       assertTrustedSender(event)
       if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)) throw new Error('Identificador de Video Studio inválido.')
       await studioSaveQueues.video
-      return readStudio(id, 'video')
+      return measureIpc('video-studio:get', () => readStudio(id, 'video'))
     })
 
     ipcMain.handle(`${channel}:save`, async (event, studio: StudioDocument): Promise<void> => {
       assertTrustedSender(event)
       const next = studioSaveQueues[workspace].catch(() => undefined).then(() => writeStudio(studio, workspace))
       studioSaveQueues[workspace] = next
-      await next
+      await measureIpc(`${channel}:save`, () => next)
     })
 
     ipcMain.handle(`${channel}:delete`, async (event, id: string): Promise<void> => {
@@ -2535,7 +2536,7 @@ async function registerFabricatorHandlers(): Promise<void> {
   ipcMain.handle('customizer:characters:list', async (event): Promise<CustomizerCharacter[]> => {
     assertTrustedSender(event)
     await characterSaveQueue.catch(() => undefined)
-    return readCustomizerCharacters()
+    return measureIpc('customizer:characters:list', () => readCustomizerCharacters())
   })
 
   ipcMain.handle('customizer:characters:save', async (event, character: CustomizerCharacter): Promise<void> => {
@@ -2549,7 +2550,7 @@ async function registerFabricatorHandlers(): Promise<void> {
       await writeCustomizerCharacters(characters)
     })
     characterSaveQueue = next
-    await next
+    await measureIpc('customizer:characters:save', () => next)
   })
 
   ipcMain.handle('customizer:characters:create', async (event, requestedName: string): Promise<CustomizerCharacter> => {
