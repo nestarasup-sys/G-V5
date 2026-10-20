@@ -36,7 +36,7 @@ app.whenReady().then(async()=>{
  if(![90,900].includes(seconds))throw new Error('Full-engine soak aceita apenas 90 ou 900 segundos.')
  if(!ffmpeg||!ffprobe)throw new Error('FFmpeg/FFprobe obrigatórios.')
  const root=fs.mkdtempSync(path.join(os.tmpdir(),`gv5-full-engine-soak-${seconds}-`)),source=path.join(root,'intro.mp4')
- run(ffmpeg,['-hide_banner','-loglevel','error','-y','-f','lavfi','-i',`testsrc2=size=480x270:rate=60:duration=${videoFrames/60}`,'-an','-c:v','mpeg4','-q:v','4','-pix_fmt','yuv420p',source])
+ run(ffmpeg,['-hide_banner','-loglevel','error','-y','-f','lavfi','-i',`testsrc2=size=480x270:rate=60:duration=${videoFrames/60}`,'-an','-c:v','h264_mf','-b:v','3M','-pix_fmt','yuv420p',source])
  bootstrap.snapshot.timeline.videoAssets[0].size=fs.statSync(source).size
  protocol.handle('gacha-video',(request)=>{const u=new URL(request.url);return u.hostname==='export-job'&&u.pathname===`/${jobId}/${assetId}`?serve(request,source):new Response('not found',{status:404})})
  let readyResolve,readyReject,pending=new Map()
