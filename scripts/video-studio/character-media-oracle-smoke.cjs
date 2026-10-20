@@ -150,7 +150,7 @@ app.whenReady().then(async()=>{
   let timer=setTimeout(()=>finish(new Error('Oracle character/media excedeu 120 segundos.')),120000)
   let finished=false
   function cleanup(){clearTimeout(timer);try{ipcMain.removeHandler('video-studio:export-surface:prepare')}catch{};ipcMain.removeAllListeners('video-studio:export-surface:ready');ipcMain.removeAllListeners('video-studio:export-surface:frame-ready');for(const w of BrowserWindow.getAllWindows())if(!w.isDestroyed())w.destroy();try{fs.rmSync(root,{recursive:true,force:true,maxRetries:12,retryDelay:150})}catch(error){console.warn('Temp cleanup warning:',error.message)}}
-  function finish(error){if(finished)return;finished=true;cleanup();if(error){console.error(error.stack||error.message);app.exit(1)}else app.exit(0)}
+  function finish(error){if(finished)return;finished=true;cleanup();if(error){console.error(error.stack||error.message);process.exitCode=1;app.exit(1)}else app.exit(0)}
 
   ipcMain.handle('video-studio:export-surface:prepare',(event,id)=>{
     if(id!==jobId||!allowed.has(event.sender.id))throw new Error('Sender/job inesperado no oracle animado.')
@@ -213,4 +213,4 @@ app.whenReady().then(async()=>{
   }
   console.log(JSON.stringify({ok:true,blinkFrame,results},null,2))
   finish()
-}).catch((error)=>{console.error(error.stack||error.message);app.exit(1)})
+}).catch((error)=>{console.error(error.stack||error.message);process.exitCode=1;app.exit(1)})
