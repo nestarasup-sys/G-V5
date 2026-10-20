@@ -20,6 +20,7 @@ import { assembleVideoStudioOutput } from './videoExportAssembler'
 import { probeVideoMedia } from './videoMediaProbe'
 import { verifyVideoStudioOutput } from './videoOutputVerifier'
 import { rgbaToBgra } from './videoPixelFormat'
+import { VideoSemanticFrameCache } from './videoSemanticFrameCache'
 
 type ReopenedVideoExportJob = Awaited<ReturnType<VideoExportJobStore['reopen']>>
 
@@ -252,7 +253,7 @@ export class VideoExportCoordinator {
     active.surface = await this.surfaceHost.open(active.jobId)
     this.abort(active)
     const sceneProgram = compileVideoScene(snapshot, renderVariant)
-    let cachedPixels: { key: string; pixels: Buffer } | null = null
+    const frameCache = new VideoSemanticFrameCache()
     let reusedFrames = 0
     let encodedChunkBytes = completedChunkBytes(reopened.manifest)
     let rawFrameBytes = reopened.manifest.chunks.reduce((sum, chunk) => sum + (chunk.endFrame - chunk.startFrame) * 1920 * 1080 * 4, 0)
@@ -270,13 +271,14 @@ export class VideoExportCoordinator {
       }, async (frame) => {
         this.abort(active)
         const semantic = evaluateVideoSceneFrame(sceneProgram, frame).reuseKey
-        if (cachedPixels?.key === semantic) {
+        const cached = frameCache.get(semantic)
+        if (cached) {
           reusedFrames += 1
-          return cachedPixels.pixels
+          return cached
         }
         const rgba = await active.surface!.renderFrame(frame)
         const pixels = rgbaToBgra(rgba)
-        cachedPixels = { key: semantic, pixels }
+        frameCache.set(semantic, pixels)
         return pixels
       }, {
         signal: active.controller.signal,
@@ -292,6 +294,12 @@ export class VideoExportCoordinator {
               reusedFrames,
               rawFrameBytes: rawFrameBytes + completedFrames * 1920 * 1080 * 4,
               encodedChunkBytes,
+              cacheHits: frameCache.stats().hits,
+              cacheMisses: frameCache.stats().misses,
+              cacheEvictions: frameCache.stats().evictions,
+              cacheEntries: frameCache.stats().entries,
+              cacheBytes: frameCache.stats().bytes,
+              cacheMaxBytes: frameCache.stats().maxBytes,
             }),
             message: `Renderizando trecho ${index + 1}/${chunkCount}…`,
           })
@@ -326,6 +334,12 @@ export class VideoExportCoordinator {
         reusedFrames,
         rawFrameBytes,
         encodedChunkBytes,
+        cacheHits: frameCache.stats().hits,
+        cacheMisses: frameCache.stats().misses,
+        cacheEvictions: frameCache.stats().evictions,
+        cacheEntries: frameCache.stats().entries,
+        cacheBytes: frameCache.stats().bytes,
+        cacheMaxBytes: frameCache.stats().maxBytes,
       }),
       message: 'Montando vídeo e áudio…',
     })
@@ -390,6 +404,12 @@ export class VideoExportCoordinator {
         publishMs: finishedAt - publishStarted,
         totalMs: finishedAt - totalStarted,
         finalBytes: record.sizeBytes,
+        cacheHits: frameCache.stats().hits,
+        cacheMisses: frameCache.stats().misses,
+        cacheEvictions: frameCache.stats().evictions,
+        cacheEntries: frameCache.stats().entries,
+        cacheBytes: frameCache.stats().bytes,
+        cacheMaxBytes: frameCache.stats().maxBytes,
       }),
       message: 'Exportação concluída e verificada.',
       record: sharedRecord,
