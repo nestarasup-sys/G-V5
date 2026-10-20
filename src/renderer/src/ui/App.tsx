@@ -297,6 +297,9 @@ function RoteiroWorkspace({ roteiro, onBack, onUpdate, onDeleteDraftVideo, chara
   const [editingTikTok, setEditingTikTok] = useState<RoteiroTikTok | null>(null)
   const [editingTitle, setEditingTitle] = useState('')
   const [editingVideoTitle, setEditingVideoTitle] = useState('')
+  const [exportingCharacters, setExportingCharacters] = useState(false)
+  const [characterExportStatus, setCharacterExportStatus] = useState('')
+  const [characterExportError, setCharacterExportError] = useState('')
   const activeTikTok = roteiro.tiktoks.find((item) => item.id === activeContentId)
   const activeContent = activeContentId === 'opening' ? roteiro.opening ?? emptyRoteiroContent() : { video: activeTikTok?.video ?? null, blocks: activeTikTok?.blocks ?? [], description: activeTikTok?.description ?? '', timeline: activeTikTok?.timeline ?? 'unspecified', sceneEndSeconds: activeTikTok?.sceneEndSeconds, firstGroupReactionSeconds: activeTikTok?.firstGroupReactionSeconds, secondGroupReactionSeconds: activeTikTok?.secondGroupReactionSeconds }
   const updateActiveContent = (content: RoteiroSectionContent) => {
@@ -327,6 +330,96 @@ function RoteiroWorkspace({ roteiro, onBack, onUpdate, onDeleteDraftVideo, chara
     onUpdate({ ...roteiro, tiktoks: roteiro.tiktoks.map((item) => item.id === editingTikTok.id ? { ...item, title: editingTitle.trim(), videoTitle: editingVideoTitle.trim() } : item) })
     setEditingTikTok(null)
   }
+  const exportCharacters = async () => {
+    if (exportingCharacters) return
+    const cast = roteiro.characterIds.map((id) => characters.find((character) => character.id === id)).filter((character): character is CustomizerCharacter => Boolean(character))
+    if (!cast.length) { setCharacterExportError('Este roteiro não tem personagens disponíveis no elenco.'); return }
+    if (cast.length !== roteiro.characterIds.length) { setCharacterExportError('Um ou mais personagens do elenco não estão disponíveis no Customizador.'); return }
+    setExportingCharacters(true); setCharacterExportError(''); setCharacterExportStatus('Preparando exportação…')
+    let jobId: string | null = null
+    try {
+      const job = await window.desktop.startRoteiroCharacterExport({ id: roteiro.id, title: roteiro.title, characters: cast.map(({ id, name }) => ({ id, name })) })
+      jobId = job.jobId
+      const [{ prepareSavedCharacterRenderer }, { buildStudioExpressionAppearance, buildStudioExpressionTransforms }] = await Promise.all([
+        import('../features/customizer/CustomizerPage'), import('../features/studio/expressionTransforms')
+      ])
+      let completedFiles = 0
+      let omittedVariants = 0
+      const componentProvider = (modelSlot: number) => ({
+        loadComponent: (id: string) => window.desktop.loadFaceComponentAsset(modelSlot, id),
+        loadCatalog: (id: string) => window.desktop.loadFaceCatalogItem(modelSlot, id)
+      })
+      for (const character of cast) {
+        const modelSlot = character.customization.modelSlot ?? 1
+        setCharacterExportStatus(`Preparando ${character.name}…`)
+        const source = await window.desktop.loadFabricatorSlot(modelSlot)
+        if (!source) throw new Error(`O modelo base do personagem “${character.name}” não está disponível.`)
+        const poseSummaries = (await window.desktop.listFabricatorPoseSlots(modelSlot)).filter((pose): pose is NonNullable<typeof pose> => Boolean(pose)).sort((a, b) => a.slot - b.slot)
+        const loadedPoses = await Promise.all(poseSummaries.map(async (summary) => ({ summary, artwork: await window.desktop.loadFabricatorPose(modelSlot, summary.slot) })))
+        const poses = loadedPoses.filter((entry): entry is { summary: NonNullable<(typeof poseSummaries)[number]>; artwork: NonNullable<(typeof entry)['artwork']> } => Boolean(entry.artwork))
+        if (poseSummaries.length && poses.length !== poseSummaries.length) throw new Error(`Uma pose salva de “${character.name}” não pôde ser carregada.`)
+        const renderPoses = poses.length ? poses : [{ summary: null, artwork: source }]
+        const expressionSummaries = character.customization.faceAppearance
+          ? (await window.desktop.listFaceExpressionPresets(modelSlot)).filter((preset) => preset.modelSlot === modelSlot).sort((a, b) => (a.expressionIndex ?? 0) - (b.expressionIndex ?? 0))
+          : []
+        const nameCounts = new Map<string, number>()
+        for (const preset of expressionSummaries) nameCounts.set(preset.name.trim().toLocaleLowerCase('pt-BR'), (nameCounts.get(preset.name.trim().toLocaleLowerCase('pt-BR')) ?? 0) + 1)
+        const normalPreset = expressionSummaries.find((preset) => preset.name.trim().toLocaleLowerCase('pt-BR') === 'normal')
+        const expressions = [
+          { name: 'normal', presetId: normalPreset?.id ?? null },
+          ...expressionSummaries.filter((preset) => preset.id !== normalPreset?.id).map((preset) => ({ name: nameCounts.get(preset.name.trim().toLocaleLowerCase('pt-BR'))! > 1 ? `${preset.name} ${preset.collectionId ?? 'extra'}` : preset.name, presetId: preset.id }))
+        ]
+        const expressionKey = (value: string) => value.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 72) || 'expressao'
+        const seenExpressionNames = new Set(['normal'])
+        for (const expression of expressions.slice(1)) {
+          let name = expression.name
+          let suffix = 2
+          while (seenExpressionNames.has(expressionKey(name))) name = `${expression.name} ${suffix++}`
+          expression.name = name
+          seenExpressionNames.add(expressionKey(name))
+        }
+        const estimated = cast.reduce((total, item) => total + (item.id === character.id ? renderPoses.length * expressions.length * 3 : 0), 0)
+        if (completedFiles + estimated > job.assetCountLimit) throw new Error('O elenco e as poses gerariam mais de 20 mil imagens. Reduza as poses ou expressões salvas antes de exportar.')
+        const { loadComponent, loadCatalog } = componentProvider(modelSlot)
+        for (let poseIndex = 0; poseIndex < renderPoses.length; poseIndex += 1) {
+          const pose = renderPoses[poseIndex]
+          const renderer = await prepareSavedCharacterRenderer(character, { artwork: pose.artwork, source })
+          for (const expression of expressions) {
+            let appearance = character.customization.faceAppearance
+            let transforms: Record<string, import('../../../shared/studio').StudioFaceTransform> = {}
+            let effects: import('../../../shared/fabricator').FaceExpressionEffects | undefined
+            if (expression.presetId && appearance) {
+              const preset = await window.desktop.loadFaceExpressionPreset(modelSlot, expression.presetId)
+              if (!preset) throw new Error(`O preset “${expression.name}” de ${character.name} não pôde ser carregado.`)
+              appearance = await buildStudioExpressionAppearance(preset, appearance, loadCatalog)
+              transforms = await buildStudioExpressionTransforms(preset, appearance, {}, loadComponent, loadCatalog)
+              effects = preset.effects
+            }
+            setCharacterExportStatus(`Exportando ${character.name} · POSE ${poseIndex + 1} · ${expression.name}…`)
+            for (const role of ['base', 'blink', 'talk'] as const) {
+              let rendered: { dataUrl: string; width: number; height: number }
+              try {
+                rendered = await renderer.render(appearance, transforms, effects, role === 'base' ? 'idle' : role)
+              } catch (reason) {
+                if (role === 'base') throw reason
+                omittedVariants += 1
+                continue
+              }
+              await window.desktop.writeRoteiroCharacterExportAsset(job.jobId, { characterId: character.id, pose: poseIndex + 1, expression: expression.name, role, dataUrl: rendered.dataUrl })
+              completedFiles += 1
+            }
+          }
+        }
+      }
+      const result = await window.desktop.finishRoteiroCharacterExport(job.jobId)
+      jobId = null
+      setCharacterExportStatus(`Exportação concluída: ${result.characters} personagem(ns), ${result.files} imagens em ${result.path}${omittedVariants ? ` · ${omittedVariants} variantes blink/talk indisponíveis foram omitidas` : ''}`)
+    } catch (reason) {
+      if (jobId) await window.desktop.cancelRoteiroCharacterExport(jobId).catch(() => undefined)
+      setCharacterExportStatus('')
+      setCharacterExportError(reason instanceof Error ? reason.message : 'Não foi possível exportar os personagens deste roteiro.')
+    } finally { setExportingCharacters(false) }
+  }
 
   return <div className="roteiro-workspace-layout">
     <aside className="roteiro-workspace-sidebar">
@@ -352,7 +445,13 @@ function RoteiroWorkspace({ roteiro, onBack, onUpdate, onDeleteDraftVideo, chara
       </section>
     </aside>
     <RoteiroSectionEditor title={activeContentId === 'opening' ? 'Abertura' : activeTikTok?.title ?? 'TikTok'} subtitle={activeContentId === 'opening' ? 'Início do roteiro' : activeTikTok?.videoTitle ?? ''} content={activeContent} characters={characters} characterIds={roteiro.characterIds} saveStatus={saveStatus} onUpdate={updateActiveContent} onDeleteDraftVideo={removeDraftVideo} />
-    <aside className="roteiro-workspace-empty-panel" aria-label="Painel lateral vazio do roteiro" />
+    <aside className="roteiro-workspace-empty-panel" aria-label="Ferramentas do roteiro">
+      <button className="roteiro-export-characters" type="button" onClick={() => void exportCharacters()} disabled={exportingCharacters || !roteiro.characterIds.length}>
+        {exportingCharacters ? 'Exportando personagens…' : 'Exportar personagens'}
+      </button>
+      {characterExportStatus && <p className="roteiro-export-feedback" role="status">{characterExportStatus}</p>}
+      {characterExportError && <p className="roteiro-export-error" role="alert">{characterExportError}</p>}
+    </aside>
     {editingTikTok && <div className="roteiro-modal-backdrop" onPointerDown={(event) => { if (event.target === event.currentTarget) setEditingTikTok(null) }}><section className="roteiro-video-title-modal" role="dialog" aria-modal="true" aria-labelledby="roteiro-tiktok-edit-heading"><header><strong id="roteiro-tiktok-edit-heading">Editar TikTok</strong><button onClick={() => setEditingTikTok(null)} aria-label="Fechar" type="button">×</button></header><label>Nome do TikTok<input autoFocus value={editingTitle} onChange={(event) => setEditingTitle(event.target.value)} maxLength={100} /></label><label>Título do vídeo<input value={editingVideoTitle} onChange={(event) => setEditingVideoTitle(event.target.value)} maxLength={100} /></label><footer><button onClick={() => setEditingTikTok(null)} type="button">Cancelar</button><button className="roteiro-create-confirm" onClick={saveTikTok} disabled={!editingTitle.trim() || !editingVideoTitle.trim()} type="button"><Icon name="check" />Salvar</button></footer></section></div>}
   </div>
 }

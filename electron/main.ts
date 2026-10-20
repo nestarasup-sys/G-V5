@@ -27,6 +27,7 @@ import { resolveVideoStudioTools } from './videoToolsResolver'
 import { probeVideoStudioFfmpeg, type VideoStudioFfmpegCapabilities } from './videoFfmpegCapabilities'
 import type { VideoExportProgress, VideoExportStartRequest } from '../src/shared/videoExportRuntime'
 import type { BaseVideoDetails, RoteiroDocument, RoteiroReactionBlock, RoteiroSectionContent, RoteiroTikTok, RoteiroVideoReference } from '../src/shared/roteiros'
+import { RoteiroCharacterExportStore } from './roteiroCharacterExport'
 import { serializeVideoCharacterRenderAssetSnapshot } from '../src/shared/videoCharacterRenderAssets'
 import { DataPlatform, getAppDataUsage } from './dataPlatform.cjs'
 import { DomainFileSystem } from './domainFileSystem.cjs'
@@ -46,6 +47,8 @@ let videoPreviewProxyStore: VideoPreviewProxyStore | null = null
 let videoPreviewToolsPromise: Promise<{ ffmpeg: VideoStudioFfmpegCapabilities }> | null = null
 const videoExportJobOwners = new Map<string, number>()
 let roteirosSaveQueue: Promise<void> = Promise.resolve()
+let roteiroCharacterExportStore: RoteiroCharacterExportStore | null = null
+const roteiroCharacterExportJobOwners = new Map<string, number>()
 
 function isRoteiroDocument(value: unknown): value is RoteiroDocument {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false
@@ -2004,6 +2007,48 @@ async function registerFabricatorHandlers(): Promise<void> {
 
   registerStudioWorkspace('studio', 'studio')
   registerStudioWorkspace('video', 'video-studio')
+
+  const getRoteiroCharacterExportStore = () => {
+    if (!roteiroCharacterExportStore) {
+      const root = configuredAppDataRoot ?? join(app.getPath('userData'), 'app-data')
+      roteiroCharacterExportStore = new RoteiroCharacterExportStore(join(root, 'temp', 'roteiro-character-export'))
+    }
+    return roteiroCharacterExportStore
+  }
+  function assertRoteiroExportOwner(event: IpcMainInvokeEvent, jobId: unknown): asserts jobId is string {
+    if (typeof jobId !== 'string' || roteiroCharacterExportJobOwners.get(jobId) !== event.sender.id) throw new Error('Esta exportação não pertence a esta janela.')
+  }
+  ipcMain.handle('roteiros:characters-export:start', async (event, request: unknown) => {
+    assertTrustedSender(event)
+    const result = await getRoteiroCharacterExportStore().start(request)
+    roteiroCharacterExportJobOwners.set(result.jobId, event.sender.id)
+    event.sender.once('destroyed', () => {
+      const abandoned = [...roteiroCharacterExportJobOwners].filter(([, owner]) => owner === event.sender.id).map(([id]) => id)
+      for (const id of abandoned) {
+        roteiroCharacterExportJobOwners.delete(id)
+        void getRoteiroCharacterExportStore().cancel(id).catch(() => undefined)
+      }
+    })
+    return result
+  })
+  ipcMain.handle('roteiros:characters-export:asset', async (event, jobId: unknown, asset: unknown) => {
+    assertTrustedSender(event)
+    assertRoteiroExportOwner(event, jobId)
+    await getRoteiroCharacterExportStore().writeAsset(jobId, asset)
+  })
+  ipcMain.handle('roteiros:characters-export:finish', async (event, jobId: unknown) => {
+    assertTrustedSender(event)
+    assertRoteiroExportOwner(event, jobId)
+    const result = await getRoteiroCharacterExportStore().finish(jobId)
+    roteiroCharacterExportJobOwners.delete(jobId)
+    return result
+  })
+  ipcMain.handle('roteiros:characters-export:cancel', async (event, jobId: unknown) => {
+    assertTrustedSender(event)
+    assertRoteiroExportOwner(event, jobId)
+    try { await getRoteiroCharacterExportStore().cancel(jobId) }
+    finally { roteiroCharacterExportJobOwners.delete(jobId) }
+  })
 
   ipcMain.handle('roteiros:list', async (event): Promise<RoteiroDocument[]> => {
     assertTrustedSender(event)

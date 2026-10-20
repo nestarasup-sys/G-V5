@@ -123,7 +123,11 @@ const roteirosApi: RoteirosDesktopApi = {
   saveBaseVideoDetails: (details) => ipcRenderer.invoke('base-videos:save-details', details),
   deleteBaseVideoDetails: (videoId) => ipcRenderer.invoke('base-videos:delete-details', videoId),
   deleteBaseVideo: (videoId) => ipcRenderer.invoke('base-videos:delete', videoId),
-  publishBaseVideo: (videoId) => ipcRenderer.invoke('base-videos:publish', videoId)
+  publishBaseVideo: (videoId) => ipcRenderer.invoke('base-videos:publish', videoId),
+  startRoteiroCharacterExport: (request) => ipcRenderer.invoke('roteiros:characters-export:start', request),
+  writeRoteiroCharacterExportAsset: (jobId, asset) => ipcRenderer.invoke('roteiros:characters-export:asset', jobId, asset),
+  finishRoteiroCharacterExport: (jobId) => ipcRenderer.invoke('roteiros:characters-export:finish', jobId),
+  cancelRoteiroCharacterExport: (jobId) => ipcRenderer.invoke('roteiros:characters-export:cancel', jobId)
 }
 
 contextBridge.exposeInMainWorld('desktop', {
