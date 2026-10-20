@@ -58,6 +58,7 @@ jobs:
         env:
           GACHA_BENCH_PROFILE: 'static-heavy'
           GACHA_BENCH_LAYER_CACHE_AB: '1'
+          GACHA_BENCH_READBACK_AB: '1'
         run: npm run bench:video:workers
       - name: Benchmark cold vs persistent warm cache
         run: npm run bench:video:cache
