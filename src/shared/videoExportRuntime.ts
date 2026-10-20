@@ -28,3 +28,16 @@ export type VideoExportStartRequest = Readonly<{
 }>
 
 export type VideoExportStartResult = Readonly<{ jobId: string }>
+
+
+export type VideoExportRecoveryRecord = Readonly<{
+  jobId: string
+  studioId: string
+  studioTitle: string
+  renderVariant: RenderVariant
+  durationFrames: number
+  completedFrames: number
+  completedChunks: number
+  totalChunks: number
+  updatedAt: string
+}>
