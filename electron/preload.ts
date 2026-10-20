@@ -117,7 +117,10 @@ const videoStudioApi: VideoStudioDesktopApi = {
 
 const roteirosApi: RoteirosDesktopApi = {
   listRoteiros: () => ipcRenderer.invoke('roteiros:list'),
-  saveRoteiros: (roteiros) => ipcRenderer.invoke('roteiros:save', roteiros)
+  saveRoteiros: (roteiros) => ipcRenderer.invoke('roteiros:save', roteiros),
+  listBaseVideoDetails: () => ipcRenderer.invoke('base-videos:list-details'),
+  saveBaseVideoDetails: (details) => ipcRenderer.invoke('base-videos:save-details', details),
+  deleteBaseVideoDetails: (videoId) => ipcRenderer.invoke('base-videos:delete-details', videoId)
 }
 
 contextBridge.exposeInMainWorld('desktop', {

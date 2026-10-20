@@ -26,7 +26,7 @@ import { VideoPreviewProxyStore } from './videoPreviewProxyStore'
 import { resolveVideoStudioTools } from './videoToolsResolver'
 import { probeVideoStudioFfmpeg, type VideoStudioFfmpegCapabilities } from './videoFfmpegCapabilities'
 import type { VideoExportProgress, VideoExportStartRequest } from '../src/shared/videoExportRuntime'
-import type { RoteiroDocument, RoteiroReactionBlock, RoteiroSectionContent, RoteiroTikTok, RoteiroVideoReference } from '../src/shared/roteiros'
+import type { BaseVideoDetails, RoteiroDocument, RoteiroReactionBlock, RoteiroSectionContent, RoteiroTikTok, RoteiroVideoReference } from '../src/shared/roteiros'
 import { serializeVideoCharacterRenderAssetSnapshot } from '../src/shared/videoCharacterRenderAssets'
 import { DataPlatform, getAppDataUsage } from './dataPlatform.cjs'
 import { DomainFileSystem } from './domainFileSystem.cjs'
@@ -2068,6 +2068,43 @@ async function registerFabricatorHandlers(): Promise<void> {
     })
     roteirosSaveQueue = next
     await next
+  })
+
+  ipcMain.handle('base-videos:list-details', async (event): Promise<BaseVideoDetails[]> => {
+    assertTrustedSender(event)
+    const db = dataPlatform.database
+    if (!db) throw new Error('Catálogo de dados não inicializado.')
+    const rows = db.prepare('SELECT video_id, description_text, timeline, scene_end_seconds, first_group_reaction_seconds, second_group_reaction_seconds FROM base_video_details ORDER BY updated_at DESC').all() as Array<{ video_id: string; description_text: string; timeline: BaseVideoDetails['timeline']; scene_end_seconds: number | null; first_group_reaction_seconds: number | null; second_group_reaction_seconds: number | null }>
+    return rows.map((row) => ({ videoId: row.video_id, description: row.description_text, timeline: row.timeline,
+      ...(row.scene_end_seconds === null ? {} : { sceneEndSeconds: row.scene_end_seconds }),
+      ...(row.first_group_reaction_seconds === null ? {} : { firstGroupReactionSeconds: row.first_group_reaction_seconds }),
+      ...(row.second_group_reaction_seconds === null ? {} : { secondGroupReactionSeconds: row.second_group_reaction_seconds }) }))
+  })
+
+  ipcMain.handle('base-videos:save-details', async (event, value: unknown): Promise<void> => {
+    assertTrustedSender(event)
+    if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Dados do vídeo inválidos.')
+    const details = value as BaseVideoDetails
+    const secondsValid = (seconds: unknown) => seconds === undefined || typeof seconds === 'number' && Number.isFinite(seconds) && seconds >= 0 && seconds <= 86400
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(details.videoId)
+      || typeof details.description !== 'string' || details.description.length > 20000
+      || !['unspecified', 'past', 'present', 'future'].includes(details.timeline)
+      || !secondsValid(details.sceneEndSeconds) || !secondsValid(details.firstGroupReactionSeconds) || !secondsValid(details.secondGroupReactionSeconds)) throw new Error('Dados do vídeo inválidos.')
+    const db = dataPlatform.database
+    if (!db) throw new Error('Catálogo de dados não inicializado.')
+    db.prepare(`INSERT INTO base_video_details(video_id, description_text, timeline, scene_end_seconds, first_group_reaction_seconds, second_group_reaction_seconds, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(video_id) DO UPDATE SET description_text=excluded.description_text, timeline=excluded.timeline,
+      scene_end_seconds=excluded.scene_end_seconds, first_group_reaction_seconds=excluded.first_group_reaction_seconds,
+      second_group_reaction_seconds=excluded.second_group_reaction_seconds, updated_at=excluded.updated_at`)
+      .run(details.videoId, details.description, details.timeline, details.sceneEndSeconds ?? null, details.firstGroupReactionSeconds ?? null, details.secondGroupReactionSeconds ?? null, new Date().toISOString())
+  })
+
+  ipcMain.handle('base-videos:delete-details', async (event, videoId: unknown): Promise<void> => {
+    assertTrustedSender(event)
+    if (typeof videoId !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(videoId)) throw new Error('Identificador de vídeo inválido.')
+    const db = dataPlatform.database
+    if (!db) throw new Error('Catálogo de dados não inicializado.')
+    db.prepare('DELETE FROM base_video_details WHERE video_id=?').run(videoId)
   })
 
   ipcMain.handle('customizer:characters:list', async (event): Promise<CustomizerCharacter[]> => {

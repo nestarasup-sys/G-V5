@@ -41,6 +41,15 @@ export type RoteiroSectionContent = {
 
 export type RoteiroTimeline = 'unspecified' | 'past' | 'present' | 'future'
 
+export type BaseVideoDetails = {
+  videoId: string
+  description: string
+  timeline: RoteiroTimeline
+  sceneEndSeconds?: number
+  firstGroupReactionSeconds?: number
+  secondGroupReactionSeconds?: number
+}
+
 export type RoteiroDocument = {
   id: string
   title: string
@@ -53,4 +62,7 @@ export type RoteiroDocument = {
 export type RoteirosDesktopApi = {
   listRoteiros: () => Promise<RoteiroDocument[]>
   saveRoteiros: (roteiros: RoteiroDocument[]) => Promise<void>
+  listBaseVideoDetails: () => Promise<BaseVideoDetails[]>
+  saveBaseVideoDetails: (details: BaseVideoDetails) => Promise<void>
+  deleteBaseVideoDetails: (videoId: string) => Promise<void>
 }

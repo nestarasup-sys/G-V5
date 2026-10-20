@@ -14,6 +14,7 @@ const LazyStudioPage = lazy(async () => ({ default: (await import('../features/s
 const LazyVideoStudioPage = lazy(async () => ({ default: (await import('../features/videoStudio/VideoStudioPage')).VideoStudioPage }))
 const LazyOptionsPage = lazy(async () => ({ default: (await import('../features/options/OptionsPage')).OptionsPage }))
 const LazyFabricatorPage = lazy(async () => ({ default: (await import('../features/fabricator/FabricatorPage')).FabricatorPage }))
+const LazyBaseVideosPage = lazy(async () => ({ default: (await import('../features/roteiros/BaseVideosPage')).BaseVideosPage }))
 
 const roteiroAreas = [
   { id: 'roteiros', label: 'Roteiros', icon: 'message' },
@@ -329,6 +330,7 @@ export function App() {
               <Route path="/estudio" element={<LazyStudioPage />} />
               <Route path="/video-studio" element={<LazyVideoStudioPage onEditorActiveChange={setVideoEditorActive} />} />
               <Route path="/roteiros" element={<EmptyRoteirosPage />} />
+              <Route path="/base-videos" element={<LazyBaseVideosPage />} />
               <Route path="/opcoes" element={<LazyOptionsPage />} />
               <Route path="/fabricador-dev" element={<LazyFabricatorPage />} />
               <Route path="*" element={<Navigate to="/customizar" replace />} />
