@@ -164,11 +164,14 @@
 .video-master-span.selected { border-color:#fff;box-shadow:0 0 0 1px #f5f1ff9c,0 0 10px #eee2ff55; }
 .video-timeline-heading .video-add-video-button { border-color:#3b7892;background:#183343;color:#bcecff; }
 .video-timeline-heading .video-add-video-button:hover { border-color:#70c5e2;background:#214b60;color:#fff; }
-.video-character-span { min-width:0;position:absolute;top:5px;bottom:5px;display:flex;align-items:flex-end;overflow:hidden;padding:0 7px 4px;border:1px solid #c8c9d055;border-radius:5px;color:#fff;font-size:10px;font-weight:700;text-align:left;text-overflow:ellipsis;white-space:nowrap;box-shadow:inset 0 1px 0 #ffffff39,0 2px 4px #090b1055;cursor:pointer; }
+.video-character-span { min-width:0;position:absolute;top:5px;bottom:5px;display:flex;align-items:flex-end;overflow:hidden;padding:0 10px 4px;border:1px solid #c8c9d055;border-radius:5px;color:#fff;font-size:10px;font-weight:700;text-align:left;text-overflow:ellipsis;white-space:nowrap;box-shadow:inset 0 1px 0 #ffffff39,0 2px 4px #090b1055;cursor:pointer;touch-action:none; }
 .video-character-span:hover { filter:brightness(1.15); }
 .video-character-span.selected { z-index:2;border-color:#fff;box-shadow:0 0 0 1px #f5f1ff9c,0 0 10px #eee2ff55; }
-.video-character-boundary { width:11px;height:calc(100% + 2px);position:absolute;z-index:8;top:-1px;transform:translateX(-50%);padding:0;border:0;background:linear-gradient(90deg,transparent 0 36%,#ffffff52 36% 64%,transparent 64% 100%);cursor:ew-resize;touch-action:none; }
-.video-character-boundary:hover { background:linear-gradient(90deg,transparent 0 28%,#d8e6ffbb 28% 72%,transparent 72% 100%); }
+.video-character-span-label { min-width:0;overflow:hidden;text-overflow:ellipsis;pointer-events:none; }
+.video-character-resize-edge { width:12px;height:100%;position:absolute;z-index:1;top:0;cursor:ew-resize;touch-action:none; }
+.video-character-resize-edge.start { left:0;border-left:2px solid #ffffffa8;background:linear-gradient(90deg,#ffffff42,transparent); }
+.video-character-resize-edge.end { right:0;border-right:2px solid #ffffffa8;background:linear-gradient(270deg,#ffffff42,transparent); }
+.video-character-span:hover .video-character-resize-edge { border-color:#fff; }
 .video-keyframe { width:7px;height:7px;position:absolute;z-index:3;top:50%;transform:translate(-50%,-50%) rotate(45deg);padding:0;border:1px solid #f0edff;border-radius:1px;background:#e7d9ff;cursor:pointer; }
 .video-keyframe:hover { width:10px;height:10px;background:#fff; }
 .video-saved-marker { width:1px;position:absolute;z-index:2;top:0;bottom:0;background:#d5b6ff;opacity:.75;pointer-events:none; }

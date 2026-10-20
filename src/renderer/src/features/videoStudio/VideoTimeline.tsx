@@ -404,6 +404,15 @@ export function VideoTimeline({ preparing, onEnterFullscreen, onExport, canUndo,
     boundaryDragRef.current = { pointerId: event.pointerId, elementId, keyId, originX: event.clientX, startFrame: frame, minFrame, maxFrame, latestFrame: frame }
     event.currentTarget.setPointerCapture(event.pointerId)
   }
+  const beginCharacterSpanBoundaryDrag = (event: ReactPointerEvent<HTMLButtonElement>, elementId: string, keys: readonly VideoTimelineDocument['characterKeys'][number][]) => {
+    const edge = (event.target as HTMLElement).closest<HTMLElement>('[data-boundary-edge]')
+    const keyId = edge?.dataset.boundaryKey
+    if (!keyId) return
+    const index = keys.findIndex((key) => key.id === keyId)
+    if (index < 0) return
+    const key = keys[index]
+    beginBoundaryDrag(event, elementId, key.id, key.frame, (keys[index - 1]?.frame ?? 0) + 1, (keys[index + 1]?.frame ?? duration) - 1)
+  }
   const moveBoundaryDrag = (event: ReactPointerEvent<HTMLButtonElement>) => {
     const drag = boundaryDragRef.current
     if (!drag || drag.pointerId !== event.pointerId) return
@@ -418,7 +427,9 @@ export function VideoTimeline({ preparing, onEnterFullscreen, onExport, canUndo,
     cancelPreviewUpdate()
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
     if (drag.latestFrame !== drag.startFrame) {
+      suppressClipClickRef.current = true
       onMoveCharacterBoundary(drag.elementId, drag.keyId, drag.latestFrame)
+      requestAnimationFrame(() => { suppressClipClickRef.current = false })
       setSelection((current) => current?.kind === 'character' && current.elementId === drag.elementId
         ? current.startFrame === drag.startFrame
           ? { ...current, startFrame: drag.latestFrame }
@@ -536,14 +547,20 @@ export function VideoTimeline({ preparing, onEnterFullscreen, onExport, canUndo,
               }}>
                 {visibleStates.map((state) => {
                   const selected = selection?.kind === 'character' && selection.elementId === character.id && selection.startFrame === state.start && selection.endFrame === state.end
-                  return <button type="button" key={state.renderId} className={`video-character-span ${selected ? 'selected' : ''}`} style={{ left: `${state.start / 60 * pixelsPerSecond}px`, width: `${Math.max(3, (state.end - state.start) / 60 * pixelsPerSecond)}px`, background: `linear-gradient(180deg, ${color} 0%, ${color}cc 48%, ${color}8c 100%)` }} onClick={(event) => {
+                  const leftBoundary = keys.find((key) => key.frame === state.start)
+                  const rightBoundary = keys.find((key) => key.frame === state.end)
+                  return <button type="button" key={state.renderId} className={`video-character-span ${selected ? 'selected' : ''}`} style={{ left: `${state.start / 60 * pixelsPerSecond}px`, width: `${Math.max(3, (state.end - state.start) / 60 * pixelsPerSecond)}px`, background: `linear-gradient(180deg, ${color} 0%, ${color}cc 48%, ${color}8c 100%)` }} onPointerDown={(event) => beginCharacterSpanBoundaryDrag(event, character.id, keys)} onPointerMove={moveBoundaryDrag} onPointerUp={finishBoundaryDrag} onPointerCancel={finishBoundaryDrag} onClick={(event) => {
+                    if (suppressClipClickRef.current) { event.preventDefault(); event.stopPropagation(); return }
                     const rect = event.currentTarget.getBoundingClientRect()
                     const ratio = rect.width > 0 ? Math.max(0, Math.min(0.999999, (event.clientX - rect.left) / rect.width)) : 0
                     const frame = Math.min(state.end - 1, state.start + Math.floor((state.end - state.start) * ratio))
                     selectOrSeekCharacterTrack(character.id, frame)
-                  }} title={`${name} · ${state.label} · clique para selecionar; clique novamente na faixa para mover o playhead`}><span>{state.label}</span></button>
+                  }} title={`${name} · ${state.label} · arraste as bordas para ajustar a duração`}>
+                    {leftBoundary && leftBoundary.frame > 0 && <span className="video-character-resize-edge start" data-boundary-edge="start" data-boundary-key={leftBoundary.id} aria-hidden="true" />}
+                    <span className="video-character-span-label">{state.label}</span>
+                    {rightBoundary && <span className="video-character-resize-edge end" data-boundary-edge="end" data-boundary-key={rightBoundary.id} aria-hidden="true" />}
+                  </button>
                 })}
-                {keys.map((key, index) => key.frame > 0 && <button type="button" key={`boundary:${key.id}`} className="video-character-boundary" style={{ left: `${key.frame / 60 * pixelsPerSecond}px` }} aria-label={`Mover divisão de ${name}`} title="Arraste para ajustar a duração deste estado" onPointerDown={(event) => beginBoundaryDrag(event, character.id, key.id, key.frame, (keys[index - 1]?.frame ?? 0) + 1, (keys[index + 1]?.frame ?? duration) - 1)} onPointerMove={moveBoundaryDrag} onPointerUp={finishBoundaryDrag} onPointerCancel={finishBoundaryDrag} />)}
                 {(timelineIndex.saveMarkersByTrack.get(character.id) ?? []).filter((marker) => marker.frame >= visibleStartFrame && marker.frame <= visibleEndFrame).map((marker) => <i className="video-saved-marker" key={marker.id} style={{ left: `${marker.frame / 60 * pixelsPerSecond}px` }} title={`Frame salvo · ${formatTime(marker.frame)}`} />)}
                 {keys.map((key) => <button type="button" className="video-keyframe" key={key.id} style={{ left: `${key.frame / 60 * pixelsPerSecond}px` }} title={`${formatTime(key.frame)} · ${key.faceMode}`} onClick={() => { characterTrackClickRef.current = null; const segment = characterSegmentAtFrame(timelineIndex, character.id, key.frame, duration); setSelection(segment ? { kind: 'character', elementId: character.id, ...segment } : null); onSelectElement(character.id); onSeek(key.frame) }} aria-label={`Ir ao frame ${formatTime(key.frame)} de ${name}`} />)}
                 <i className="video-lane-playhead" style={{ left: `${playheadFrame / 60 * pixelsPerSecond}px` }} />
