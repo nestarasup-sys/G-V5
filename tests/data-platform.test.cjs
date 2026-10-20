@@ -4,6 +4,7 @@ const fs = require('node:fs/promises')
 const os = require('node:os')
 const path = require('node:path')
 const sharp = require('sharp')
+const Database = require('better-sqlite3')
 const { ContentAddressedStore, DataPlatform, createDatabaseSnapshot, getAppDataUsage, registerObjectMetadata, sha256 } = require('../electron/dataPlatform.cjs')
 const { DomainFileSystem } = require('../electron/domainFileSystem.cjs')
 const { DataMigrationService } = require('../electron/dataMigration.cjs')
@@ -51,6 +52,67 @@ test('catalog supports new domains, stable IDs, metadata search and bounded pagi
   assert.equal(catalog.storageSummary().assets, 136)
   assert.throws(() => catalog.upsertAsset({ id: 'bad', domainId: 'missing.domain', kind: 'x', displayName: 'bad' }), /Domínio não registrado/)
   catalog.close()
+}))
+
+test('roteiros migra JSON para SQLite sem apagar a origem e adapta o schema legado', async () => withRoot(async (root) => {
+  await fs.mkdir(path.join(root, 'database'), { recursive: true })
+  await fs.mkdir(path.join(root, 'projects', 'roteiros'), { recursive: true })
+  const legacyDb = new Database(path.join(root, 'database', 'catalog.sqlite'))
+  legacyDb.exec(`CREATE TABLE roteiros (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    video_title TEXT NOT NULL,
+    character_ids_json TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  ) WITHOUT ROWID; PRAGMA user_version = 4;`)
+  legacyDb.close()
+
+  const fixture = [{
+    id: 'b794825b-b298-4dd8-911c-2d183099f0e6',
+    title: 'Roteiro sintético',
+    videoTitle: 'Vídeo 01',
+    characterIds: ['61038909-9c02-4bf3-b194-b93927d06dcd'],
+    tiktoks: [{
+      id: '9a4d298f-8bc9-4fca-a379-1b0e409f891a',
+      title: 'TikTok sintético',
+      videoTitle: 'Cena 01'
+    }]
+  }]
+  const sourcePath = path.join(root, 'projects', 'roteiros', 'library.json')
+  const sourceBytes = Buffer.from(JSON.stringify(fixture))
+  await fs.writeFile(sourcePath, sourceBytes)
+
+  const catalog = catalogAt(root)
+  const db = catalog.database
+  assert.equal(db.pragma('user_version', { simple: true }), 5)
+  assert.ok(db.prepare('PRAGMA table_info(roteiros)').all().some((column) => column.name === 'position'))
+  assert.deepEqual(db.prepare('SELECT id, title, video_title, character_ids_json, position FROM roteiros ORDER BY position').all(), [{
+    id: fixture[0].id,
+    title: fixture[0].title,
+    video_title: fixture[0].videoTitle,
+    character_ids_json: JSON.stringify(fixture[0].characterIds),
+    position: 0
+  }])
+  assert.deepEqual(db.prepare('SELECT id, roteiro_id, title, video_title, position FROM roteiro_tiktoks ORDER BY position').all(), [{
+    id: fixture[0].tiktoks[0].id,
+    roteiro_id: fixture[0].id,
+    title: fixture[0].tiktoks[0].title,
+    video_title: fixture[0].tiktoks[0].videoTitle,
+    position: 0
+  }])
+  const migration = JSON.parse(db.prepare("SELECT value FROM app_metadata WHERE key = 'roteiros-json-to-sqlite-v1'").get().value)
+  assert.equal(migration.sourceSha256, sha256(sourceBytes))
+  assert.deepEqual(await fs.readFile(sourcePath), sourceBytes)
+  assert.equal(db.pragma('integrity_check', { simple: true }), 'ok')
+  assert.deepEqual(db.pragma('foreign_key_check'), [])
+
+  catalog.close()
+  const reopened = catalogAt(root)
+  assert.equal(reopened.database.prepare('SELECT count(*) AS count FROM roteiros').get().count, 1)
+  assert.equal(reopened.database.prepare('SELECT count(*) AS count FROM roteiro_tiktoks').get().count, 1)
+  assert.equal(JSON.parse(reopened.database.prepare("SELECT value FROM app_metadata WHERE key = 'roteiros-json-to-sqlite-v1'").get().value).migratedAt, migration.migratedAt)
+  reopened.close()
 }))
 
 test('synthetic scale index handles 600 characters and 2000 hair assets with bounded first-page latency', async (t) => withRoot(async (root) => {

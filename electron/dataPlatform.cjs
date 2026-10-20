@@ -139,7 +139,7 @@ class DataPlatform {
     this.database = new Database(dbPath, { timeout: 5000 })
     this.database.pragma('foreign_keys = ON')
     const currentSchema = this.database.pragma('user_version', { simple: true })
-    if (currentSchema > 3) {
+    if (currentSchema > 5) {
       this.database.close()
       this.database = null
       throw new Error(`O catálogo usa schema ${currentSchema}, mais novo que esta versão do app.`)
@@ -208,6 +208,26 @@ class DataPlatform {
         PRIMARY KEY(source_domain, source_id, target_domain, target_id, relation)
       ) WITHOUT ROWID;
       CREATE INDEX IF NOT EXISTS entity_references_by_target ON entity_references(target_domain, target_id);
+      CREATE TABLE IF NOT EXISTS roteiros (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        video_title TEXT NOT NULL,
+        character_ids_json TEXT NOT NULL,
+        position INTEGER NOT NULL CHECK(position >= 0),
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      ) WITHOUT ROWID;
+      CREATE TABLE IF NOT EXISTS roteiro_tiktoks (
+        id TEXT PRIMARY KEY,
+        roteiro_id TEXT NOT NULL REFERENCES roteiros(id) ON DELETE CASCADE,
+        title TEXT NOT NULL,
+        video_title TEXT NOT NULL,
+        position INTEGER NOT NULL CHECK(position >= 0),
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        UNIQUE(roteiro_id, position)
+      ) WITHOUT ROWID;
+      CREATE INDEX IF NOT EXISTS roteiro_tiktoks_by_parent_order ON roteiro_tiktoks(roteiro_id, position);
       CREATE TABLE IF NOT EXISTS domain_files (
         domain_id TEXT NOT NULL REFERENCES domains(domain_id),
         relative_path TEXT NOT NULL,
@@ -271,13 +291,81 @@ class DataPlatform {
       .run(sha256('gacha-domain-files-schema-v2'), now)
     this.database.prepare(`INSERT OR IGNORE INTO schema_migrations(version, name, checksum, applied_at) VALUES (3, 'canonical-image-references', ?, ?)`)
       .run(sha256('gacha-canonical-image-references-schema-v3'), now)
-    if (currentSchema < 3) this.database.pragma('user_version = 3')
+    this.database.prepare("INSERT OR IGNORE INTO schema_migrations(version, name, checksum, applied_at) VALUES (4, 'roteiros-and-tiktoks-sqlite-store', ?, ?)")
+      .run(sha256('gacha-roteiros-sqlite-schema-v4'), now)
+    const roteiroColumns = new Set(this.database.prepare('PRAGMA table_info(roteiros)').all().map((column) => column.name))
+    if (!roteiroColumns.has('position')) {
+      this.database.exec('ALTER TABLE roteiros ADD COLUMN position INTEGER NOT NULL DEFAULT 0 CHECK(position >= 0)')
+      const existingRoutes = this.database.prepare('SELECT id FROM roteiros ORDER BY created_at, id').all()
+      const updatePosition = this.database.prepare('UPDATE roteiros SET position = ? WHERE id = ?')
+      this.database.transaction(() => existingRoutes.forEach((route, index) => updatePosition.run(index, route.id)))()
+    }
+    this.database.prepare("INSERT OR IGNORE INTO schema_migrations(version, name, checksum, applied_at) VALUES (5, 'roteiros-position-compatibility', ?, ?)")
+      .run(sha256('gacha-roteiros-position-compatibility-schema-v5'), now)
+    if (currentSchema < 5) this.database.pragma('user_version = 5')
     const insertDomain = this.database.prepare(`INSERT OR IGNORE INTO domains(domain_id, schema_version, manifest_json, updated_at) VALUES (?, 1, '{}', ?)`)
     const registerBuiltins = this.database.transaction(() => BUILTIN_DOMAINS.forEach((id) => insertDomain.run(id, now)))
     registerBuiltins()
     this.database.prepare("INSERT OR IGNORE INTO app_metadata(key, value) VALUES ('schema_version', '1')").run()
-    this.database.prepare("UPDATE app_metadata SET value='3' WHERE key='schema_version'").run()
+    this.database.prepare("UPDATE app_metadata SET value='5' WHERE key='schema_version'").run()
+    this.migrateRoteirosJson()
     return this
+  }
+
+  migrateRoteirosJson() {
+    const db = this.assertReady()
+    const migrationKey = 'roteiros-json-to-sqlite-v1'
+    if (db.prepare('SELECT 1 FROM app_metadata WHERE key=?').get(migrationKey)) return
+    const source = path.join(this.root, 'projects', 'roteiros', 'library.json')
+    let documents = []
+    let sourceSha256 = null
+    if (fs.existsSync(source)) {
+      const contents = fs.readFileSync(source, 'utf8')
+      sourceSha256 = sha256(contents)
+      let parsed
+      try { parsed = JSON.parse(contents) }
+      catch { throw new Error('O arquivo antigo de roteiros não contém JSON válido; ele foi preservado sem alterações.') }
+      if (!Array.isArray(parsed) || parsed.length > 2000) {
+        throw new Error('O arquivo antigo de roteiros tem formato ou quantidade inválida; ele foi preservado sem alterações.')
+      }
+      const isUuid = (value) => typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
+      const isText = (value) => typeof value === 'string' && value.trim().length > 0 && value.length <= 100
+      documents = parsed.map((entry) => entry && typeof entry === 'object' && !Array.isArray(entry)
+        ? { ...entry, tiktoks: entry.tiktoks ?? [] }
+        : entry)
+      const routeIds = new Set()
+      const tiktokIds = new Set()
+      for (const roteiro of documents) {
+        if (!roteiro || typeof roteiro !== 'object' || !isUuid(roteiro.id) || !isText(roteiro.title) || !isText(roteiro.videoTitle)
+          || !Array.isArray(roteiro.characterIds) || roteiro.characterIds.length > 500 || !roteiro.characterIds.every(isUuid)
+          || !Array.isArray(roteiro.tiktoks) || roteiro.tiktoks.length > 500 || routeIds.has(roteiro.id)) {
+          throw new Error('Foram encontrados dados inválidos ou IDs repetidos no arquivo antigo de roteiros; ele foi preservado sem alterações.')
+        }
+        routeIds.add(roteiro.id)
+        for (const tiktok of roteiro.tiktoks) {
+          if (!tiktok || !isUuid(tiktok.id) || !isText(tiktok.title) || !isText(tiktok.videoTitle) || tiktokIds.has(tiktok.id)) {
+            throw new Error('Foram encontrados TikToks inválidos ou IDs repetidos no arquivo antigo; ele foi preservado sem alterações.')
+          }
+          tiktokIds.add(tiktok.id)
+        }
+      }
+    }
+
+    const now = new Date().toISOString()
+    const insertRoteiro = db.prepare('INSERT OR IGNORE INTO roteiros(id, title, video_title, character_ids_json, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+    const insertTikTok = db.prepare('INSERT OR IGNORE INTO roteiro_tiktoks(id, roteiro_id, title, video_title, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+    const migrate = db.transaction(() => {
+      documents.forEach((roteiro, position) => {
+        const inserted = insertRoteiro.run(roteiro.id, roteiro.title.trim(), roteiro.videoTitle.trim(), JSON.stringify(roteiro.characterIds), position, now, now).changes
+        if (!inserted) return
+        roteiro.tiktoks.forEach((tiktok, tiktokPosition) => {
+          insertTikTok.run(tiktok.id, roteiro.id, tiktok.title.trim(), tiktok.videoTitle.trim(), tiktokPosition, now, now)
+        })
+      })
+      db.prepare('INSERT INTO app_metadata(key, value) VALUES (?, ?)')
+        .run(migrationKey, JSON.stringify({ migratedAt: now, sourceSha256, roteiroCount: documents.length }))
+    })
+    migrate()
   }
 
   assertReady() {

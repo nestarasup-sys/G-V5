@@ -1974,40 +1974,50 @@ async function registerFabricatorHandlers(): Promise<void> {
   registerStudioWorkspace('studio', 'studio')
   registerStudioWorkspace('video', 'video-studio')
 
-  const roteirosFile = join(app.getPath('appData'), 'projects', 'roteiros', 'library.json')
   ipcMain.handle('roteiros:list', async (event): Promise<RoteiroDocument[]> => {
     assertTrustedSender(event)
     await roteirosSaveQueue.catch(() => undefined)
-    try {
-      const contents = await readFile(roteirosFile, 'utf8')
-      const parsed: unknown = JSON.parse(contents)
-      if (!Array.isArray(parsed) || parsed.length > 2000 || !parsed.every(isRoteiroDocument)) {
-        throw new Error('O arquivo de roteiros contém dados inválidos.')
-      }
-      return parsed
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []
-      throw error
+    const db = dataPlatform.database
+    if (!db) throw new Error('Catálogo de dados não inicializado.')
+    const roteiroRows = db.prepare('SELECT id, title, video_title, character_ids_json FROM roteiros ORDER BY position, created_at, id').all() as Array<{ id: string; title: string; video_title: string; character_ids_json: string }>
+    const tiktokRows = db.prepare('SELECT id, roteiro_id, title, video_title FROM roteiro_tiktoks ORDER BY roteiro_id, position').all() as Array<{ id: string; roteiro_id: string; title: string; video_title: string }>
+    const tiktoksByRoteiro = new Map<string, RoteiroDocument['tiktoks']>()
+    for (const row of tiktokRows) {
+      const items = tiktoksByRoteiro.get(row.roteiro_id) ?? []
+      items.push({ id: row.id, title: row.title, videoTitle: row.video_title })
+      tiktoksByRoteiro.set(row.roteiro_id, items)
     }
+    return roteiroRows.map((row) => ({
+      id: row.id, title: row.title, videoTitle: row.video_title,
+      characterIds: JSON.parse(row.character_ids_json) as string[],
+      tiktoks: tiktoksByRoteiro.get(row.id) ?? []
+    }))
   })
 
   ipcMain.handle('roteiros:save', async (event, roteiros: unknown): Promise<void> => {
     assertTrustedSender(event)
     if (!Array.isArray(roteiros) || roteiros.length > 2000 || !roteiros.every(isRoteiroDocument)
-      || new Set(roteiros.map((roteiro: RoteiroDocument) => roteiro.id)).size !== roteiros.length) {
+      || new Set(roteiros.map((roteiro: RoteiroDocument) => roteiro.id)).size !== roteiros.length
+      || new Set(roteiros.flatMap((roteiro: RoteiroDocument) => roteiro.tiktoks.map((tiktok) => tiktok.id))).size !== roteiros.reduce((total: number, roteiro: RoteiroDocument) => total + roteiro.tiktoks.length, 0)) {
       throw new Error('A lista de roteiros enviada para salvar é inválida.')
     }
-    const next = roteirosSaveQueue.catch(() => undefined).then(async () => {
-      const folder = dirname(roteirosFile)
-      await mkdir(folder, { recursive: true })
-      const temporary = roteirosFile + '.' + randomUUID() + '.tmp'
-      try {
-        await writeFile(temporary, JSON.stringify(roteiros), 'utf8')
-        await rename(temporary, roteirosFile)
-      } catch (error) {
-        await rm(temporary, { force: true }).catch(() => undefined)
-        throw error
-      }
+    const next = roteirosSaveQueue.catch(() => undefined).then(() => {
+      const db = dataPlatform.database
+      if (!db) throw new Error('Catálogo de dados não inicializado.')
+      const now = new Date().toISOString()
+      const save = db.transaction((documents: RoteiroDocument[]) => {
+        db.prepare('DELETE FROM roteiro_tiktoks').run()
+        db.prepare('DELETE FROM roteiros').run()
+        const insertRoteiro = db.prepare('INSERT INTO roteiros(id, title, video_title, character_ids_json, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+        const insertTikTok = db.prepare('INSERT INTO roteiro_tiktoks(id, roteiro_id, title, video_title, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+        documents.forEach((roteiro, position) => {
+          insertRoteiro.run(roteiro.id, roteiro.title.trim(), roteiro.videoTitle.trim(), JSON.stringify(roteiro.characterIds), position, now, now)
+          roteiro.tiktoks.forEach((tiktok, tiktokPosition) => {
+            insertTikTok.run(tiktok.id, roteiro.id, tiktok.title.trim(), tiktok.videoTitle.trim(), tiktokPosition, now, now)
+          })
+        })
+      })
+      save(roteiros as RoteiroDocument[])
     })
     roteirosSaveQueue = next
     await next
@@ -3025,7 +3035,7 @@ app.on('before-quit', (event) => {
   waitingForPersistenceWritesBeforeQuit = true
   const pendingWrites = [
     ...fabricatorSaveQueues.values(), ...poseSaveWrites, ...hairSaveQueues.values(),
-    studioSaveQueues.studio, studioSaveQueues.video,
+    studioSaveQueues.studio, studioSaveQueues.video, roteirosSaveQueue,
     ...(dataMigrationTask ? [dataMigrationTask] : [])
   ]
   void Promise.allSettled(pendingWrites).then((results) => {
