@@ -3,7 +3,6 @@ const { app,BrowserWindow }=require('electron')
 const fs=require('node:fs'),os=require('node:os'),path=require('node:path')
 const { pathToFileURL }=require('node:url')
 
-app.disableHardwareAcceleration()
 app.commandLine.appendSwitch('disable-background-timer-throttling')
 app.commandLine.appendSwitch('force-device-scale-factor','1')
 
@@ -43,14 +42,26 @@ async function pixiBench(){
   const elapsedMs=performance.now()-started;app.destroy(true,{children:true});
   return{elapsedMs,checksum};
 }
-window.__resultPromise=(async()=>{const canvas=canvasBench();const pixi=await pixiBench();return{ok:true,width,height,frames,objects,canvas,pixi,speedup:canvas.elapsedMs/pixi.elapsedMs};})();
+function median(values){const sorted=[...values].sort((a,b)=>a-b);return sorted[Math.floor(sorted.length/2)];}
+window.__resultPromise=(async()=>{
+  const canvasSamples=[],pixiSamples=[];
+  for(let round=0;round<3;round++){
+    if(round%2===0){canvasSamples.push(canvasBench());pixiSamples.push(await pixiBench());}
+    else{pixiSamples.push(await pixiBench());canvasSamples.push(canvasBench());}
+  }
+  const canvasMedianMs=median(canvasSamples.map(x=>x.elapsedMs));
+  const pixiMedianMs=median(pixiSamples.map(x=>x.elapsedMs));
+  return{ok:true,width,height,frames,objects,rounds:3,canvasSamples,pixiSamples,canvasMedianMs,pixiMedianMs,speedup:canvasMedianMs/pixiMedianMs};
+})();
 </script></body></html>`)
   const win=new BrowserWindow({show:false,width:960,height:540,webPreferences:{contextIsolation:true,nodeIntegration:false,sandbox:false,backgroundThrottling:false}})
   try{
     await win.loadFile(html)
     const result=await win.webContents.executeJavaScript('(async()=>{while(!window.__resultPromise)await new Promise(r=>setTimeout(r,10));return await window.__resultPromise})()',true)
-    if(!result?.ok||!Number.isFinite(result.pixi?.elapsedMs)||result.pixi.elapsedMs<=0)throw new Error('Pixi benchmark did not return valid timing.')
-    console.log(JSON.stringify(result,null,2))
+    if(!result?.ok||!Number.isFinite(result.pixiMedianMs)||result.pixiMedianMs<=0)throw new Error('Pixi benchmark did not return valid timing.')
+    const gpuInfo=await app.getGPUInfo('basic').catch(()=>null)
+    const gpuFeatures=app.getGPUFeatureStatus()
+    console.log(JSON.stringify({...result,machine:{platform:process.platform,release:os.release(),cpu:os.cpus()[0]?.model??'unknown',logicalCpuCount:os.cpus().length,totalMemoryBytes:os.totalmem()},gpuInfo,gpuFeatures},null,2))
   }finally{
     if(!win.isDestroyed())win.destroy()
     fs.rmSync(root,{recursive:true,force:true,maxRetries:8,retryDelay:100})
