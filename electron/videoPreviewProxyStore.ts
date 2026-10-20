@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { createReadStream } from 'node:fs'
-import { mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { runVideoStudioProcess, type VideoStudioFfmpegCapabilities } from './videoFfmpegCapabilities'
 
@@ -31,7 +31,9 @@ async function hashFile(path: string): Promise<string> {
 }
 
 export class VideoPreviewProxyStore {
-  constructor(readonly root: string) {}
+  constructor(readonly root: string, readonly maxBytes = 4 * 1024 * 1024 * 1024) {
+    if (!Number.isSafeInteger(maxBytes) || maxBytes < 1024) throw new Error('Orçamento do cache de proxy inválido.')
+  }
 
   private folderFor(sha: string): string {
     if(!SHA.test(sha)) throw new Error('SHA de proxy inválido.')
@@ -126,11 +128,53 @@ export class VideoPreviewProxyStore {
       const manifestTemp=join(folder,`.manifest-${randomUUID()}.tmp`)
       await writeFile(manifestTemp,`${JSON.stringify(record,null,2)}\n`,{flag:'wx'})
       await rename(manifestTemp,this.manifestPath(sha))
+      await this.prune(sha)
       return record
     }finally{
       await rm(proxyTemp,{force:true}).catch(()=>undefined)
       await rm(waveTemp,{force:true}).catch(()=>undefined)
     }
+  }
+
+
+  async prune(protectedSha?: string): Promise<{ bytes: number; removed: number }> {
+    await mkdir(this.root,{recursive:true})
+    const entries:Array<{sha:string;folder:string;bytes:number;createdAt:string}>=[]
+    for(const prefix of await readdir(this.root,{withFileTypes:true}).catch(()=>[])){
+      if(!prefix.isDirectory()||prefix.isSymbolicLink()||!/^[a-f0-9]{2}$/.test(prefix.name)) continue
+      const prefixFolder=join(this.root,prefix.name)
+      for(const item of await readdir(prefixFolder,{withFileTypes:true}).catch(()=>[])){
+        if(!item.isDirectory()||item.isSymbolicLink()||!SHA.test(item.name)||item.name.slice(0,2)!==prefix.name) continue
+        const folder=join(prefixFolder,item.name)
+        try{
+          const record=JSON.parse(await readFile(join(folder,'manifest.json'),'utf8')) as VideoPreviewProxyRecord
+          if(record.schemaVersion!==1||record.profileVersion!==VIDEO_PREVIEW_PROXY_VERSION||record.sourceSha256!==item.name
+            ||record.proxyFilename!=='preview.mp4'||(record.waveformFilename!==null&&record.waveformFilename!=='waveform.png')
+            ||!Number.isSafeInteger(record.proxyBytes)||record.proxyBytes<1||!Date.parse(record.createdAt)) throw new Error('invalid')
+          const proxy=await stat(join(folder,'preview.mp4'))
+          if(!proxy.isFile()||proxy.size!==record.proxyBytes) throw new Error('invalid')
+          let bytes=proxy.size
+          if(record.waveformFilename){
+            const wave=await stat(join(folder,record.waveformFilename))
+            if(!wave.isFile()||wave.size<1) throw new Error('invalid')
+            bytes+=wave.size
+          }
+          entries.push({sha:item.name,folder,bytes,createdAt:record.createdAt})
+        }catch{
+          if(item.name!==protectedSha) await rm(folder,{recursive:true,force:true}).catch(()=>undefined)
+        }
+      }
+    }
+    entries.sort((a,b)=>a.createdAt.localeCompare(b.createdAt))
+    let bytes=entries.reduce((sum,item)=>sum+item.bytes,0),removed=0
+    for(const item of entries){
+      if(bytes<=this.maxBytes) break
+      if(item.sha===protectedSha) continue
+      await rm(item.folder,{recursive:true,force:true})
+      bytes-=item.bytes
+      removed++
+    }
+    return{bytes,removed}
   }
 
   async resolveFile(sha:string,kind:'proxy'|'waveform'):Promise<string>{
