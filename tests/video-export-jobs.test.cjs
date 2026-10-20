@@ -413,3 +413,34 @@ test('recovery torture never advertises a corrupted manifest and leaves neighbor
   await assert.rejects(store.reopen(jobId))
   assert.equal((await fs.stat(path.join(root, otherJobId))).isDirectory(), true)
 })
+
+
+test('corrupt manifests are omitted from recovery but can be discarded without escaping the jobs root', async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'gacha-video-job-corrupt-manifest-'))
+  t.after(() => fs.rm(root, { recursive: true, force: true }))
+  const store = new VideoExportJobStore(root)
+  await store.create({ jobId, ...parameters })
+  const folder = path.join(root, jobId)
+  await fs.writeFile(path.join(folder, '.manifest-orphan.tmp'), '{"partial":')
+  await fs.writeFile(path.join(folder, 'manifest.json'), '{"schemaVersion":2,"jobId":')
+
+  assert.deepEqual(await store.listRecoverable(), [])
+  await store.cancel(jobId)
+  await assert.rejects(fs.stat(folder))
+  assert.equal((await fs.stat(root)).isDirectory(), true)
+})
+
+test('cleanup still fails closed when a readable manifest claims a different job owner', async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'gacha-video-job-owner-mismatch-'))
+  t.after(() => fs.rm(root, { recursive: true, force: true }))
+  const store = new VideoExportJobStore(root)
+  await store.create({ jobId, ...parameters })
+  const folder = path.join(root, jobId)
+  const manifestPath = path.join(folder, 'manifest.json')
+  const manifest = JSON.parse(await fs.readFile(manifestPath, 'utf8'))
+  manifest.jobId = otherJobId
+  await fs.writeFile(manifestPath, JSON.stringify(manifest))
+
+  await assert.rejects(store.cancel(jobId), /não é proprietário/)
+  assert.equal((await fs.stat(folder)).isDirectory(), true)
+})
