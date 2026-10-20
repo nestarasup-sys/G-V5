@@ -7,15 +7,18 @@ export type VideoCharacterTimelineLookup = Readonly<{
   stageTransform?: Partial<StudioElement>
 }>
 
-const transformFields = ['x', 'y', 'width', 'height', 'rotation', 'flipX', 'characterScale', 'characterWidthScale', 'characterHeightScale', 'zIndex'] as const
+// Stage transforms are actor-wide. The element's width/height are pose-local
+// visible-crop geometry and must remain attached to each authored state.
+const transformFields = ['x', 'y', 'rotation', 'flipX', 'characterScale', 'characterWidthScale', 'characterHeightScale', 'zIndex'] as const
 const lookupsByTimeline = new WeakMap<VideoTimelineDocument, Map<string, VideoCharacterTimelineLookup>>()
 
 function createLookup(timeline: VideoTimelineDocument, elementId: string): VideoCharacterTimelineLookup {
   const keys = timeline.characterKeys.filter((key) => key.elementId === elementId).sort((left, right) => left.frame - right.frame)
   const stateKeys = keys.filter((key) => key.state)
   const global = timeline.characterTransforms?.[elementId]
-  if (global && [global.x, global.y, global.width, global.height, global.rotation, global.zIndex].every(Number.isFinite)) {
-    return { keys, stateKeys, stageTransform: global }
+  if (global && [global.x, global.y, global.rotation, global.zIndex].every(Number.isFinite)) {
+    const stageTransform = Object.fromEntries(transformFields.filter((field) => global[field] !== undefined).map((field) => [field, global[field]])) as Partial<StudioElement>
+    return { keys, stateKeys, stageTransform }
   }
   let first: VideoTimelineDocument['characterKeys'][number] | undefined
   for (const key of stateKeys) {

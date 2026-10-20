@@ -289,3 +289,10 @@ _Atualizações posteriores devem registrar o SHA real do gate e nunca declarar 
 **Estado de evidências:** análise do código + commits via GitHub, verificação estática das mudanças. **Não** rodei Node/typecheck/build/Electron/FFmpeg/CI ou benchmarks nesta continuação; commits de código aguardam gate local ou Actions no HEAD. A melhora assintótica é demonstrável pela estrutura de busca, mas o ganho de tempo real **não foi medido**.
 
 **Próximo passo de maior valor:** integrar `VideoSceneIR` aos assets/renderer real e capturar still canônico; depois gerar MP4 serial válido com probe/FFprobe/áudio antes de Turbo. Seguir V505/V507/V509/V512-V518, preservar contratos e dois modos da modernização.
+
+## 2026-10-19 — Corrigir recorte de pose vazando entre faixas
+
+- Causa: o `width`/`height` do personagem descreve o retângulo visível da arte recortada daquela pose. A sincronização global de transformações incluía esses campos e, ao mudar a pose no playhead, copiava as novas dimensões para a pose anterior e todas as demais faixas. Saves antigos também podiam reaplicar `width`/`height` legados em cada estado ao resolver o palco.
+- Correção: transformações globais agora sincronizam posição, rotação, espelhamento, escala uniforme/por eixo e camada. A largura e a altura do recorte continuam no estado de cada pose. Leituras de `characterTransforms` legados filtram `width`/`height` sem reescrever os saves.
+- Cobertura sintética: `tests/video-character-track.test.cjs` testa duas poses com recortes distintos, mudanças globais que devem alcançar ambas sem alterar os recortes, e compatibilidade com transformações antigas contendo dimensões. `tests/video-timeline-index.test.cjs` atualiza o contrato do resolver global.
+- Limite: testes de lógica, typecheck e build não substituem confirmação visual no Electron com roteiro real. Nenhum projeto ou personagem pessoal foi aberto ou alterado.

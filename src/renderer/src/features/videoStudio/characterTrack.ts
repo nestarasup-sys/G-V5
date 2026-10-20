@@ -1,8 +1,10 @@
 import type { StudioDocument, StudioElement, VideoCharacterState, VideoTimelineDocument } from '../../../../shared/studio'
 import { videoCharacterStateAt, videoCharacterTimelineLookup } from '../../../../shared/videoCharacterTimeline'
 
-type CharacterTransform = Pick<StudioElement, 'x' | 'y' | 'width' | 'height' | 'rotation' | 'flipX' | 'characterScale' | 'characterWidthScale' | 'characterHeightScale' | 'zIndex'>
-const transformFields = ['x', 'y', 'width', 'height', 'rotation', 'flipX', 'characterScale', 'characterWidthScale', 'characterHeightScale', 'zIndex'] as const
+// width/height describe the visible crop of a particular pose. They are not
+// actor-wide transforms: pose changes legitimately alter these dimensions.
+type CharacterTransform = Pick<StudioElement, 'x' | 'y' | 'rotation' | 'flipX' | 'characterScale' | 'characterWidthScale' | 'characterHeightScale' | 'zIndex'>
+const transformFields = ['x', 'y', 'rotation', 'flipX', 'characterScale', 'characterWidthScale', 'characterHeightScale', 'zIndex'] as const
 
 function pickTransform(element: StudioElement): CharacterTransform {
   return Object.fromEntries(transformFields.filter((field) => element[field] !== undefined).map((field) => [field, element[field]])) as CharacterTransform
@@ -12,10 +14,14 @@ function equalTransform(left: CharacterTransform | undefined, right: CharacterTr
   return Boolean(left && right && transformFields.every((field) => left[field] === right[field]))
 }
 
+function pickCharacterTransform(source: Partial<StudioElement>): CharacterTransform {
+  return Object.fromEntries(transformFields.filter((field) => source[field] !== undefined).map((field) => [field, source[field]])) as CharacterTransform
+}
+
 /** Prefer the script-level transform; legacy scripts are migrated from their first authored state. */
 function firstCharacterTransform(timeline: VideoTimelineDocument, elementId: string, fallback?: StudioElement): CharacterTransform | undefined {
   const global = timeline.characterTransforms?.[elementId]
-  if (global && [global.x, global.y, global.width, global.height, global.rotation, global.zIndex].every(Number.isFinite)) return global
+  if (global && [global.x, global.y, global.rotation, global.zIndex].every(Number.isFinite)) return pickCharacterTransform(global)
   if (fallback) {
     const source = fallback
     const transform = pickTransform(source)

@@ -122,7 +122,7 @@ test('character preview state lookup preserves same-frame key order and frame bo
   assert.equal(characterStateAt(doc, 'actor', 30).element.pose, 'next')
 })
 
-test('shared absolute character resolver preserves legacy position and global transform priority', () => {
+test('shared absolute character resolver preserves pose crop bounds with global placement priority', () => {
   const state = { imageDataUrl: 'data:synthetic', element: { id: 'actor', kind: 'character', x: 1, y: 2, width: 100, height: 80, rotation: 0, zIndex: 3 } }
   const legacy = timeline({ characterBases: { actor: state }, characterPositions: { actor: { x: 12, y: 34 } } })
   assert.equal(characterStateAt(legacy, 'actor', 0).element.x, 12)
@@ -134,7 +134,7 @@ test('shared absolute character resolver preserves legacy position and global tr
     characterTransforms: { actor: { x: 80, y: 90, width: 200, height: 160, rotation: 25, zIndex: 9 } }
   })
   const transformed = characterStateAt(global, 'actor', 0).element
-  assert.deepEqual([transformed.x, transformed.y, transformed.width, transformed.height, transformed.rotation, transformed.zIndex], [80, 90, 200, 160, 25, 9])
+  assert.deepEqual([transformed.x, transformed.y, transformed.width, transformed.height, transformed.rotation, transformed.zIndex], [80, 90, 100, 80, 25, 9])
 })
 
 
