@@ -15,6 +15,11 @@ type Index = { schemaVersion: 1; rendererVersion: string; entries: IndexEntry[] 
 
 const rootQueues = new Map<string, Promise<unknown>>()
 const rootIndexes = new Map<string, Index>()
+const rootIndexMaps = new Map<string, Map<string, IndexEntry>>()
+function cacheIndex(root: string, index: Index): void {
+  rootIndexes.set(root, index)
+  rootIndexMaps.set(root, new Map(index.entries.map((entry) => [entry.key, entry])))
+}
 
 export type PersistentFrameCacheStats = Readonly<{
   hits: number
@@ -71,17 +76,17 @@ export class VideoPersistentFrameCache {
           || !Number.isSafeInteger(e.rawBytes) || e.rawBytes < 4 || !Number.isFinite(e.touchedAt))) {
         throw new Error('Índice do cache persistente inválido.')
       }
-      rootIndexes.set(this.canonicalRoot, parsed)
+      cacheIndex(this.canonicalRoot, parsed)
       return parsed
     } catch (reason) {
       const empty: Index = { schemaVersion: 1, rendererVersion: VIDEO_RENDERER_CACHE_VERSION, entries: [] }
       if ((reason as NodeJS.ErrnoException).code === 'ENOENT') {
-        rootIndexes.set(this.canonicalRoot, empty)
+        cacheIndex(this.canonicalRoot, empty)
         return empty
       }
       // Renderer upgrades/corrupt metadata invalidate only cache, never project data.
       await rm(this.root, { recursive: true, force: true }).catch(() => undefined)
-      rootIndexes.set(this.canonicalRoot, empty)
+      cacheIndex(this.canonicalRoot, empty)
       return empty
     }
   }
@@ -103,7 +108,7 @@ export class VideoPersistentFrameCache {
     } finally {
       await rm(temp, { force: true }).catch(() => undefined)
     }
-    rootIndexes.set(this.canonicalRoot, index)
+    cacheIndex(this.canonicalRoot, index)
   }
 
   private async enforceBudget(index: Index): Promise<void> {
@@ -122,7 +127,7 @@ export class VideoPersistentFrameCache {
     return this.run(async () => {
       const key = cacheHash(semanticKey)
       const index = await this.readIndex()
-      const entry = index.entries.find((candidate) => candidate.key === key)
+      const entry = rootIndexMaps.get(this.canonicalRoot)?.get(key) ?? index.entries.find((candidate) => candidate.key === key)
       if (!entry || entry.rawBytes !== expectedRawBytes) { this.misses += 1; return undefined }
       try {
         const file = await readFile(this.framePath(key))
@@ -153,7 +158,7 @@ export class VideoPersistentFrameCache {
     return this.run(async () => {
       const key = cacheHash(semanticKey)
       const index = await this.readIndex()
-      const existing = index.entries.find((candidate) => candidate.key === key)
+      const existing = rootIndexMaps.get(this.canonicalRoot)?.get(key) ?? index.entries.find((candidate) => candidate.key === key)
       if (existing?.rawBytes === pixels.byteLength) { existing.touchedAt = Date.now(); await this.writeIndex(index); return }
       const compressed = await deflate(pixels, { level: 1 })
       const file = Buffer.allocUnsafe(HEADER_BYTES + compressed.byteLength)
@@ -183,6 +188,7 @@ export class VideoPersistentFrameCache {
     await this.run(async () => {
       await rm(this.root, { recursive: true, force: true })
       rootIndexes.delete(this.canonicalRoot)
+      rootIndexMaps.delete(this.canonicalRoot)
     })
   }
 
