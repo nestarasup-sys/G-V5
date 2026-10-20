@@ -8,16 +8,17 @@ const os = require('node:os')
 const path = require('node:path')
 const ts = require('typescript')
 
-function loadTs(file) {
+function loadTs(file, deps = {}) {
   const source = fsSync.readFileSync(path.join(__dirname, file), 'utf8')
   const compiled = ts.transpile(source, { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 })
   const mod = { exports: {} }
-  new Function('require', 'module', 'exports', compiled)(require, mod, mod.exports)
+  new Function('require', 'module', 'exports', compiled)((name) => name in deps ? deps[name] : require(name), mod, mod.exports)
   return mod.exports
 }
 
 const { buildVideoExportMediaManifest, verifyVideoExportMediaManifest } = loadTs('../electron/videoExportAssets.ts')
-const { VideoLibraryStore } = loadTs('../electron/videoLibrary.ts')
+const casModule = loadTs('../electron/videoCasShadow.ts')
+const { VideoLibraryStore } = loadTs('../electron/videoLibrary.ts', { './videoCasShadow': casModule })
 const studioId = '360d7ac8-27c8-4aab-b8be-2397e1c46a76'
 const assetId = 'f3c40c08-5be8-476f-8132-4dafca4f3d57'
 const asset = { id: assetId, name: 'synthetic.mp4', mimeType: 'video/mp4', extension: 'mp4', size: 20, durationFrames: 60 }
