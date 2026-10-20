@@ -7,7 +7,7 @@ import type { VideoExportJobStore } from './videoExportJobs'
 
 type PendingFrame = {
   frame: number
-  resolve: () => void
+  resolve: (pixels: Buffer) => void
   reject: (error: Error) => void
   timer: ReturnType<typeof setTimeout>
 }
@@ -89,8 +89,16 @@ export class VideoExportSurfaceHost {
       if (!pending || pending.frame !== ready.frame) return
       clearTimeout(pending.timer)
       session.pending.delete(ready.requestId)
-      if (ready.error) pending.reject(new Error(ready.error))
-      else pending.resolve()
+      if (ready.error) {
+        pending.reject(new Error(ready.error))
+        return
+      }
+      const expectedBytes = VIDEO_STAGE_WIDTH * VIDEO_STAGE_HEIGHT * 4
+      if (!(ready.pixels instanceof Uint8Array) || ready.pixels.byteLength !== expectedBytes) {
+        pending.reject(new Error(`Surface devolveu ${ready.pixels?.byteLength ?? 0} bytes RGBA; esperava ${expectedBytes}.`))
+        return
+      }
+      pending.resolve(Buffer.from(ready.pixels.buffer, ready.pixels.byteOffset, ready.pixels.byteLength))
     })
   }
 
@@ -177,24 +185,15 @@ export class VideoExportSurfaceSession {
     const { window } = this.session
     if (window.isDestroyed()) throw new Error('Surface de exportação já foi encerrada.')
     const requestId = randomUUID()
-    const ready = new Promise<void>((resolve, reject) => {
+    const pixels = await new Promise<Buffer>((resolve, reject) => {
       const timer = setTimeout(() => {
         this.session.pending.delete(requestId)
         reject(new Error(`Surface excedeu ${timeoutMs} ms ao renderizar frame ${frame}.`))
       }, Math.max(1_000, Math.min(120_000, timeoutMs)))
       this.session.pending.set(requestId, { frame, resolve, reject, timer })
+      window.webContents.send('video-studio:export-surface:render', { requestId, frame })
     })
-    window.webContents.send('video-studio:export-surface:render', { requestId, frame })
-    await ready
-    const image = await window.webContents.capturePage({ x: 0, y: 0, width: VIDEO_STAGE_WIDTH, height: VIDEO_STAGE_HEIGHT })
-    const size = image.getSize()
-    if (size.width !== VIDEO_STAGE_WIDTH || size.height !== VIDEO_STAGE_HEIGHT) {
-      throw new Error(`Surface capturou ${size.width}×${size.height}; esperava ${VIDEO_STAGE_WIDTH}×${VIDEO_STAGE_HEIGHT}.`)
-    }
-    const bitmap = image.toBitmap()
-    const expectedBytes = VIDEO_STAGE_WIDTH * VIDEO_STAGE_HEIGHT * 4
-    if (bitmap.byteLength !== expectedBytes) throw new Error(`Bitmap da surface contém ${bitmap.byteLength} bytes; esperava ${expectedBytes}.`)
-    return Buffer.from(bitmap)
+    return pixels
   }
 
   async dispose(): Promise<void> {
