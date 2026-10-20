@@ -122,6 +122,13 @@ export class VideoPersistentFrameCache {
     }
   }
 
+  has(semanticKey: string, expectedRawBytes: number): boolean {
+    if (!semanticKey || !Number.isSafeInteger(expectedRawBytes) || expectedRawBytes < 4) throw new Error('Consulta inválida ao cache persistente.')
+    const key = cacheHash(semanticKey)
+    const entry = rootIndexMaps.get(this.canonicalRoot)?.get(key)
+    return Boolean(entry && entry.rawBytes === expectedRawBytes)
+  }
+
   async get(semanticKey: string, expectedRawBytes: number): Promise<Buffer | undefined> {
     if (!semanticKey || !Number.isSafeInteger(expectedRawBytes) || expectedRawBytes < 4) throw new Error('Consulta inválida ao cache persistente.')
     return this.run(async () => {
