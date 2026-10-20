@@ -26,7 +26,7 @@ import { VideoPreviewProxyStore } from './videoPreviewProxyStore'
 import { resolveVideoStudioTools } from './videoToolsResolver'
 import { probeVideoStudioFfmpeg, type VideoStudioFfmpegCapabilities } from './videoFfmpegCapabilities'
 import type { VideoExportProgress, VideoExportStartRequest } from '../src/shared/videoExportRuntime'
-import type { RoteiroDocument } from '../src/shared/roteiros'
+import type { RoteiroDocument, RoteiroReactionBlock, RoteiroSectionContent, RoteiroTikTok, RoteiroVideoReference } from '../src/shared/roteiros'
 import { serializeVideoCharacterRenderAssetSnapshot } from '../src/shared/videoCharacterRenderAssets'
 import { DataPlatform, getAppDataUsage } from './dataPlatform.cjs'
 import { DomainFileSystem } from './domainFileSystem.cjs'
@@ -52,10 +52,25 @@ function isRoteiroDocument(value: unknown): value is RoteiroDocument {
   const roteiro = value as Partial<RoteiroDocument>
   const isText = (text: unknown, max: number) => typeof text === 'string' && text.trim().length > 0 && text.length <= max
   const isId = (id: unknown) => typeof id === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)
+  const isVideo = (video: unknown): video is RoteiroVideoReference | null | undefined => video === undefined || video === null || Boolean(video && typeof video === 'object' && !Array.isArray(video)
+    && isId((video as RoteiroVideoReference).id) && isText((video as RoteiroVideoReference).name, 255)
+    && ({ mp4: 'video/mp4', webm: 'video/webm', mov: 'video/quicktime', m4v: 'video/x-m4v' } as Record<string, string>)[(video as RoteiroVideoReference).extension] === (video as RoteiroVideoReference).mimeType
+    && Number.isSafeInteger((video as RoteiroVideoReference).size) && (video as RoteiroVideoReference).size > 0 && (video as RoteiroVideoReference).size <= 5 * 1024 ** 3
+    && Number.isSafeInteger((video as RoteiroVideoReference).durationFrames) && (video as RoteiroVideoReference).durationFrames > 0)
+  const isContent = (content: unknown, characters: string[]): content is RoteiroSectionContent | undefined => content === undefined || Boolean(content && typeof content === 'object' && !Array.isArray(content)
+    && isVideo((content as RoteiroSectionContent).video) && Array.isArray((content as RoteiroSectionContent).blocks) && (content as RoteiroSectionContent).blocks.length <= 200
+    && (content as RoteiroSectionContent).blocks.every((block: RoteiroReactionBlock) => Boolean(block && isId(block.id)
+      && (block.characterId === '' || isId(block.characterId) && characters.includes(block.characterId))
+      && (block.kind === 'fala' || block.kind === 'pensamento')
+      && typeof block.expression === 'string' && block.expression.length <= 500
+      && typeof block.textPortuguese === 'string' && block.textPortuguese.length <= 10000
+      && typeof block.textEnglish === 'string' && block.textEnglish.length <= 10000)))
   return isId(roteiro.id) && isText(roteiro.title, 100) && isText(roteiro.videoTitle, 100)
     && Array.isArray(roteiro.characterIds) && roteiro.characterIds.length <= 500 && roteiro.characterIds.every(isId)
     && Array.isArray(roteiro.tiktoks) && roteiro.tiktoks.length <= 500
-    && roteiro.tiktoks.every((item) => Boolean(item && isId(item.id) && isText(item.title, 100) && isText(item.videoTitle, 100)))
+    && isContent(roteiro.opening, roteiro.characterIds ?? [])
+    && roteiro.tiktoks.every((item: RoteiroTikTok) => Boolean(item && isId(item.id) && isText(item.title, 100) && isText(item.videoTitle, 100)
+      && isVideo(item.video) && isContent({ video: item.video ?? null, blocks: item.blocks ?? [] }, roteiro.characterIds ?? [])))
 }
 
 function configureDevAiDataRoot(): void {
@@ -1914,7 +1929,16 @@ async function registerFabricatorHandlers(): Promise<void> {
         return videoLibrary.importFile(result.filePaths[0])
       })
       ipcMain.handle('video-studio:video-library:finish', async (event, id: string, durationFrames: number) => { assertTrustedSender(event); return videoLibrary.finishImport(id, durationFrames) })
-      ipcMain.handle('video-studio:video-library:delete', async (event, id: string) => { assertTrustedSender(event); return videoLibrary.delete(id) })
+      ipcMain.handle('video-studio:video-library:delete', async (event, id: string) => {
+        assertTrustedSender(event)
+        const next = roteirosSaveQueue.catch(() => undefined).then(async () => {
+          const reference = dataPlatform.database?.prepare("SELECT 1 FROM roteiro_sections WHERE json_extract(video_asset_json, '$.id') = ? LIMIT 1").get(id)
+          if (reference) throw new Error('Este vídeo está sendo usado em uma abertura ou TikTok. Remova a referência no roteiro antes de excluí-lo da biblioteca.')
+          await videoLibrary.delete(id)
+        })
+        roteirosSaveQueue = next
+        await next
+      })
       ipcMain.handle('video-studio:video-library:attach', async (event, studioId: string, ids: string[]) => { assertTrustedSender(event); return videoLibrary.attach(studioId, ids) })
       ipcMain.handle('video-studio:preview-media:prepare', async (event, studioId: string, asset: VideoStudioAsset) => {
         assertTrustedSender(event)
@@ -1981,15 +2005,21 @@ async function registerFabricatorHandlers(): Promise<void> {
     if (!db) throw new Error('Catálogo de dados não inicializado.')
     const roteiroRows = db.prepare('SELECT id, title, video_title, character_ids_json FROM roteiros ORDER BY position, created_at, id').all() as Array<{ id: string; title: string; video_title: string; character_ids_json: string }>
     const tiktokRows = db.prepare('SELECT id, roteiro_id, title, video_title FROM roteiro_tiktoks ORDER BY roteiro_id, position').all() as Array<{ id: string; roteiro_id: string; title: string; video_title: string }>
+    const sectionRows = db.prepare('SELECT section_id, roteiro_id, section_kind, video_asset_json, blocks_json FROM roteiro_sections').all() as Array<{ section_id: string; roteiro_id: string; section_kind: 'opening' | 'tiktok'; video_asset_json: string | null; blocks_json: string }>
+    const contentById = new Map(sectionRows.map((row) => [row.section_id, {
+      video: row.video_asset_json ? JSON.parse(row.video_asset_json) as RoteiroVideoReference : null,
+      blocks: JSON.parse(row.blocks_json) as RoteiroReactionBlock[]
+    }]))
     const tiktoksByRoteiro = new Map<string, RoteiroDocument['tiktoks']>()
     for (const row of tiktokRows) {
       const items = tiktoksByRoteiro.get(row.roteiro_id) ?? []
-      items.push({ id: row.id, title: row.title, videoTitle: row.video_title })
+      items.push({ id: row.id, title: row.title, videoTitle: row.video_title, ...(contentById.get(row.id) ?? { video: null, blocks: [] }) })
       tiktoksByRoteiro.set(row.roteiro_id, items)
     }
     return roteiroRows.map((row) => ({
       id: row.id, title: row.title, videoTitle: row.video_title,
       characterIds: JSON.parse(row.character_ids_json) as string[],
+      opening: contentById.get(`${row.id}:opening`) ?? { video: null, blocks: [] },
       tiktoks: tiktoksByRoteiro.get(row.id) ?? []
     }))
   })
@@ -2006,14 +2036,20 @@ async function registerFabricatorHandlers(): Promise<void> {
       if (!db) throw new Error('Catálogo de dados não inicializado.')
       const now = new Date().toISOString()
       const save = db.transaction((documents: RoteiroDocument[]) => {
+        db.prepare('DELETE FROM roteiro_sections').run()
         db.prepare('DELETE FROM roteiro_tiktoks').run()
         db.prepare('DELETE FROM roteiros').run()
         const insertRoteiro = db.prepare('INSERT INTO roteiros(id, title, video_title, character_ids_json, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
         const insertTikTok = db.prepare('INSERT INTO roteiro_tiktoks(id, roteiro_id, title, video_title, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+        const insertSection = db.prepare('INSERT INTO roteiro_sections(section_id, roteiro_id, section_kind, video_asset_json, blocks_json, updated_at) VALUES (?, ?, ?, ?, ?, ?)')
         documents.forEach((roteiro, position) => {
           insertRoteiro.run(roteiro.id, roteiro.title.trim(), roteiro.videoTitle.trim(), JSON.stringify(roteiro.characterIds), position, now, now)
+          const opening = roteiro.opening ?? { video: null, blocks: [] }
+          insertSection.run(`${roteiro.id}:opening`, roteiro.id, 'opening', opening.video ? JSON.stringify(opening.video) : null, JSON.stringify(opening.blocks), now)
           roteiro.tiktoks.forEach((tiktok, tiktokPosition) => {
             insertTikTok.run(tiktok.id, roteiro.id, tiktok.title.trim(), tiktok.videoTitle.trim(), tiktokPosition, now, now)
+            const content = { video: tiktok.video ?? null, blocks: tiktok.blocks ?? [] }
+            insertSection.run(tiktok.id, roteiro.id, 'tiktok', content.video ? JSON.stringify(content.video) : null, JSON.stringify(content.blocks), now)
           })
         })
       })

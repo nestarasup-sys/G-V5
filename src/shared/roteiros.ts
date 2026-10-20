@@ -2,6 +2,31 @@ export type RoteiroTikTok = {
   id: string
   title: string
   videoTitle: string
+  video?: RoteiroVideoReference | null
+  blocks?: RoteiroReactionBlock[]
+}
+
+export type RoteiroVideoReference = {
+  id: string
+  name: string
+  mimeType: 'video/mp4' | 'video/webm' | 'video/quicktime' | 'video/x-m4v'
+  extension: 'mp4' | 'webm' | 'mov' | 'm4v'
+  size: number
+  durationFrames: number
+}
+
+export type RoteiroReactionBlock = {
+  id: string
+  characterId: string
+  kind: 'fala' | 'pensamento'
+  expression: string
+  textPortuguese: string
+  textEnglish: string
+}
+
+export type RoteiroSectionContent = {
+  video: RoteiroVideoReference | null
+  blocks: RoteiroReactionBlock[]
 }
 
 export type RoteiroDocument = {
@@ -9,6 +34,7 @@ export type RoteiroDocument = {
   title: string
   videoTitle: string
   characterIds: string[]
+  opening?: RoteiroSectionContent
   tiktoks: RoteiroTikTok[]
 }
 

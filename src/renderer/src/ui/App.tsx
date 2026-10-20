@@ -5,6 +5,8 @@ import { AppErrorBoundary } from './components/AppErrorBoundary'
 import { Icon } from './components/Icon'
 import { CharacterPortrait } from './components/CharacterPortrait'
 import type { CustomizerCharacter } from '../../../shared/customizer'
+import type { RoteiroDocument, RoteiroReactionBlock, RoteiroSectionContent, RoteiroTikTok, RoteiroVideoReference } from '../../../shared/roteiros'
+import type { VideoLibraryItem } from '../../../shared/studio'
 
 const LazyCustomizerPage = lazy(async () => ({ default: (await import('../features/customizer/CustomizerPage')).CustomizerPage }))
 const LazyStudioPage = lazy(async () => ({ default: (await import('../features/studio/StudioPage')).StudioPage }))
@@ -18,14 +20,112 @@ const roteiroAreas = [
   { id: 'configuracoes', label: 'Configurações', icon: 'settings' }
 ] as const
 
-type RoteiroTikTok = { id: string; title: string; videoTitle: string }
-type SidebarRoteiro = { id: string; title: string; videoTitle: string; characterIds: string[]; tiktoks: RoteiroTikTok[] }
+type SidebarRoteiro = RoteiroDocument
 
-function RoteiroWorkspace({ roteiro, onBack, onUpdate }: { roteiro: SidebarRoteiro; onBack: () => void; onUpdate: (next: SidebarRoteiro) => void }) {
+const emptyRoteiroContent = (): RoteiroSectionContent => ({ video: null, blocks: [] })
+
+function roteiroVideoReference(item: VideoLibraryItem): RoteiroVideoReference {
+  if (item.durationFrames === null) throw new Error('A duração do vídeo ainda não foi reconhecida.')
+  return { id: item.id, name: item.name, mimeType: item.mimeType, extension: item.extension, size: item.size, durationFrames: item.durationFrames }
+}
+
+function RoteiroSectionEditor({ title, subtitle, content, characters, characterIds, onUpdate }: {
+  title: string
+  subtitle: string
+  content: RoteiroSectionContent
+  characters: CustomizerCharacter[]
+  characterIds: string[]
+  onUpdate: (content: RoteiroSectionContent) => void
+}) {
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const addVideo = async () => {
+    setBusy(true)
+    setError(null)
+    try {
+      const imported = await window.desktop.importVideoLibrary()
+      if (!imported) return
+      let ready = imported
+      if (ready.durationFrames === null) {
+        const media = document.createElement('video')
+        media.preload = 'metadata'
+        media.muted = true
+        try {
+          const seconds = await new Promise<number>((resolve, reject) => {
+            const timer = window.setTimeout(() => { cleanup(); reject(new Error('Não foi possível reconhecer a duração do vídeo.')) }, 30000)
+            const cleanup = () => { window.clearTimeout(timer); media.onloadedmetadata = null; media.onerror = null }
+            media.onloadedmetadata = () => { cleanup(); resolve(media.duration) }
+            media.onerror = () => { cleanup(); reject(new Error('Não foi possível abrir esse vídeo para a prévia.')) }
+            media.src = `gacha-video://library/${ready.id}`
+            media.load()
+          })
+          if (!Number.isFinite(seconds) || seconds <= 0 || seconds > 60 * 60 * 24) throw new Error('A duração do vídeo não é válida.')
+          ready = await window.desktop.finishVideoLibraryImport(ready.id, Math.max(1, Math.ceil(seconds * 60)))
+        } finally { media.pause(); media.removeAttribute('src'); media.load() }
+      }
+      onUpdate({ ...content, video: roteiroVideoReference(ready) })
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Não foi possível adicionar o vídeo.')
+    } finally { setBusy(false) }
+  }
+  const updateBlock = (id: string, patch: Partial<RoteiroReactionBlock>) => onUpdate({ ...content, blocks: content.blocks.map((block) => block.id === id ? { ...block, ...patch } : block) })
+  const moveBlock = (index: number, direction: -1 | 1) => {
+    const target = index + direction
+    if (target < 0 || target >= content.blocks.length) return
+    const blocks = [...content.blocks]
+    ;[blocks[index], blocks[target]] = [blocks[target], blocks[index]]
+    onUpdate({ ...content, blocks })
+  }
+  const addBlock = () => onUpdate({ ...content, blocks: [...content.blocks, {
+    id: crypto.randomUUID(), characterId: characterIds[0] ?? '', kind: 'fala', expression: '', textPortuguese: '', textEnglish: ''
+  }] })
+  const video = content.video
+
+  return <main className="roteiro-workspace-editor" aria-label={'Área de edição: ' + title}>
+    <header className="roteiro-editor-subbar"><div><strong>{title}</strong><span>{subtitle}</span></div><div className="roteiro-video-actions">
+      <button type="button" onClick={() => void addVideo()} disabled={busy}>{busy ? 'Importando…' : video ? 'Substituir vídeo' : 'Adicionar vídeo'}</button>
+      <button type="button" className="danger" onClick={() => onUpdate({ ...content, video: null })} disabled={!video || busy}>Excluir vídeo</button>
+    </div></header>
+    {error && <p className="roteiro-editor-error" role="alert">{error}</p>}
+    <section className="roteiro-video-stage-wrap" aria-label="Preview 1920 por 1080">
+      <div className="roteiro-video-stage">
+        {video ? <video key={video.id} src={`gacha-video://library/${video.id}`} controls playsInline preload="metadata" aria-label={'Prévia de ' + video.name} /> : <div className="roteiro-video-placeholder"><Icon name="camera" /><strong>Preview 1920 × 1080</strong><span>Adicione um vídeo para visualizar esta seção.</span></div>}
+      </div>
+    </section>
+    <section className="roteiro-reaction-sequence" aria-label="Sequência de reações">
+      <header><div><Icon name="message" /><h2>Sequência de reações</h2><span>{content.blocks.length}</span></div></header>
+      <button className="roteiro-add-block" type="button" onClick={addBlock}><Icon name="plus" />Adicionar bloco</button>
+      <div className="roteiro-reaction-blocks">{content.blocks.map((block, index) => <article className={`roteiro-reaction-block tone-${index % 3}`} key={block.id}>
+        <span className="roteiro-reaction-index">{String(index + 1).padStart(2, '0')}</span>
+        <div className="roteiro-reaction-fields">
+          <label>Personagem<select value={block.characterId} onChange={(event) => updateBlock(block.id, { characterId: event.target.value })}><option value="">Selecione personagem</option>{characters.filter((character) => characterIds.includes(character.id)).map((character) => <option value={character.id} key={character.id}>{character.name}</option>)}</select></label>
+          <label>Tipo<select value={block.kind} onChange={(event) => updateBlock(block.id, { kind: event.target.value as RoteiroReactionBlock['kind'] })}><option value="fala">Fala</option><option value="pensamento">Pensamento</option></select></label>
+          <label>Expressão ou emoção<input value={block.expression} onChange={(event) => updateBlock(block.id, { expression: event.target.value })} placeholder="Ex.: sério, desviando o olhar" maxLength={500} /></label>
+          <label className="roteiro-reaction-text">{block.kind === 'pensamento' ? 'Pensamento em português' : 'Fala em português'}<textarea value={block.textPortuguese} onChange={(event) => updateBlock(block.id, { textPortuguese: event.target.value })} placeholder="Escreva o texto em português…" maxLength={10000} /></label>
+          <label className="roteiro-reaction-text">Versão em inglês<textarea value={block.textEnglish} onChange={(event) => updateBlock(block.id, { textEnglish: event.target.value })} placeholder="A tradução aparecerá aqui…" maxLength={10000} /></label>
+        </div>
+        <div className="roteiro-reaction-actions">
+          <button type="button" onClick={() => moveBlock(index, -1)} disabled={index === 0}>↑ Subir</button><button type="button" onClick={() => moveBlock(index, 1)} disabled={index === content.blocks.length - 1}>↓ Descer</button>
+          <button type="button" disabled title="Ação de IA ainda não configurada">✦ Melhorar frase</button><button type="button" disabled title="Ação de IA ainda não configurada">✎ Refazer frase</button><button type="button" disabled title="Ação de tradução ainda não configurada">◎ Traduzir</button>
+          <button type="button" onClick={() => onUpdate({ ...content, blocks: [...content.blocks.slice(0, index + 1), { ...block, id: crypto.randomUUID() }, ...content.blocks.slice(index + 1)] })}>⊞ Duplicar</button>
+          <button type="button" className="danger" onClick={() => onUpdate({ ...content, blocks: content.blocks.filter((item) => item.id !== block.id) })}>Excluir</button>
+        </div>
+      </article>)}</div>
+    </section>
+  </main>
+}
+
+function RoteiroWorkspace({ roteiro, onBack, onUpdate, characters }: { roteiro: SidebarRoteiro; onBack: () => void; onUpdate: (next: SidebarRoteiro) => void; characters: CustomizerCharacter[] }) {
   const [activeContentId, setActiveContentId] = useState('opening')
   const [editingTikTok, setEditingTikTok] = useState<RoteiroTikTok | null>(null)
   const [editingTitle, setEditingTitle] = useState('')
   const [editingVideoTitle, setEditingVideoTitle] = useState('')
+  const activeTikTok = roteiro.tiktoks.find((item) => item.id === activeContentId)
+  const activeContent = activeContentId === 'opening' ? roteiro.opening ?? emptyRoteiroContent() : { video: activeTikTok?.video ?? null, blocks: activeTikTok?.blocks ?? [] }
+  const updateActiveContent = (content: RoteiroSectionContent) => {
+    if (activeContentId === 'opening') onUpdate({ ...roteiro, opening: content })
+    else onUpdate({ ...roteiro, tiktoks: roteiro.tiktoks.map((item) => item.id === activeContentId ? { ...item, video: content.video, blocks: content.blocks } : item) })
+  }
   const addTikTok = () => {
     const number = roteiro.tiktoks.length + 1
     const item = { id: crypto.randomUUID(), title: 'TikTok ' + number, videoTitle: 'Vídeo ' + String(number).padStart(2, '0') }
@@ -68,13 +168,7 @@ function RoteiroWorkspace({ roteiro, onBack, onUpdate }: { roteiro: SidebarRotei
         </article>)}</div>
       </section>
     </aside>
-    <main className="roteiro-workspace-empty" aria-label={'Conteúdo do roteiro ' + roteiro.title}>
-      <header className="roteiro-content-heading">
-        <strong>{activeContentId === 'opening' ? 'Abertura' : roteiro.tiktoks.find((item) => item.id === activeContentId)?.title ?? 'TikTok'}</strong>
-        <span>{activeContentId === 'opening' ? 'Início do roteiro' : roteiro.tiktoks.find((item) => item.id === activeContentId)?.videoTitle}</span>
-      </header>
-      <section className="roteiro-content-canvas" aria-label={activeContentId === 'opening' ? 'Subárea da abertura' : 'Subárea do TikTok selecionado'} />
-    </main>
+    <RoteiroSectionEditor title={activeContentId === 'opening' ? 'Abertura' : activeTikTok?.title ?? 'TikTok'} subtitle={activeContentId === 'opening' ? 'Início do roteiro' : activeTikTok?.videoTitle ?? ''} content={activeContent} characters={characters} characterIds={roteiro.characterIds} onUpdate={updateActiveContent} />
     {editingTikTok && <div className="roteiro-modal-backdrop" onPointerDown={(event) => { if (event.target === event.currentTarget) setEditingTikTok(null) }}><section className="roteiro-video-title-modal" role="dialog" aria-modal="true" aria-labelledby="roteiro-tiktok-edit-heading"><header><strong id="roteiro-tiktok-edit-heading">Editar TikTok</strong><button onClick={() => setEditingTikTok(null)} aria-label="Fechar" type="button">×</button></header><label>Nome do TikTok<input autoFocus value={editingTitle} onChange={(event) => setEditingTitle(event.target.value)} maxLength={100} /></label><label>Título do vídeo<input value={editingVideoTitle} onChange={(event) => setEditingVideoTitle(event.target.value)} maxLength={100} /></label><footer><button onClick={() => setEditingTikTok(null)} type="button">Cancelar</button><button className="roteiro-create-confirm" onClick={saveTikTok} disabled={!editingTitle.trim() || !editingVideoTitle.trim()} type="button"><Icon name="check" />Salvar</button></footer></section></div>}
   </div>
 }
@@ -165,7 +259,7 @@ function EmptyRoteirosPage() {
     setEditingVideoId(null); setEditingVideoTitle(''); setEditingCharacterIds([])
   }
 
-  if (openedRoteiro) return <RoteiroWorkspace roteiro={openedRoteiro} onBack={() => setOpenedRoteiroId(null)} onUpdate={(updated) => setRoteiros((current) => current.map((item) => item.id === updated.id ? updated : item))} />
+  if (openedRoteiro) return <RoteiroWorkspace roteiro={openedRoteiro} characters={characters} onBack={() => setOpenedRoteiroId(null)} onUpdate={(updated) => setRoteiros((current) => current.map((item) => item.id === updated.id ? updated : item))} />
 
   return <div className="roteiros-layout">
     <aside className="roteiros-sidebar-empty" aria-label="Navegação de roteiros">

@@ -139,7 +139,7 @@ class DataPlatform {
     this.database = new Database(dbPath, { timeout: 5000 })
     this.database.pragma('foreign_keys = ON')
     const currentSchema = this.database.pragma('user_version', { simple: true })
-    if (currentSchema > 5) {
+    if (currentSchema > 6) {
       this.database.close()
       this.database = null
       throw new Error(`O catálogo usa schema ${currentSchema}, mais novo que esta versão do app.`)
@@ -228,6 +228,15 @@ class DataPlatform {
         UNIQUE(roteiro_id, position)
       ) WITHOUT ROWID;
       CREATE INDEX IF NOT EXISTS roteiro_tiktoks_by_parent_order ON roteiro_tiktoks(roteiro_id, position);
+      CREATE TABLE IF NOT EXISTS roteiro_sections (
+        section_id TEXT PRIMARY KEY,
+        roteiro_id TEXT NOT NULL REFERENCES roteiros(id) ON DELETE CASCADE,
+        section_kind TEXT NOT NULL CHECK(section_kind IN ('opening', 'tiktok')),
+        video_asset_json TEXT,
+        blocks_json TEXT NOT NULL DEFAULT '[]',
+        updated_at TEXT NOT NULL
+      ) WITHOUT ROWID;
+      CREATE INDEX IF NOT EXISTS roteiro_sections_by_parent ON roteiro_sections(roteiro_id, section_kind);
       CREATE TABLE IF NOT EXISTS domain_files (
         domain_id TEXT NOT NULL REFERENCES domains(domain_id),
         relative_path TEXT NOT NULL,
@@ -302,12 +311,14 @@ class DataPlatform {
     }
     this.database.prepare("INSERT OR IGNORE INTO schema_migrations(version, name, checksum, applied_at) VALUES (5, 'roteiros-position-compatibility', ?, ?)")
       .run(sha256('gacha-roteiros-position-compatibility-schema-v5'), now)
-    if (currentSchema < 5) this.database.pragma('user_version = 5')
+    this.database.prepare("INSERT OR IGNORE INTO schema_migrations(version, name, checksum, applied_at) VALUES (6, 'roteiro-section-content-and-blocks', ?, ?)")
+      .run(sha256('gacha-roteiro-section-content-and-blocks-schema-v6'), now)
+    if (currentSchema < 6) this.database.pragma('user_version = 6')
     const insertDomain = this.database.prepare(`INSERT OR IGNORE INTO domains(domain_id, schema_version, manifest_json, updated_at) VALUES (?, 1, '{}', ?)`)
     const registerBuiltins = this.database.transaction(() => BUILTIN_DOMAINS.forEach((id) => insertDomain.run(id, now)))
     registerBuiltins()
     this.database.prepare("INSERT OR IGNORE INTO app_metadata(key, value) VALUES ('schema_version', '1')").run()
-    this.database.prepare("UPDATE app_metadata SET value='5' WHERE key='schema_version'").run()
+    this.database.prepare("UPDATE app_metadata SET value='6' WHERE key='schema_version'").run()
     this.migrateRoteirosJson()
     return this
   }
