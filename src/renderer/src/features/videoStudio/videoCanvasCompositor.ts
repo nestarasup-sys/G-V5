@@ -2,6 +2,7 @@ import type { StudioElement, VideoCharacterState } from '../../../../shared/stud
 import { videoCharacterTrackColor } from '../../../../shared/studio'
 import type { VideoSceneFrame, VideoSceneLayer } from '../../../../shared/videoSceneIR'
 import { videoCharacterElementSize, videoClipStageRect, videoStageRect, VIDEO_STAGE_HEIGHT, VIDEO_STAGE_WIDTH } from '../../../../shared/videoStageGeometry'
+import { matchingVideoVisualPlugin } from './videoVisualPluginRegistry'
 
 export type VideoCanvasFrameResources = Readonly<{
   /** Transition/blink/mouth renderer output keyed by Studio character element id. */
@@ -179,6 +180,10 @@ async function drawElementLayer(
     const override = resources.characterStates?.get(element.id)
     if (override) { element = override.element; source = override.imageDataUrl }
   }
+  const characterState = resources.characterStates?.get(element.id)
+  const pluginContext = { frame, layer, element, imageDataUrl: source, characterState }
+  const plugin = matchingVideoVisualPlugin(pluginContext)
+  if (plugin?.renderCanvas && await plugin.renderCanvas(pluginContext, context)) return
   if ((element.kind === 'image' || element.kind === 'character') && source) {
     const image = await loadImage(source)
     const size = videoCharacterElementSize(element)
