@@ -37,6 +37,8 @@ button:focus-visible, input:focus-visible { outline: 3px solid #ed8caf; outline-
 .route-content { min-height: 0; flex: 1; display: flex; }
 .roteiros-layout { min-width:0;min-height:0;flex:1;display:flex; }
 .roteiros-sidebar-empty { width:280px;min-width:280px;height:100%;border-right:1px solid #e9e2ee;background:#fff; }
+.roteiros-main-empty { min-width:0;min-height:0;flex:1;display:flex;justify-content:center;align-items:flex-start;padding:20px 16px;background:#f5f3f4; }
+.roteiros-main-empty h1 { margin:0;color:#342e36;font:800 22px/1.25 Manrope,sans-serif;letter-spacing:-.4px; }
 .blank-page { min-width: 0; min-height: 0; flex: 1; display: grid; place-items: center; background: #f5f3f4; color: #8a7280; }
 .app-recovery { min-height: 100vh; display: grid; place-items: center; padding: 24px; background: #f5f3f4; color: #352530; }
 .route-content .app-recovery { width: 100%; min-height: 100%; }
