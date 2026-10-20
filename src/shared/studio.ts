@@ -1,6 +1,6 @@
 import type { CustomizerFaceAppearance } from './customizer'
 import type { FaceCatalogItemSummary, FaceExpressionEffects, FaceTransform } from './fabricator'
-import type { VideoExportProgress, VideoExportStartRequest, VideoExportStartResult } from './videoExportRuntime'
+import type { VideoExportProgress, VideoExportRecoveryRecord, VideoExportStartRequest, VideoExportStartResult } from './videoExportRuntime'
 
 export type StudioAsset = {
   id: string
@@ -290,4 +290,7 @@ export type VideoStudioDesktopApi = {
   cancelVideoExport: (jobId: string) => Promise<void>
   getVideoExportStatus: (jobId: string) => Promise<VideoExportProgress | null>
   onVideoExportProgress: (callback: (progress: VideoExportProgress) => void) => () => void
+  listRecoverableVideoExports: () => Promise<VideoExportRecoveryRecord[]>
+  resumeVideoExport: (jobId: string) => Promise<VideoExportStartResult>
+  discardVideoExportRecovery: (jobId: string) => Promise<void>
 }
