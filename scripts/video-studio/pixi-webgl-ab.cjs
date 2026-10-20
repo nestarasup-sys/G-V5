@@ -13,7 +13,7 @@ app.whenReady().then(async()=>{
   const html=path.join(root,'bench.html')
   fs.writeFileSync(html,`<!doctype html><html><body><script type="module">
 import {Application,Container,Graphics} from ${JSON.stringify(pixiUrl)};
-const width=960,height=540,frames=30,objects=64;
+const width=960,height=540,frames=12,objects=48;
 function canvasBench(){
   const canvas=document.createElement('canvas');canvas.width=width;canvas.height=height;
   const ctx=canvas.getContext('2d',{alpha:false,willReadFrequently:true});
@@ -45,13 +45,13 @@ async function pixiBench(){
 function median(values){const sorted=[...values].sort((a,b)=>a-b);return sorted[Math.floor(sorted.length/2)];}
 window.__resultPromise=(async()=>{
   const canvasSamples=[],pixiSamples=[];
-  for(let round=0;round<3;round++){
+  for(let round=0;round<2;round++){
     if(round%2===0){canvasSamples.push(canvasBench());pixiSamples.push(await pixiBench());}
     else{pixiSamples.push(await pixiBench());canvasSamples.push(canvasBench());}
   }
   const canvasMedianMs=median(canvasSamples.map(x=>x.elapsedMs));
   const pixiMedianMs=median(pixiSamples.map(x=>x.elapsedMs));
-  return{ok:true,width,height,frames,objects,rounds:3,canvasSamples,pixiSamples,canvasMedianMs,pixiMedianMs,speedup:canvasMedianMs/pixiMedianMs};
+  return{ok:true,width,height,frames,objects,rounds:2,canvasSamples,pixiSamples,canvasMedianMs,pixiMedianMs,speedup:canvasMedianMs/pixiMedianMs};
 })();
 </script></body></html>`)
   const win=new BrowserWindow({show:false,width:960,height:540,webPreferences:{contextIsolation:true,nodeIntegration:false,sandbox:false,backgroundThrottling:false}})
@@ -59,7 +59,7 @@ window.__resultPromise=(async()=>{
     await win.loadFile(html)
     const result=await Promise.race([
       win.webContents.executeJavaScript('(async()=>{while(!window.__resultPromise)await new Promise(r=>setTimeout(r,10));return await window.__resultPromise})()',true),
-      new Promise((_,reject)=>setTimeout(()=>reject(new Error('Pixi A/B excedeu 180 segundos.')),180000)),
+      new Promise((_,reject)=>setTimeout(()=>reject(new Error('Pixi A/B excedeu 75 segundos.')),75000)),
     ])
     if(!result?.ok||!Number.isFinite(result.pixiMedianMs)||result.pixiMedianMs<=0)throw new Error('Pixi benchmark did not return valid timing.')
     const gpuInfo=await app.getGPUInfo('basic').catch(()=>null)
