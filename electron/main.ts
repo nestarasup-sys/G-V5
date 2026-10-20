@@ -11,7 +11,7 @@ import { hairCategories } from '../src/shared/hairCategories'
 import type { CustomizerCharacter, CustomizerFaceAppearance, CustomizerWardrobePaletteKey, HairColorOverrides } from '../src/shared/customizer'
 import { characterBodyDimensionLimits, characterProportionLimits } from '../src/shared/customizer'
 import { validWardrobeAdjustmentReference } from '../src/shared/wardrobeAdjustment'
-import type { StudioAsset, StudioDocument, VideoTimelineDocument } from '../src/shared/studio'
+import type { StudioAsset, StudioDocument, VideoStudioAsset, VideoTimelineDocument } from '../src/shared/studio'
 import { applyModelHeadShape } from '../src/shared/headShape'
 import { isStudioExpressionEffects, isStudioFaceTransforms } from '../src/shared/studio'
 import { isValidVideoMediaClip } from '../src/shared/videoMedia'
@@ -22,6 +22,9 @@ import { VideoExportLibrary } from './videoExports'
 import { VideoExportJobStore } from './videoExportJobs'
 import { VideoExportSurfaceHost } from './videoExportSurfaceHost'
 import { VideoExportCoordinator } from './videoExportCoordinator'
+import { VideoPreviewProxyStore } from './videoPreviewProxyStore'
+import { resolveVideoStudioTools } from './videoToolsResolver'
+import { probeVideoStudioFfmpeg, type VideoStudioFfmpegCapabilities } from './videoFfmpegCapabilities'
 import type { VideoExportProgress, VideoExportStartRequest } from '../src/shared/videoExportRuntime'
 import { serializeVideoCharacterRenderAssetSnapshot } from '../src/shared/videoCharacterRenderAssets'
 import { DataPlatform, getAppDataUsage } from './dataPlatform.cjs'
@@ -38,6 +41,8 @@ let videoExportLibrary: VideoExportLibrary | null = null
 let videoExportJobStore: VideoExportJobStore | null = null
 let videoExportSurfaceHost: VideoExportSurfaceHost | null = null
 let videoExportCoordinator: VideoExportCoordinator | null = null
+let videoPreviewProxyStore: VideoPreviewProxyStore | null = null
+let videoPreviewToolsPromise: Promise<{ ffmpeg: VideoStudioFfmpegCapabilities }> | null = null
 const videoExportJobOwners = new Map<string, number>()
 
 function configureDevAiDataRoot(): void {
@@ -1822,6 +1827,7 @@ async function registerFabricatorHandlers(): Promise<void> {
 
     if (workspace === 'video') {
       videoExportLibrary ??= new VideoExportLibrary(app.getPath('appData'))
+  videoPreviewProxyStore ??= new VideoPreviewProxyStore(join(app.getPath('appData'), 'CACHE', 'video-studio', 'preview-media'))
       ipcMain.handle('video-studio:exports:list', async (event) => {
         assertTrustedSender(event)
         return videoExportLibrary!.list()
@@ -1897,6 +1903,21 @@ async function registerFabricatorHandlers(): Promise<void> {
       ipcMain.handle('video-studio:video-library:finish', async (event, id: string, durationFrames: number) => { assertTrustedSender(event); return videoLibrary.finishImport(id, durationFrames) })
       ipcMain.handle('video-studio:video-library:delete', async (event, id: string) => { assertTrustedSender(event); return videoLibrary.delete(id) })
       ipcMain.handle('video-studio:video-library:attach', async (event, studioId: string, ids: string[]) => { assertTrustedSender(event); return videoLibrary.attach(studioId, ids) })
+      ipcMain.handle('video-studio:preview-media:prepare', async (event, studioId: string, asset: VideoStudioAsset) => {
+        assertTrustedSender(event)
+        if (!videoPreviewProxyStore) throw new Error('Cache de preview ainda não foi inicializado.')
+        if (!asset || typeof asset !== 'object' || typeof asset.id !== 'string') throw new Error('Asset de preview inválido.')
+        const source = await videoLibrary.resolveProjectMediaDependency(studioId, asset.id, asset)
+        videoPreviewToolsPromise ??= resolveVideoStudioTools().then(async (paths) => ({ ffmpeg: await probeVideoStudioFfmpeg(paths.ffmpeg) }))
+        void videoPreviewToolsPromise.catch(() => { videoPreviewToolsPromise = null })
+        const tools = await videoPreviewToolsPromise
+        const record = await videoPreviewProxyStore.ensure({ sourcePath: source.path, ffmpeg: tools.ffmpeg })
+        return {
+          sourceSha256: record.sourceSha256,
+          proxyUrl: `gacha-video://preview-proxy/${record.sourceSha256}`,
+          waveformUrl: record.waveformFilename ? `gacha-video://preview-waveform/${record.sourceSha256}` : null,
+        }
+      })
       ipcMain.handle('video-studio:background-library:list', async (event) => { assertTrustedSender(event); return videoBackgroundLibrary.list() })
       ipcMain.handle('video-studio:background-library:import', async (event) => {
         assertTrustedSender(event)
@@ -2647,6 +2668,19 @@ function registerVideoAssetProtocol(): void {
         const media = await videoExportJobStore.resolvePinnedMedia(parts[0], parts[1])
         path = media.path
         extension = media.extension
+      } else if ((url.hostname === 'preview-proxy' || url.hostname === 'preview-waveform') && parts.length === 1 && /^[a-f0-9]{64}$/i.test(parts[0])) {
+        if (!videoPreviewProxyStore) return new Response('Preview cache unavailable', { status: 503 })
+        const kind = url.hostname === 'preview-proxy' ? 'proxy' : 'waveform'
+        path = await videoPreviewProxyStore.resolveFile(parts[0].toLowerCase(), kind)
+        if (kind === 'proxy') extension = 'mp4'
+        else {
+          const file = await stat(path)
+          const range = request.headers.get('range')
+          const headers = new Headers({ 'content-type': 'image/png', 'content-length': String(file.size), 'cache-control': 'public, max-age=31536000, immutable' })
+          if (request.method === 'HEAD') return new Response(null, { status: 200, headers })
+          if (range) return new Response(null, { status: 416, headers: { 'content-range': `bytes */${file.size}` } })
+          return new Response(Readable.toWeb(createReadStream(path)) as unknown as BodyInit, { status: 200, headers })
+        }
       }
       if (!path || !extension) return new Response('Not found', { status: 404 })
       path = await dataFileSystem.resolvePhysicalPath(path) ?? path
