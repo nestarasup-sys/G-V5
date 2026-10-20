@@ -11,7 +11,7 @@ A escolha é C# + Avalonia + SDK .NET portátil, com scripts `.bat`. O Visual St
 Versões iniciais fixadas: .NET SDK **10.0.402** (linha .NET 10 LTS) e templates Avalonia **12.1.4**. O `global.json` exige o SDK escolhido. O SDK inclui runtime, compilador e ferramentas de compilação; não é preciso instalar um runtime separado para desenvolver.
 
 - `Preparar.bat`: baixa o SDK do servidor oficial, verifica SHA-512 e instala os templates Avalonia no perfil local.
-- `Desenvolver.bat`: usa o SDK local e inicia `dotnet watch` quando o projeto Desktop existir. Antes disso, informa que a criação do app ainda está pendente.
+- `Desenvolver.bat`: usa o SDK local e inicia `dotnet watch` para `src/GV5.App`. É launcher de desenvolvimento; o produto será executável diretamente.
 - Os pacotes do aplicativo serão fixados e restaurados conforme seus projetos forem criados. Não instalar ferramentas globais, workloads móveis ou bibliotecas sem uso definido.
 - `.tools` e `.packages` são arquivos locais reproduzíveis, não conteúdo para enviar ao GitHub.
 
@@ -63,6 +63,25 @@ Avalonia é a camada da interface e o cliente da engine do G5; não será a engi
 - Dados possuem versão e migrações verificáveis desde a primeira versão pública.
 - Novas abstrações entram quando resolvem uma necessidade concreta; evitar um framework interno gigante antes do primeiro fluxo funcionar.
 
+### Fundações transversais
+
+Construir estas capacidades em fatias finas junto com Fabricador, Customizador e Studio. “Desde cedo” significa contratos e um primeiro fluxo confiável, aprofundados conforme casos reais surgirem; não significa criar subsistemas genéricos completos antes de usá-los.
+
+1. **DataPlatform (`GV5.Data`):** única porta para SQLite, arquivos, AssetStore, thumbnails, hashes, migrations, backups e restauração. Nenhuma feature inventa seu formato de persistência ou caminho de arquivo. Módulos declaram seus esquemas/migrations pelos contratos centrais; a plataforma coordena transações e recuperação.
+2. **Design System (`GV5.DesignSystem`):** tokens de cor, tipografia, espaçamento e estados, mais botões, painéis, dialogs, inputs, tabs, toolbars e cards reutilizáveis. Módulos podem compor controles próprios sem duplicar estilos globais.
+3. **Undo/Redo por workspace:** comandos reversíveis e escopos claros desde Fabricador, Customizador e Studio. Um gesto contínuo vira uma ação; armazenar deltas quando seguros, com snapshots limitados apenas quando necessário, em vez de snapshots gigantes por padrão.
+4. **Autosave e recuperação:** estado de edição `Saved`, `Dirty`, `Saving` ou `Error`, com gravação incremental e checkpoint/journal recuperável. Na próxima abertura, oferecer restauração do último estado consistente após crash; nunca declarar salvo antes da confirmação no disco.
+5. **Jobs e cache compartilhados:** importação, thumbnails, chroma, render, backup e migration usam workers com progresso/cancelamento. Cache de imagens, personagens resolvidos e thumbnails usa LRU, leases/referências e orçamento em bytes com métricas de uso; nenhum cache pode crescer sem limite.
+6. **Diagnóstico e modo seguro:** medir abertura de telas, render, queries, jobs, memória, cache e erros com duração/correlation ID, sem coletar conteúdo privado. Se abertura de projeto ou estado de cache falhar, iniciar um shell seguro que desabilite abertura automática, caches descartáveis e módulos não essenciais, mantendo ferramentas de recuperação.
+7. **Módulos e feature flags:** registrar módulos estaticamente na composição do app; cada módulo declara rotas, serviços, comandos, queries e migrations via contratos. Feature flags mantêm trabalho incompleto desligado. Não criar um carregador dinâmico de plugins nesta fase.
+8. **Importação e backup do legado:** `GV5.Legacy.Electron` entende formatos antigos e executa migrações/cópias com relatório; o app principal nunca depende do Electron. Backups versionados incluem manifesto, hashes e verificação de restore, não apenas cópia cega de pasta.
+9. **Qualidade e evolução:** fixtures sintéticas canônicas (modelo simples/complexo, roupa, face, cabelo, pose) sustentam testes de regressão; testes de arquitetura bloqueiam dependências proibidas; benchmarks repetíveis cobrem 100 personagens, 1000 poses, 5000 assets, arquivos grandes e cache cheio. O CI pode crescer por fases sem exigir toda a suíte antes do primeiro fluxo.
+10. **Shell e serviços do sistema:** `.bat` é launcher de desenvolvimento, nunca parte da arquitetura de runtime; o G-V5 continua sendo um executável normal. Abstrair seleção de arquivos, clipboard, notificações e consulta de hardware por interfaces como `IFilePicker`, `IClipboard`, `INotificationService` e `IHardwareInfo`.
+11. **Dados e versões:** manter dados fora do executável/repositório em diretório por usuário, com `database/`, `assets/`, `thumbnails/`, `projects/`, `backups/`, `cache/`, `logs/` e `temp/`. Definir versionamento de produto (SemVer) separado das versões de schema/migrations, desde as primeiras distribuições.
+12. **Ferramentas internas:** um painel de diagnóstico, oculto/desativado por padrão e habilitado explicitamente em desenvolvimento, poderá inspecionar banco, assets, cache, jobs, revisões, memória e eventos. Ele observa o sistema por APIs de diagnóstico; não altera dados de produção diretamente.
+
+Filosofia do produto: **tela não é dona do sistema**. A tela apresenta estado e envia comandos; dados, engine gráfica, assets, jobs e módulos têm responsabilidades e contratos próprios.
+
 ## 3. Organização da solução e limites dos módulos
 
 Começar como um aplicativo modular em um único processo. Criar processos adicionais apenas para trabalhos que precisem de isolamento ou que as medições justifiquem.
@@ -84,8 +103,10 @@ master avalonia/
     GV5.Scene/                  # cena resolvida e composição de entidades
     GV5.Rendering/              # RenderScene, SkiaRenderer e superfícies de desenho
     GV5.Media/                  # contratos e serviços de playback/decoding de mídia
-    GV5.Data/                   # SQLite, implementação de arquivos e migrations
+    GV5.Data/                   # DataPlatform: SQLite, arquivos, migrations e backups
     GV5.Jobs/                   # filas, workers, cancelamento e progresso
+    GV5.Diagnostics/            # métricas, eventos técnicos e diagnósticos locais
+    GV5.DesignSystem/           # controles, estilos, tokens visuais e temas Avalonia
     GV5.Modules.Fabricador/     # telas e fluxos próprios do Fabricador
     GV5.Modules.Customizador/   # telas e fluxos próprios do Customizador
     GV5.Modules.Studio/         # criado depois do fluxo Fabricador/Customizador
@@ -93,18 +114,23 @@ master avalonia/
     GV5.Modules.Roteiros/       # roteiros referenciam VideoId
     GV5.Timeline/               # modelo e avaliação temporal, sem UI/FFmpeg
     GV5.Modules.VideoStudio/    # última grande área; edição e exportação
-    GV5.SharedUi/               # estilos e controles visuais realmente comuns
   tests/
     GV5.Core.Tests/
     GV5.Integration.Tests/
     GV5.Desktop.Tests/
+    GV5.Architecture.Tests/
+    Fixtures/                   # modelos/personagens sintéticos canônicos
+  benchmarks/
+    GV5.Benchmarks/             # cenários repetíveis de carga e memória
   docs/
     decisions/                 # decisões curtas: motivo, alternativas e limite
     data/                      # esquema, migrações e recuperação
-  tools/                       # ferramentas reproduzíveis de desenvolvimento
+  tools/
+    GV5.Legacy.Electron/        # importador isolado; não é dependência do app
+    # ferramentas reproduzíveis de desenvolvimento
 ```
 
-Essa lista é um mapa de responsabilidades, não uma ordem para criar projetos vazios. A engine é esse conjunto de bibliotecas C#/.NET, sem um monólito obrigatório chamado Engine. Primeiro estabelecer a plataforma compartilhada e construir Fabricador e Customizador. Depois avançar por Studio, Base de Vídeos, Roteiros e, por último, Video Studio. `GV5.Timeline` e `GV5.Media` podem existir como contratos pequenos antes, mas sua implementação específica para edição de vídeo fica bloqueada até a etapa final. `GV5.SharedUi` só recebe controles ou estilos com uso realmente compartilhado; não vira uma pasta para regras de negócio.
+Essa lista é um mapa de responsabilidades, não uma ordem para criar projetos vazios. A engine é esse conjunto de bibliotecas C#/.NET, sem um monólito obrigatório chamado Engine. Primeiro estabelecer a plataforma compartilhada e construir Fabricador e Customizador. Depois avançar por Studio, Base de Vídeos, Roteiros e, por último, Video Studio. `GV5.Timeline` e `GV5.Media` podem existir como contratos pequenos antes, mas sua implementação específica para edição de vídeo fica bloqueada até a etapa final. `GV5.DesignSystem` concentra tokens e componentes visuais, sem regras de negócio. `GV5.Legacy.Electron` é uma ferramenta de importação isolada, não referenciada nem distribuída pelo app.
 
 Direção das dependências:
 
@@ -121,11 +147,11 @@ GV5.Data ──────────────→ contratos de GV5.Applicat
 GV5.Jobs ──────────────→ contratos de GV5.Application
 ```
 
-Módulos de produto não importam implementações internas uns dos outros. Fabricador e Customizador usam o mesmo modelo e os mesmos serviços públicos do domínio. Integrações passam por contratos em Application ou Core. Referências proibidas devem ser verificadas no build ou em uma verificação de arquitetura; uma orientação escrita sozinha não impede dependências acidentais.
+Módulos de produto não importam implementações internas uns dos outros. Fabricador e Customizador usam o mesmo modelo e os mesmos serviços públicos do domínio. Integrações passam por contratos em Application ou Core. `GV5.DesignSystem` e módulos de interface podem depender de Avalonia; Core, Geometry, Assets, Characters, Scene, Rendering, Data, Jobs e Diagnostics permanecem independentes da UI quando suas responsabilidades não exigirem apresentação. Referências proibidas devem ser verificadas no build ou em uma verificação de arquitetura; uma orientação escrita sozinha não impede dependências acidentais.
 
 `GV5.Core`, `GV5.Geometry`, `GV5.Assets`, `GV5.Characters`, `GV5.Scene`, `GV5.Rendering`, `GV5.Media` e `GV5.Timeline` não dependem de Avalonia. `GV5.Core` também não conhece SQLite, sistema de arquivos ou APIs de backend de mídia. `GV5.Application` expressa operações como comandos e casos de uso. `GV5.Data` implementa persistência. `GV5.Rendering` compõe a cena com SkiaSharp. `GV5.Media` implementa contratos de mídia por adaptadores substituíveis. `GV5.Jobs` coordena trabalho demorado. `GV5.App` monta serviços, abre janelas e hospeda Views, ViewModels e controles que fazem a ponte entre input Avalonia e as engines.
 
-Usar MVVM com Views e ViewModels pequenos por fluxo. A View encaminha intenção; o ViewModel coordena estado da tela e solicita casos de uso; o domínio mantém invariantes. Evitar code-behind com regras e um ViewModel global com acesso a todas as áreas. Cada módulo publica uma entrada pequena de navegação e seus serviços; não criar um sistema de plugins dinâmico no início.
+Usar MVVM com Views e ViewModels pequenos por fluxo. A View encaminha intenção; o ViewModel coordena estado da tela e solicita casos de uso; o domínio mantém invariantes. Evitar code-behind com regras e um ViewModel global com acesso a todas as áreas. Cada módulo fornece registro estático de rotas, serviços, comandos, queries e migrations por contratos; o shell compõe a lista habilitada por feature flags. Não criar um sistema de plugins dinâmico no início.
 
 XAML descreve composição e layout, por exemplo uma janela com `AssetBrowser` ao lado de `CharacterCanvas`. C# implementa o controle especializado, comportamento e ViewModel. `TimelineControl`, `PropertyInspector`, `ColorPicker`, `PoseGrid`, `WardrobeEditor` e `FaceEditor` podem ter APIs e estilos próprios, sem incorporar persistência ou domínio. Esses controles Avalonia são desenhados pela plataforma do Avalonia para aparência consistente; serviços de sistema, como diálogo de arquivo e clipboard, usam a integração da plataforma.
 
@@ -282,19 +308,23 @@ Antes de implementar todos os ajustes, estabelecer exemplos de referência com r
 
 Usar SQLite para metadados estruturados e relacionamentos. Guardar imagens e outros arquivos grandes no armazenamento de recursos, referenciados pelo banco. Não persistir imagens repetidas como base64 em cada registro de personagem ou pose.
 
+`GV5.Data` é o DataPlatform central. Os módulos não abrem conexões SQLite nem constroem seus próprios repositórios de arquivo; enviam comandos e queries pelas interfaces de Application, enquanto Data implementa armazenamento e coordena migrations registradas pelos módulos.
+
 Estrutura conceitual da pasta de dados:
 
 ```text
-GachaNymiAvalonia/
+GV5Data/
   database/app.db
   assets/<hash-do-conteudo>.<extensao>
   thumbnails/
+  projects/
   backups/
+  cache/
   logs/
   temp/
 ```
 
-A localização real será resolvida por um serviço de armazenamento. Não depender da pasta atual do terminal ou do repositório. Um modo portátil poderá ser criado depois, com seleção explícita de diretório.
+A localização real será resolvida por um serviço de armazenamento sob a pasta de dados do usuário no Windows. Não depender da pasta atual do terminal, do executável ou do repositório. Um modo portátil poderá ser criado depois, com seleção explícita de diretório.
 
 Entidades iniciais previstas: modelos, peças, articulações, poses, personagens, roupas, conjuntos de rosto, recursos e referências entre eles. Cada domínio deve detalhar seu esquema antes de implementar suas gravações. Evitar tanto uma tabela gigante de JSON quanto fragmentar cada pequeno valor em tabelas desnecessárias. JSON versionado pode servir para configurações flexíveis que não precisem de consultas relacionais.
 
@@ -302,9 +332,11 @@ Regras essenciais:
 
 - IDs estáveis independentes do nome exibido e da posição em listas.
 - Chaves estrangeiras, índices, unicidade e restrições de valores quando aplicáveis.
-- Datas com convenção única e revisão para detectar gravações desatualizadas.
+- Datas com convenção única, versão do produto SemVer e revisão para detectar gravações desatualizadas.
+- Versão de schema/migration independente da versão do produto. Cada release registra compatibilidade e caminho de atualização; updater pode ser implementado depois.
 - Migrações numeradas e backup consistente antes de atualizações de esquema.
-- Backup feito com mecanismo consistente para SQLite; não copiar apenas o arquivo principal enquanto há gravações ou arquivos WAL ativos.
+- Backups versionados com manifesto de formato, versão do produto e schema, inventário de conteúdo e hashes; criação consistente para SQLite, sem copiar apenas o arquivo principal durante gravações/WAL ativos.
+- Restore de backup verificado em ambiente isolado antes de considerar a operação concluída; relatório de itens restaurados e incompatíveis.
 - Exportação e importação de projeto com manifesto versionado e verificação de integridade.
 - Nenhuma exclusão de arquivo compartilhado enquanto houver referências válidas.
 
@@ -312,9 +344,9 @@ Banco e arquivos não participam da mesma transação automaticamente. A importa
 
 ## 13. Edição, desfazer e salvamento
 
-Representar ações importantes por comandos: mover peça, alterar pivô, aplicar pose, trocar roupa, duplicar personagem e excluir item. Uma interação contínua de arrastar gera uma única entrada no histórico, não centenas.
+Representar ações importantes por comandos reversíveis: mover peça, alterar pivô, aplicar pose, trocar roupa, duplicar personagem e excluir item. O histórico é por workspace e pode agrupar operações entre painéis do mesmo documento. Uma interação contínua de arrastar gera uma única entrada, não centenas. Deltas são preferidos quando completos e seguros; checkpoints/snapshots têm limites explícitos de tamanho e retenção.
 
-O estado de edição deve distinguir alterações temporárias e dados confirmados. Definir estados visíveis como: salvo, alterações pendentes, salvando e falha ao salvar. Ao fechar, aguardar gravações pendentes ou permitir uma decisão informada do usuário.
+O estado de edição deve distinguir alterações temporárias e dados confirmados: `Saved`, `Dirty`, `Saving` e `Error`. Autosave grava somente entidades alteradas, com debounce e revisão para impedir sobrescritas. Usar journal/checkpoints recuperáveis; após encerramento inesperado, validar a última operação e oferecer recuperação sem substituir silenciosamente a versão confirmada. Ao fechar normalmente, aguardar gravações pendentes ou permitir uma decisão informada do usuário.
 
 Agrupar mudanças rápidas e gravar apenas os registros necessários, dentro de transações. Usar uma política de escrita coordenada para evitar duas telas sobrescrevendo a mesma revisão. Não guardar um histórico ilimitado de imagens para implementar desfazer.
 
@@ -326,13 +358,15 @@ Usar MVVM com ViewModels pequenos por tela ou painel e bindings compilados onde 
 
 Cada nova área declara rota, título, permissões de edição quando necessárias, ViewModel e casos de uso. A navegação precisa liberar inscrições de eventos, cancelar tarefas e descartar recursos ao encerrar a sessão.
 
-Criar desde cedo um conjunto consistente de cores, espaçamentos, tipografia, botões, formulários, estados de carregamento e mensagens de erro. Suportar escala de tela, atalhos com contexto, foco de teclado e textos acessíveis.
+Criar desde cedo um conjunto consistente de cores, espaçamentos, tipografia, botões, formulários, estados de carregamento e mensagens de erro. Suportar escala de tela, atalhos com contexto, foco de teclado e textos acessíveis. `GV5.DesignSystem` será a fonte única de tokens e controles visuais compartilhados.
+
+Serviços de sistema entram por contratos na fronteira do app — `IFilePicker`, `IClipboard`, `INotificationService` e `IHardwareInfo` — com adaptadores Avalonia/Windows na composição. Módulos não chamam APIs do Windows diretamente.
 
 Ordem oficial das áreas reconstruídas: Fabricador → Customizador → Studio → Base de Vídeos → Roteiros → Video Studio. Poses, Rosto, Roupas, Cabelos, Faces, Expressões e Animações começam como fluxos/seções do Fabricador conforme o modelo de domínio amadurecer; não criar páginas fictícias para antecipar o produto.
 
 Quando forem implementadas, as áreas adicionais seguem estes limites:
 
-- **Studio:** uma cena contém entidades com IDs e transformações próprias: fundo, personagem, imagem, balão e texto. Alterar `Transform.X`/`Transform.Y` atualiza o item e sua visualização, preservando o restante da cena.
+- **Studio:** uma cena contém entidades com IDs e transformações próprias: fundo, personagem, imagem, objeto, fala, pensamento e texto. Consumirá personagens por contratos de Core/Characters/Rendering e não poderá importar classes de View, controle ou ViewModel do Fabricador ou Customizador. Alterar `Transform.X`/`Transform.Y` atualiza o item e sua visualização, preservando o restante da cena.
 - **Base de Vídeos:** biblioteca própria com `VideoAsset` (ID estável, arquivo original/AssetId, hash, duração, resolução, FPS, codecs, data de criação, categorias/tags, thumbnail e estado de proxy), além de `VideoLibraryService`, `VideoMetadataService` e `ThumbnailService`. Metadados e arquivos são geridos pela plataforma de dados/assets; não pertencem ao módulo Roteiros.
 - **Roteiros:** entidades próprias como `Roteiro`, Sections, TikToks, Dialogues, Reactions, CharacterReferences e VideoReferences. Referenciar vídeos da biblioteca por `VideoId`, sem copiar nem persistir a biblioteca dentro do roteiro. Persistir alterações por entidade/ID/revisão (por exemplo `RoteiroId`, `SectionId`, `BlockId`, `Revision`), agrupando mudanças rápidas e gravando apenas o que mudou.
 - **Video Studio:** última grande área da reconstrução. `TimelineControl` apresenta faixas de vídeo, áudio, texto, personagem, keyframes e playhead. Edição de timeline vive em regras testáveis; playback, frame decode e exportação usam serviços/jobs separados da View. FFmpeg pode ser encapsulado para processamento de vídeo.
@@ -352,6 +386,8 @@ Quando forem implementadas, as áreas adicionais seguem estes limites:
 
 `GV5.Jobs` fornece filas com concorrência limitada, `CancellationToken`, estado de progresso e resultados explícitos. Usar `async/await` para aguardar I/O e tarefas de worker para trabalho de CPU; não criar uma thread ou processo por item. As operações que podem ser interrompidas devem verificar cancelamento em limites seguros. FFmpeg pode continuar como processo externo para probing, encode e mux de vídeo, encapsulado por serviços que reportam saída, erro, cancelamento e recuperação. A UI só exibe o progresso e envia comandos de iniciar/cancelar.
 
+Um cache compartilhado mantém orçamento total de memória em bytes, LRU, leases e métricas de hit/miss/eviction. Ele inclui imagens decodificadas, thumbnails e personagens/cenas resolvidos; entradas descartáveis podem ser regeneradas e nunca definem a fonte de verdade.
+
 Usar `SkiaRenderer` como engine de desenho do G5 desde o primeiro fluxo de personagem. Avalonia apresenta o resultado e desenha a interface; `DrawingContext` atende elementos simples da UI, e a ponte de desenho customizado apresenta a saída do renderer no canvas. Manter raster CPU como primeiro caminho funcional, medir e só então decidir a estratégia GPU. GPU e C# não garantem fluidez se a interface continuar fazendo trabalho desnecessário.
 
 Registrar abertura fria e quente, tempo até a primeira prévia, latência de arraste, tempo de salvamento, memória e recursos retidos depois de fechar um projeto. Definir metas com um primeiro cenário medido no computador de uso, em vez de prometer números sem evidência.
@@ -360,9 +396,11 @@ Registrar abertura fria e quente, tempo até a primeira prévia, latência de ar
 
 Erros esperados devem ter resultado tipado: arquivo ausente, formato inválido, conflito de revisão, acesso negado e falta de espaço. Exibir uma mensagem útil com a ação que falhou e a possibilidade de tentar novamente quando aplicável.
 
-Logs locais devem incluir operação, duração, módulo e identificador de correlação, com rotação e limite de tamanho. Não registrar imagens, textos privados, segredos ou caminhos pessoais completos por padrão. Um relatório de diagnóstico exportável deve permitir revisão antes de compartilhar.
+Logs locais devem incluir operação, duração, módulo e identificador de correlação, com rotação e limite de tamanho. Métricas internas registram tempos de abertura, renderização, queries, jobs, memória e erros. Não registrar imagens, textos privados, segredos ou caminhos pessoais completos por padrão. Um relatório de diagnóstico exportável deve permitir revisão antes de compartilhar.
 
-Falhas inesperadas precisam preservar o último estado confirmado e informar quando uma operação ficou incompleta. Não usar um capturador global de exceções para fingir que uma operação foi concluída.
+Falhas inesperadas precisam preservar o último estado confirmado e informar quando uma operação ficou incompleta. Não usar um capturador global de exceções para fingir que uma operação foi concluída. Em falhas repetidas na abertura, oferecer modo seguro: iniciar shell mínimo, suspender autoabertura do último projeto, ignorar caches regeneráveis e desabilitar áreas opcionais para permitir diagnóstico e recuperação.
+
+Ferramentas internas podem expor banco, assets, cache, jobs, revisões, memória e eventos em um painel oculto, desativado por padrão e habilitado explicitamente em desenvolvimento. O painel observa e exporta diagnósticos; não altera diretamente dados de produção.
 
 ## 17. Verificações que acompanham a arquitetura
 
@@ -373,12 +411,16 @@ Falhas inesperadas precisam preservar o último estado confirmado e informar qua
 - Interface: fluxos essenciais, atalhos, desfazer e fechar com mudanças pendentes.
 - Desempenho: o mesmo cenário antes e depois da mudança, com quantidades de peças e personagens documentadas.
 - Arquitetura: dependências entre projetos respeitam os limites definidos.
+- Fixtures canônicas: modelo simples e complexo, roupa, face, cabelo, pose e transformações extremas.
+- Testes de arquitetura: `Core` não referencia Avalonia; Studio não importa Views/controles do Fabricador ou Customizador; módulos acessam dados apenas via contratos; dependências proibidas falham no CI.
+- Restauração de backup: validar manifesto e hashes, restaurar em área temporária e abrir o resultado antes de reportar sucesso.
+- Benchmarks repetíveis: 100 personagens, 1000 poses, 5000 assets, imagens grandes e cache cheio, registrando baseline e ambiente.
 
 Compilar não comprova correção visual. Uma verificação automática também não substitui executar o aplicativo no Windows e manipular um personagem real. Novos testes devem proteger regras e riscos concretos, sem apenas repetir a implementação.
 
 ## 18. Importação do legado e independência
 
-O legado será fonte de referência e importação, nunca biblioteca obrigatória do novo aplicativo. Criar importadores versionados em C# que copiem os dados selecionados e gerem um relatório de itens importados, ignorados e incompatíveis.
+O legado será fonte de referência e importação, nunca biblioteca obrigatória do novo aplicativo. Criar `tools/GV5.Legacy.Electron`, uma ferramenta de importação versionada que entende os formatos antigos e conversa com o novo armazenamento por formatos/contratos de intercâmbio. O executável principal não referencia nem distribui esse projeto; ele pode ser removido quando a migração terminar.
 
 Não escrever no banco ou nos arquivos originais do Electron. Conservar IDs de origem em um mapeamento de importação para evitar duplicar itens na repetição do processo. Validar transparência, dimensões, vínculos, camadas e poses, além da contagem de arquivos.
 
@@ -386,10 +428,10 @@ Antes de excluir o legado, provar que uma cópia contendo somente `master avalon
 
 ## 19. Primeiras entregas, na ordem
 
-1. **Plataforma:** solução, shell Avalonia, SQLite/migrations, AssetStore, Geometry, Jobs, logs e pipeline `RenderScene`/SkiaRenderer em fatias pequenas. Critério: app abre, salva dados próprios e renderiza um asset real sem depender do legado.
+1. **Plataforma transversal:** solução e shell Avalonia, DataPlatform/SQLite/migrations, AssetStore, Geometry, DesignSystem, Jobs, cache limitado, autosave/recuperação base, logs/métricas, feature flags iniciais e serviços de sistema por interfaces; pipeline `RenderScene`/SkiaRenderer em fatias pequenas. Critério: app abre, salva o primeiro conteúdo editável, recupera uma edição interrompida e renderiza um asset real sem depender do legado. Testes de arquitetura e fixtures mínimas protegem os limites já criados.
 2. **Fabricador:** modelos, parts/layers, joints/pivôs/transformações, poses, roupas, cabelo, face/expressões, animações, importação/chroma, undo/redo e publicação de assets. Critério: criar/editar/publicar e reabrir conteúdo preservando geometria, transparência, vínculos e aparência.
 3. **Customizador:** consumir por IDs estáveis (`ModelId`, `PoseId`, `WardrobeId`, `HairId`, `FaceId`, `ExpressionId`), montar `Character` por `CharacterResolver` e salvar overrides próprios sem alterar assets globais. Critério: Fabricador e Customizador renderizam o mesmo conteúdo de forma consistente.
-4. **Studio:** reutilizar `CharacterResolver` e `RenderingEngine`; adicionar Scene Engine e entidades de fundo, personagem, imagem, objeto, texto, fala e pensamento. Critério: montar uma cena com personagens salvos, reabrir e obter o mesmo resultado visual. Este é o primeiro grande marco de validação da plataforma compartilhada.
+4. **Studio:** reutilizar `CharacterResolver` e `RenderingEngine`; adicionar Scene Engine e entidades de fundo, personagem, imagem, objeto, texto, fala e pensamento. Critério: montar uma cena com personagens salvos, reabrir e obter o mesmo resultado visual; confirmar por teste de arquitetura que Studio não referencia nenhum assembly/classe de UI do Fabricador ou Customizador. Este é o primeiro grande marco de validação da plataforma compartilhada.
 5. **Base de Vídeos:** implementar biblioteca e serviços de metadados/miniaturas, categorias/tags, IDs, arquivos originais e integridade. Critério: importar, catalogar, reabrir, localizar e remover referências sem misturar a biblioteca com roteiros.
 6. **Roteiros:** construir seções/blocos e referências a personagens e `VideoId`; salvar incrementalmente por entidade/revisão. Critério: editar texto e vínculos sem regravar a biblioteca nem o roteiro inteiro por tecla; fechar/reabrir preserva a estrutura.
 7. **Video Studio, por último:** iniciar timeline, playback/frame decoder, áudio, keyframes, transições e export somente após as etapas anteriores estarem persistentes e utilizáveis. Escolher backends com a prova de conceito da seção de mídia.
