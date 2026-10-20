@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { copyFile, lstat, mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { basename, dirname, join, relative, resolve, sep } from 'node:path'
-import type { RoteiroDocument, RoteiroSectionContent, RoteiroVideoReference } from '../src/shared/roteiros'
+import type { RoteiroDocument, RoteiroExportCharacterInfo, RoteiroSectionContent, RoteiroVideoReference } from '../src/shared/roteiros'
 
 const idPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const rootDefault = 'C:\\TRABALHO 2\\EDITOR V4\\EDITOR V4\\projects'
@@ -14,6 +14,8 @@ const sectionEntries = (roteiro: RoteiroDocument): Array<{ label: string; sectio
   { label: 'Abertura', section: roteiro.opening ?? { video: null, blocks: [] } },
   ...roteiro.tiktoks.map((tiktok) => ({ label: tiktok.title, section: { video: tiktok.video ?? null, blocks: tiktok.blocks ?? [], description: tiktok.description, timeline: tiktok.timeline, sceneEndSeconds: tiktok.sceneEndSeconds, firstGroupReactionSeconds: tiktok.firstGroupReactionSeconds, secondGroupReactionSeconds: tiktok.secondGroupReactionSeconds } }))
 ]
+const displayTime = (seconds: number | undefined) => seconds === undefined ? 'não definido' : `${new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 2 }).format(seconds)} segundos`
+const characterFolder = (name: string, id: string) => safeSegment(name || 'personagem') || `personagem-${id.slice(0, 8)}`
 
 export class RoteiroProjectExportStore {
   constructor(private readonly resolveBackground: (id: string) => Promise<string>, private readonly resolveVideo: (video: RoteiroVideoReference) => Promise<string>, private readonly projectsRoot = rootDefault) {}
@@ -97,7 +99,7 @@ export class RoteiroProjectExportStore {
     }
     return { folder, files: outputs.length }
   }
-  async export(roteiro: RoteiroDocument, kind: 'background' | 'videos' | 'script') {
+  async export(roteiro: RoteiroDocument, kind: 'background' | 'videos' | 'script', characterInfo: RoteiroExportCharacterInfo[] = []) {
     if (!idPattern.test(roteiro.id)) throw new Error('ID do roteiro inválido.')
     const folder = await this.projectFolder(roteiro)
     const outputs: Array<{ path: string; bytes?: Buffer; sourcePath?: string; expectedSize?: number }> = []
@@ -120,15 +122,58 @@ export class RoteiroProjectExportStore {
         outputs.push({ path: `assets/tiktoks/${String(index + 1).padStart(2, '0')}.${reference.extension}`, sourcePath: source, expectedSize: reference.size })
       }
     } else {
-      const lines = [`ROTEIRO: ${roteiro.title}`, `VÍDEO: ${roteiro.videoTitle}`, `ELENCO: ${roteiro.characterIds.length} personagem(ns)`, '']
-      for (const [index, { label, section }] of sectionEntries(roteiro).entries()) {
-        lines.push(`${index === 0 ? 'ABERTURA' : `TIKTOK ${index}`}: ${label}`)
-        lines.push(`Descrição: ${section.description?.trim() || '—'}`, `Linha do tempo: ${section.timeline ?? 'unspecified'}`)
-        if (section.sceneEndSeconds !== undefined) lines.push(`Fim da cena da descrição: ${section.sceneEndSeconds}s`)
-        if (section.firstGroupReactionSeconds !== undefined) lines.push(`Primeira reação em grupo: ${section.firstGroupReactionSeconds}s`)
-        if (section.secondGroupReactionSeconds !== undefined) lines.push(`Segunda reação em grupo: ${section.secondGroupReactionSeconds}s`)
-        for (const [blockIndex, block] of section.blocks.entries()) lines.push(`  ${blockIndex + 1}. ${block.kind.toUpperCase()} · ${block.characterId || 'sem personagem'}${block.expression ? ` · ${block.expression}` : ''}\n     PT: ${block.textPortuguese || '—'}\n     EN: ${block.textEnglish || '—'}`)
-        if (section.video) lines.push(`Vídeo: ${section.video.name} (${section.video.id})`)
+      const names = new Map(characterInfo.map((character) => [character.id, character.name]))
+      const sections = sectionEntries(roteiro)
+      const videoNumbers = new Map<number, string>()
+      let videoNumber = 0
+      sections.forEach(({ section }, index) => { if (section.video) videoNumbers.set(index, String(++videoNumber).padStart(2, '0')) })
+      const lines = ['PERSONAGENS E EXPRESSÕES', '========================', '']
+      const charactersById = new Map(characterInfo.map((character) => [character.id, character]))
+      const usedFolders = new Set<string>()
+      const folderById = new Map<string, string>()
+      for (const character of characterInfo) {
+        const base = characterFolder(character.name, character.id)
+        let folder = base
+        if (usedFolders.has(folder.toLocaleLowerCase('en-US'))) folder = `${base}-${character.id.slice(0, 8)}`
+        usedFolders.add(folder.toLocaleLowerCase('en-US'))
+        folderById.set(character.id, folder)
+      }
+      const knownIds = new Set(characterInfo.map((character) => character.id))
+      for (const id of roteiro.characterIds) {
+        const character = charactersById.get(id)
+        const name = character?.name ?? `Personagem ${id.slice(0, 8)}`
+        const folder = `assets/characters/${folderById.get(id) ?? characterFolder(name, id)}`
+        lines.push(name, `Pasta exata: ${folder}`)
+        if (character) {
+          lines.push(`Modelo Dev: ${character.modelSlot}`, `Cabelo: ${character.hair || 'Não informado.'}`, `Roupa: ${character.outfit || 'Não informada.'}`, `Pele: ${character.skin || 'Não informada.'}`)
+          const poseSlots = character.poseSlots.length ? character.poseSlots : [0]
+          lines.push('Poses:')
+          poseSlots.forEach((slot, index) => lines.push(`- POSE ${index + 1}${slot > 0 ? ` (slot ${String(slot).padStart(2, '0')})` : ' (modelo base)'} · Pasta exata: ${folder}/POSE ${index + 1}`))
+          const expressions = [...new Set(['normal', ...character.expressions])]
+          lines.push(`Expressões: ${expressions.join(', ')}`, `Variantes por expressão: base, blink, talk${character.hasFaceAppearance ? ', pt, pt-blink, pt-talk' : ''}`)
+        } else lines.push('Expressões: normal', 'Aviso: os detalhes deste personagem não estavam disponíveis no Customizador durante a exportação.')
+        lines.push('')
+      }
+      if (!roteiro.characterIds.length) lines.push('Nenhum personagem selecionado.', '')
+      const backgroundPath = roteiro.backgroundAssetId ? `assets/backgrounds/01${await this.resolveBackground(roteiro.backgroundAssetId).then((path) => path.match(/\.(png|jpg|jpeg|webp)$/i)?.[0] ?? '.png')}` : null
+      if (backgroundPath) lines.push('FUNDO', '=====', `Caminho exato: ${backgroundPath}`, `Nome do arquivo: ${basename(backgroundPath)}`, '')
+      else lines.push('FUNDO', '=====', 'Nenhum fundo selecionado para este roteiro.', '')
+      lines.push('ROTEIRO', '=======', '', `Roteiro: ${roteiro.title}`, `Título do vídeo: ${roteiro.videoTitle}`, '')
+      for (const [index, { label, section }] of sections.entries()) {
+        if (index === 0) lines.push('ABERTURA', '========')
+        else lines.push(`TIKTOK ${String(index).padStart(2, '0')} — ${label}`, '-'.repeat(Math.max(12, label.length + 12)))
+        if (section.video) {
+          const number = videoNumbers.get(index)
+          lines.push(`Duração total do vídeo: ${displayTime(section.video.durationFrames / 60)}`, `Caminho exato: ${number ? `assets/tiktoks/${number}.${section.video.extension}` : 'vídeo não exportado'}`)
+        } else if (index > 0) lines.push('Duração total do vídeo: não disponível', 'Caminho exato: vídeo não exportado')
+        lines.push(`Cena da descrição termina no ${displayTime(section.sceneEndSeconds)}`, `Primeira reação em grupo no ${displayTime(section.firstGroupReactionSeconds)}`, `Segunda reação em grupo no ${displayTime(section.secondGroupReactionSeconds)}`)
+        lines.push(`Descrição: ${section.description?.trim() || 'Não informada.'}`, `Linha do tempo: ${{ unspecified: 'Indefinido', past: 'Passado', present: 'Presente', future: 'Futuro' }[section.timeline ?? 'unspecified']}`)
+        if (!section.blocks.length) lines.push('Sem falas ou pensamentos.')
+        section.blocks.forEach((block, blockIndex) => {
+          const name = names.get(block.characterId) ?? (knownIds.has(block.characterId) ? `Personagem ${block.characterId.slice(0, 8)}` : 'Personagem não selecionado no elenco')
+          lines.push(`${blockIndex + 1} - ${name} (${block.kind === 'fala' ? 'fala' : 'pensamento'}${block.expression ? ` · ${block.expression}` : ''})`, `Português: ${block.textPortuguese || 'Não preenchido.'}`, `English: ${block.textEnglish || 'Não preenchido.'}`)
+        })
+        if (section.video) lines.push(`Vídeo original: ${section.video.name}`, `ID do vídeo: ${section.video.id}`)
         lines.push('')
       }
       outputs.push({ path: 'roteiro.txt', bytes: Buffer.from(`${lines.join('\n').trim()}\n`, 'utf8') })

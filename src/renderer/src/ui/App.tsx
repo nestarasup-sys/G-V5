@@ -6,7 +6,7 @@ import { Icon } from './components/Icon'
 import { CharacterPortrait } from './components/CharacterPortrait'
 import { RenderedCharacterPortrait } from './components/RenderedCharacterPortrait'
 import type { CustomizerCharacter } from '../../../shared/customizer'
-import type { BaseVideoDetails, RoteiroDocument, RoteiroReactionBlock, RoteiroSectionContent, RoteiroTikTok, RoteiroVideoReference } from '../../../shared/roteiros'
+import type { BaseVideoDetails, RoteiroDocument, RoteiroExportCharacterInfo, RoteiroReactionBlock, RoteiroSectionContent, RoteiroTikTok, RoteiroVideoReference } from '../../../shared/roteiros'
 import type { VideoLibraryItem } from '../../../shared/studio'
 import type { VideoBackgroundLibraryItem } from '../../../shared/studio'
 
@@ -459,7 +459,33 @@ function RoteiroWorkspace({ roteiro, onBack, onUpdate, onDeleteDraftVideo, chara
   const exportRoteiroAsset = async (kind: 'background' | 'videos' | 'script') => {
     setRoteiroExportBusy(kind); setRoteiroExportError(''); setRoteiroExportMessage('')
     try {
-      const result = await window.desktop.exportRoteiroAssets({ roteiro, kind })
+      const characterInfo = kind === 'script' ? await Promise.all(roteiro.characterIds.map(async (id): Promise<RoteiroExportCharacterInfo | null> => {
+        const character = characters.find((item) => item.id === id)
+        if (!character) return null
+        const modelSlot = character.customization.modelSlot ?? 1
+        const [allPoseSummaries, exportSlots] = await Promise.all([window.desktop.listFabricatorPoseSlots(modelSlot), window.desktop.getFabricatorExportPoseSlots(modelSlot)])
+        const availableSlots = allPoseSummaries.filter((pose): pose is NonNullable<typeof pose> => Boolean(pose)).sort((a, b) => a.slot - b.slot).map((pose) => pose.slot)
+        const poseSlots = exportSlots === null ? availableSlots : exportSlots.filter((slot): slot is number => slot !== null && availableSlots.includes(slot))
+        let expressions: string[] = []
+        if (character.customization.faceAppearance) {
+          const presets = (await window.desktop.listFaceExpressionPresets(modelSlot)).filter((preset) => preset.modelSlot === modelSlot).sort((a, b) => (a.expressionIndex ?? 0) - (b.expressionIndex ?? 0))
+          const normal = presets.find((preset) => preset.name.trim().toLocaleLowerCase('pt-BR') === 'normal')
+          const counts = new Map<string, number>()
+          for (const preset of presets) counts.set(preset.name.trim().toLocaleLowerCase('pt-BR'), (counts.get(preset.name.trim().toLocaleLowerCase('pt-BR')) ?? 0) + 1)
+          expressions = [
+            ...presets.filter((preset) => preset.id !== normal?.id).map((preset) => counts.get(preset.name.trim().toLocaleLowerCase('pt-BR'))! > 1 ? `${preset.name} ${preset.collectionId ?? 'extra'}` : preset.name)
+          ]
+          const expressionKey = (value: string) => value.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 72) || 'expressao'
+          const seen = new Set(['normal'])
+          expressions = expressions.map((expression) => {
+            let name = expression, suffix = 2
+            while (seen.has(expressionKey(name))) name = `${expression} ${suffix++}`
+            seen.add(expressionKey(name)); return name
+          })
+        }
+        return { id, name: character.name, modelSlot, hair: character.hair, outfit: character.outfit, skin: character.skin, hasFaceAppearance: Boolean(character.customization.faceAppearance), poseSlots: poseSlots.length ? poseSlots : [0], expressions }
+      })) : undefined
+      const result = await window.desktop.exportRoteiroAssets({ roteiro, kind, ...(characterInfo ? { characters: characterInfo.filter((item): item is RoteiroExportCharacterInfo => Boolean(item)) } : {}) })
       const label = kind === 'background' ? 'Fundo' : kind === 'videos' ? 'Vídeos' : 'Roteiro'
       setRoteiroExportMessage(`${label} exportado${kind === 'videos' && result.files !== 1 ? 's' : ''}: ${result.files} arquivo(s) · ${result.path}`)
       addExportLog(`Exportar ${label.toLocaleLowerCase('pt-BR')}`, 'success', `${result.files} arquivo(s) · ${result.path}`)

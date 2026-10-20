@@ -26,7 +26,7 @@ import { VideoPreviewProxyStore } from './videoPreviewProxyStore'
 import { resolveVideoStudioTools } from './videoToolsResolver'
 import { probeVideoStudioFfmpeg, type VideoStudioFfmpegCapabilities } from './videoFfmpegCapabilities'
 import type { VideoExportProgress, VideoExportStartRequest } from '../src/shared/videoExportRuntime'
-import type { BaseVideoDetails, RoteiroDocument, RoteiroReactionBlock, RoteiroSectionContent, RoteiroTikTok, RoteiroVideoReference } from '../src/shared/roteiros'
+import type { BaseVideoDetails, RoteiroDocument, RoteiroExportCharacterInfo, RoteiroReactionBlock, RoteiroSectionContent, RoteiroTikTok, RoteiroVideoReference } from '../src/shared/roteiros'
 import { RoteiroCharacterExportStore } from './roteiroCharacterExport'
 import { RoteiroProjectExportStore } from './roteiroProjectExport'
 import { serializeVideoCharacterRenderAssetSnapshot } from '../src/shared/videoCharacterRenderAssets'
@@ -2041,9 +2041,22 @@ async function registerFabricatorHandlers(): Promise<void> {
   ipcMain.handle('roteiros:assets-export', async (event, request: unknown) => {
     assertTrustedSender(event)
     if (!request || typeof request !== 'object' || Array.isArray(request)) throw new Error('Solicitação de exportação inválida.')
-    const value = request as { roteiro?: unknown; kind?: unknown }
+    const value = request as { roteiro?: unknown; kind?: unknown; characters?: unknown }
     if (!isRoteiroDocument(value.roteiro) || !['background', 'videos', 'script'].includes(String(value.kind))) throw new Error('Roteiro ou tipo de exportação inválido.')
-    return getRoteiroProjectExportStore().export(value.roteiro, value.kind as 'background' | 'videos' | 'script')
+    const roteiro = value.roteiro
+    let characters: RoteiroExportCharacterInfo[] = []
+    if (value.characters !== undefined) {
+      if (!Array.isArray(value.characters) || value.characters.length > 500 || !value.characters.every((item) => Boolean(item && typeof item === 'object'
+        && typeof item.id === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(item.id)
+        && roteiro.characterIds.includes(item.id) && typeof item.name === 'string' && item.name.trim().length > 0 && item.name.length <= 100
+        && Number.isInteger(item.modelSlot) && item.modelSlot >= 1 && item.modelSlot <= 100
+        && typeof item.hair === 'string' && item.hair.length <= 255 && typeof item.outfit === 'string' && item.outfit.length <= 255 && typeof item.skin === 'string' && item.skin.length <= 255
+        && typeof item.hasFaceAppearance === 'boolean' && Array.isArray(item.poseSlots) && item.poseSlots.length <= 100 && item.poseSlots.every((slot: unknown) => Number.isInteger(slot) && (slot as number) >= 0 && (slot as number) <= 100)
+        && Array.isArray(item.expressions) && item.expressions.length <= 500 && item.expressions.every((name: unknown) => typeof name === 'string' && name.length > 0 && name.length <= 100)))
+        || new Set(value.characters.map((item: RoteiroExportCharacterInfo) => item.id)).size !== value.characters.length) throw new Error('Dados de personagens inválidos para o TXT.')
+      characters = value.characters as RoteiroExportCharacterInfo[]
+    }
+    return getRoteiroProjectExportStore().export(roteiro, value.kind as 'background' | 'videos' | 'script', characters)
   })
   ipcMain.handle('roteiros:export-folder:open', async (event, request: unknown) => {
     assertTrustedSender(event)
