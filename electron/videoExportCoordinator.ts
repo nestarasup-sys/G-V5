@@ -258,7 +258,7 @@ export class VideoExportCoordinator {
     let encodedChunkBytes = completedChunkBytes(reopened.manifest)
     let rawFrameBytes = reopened.manifest.chunks.reduce((sum, chunk) => sum + (chunk.endFrame - chunk.startFrame) * 1920 * 1080 * 4, 0)
 
-    for (let index = reopened.nextChunkIndex; index < chunkCount; index += 1) {
+    for (const index of reopened.missingChunkIndexes) {
       this.abort(active)
       const startFrame = index * reopened.manifest.chunkFrames
       const endFrameExclusive = Math.min(timeline.durationFrames, startFrame + reopened.manifest.chunkFrames)
