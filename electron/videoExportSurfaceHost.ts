@@ -1,13 +1,21 @@
 import { BrowserWindow, ipcMain, type IpcMainInvokeEvent, type WebContents } from 'electron'
 import { randomUUID } from 'node:crypto'
+import { performance } from 'node:perf_hooks'
 import { isAbsolute } from 'node:path'
 import type { VideoExportSurfaceBootstrap, VideoExportSurfaceFrameReady, VideoExportSurfaceReady } from '../src/shared/videoExportSurface'
 import { VIDEO_STAGE_HEIGHT, VIDEO_STAGE_WIDTH } from '../src/shared/videoStageGeometry'
 import type { VideoExportJobStore } from './videoExportJobs'
 
+export type VideoExportSurfaceFrameResult = Readonly<{
+  pixels: Buffer
+  timings: Readonly<{ composeMs: number; readbackMs: number }>
+  roundTripMs: number
+}>
+
 type PendingFrame = {
   frame: number
-  resolve: (pixels: Buffer) => void
+  startedAt: number
+  resolve: (result: VideoExportSurfaceFrameResult) => void
   reject: (error: Error) => void
   timer: ReturnType<typeof setTimeout>
 }
@@ -98,7 +106,16 @@ export class VideoExportSurfaceHost {
         pending.reject(new Error(`Surface devolveu ${ready.pixels?.byteLength ?? 0} bytes RGBA; esperava ${expectedBytes}.`))
         return
       }
-      pending.resolve(Buffer.from(ready.pixels.buffer, ready.pixels.byteOffset, ready.pixels.byteLength))
+      const composeMs = Number(ready.timings?.composeMs)
+      const readbackMs = Number(ready.timings?.readbackMs)
+      pending.resolve({
+        pixels: Buffer.from(ready.pixels.buffer, ready.pixels.byteOffset, ready.pixels.byteLength),
+        timings: {
+          composeMs: Number.isFinite(composeMs) && composeMs >= 0 ? composeMs : 0,
+          readbackMs: Number.isFinite(readbackMs) && readbackMs >= 0 ? readbackMs : 0,
+        },
+        roundTripMs: Math.max(0, performance.now() - pending.startedAt),
+      })
     })
   }
 
@@ -203,12 +220,12 @@ export class VideoExportSurfaceSession {
 
   get jobId(): string { return this.session.jobId }
 
-  async renderFrame(frame: number, timeoutMs = 30_000): Promise<Buffer> {
+  async renderFrameDetailed(frame: number, timeoutMs = 30_000): Promise<VideoExportSurfaceFrameResult> {
     if (!Number.isSafeInteger(frame) || frame < 0) throw new Error('Frame inválido para a surface de exportação.')
     const { window } = this.session
     if (window.isDestroyed()) throw new Error('Surface de exportação já foi encerrada.')
     const requestId = randomUUID()
-    const pixels = await new Promise<Buffer>((resolve, reject) => {
+    return await new Promise<VideoExportSurfaceFrameResult>((resolve, reject) => {
       const timer = setTimeout(() => {
         this.session.pending.delete(requestId)
         reject(new Error(`Surface excedeu ${timeoutMs} ms ao renderizar frame ${frame}.`))
@@ -217,10 +234,13 @@ export class VideoExportSurfaceSession {
         // stale responses or waiting another timeout on the next frame.
         if (!window.isDestroyed()) window.destroy()
       }, Math.max(1_000, Math.min(120_000, timeoutMs)))
-      this.session.pending.set(requestId, { frame, resolve, reject, timer })
+      this.session.pending.set(requestId, { frame, startedAt: performance.now(), resolve, reject, timer })
       window.webContents.send('video-studio:export-surface:render', { requestId, frame })
     })
-    return pixels
+  }
+
+  async renderFrame(frame: number, timeoutMs = 30_000): Promise<Buffer> {
+    return (await this.renderFrameDetailed(frame, timeoutMs)).pixels
   }
 
   async dispose(): Promise<void> {
