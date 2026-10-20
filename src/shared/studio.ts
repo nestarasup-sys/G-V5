@@ -175,6 +175,8 @@ export type VideoTimelineDocument = {
   characterTransforms?: Record<string, Pick<StudioElement, 'x' | 'y' | 'rotation' | 'flipX' | 'characterScale' | 'characterWidthScale' | 'characterHeightScale' | 'zIndex'>>
   /** Empty intervals created by deleting a character segment, preserving adjacent states. */
   characterGaps?: Array<{ id: string; elementId: string; startFrame: number; endFrame: number }>
+  /** Last visible authored frame boundary per character, retained when a block is resized. */
+  characterTrackEnds?: Record<string, number>
   /** Imported media files live in this Studio project's dedicated videos folder. */
   videoAssets?: VideoStudioAsset[]
   /** Compressed still from the first video clip, used as this project's library cover. */

@@ -7,6 +7,7 @@ export const DEFAULT_VIDEO_DURATION_FRAMES = 5 * 60
 export function fitVideoTimelineDuration(timeline: VideoTimelineDocument): number {
   const ends = [
     ...timeline.characterKeys.map((key) => key.frame + 1),
+    ...Object.values(timeline.characterTrackEnds ?? {}),
     ...(timeline.characterGaps ?? []).map((gap) => gap.endFrame),
     ...timeline.textClips.map((clip) => clip.endFrame),
     ...(timeline.videoClips ?? []).map((clip) => clip.endFrame),

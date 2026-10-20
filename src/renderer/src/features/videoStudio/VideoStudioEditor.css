@@ -172,7 +172,7 @@
 .video-character-resize-edge.start { left:0;border-left:2px solid #ffffffa8;background:linear-gradient(90deg,#ffffff42,transparent); }
 .video-character-resize-edge.end { right:0;border-right:2px solid #ffffffa8;background:linear-gradient(270deg,#ffffff42,transparent); }
 .video-character-span:hover .video-character-resize-edge { border-color:#fff; }
-.video-keyframe { width:7px;height:7px;position:absolute;z-index:3;top:50%;transform:translate(-50%,-50%) rotate(45deg);padding:0;border:1px solid #f0edff;border-radius:1px;background:#e7d9ff;cursor:pointer; }
+.video-keyframe { width:7px;height:7px;position:absolute;z-index:3;top:50%;transform:translate(-50%,-50%) rotate(45deg);padding:0;border:1px solid #f0edff;border-radius:1px;background:#e7d9ff;pointer-events:none; }
 .video-keyframe:hover { width:10px;height:10px;background:#fff; }
 .video-saved-marker { width:1px;position:absolute;z-index:2;top:0;bottom:0;background:#d5b6ff;opacity:.75;pointer-events:none; }
 .video-lane-playhead { width:2px;position:absolute;z-index:4;top:-2px;bottom:-2px;background:#ff6189;pointer-events:none; }

@@ -5,6 +5,7 @@ import { videoCharacterTrackColor } from '../../../../shared/studio'
 import type { StudioDocument, VideoTimelineDocument } from '../../../../shared/studio'
 import { editVideoMediaClip, type VideoClipEditMode } from '../../../../shared/videoMedia'
 import type { VideoAudioSettings, VideoMediaClip } from '../../../../shared/studio'
+import { resizeTimelineBlock, type TimelineBlockTarget } from '../../../../shared/videoTimelineEditing'
 import { DEFAULT_VIDEO_DURATION_FRAMES, fitVideoTimelineDuration } from '../../../../shared/videoTimelineDuration'
 import { characterKeysForFrameRange, characterSegmentAtFrame, clipsForFrameRange, indexVideoTimeline, nearestTimelineSnapFrame } from './videoTimelineIndex'
 
@@ -20,9 +21,9 @@ type TrackSelection =
   | { kind: 'text'; elementId: string; clipId: string; startFrame: number; endFrame: number }
   | { kind: 'video'; clipId: string; startFrame: number; endFrame: number }
   | null
-type TextClipDrag = { pointerId: number; clip: TextClip; mode: 'move' | 'start' | 'end'; originX: number; startFrame: number; endFrame: number; latestStartFrame: number; latestEndFrame: number }
-type VideoClipDrag = { pointerId: number; clip: VideoMediaClip; mode: VideoClipEditMode; originX: number; latest: VideoMediaClip }
-type BoundaryDrag = { pointerId: number; elementId: string; keyId: string; originX: number; startFrame: number; minFrame: number; maxFrame: number; latestFrame: number }
+type TextClipDrag = { pointerId: number; clip: TextClip; mode: 'move' | 'start' | 'end'; originX: number; scrollLeft: number; startFrame: number; endFrame: number; latestStartFrame: number; latestEndFrame: number }
+type VideoClipDrag = { pointerId: number; clip: VideoMediaClip; mode: VideoClipEditMode; originX: number; scrollLeft: number; latest: VideoMediaClip }
+type BoundaryDrag = { pointerId: number; target: Extract<TimelineBlockTarget, { kind: 'character' }>; mode: 'start' | 'end'; originX: number; scrollLeft: number; renderId: string; source: VideoTimelineDocument; latestStart: number; latestEnd: number }
 
 export function videoTimelineFor(studio: StudioDocument): VideoTimelineDocument {
   return studio.videoTimeline ?? DEFAULT_TIMELINE
@@ -34,7 +35,7 @@ function formatTime(frame: number): string {
   return `${String(minutes).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}:${String(frame % 60).padStart(2, '0')}`
 }
 
-export function VideoTimeline({ preparing, onEnterFullscreen, onExport, canUndo, canRedo, onUndo, onRedo, selectedCanvasId, studio, playheadFrame, playing, height, presetNames, onSeek, onSelectElement, onTogglePlayback, onSaveFrame, onSplitCharacter, onSplitTextClip, onSplitVideoClip, onUpdateTextClip, onUpdateVideoClip, onChangeVideoAudio, onBeginAudioEdit, onDuplicateVideoClip, onDeleteTextClip, onDeleteVideoClip, onDeleteTextElement, onDeleteCharacterSegment, onDuplicateTextClip, onMoveCharacterBoundary, onChangeDuration, onResize, onAddText, onAddVideo, onChangeTrackSettings, onSetCharacterAnimationsEnabled, onMoveCharacterTrack, onSetCharacterPositionsLocked, onChangeTimelineView }: {
+export function VideoTimeline({ preparing, onEnterFullscreen, onExport, canUndo, canRedo, onUndo, onRedo, selectedCanvasId, studio, playheadFrame, playing, height, presetNames, onSeek, onSelectElement, onTogglePlayback, onSaveFrame, onSplitCharacter, onSplitTextClip, onSplitVideoClip, onUpdateTextClip, onUpdateVideoClip, onChangeVideoAudio, onBeginAudioEdit, onDuplicateVideoClip, onDeleteTextClip, onDeleteVideoClip, onDeleteTextElement, onDeleteCharacterSegment, onDuplicateTextClip, onResizeBlock, onChangeDuration, onResize, onAddText, onAddVideo, onChangeTrackSettings, onSetCharacterAnimationsEnabled, onMoveCharacterTrack, onSetCharacterPositionsLocked, onChangeTimelineView }: {
   preparing: boolean
   onEnterFullscreen: () => void
   onExport: () => void
@@ -65,7 +66,7 @@ export function VideoTimeline({ preparing, onEnterFullscreen, onExport, canUndo,
   onDeleteTextElement: (elementId: string) => void
   onDeleteCharacterSegment: (elementId: string, startFrame: number, endFrame: number) => void
   onDuplicateTextClip: (clip: TextClip) => void
-  onMoveCharacterBoundary: (elementId: string, keyId: string, frame: number) => void
+  onResizeBlock: (target: TimelineBlockTarget, startFrame: number, endFrame: number) => void
   onChangeDuration: (durationFrames: number) => void
   onResize: (height: number) => void
   onAddText: (kind: 'speech' | 'thought') => void
@@ -90,11 +91,12 @@ export function VideoTimeline({ preparing, onEnterFullscreen, onExport, canUndo,
   const characterTrackClickRef = useRef<string | null>(null)
   const [previewTextClip, setPreviewTextClip] = useState<TextClip | null>(null)
   const [previewVideoClip, setPreviewVideoClip] = useState<VideoMediaClip | null>(null)
-  const [previewBoundary, setPreviewBoundary] = useState<{ elementId: string; keyId: string; frame: number } | null>(null)
+  const [previewEdit, setPreviewEdit] = useState<VideoTimelineDocument | null>(null)
+  const dragSourceRef = useRef<VideoTimelineDocument | null>(null)
   const [trackMenuOpen, setTrackMenuOpen] = useState(false)
   const [videoWaveforms, setVideoWaveforms] = useState<Record<string, string>>({})
   const [pixelsPerSecond, setPixelsPerSecond] = useState(() => Math.max(1, Math.min(120, studio.videoTimeline?.timelineZoom ?? 37)))
-  const timeline = videoTimelineFor(studio)
+  const timeline = previewEdit ?? videoTimelineFor(studio)
   useEffect(() => {
     let cancelled = false
     const referencedIds = [...new Set((timeline.videoClips ?? []).map((clip) => clip.assetId))]
@@ -149,7 +151,7 @@ export function VideoTimeline({ preparing, onEnterFullscreen, onExport, canUndo,
   const duration = Math.max(1, timeline.durationFrames)
   const timelineSeconds = duration / 60
   const timelineWidth = timelineSeconds * pixelsPerSecond
-  const contentWidth = timelineWidth + 96
+  const contentWidth = timelineWidth + 96 + Math.max(120, scrollViewport.width / 2)
   const tickSeconds = pixelsPerSecond >= 16 ? 5 : Math.max(1, Math.ceil(80 / pixelsPerSecond))
   const tickCount = Math.floor(timelineSeconds / tickSeconds)
   const overscanPixels = 360
@@ -193,6 +195,7 @@ export function VideoTimeline({ preparing, onEnterFullscreen, onExport, canUndo,
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [selection, canDeleteSelection])
   useEffect(() => {
+    if (boundaryDragRef.current) return
     const sampledFrame = Math.min(playheadFrame, duration - 1)
     if (selection?.kind !== 'character' || selection.startFrame <= sampledFrame && sampledFrame < selection.endFrame) return
     const segment = characterSegmentAtFrame(timelineIndex, selection.elementId, sampledFrame, duration)
@@ -204,7 +207,7 @@ export function VideoTimeline({ preparing, onEnterFullscreen, onExport, canUndo,
     clips: studio.elements.filter((element) => element.kind === kind).flatMap((element) => {
       const allSavedClips = timelineIndex.textClipsByElement.get(element.id) ?? []
       const savedClips = clipsForFrameRange(allSavedClips, timelineIndex.textClipPrefixMaxEndByElement.get(element.id) ?? [], visibleStartFrame, visibleEndFrame)
-      return (allSavedClips.length ? savedClips : [{ id: `legacy:${element.id}`, elementId: element.id, kind, startFrame: 0, endFrame: Math.min(duration, 300) }])
+      return savedClips
         .map((clip) => ({ element, clip: previewTextClip?.id === clip.id ? previewTextClip : clip }))
     })
   })), [studio.elements, timelineIndex, visibleStartFrame, visibleEndFrame, duration, previewTextClip])
@@ -271,7 +274,6 @@ export function VideoTimeline({ preparing, onEnterFullscreen, onExport, canUndo,
     .filter((character) => trackSettings[character.id]?.visible !== false)
     .map((character) => {
       const keys = characterKeysForFrameRange(timelineIndex.characterKeysByElement.get(character.id) ?? [], visibleStartFrame, visibleEndFrame)
-        .map((key) => previewBoundary?.elementId === character.id && previewBoundary.keyId === key.id ? { ...key, frame: previewBoundary.frame } : key)
       const name = character.text || studio.assets.find((asset) => asset.id === character.assetId)?.name || 'Personagem'
       const color = videoCharacterTrackColor(character.id, character.timelineColor)
       const basePresetId = timeline.characterBases?.[character.id]?.element.activeExpressionPresetId
@@ -289,10 +291,10 @@ export function VideoTimeline({ preparing, onEnterFullscreen, onExport, canUndo,
             ...(gap.endFrame < part.end ? [{ start: gap.endFrame, end: part.end }] : [])
           ]
         })
-        return parts.map((part) => ({ ...state, start: part.start, end: part.end, renderId: `${state.id}:${part.start}` }))
+        return parts.map((part, index) => ({ ...state, start: part.start, end: part.end, renderId: `${state.id}:${index}` }))
       }).filter((state) => state.end > visibleStartFrame && state.start < visibleEndFrame)
       return { character, keys, name, color, visibleStates }
-    }), [characters, trackSettings, timelineIndex, visibleStartFrame, visibleEndFrame, timeline.characterBases, presetNames, duration, studio.assets, previewBoundary])
+    }), [characters, trackSettings, timelineIndex, visibleStartFrame, visibleEndFrame, timeline.characterBases, presetNames, duration, studio.assets])
   const canSplitSelection = Boolean(selection && !isLocked(selectedTrackId) && playheadFrame > selection.startFrame && playheadFrame < selection.endFrame)
   const splitSelection = () => {
     if (!selection || !canSplitSelection || (selection.kind !== 'video' && isLocked(selection.kind === 'character' ? selection.elementId : timeline.textClips.find((clip) => clip.id === selection.clipId)?.kind ?? 'speech'))) return
@@ -322,7 +324,8 @@ export function VideoTimeline({ preparing, onEnterFullscreen, onExport, canUndo,
       const ratio = rect.width > 0 ? Math.max(0, Math.min(0.999999, (event.clientX - rect.left) / rect.width)) : 0
       onSeek(Math.min(clip.endFrame - 1, clip.startFrame + Math.floor((clip.endFrame - clip.startFrame) * ratio)))
     }
-    textClipDragRef.current = { pointerId: event.pointerId, clip, mode, originX: event.clientX, startFrame: clip.startFrame, endFrame: clip.endFrame, latestStartFrame: clip.startFrame, latestEndFrame: clip.endFrame }
+    dragSourceRef.current = videoTimelineFor(studio)
+    textClipDragRef.current = { pointerId: event.pointerId, clip, mode, originX: event.clientX, scrollLeft: timelineScrollRef.current?.scrollLeft ?? 0, startFrame: clip.startFrame, endFrame: clip.endFrame, latestStartFrame: clip.startFrame, latestEndFrame: clip.endFrame }
     event.currentTarget.setPointerCapture(event.pointerId)
   }
   const beginVideoClipDrag = (event: ReactPointerEvent<HTMLButtonElement>, clip: VideoMediaClip) => {
@@ -338,18 +341,30 @@ export function VideoTimeline({ preparing, onEnterFullscreen, onExport, canUndo,
       onSeek(Math.min(clip.endFrame - 1, clip.startFrame + Math.floor((clip.endFrame - clip.startFrame) * ratio)))
     }
     if (isLocked('video')) return
-    videoClipDragRef.current = { pointerId: event.pointerId, clip, mode, originX: event.clientX, latest: clip }
+    dragSourceRef.current = videoTimelineFor(studio)
+    videoClipDragRef.current = { pointerId: event.pointerId, clip, mode, originX: event.clientX, scrollLeft: timelineScrollRef.current?.scrollLeft ?? 0, latest: clip }
     event.currentTarget.setPointerCapture(event.pointerId)
+  }
+  const scrollForDrag = (clientX: number) => {
+    const scroller = timelineScrollRef.current
+    if (!scroller) return
+    const bounds = scroller.getBoundingClientRect()
+    if (clientX > bounds.right - 28) scroller.scrollLeft += 16
+    else if (clientX < bounds.left + 120) scroller.scrollLeft = Math.max(0, scroller.scrollLeft - 16)
   }
   const moveVideoClipDrag = (event: ReactPointerEvent<HTMLButtonElement>) => {
     const drag = videoClipDragRef.current
     if (!drag || drag.pointerId !== event.pointerId) return
     const asset = timeline.videoAssets?.find((item) => item.id === drag.clip.assetId)
     if (!asset) return
-    const delta = Math.round((event.clientX - drag.originX) / pixelsPerSecond * 60)
+    scrollForDrag(event.clientX)
+    const delta = Math.round((event.clientX - drag.originX + (timelineScrollRef.current?.scrollLeft ?? 0) - drag.scrollLeft) / pixelsPerSecond * 60)
     const origin = drag.mode === 'end' ? drag.clip.endFrame : drag.clip.startFrame
-    drag.latest = editVideoMediaClip(drag.clip, drag.mode, snapFrame(origin + delta, drag.clip.id), asset.durationFrames, duration)
-    schedulePreviewUpdate(() => setPreviewVideoClip(drag.latest))
+    drag.latest = editVideoMediaClip(drag.clip, drag.mode, drag.mode === 'move' ? snapFrame(origin + delta, drag.clip.id) : origin + delta, asset.durationFrames, Math.max(duration, origin + delta))
+    schedulePreviewUpdate(() => {
+      setPreviewVideoClip(drag.latest)
+      if (drag.mode !== 'move') setPreviewEdit(resizeTimelineBlock(dragSourceRef.current!, { kind: 'video', clipId: drag.clip.id }, drag.latest.startFrame, drag.latest.endFrame, characters.map((character) => character.id)))
+    })
   }
   const finishVideoClipDrag = (event: ReactPointerEvent<HTMLButtonElement>) => {
     const drag = videoClipDragRef.current
@@ -359,26 +374,32 @@ export function VideoTimeline({ preparing, onEnterFullscreen, onExport, canUndo,
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
     if (event.type !== 'pointercancel' && !isLocked('video') && (drag.latest.startFrame !== drag.clip.startFrame || drag.latest.endFrame !== drag.clip.endFrame)) {
       suppressClipClickRef.current = true
-      onUpdateVideoClip(drag.latest)
+      if (drag.mode === 'move') onUpdateVideoClip(drag.latest)
+      else onResizeBlock({ kind: 'video', clipId: drag.clip.id }, drag.latest.startFrame, drag.latest.endFrame)
       setSelection({ kind: 'video', clipId: drag.clip.id, startFrame: drag.latest.startFrame, endFrame: drag.latest.endFrame })
       requestAnimationFrame(() => { suppressClipClickRef.current = false })
     }
     setPreviewVideoClip(null)
+    setPreviewEdit(null)
   }
   const moveTextClipDrag = (event: ReactPointerEvent<HTMLButtonElement>) => {
     const drag = textClipDragRef.current
     if (!drag || drag.pointerId !== event.pointerId) return
-    const delta = Math.round((event.clientX - drag.originX) / pixelsPerSecond * 60)
+    scrollForDrag(event.clientX)
+    const delta = Math.round((event.clientX - drag.originX + (timelineScrollRef.current?.scrollLeft ?? 0) - drag.scrollLeft) / pixelsPerSecond * 60)
     let startFrame = drag.startFrame
     let endFrame = drag.endFrame
     if (drag.mode === 'move') {
       startFrame = Math.max(0, Math.min(duration - (drag.endFrame - drag.startFrame), snapFrame(drag.startFrame + delta, drag.clip.id)))
       endFrame = startFrame + (drag.endFrame - drag.startFrame)
-    } else if (drag.mode === 'start') startFrame = Math.max(0, Math.min(drag.endFrame - 1, snapFrame(drag.startFrame + delta, drag.clip.id)))
-    else endFrame = Math.max(drag.startFrame + 1, Math.min(duration, snapFrame(drag.endFrame + delta, drag.clip.id)))
+    } else if (drag.mode === 'start') startFrame = Math.max(0, Math.min(drag.endFrame - 1, drag.startFrame + delta))
+    else endFrame = Math.max(drag.startFrame + 1, drag.endFrame + delta)
     drag.latestStartFrame = startFrame
     drag.latestEndFrame = endFrame
-    schedulePreviewUpdate(() => setPreviewTextClip({ ...drag.clip, startFrame: drag.latestStartFrame, endFrame: drag.latestEndFrame }))
+    schedulePreviewUpdate(() => {
+      setPreviewTextClip({ ...drag.clip, startFrame: drag.latestStartFrame, endFrame: drag.latestEndFrame })
+      if (drag.mode !== 'move') setPreviewEdit(resizeTimelineBlock(dragSourceRef.current!, { kind: 'text', clipId: drag.clip.id }, drag.latestStartFrame, drag.latestEndFrame, characters.map((character) => character.id)))
+    })
   }
   const finishTextClipDrag = (event: ReactPointerEvent<HTMLButtonElement>) => {
     const drag = textClipDragRef.current
@@ -386,39 +407,39 @@ export function VideoTimeline({ preparing, onEnterFullscreen, onExport, canUndo,
     textClipDragRef.current = null
     cancelPreviewUpdate()
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
-    if (drag.latestStartFrame !== drag.startFrame || drag.latestEndFrame !== drag.endFrame) {
+    if (event.type !== 'pointercancel' && (drag.latestStartFrame !== drag.startFrame || drag.latestEndFrame !== drag.endFrame)) {
       suppressClipClickRef.current = true
-      onUpdateTextClip({ ...drag.clip, startFrame: drag.latestStartFrame, endFrame: drag.latestEndFrame })
+      if (drag.mode === 'move') onUpdateTextClip({ ...drag.clip, startFrame: drag.latestStartFrame, endFrame: drag.latestEndFrame })
+      else onResizeBlock({ kind: 'text', clipId: drag.clip.id }, drag.latestStartFrame, drag.latestEndFrame)
       setSelection((current) => current?.kind === 'text' && current.clipId === drag.clip.id
         ? { ...current, startFrame: drag.latestStartFrame, endFrame: drag.latestEndFrame }
         : current)
       requestAnimationFrame(() => { suppressClipClickRef.current = false })
     }
     setPreviewTextClip(null)
+    setPreviewEdit(null)
   }
-  const beginBoundaryDrag = (event: ReactPointerEvent<HTMLButtonElement>, elementId: string, keyId: string, frame: number, minFrame: number, maxFrame: number) => {
+  const beginCharacterSpanBoundaryDrag = (event: ReactPointerEvent<HTMLButtonElement>, elementId: string, startFrame: number, endFrame: number) => {
     if (isLocked(elementId)) return
+    const edge = (event.target as HTMLElement).closest<HTMLElement>('[data-boundary-edge]')?.dataset.boundaryEdge
+    if (edge !== 'start' && edge !== 'end') return
     event.preventDefault()
     event.stopPropagation()
     onSelectElement(elementId)
-    boundaryDragRef.current = { pointerId: event.pointerId, elementId, keyId, originX: event.clientX, startFrame: frame, minFrame, maxFrame, latestFrame: frame }
+    const target = { kind: 'character' as const, elementId, startFrame, endFrame }
+    setSelection(target)
+    boundaryDragRef.current = { pointerId: event.pointerId, target, mode: edge, originX: event.clientX, scrollLeft: timelineScrollRef.current?.scrollLeft ?? 0, renderId: event.currentTarget.dataset.segmentId!, source: videoTimelineFor(studio), latestStart: startFrame, latestEnd: endFrame }
     event.currentTarget.setPointerCapture(event.pointerId)
-  }
-  const beginCharacterSpanBoundaryDrag = (event: ReactPointerEvent<HTMLButtonElement>, elementId: string, keys: readonly VideoTimelineDocument['characterKeys'][number][]) => {
-    const edge = (event.target as HTMLElement).closest<HTMLElement>('[data-boundary-edge]')
-    const keyId = edge?.dataset.boundaryKey
-    if (!keyId) return
-    const index = keys.findIndex((key) => key.id === keyId)
-    if (index < 0) return
-    const key = keys[index]
-    beginBoundaryDrag(event, elementId, key.id, key.frame, (keys[index - 1]?.frame ?? 0) + 1, (keys[index + 1]?.frame ?? duration) - 1)
   }
   const moveBoundaryDrag = (event: ReactPointerEvent<HTMLButtonElement>) => {
     const drag = boundaryDragRef.current
     if (!drag || drag.pointerId !== event.pointerId) return
-    const frame = Math.max(drag.minFrame, Math.min(drag.maxFrame, snapFrame(drag.startFrame + Math.round((event.clientX - drag.originX) / pixelsPerSecond * 60), drag.keyId, false)))
-    drag.latestFrame = frame
-    schedulePreviewUpdate(() => setPreviewBoundary({ elementId: drag.elementId, keyId: drag.keyId, frame: drag.latestFrame }))
+    scrollForDrag(event.clientX)
+    const delta = Math.round((event.clientX - drag.originX + (timelineScrollRef.current?.scrollLeft ?? 0) - drag.scrollLeft) / pixelsPerSecond * 60)
+    // The edge follows the pointer directly, including across any number of neighbours.
+    drag.latestStart = drag.mode === 'start' ? Math.max(0, Math.min(drag.target.endFrame - 1, drag.target.startFrame + delta)) : drag.target.startFrame
+    drag.latestEnd = drag.mode === 'end' ? Math.max(drag.target.startFrame + 1, drag.target.endFrame + delta) : drag.target.endFrame
+    schedulePreviewUpdate(() => setPreviewEdit(resizeTimelineBlock(drag.source, drag.target, drag.latestStart, drag.latestEnd, characters.map((character) => character.id))))
   }
   const finishBoundaryDrag = (event: ReactPointerEvent<HTMLButtonElement>) => {
     const drag = boundaryDragRef.current
@@ -426,19 +447,13 @@ export function VideoTimeline({ preparing, onEnterFullscreen, onExport, canUndo,
     boundaryDragRef.current = null
     cancelPreviewUpdate()
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
-    if (drag.latestFrame !== drag.startFrame) {
+    if (event.type !== 'pointercancel' && (drag.latestStart !== drag.target.startFrame || drag.latestEnd !== drag.target.endFrame)) {
       suppressClipClickRef.current = true
-      onMoveCharacterBoundary(drag.elementId, drag.keyId, drag.latestFrame)
+      onResizeBlock(drag.target, drag.latestStart, drag.latestEnd)
+      setSelection({ ...drag.target, startFrame: drag.latestStart, endFrame: drag.latestEnd })
       requestAnimationFrame(() => { suppressClipClickRef.current = false })
-      setSelection((current) => current?.kind === 'character' && current.elementId === drag.elementId
-        ? current.startFrame === drag.startFrame
-          ? { ...current, startFrame: drag.latestFrame }
-          : current.endFrame === drag.startFrame
-            ? { ...current, endFrame: drag.latestFrame }
-            : current
-        : current)
     }
-    setPreviewBoundary(null)
+    setPreviewEdit(null)
   }
 
   return <section className="video-timeline" aria-label="Timeline do Video Studio">
@@ -547,22 +562,20 @@ export function VideoTimeline({ preparing, onEnterFullscreen, onExport, canUndo,
               }}>
                 {visibleStates.map((state) => {
                   const selected = selection?.kind === 'character' && selection.elementId === character.id && selection.startFrame === state.start && selection.endFrame === state.end
-                  const leftBoundary = keys.find((key) => key.frame === state.start)
-                  const rightBoundary = keys.find((key) => key.frame === state.end)
-                  return <button type="button" key={state.renderId} className={`video-character-span ${selected ? 'selected' : ''}`} style={{ left: `${state.start / 60 * pixelsPerSecond}px`, width: `${Math.max(3, (state.end - state.start) / 60 * pixelsPerSecond)}px`, background: `linear-gradient(180deg, ${color} 0%, ${color}cc 48%, ${color}8c 100%)` }} onPointerDown={(event) => beginCharacterSpanBoundaryDrag(event, character.id, keys)} onPointerMove={moveBoundaryDrag} onPointerUp={finishBoundaryDrag} onPointerCancel={finishBoundaryDrag} onClick={(event) => {
+                  return <button type="button" key={boundaryDragRef.current?.target.elementId === character.id && boundaryDragRef.current.latestStart === state.start && boundaryDragRef.current.latestEnd === state.end ? boundaryDragRef.current.renderId : state.renderId} data-segment-id={state.renderId} className={`video-character-span ${selected ? 'selected' : ''}`} style={{ left: `${state.start / 60 * pixelsPerSecond}px`, width: `${Math.max(3, (state.end - state.start) / 60 * pixelsPerSecond)}px`, background: `linear-gradient(180deg, ${color} 0%, ${color}cc 48%, ${color}8c 100%)` }} onPointerDown={(event) => beginCharacterSpanBoundaryDrag(event, character.id, state.start, state.end)} onPointerMove={moveBoundaryDrag} onPointerUp={finishBoundaryDrag} onPointerCancel={finishBoundaryDrag} onClick={(event) => {
                     if (suppressClipClickRef.current) { event.preventDefault(); event.stopPropagation(); return }
                     const rect = event.currentTarget.getBoundingClientRect()
                     const ratio = rect.width > 0 ? Math.max(0, Math.min(0.999999, (event.clientX - rect.left) / rect.width)) : 0
                     const frame = Math.min(state.end - 1, state.start + Math.floor((state.end - state.start) * ratio))
                     selectOrSeekCharacterTrack(character.id, frame)
                   }} title={`${name} · ${state.label} · arraste as bordas para ajustar a duração`}>
-                    {leftBoundary && leftBoundary.frame > 0 && <span className="video-character-resize-edge start" data-boundary-edge="start" data-boundary-key={leftBoundary.id} aria-hidden="true" />}
+                    <span className="video-character-resize-edge start" data-boundary-edge="start" aria-label="Ajustar início do bloco" />
                     <span className="video-character-span-label">{state.label}</span>
-                    {rightBoundary && <span className="video-character-resize-edge end" data-boundary-edge="end" data-boundary-key={rightBoundary.id} aria-hidden="true" />}
+                    <span className="video-character-resize-edge end" data-boundary-edge="end" aria-label="Ajustar fim do bloco" />
                   </button>
                 })}
                 {(timelineIndex.saveMarkersByTrack.get(character.id) ?? []).filter((marker) => marker.frame >= visibleStartFrame && marker.frame <= visibleEndFrame).map((marker) => <i className="video-saved-marker" key={marker.id} style={{ left: `${marker.frame / 60 * pixelsPerSecond}px` }} title={`Frame salvo · ${formatTime(marker.frame)}`} />)}
-                {keys.map((key) => <button type="button" className="video-keyframe" key={key.id} style={{ left: `${key.frame / 60 * pixelsPerSecond}px` }} title={`${formatTime(key.frame)} · ${key.faceMode}`} onClick={() => { characterTrackClickRef.current = null; const segment = characterSegmentAtFrame(timelineIndex, character.id, key.frame, duration); setSelection(segment ? { kind: 'character', elementId: character.id, ...segment } : null); onSelectElement(character.id); onSeek(key.frame) }} aria-label={`Ir ao frame ${formatTime(key.frame)} de ${name}`} />)}
+                {keys.map((key) => <i className="video-keyframe" key={key.id} style={{ left: `${key.frame / 60 * pixelsPerSecond}px` }} aria-hidden="true" />)}
                 <i className="video-lane-playhead" style={{ left: `${playheadFrame / 60 * pixelsPerSecond}px` }} />
               </div>
             </div>
