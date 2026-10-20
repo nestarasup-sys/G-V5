@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "provider": "BtbN/FFmpeg-Builds",
+  "releaseTag": "latest",
+  "ffmpegBranch": "8.1",
+  "platform": "win64",
+  "variant": "lgpl",
+  "assetName": "ffmpeg-n8.1-latest-win64-lgpl-8.1.zip",
+  "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n8.1-latest-win64-lgpl-8.1.zip",
+  "sha256": "602a1b4f1aaf6d2344cba2ffd44dd3ccc9cf0ba956f7b63baa3e9e4871af9452",
+  "expectedExecutables": ["ffmpeg.exe", "ffprobe.exe"],
+  "forbiddenConfigureFlags": ["--enable-gpl", "--enable-nonfree"],
+  "requiredEncoders": ["aac"],
+  "acceptedH264Encoders": ["h264_mf", "h264_nvenc", "h264_qsv", "h264_amf"],
+  "license": "LGPL-2.1-or-later",
+  "ffmpegLegal": "https://ffmpeg.org/legal.html",
+  "upstreamBuildProject": "https://github.com/BtbN/FFmpeg-Builds"
+}
