@@ -26,6 +26,7 @@ import { VideoPreviewProxyStore } from './videoPreviewProxyStore'
 import { resolveVideoStudioTools } from './videoToolsResolver'
 import { probeVideoStudioFfmpeg, type VideoStudioFfmpegCapabilities } from './videoFfmpegCapabilities'
 import type { VideoExportProgress, VideoExportStartRequest } from '../src/shared/videoExportRuntime'
+import type { RoteiroDocument } from '../src/shared/roteiros'
 import { serializeVideoCharacterRenderAssetSnapshot } from '../src/shared/videoCharacterRenderAssets'
 import { DataPlatform, getAppDataUsage } from './dataPlatform.cjs'
 import { DomainFileSystem } from './domainFileSystem.cjs'
@@ -44,6 +45,18 @@ let videoExportCoordinator: VideoExportCoordinator | null = null
 let videoPreviewProxyStore: VideoPreviewProxyStore | null = null
 let videoPreviewToolsPromise: Promise<{ ffmpeg: VideoStudioFfmpegCapabilities }> | null = null
 const videoExportJobOwners = new Map<string, number>()
+let roteirosSaveQueue: Promise<void> = Promise.resolve()
+
+function isRoteiroDocument(value: unknown): value is RoteiroDocument {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+  const roteiro = value as Partial<RoteiroDocument>
+  const isText = (text: unknown, max: number) => typeof text === 'string' && text.trim().length > 0 && text.length <= max
+  const isId = (id: unknown) => typeof id === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)
+  return isId(roteiro.id) && isText(roteiro.title, 100) && isText(roteiro.videoTitle, 100)
+    && Array.isArray(roteiro.characterIds) && roteiro.characterIds.length <= 500 && roteiro.characterIds.every(isId)
+    && Array.isArray(roteiro.tiktoks) && roteiro.tiktoks.length <= 500
+    && roteiro.tiktoks.every((item) => Boolean(item && isId(item.id) && isText(item.title, 100) && isText(item.videoTitle, 100)))
+}
 
 function configureDevAiDataRoot(): void {
   const privateCopyTest = process.env.GACHA_DEV_AI_PRIVATE_TEST === '1'
@@ -1770,7 +1783,7 @@ async function registerFabricatorHandlers(): Promise<void> {
   ipcMain.handle('app:flush-pending-writes', async (event): Promise<void> => {
     assertTrustedSender(event)
     const pendingWrites = [...fabricatorSaveQueues.values(), ...poseSaveWrites, ...hairSaveQueues.values(),
-      studioSaveQueues.studio, studioSaveQueues.video]
+      studioSaveQueues.studio, studioSaveQueues.video, roteirosSaveQueue]
     const results = await Promise.allSettled(pendingWrites)
     const failedWrite = results.find((result): result is PromiseRejectedResult => result.status === 'rejected')
     if (failedWrite) throw failedWrite.reason
@@ -1960,6 +1973,45 @@ async function registerFabricatorHandlers(): Promise<void> {
 
   registerStudioWorkspace('studio', 'studio')
   registerStudioWorkspace('video', 'video-studio')
+
+  const roteirosFile = join(app.getPath('appData'), 'projects', 'roteiros', 'library.json')
+  ipcMain.handle('roteiros:list', async (event): Promise<RoteiroDocument[]> => {
+    assertTrustedSender(event)
+    await roteirosSaveQueue.catch(() => undefined)
+    try {
+      const contents = await readFile(roteirosFile, 'utf8')
+      const parsed: unknown = JSON.parse(contents)
+      if (!Array.isArray(parsed) || parsed.length > 2000 || !parsed.every(isRoteiroDocument)) {
+        throw new Error('O arquivo de roteiros contém dados inválidos.')
+      }
+      return parsed
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []
+      throw error
+    }
+  })
+
+  ipcMain.handle('roteiros:save', async (event, roteiros: unknown): Promise<void> => {
+    assertTrustedSender(event)
+    if (!Array.isArray(roteiros) || roteiros.length > 2000 || !roteiros.every(isRoteiroDocument)
+      || new Set(roteiros.map((roteiro: RoteiroDocument) => roteiro.id)).size !== roteiros.length) {
+      throw new Error('A lista de roteiros enviada para salvar é inválida.')
+    }
+    const next = roteirosSaveQueue.catch(() => undefined).then(async () => {
+      const folder = dirname(roteirosFile)
+      await mkdir(folder, { recursive: true })
+      const temporary = roteirosFile + '.' + randomUUID() + '.tmp'
+      try {
+        await writeFile(temporary, JSON.stringify(roteiros), 'utf8')
+        await rename(temporary, roteirosFile)
+      } catch (error) {
+        await rm(temporary, { force: true }).catch(() => undefined)
+        throw error
+      }
+    })
+    roteirosSaveQueue = next
+    await next
+  })
 
   ipcMain.handle('customizer:characters:list', async (event): Promise<CustomizerCharacter[]> => {
     assertTrustedSender(event)

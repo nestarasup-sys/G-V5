@@ -18,13 +18,55 @@ const roteiroAreas = [
   { id: 'configuracoes', label: 'Configurações', icon: 'settings' }
 ] as const
 
-type SidebarRoteiro = { id: string; title: string; videoTitle: string; characterIds: string[] }
+type RoteiroTikTok = { id: string; title: string; videoTitle: string }
+type SidebarRoteiro = { id: string; title: string; videoTitle: string; characterIds: string[]; tiktoks: RoteiroTikTok[] }
+
+function RoteiroWorkspace({ roteiro, onBack, onUpdate }: { roteiro: SidebarRoteiro; onBack: () => void; onUpdate: (next: SidebarRoteiro) => void }) {
+  const [editingTikTok, setEditingTikTok] = useState<RoteiroTikTok | null>(null)
+  const [editingTitle, setEditingTitle] = useState('')
+  const [editingVideoTitle, setEditingVideoTitle] = useState('')
+  const addTikTok = () => {
+    const number = roteiro.tiktoks.length + 1
+    onUpdate({ ...roteiro, tiktoks: [...roteiro.tiktoks, { id: crypto.randomUUID(), title: 'TikTok ' + number, videoTitle: 'Vídeo ' + String(number).padStart(2, '0') }] })
+  }
+  const moveTikTok = (index: number, direction: -1 | 1) => {
+    const destination = index + direction
+    if (destination < 0 || destination >= roteiro.tiktoks.length) return
+    const next = [...roteiro.tiktoks]
+    ;[next[index], next[destination]] = [next[destination], next[index]]
+    onUpdate({ ...roteiro, tiktoks: next })
+  }
+  const saveTikTok = () => {
+    if (!editingTikTok || !editingTitle.trim() || !editingVideoTitle.trim()) return
+    onUpdate({ ...roteiro, tiktoks: roteiro.tiktoks.map((item) => item.id === editingTikTok.id ? { ...item, title: editingTitle.trim(), videoTitle: editingVideoTitle.trim() } : item) })
+    setEditingTikTok(null)
+  }
+
+  return <div className="roteiro-workspace-layout">
+    <aside className="roteiro-workspace-sidebar">
+      <button className="roteiro-back-button" onClick={onBack} type="button"><span aria-hidden="true">←</span>Voltar</button>
+      <section className="roteiro-tiktoks-panel" aria-label="TikToks deste roteiro">
+        <header><strong>TIKTOKS</strong><button onClick={addTikTok} title="Adicionar TikTok" aria-label="Adicionar TikTok" type="button"><Icon name="plus" /></button></header>
+        <div className="roteiro-tiktoks-list">{roteiro.tiktoks.map((item, index) => <article className="roteiro-tiktok-card" key={item.id}>
+          <span className="roteiro-tiktok-number">{index + 1}</span>
+          <div className="roteiro-tiktok-info"><strong>{item.title}</strong><span>{item.videoTitle}</span></div>
+          <span className="roteiro-tiktok-cast">{roteiro.characterIds.length}/{roteiro.characterIds.length}</span>
+          <div className="roteiro-tiktok-actions"><button onClick={() => moveTikTok(index, -1)} disabled={index === 0} aria-label={'Mover ' + item.title + ' para cima'} type="button">↑</button><button onClick={() => moveTikTok(index, 1)} disabled={index === roteiro.tiktoks.length - 1} aria-label={'Mover ' + item.title + ' para baixo'} type="button">↓</button><button onClick={() => { setEditingTikTok(item); setEditingTitle(item.title); setEditingVideoTitle(item.videoTitle) }} type="button">Editar</button></div>
+        </article>)}</div>
+      </section>
+    </aside>
+    <main className="roteiro-workspace-empty" aria-label={'Conteúdo do roteiro ' + roteiro.title} />
+    {editingTikTok && <div className="roteiro-modal-backdrop" onPointerDown={(event) => { if (event.target === event.currentTarget) setEditingTikTok(null) }}><section className="roteiro-video-title-modal" role="dialog" aria-modal="true" aria-labelledby="roteiro-tiktok-edit-heading"><header><strong id="roteiro-tiktok-edit-heading">Editar TikTok</strong><button onClick={() => setEditingTikTok(null)} aria-label="Fechar" type="button">×</button></header><label>Nome do TikTok<input autoFocus value={editingTitle} onChange={(event) => setEditingTitle(event.target.value)} maxLength={100} /></label><label>Título do vídeo<input value={editingVideoTitle} onChange={(event) => setEditingVideoTitle(event.target.value)} maxLength={100} /></label><footer><button onClick={() => setEditingTikTok(null)} type="button">Cancelar</button><button className="roteiro-create-confirm" onClick={saveTikTok} disabled={!editingTitle.trim() || !editingVideoTitle.trim()} type="button"><Icon name="check" />Salvar</button></footer></section></div>}
+  </div>
+}
 
 function EmptyRoteirosPage() {
   const [activeArea, setActiveArea] = useState<(typeof roteiroAreas)[number]['id']>('roteiros')
   const [roteiros, setRoteiros] = useState<SidebarRoteiro[]>([])
+  const [roteirosLoaded, setRoteirosLoaded] = useState(false)
   const [characters, setCharacters] = useState<CustomizerCharacter[]>([])
   const [selectedRoteiroId, setSelectedRoteiroId] = useState<string | null>(null)
+  const [openedRoteiroId, setOpenedRoteiroId] = useState<string | null>(null)
   const [deleteMode, setDeleteMode] = useState(false)
   const [deleteSelection, setDeleteSelection] = useState<string[]>([])
   const [createOpen, setCreateOpen] = useState(false)
@@ -33,12 +75,29 @@ function EmptyRoteirosPage() {
   const [editingVideoId, setEditingVideoId] = useState<string | null>(null)
   const [editingVideoTitle, setEditingVideoTitle] = useState('')
   const active = roteiroAreas.find((area) => area.id === activeArea) ?? roteiroAreas[0]
+  const openedRoteiro = roteiros.find((roteiro) => roteiro.id === openedRoteiroId) ?? null
 
   useEffect(() => {
     let cancelled = false
     void window.desktop.listCustomizerCharacters().then((items) => { if (!cancelled) setCharacters(items) }).catch(() => undefined)
     return () => { cancelled = true }
   }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    void window.desktop.listRoteiros().then((items) => {
+      if (!cancelled) {
+        setRoteiros(items)
+        setRoteirosLoaded(true)
+      }
+    }).catch((error) => console.error('Não foi possível carregar os roteiros salvos.', error))
+    return () => { cancelled = true }
+  }, [])
+
+  useEffect(() => {
+    if (!roteirosLoaded) return
+    void window.desktop.saveRoteiros(roteiros).catch((error) => console.error('Não foi possível salvar os roteiros.', error))
+  }, [roteiros, roteirosLoaded])
 
   useEffect(() => {
     if (!deleteMode) return
@@ -52,7 +111,7 @@ function EmptyRoteirosPage() {
   const createRoteiro = () => {
     const title = newTitle.trim()
     if (!title) return
-    const roteiro: SidebarRoteiro = { id: crypto.randomUUID(), title, videoTitle: 'Vídeo 01', characterIds: newCharacterIds }
+    const roteiro: SidebarRoteiro = { id: crypto.randomUUID(), title, videoTitle: 'Vídeo 01', characterIds: newCharacterIds, tiktoks: [] }
     setRoteiros((current) => [roteiro, ...current])
     setSelectedRoteiroId(roteiro.id)
     setNewTitle(''); setNewCharacterIds([]); setCreateOpen(false)
@@ -67,6 +126,7 @@ function EmptyRoteirosPage() {
     if (deleteSelection.length === 0) return
     setRoteiros((current) => current.filter((roteiro) => !deleteSelection.includes(roteiro.id)))
     if (selectedRoteiroId && deleteSelection.includes(selectedRoteiroId)) setSelectedRoteiroId(null)
+    if (openedRoteiroId && deleteSelection.includes(openedRoteiroId)) setOpenedRoteiroId(null)
     setDeleteSelection([])
     setDeleteMode(false)
   }
@@ -85,6 +145,8 @@ function EmptyRoteirosPage() {
     setEditingVideoId(null); setEditingVideoTitle('')
   }
 
+  if (openedRoteiro) return <RoteiroWorkspace roteiro={openedRoteiro} onBack={() => setOpenedRoteiroId(null)} onUpdate={(updated) => setRoteiros((current) => current.map((item) => item.id === updated.id ? updated : item))} />
+
   return <div className="roteiros-layout">
     <aside className="roteiros-sidebar-empty" aria-label="Navegação de roteiros">
       <nav className="roteiros-subnav" aria-label="Subáreas de Roteiros">
@@ -98,7 +160,7 @@ function EmptyRoteirosPage() {
         const markedForDelete = deleteSelection.includes(roteiro.id)
         return <article className={`roteiro-main-card${selectedRoteiroId === roteiro.id && !deleteMode ? ' selected' : ''}${deleteMode ? ' delete-mode' : ''}${markedForDelete ? ' delete-selected' : ''}`} key={roteiro.id}>
           <div className="roteiro-main-video-strip"><span title={roteiro.videoTitle}>{roteiro.videoTitle}</span><button onClick={() => { setEditingVideoId(roteiro.id); setEditingVideoTitle(roteiro.videoTitle) }} disabled={deleteMode} aria-label={`Editar título de ${roteiro.videoTitle}`} title="Editar título do vídeo" type="button"><Icon name="edit" /></button></div>
-          <button className="roteiro-main-thumbnail" onClick={() => toggleRoteiroSelection(roteiro.id)} aria-pressed={deleteMode ? markedForDelete : selectedRoteiroId === roteiro.id} type="button">{firstCharacter ? <CharacterPortrait character={firstCharacter} /> : <span className="roteiro-thumbnail-placeholder"><Icon name="message" /></span>}<strong title={roteiro.title}>{roteiro.title}</strong></button>
+          <button className="roteiro-main-thumbnail" onClick={() => { if (deleteMode) toggleRoteiroSelection(roteiro.id); else { setSelectedRoteiroId(roteiro.id); setOpenedRoteiroId(roteiro.id) } }} aria-pressed={deleteMode ? markedForDelete : selectedRoteiroId === roteiro.id} type="button">{firstCharacter ? <CharacterPortrait character={firstCharacter} /> : <span className="roteiro-thumbnail-placeholder"><Icon name="message" /></span>}<strong title={roteiro.title}>{roteiro.title}</strong></button>
         </article>
       })}</div></div>}
     </section>

@@ -100,6 +100,30 @@ button:focus-visible, input:focus-visible { outline: 3px solid #ed8caf; outline-
 .roteiros-title-actions button.confirm-delete:hover:not(:disabled) { background:#a01924; }
 .roteiros-title-actions button:disabled { opacity:.45;cursor:default; }
 .roteiros-area-titlebar h1 { margin:0;color:#342e36;font:800 26px/1.25 Manrope,sans-serif;letter-spacing:-.4px; }
+.roteiro-workspace-layout { min-width:0;min-height:0;flex:1;display:flex;background:#f5f3f4; }
+.roteiro-workspace-sidebar { width:306px;min-width:306px;height:100%;display:flex;flex-direction:column;gap:13px;padding:14px 16px;border-right:1px solid #e9e2ee;background:#fff;overflow:hidden; }
+.roteiro-back-button { min-height:38px;align-self:flex-start;display:flex;align-items:center;gap:8px;padding:0 12px;border:1px solid #e8e0ee;border-radius:9px;background:#fff;color:#685777;font-size:13px;font-weight:650;cursor:pointer; }
+.roteiro-back-button:hover { background:#f7f3fa;color:#6845a7; }
+.roteiro-back-button>span { font-size:18px;line-height:1; }
+.roteiro-tiktoks-panel { min-height:0;flex:1;display:flex;flex-direction:column;gap:11px;overflow:hidden; }
+.roteiro-tiktoks-panel>header { min-height:36px;display:flex;align-items:center;justify-content:space-between;padding:0 1px; }
+.roteiro-tiktoks-panel>header>strong { color:#675c6d;font-size:13px;font-weight:850;letter-spacing:1.2px; }
+.roteiro-tiktoks-panel>header>button { width:38px;height:38px;display:grid;place-items:center;border:1px solid #e8dfed;border-radius:10px;background:#fff;color:#7956bc;cursor:pointer; }
+.roteiro-tiktoks-panel>header>button:hover { border-color:#c8b3e4;background:#f8f4fc; }
+.roteiro-tiktoks-panel>header>button svg { width:17px;height:17px; }
+.roteiro-tiktoks-list { min-height:0;display:flex;flex-direction:column;gap:11px;overflow:auto;padding:1px 2px 9px 0; }
+.roteiro-tiktok-card { min-height:128px;position:relative;display:grid;grid-template-columns:36px minmax(0,1fr) auto;grid-template-rows:1fr 33px;align-items:center;column-gap:10px;padding:12px;border:1px solid #e7deed;border-radius:16px;background:#fff; }
+.roteiro-tiktok-card:first-child { border-color:#9875ed;box-shadow:0 0 0 1px #9875ed24; }
+.roteiro-tiktok-number { width:34px;height:34px;grid-column:1;grid-row:1;display:grid;place-items:center;border-radius:11px;background:#f1eaff;color:#7048c7;font-size:12px;font-weight:700; }
+.roteiro-tiktok-info { min-width:0;grid-column:2;grid-row:1;display:flex;flex-direction:column;gap:6px; }
+.roteiro-tiktok-info>strong { overflow:hidden;color:#19161b;font-size:16px;font-weight:750;text-overflow:ellipsis;white-space:nowrap; }
+.roteiro-tiktok-info>span { overflow:hidden;color:#7d7181;font-size:16px;text-overflow:ellipsis;white-space:nowrap; }
+.roteiro-tiktok-cast { grid-column:3;grid-row:1;padding:5px 7px;border:1px solid #b9ead9;border-radius:9px;background:#f1fbf6;color:#14805d;font-size:10px;font-weight:800; }
+.roteiro-tiktok-actions { grid-column:1/4;grid-row:2;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px; }
+.roteiro-tiktok-actions>button { min-width:0;height:29px;border:1px solid #e7deed;border-radius:8px;background:#fff;color:#856ba4;font-size:11px;cursor:pointer; }
+.roteiro-tiktok-actions>button:hover:not(:disabled) { border-color:#c8b3e4;background:#faf7fd; }
+.roteiro-tiktok-actions>button:disabled { color:#d8d1dd;cursor:default; }
+.roteiro-workspace-empty { min-width:0;min-height:0;flex:1;background:#f5f3f4; }
 @media (max-width:700px) { .roteiro-main-library { padding:14px; }.roteiro-main-cards { grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); }.roteiro-main-thumbnail>.portrait-art,.roteiro-thumbnail-placeholder { height:120px; } }
 .blank-page { min-width: 0; min-height: 0; flex: 1; display: grid; place-items: center; background: #f5f3f4; color: #8a7280; }
 .app-recovery { min-height: 100vh; display: grid; place-items: center; padding: 24px; background: #f5f3f4; color: #352530; }

@@ -1,6 +1,7 @@
 import type { FabricatorDesktopApi } from '../../shared/fabricator'
 import type { CustomizerDesktopApi } from '../../shared/customizer'
 import type { StudioDesktopApi, VideoStudioDesktopApi } from '../../shared/studio'
+import type { RoteirosDesktopApi } from '../../shared/roteiros'
 import type { VideoExportSurfaceBootstrap, VideoExportSurfaceFrameReady, VideoExportSurfaceReady, VideoExportSurfaceRenderRequest } from '../../shared/videoExportSurface'
 
 declare global {
@@ -32,7 +33,7 @@ declare global {
       onVideoExportSurfaceRender: (callback: (request: VideoExportSurfaceRenderRequest) => void) => () => void
       reportVideoExportSurfaceFrame: (ready: VideoExportSurfaceFrameReady) => void
       reportVideoExportSurfaceReady: (ready: VideoExportSurfaceReady) => void
-    } & FabricatorDesktopApi & CustomizerDesktopApi & StudioDesktopApi & VideoStudioDesktopApi
+    } & FabricatorDesktopApi & CustomizerDesktopApi & StudioDesktopApi & VideoStudioDesktopApi & RoteirosDesktopApi
   }
 }
 

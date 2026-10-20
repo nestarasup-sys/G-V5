@@ -3,6 +3,7 @@ import type { FabricatorDesktopApi } from '../src/shared/fabricator'
 import type { CustomizerDesktopApi } from '../src/shared/customizer'
 import type { StudioDesktopApi, VideoStudioDesktopApi } from '../src/shared/studio'
 import type { VideoExportProgress } from '../src/shared/videoExportRuntime'
+import type { RoteirosDesktopApi } from '../src/shared/roteiros'
 
 const fabricatorApi: FabricatorDesktopApi = {
   listFabricatorSlots: () => ipcRenderer.invoke('fabricator:list-slots'),
@@ -114,6 +115,11 @@ const videoStudioApi: VideoStudioDesktopApi = {
   discardVideoExportRecovery: (jobId) => ipcRenderer.invoke('video-studio:export:discard-recovery', jobId)
 }
 
+const roteirosApi: RoteirosDesktopApi = {
+  listRoteiros: () => ipcRenderer.invoke('roteiros:list'),
+  saveRoteiros: (roteiros) => ipcRenderer.invoke('roteiros:save', roteiros)
+}
+
 contextBridge.exposeInMainWorld('desktop', {
   platform: process.platform,
   appName: 'Gacha Nymi',
@@ -138,5 +144,6 @@ contextBridge.exposeInMainWorld('desktop', {
   ...fabricatorApi,
   ...customizerApi,
   ...studioApi,
-  ...videoStudioApi
+  ...videoStudioApi,
+  ...roteirosApi
 })
