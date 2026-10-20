@@ -648,16 +648,6 @@ export function PoseWorkspace() {
         </section>
 
         <aside className="pose-side-panel" aria-label="Slots e ferramentas de pose">
-          <section className="pose-slots-panel">
-            <header><span><strong>Slots de poses</strong><small>12 espaços · 6 visíveis</small></span><span className="pose-slot-count">{slots.filter(Boolean).length}/12</span></header>
-            <div className="pose-slot-grid" role="tablist" aria-label="Slots de poses">
-              {slots.map((slot, index) => {
-                const number = index + 1
-                return <button key={number} role="tab" aria-selected={activeSlot === number} className={`pose-slot${activeSlot === number ? ' active' : ''}${slot ? ' filled' : ' empty'}`} onClick={() => { setCategoryPickerOpen(false); void selectPoseSlot(number) }} title={slot ? `${slot.name} · ${resolvePoseCategory(slot)}` : `Slot ${number}: vazio`} type="button"><b>{String(number).padStart(2, '0')}</b><small>{slot ? resolvePoseCategory(slot) : 'Vazio'}</small></button>
-              })}
-            </div>
-          </section>
-
           <section className="pose-export-slots-panel" aria-label="Poses usadas na exportação de personagens">
             <header><span><strong>Poses para exportação</strong><small>Escolha até cinco poses deste modelo</small></span><span className="pose-slot-count">{exportPoseSlots.filter((slot) => slot !== null).length}/5</span></header>
             <div className="pose-export-slot-list">
@@ -665,6 +655,16 @@ export function PoseWorkspace() {
                 const available = allPoseSlots.filter((pose): pose is NonNullable<FabricatorPoseSummary> => Boolean(pose && pose.sourceModelSlot === selectedModelSlot))
                 const selectedPose = available.find((pose) => pose.slot === poseSlot)
                 return <label className="pose-export-slot-row" key={index}><b>{String(index + 1).padStart(2, '0')}</b><select aria-label={`Pose do slot de exportação ${index + 1}`} disabled={savingExportPoseSlots} value={poseSlot ?? ''} onChange={(event) => void assignExportPose(index, event.target.value ? Number(event.target.value) : null)}><option value="">Escolher pose</option>{poseSlot !== null && !selectedPose && <option value={poseSlot}>Pose {String(poseSlot).padStart(2, '0')} · indisponível</option>}{available.map((pose) => <option key={pose.slot} value={pose.slot} disabled={exportPoseSlots.some((slot, slotIndex) => slotIndex !== index && slot === pose.slot)}>Pose {String(pose.slot).padStart(2, '0')}</option>)}</select></label>
+              })}
+            </div>
+          </section>
+
+          <section className="pose-slots-panel">
+            <header><span><strong>Slots de poses</strong><small>12 espaços · 6 visíveis</small></span><span className="pose-slot-count">{slots.filter(Boolean).length}/12</span></header>
+            <div className="pose-slot-grid" role="tablist" aria-label="Slots de poses">
+              {slots.map((slot, index) => {
+                const number = index + 1
+                return <button key={number} role="tab" aria-selected={activeSlot === number} className={`pose-slot${activeSlot === number ? ' active' : ''}${slot ? ' filled' : ' empty'}`} onClick={() => { setCategoryPickerOpen(false); void selectPoseSlot(number) }} title={slot ? `${slot.name} · ${resolvePoseCategory(slot)}` : `Slot ${number}: vazio`} type="button"><b>{String(number).padStart(2, '0')}</b><small>{slot ? resolvePoseCategory(slot) : 'Vazio'}</small></button>
               })}
             </div>
           </section>
