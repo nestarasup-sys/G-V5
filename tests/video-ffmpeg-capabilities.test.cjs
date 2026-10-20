@@ -39,3 +39,17 @@ test('FFmpeg probe rejects missing paths and non-FFmpeg executables before user 
   await assert.rejects(() => capabilities.probeVideoStudioFfmpeg(missing), /não foi encontrado/)
   await assert.rejects(() => capabilities.probeVideoStudioFfmpeg(process.execPath, { timeoutMs: 5000 }), /FFmpeg não iniciou corretamente|não se identificou como FFmpeg/)
 })
+
+
+test('media process runner aborts a live child instead of waiting for timeout', async () => {
+  const controller = new AbortController()
+  const started = Date.now()
+  const pending = capabilities.runVideoStudioProcess(
+    process.execPath,
+    ['-e', 'setInterval(() => {}, 1000)'],
+    { timeoutMs: 30_000, signal: controller.signal },
+  )
+  setTimeout(() => controller.abort(new Error('cancelled-by-test')), 100)
+  await assert.rejects(pending, /cancelled-by-test/)
+  assert.ok(Date.now() - started < 5_000, 'abort should kill the child promptly')
+})
