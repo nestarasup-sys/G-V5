@@ -82,6 +82,12 @@ jobs:
           $env:GACHA_VIDEO_TOOLS_SMOKE_OUTPUT = $report
           Remove-Item Env:GACHA_FFMPEG_PATH -ErrorAction SilentlyContinue
           Remove-Item Env:GACHA_FFPROBE_PATH -ErrorAction SilentlyContinue
+          # Simulate a clean machine for media tools: remove Chocolatey/Git/other
+          # tool directories from PATH. The packaged app must resolve only
+          # process.resourcesPath/video-tools.
+          $env:PATH = "$env:SystemRoot\System32;$env:SystemRoot"
+          if (Get-Command ffmpeg -ErrorAction SilentlyContinue) { throw 'System FFmpeg is still visible during packaged smoke.' }
+          if (Get-Command ffprobe -ErrorAction SilentlyContinue) { throw 'System FFprobe is still visible during packaged smoke.' }
           $process = Start-Process -FilePath $exe -PassThru
           if (-not $process.WaitForExit(120000)) {
             $process.Kill()
