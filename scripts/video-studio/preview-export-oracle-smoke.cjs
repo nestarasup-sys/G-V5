@@ -62,22 +62,14 @@ function fail(reason){
   app.exit(1)
 }
 
-function createWindow(hash){
+function createWindow(){
   const win=new BrowserWindow({
     show:false,width,height,useContentSize:true,backgroundColor:'#000000',
     webPreferences:{preload:preloadPath,contextIsolation:true,nodeIntegration:false,sandbox:true,backgroundThrottling:false,offscreen:true},
   })
   win.webContents.on('render-process-gone',(_event,details)=>fail(new Error(`Oracle renderer encerrou: ${details.reason}`)))
   activeWindow=win
-  return win.loadFile(rendererFile,{hash}).then(()=>win)
-}
-
-function renderFrame(win,mode){
-  currentMode=mode
-  return new Promise((resolve,reject)=>{
-    pendingResolve={resolve,reject,win}
-    win.webContents.send('video-studio:export-surface:render',{requestId:`${mode}-frame-0`,frame:0})
-  })
+  return win
 }
 
 app.disableHardwareAcceleration()
@@ -110,20 +102,19 @@ app.whenReady().then(async()=>{
     }catch(error){pending.reject(error)}
   })
 
-  const dom=await createWindow(`/video-preview-oracle?jobId=${jobId}`)
+  const dom=createWindow()
   allowed.add(dom.webContents.id)
   currentMode='dom'
   const domReady=new Promise((resolve,reject)=>{pendingResolve={resolve,reject,win:dom}})
-  // Reload once after sender authorization so bootstrap cannot race the allow-list.
-  await dom.reload()
+  await dom.loadFile(rendererFile,{hash:`/video-preview-oracle?jobId=${jobId}`})
   const domPixels=await domReady
   allowed.delete(dom.webContents.id);dom.destroy()
 
-  const canvas=await createWindow(`/video-export-surface?jobId=${jobId}`)
+  const canvas=createWindow()
   allowed.add(canvas.webContents.id)
   currentMode='canvas'
   const canvasReady=new Promise((resolve,reject)=>{pendingResolve={resolve,reject,win:canvas}})
-  await canvas.reload()
+  await canvas.loadFile(rendererFile,{hash:`/video-export-surface?jobId=${jobId}`})
   const canvasPixels=await canvasReady
 
   const metrics={
