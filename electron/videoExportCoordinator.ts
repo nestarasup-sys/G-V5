@@ -158,7 +158,7 @@ export class VideoExportCoordinator {
     for (const dependency of reopened.manifest.mediaDependencies ?? []) {
       this.abort(active)
       const pinned = await this.jobs.resolvePinnedMedia(active.jobId, dependency.assetId)
-      const probe = await probeVideoMedia(paths.ffprobe, pinned.path)
+      const probe = await probeVideoMedia(paths.ffprobe, pinned.path, { signal: active.controller.signal })
       media.set(dependency.assetId, { path: pinned.path, hasAudio: probe.audio !== null })
     }
 
@@ -237,6 +237,7 @@ export class VideoExportCoordinator {
       media,
       outputPath: finalPath,
       tempRoot: this.jobs.root,
+      signal: active.controller.signal,
     })
 
     this.abort(active)
@@ -245,6 +246,7 @@ export class VideoExportCoordinator {
       ffprobeExecutable: paths.ffprobe,
       ffmpegExecutable: paths.ffmpeg,
       outputPath: finalPath,
+      signal: active.controller.signal,
       expected: {
         width: 1920,
         height: 1080,
