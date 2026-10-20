@@ -7,7 +7,6 @@ const { pathToFileURL }=require('node:url')
 const ffmpeg=process.env.GACHA_FFMPEG_PATH
 function run(exe,args){return execFileSync(exe,args,{encoding:'utf8',timeout:180000,windowsHide:true,maxBuffer:16*1024*1024})}
 
-app.disableHardwareAcceleration()
 app.commandLine.appendSwitch('disable-background-timer-throttling')
 app.whenReady().then(async()=>{
   if(!ffmpeg||!path.isAbsolute(ffmpeg))throw new Error('GACHA_FFMPEG_PATH obrigatório.')
@@ -47,14 +46,26 @@ async function bunny(){
   }
   return{supported:true,elapsedMs:performance.now()-started,checksum,duration:await input.computeDuration()};
 }
-window.__resultPromise=(async()=>{const native=await htmlVideo();const mediabunny=await bunny();return{ok:true,timestamps:timestamps.length,native,mediabunny,speedup:mediabunny.supported?native.elapsedMs/mediabunny.elapsedMs:null};})();
+function median(values){const sorted=[...values].sort((a,b)=>a-b);return sorted[Math.floor(sorted.length/2)];}
+window.__resultPromise=(async()=>{
+  const nativeSamples=[],mediabunnySamples=[];
+  for(let round=0;round<3;round++){
+    if(round%2===0){nativeSamples.push(await htmlVideo());mediabunnySamples.push(await bunny());}
+    else{mediabunnySamples.push(await bunny());nativeSamples.push(await htmlVideo());}
+  }
+  const supported=mediabunnySamples.every(x=>x.supported);
+  const nativeMedianMs=median(nativeSamples.map(x=>x.elapsedMs));
+  const mediabunnyMedianMs=supported?median(mediabunnySamples.map(x=>x.elapsedMs)):null;
+  return{ok:true,timestamps:timestamps.length,rounds:3,nativeSamples,mediabunnySamples,nativeMedianMs,mediabunnyMedianMs,speedup:supported?nativeMedianMs/mediabunnyMedianMs:null};
+})();
 </script></body></html>`)
   const win=new BrowserWindow({show:false,width:640,height:360,webPreferences:{contextIsolation:true,nodeIntegration:false,sandbox:false,backgroundThrottling:false}})
   try{
     await win.loadFile(html)
     const result=await win.webContents.executeJavaScript('(async()=>{while(!window.__resultPromise)await new Promise(r=>setTimeout(r,10));return await window.__resultPromise})()',true)
     if(!result?.ok)throw new Error('Mediabunny A/B did not return result.')
-    console.log(JSON.stringify(result,null,2))
+    const gpuInfo=await app.getGPUInfo('basic').catch(()=>null)
+    console.log(JSON.stringify({...result,machine:{platform:process.platform,release:os.release(),cpu:os.cpus()[0]?.model??'unknown',logicalCpuCount:os.cpus().length,totalMemoryBytes:os.totalmem()},gpuInfo},null,2))
   }finally{
     if(!win.isDestroyed())win.destroy()
     fs.rmSync(root,{recursive:true,force:true,maxRetries:8,retryDelay:100})
