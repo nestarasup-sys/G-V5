@@ -31,6 +31,7 @@ async function hashFile(path: string): Promise<string> {
 }
 
 export class VideoPreviewProxyStore {
+  private readonly pending = new Map<string, Promise<VideoPreviewProxyRecord>>()
   constructor(readonly root: string, readonly maxBytes = 4 * 1024 * 1024 * 1024) {
     if (!Number.isSafeInteger(maxBytes) || maxBytes < 1024) throw new Error('Orçamento do cache de proxy inválido.')
   }
@@ -73,7 +74,24 @@ export class VideoPreviewProxyStore {
     const sha=await hashFile(sourcePath)
     const existing=await this.read(sha)
     if(existing) return existing
+    const alreadyPending=this.pending.get(sha)
+    if(alreadyPending) return alreadyPending
 
+    const generation=this.generate({ ...input, sourcePath, sourceBytes: source.size, sha })
+      .finally(()=>{ if(this.pending.get(sha)===generation) this.pending.delete(sha) })
+    this.pending.set(sha,generation)
+    return generation
+  }
+
+  private async generate(input:{
+    sourcePath:string
+    sourceBytes:number
+    sha:string
+    ffmpeg:VideoStudioFfmpegCapabilities
+    signal?:AbortSignal
+    timeoutMs?:number
+  }):Promise<VideoPreviewProxyRecord>{
+    const {sourcePath,sourceBytes,sha}=input
     const folder=this.folderFor(sha)
     // A stale/corrupt derivative is disposable by definition. Remove the
     // content-addressed folder before regenerating so Windows rename semantics
@@ -97,10 +115,7 @@ export class VideoPreviewProxyStore {
       if(proxy.code!==0) throw new Error(`Falha ao criar proxy de preview. ${proxy.stderr}`)
       const proxyInfo=await stat(proxyTemp)
       if(!proxyInfo.isFile()||proxyInfo.size<128) throw new Error('Proxy de preview saiu vazio.')
-      await rename(proxyTemp,proxyFinal).catch(async(reason)=>{
-        if((reason as NodeJS.ErrnoException).code==='EEXIST') await rm(proxyTemp,{force:true})
-        else throw reason
-      })
+      await rename(proxyTemp,proxyFinal)
 
       let waveformFilename:string|null=null
       const wave=await runVideoStudioProcess(input.ffmpeg.executable,[
@@ -111,10 +126,7 @@ export class VideoPreviewProxyStore {
       if(wave?.code===0){
         const info=await stat(waveTemp).catch(()=>null)
         if(info?.isFile()&&info.size>0){
-          await rename(waveTemp,waveFinal).catch(async(reason)=>{
-            if((reason as NodeJS.ErrnoException).code==='EEXIST') await rm(waveTemp,{force:true})
-            else throw reason
-          })
+          await rename(waveTemp,waveFinal)
           waveformFilename='waveform.png'
         }
       }
@@ -122,7 +134,7 @@ export class VideoPreviewProxyStore {
       const finalInfo=await stat(proxyFinal)
       const record:VideoPreviewProxyRecord={
         schemaVersion:1,profileVersion:VIDEO_PREVIEW_PROXY_VERSION,sourceSha256:sha,
-        sourceBytes:source.size,proxyBytes:finalInfo.size,proxyFilename:'preview.mp4',
+        sourceBytes,proxyBytes:finalInfo.size,proxyFilename:'preview.mp4',
         waveformFilename,createdAt:new Date().toISOString()
       }
       const manifestTemp=join(folder,`.manifest-${randomUUID()}.tmp`)
@@ -130,12 +142,16 @@ export class VideoPreviewProxyStore {
       await rename(manifestTemp,this.manifestPath(sha))
       await this.prune(sha)
       return record
+    }catch(reason){
+      // A failed generation must never leave a folder that future callers can
+      // mistake for a usable derivative.
+      await rm(folder,{recursive:true,force:true}).catch(()=>undefined)
+      throw reason
     }finally{
       await rm(proxyTemp,{force:true}).catch(()=>undefined)
       await rm(waveTemp,{force:true}).catch(()=>undefined)
     }
   }
-
 
   async prune(protectedSha?: string): Promise<{ bytes: number; removed: number }> {
     await mkdir(this.root,{recursive:true})
