@@ -85,7 +85,7 @@ test('roteiros migra JSON para SQLite sem apagar a origem e adapta o schema lega
 
   const catalog = catalogAt(root)
   const db = catalog.database
-  assert.equal(db.pragma('user_version', { simple: true }), 6)
+  assert.equal(db.pragma('user_version', { simple: true }), 7)
   assert.ok(db.prepare('PRAGMA table_info(roteiros)').all().some((column) => column.name === 'position'))
   assert.ok(db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='roteiro_sections'").get())
   assert.deepEqual(db.prepare('SELECT id, title, video_title, character_ids_json, position FROM roteiros ORDER BY position').all(), [{

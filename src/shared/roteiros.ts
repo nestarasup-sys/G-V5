@@ -4,6 +4,7 @@ export type RoteiroTikTok = {
   videoTitle: string
   video?: RoteiroVideoReference | null
   blocks?: RoteiroReactionBlock[]
+  description?: string
 }
 
 export type RoteiroVideoReference = {
@@ -27,6 +28,7 @@ export type RoteiroReactionBlock = {
 export type RoteiroSectionContent = {
   video: RoteiroVideoReference | null
   blocks: RoteiroReactionBlock[]
+  description?: string
 }
 
 export type RoteiroDocument = {

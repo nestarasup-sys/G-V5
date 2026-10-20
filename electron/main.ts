@@ -59,6 +59,7 @@ function isRoteiroDocument(value: unknown): value is RoteiroDocument {
     && Number.isSafeInteger((video as RoteiroVideoReference).durationFrames) && (video as RoteiroVideoReference).durationFrames > 0)
   const isContent = (content: unknown, characters: string[]): content is RoteiroSectionContent | undefined => content === undefined || Boolean(content && typeof content === 'object' && !Array.isArray(content)
     && isVideo((content as RoteiroSectionContent).video) && Array.isArray((content as RoteiroSectionContent).blocks) && (content as RoteiroSectionContent).blocks.length <= 200
+    && ((content as RoteiroSectionContent).description === undefined || typeof (content as RoteiroSectionContent).description === 'string' && (content as RoteiroSectionContent).description!.length <= 20_000)
     && (content as RoteiroSectionContent).blocks.every((block: RoteiroReactionBlock) => Boolean(block && isId(block.id)
       && (block.characterId === '' || isId(block.characterId) && characters.includes(block.characterId))
       && (block.kind === 'fala' || block.kind === 'pensamento')
@@ -70,7 +71,7 @@ function isRoteiroDocument(value: unknown): value is RoteiroDocument {
     && Array.isArray(roteiro.tiktoks) && roteiro.tiktoks.length <= 500
     && isContent(roteiro.opening, roteiro.characterIds ?? [])
     && roteiro.tiktoks.every((item: RoteiroTikTok) => Boolean(item && isId(item.id) && isText(item.title, 100) && isText(item.videoTitle, 100)
-      && isVideo(item.video) && isContent({ video: item.video ?? null, blocks: item.blocks ?? [] }, roteiro.characterIds ?? [])))
+      && isVideo(item.video) && isContent({ video: item.video ?? null, blocks: item.blocks ?? [], description: item.description }, roteiro.characterIds ?? [])))
 }
 
 function configureDevAiDataRoot(): void {
@@ -2005,21 +2006,22 @@ async function registerFabricatorHandlers(): Promise<void> {
     if (!db) throw new Error('Catálogo de dados não inicializado.')
     const roteiroRows = db.prepare('SELECT id, title, video_title, character_ids_json FROM roteiros ORDER BY position, created_at, id').all() as Array<{ id: string; title: string; video_title: string; character_ids_json: string }>
     const tiktokRows = db.prepare('SELECT id, roteiro_id, title, video_title FROM roteiro_tiktoks ORDER BY roteiro_id, position').all() as Array<{ id: string; roteiro_id: string; title: string; video_title: string }>
-    const sectionRows = db.prepare('SELECT section_id, roteiro_id, section_kind, video_asset_json, blocks_json FROM roteiro_sections').all() as Array<{ section_id: string; roteiro_id: string; section_kind: 'opening' | 'tiktok'; video_asset_json: string | null; blocks_json: string }>
+    const sectionRows = db.prepare('SELECT section_id, roteiro_id, section_kind, video_asset_json, blocks_json, description_text FROM roteiro_sections').all() as Array<{ section_id: string; roteiro_id: string; section_kind: 'opening' | 'tiktok'; video_asset_json: string | null; blocks_json: string; description_text: string }>
     const contentById = new Map(sectionRows.map((row) => [row.section_id, {
       video: row.video_asset_json ? JSON.parse(row.video_asset_json) as RoteiroVideoReference : null,
-      blocks: JSON.parse(row.blocks_json) as RoteiroReactionBlock[]
+      blocks: JSON.parse(row.blocks_json) as RoteiroReactionBlock[],
+      description: row.description_text
     }]))
     const tiktoksByRoteiro = new Map<string, RoteiroDocument['tiktoks']>()
     for (const row of tiktokRows) {
       const items = tiktoksByRoteiro.get(row.roteiro_id) ?? []
-      items.push({ id: row.id, title: row.title, videoTitle: row.video_title, ...(contentById.get(row.id) ?? { video: null, blocks: [] }) })
+      items.push({ id: row.id, title: row.title, videoTitle: row.video_title, ...(contentById.get(row.id) ?? { video: null, blocks: [], description: '' }) })
       tiktoksByRoteiro.set(row.roteiro_id, items)
     }
     return roteiroRows.map((row) => ({
       id: row.id, title: row.title, videoTitle: row.video_title,
       characterIds: JSON.parse(row.character_ids_json) as string[],
-      opening: contentById.get(`${row.id}:opening`) ?? { video: null, blocks: [] },
+      opening: contentById.get(`${row.id}:opening`) ?? { video: null, blocks: [], description: '' },
       tiktoks: tiktoksByRoteiro.get(row.id) ?? []
     }))
   })
@@ -2041,15 +2043,15 @@ async function registerFabricatorHandlers(): Promise<void> {
         db.prepare('DELETE FROM roteiros').run()
         const insertRoteiro = db.prepare('INSERT INTO roteiros(id, title, video_title, character_ids_json, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
         const insertTikTok = db.prepare('INSERT INTO roteiro_tiktoks(id, roteiro_id, title, video_title, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
-        const insertSection = db.prepare('INSERT INTO roteiro_sections(section_id, roteiro_id, section_kind, video_asset_json, blocks_json, updated_at) VALUES (?, ?, ?, ?, ?, ?)')
+        const insertSection = db.prepare('INSERT INTO roteiro_sections(section_id, roteiro_id, section_kind, video_asset_json, blocks_json, description_text, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
         documents.forEach((roteiro, position) => {
           insertRoteiro.run(roteiro.id, roteiro.title.trim(), roteiro.videoTitle.trim(), JSON.stringify(roteiro.characterIds), position, now, now)
-          const opening = roteiro.opening ?? { video: null, blocks: [] }
-          insertSection.run(`${roteiro.id}:opening`, roteiro.id, 'opening', opening.video ? JSON.stringify(opening.video) : null, JSON.stringify(opening.blocks), now)
+          const opening = roteiro.opening ?? { video: null, blocks: [], description: '' }
+          insertSection.run(`${roteiro.id}:opening`, roteiro.id, 'opening', opening.video ? JSON.stringify(opening.video) : null, JSON.stringify(opening.blocks), opening.description ?? '', now)
           roteiro.tiktoks.forEach((tiktok, tiktokPosition) => {
             insertTikTok.run(tiktok.id, roteiro.id, tiktok.title.trim(), tiktok.videoTitle.trim(), tiktokPosition, now, now)
-            const content = { video: tiktok.video ?? null, blocks: tiktok.blocks ?? [] }
-            insertSection.run(tiktok.id, roteiro.id, 'tiktok', content.video ? JSON.stringify(content.video) : null, JSON.stringify(content.blocks), now)
+            const content = { video: tiktok.video ?? null, blocks: tiktok.blocks ?? [], description: tiktok.description ?? '' }
+            insertSection.run(tiktok.id, roteiro.id, 'tiktok', content.video ? JSON.stringify(content.video) : null, JSON.stringify(content.blocks), content.description, now)
           })
         })
       })
