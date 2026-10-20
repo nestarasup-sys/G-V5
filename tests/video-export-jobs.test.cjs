@@ -5,6 +5,7 @@ const fs = require('node:fs/promises')
 const fsSync = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
+const { randomUUID } = require('node:crypto')
 const ts = require('typescript')
 
 const sourcePath = path.join(__dirname, '../electron/videoExportJobs.ts')
@@ -443,4 +444,34 @@ test('cleanup still fails closed when a readable manifest claims a different job
 
   await assert.rejects(store.cancel(jobId), /não é proprietário/)
   assert.equal((await fs.stat(folder)).isDirectory(), true)
+})
+
+
+test('recoverable listing keeps the newest 100 jobs when stale history exceeds the UI cap', async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'gacha-video-job-recovery-cap-'))
+  t.after(() => fs.rm(root, { recursive: true, force: true }))
+  const store = new VideoExportJobStore(root)
+  const snapshot = createVideoExportSnapshot(syntheticStudio())
+  const characterAssets = createVideoCharacterRenderAssetSnapshot([])
+  const characters = { schemaVersion: 1, characters: [] }
+  const expected = {
+    studioId,
+    snapshotSha256: hashSnapshot(snapshot),
+    mediaSha256: [],
+    durationFrames: 30,
+    renderVariant: 'static-characters',
+  }
+  const ids = []
+  for (let index = 0; index < 102; index += 1) {
+    const id = randomUUID()
+    ids.push(id)
+    await store.create({ jobId: id, ...expected, snapshot, characterAssets, characters, renderVariant: expected.renderVariant })
+    const when = new Date(Date.now() - (102 - index) * 1000)
+    await fs.utimes(path.join(root, id), when, when)
+  }
+  const records = await store.listRecoverable()
+  assert.equal(records.length, 100)
+  assert.equal(records.some((record) => record.jobId === ids[0]), false)
+  assert.equal(records.some((record) => record.jobId === ids[1]), false)
+  assert.equal(records.some((record) => record.jobId === ids.at(-1)), true)
 })
