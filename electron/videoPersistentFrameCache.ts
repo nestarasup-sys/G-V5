@@ -139,8 +139,10 @@ export class VideoPersistentFrameCache {
         if (pixels.byteLength !== rawBytes) throw new Error('cache inflate mismatch')
         const actualChecksum = createHash('sha256').update(pixels).digest()
         if (!actualChecksum.equals(checksum)) throw new Error('cache checksum mismatch')
+        // LRU freshness is a performance hint, not correctness metadata.
+        // Keep hot touches in the shared in-memory index and persist them on
+        // the next normal mutation instead of rewriting index.json per frame.
         entry.touchedAt = Date.now()
-        await this.writeIndex(index)
         this.hits += 1
         return Buffer.from(pixels)
       } catch {
