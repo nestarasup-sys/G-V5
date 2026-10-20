@@ -64,7 +64,7 @@ function fail(reason){
 
 function createWindow(){
   const win=new BrowserWindow({
-    show:false,width,height,useContentSize:true,backgroundColor:'#000000',
+    show:false,frame:false,resizable:false,width,height,useContentSize:true,backgroundColor:'#000000',
     webPreferences:{preload:preloadPath,contextIsolation:true,nodeIntegration:false,sandbox:true,backgroundThrottling:false,offscreen:true},
   })
   win.webContents.on('render-process-gone',(_event,details)=>fail(new Error(`Oracle renderer encerrou: ${details.reason}`)))
@@ -93,8 +93,10 @@ app.whenReady().then(async()=>{
     if(ready.error){pending.reject(new Error(ready.error));return}
     try{
       if(currentMode==='dom'){
+        pending.win.setContentSize(width,height,false)
         const image=await pending.win.webContents.capturePage({x:0,y:0,width,height})
-        if(image.getSize().width!==width||image.getSize().height!==height)throw new Error('Captura DOM não é 1920x1080.')
+        const captured=image.getSize()
+        if(captured.width!==width||captured.height!==height)throw new Error(`Captura DOM é ${captured.width}x${captured.height}; esperava 1920x1080.`)
         pending.resolve(Buffer.from(image.toBitmap()))
       }else{
         if(!(ready.pixels instanceof Uint8Array)||ready.pixels.byteLength!==width*height*4)throw new Error('Canvas export não devolveu pixels esperados.')
