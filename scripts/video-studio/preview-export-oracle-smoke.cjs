@@ -74,6 +74,7 @@ function createWindow(){
 
 app.disableHardwareAcceleration()
 app.commandLine.appendSwitch('disable-background-timer-throttling')
+app.commandLine.appendSwitch('force-device-scale-factor','1')
 app.whenReady().then(async()=>{
   timer=setTimeout(()=>fail(new Error('Oracle Preview↔Export excedeu 60 segundos.')),60000)
   const allowed=new Set()
