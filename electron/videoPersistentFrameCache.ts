@@ -13,6 +13,8 @@ export const VIDEO_RENDERER_CACHE_VERSION = 'g-v5-canvas-v3-sha256'
 type IndexEntry = { key: string; bytes: number; rawBytes: number; touchedAt: number }
 type Index = { schemaVersion: 1; rendererVersion: string; entries: IndexEntry[] }
 
+const rootQueues = new Map<string, Promise<unknown>>()
+
 export type PersistentFrameCacheStats = Readonly<{
   hits: number
   misses: number
@@ -37,17 +39,22 @@ export class VideoPersistentFrameCache {
   private misses = 0
   private writes = 0
   private evictions = 0
-  private queue: Promise<unknown> = Promise.resolve()
+  private readonly canonicalRoot: string
 
   constructor(readonly root: string, readonly maxBytes = 512 * 1024 * 1024) {
+    this.canonicalRoot = resolve(root)
     if (!resolve(root) || !Number.isSafeInteger(maxBytes) || maxBytes < 64 * 1024 * 1024) {
       throw new Error('Configuração do cache persistente inválida.')
     }
   }
 
   private run<T>(operation: () => Promise<T>): Promise<T> {
-    const next = this.queue.catch(() => undefined).then(operation)
-    this.queue = next
+    const previous = rootQueues.get(this.canonicalRoot) ?? Promise.resolve()
+    const next = previous.catch(() => undefined).then(operation)
+    rootQueues.set(this.canonicalRoot, next)
+    void next.finally(() => {
+      if (rootQueues.get(this.canonicalRoot) === next) rootQueues.delete(this.canonicalRoot)
+    }).catch(() => undefined)
     return next
   }
   private indexPath() { return join(this.root, 'index.json') }
