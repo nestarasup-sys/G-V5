@@ -1,7 +1,7 @@
 import { constants, createReadStream } from 'node:fs'
 import { copyFile, mkdir, lstat, readFile, readdir, realpath, rename, rm, writeFile } from 'node:fs/promises'
 import { createHash, randomUUID } from 'node:crypto'
-import { basename, join, relative, resolve, sep } from 'node:path'
+import { basename, dirname, join, relative, resolve, sep } from 'node:path'
 import { verifyVideoExportMediaManifest, type ResolveVideoExportMedia, type VideoExportMediaDependency } from './videoExportAssets'
 import { parseVideoExportSnapshot, type VideoExportSnapshot } from '../src/shared/videoExportSnapshot'
 import type { RenderVariant } from '../src/shared/videoSceneIR'
@@ -637,11 +637,29 @@ export class VideoExportJobStore {
     const info = await lstat(folder).catch(() => null)
     if (!info) return
     if (!info.isDirectory() || info.isSymbolicLink()) throw new Error('Pasta do job inválida.')
-    const manifest = JSON.parse(await readFile(join(folder, 'manifest.json'), 'utf8')) as VideoExportManifest
-    if (manifest.jobId !== jobId) throw new Error('O job não é proprietário desta pasta.')
-    const rootRelative = relative(this.root, folder)
-    if (!rootRelative || rootRelative.startsWith(`..${sep}`)) throw new Error('Pasta do job fora do diretório temporário.')
-    await rm(folder, { recursive: true })
+    const [canonicalRoot, canonicalFolder] = await Promise.all([
+      realpath(this.root),
+      realpath(folder),
+    ])
+    // Cleanup must remain possible after a crash truncates/corrupts manifest.json,
+    // but deletion is allowed only for the exact UUID child inside the trusted
+    // jobs root. A readable manifest with a conflicting owner still fails closed.
+    if (dirname(canonicalFolder) !== canonicalRoot || basename(canonicalFolder) !== jobId) {
+      throw new Error('Pasta do job fora do diretório temporário.')
+    }
+    const manifestPath = join(canonicalFolder, 'manifest.json')
+    const manifestText = await readFile(manifestPath, 'utf8').catch(() => null)
+    if (manifestText !== null) {
+      try {
+        const manifest = JSON.parse(manifestText) as VideoExportManifest
+        if (manifest.jobId !== jobId) throw new Error('O job não é proprietário desta pasta.')
+      } catch (reason) {
+        if (reason instanceof Error && reason.message === 'O job não é proprietário desta pasta.') throw reason
+        // Malformed/truncated manifests are not resumable, but the exact
+        // app-owned UUID directory can still be discarded safely.
+      }
+    }
+    await rm(canonicalFolder, { recursive: true })
   }
 
   async cancel(jobId: string): Promise<void> {
