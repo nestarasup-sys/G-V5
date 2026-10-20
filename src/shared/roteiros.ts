@@ -9,6 +9,7 @@ export type RoteiroTikTok = {
   sceneEndSeconds?: number
   firstGroupReactionSeconds?: number
   secondGroupReactionSeconds?: number
+  additionalContext?: string
 }
 
 export type RoteiroVideoReference = {
@@ -37,6 +38,7 @@ export type RoteiroSectionContent = {
   sceneEndSeconds?: number
   firstGroupReactionSeconds?: number
   secondGroupReactionSeconds?: number
+  additionalContext?: string
 }
 
 export type RoteiroTimeline = 'unspecified' | 'past' | 'present' | 'future'
@@ -49,6 +51,7 @@ export type BaseVideoDetails = {
   sceneEndSeconds?: number
   firstGroupReactionSeconds?: number
   secondGroupReactionSeconds?: number
+  additionalContext?: string
 }
 
 export type RoteiroDocument = {

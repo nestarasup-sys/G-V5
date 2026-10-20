@@ -3,7 +3,7 @@ import type { BaseVideoDetails, RoteiroTimeline } from '../../../../shared/rotei
 import type { VideoLibraryItem } from '../../../../shared/studio'
 import { Icon } from '../../ui/components/Icon'
 
-const emptyDetails = (videoId: string): BaseVideoDetails => ({ videoId, description: '', timeline: 'unspecified' })
+const emptyDetails = (videoId: string): BaseVideoDetails => ({ videoId, description: '', additionalContext: '', timeline: 'unspecified' })
 const formatDuration = (frames: number | null) => {
   if (frames === null) return 'Duração não reconhecida'
   const seconds = Math.floor(frames / 60)
@@ -128,7 +128,7 @@ export function BaseVideosPage() {
   const visibleItems = useMemo(() => items.filter((item) => {
     const details = detailsById[item.id] ?? emptyDetails(item.id)
     const query = search.trim().toLocaleLowerCase('pt-BR')
-    const matchesQuery = !query || item.name.toLocaleLowerCase('pt-BR').includes(query) || item.id.toLocaleLowerCase().includes(query) || String(details.videoNumber ?? '').includes(query) || details.description.toLocaleLowerCase('pt-BR').includes(query)
+    const matchesQuery = !query || item.name.toLocaleLowerCase('pt-BR').includes(query) || item.id.toLocaleLowerCase('pt-BR').includes(query) || String(details.videoNumber ?? '').includes(query) || details.description.toLocaleLowerCase('pt-BR').includes(query) || (details.additionalContext ?? '').toLocaleLowerCase('pt-BR').includes(query)
     return matchesQuery && (timelineFilter === 'all' || details.timeline === timelineFilter) && (activeView === 'drafts' ? details.videoNumber === undefined : details.videoNumber !== undefined)
   }).sort((a, b) => {
     const numberA = detailsById[a.id]?.videoNumber
@@ -279,6 +279,7 @@ export function BaseVideosPage() {
               <section className="roteiro-group-reaction first"><header><strong>Primeira reação em grupo</strong><span>REAÇÃO 1</span></header><div className="roteiro-timing-input"><input disabled={busy} aria-label={`Primeira reação de ${item.name} em segundos`} type="number" min="0" max="86400" step="0.01" value={details.firstGroupReactionSeconds ?? ''} onChange={(event) => updateSeconds(item.id, 'firstGroupReactionSeconds', event.target.value)} placeholder="0" /><button disabled={busy} type="button" onClick={(event) => captureTime(item.id, 'firstGroupReactionSeconds', event.currentTarget.closest('.base-video-card')?.querySelector('video') ?? null)}>Tempo real</button><small>segundos</small></div></section>
               <section className="roteiro-group-reaction second"><header><strong>Segunda reação em grupo</strong><span>REAÇÃO 2</span></header><div className="roteiro-timing-input"><input disabled={busy} aria-label={`Segunda reação de ${item.name} em segundos`} type="number" min="0" max="86400" step="0.01" value={details.secondGroupReactionSeconds ?? ''} onChange={(event) => updateSeconds(item.id, 'secondGroupReactionSeconds', event.target.value)} placeholder="0" /><button disabled={busy} type="button" onClick={(event) => captureTime(item.id, 'secondGroupReactionSeconds', event.currentTarget.closest('.base-video-card')?.querySelector('video') ?? null)}>Tempo real</button><small>segundos</small></div></section>
             </div>
+            <label className="roteiro-additional-context"><span>Contexto adicional para IA</span><textarea value={details.additionalContext ?? ''} disabled={busy} onChange={(event) => updateDetails(item.id, { additionalContext: event.target.value })} placeholder="Adicione informações, regras ou detalhes que a IA deve considerar…" maxLength={20000} /></label>
             {activeView === 'drafts' && !deleteMode && <><button className="base-video-send" type="button" disabled={busy} onClick={() => void sendToBase(item.id)}>{busy ? 'Enviando…' : 'Enviar para base de vídeos'}</button>{publishErrors[item.id] && <p className="base-video-publish-error" role="alert">{publishErrors[item.id]}</p>}</>}
           </div>
         </article>

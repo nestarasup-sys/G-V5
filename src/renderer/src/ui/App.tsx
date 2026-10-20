@@ -26,7 +26,7 @@ const roteiroAreas = [
 type SidebarRoteiro = RoteiroDocument
 type RoteiroExportLog = { id: string; createdAt: string; action: string; status: 'success' | 'error'; details: string }
 
-const emptyRoteiroContent = (): RoteiroSectionContent => ({ video: null, blocks: [], description: '', timeline: 'unspecified' })
+const emptyRoteiroContent = (): RoteiroSectionContent => ({ video: null, blocks: [], description: '', additionalContext: '', timeline: 'unspecified' })
 const roteiroThumbnailColors = ['#dcecff', '#ffe3ec', '#e2f4df', '#fff0cf', '#e9e1ff', '#d9f2ef']
 
 function roteiroThumbnailColor(id: string): string {
@@ -196,6 +196,7 @@ function RoteiroSectionEditor({ title, subtitle, content, characters, characterI
     const details = {
       videoId: video.id,
       description: content.description ?? '',
+      additionalContext: content.additionalContext ?? '',
       timeline: content.timeline ?? 'unspecified',
       sceneEndSeconds: content.sceneEndSeconds,
       firstGroupReactionSeconds: content.firstGroupReactionSeconds,
@@ -206,6 +207,7 @@ function RoteiroSectionEditor({ title, subtitle, content, characters, characterI
       const saved = await window.desktop.listBaseVideoDetails()
       const existing = saved.find((item) => item.videoId === video.id)
       const hasFilledContent = Boolean(details.description.trim()
+        || details.additionalContext.trim()
         || details.timeline !== 'unspecified'
         || details.sceneEndSeconds !== undefined
         || details.firstGroupReactionSeconds !== undefined
@@ -275,6 +277,7 @@ function RoteiroSectionEditor({ title, subtitle, content, characters, characterI
         </div>
       </article>)}</div>}
     </section>
+    <label className="roteiro-additional-context"><span>Contexto adicional para IA</span><textarea value={content.additionalContext ?? ''} onChange={(event) => onUpdate({ ...content, additionalContext: event.target.value })} placeholder="Adicione informações, regras ou detalhes que a IA deve considerar…" maxLength={20000} /></label>
   </main>{pickerOpen && <div className="roteiro-modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setPickerOpen(false) }}>
     <section className="roteiro-video-picker-modal" role="dialog" aria-modal="true" aria-labelledby="roteiro-video-picker-title">
       <header><div><span>BASE DE VÍDEOS</span><h2 id="roteiro-video-picker-title">Selecionar vídeo</h2><p>Escolha um vídeo publicado para vincular a esta seção.</p></div><button type="button" aria-label="Fechar" onClick={() => setPickerOpen(false)}>×</button></header>
@@ -317,15 +320,15 @@ function RoteiroWorkspace({ roteiro, onBack, onUpdate, onDeleteDraftVideo, chara
   const [exportLogs, setExportLogs] = useState<RoteiroExportLog[]>([])
   const addExportLog = (action: string, status: RoteiroExportLog['status'], details: string) => setExportLogs((current) => [{ id: crypto.randomUUID(), createdAt: new Date().toISOString(), action, status, details }, ...current].slice(0, 50))
   const activeTikTok = roteiro.tiktoks.find((item) => item.id === activeContentId)
-  const activeContent = activeContentId === 'opening' ? roteiro.opening ?? emptyRoteiroContent() : { video: activeTikTok?.video ?? null, blocks: activeTikTok?.blocks ?? [], description: activeTikTok?.description ?? '', timeline: activeTikTok?.timeline ?? 'unspecified', sceneEndSeconds: activeTikTok?.sceneEndSeconds, firstGroupReactionSeconds: activeTikTok?.firstGroupReactionSeconds, secondGroupReactionSeconds: activeTikTok?.secondGroupReactionSeconds }
+  const activeContent = activeContentId === 'opening' ? roteiro.opening ?? emptyRoteiroContent() : { video: activeTikTok?.video ?? null, blocks: activeTikTok?.blocks ?? [], description: activeTikTok?.description ?? '', additionalContext: activeTikTok?.additionalContext ?? '', timeline: activeTikTok?.timeline ?? 'unspecified', sceneEndSeconds: activeTikTok?.sceneEndSeconds, firstGroupReactionSeconds: activeTikTok?.firstGroupReactionSeconds, secondGroupReactionSeconds: activeTikTok?.secondGroupReactionSeconds }
   const updateActiveContent = (content: RoteiroSectionContent) => {
     if (activeContentId === 'opening') onUpdate({ ...roteiro, opening: content })
-    else onUpdate({ ...roteiro, tiktoks: roteiro.tiktoks.map((item) => item.id === activeContentId ? { ...item, video: content.video, blocks: content.blocks, description: content.description ?? '', timeline: content.timeline, sceneEndSeconds: content.sceneEndSeconds, firstGroupReactionSeconds: content.firstGroupReactionSeconds, secondGroupReactionSeconds: content.secondGroupReactionSeconds } : item) })
+    else onUpdate({ ...roteiro, tiktoks: roteiro.tiktoks.map((item) => item.id === activeContentId ? { ...item, video: content.video, blocks: content.blocks, description: content.description ?? '', additionalContext: content.additionalContext ?? '', timeline: content.timeline, sceneEndSeconds: content.sceneEndSeconds, firstGroupReactionSeconds: content.firstGroupReactionSeconds, secondGroupReactionSeconds: content.secondGroupReactionSeconds } : item) })
   }
   const removeDraftVideo = (videoId: string, content: RoteiroSectionContent) => {
     const next = activeContentId === 'opening'
       ? { ...roteiro, opening: content }
-      : { ...roteiro, tiktoks: roteiro.tiktoks.map((item) => item.id === activeContentId ? { ...item, video: content.video, blocks: content.blocks, description: content.description ?? '', timeline: content.timeline, sceneEndSeconds: content.sceneEndSeconds, firstGroupReactionSeconds: content.firstGroupReactionSeconds, secondGroupReactionSeconds: content.secondGroupReactionSeconds } : item) }
+      : { ...roteiro, tiktoks: roteiro.tiktoks.map((item) => item.id === activeContentId ? { ...item, video: content.video, blocks: content.blocks, description: content.description ?? '', additionalContext: content.additionalContext ?? '', timeline: content.timeline, sceneEndSeconds: content.sceneEndSeconds, firstGroupReactionSeconds: content.firstGroupReactionSeconds, secondGroupReactionSeconds: content.secondGroupReactionSeconds } : item) }
     return onDeleteDraftVideo(next, videoId)
   }
   const addTikTok = () => {

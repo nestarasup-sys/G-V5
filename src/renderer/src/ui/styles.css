@@ -301,6 +301,13 @@ button:focus-visible, input:focus-visible { outline: 3px solid #ed8caf; outline-
 .roteiro-video-description>span { color:#5e5366;font-size:15px;font-weight:800; }
 .roteiro-video-description>textarea { width:100%;min-height:74px;resize:vertical;padding:9px 11px;border:1px solid #ded6e2;border-radius:8px;background:#fff;color:#28232d;font:500 15px/1.4 'DM Sans',sans-serif; }
 .roteiro-video-description>textarea::placeholder { color:#a39aa7; }
+.roteiro-additional-context { display:grid;gap:7px;padding:12px 14px 14px;background:#fff; }
+.roteiro-additional-context>span { color:#5e5366;font-size:15px;font-weight:800; }
+.roteiro-additional-context>textarea { width:100%;min-height:96px;resize:vertical;padding:10px 12px;border:1px solid #ded6e2;border-radius:9px;background:#fff;color:#28232d;font:500 14px/1.45 'DM Sans',sans-serif; }
+.roteiro-additional-context>textarea:focus { outline:2px solid #b89de3;outline-offset:1px;border-color:#9c7bd1; }
+.base-video-notes-panel .roteiro-additional-context { padding:10px 11px 12px; }
+.base-video-notes-panel .roteiro-additional-context>span { font-size:14px; }
+.base-video-notes-panel .roteiro-additional-context>textarea { min-height:84px;font-size:14px; }
 .roteiro-scene-settings { display:grid;grid-template-columns:minmax(180px,.9fr) minmax(240px,1.5fr);gap:12px;padding:0 14px 14px;background:#fff; }
 .roteiro-scene-settings>label,.roteiro-group-reaction { min-width:0;display:grid;align-content:start;gap:9px;padding:13px 14px;border:1px solid #e5dceb;border-radius:11px;background:#fbf9fd; }
 .roteiro-scene-settings>label>span { color:#5e5366;font-size:14px;font-weight:800; }

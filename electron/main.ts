@@ -67,6 +67,7 @@ function isRoteiroDocument(value: unknown): value is RoteiroDocument {
   const isContent = (content: unknown, characters: string[]): content is RoteiroSectionContent | undefined => content === undefined || Boolean(content && typeof content === 'object' && !Array.isArray(content)
     && isVideo((content as RoteiroSectionContent).video) && Array.isArray((content as RoteiroSectionContent).blocks) && (content as RoteiroSectionContent).blocks.length <= 200
     && ((content as RoteiroSectionContent).description === undefined || typeof (content as RoteiroSectionContent).description === 'string' && (content as RoteiroSectionContent).description!.length <= 20_000)
+    && ((content as RoteiroSectionContent).additionalContext === undefined || typeof (content as RoteiroSectionContent).additionalContext === 'string' && (content as RoteiroSectionContent).additionalContext!.length <= 20_000)
     && ((content as RoteiroSectionContent).timeline === undefined || ['unspecified', 'past', 'present', 'future'].includes((content as RoteiroSectionContent).timeline!))
     && isOptionalSeconds((content as RoteiroSectionContent).sceneEndSeconds)
     && isOptionalSeconds((content as RoteiroSectionContent).firstGroupReactionSeconds)
@@ -84,7 +85,7 @@ function isRoteiroDocument(value: unknown): value is RoteiroDocument {
     && Array.isArray(roteiro.tiktoks) && roteiro.tiktoks.length <= 500
     && isContent(roteiro.opening, roteiro.characterIds ?? [])
     && roteiro.tiktoks.every((item: RoteiroTikTok) => Boolean(item && isId(item.id) && isText(item.title, 100) && isText(item.videoTitle, 100)
-      && isVideo(item.video) && isContent({ video: item.video ?? null, blocks: item.blocks ?? [], description: item.description, timeline: item.timeline, sceneEndSeconds: item.sceneEndSeconds, firstGroupReactionSeconds: item.firstGroupReactionSeconds, secondGroupReactionSeconds: item.secondGroupReactionSeconds }, roteiro.characterIds ?? [])))
+      && isVideo(item.video) && isContent({ video: item.video ?? null, blocks: item.blocks ?? [], description: item.description, timeline: item.timeline, sceneEndSeconds: item.sceneEndSeconds, firstGroupReactionSeconds: item.firstGroupReactionSeconds, secondGroupReactionSeconds: item.secondGroupReactionSeconds, additionalContext: item.additionalContext }, roteiro.characterIds ?? [])))
 }
 
 function configureDevAiDataRoot(): void {
@@ -2132,11 +2133,12 @@ async function registerFabricatorHandlers(): Promise<void> {
     if (!db) throw new Error('Catálogo de dados não inicializado.')
     const roteiroRows = db.prepare('SELECT id, title, video_title, character_ids_json, background_asset_id, ui_gif_asset_id FROM roteiros ORDER BY position, created_at, id').all() as Array<{ id: string; title: string; video_title: string; character_ids_json: string; background_asset_id: string | null; ui_gif_asset_id: string | null }>
     const tiktokRows = db.prepare('SELECT id, roteiro_id, title, video_title FROM roteiro_tiktoks ORDER BY roteiro_id, position').all() as Array<{ id: string; roteiro_id: string; title: string; video_title: string }>
-    const sectionRows = db.prepare('SELECT section_id, roteiro_id, section_kind, video_asset_json, blocks_json, description_text, timeline, scene_end_seconds, first_group_reaction_seconds, second_group_reaction_seconds FROM roteiro_sections').all() as Array<{ section_id: string; roteiro_id: string; section_kind: 'opening' | 'tiktok'; video_asset_json: string | null; blocks_json: string; description_text: string; timeline: RoteiroSectionContent['timeline']; scene_end_seconds: number | null; first_group_reaction_seconds: number | null; second_group_reaction_seconds: number | null }>
+    const sectionRows = db.prepare('SELECT section_id, roteiro_id, section_kind, video_asset_json, blocks_json, description_text, timeline, scene_end_seconds, first_group_reaction_seconds, second_group_reaction_seconds, additional_context FROM roteiro_sections').all() as Array<{ section_id: string; roteiro_id: string; section_kind: 'opening' | 'tiktok'; video_asset_json: string | null; blocks_json: string; description_text: string; timeline: RoteiroSectionContent['timeline']; scene_end_seconds: number | null; first_group_reaction_seconds: number | null; second_group_reaction_seconds: number | null; additional_context: string }>
     const contentById = new Map(sectionRows.map((row) => [row.section_id, {
       video: row.video_asset_json ? JSON.parse(row.video_asset_json) as RoteiroVideoReference : null,
       blocks: JSON.parse(row.blocks_json) as RoteiroReactionBlock[],
       description: row.description_text,
+      additionalContext: row.additional_context,
       timeline: row.timeline,
       ...(row.scene_end_seconds === null ? {} : { sceneEndSeconds: row.scene_end_seconds }),
       ...(row.first_group_reaction_seconds === null ? {} : { firstGroupReactionSeconds: row.first_group_reaction_seconds }),
@@ -2205,17 +2207,17 @@ async function registerFabricatorHandlers(): Promise<void> {
         const upsertTikTok = db.prepare(`INSERT INTO roteiro_tiktoks(id, roteiro_id, title, video_title, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)
           ON CONFLICT(id) DO UPDATE SET roteiro_id=excluded.roteiro_id, title=excluded.title, video_title=excluded.video_title, position=excluded.position, updated_at=excluded.updated_at
           WHERE roteiro_tiktoks.roteiro_id IS NOT excluded.roteiro_id OR roteiro_tiktoks.title IS NOT excluded.title OR roteiro_tiktoks.video_title IS NOT excluded.video_title OR roteiro_tiktoks.position IS NOT excluded.position`)
-        const upsertSection = db.prepare(`INSERT INTO roteiro_sections(section_id, roteiro_id, section_kind, video_asset_json, blocks_json, description_text, timeline, scene_end_seconds, first_group_reaction_seconds, second_group_reaction_seconds, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-          ON CONFLICT(section_id) DO UPDATE SET roteiro_id=excluded.roteiro_id, section_kind=excluded.section_kind, video_asset_json=excluded.video_asset_json, blocks_json=excluded.blocks_json, description_text=excluded.description_text, timeline=excluded.timeline, scene_end_seconds=excluded.scene_end_seconds, first_group_reaction_seconds=excluded.first_group_reaction_seconds, second_group_reaction_seconds=excluded.second_group_reaction_seconds, updated_at=excluded.updated_at
-          WHERE roteiro_sections.roteiro_id IS NOT excluded.roteiro_id OR roteiro_sections.section_kind IS NOT excluded.section_kind OR roteiro_sections.video_asset_json IS NOT excluded.video_asset_json OR roteiro_sections.blocks_json IS NOT excluded.blocks_json OR roteiro_sections.description_text IS NOT excluded.description_text OR roteiro_sections.timeline IS NOT excluded.timeline OR roteiro_sections.scene_end_seconds IS NOT excluded.scene_end_seconds OR roteiro_sections.first_group_reaction_seconds IS NOT excluded.first_group_reaction_seconds OR roteiro_sections.second_group_reaction_seconds IS NOT excluded.second_group_reaction_seconds`)
+        const upsertSection = db.prepare(`INSERT INTO roteiro_sections(section_id, roteiro_id, section_kind, video_asset_json, blocks_json, description_text, timeline, scene_end_seconds, first_group_reaction_seconds, second_group_reaction_seconds, additional_context, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(section_id) DO UPDATE SET roteiro_id=excluded.roteiro_id, section_kind=excluded.section_kind, video_asset_json=excluded.video_asset_json, blocks_json=excluded.blocks_json, description_text=excluded.description_text, timeline=excluded.timeline, scene_end_seconds=excluded.scene_end_seconds, first_group_reaction_seconds=excluded.first_group_reaction_seconds, second_group_reaction_seconds=excluded.second_group_reaction_seconds, additional_context=excluded.additional_context, updated_at=excluded.updated_at
+          WHERE roteiro_sections.roteiro_id IS NOT excluded.roteiro_id OR roteiro_sections.section_kind IS NOT excluded.section_kind OR roteiro_sections.video_asset_json IS NOT excluded.video_asset_json OR roteiro_sections.blocks_json IS NOT excluded.blocks_json OR roteiro_sections.description_text IS NOT excluded.description_text OR roteiro_sections.timeline IS NOT excluded.timeline OR roteiro_sections.scene_end_seconds IS NOT excluded.scene_end_seconds OR roteiro_sections.first_group_reaction_seconds IS NOT excluded.first_group_reaction_seconds OR roteiro_sections.second_group_reaction_seconds IS NOT excluded.second_group_reaction_seconds OR roteiro_sections.additional_context IS NOT excluded.additional_context`)
         documents.forEach((roteiro, position) => {
           upsertRoteiro.run(roteiro.id, roteiro.title.trim(), roteiro.videoTitle.trim(), JSON.stringify(roteiro.characterIds), roteiro.backgroundAssetId ?? null, roteiro.uiGifAssetId ?? null, position, now, now)
           const opening = roteiro.opening ?? { video: null, blocks: [], description: '' }
-          upsertSection.run(`${roteiro.id}:opening`, roteiro.id, 'opening', opening.video ? JSON.stringify(opening.video) : null, JSON.stringify(opening.blocks), opening.description ?? '', opening.timeline ?? 'unspecified', opening.sceneEndSeconds ?? null, opening.firstGroupReactionSeconds ?? null, opening.secondGroupReactionSeconds ?? null, now)
+          upsertSection.run(`${roteiro.id}:opening`, roteiro.id, 'opening', opening.video ? JSON.stringify(opening.video) : null, JSON.stringify(opening.blocks), opening.description ?? '', opening.timeline ?? 'unspecified', opening.sceneEndSeconds ?? null, opening.firstGroupReactionSeconds ?? null, opening.secondGroupReactionSeconds ?? null, opening.additionalContext ?? '', now)
           roteiro.tiktoks.forEach((tiktok, tiktokPosition) => {
             upsertTikTok.run(tiktok.id, roteiro.id, tiktok.title.trim(), tiktok.videoTitle.trim(), tiktokPosition, now, now)
-            const content = { video: tiktok.video ?? null, blocks: tiktok.blocks ?? [], description: tiktok.description ?? '', timeline: tiktok.timeline ?? 'unspecified', sceneEndSeconds: tiktok.sceneEndSeconds, firstGroupReactionSeconds: tiktok.firstGroupReactionSeconds, secondGroupReactionSeconds: tiktok.secondGroupReactionSeconds }
-            upsertSection.run(tiktok.id, roteiro.id, 'tiktok', content.video ? JSON.stringify(content.video) : null, JSON.stringify(content.blocks), content.description, content.timeline, content.sceneEndSeconds ?? null, content.firstGroupReactionSeconds ?? null, content.secondGroupReactionSeconds ?? null, now)
+            const content = { video: tiktok.video ?? null, blocks: tiktok.blocks ?? [], description: tiktok.description ?? '', timeline: tiktok.timeline ?? 'unspecified', sceneEndSeconds: tiktok.sceneEndSeconds, firstGroupReactionSeconds: tiktok.firstGroupReactionSeconds, secondGroupReactionSeconds: tiktok.secondGroupReactionSeconds, additionalContext: tiktok.additionalContext ?? '' }
+            upsertSection.run(tiktok.id, roteiro.id, 'tiktok', content.video ? JSON.stringify(content.video) : null, JSON.stringify(content.blocks), content.description, content.timeline, content.sceneEndSeconds ?? null, content.firstGroupReactionSeconds ?? null, content.secondGroupReactionSeconds ?? null, content.additionalContext, now)
           })
         })
       })
@@ -2229,11 +2231,11 @@ async function registerFabricatorHandlers(): Promise<void> {
     assertTrustedSender(event)
     const db = dataPlatform.database
     if (!db) throw new Error('Catálogo de dados não inicializado.')
-    const rows = db.prepare('SELECT video_id, video_number, description_text, timeline, scene_end_seconds, first_group_reaction_seconds, second_group_reaction_seconds FROM base_video_details ORDER BY CASE WHEN video_number IS NULL THEN 1 ELSE 0 END, video_number, updated_at DESC').all() as Array<{ video_id: string; video_number: number | null; description_text: string; timeline: BaseVideoDetails['timeline']; scene_end_seconds: number | null; first_group_reaction_seconds: number | null; second_group_reaction_seconds: number | null }>
+    const rows = db.prepare('SELECT video_id, video_number, description_text, timeline, scene_end_seconds, first_group_reaction_seconds, second_group_reaction_seconds, additional_context FROM base_video_details ORDER BY CASE WHEN video_number IS NULL THEN 1 ELSE 0 END, video_number, updated_at DESC').all() as Array<{ video_id: string; video_number: number | null; description_text: string; timeline: BaseVideoDetails['timeline']; scene_end_seconds: number | null; first_group_reaction_seconds: number | null; second_group_reaction_seconds: number | null; additional_context: string }>
     return rows.map((row) => ({ videoId: row.video_id, ...(row.video_number === null ? {} : { videoNumber: row.video_number }), description: row.description_text, timeline: row.timeline,
       ...(row.scene_end_seconds === null ? {} : { sceneEndSeconds: row.scene_end_seconds }),
       ...(row.first_group_reaction_seconds === null ? {} : { firstGroupReactionSeconds: row.first_group_reaction_seconds }),
-      ...(row.second_group_reaction_seconds === null ? {} : { secondGroupReactionSeconds: row.second_group_reaction_seconds }) }))
+      ...(row.second_group_reaction_seconds === null ? {} : { secondGroupReactionSeconds: row.second_group_reaction_seconds }), additionalContext: row.additional_context }))
   })
 
   ipcMain.handle('base-videos:save-details', async (event, value: unknown): Promise<void> => {
@@ -2243,16 +2245,17 @@ async function registerFabricatorHandlers(): Promise<void> {
     const secondsValid = (seconds: unknown) => seconds === undefined || typeof seconds === 'number' && Number.isFinite(seconds) && seconds >= 0 && seconds <= 86400
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(details.videoId)
       || typeof details.description !== 'string' || details.description.length > 20000
+      || details.additionalContext !== undefined && (typeof details.additionalContext !== 'string' || details.additionalContext.length > 20000)
       || !['unspecified', 'past', 'present', 'future'].includes(details.timeline)
       || !secondsValid(details.sceneEndSeconds) || !secondsValid(details.firstGroupReactionSeconds) || !secondsValid(details.secondGroupReactionSeconds)) throw new Error('Dados do vídeo inválidos.')
     const db = dataPlatform.database
     if (!db) throw new Error('Catálogo de dados não inicializado.')
     const next = roteirosSaveQueue.catch(() => undefined).then(() => {
-      db.prepare(`INSERT INTO base_video_details(video_id, description_text, timeline, scene_end_seconds, first_group_reaction_seconds, second_group_reaction_seconds, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(video_id) DO UPDATE SET description_text=excluded.description_text, timeline=excluded.timeline,
+      db.prepare(`INSERT INTO base_video_details(video_id, description_text, timeline, scene_end_seconds, first_group_reaction_seconds, second_group_reaction_seconds, additional_context, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(video_id) DO UPDATE SET description_text=excluded.description_text, timeline=excluded.timeline,
         scene_end_seconds=excluded.scene_end_seconds, first_group_reaction_seconds=excluded.first_group_reaction_seconds,
-        second_group_reaction_seconds=excluded.second_group_reaction_seconds, updated_at=excluded.updated_at`)
-        .run(details.videoId, details.description, details.timeline, details.sceneEndSeconds ?? null, details.firstGroupReactionSeconds ?? null, details.secondGroupReactionSeconds ?? null, new Date().toISOString())
+        second_group_reaction_seconds=excluded.second_group_reaction_seconds, additional_context=excluded.additional_context, updated_at=excluded.updated_at`)
+        .run(details.videoId, details.description, details.timeline, details.sceneEndSeconds ?? null, details.firstGroupReactionSeconds ?? null, details.secondGroupReactionSeconds ?? null, details.additionalContext ?? '', new Date().toISOString())
     })
     roteirosSaveQueue = next
     await next

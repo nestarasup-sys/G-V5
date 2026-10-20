@@ -139,7 +139,7 @@ class DataPlatform {
     this.database = new Database(dbPath, { timeout: 5000 })
     this.database.pragma('foreign_keys = ON')
     const currentSchema = this.database.pragma('user_version', { simple: true })
-    if (currentSchema > 11) {
+    if (currentSchema > 12) {
       this.database.close()
       this.database = null
       throw new Error(`O catálogo usa schema ${currentSchema}, mais novo que esta versão do app.`)
@@ -241,6 +241,7 @@ class DataPlatform {
         scene_end_seconds REAL,
         first_group_reaction_seconds REAL,
         second_group_reaction_seconds REAL,
+        additional_context TEXT NOT NULL DEFAULT '',
         updated_at TEXT NOT NULL
       ) WITHOUT ROWID;
       CREATE INDEX IF NOT EXISTS roteiro_sections_by_parent ON roteiro_sections(roteiro_id, section_kind);
@@ -252,6 +253,7 @@ class DataPlatform {
         scene_end_seconds REAL,
         first_group_reaction_seconds REAL,
         second_group_reaction_seconds REAL,
+        additional_context TEXT NOT NULL DEFAULT '',
         updated_at TEXT NOT NULL
       ) WITHOUT ROWID;
       CREATE TABLE IF NOT EXISTS base_video_sequence (
@@ -348,22 +350,26 @@ class DataPlatform {
     if (!sectionColumns.has('scene_end_seconds')) this.database.exec('ALTER TABLE roteiro_sections ADD COLUMN scene_end_seconds REAL')
     if (!sectionColumns.has('first_group_reaction_seconds')) this.database.exec('ALTER TABLE roteiro_sections ADD COLUMN first_group_reaction_seconds REAL')
     if (!sectionColumns.has('second_group_reaction_seconds')) this.database.exec('ALTER TABLE roteiro_sections ADD COLUMN second_group_reaction_seconds REAL')
+    if (!sectionColumns.has('additional_context')) this.database.exec("ALTER TABLE roteiro_sections ADD COLUMN additional_context TEXT NOT NULL DEFAULT ''")
     this.database.prepare("INSERT OR IGNORE INTO schema_migrations(version, name, checksum, applied_at) VALUES (8, 'roteiro-section-timeline-and-reaction-timing', ?, ?)")
       .run(sha256('gacha-roteiro-section-timeline-and-reaction-timing-schema-v8'), now)
     this.database.prepare("INSERT OR IGNORE INTO schema_migrations(version, name, checksum, applied_at) VALUES (9, 'base-video-details', ?, ?)")
       .run(sha256('gacha-base-video-details-schema-v9'), now)
     const baseVideoColumns = new Set(this.database.prepare('PRAGMA table_info(base_video_details)').all().map((column) => column.name))
     if (!baseVideoColumns.has('video_number')) this.database.exec('ALTER TABLE base_video_details ADD COLUMN video_number INTEGER')
+    if (!baseVideoColumns.has('additional_context')) this.database.exec("ALTER TABLE base_video_details ADD COLUMN additional_context TEXT NOT NULL DEFAULT ''")
     this.database.exec('CREATE UNIQUE INDEX IF NOT EXISTS base_video_details_by_number ON base_video_details(video_number) WHERE video_number IS NOT NULL')
     this.database.exec('INSERT OR IGNORE INTO base_video_sequence(sequence_id, next_number) SELECT 1, COALESCE(MAX(video_number), 0) + 1 FROM base_video_details')
     this.database.prepare("INSERT OR IGNORE INTO schema_migrations(version, name, checksum, applied_at) VALUES (10, 'base-video-stable-sequence-numbers', ?, ?)")
       .run(sha256('gacha-base-video-stable-sequence-numbers-schema-v10'), now)
-    if (currentSchema < 11) this.database.pragma('user_version = 11')
+    this.database.prepare("INSERT OR IGNORE INTO schema_migrations(version, name, checksum, applied_at) VALUES (12, 'roteiro-ai-additional-context', ?, ?)")
+      .run(sha256('gacha-roteiro-ai-additional-context-schema-v12'), now)
+    if (currentSchema < 12) this.database.pragma('user_version = 12')
     const insertDomain = this.database.prepare(`INSERT OR IGNORE INTO domains(domain_id, schema_version, manifest_json, updated_at) VALUES (?, 1, '{}', ?)`)
     const registerBuiltins = this.database.transaction(() => BUILTIN_DOMAINS.forEach((id) => insertDomain.run(id, now)))
     registerBuiltins()
     this.database.prepare("INSERT OR IGNORE INTO app_metadata(key, value) VALUES ('schema_version', '1')").run()
-    this.database.prepare("UPDATE app_metadata SET value='10' WHERE key='schema_version'").run()
+    this.database.prepare("UPDATE app_metadata SET value='12' WHERE key='schema_version'").run()
     this.migrateRoteirosJson()
     return this
   }
