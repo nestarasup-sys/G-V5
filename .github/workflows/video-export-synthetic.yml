@@ -64,6 +64,7 @@ on:
       - 'tests/video-output-verifier.test.cjs'
       - 'tests/video-media-probe.test.cjs'
       - 'tests/video-stage-geometry.test.cjs'
+      - 'scripts/video-studio/export-surface-electron-smoke.cjs'
   workflow_dispatch:
 
 permissions:
@@ -101,3 +102,11 @@ jobs:
         if: always() && steps.install.outcome == 'success'
         shell: pwsh
         run: npm run build
+      - name: Install Electron runtime for isolated surface smoke
+        if: always() && steps.install.outcome == 'success'
+        shell: pwsh
+        run: node node_modules/electron/install.js
+      - name: Smoke isolated offscreen export surface
+        if: always() && steps.install.outcome == 'success'
+        shell: pwsh
+        run: npm run test:export:electron-surface
