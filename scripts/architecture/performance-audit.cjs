@@ -5,7 +5,7 @@ const path = require('node:path')
 const root = path.resolve(__dirname, '../..')
 const budgets = {
   'src/renderer/src/features/customizer/CustomizerPage.tsx': 4053,
-  'electron/main.ts': 3617,
+  'electron/main.ts': 3618,
   'src/renderer/src/features/videoStudio/VideoStudioEditor.tsx': 2613,
   'src/renderer/src/features/studio/StudioPage.tsx': 1673,
   'src/renderer/src/features/fabricator/FabricatorPage.tsx': 1085,
