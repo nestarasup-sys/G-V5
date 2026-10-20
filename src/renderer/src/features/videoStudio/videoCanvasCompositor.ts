@@ -227,9 +227,14 @@ export async function renderVideoSceneFrameToCanvas(
 
   for (const layer of frame.layers) {
     if (layer.type === 'element') {
-      if(layerCache){
-        const override=resources.characterStates?.get(layer.element.id)
-        const effective=override?.element??layer.element
+      const override=resources.characterStates?.get(layer.element.id)
+      const effective=override?.element??layer.element
+      // Character output is intentionally excluded from the full-stage raster
+      // cache. Blink/mouth/transition state can change its source every frame;
+      // caching those states caused thousands of 1920x1080 misses/evictions
+      // and >10s of extra compose work in the static-heavy CI profile. Repeated
+      // character states are already handled by the semantic frame cache.
+      if(layerCache && effective.kind !== 'character'){
         const source=override?.imageDataUrl??layer.assetDataUrl
         const speaker=effective.speakerCharacterId
           ? frame.layers.find((candidate)=>candidate.type==='element'&&candidate.element.id===effective.speakerCharacterId)
