@@ -45,7 +45,7 @@ export async function encodeVideoStudioSerialChunk(
   } = {},
 ): Promise<VideoSerialChunkResult> {
   const { ffmpeg, outputPath, startFrame, endFrameExclusive } = request
-  if (!ffmpeg?.smokeEncoded || ffmpeg.videoEncoder !== 'h264_mf') throw new Error('FFmpeg ainda não passou pelo capability probe do Video Studio.')
+  if (!ffmpeg?.smokeEncoded || !ffmpeg.videoEncoder) throw new Error('FFmpeg ainda não passou pelo capability probe do Video Studio.')
   if (!isAbsolute(ffmpeg.executable) || !isAbsolute(outputPath)) throw new Error('Encoder e saída precisam usar caminhos absolutos.')
   if (!Number.isSafeInteger(startFrame) || !Number.isSafeInteger(endFrameExclusive)
     || startFrame < 0 || endFrameExclusive <= startFrame) throw new Error('Intervalo serial inválido.')
@@ -63,7 +63,7 @@ export async function encodeVideoStudioSerialChunk(
 
   const writer = new VideoRawFrameWriter({
     executable: ffmpeg.executable,
-    args: buildVideoStudioChunkArgs(outputPath, frameCount, 'rgba'),
+    args: buildVideoStudioChunkArgs(outputPath, frameCount, 'bgra', ffmpeg.videoEncoder),
     outputPath,
     frameBytes,
     frameCount,
