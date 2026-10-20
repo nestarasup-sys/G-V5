@@ -43,7 +43,9 @@ export function indexVideoTimeline(timeline: VideoTimelineDocument): VideoTimeli
 
   for (const key of timeline.characterKeys) {
     addToGroup(characterKeysByElement, key.elementId, key)
-    addSnap(key.frame)
+    // Treat the keyframe as the owner of its boundary so the boundary can be
+    // excluded while it is being dragged (otherwise it snaps back to itself).
+    addSnap(key.frame, key.id)
   }
   for (const gap of timeline.characterGaps ?? []) addToGroup(characterGapsByElement, gap.elementId, gap)
   for (const clip of timeline.textClips) {

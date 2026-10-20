@@ -407,7 +407,7 @@ export function VideoTimeline({ preparing, onEnterFullscreen, onExport, canUndo,
   const moveBoundaryDrag = (event: ReactPointerEvent<HTMLButtonElement>) => {
     const drag = boundaryDragRef.current
     if (!drag || drag.pointerId !== event.pointerId) return
-    const frame = Math.max(drag.minFrame, Math.min(drag.maxFrame, snapFrame(drag.startFrame + Math.round((event.clientX - drag.originX) / pixelsPerSecond * 60))))
+    const frame = Math.max(drag.minFrame, Math.min(drag.maxFrame, snapFrame(drag.startFrame + Math.round((event.clientX - drag.originX) / pixelsPerSecond * 60), drag.keyId)))
     drag.latestFrame = frame
     schedulePreviewUpdate(() => setPreviewBoundary({ elementId: drag.elementId, keyId: drag.keyId, frame: drag.latestFrame }))
   }
