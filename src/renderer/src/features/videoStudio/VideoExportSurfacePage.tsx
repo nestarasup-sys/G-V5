@@ -18,11 +18,6 @@ function jobIdFromHash(): string {
   return value
 }
 
-async function afterCanvasPaint(): Promise<void> {
-  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
-  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
-}
-
 export function VideoExportSurfacePage() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
 
@@ -61,9 +56,10 @@ export function VideoExportSurfacePage() {
             mediaPool!.framesForScene(scene),
           ])
           if (disposed) throw new DOMException('Surface descartada.', 'AbortError')
-          await renderVideoSceneFrameToCanvas(scene, runtime.canvas, { characterStates: characters, videoFrames: videos })
-          await afterCanvasPaint()
-          if (!disposed) window.desktop.reportVideoExportSurfaceFrame({ requestId: request.requestId, frame: request.frame })
+          const context = await renderVideoSceneFrameToCanvas(scene, runtime.canvas, { characterStates: characters, videoFrames: videos })
+          const rgba = context.getImageData(0, 0, VIDEO_STAGE_WIDTH, VIDEO_STAGE_HEIGHT).data
+          const pixels = new Uint8Array(rgba.buffer, rgba.byteOffset, rgba.byteLength)
+          if (!disposed) window.desktop.reportVideoExportSurfaceFrame({ requestId: request.requestId, frame: request.frame, pixels })
         } catch (reason) {
           if (!disposed) window.desktop.reportVideoExportSurfaceFrame({
             requestId: request.requestId,
