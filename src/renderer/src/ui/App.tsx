@@ -31,13 +31,14 @@ function roteiroVideoReference(item: VideoLibraryItem): RoteiroVideoReference {
   return { id: item.id, name: item.name, mimeType: item.mimeType, extension: item.extension, size: item.size, durationFrames: item.durationFrames }
 }
 
-function RoteiroSectionEditor({ title, subtitle, content, characters, characterIds, onUpdate }: {
+function RoteiroSectionEditor({ title, subtitle, content, characters, characterIds, onUpdate, onDeleteDraftVideo }: {
   title: string
   subtitle: string
   content: RoteiroSectionContent
   characters: CustomizerCharacter[]
   characterIds: string[]
   onUpdate: (content: RoteiroSectionContent) => void
+  onDeleteDraftVideo: (videoId: string, content: RoteiroSectionContent) => Promise<boolean>
 }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -96,6 +97,28 @@ function RoteiroSectionEditor({ title, subtitle, content, characters, characterI
     onUpdate({ ...content, video: roteiroVideoReference(item) })
     setPickerOpen(false)
     setLibraryActionMessage(`Vídeo ${String(pickerNumbers[item.id]).padStart(2, '0')} vinculado ao roteiro pelo ID.`)
+  }
+  const removeVideo = async () => {
+    if (!video) return
+    setBusy(true)
+    setError(null)
+    setLibraryActionMessage(null)
+    const nextContent = { ...content, video: null }
+    try {
+      const details = await window.desktop.listBaseVideoDetails()
+      const existing = details.find((item) => item.videoId === video.id)
+      if (existing?.videoNumber !== undefined) {
+        onUpdate(nextContent)
+        setLibraryActionMessage(`Referência do VÍDEO ${String(existing.videoNumber).padStart(2, '0')} removida deste roteiro. O vídeo continua na Base.`)
+      } else {
+        const deleted = await onDeleteDraftVideo(video.id, nextContent)
+        setLibraryActionMessage(deleted
+          ? 'Vídeo não publicado removido deste roteiro e dos Rascunhos.'
+          : 'Referência removida. O vídeo foi mantido porque outro roteiro ainda o utiliza.')
+      }
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Não foi possível remover o vídeo do roteiro.')
+    } finally { setBusy(false) }
   }
   const updateBlock = (id: string, patch: Partial<RoteiroReactionBlock>) => onUpdate({ ...content, blocks: content.blocks.map((block) => block.id === id ? { ...block, ...patch } : block) })
   const moveBlock = (index: number, direction: -1 | 1) => {
@@ -172,7 +195,7 @@ function RoteiroSectionEditor({ title, subtitle, content, characters, characterI
       <div className="roteiro-video-preview-panel">
         <div className="roteiro-library-actions" aria-label="Destino do vídeo">
           <button type="button" onClick={() => void addVideo()} disabled={busy}>{busy ? 'Importando…' : 'Adicionar vídeo'}</button>
-          <button type="button" className="danger" onClick={() => onUpdate({ ...content, video: null })} disabled={!video || busy}>Excluir vídeo</button>
+          <button type="button" className="danger" onClick={() => void removeVideo()} disabled={!video || busy}>Excluir vídeo</button>
           <button type="button" onClick={() => void openVideoPicker()} disabled={busy}>Selecionar da base de vídeos</button>
           <button type="button" className="primary" onClick={() => void saveVideoDestination('base')} disabled={busy || !video}>{busy ? 'Salvando…' : 'Enviar para base de vídeos'}</button>
           <button type="button" onClick={() => void saveVideoDestination('draft')} disabled={busy || !video}>Salvar como rascunho</button>
@@ -220,7 +243,7 @@ function RoteiroSectionEditor({ title, subtitle, content, characters, characterI
   </div>}
 }
 
-function RoteiroWorkspace({ roteiro, onBack, onUpdate, characters }: { roteiro: SidebarRoteiro; onBack: () => void; onUpdate: (next: SidebarRoteiro) => void; characters: CustomizerCharacter[] }) {
+function RoteiroWorkspace({ roteiro, onBack, onUpdate, onDeleteDraftVideo, characters }: { roteiro: SidebarRoteiro; onBack: () => void; onUpdate: (next: SidebarRoteiro) => void; onDeleteDraftVideo: (next: SidebarRoteiro, videoId: string) => Promise<boolean>; characters: CustomizerCharacter[] }) {
   const [activeContentId, setActiveContentId] = useState('opening')
   const [editingTikTok, setEditingTikTok] = useState<RoteiroTikTok | null>(null)
   const [editingTitle, setEditingTitle] = useState('')
@@ -230,6 +253,12 @@ function RoteiroWorkspace({ roteiro, onBack, onUpdate, characters }: { roteiro: 
   const updateActiveContent = (content: RoteiroSectionContent) => {
     if (activeContentId === 'opening') onUpdate({ ...roteiro, opening: content })
     else onUpdate({ ...roteiro, tiktoks: roteiro.tiktoks.map((item) => item.id === activeContentId ? { ...item, video: content.video, blocks: content.blocks, description: content.description ?? '', timeline: content.timeline, sceneEndSeconds: content.sceneEndSeconds, firstGroupReactionSeconds: content.firstGroupReactionSeconds, secondGroupReactionSeconds: content.secondGroupReactionSeconds } : item) })
+  }
+  const removeDraftVideo = (videoId: string, content: RoteiroSectionContent) => {
+    const next = activeContentId === 'opening'
+      ? { ...roteiro, opening: content }
+      : { ...roteiro, tiktoks: roteiro.tiktoks.map((item) => item.id === activeContentId ? { ...item, video: content.video, blocks: content.blocks, description: content.description ?? '', timeline: content.timeline, sceneEndSeconds: content.sceneEndSeconds, firstGroupReactionSeconds: content.firstGroupReactionSeconds, secondGroupReactionSeconds: content.secondGroupReactionSeconds } : item) }
+    return onDeleteDraftVideo(next, videoId)
   }
   const addTikTok = () => {
     const number = roteiro.tiktoks.length + 1
@@ -273,7 +302,7 @@ function RoteiroWorkspace({ roteiro, onBack, onUpdate, characters }: { roteiro: 
         </article>)}</div>
       </section>
     </aside>
-    <RoteiroSectionEditor title={activeContentId === 'opening' ? 'Abertura' : activeTikTok?.title ?? 'TikTok'} subtitle={activeContentId === 'opening' ? 'Início do roteiro' : activeTikTok?.videoTitle ?? ''} content={activeContent} characters={characters} characterIds={roteiro.characterIds} onUpdate={updateActiveContent} />
+    <RoteiroSectionEditor title={activeContentId === 'opening' ? 'Abertura' : activeTikTok?.title ?? 'TikTok'} subtitle={activeContentId === 'opening' ? 'Início do roteiro' : activeTikTok?.videoTitle ?? ''} content={activeContent} characters={characters} characterIds={roteiro.characterIds} onUpdate={updateActiveContent} onDeleteDraftVideo={removeDraftVideo} />
     <aside className="roteiro-workspace-empty-panel" aria-label="Painel lateral vazio do roteiro" />
     {editingTikTok && <div className="roteiro-modal-backdrop" onPointerDown={(event) => { if (event.target === event.currentTarget) setEditingTikTok(null) }}><section className="roteiro-video-title-modal" role="dialog" aria-modal="true" aria-labelledby="roteiro-tiktok-edit-heading"><header><strong id="roteiro-tiktok-edit-heading">Editar TikTok</strong><button onClick={() => setEditingTikTok(null)} aria-label="Fechar" type="button">×</button></header><label>Nome do TikTok<input autoFocus value={editingTitle} onChange={(event) => setEditingTitle(event.target.value)} maxLength={100} /></label><label>Título do vídeo<input value={editingVideoTitle} onChange={(event) => setEditingVideoTitle(event.target.value)} maxLength={100} /></label><footer><button onClick={() => setEditingTikTok(null)} type="button">Cancelar</button><button className="roteiro-create-confirm" onClick={saveTikTok} disabled={!editingTitle.trim() || !editingVideoTitle.trim()} type="button"><Icon name="check" />Salvar</button></footer></section></div>}
   </div>
@@ -337,6 +366,17 @@ function EmptyRoteirosPage() {
     setNewTitle(''); setNewCharacterIds([]); setCreateOpen(false)
   }
 
+  const deleteDraftVideoFromRoteiro = async (updatedRoteiro: SidebarRoteiro, videoId: string) => {
+    const nextRoteiros = roteiros.map((item) => item.id === updatedRoteiro.id ? updatedRoteiro : item)
+    await window.desktop.saveRoteiros(nextRoteiros)
+    setRoteiros(nextRoteiros)
+    const stillReferenced = nextRoteiros.some((item) => item.opening?.video?.id === videoId || item.tiktoks.some((tiktok) => tiktok.video?.id === videoId))
+    if (stillReferenced) return false
+    await window.desktop.deleteVideoLibraryItem(videoId)
+    await window.desktop.deleteBaseVideoDetails(videoId)
+    return true
+  }
+
   const handleDeleteButton = () => {
     if (!deleteMode) {
       setDeleteSelection([])
@@ -365,7 +405,7 @@ function EmptyRoteirosPage() {
     setEditingVideoId(null); setEditingVideoTitle(''); setEditingCharacterIds([])
   }
 
-  if (openedRoteiro) return <RoteiroWorkspace roteiro={openedRoteiro} characters={characters} onBack={() => setOpenedRoteiroId(null)} onUpdate={(updated) => setRoteiros((current) => current.map((item) => item.id === updated.id ? updated : item))} />
+  if (openedRoteiro) return <RoteiroWorkspace roteiro={openedRoteiro} characters={characters} onBack={() => setOpenedRoteiroId(null)} onUpdate={(updated) => setRoteiros((current) => current.map((item) => item.id === updated.id ? updated : item))} onDeleteDraftVideo={deleteDraftVideoFromRoteiro} />
 
   return <div className="roteiros-layout">
     <aside className="roteiros-sidebar-empty" aria-label="Navegação de roteiros">
