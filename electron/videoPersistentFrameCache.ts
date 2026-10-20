@@ -7,8 +7,8 @@ import { promisify } from 'node:util'
 const deflate = promisify(deflateRaw)
 const inflate = promisify(inflateRaw)
 const HASH = /^[a-f0-9]{64}$/
-const HEADER_BYTES = 12
-export const VIDEO_RENDERER_CACHE_VERSION = 'g-v5-canvas-v2'
+const HEADER_BYTES = 40
+export const VIDEO_RENDERER_CACHE_VERSION = 'g-v5-canvas-v3-sha256'
 
 type IndexEntry = { key: string; bytes: number; rawBytes: number; touchedAt: number }
 type Index = { schemaVersion: 1; rendererVersion: string; entries: IndexEntry[] }
@@ -111,13 +111,12 @@ export class VideoPersistentFrameCache {
         const file = await readFile(this.framePath(key))
         if (file.byteLength !== entry.bytes || file.byteLength < HEADER_BYTES || file.subarray(0, 4).toString('ascii') !== 'GV5F') throw new Error('cache frame invalid')
         const rawBytes = file.readUInt32LE(4)
-        const checksum = file.readUInt32LE(8)
+        const checksum = file.subarray(8, 40)
         if (rawBytes !== expectedRawBytes) throw new Error('cache raw size mismatch')
         const pixels = await inflate(file.subarray(HEADER_BYTES))
         if (pixels.byteLength !== rawBytes) throw new Error('cache inflate mismatch')
-        let rolling = 0
-        for (let i = 0; i < pixels.length; i += 4096) rolling = (rolling + pixels[i]) >>> 0
-        if (rolling !== checksum) throw new Error('cache checksum mismatch')
+        const actualChecksum = createHash('sha256').update(pixels).digest()
+        if (!actualChecksum.equals(checksum)) throw new Error('cache checksum mismatch')
         entry.touchedAt = Date.now()
         await this.writeIndex(index)
         this.hits += 1
@@ -143,9 +142,7 @@ export class VideoPersistentFrameCache {
       const file = Buffer.allocUnsafe(HEADER_BYTES + compressed.byteLength)
       file.write('GV5F', 0, 'ascii')
       file.writeUInt32LE(pixels.byteLength, 4)
-      let rolling = 0
-      for (let i = 0; i < pixels.length; i += 4096) rolling = (rolling + pixels[i]) >>> 0
-      file.writeUInt32LE(rolling, 8)
+      createHash('sha256').update(pixels).digest().copy(file, 8)
       compressed.copy(file, HEADER_BYTES)
       // A single pathological frame may not evict the useful cache.
       if (file.byteLength > Math.floor(this.maxBytes / 4)) return
