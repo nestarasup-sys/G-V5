@@ -73,7 +73,7 @@ app.whenReady().then(async()=>{
    console.log(JSON.stringify({ok:true,seconds,totalFrames,encoder,renderedFrames,reusedFrames,chunks:chunks.length,elapsedMs,realtimeFactor:seconds/(elapsedMs/1000),throughputFps:totalFrames/(elapsedMs/1000),peakRss,finalBytes:fs.statSync(final).size,stream},null,2))
  }finally{
    if(win&&!win.isDestroyed())win.destroy()
-   fs.rmSync(root,{recursive:true,force:true,maxRetries:12,retryDelay:150})
+   try{fs.rmSync(root,{recursive:true,force:true,maxRetries:12,retryDelay:150})}catch(error){console.warn('Temp cleanup warning:',error.message)}
    app.exit(0)
  }
 }).catch(error=>{console.error(error.stack||error.message);app.exit(1)})
