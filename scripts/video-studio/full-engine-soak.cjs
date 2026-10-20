@@ -18,7 +18,7 @@ const preloadPath=path.resolve(__dirname,'../../out/preload/video-export-preload
 const jobId='71536b91-ac59-44ee-806e-3d90894345ee',studioId='fb1dafc4-ec9c-4eb2-bc13-3bb3637df7f4',assetId='631d0a35-4f0c-47ad-af79-e19da583571c'
 
 function loadTs(relativePath){const source=fs.readFileSync(path.resolve(__dirname,'../..',relativePath),'utf8');const compiled=ts.transpile(source,{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022});const mod={exports:{}};new Function('require','module','exports',compiled)(require,mod,mod.exports);return mod.exports}
-const raw=loadTs('electron/videoRawFrameWriter.ts'),pixel=loadTs('electron/videoPixelFormat.ts')
+const raw=loadTs('electron/videoRawFrameWriter.ts')
 function run(exe,args,encoding='utf8'){return execFileSync(exe,args,{encoding,timeout:35*60*1000,windowsHide:true,maxBuffer:32*1024*1024})}
 function serve(request,file){const info=fs.statSync(file),range=request.headers.get('range'),headers=new Headers({'accept-ranges':'bytes','content-type':'video/mp4','cache-control':'no-store'});if(request.method==='HEAD'){headers.set('content-length',String(info.size));return new Response(null,{status:200,headers})}if(range){const m=/^bytes=(\d*)-(\d*)$/.exec(range);if(!m)return new Response(null,{status:416});const s=m[1]?Number(m[1]):Math.max(0,info.size-Number(m[2])),e=m[2]&&m[1]?Math.min(info.size-1,Number(m[2])):info.size-1;headers.set('content-range',`bytes ${s}-${e}/${info.size}`);headers.set('content-length',String(e-s+1));return new Response(Readable.toWeb(createReadStream(file,{start:s,end:e})),{status:206,headers})}headers.set('content-length',String(info.size));return new Response(Readable.toWeb(createReadStream(file)),{status:200,headers})}
 
@@ -42,7 +42,7 @@ app.whenReady().then(async()=>{
  let readyResolve,readyReject,pending=new Map()
  ipcMain.handle('video-studio:export-surface:prepare',(_event,id)=>{if(id!==jobId)throw new Error('job inválido');return bootstrap})
  ipcMain.on('video-studio:export-surface:ready',(_event,ready)=>ready.error?readyReject(new Error(ready.error)):readyResolve())
- ipcMain.on('video-studio:export-surface:frame-ready',(_event,ready)=>{const p=pending.get(ready.requestId);if(!p)return;pending.delete(ready.requestId);if(ready.error)p.reject(new Error(ready.error));else p.resolve(pixel.rgbaToBgra(ready.pixels))})
+ ipcMain.on('video-studio:export-surface:frame-ready',(_event,ready)=>{const p=pending.get(ready.requestId);if(!p)return;pending.delete(ready.requestId);if(ready.error)p.reject(new Error(ready.error));else p.resolve(Buffer.from(ready.pixels.buffer,ready.pixels.byteOffset,ready.pixels.byteLength))})
  let win
  try{
    const ready=new Promise((resolve,reject)=>{readyResolve=resolve;readyReject=reject})
@@ -53,12 +53,17 @@ app.whenReady().then(async()=>{
    const count=Math.ceil(totalFrames/chunkFrames)
    for(let index=0;index<count;index++){
      const start=index*chunkFrames,end=Math.min(totalFrames,start+chunkFrames),frames=end-start,out=path.join(root,`chunk-${String(index).padStart(4,'0')}.mp4`)
-     const writer=new raw.VideoRawFrameWriter({executable:ffmpeg,args:raw.buildVideoStudioChunkArgs(out,frames,'bgra',encoder),outputPath:out,frameBytes:width*height*4,frameCount:frames})
+     const writer=new raw.VideoRawFrameWriter({executable:ffmpeg,args:raw.buildVideoStudioChunkArgs(out,frames,'rgba',encoder),outputPath:out,frameBytes:width*height*4,frameCount:frames})
      await writer.ready()
+     const getPixels=async(frame)=>{
+       if(frame>videoFrames&&cachedStatic){reusedFrames++;return cachedStatic}
+       const pixels=await render(frame);renderedFrames++;if(frame===videoFrames)cachedStatic=pixels
+       return pixels
+     }
+     let pendingPixels=getPixels(start)
      for(let frame=start;frame<end;frame++){
-       let pixels
-       if(frame>videoFrames&&cachedStatic){pixels=cachedStatic;reusedFrames++}
-       else{pixels=await render(frame);renderedFrames++;if(frame===videoFrames)cachedStatic=pixels}
+       const pixels=await pendingPixels
+       if(frame+1<end)pendingPixels=getPixels(frame+1)
        await writer.writeFrame(pixels,{copy:false})
      }
      await writer.finish();chunks.push(out);peakRss=Math.max(peakRss,process.memoryUsage().rss)
