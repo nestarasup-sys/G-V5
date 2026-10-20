@@ -2111,7 +2111,11 @@ async function registerFabricatorHandlers(): Promise<void> {
     assertTrustedSender(event)
     if (typeof videoId !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(videoId)) throw new Error('Identificador de vídeo inválido.')
     const media = await videoLibrary.resolveMedia(videoId)
-    await nativeAccess(media.path)
+    // Library paths are virtual when media is in the content-addressed catalog; resolve those
+    // references before using native filesystem APIs. Legacy files still use their logical path.
+    const physicalMediaPath = await dataFileSystem.resolvePhysicalPath(media.path)
+    if (physicalMediaPath) await nativeAccess(physicalMediaPath)
+    else await dataFileSystem.access(media.path)
     const db = dataPlatform.database
     if (!db) throw new Error('Catálogo de dados não inicializado.')
     const publish = db.transaction((id: string) => {
