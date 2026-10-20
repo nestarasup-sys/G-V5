@@ -1,3 +1,4 @@
+import { VideoPreviewSeekScheduler } from './videoPreviewSeekScheduler'
 import type { VideoAudioSettings, VideoMediaClip } from '../../../../shared/studio'
 import { videoAudioOutput } from '../../../../shared/videoAudio'
 
@@ -11,6 +12,7 @@ export class VideoMediaPlayback {
   private blocked = false
   private request = 0
   private mediaErrorReported = false
+  private readonly seekScheduler = new VideoPreviewSeekScheduler()
 
   constructor(private readonly media: HTMLVideoElement, private readonly onError: (message: string) => void) {}
 
@@ -23,6 +25,7 @@ export class VideoMediaPlayback {
     this.media.muted = output.muted
     if (!next.playing) {
       if (wasPlaying || this.pending) this.request += 1
+      this.seekScheduler.cancel()
       this.pending = false
       this.blocked = false
       if (!this.media.paused) this.media.pause()
@@ -36,8 +39,14 @@ export class VideoMediaPlayback {
       this.media.muted = true
       return
     }
-    // Let native playback run; only seek to correct drift or a paused playhead change.
-    if (Math.abs(this.media.currentTime - target) > (next.playing ? 0.15 : 1 / 120)) this.media.currentTime = target
+    // Let native playback run; coalesce scrubbing seeks so obsolete playhead
+    // positions never flood the decoder while the pointer is still moving.
+    if (Math.abs(this.media.currentTime - target) > (next.playing ? 0.15 : 1 / 120)) {
+      this.seekScheduler.request(target, ({ targetSeconds }) => {
+        if (this.disposed || !this.state) return
+        try { this.media.currentTime = targetSeconds } catch { /* media error event reports a stable message */ }
+      })
+    }
     if (!next.playing || !this.media.paused || this.pending || this.blocked) return
     this.pending = true
     const request = ++this.request
@@ -78,6 +87,7 @@ export class VideoMediaPlayback {
     this.disposed = true
     this.request += 1
     this.state = null
+    this.seekScheduler.dispose()
     this.media.muted = true
     this.media.pause()
   }
