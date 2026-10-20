@@ -76,4 +76,4 @@ app.whenReady().then(async()=>{
    try{fs.rmSync(root,{recursive:true,force:true,maxRetries:12,retryDelay:150})}catch(error){console.warn('Temp cleanup warning:',error.message)}
    app.exit(0)
  }
-}).catch(error=>{console.error(error.stack||error.message);app.exit(1)})
+}).catch(error=>{console.error(error.stack||error.message);process.exitCode=1;app.exit(1)})
