@@ -61,6 +61,7 @@ function RoteiroSectionEditor({ title, content, characters, characterIds, onUpda
   const [pickerSort, setPickerSort] = useState<'number' | 'name' | 'duration' | 'newest'>('number')
   const [pickerPreviewId, setPickerPreviewId] = useState<string | null>(null)
   const [blocksCollapsed, setBlocksCollapsed] = useState(false)
+  const [previewDetailsCollapsed, setPreviewDetailsCollapsed] = useState(false)
   const previewRef = useRef<HTMLVideoElement>(null)
   useEffect(() => {
     if (!pickerOpen) return
@@ -241,10 +242,12 @@ function RoteiroSectionEditor({ title, content, characters, characterIds, onUpda
           <button type="button" className="primary" onClick={() => void saveVideoDestination('base')} disabled={busy || !video}>{busy ? 'Salvando…' : 'Enviar para base de vídeos'}</button>
           <button type="button" onClick={() => void saveVideoDestination('draft')} disabled={busy || !video}>Salvar como rascunho</button>
           {libraryActionMessage && <span role="status">{libraryActionMessage}</span>}
+          <button className="roteiro-preview-toggle" type="button" aria-expanded={!previewDetailsCollapsed} onClick={() => setPreviewDetailsCollapsed((collapsed) => !collapsed)}>{previewDetailsCollapsed ? 'Mostrar' : 'Ocultar'}</button>
         </div>
         <div className="roteiro-video-stage">
           {video ? <video ref={previewRef} key={video.id} src={`gacha-video://library/${video.id}`} controls playsInline preload="metadata" aria-label={'Prévia de ' + video.name} /> : <div className="roteiro-video-placeholder"><Icon name="camera" /><strong>Preview 1920 × 1080</strong><span>Adicione um vídeo para visualizar esta seção.</span></div>}
         </div>
+        {!previewDetailsCollapsed && <>
         <label className="roteiro-video-description"><span>Descrição do que acontece no vídeo</span><textarea value={content.description ?? ''} onChange={(event) => onUpdate({ ...content, description: event.target.value })} placeholder="Descreva o que acontece neste vídeo…" maxLength={20000} /></label>
         <div className="roteiro-scene-settings">
           <label className="roteiro-timeline-field"><span>Linha do tempo</span><select value={content.timeline ?? 'unspecified'} onChange={(event) => onUpdate({ ...content, timeline: event.target.value as RoteiroSectionContent['timeline'] })}><option value="unspecified">Indefinido</option><option value="past">Passado</option><option value="present">Presente</option><option value="future">Futuro</option></select></label>
@@ -254,6 +257,7 @@ function RoteiroSectionEditor({ title, content, characters, characterIds, onUpda
         </div>
         {video && [content.sceneEndSeconds, content.firstGroupReactionSeconds, content.secondGroupReactionSeconds].some((seconds) => seconds !== undefined && seconds > video.durationFrames / 60) && <p className="roteiro-time-warning" role="status"><Icon name="warning" /> Um ou mais tempos ultrapassam a duração do vídeo ({(video.durationFrames / 60).toFixed(2)} s).</p>}
         <label className="roteiro-additional-context"><span>Contexto adicional para IA</span><textarea value={content.additionalContext ?? ''} onChange={(event) => onUpdate({ ...content, additionalContext: event.target.value })} placeholder="Adicione informações, regras ou detalhes que a IA deve considerar…" maxLength={20000} /></label>
+        </>}
       </div>
     </section>
     <section className="roteiro-reaction-sequence" aria-label="Sequência de reações">
