@@ -1,5 +1,5 @@
-import { useEffect, useRef, type PointerEvent as ReactPointerEvent } from 'react'
-import type { VideoAudioSettings, VideoClipTransform, VideoMediaClip } from '../../../../shared/studio'
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
+import type { VideoAudioSettings, VideoClipTransform, VideoMediaClip, VideoStudioAsset } from '../../../../shared/studio'
 import { defaultVideoTransform } from '../../../../shared/videoMedia'
 import { videoAudioOutput } from '../../../../shared/videoAudio'
 import { VideoMediaPlayback } from './videoMediaPlayback'
@@ -7,8 +7,9 @@ import { VideoMediaPlayback } from './videoMediaPlayback'
 type CompositionDrag = { pointerId: number; clientX: number; clientY: number; stageWidth: number; stageHeight: number; original: VideoClipTransform; corner?: { x: number; y: number }; started: boolean }
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value))
 
-export function VideoStudioClipPreview({ studioId, clip, playheadFrame, playing, masterAudio, onPlaybackError, selected, editable, onSelect, onBeginEdit, onTransform }: {
+export function VideoStudioClipPreview({ studioId, asset, clip, playheadFrame, playing, masterAudio, onPlaybackError, selected, editable, onSelect, onBeginEdit, onTransform }: {
   studioId: string
+  asset?: VideoStudioAsset
   clip: VideoMediaClip
   playheadFrame: number
   playing: boolean
@@ -24,7 +25,19 @@ export function VideoStudioClipPreview({ studioId, clip, playheadFrame, playing,
   const wrapperRef = useRef<HTMLDivElement>(null)
   const dragRef = useRef<CompositionDrag | null>(null)
   const playbackRef = useRef<VideoMediaPlayback | null>(null)
-  const sourceUrl = `gacha-video://studio/${studioId}/${clip.assetId}`
+  const [proxyUrl, setProxyUrl] = useState<string | null>(null)
+  const sourceUrl = proxyUrl ?? `gacha-video://studio/${studioId}/${clip.assetId}`
+  useEffect(() => {
+    let cancelled = false
+    setProxyUrl(null)
+    if (!asset) return () => { cancelled = true }
+    void window.desktop.prepareVideoPreviewMedia(studioId, asset).then((prepared) => {
+      if (!cancelled) setProxyUrl(prepared.proxyUrl)
+    }).catch(() => {
+      // Proxy is an optimization only. Original project media remains the fallback.
+    })
+    return () => { cancelled = true }
+  }, [studioId, asset?.id, asset?.size, asset?.durationFrames])
   useEffect(() => {
     if (!mediaRef.current) return
     const playback = new VideoMediaPlayback(mediaRef.current, onPlaybackError)
