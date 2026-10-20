@@ -168,7 +168,7 @@ button:focus-visible, input:focus-visible { outline: 3px solid #ed8caf; outline-
 .roteiro-timing-input button:hover { border-color:#9d7bcc;background:#fdfbff; }
 @media (max-width:720px) { .roteiro-scene-settings { grid-template-columns:1fr; } .roteiro-group-reaction { grid-column:auto; } }
 .roteiro-reaction-sequence { display:flex;flex-direction:column;gap:10px;padding:0 18px 22px; }
-.roteiro-reaction-sequence>header { min-height:48px;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:5px 0;border-bottom:1px solid #e6dfe8; }
+.roteiro-reaction-sequence>header { min-height:48px;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:7px 10px;border:1px solid #ead8ec;border-radius:11px;background:linear-gradient(100deg,#fff1f5 0%,#f5efff 100%);box-shadow:0 2px 8px #4d2b5a0b; }
 .roteiro-reaction-sequence>header>div { display:flex;align-items:center;gap:9px;color:#c83e61; }
 .roteiro-sequence-collapse { width:27px;height:27px;display:grid;place-items:center;border:0;border-radius:8px;background:#df5b7b;color:#fff;cursor:pointer; }
 .roteiro-sequence-collapse svg { width:14px;height:14px;transition:transform .16s ease; }
