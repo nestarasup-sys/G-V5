@@ -142,6 +142,29 @@ export class VideoExportSurfaceHost {
     }
     this.sessions.set(window.webContents.id, session)
 
+    const failSession = (message: string) => {
+      if (!session.ready.settled) {
+        session.ready.settled = true
+        clearTimeout(session.ready.timer)
+        session.ready.reject(new Error(message))
+      }
+      for (const pending of session.pending.values()) {
+        clearTimeout(pending.timer)
+        pending.reject(new Error(message))
+      }
+      session.pending.clear()
+      if (!window.isDestroyed()) window.destroy()
+    }
+    window.webContents.once('render-process-gone', (_event, details) => {
+      failSession(`Surface de exportação perdeu o renderer (${details.reason}, exitCode=${details.exitCode}).`)
+    })
+    window.webContents.once('unresponsive', () => {
+      failSession('Surface de exportação ficou sem responder.')
+    })
+    window.webContents.on('did-fail-load', (_event, code, description, _url, isMainFrame) => {
+      if (isMainFrame) failSession(`Surface de exportação falhou ao carregar (${code}: ${description}).`)
+    })
+
     const cleanup = () => {
       this.sessions.delete(window.webContents.id)
       if (!session.ready.settled) {
@@ -189,6 +212,10 @@ export class VideoExportSurfaceSession {
       const timer = setTimeout(() => {
         this.session.pending.delete(requestId)
         reject(new Error(`Surface excedeu ${timeoutMs} ms ao renderizar frame ${frame}.`))
+        // A surface that could not acknowledge one frame is no longer trusted:
+        // destroy it so Turbo can fall back/reopen rather than accumulating
+        // stale responses or waiting another timeout on the next frame.
+        if (!window.isDestroyed()) window.destroy()
       }, Math.max(1_000, Math.min(120_000, timeoutMs)))
       this.session.pending.set(requestId, { frame, resolve, reject, timer })
       window.webContents.send('video-studio:export-surface:render', { requestId, frame })
