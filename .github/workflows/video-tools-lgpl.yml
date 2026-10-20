@@ -1,0 +1,65 @@
+name: Video Studio FFmpeg LGPL runtime
+
+on:
+  push:
+    branches: [master-desenvolvimento]
+    paths:
+      - 'resources/video-tools.manifest.json'
+      - 'scripts/video-studio/prepare-ffmpeg-lgpl.ps1'
+      - 'electron/videoRawFrameWriter.ts'
+      - 'electron/videoFfmpegCapabilities.ts'
+      - 'electron/videoToolsResolver.ts'
+      - '.github/workflows/video-tools-lgpl.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: video-tools-lgpl-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows-lgpl-runtime:
+    name: Validate pinned LGPL FFmpeg / Windows
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare pinned runtime
+        shell: pwsh
+        run: |
+          ./scripts/video-studio/prepare-ffmpeg-lgpl.ps1
+      - name: Validate build flags and real H264 encode
+        shell: pwsh
+        run: |
+          $ffmpeg = Resolve-Path ./resources/video-tools/ffmpeg.exe
+          $ffprobe = Resolve-Path ./resources/video-tools/ffprobe.exe
+          $conf = (& $ffmpeg -hide_banner -buildconf 2>&1 | Out-String)
+          if ($conf -match '--enable-gpl') { throw 'LGPL runtime unexpectedly enables GPL.' }
+          if ($conf -match '--enable-nonfree') { throw 'LGPL runtime unexpectedly enables nonfree.' }
+          $encoders = (& $ffmpeg -hide_banner -encoders 2>&1 | Out-String)
+          if ($encoders -notmatch '\baac\b') { throw 'AAC encoder missing.' }
+          $accepted = @('h264_mf','h264_nvenc','h264_qsv','h264_amf') | Where-Object { $encoders -match ("\b" + $_ + "\b") }
+          if ($accepted.Count -eq 0) { throw 'No accepted H264 encoder is advertised.' }
+
+          $out = Join-Path $env:RUNNER_TEMP 'gacha-lgpl-h264.mp4'
+          $success = $false
+          foreach ($encoder in $accepted) {
+            Remove-Item $out -Force -ErrorAction SilentlyContinue
+            & $ffmpeg -hide_banner -loglevel error -y -f lavfi -i 'color=c=#203040:s=128x72:r=60:d=0.1' -an -c:v $encoder -b:v 1M -pix_fmt yuv420p -frames:v 6 $out
+            if ($LASTEXITCODE -eq 0 -and (Test-Path $out)) {
+              $success = $true
+              Write-Host "Selected runtime encoder: $encoder"
+              break
+            }
+          }
+          if (-not $success) { throw 'Advertised H264 backends all failed a real encode.' }
+          $probe = & $ffprobe -v error -count_frames -select_streams v:0 -show_entries stream=codec_name,width,height,r_frame_rate,nb_read_frames -of json $out | ConvertFrom-Json
+          if ($probe.streams[0].codec_name -ne 'h264' -or $probe.streams[0].nb_read_frames -ne '6') { throw 'Encoded probe failed validation.' }
+          & $ffmpeg -v error -i $out -f null -
+          if ($LASTEXITCODE -ne 0) { throw 'Full decode failed.' }
+      - name: Remove downloaded runtime
+        if: always()
+        shell: pwsh
+        run: Remove-Item ./resources/video-tools -Recurse -Force -ErrorAction SilentlyContinue
