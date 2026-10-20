@@ -2,6 +2,7 @@
 
 const { app, BrowserWindow, ipcMain, nativeImage, protocol } = require('electron')
 const { execFileSync, spawn } = require('node:child_process')
+const { createHash } = require('node:crypto')
 const { createReadStream } = require('node:fs')
 const fs = require('node:fs')
 const os = require('node:os')
@@ -33,17 +34,31 @@ function cleanSandboxAfterExit(){
   try{spawn(process.execPath,['-e',cleanupScript,root],{detached:true,stdio:'ignore',env:{...process.env,ELECTRON_RUN_AS_NODE:'1'}}).unref()}catch{}
 }
 
+const tsModules=new Map()
+const repoRoot=path.resolve(__dirname,'../..')
 function loadTs(relativePath){
-  const source=fs.readFileSync(path.resolve(__dirname,'../..',relativePath),'utf8')
+  const file=path.resolve(repoRoot,relativePath)
+  const cached=tsModules.get(file)
+  if(cached)return cached.exports
+  const source=fs.readFileSync(file,'utf8')
   const compiled=ts.transpile(source,{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022})
   const mod={exports:{}}
-  new Function('require','module','exports',compiled)(require,mod,mod.exports)
+  tsModules.set(file,mod)
+  const localRequire=(id)=>{
+    if(!id.startsWith('./'))return require(id)
+    const target=path.resolve(path.dirname(file),`${id}.ts`)
+    if(!target.startsWith(`${repoRoot}${path.sep}`))throw new Error(`Módulo do oracle fora do repositório: ${id}`)
+    return loadTs(path.relative(repoRoot,target))
+  }
+  new Function('require','module','exports',compiled)(localRequire,mod,mod.exports)
   return mod.exports
 }
 const visualOracle=loadTs('src/shared/videoVisualOracle.ts')
 const frameHelpers=loadTs('src/shared/videoFrame.ts')
+const sceneIr=loadTs('src/shared/videoSceneIR.ts')
 
 function run(exe,args){return execFileSync(exe,args,{encoding:'utf8',timeout:180000,windowsHide:true,maxBuffer:32*1024*1024})}
+function sha256(buffer){return createHash('sha256').update(buffer).digest('hex')}
 async function svgPng(width,height,body){
   const svg=`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">${body}</svg>`
   const png=await require('sharp')(Buffer.from(svg)).png({palette:false}).toBuffer()
@@ -88,20 +103,21 @@ async function fixtureBootstrap(){
   },mouthClosedCatalogId:mouthClosed.id,mouthOpenCatalogId:mouthOpen.id,
     eyeState:0,eyebrows:false,noseIndex:0,expressionIndex:0,mouthOpen:false}
   const baseElement={id:actorId,kind:'character',characterId,poseSlot:1,faceAppearance,text:'Synthetic',x:-18,y:0,width:20,height:48,rotation:0,zIndex:5,characterCanvasWidth:20}
-  const nextElement={...baseElement,poseSlot:2,x:-14,y:1}
+  const nextElement={...baseElement,poseSlot:2,x:-14,y:1,faceAppearance:{...faceAppearance,expressionIndex:1}}
   const authored1=await svgPng(200,300,'<rect x="45" y="125" width="110" height="160" rx="25" fill="#7957c8"/><rect x="50" y="15" width="100" height="100" rx="30" fill="#f0bb8e"/><circle cx="82" cy="55" r="6" fill="#14233c"/><circle cx="118" cy="55" r="6" fill="#14233c"/><path d="M84 85 Q100 94 116 85" stroke="#8a3150" stroke-width="5" fill="none"/>')
   const authored2=await svgPng(200,300,'<g transform="rotate(-8 90 205)"><rect x="35" y="125" width="110" height="160" rx="25" fill="#7957c8"/></g><g transform="rotate(12 122 70)"><rect x="72" y="20" width="100" height="100" rx="30" fill="#f0bb8e"/><circle cx="102" cy="58" r="6" fill="#14233c"/><circle cx="138" cy="58" r="6" fill="#14233c"/><path d="M104 88 Q120 97 136 88" stroke="#8a3150" stroke-width="5" fill="none"/></g>')
   const baseState={imageDataUrl:authored1,element:baseElement}
   const nextState={imageDataUrl:authored2,element:nextElement}
   const narrator={id:'narrator-oracle',kind:'narrator',text:'Narrador: ação, você e coração',x:0,y:-38,width:42,height:12,rotation:0,zIndex:3}
-  const speech={id:'speech-oracle',kind:'speech',speakerCharacterId:actorId,speakerName:'Synthetic',speakerColor:'#7957c8',text:'Falando no oracle',x:-5,y:30,width:28,height:13,rotation:0,zIndex:6}
+  const speech={id:'speech-oracle',kind:'speech',speakerCharacterId:actorId,speakerName:'Synthetic',speakerColor:'#7957c8',text:'Falando no oracle',x:-5,y:35,width:28,height:13,rotation:0,zIndex:6}
   const thought={id:'thought-oracle',kind:'thought',speakerCharacterId:actorId,speakerName:'Synthetic',speakerColor:'#7957c8',text:'Pensamento sintético',x:34,y:25,width:23,height:13,rotation:0,zIndex:6}
-  const extension={id:'extension-oracle',kind:'image',assetId:'@g-v5-fixture:extension-box',text:'Extensão V546',x:32,y:-16,width:10,height:10,rotation:0,zIndex:7}
+  const extension={id:'extension-oracle',kind:'image',assetId:'@g-v5-fixture:extension-box',text:'Extensão V546',x:32,y:-6,width:10,height:10,rotation:0,zIndex:7}
   const timeline={schemaVersion:1,frameRate:60,durationFrames:300,playheadFrame:0,playing:false,animateCharacterTransitions:true,
     characterBases:{[actorId]:baseState},characterKeys:[{id:'pose-change',elementId:actorId,frame:30,poseSlot:2,expressionCollectionId:null,expressionPresetId:null,faceMode:'idle',state:nextState}],
-    textClips:[{id:'narrator-clip',elementId:narrator.id,kind:'narrator',startFrame:0,endFrame:300},{id:'speech-clip',elementId:speech.id,kind:'speech',startFrame:50,endFrame:90},{id:'thought-clip',elementId:thought.id,kind:'thought',startFrame:0,endFrame:300}],
+    textClips:[{id:'narrator-clip',elementId:narrator.id,kind:'narrator',startFrame:0,endFrame:300},{id:'speech-clip',elementId:speech.id,kind:'speech',startFrame:50,endFrame:90},{id:'thought-clip',elementId:thought.id,kind:'thought',startFrame:0,endFrame:150}],
+    characterTransforms:{[actorId]:{x:-14,y:1,rotation:2,characterScale:100,characterWidthScale:100,characterHeightScale:100,zIndex:5}},
     videoAssets:[{id:assetId,name:'oracle-video.mp4',mimeType:'video/mp4',extension:'mp4',size:1,durationFrames:300}],
-    videoClips:[{id:'oracle-video-clip',assetId,startFrame:0,endFrame:300,sourceStartFrame:0,sourceEndFrame:300,transform:{x:25,y:-20,width:30,height:28,rotation:4}}],
+    videoClips:[{id:'oracle-video-clip',assetId,startFrame:0,endFrame:300,sourceStartFrame:0,sourceEndFrame:300,transform:{x:25,y:-10,width:30,height:28,rotation:4}}],
     saveMarkers:[]}
   const studio={schemaVersion:1,id:studioId,title:'Character Media Oracle',color:'#333',createdAt:now,updatedAt:now,
     backgroundColor:'#203247',backgroundAssetId:'oracle-background',backgroundX:0,backgroundY:0,backgroundWidth:100,backgroundHeight:100,backgroundRotation:0,
@@ -155,19 +171,25 @@ app.whenReady().then(async()=>{
   protocol.handle('gacha-video',(request)=>{
     const url=new URL(request.url)
     if(url.hostname==='export-job'&&url.pathname===`/${jobId}/${assetId}`)return serveFile(request,videoPath)
+    if(url.hostname==='studio'&&url.pathname===`/${studioId}/${assetId}`)return serveFile(request,videoPath)
     return new Response('not found',{status:404})
   })
 
   const allowed=new Set()
   let pending=null
+  let activeVariant='animated'
   let timer=setTimeout(()=>finish(new Error('Oracle character/media excedeu 120 segundos.')),120000)
   let finished=false
-  function cleanup(){clearTimeout(timer);try{ipcMain.removeHandler('video-studio:export-surface:prepare')}catch{};ipcMain.removeAllListeners('video-studio:export-surface:ready');ipcMain.removeAllListeners('video-studio:export-surface:frame-ready');for(const w of BrowserWindow.getAllWindows())if(!w.isDestroyed())w.destroy();cleanSandboxAfterExit()}
+  function cleanup(){clearTimeout(timer);try{ipcMain.removeHandler('video-studio:export-surface:prepare')}catch{};try{ipcMain.removeHandler('video-studio:preview-media:prepare')}catch{};ipcMain.removeAllListeners('video-studio:export-surface:ready');ipcMain.removeAllListeners('video-studio:export-surface:frame-ready');for(const w of BrowserWindow.getAllWindows())if(!w.isDestroyed())w.destroy();cleanSandboxAfterExit()}
   function finish(error){if(finished)return;finished=true;cleanup();if(error){console.error(error.stack||error.message);process.exitCode=1;app.exit(1)}else app.exit(0)}
 
   ipcMain.handle('video-studio:export-surface:prepare',(event,id)=>{
-    if(id!==jobId||!allowed.has(event.sender.id))throw new Error('Sender/job inesperado no oracle animado.')
-    return bootstrap
+    if(id!==jobId||!allowed.has(event.sender.id))throw new Error('Sender/job inesperado no oracle.')
+    return {...bootstrap,renderVariant:activeVariant}
+  })
+  ipcMain.handle('video-studio:preview-media:prepare',(event,id,asset)=>{
+    if(!allowed.has(event.sender.id)||id!==studioId||asset?.id!==assetId)throw new Error('Asset inesperado no preview oracle.')
+    return {sourceSha256:'synthetic-fixture',proxyUrl:`gacha-video://studio/${studioId}/${assetId}`,waveformUrl:null}
   })
   ipcMain.on('video-studio:export-surface:ready',(event,ready)=>{
     if(!pending||event.sender.id!==pending.win.webContents.id)return
@@ -175,7 +197,7 @@ app.whenReady().then(async()=>{
     event.sender.send('video-studio:export-surface:render',{requestId:pending.requestId,frame:pending.frame})
   })
   ipcMain.on('video-studio:export-surface:frame-ready',async(event,ready)=>{
-    if(!pending||event.sender.id!==pending.win.webContents.id||ready.requestId!==pending.requestId)return
+    if(!pending||event.sender.id!==pending.win.webContents.id||ready.requestId!==pending.requestId||ready.frame!==pending.frame)return
     const p=pending;pending=null
     if(ready.error){p.reject(new Error(ready.error));return}
     try{
@@ -195,43 +217,143 @@ app.whenReady().then(async()=>{
     }catch(error){p.reject(error)}
   })
 
-  async function capture(mode,frame){
+  async function captureSequence(mode,variant,frames){
+    activeVariant=variant
     const win=new BrowserWindow({show:false,frame:false,resizable:false,width,height,useContentSize:true,backgroundColor:'#000',
       webPreferences:{preload:preloadPath,contextIsolation:true,nodeIntegration:false,sandbox:true,backgroundThrottling:false,offscreen:mode==='canvas'}})
     allowed.add(win.webContents.id)
-    const pixels=new Promise((resolve,reject)=>{pending={resolve,reject,win,mode,frame,requestId:`${mode}-${frame}-${Date.now()}`}})
-    await win.loadFile(rendererFile,{hash:`${mode==='canvas'?'/video-export-surface':'/video-preview-oracle'}?jobId=${jobId}`})
-    const result=await pixels
-    if(process.env.GACHA_VIDEO_ORACLE_SAVE_EVIDENCE==='1'){
-      const evidenceDir=path.resolve(__dirname,'../../out/video-oracle-evidence')
-      fs.mkdirSync(evidenceDir,{recursive:true})
-      fs.writeFileSync(path.join(evidenceDir,`${mode}-${frame}.png`),nativeImage.createFromBitmap(result,{width,height,scaleFactor:1}).toPNG())
+    let requestCount=0
+    const request=(frame,sendImmediately)=>{
+      if(pending)throw new Error('Oracle já possui captura pendente.')
+      const requestId=`${mode}-${variant}-${frame}-${++requestCount}-${Date.now()}`
+      const pixels=new Promise((resolve,reject)=>{pending={resolve,reject,win,mode,frame,variant,requestId}})
+      if(sendImmediately)win.webContents.send('video-studio:export-surface:render',{requestId,frame})
+      return pixels
     }
-    allowed.delete(win.webContents.id);win.destroy()
-    return result
+    try{
+      const samples=[]
+      const first=request(frames[0],false)
+      await win.loadFile(rendererFile,{hash:`${mode==='canvas'?'/video-export-surface':'/video-preview-oracle'}?jobId=${jobId}`})
+      const save=async(frame,pixels)=>{
+        if(process.env.GACHA_VIDEO_ORACLE_SAVE_EVIDENCE!=='1')return
+        const evidenceDir=path.resolve(__dirname,'../../out/video-oracle-evidence')
+        fs.mkdirSync(evidenceDir,{recursive:true})
+        fs.writeFileSync(path.join(evidenceDir,`${variant}-${mode}-${frame}.png`),nativeImage.createFromBitmap(pixels,{width,height,scaleFactor:1}).toPNG())
+      }
+      const firstPixels=await first
+      await save(frames[0],firstPixels)
+      samples.push({frame:frames[0],pixels:firstPixels})
+      for(const frame of frames.slice(1)){
+        const pixels=await request(frame,true)
+        await save(frame,pixels)
+        samples.push({frame,pixels})
+      }
+      return samples
+    }finally{
+      if(pending?.win===win)pending=null
+      allowed.delete(win.webContents.id)
+      if(!win.isDestroyed())win.destroy()
+    }
   }
 
   let blinkFrame=-1
   for(let frame=91;frame<300;frame++)if(frameHelpers.automaticBlinkFrameFor(frame,actorId,60)){blinkFrame=frame;break}
   if(blinkFrame<0)throw new Error('Fixture não encontrou frame determinístico de blink.')
   const cases=[
-    {name:'authored',frame:5},
-    {name:'transition',frame:22},
-    {name:'mouth',frame:65},
+    {name:'pose-initial',frame:5},
+    {name:'transition-mid',frame:22},
+    {name:'pose-final',frame:30},
+    {name:'mouth-idle',frame:10},
+    {name:'mouth-talk',frame:65},
     {name:'blink',frame:blinkFrame},
-    {name:'video',frame:140},
+    {name:'imported-video',frame:140},
   ]
-  const results={}
-  for(const entry of cases){
-    const dom=await capture('dom',entry.frame)
-    const canvas=await capture('canvas',entry.frame)
-    const full=visualOracle.comparePixelBuffers(dom,canvas,width,height)
-    const character=visualOracle.comparePixelBuffers(dom,canvas,width,height,{x:420,y:220,width:720,height:760})
-    const video=visualOracle.comparePixelBuffers(dom,canvas,width,height,{x:1250,y:180,width:560,height:400})
-    results[entry.name]={frame:entry.frame,full,character,video}
-    if(character.meanAbsoluteError>20||character.changedPixelRatio>0.25)throw new Error(`${entry.name}: personagem divergiu: ${JSON.stringify(character)}`)
-    if(video.meanAbsoluteError>12||video.changedPixelRatio>0.16)throw new Error(`${entry.name}: vídeo divergiu: ${JSON.stringify(video)}`)
+  const regions={
+    background:{x:10,y:10,width:400,height:300},
+    backgroundArt:{x:1380,y:75,width:260,height:185},
+    character:{x:480,y:260,width:280,height:530},
+    narrator:{x:550,y:55,width:600,height:160},
+    speech:{x:570,y:835,width:580,height:170},
+    thought:{x:1370,y:720,width:480,height:180},
+    video:{x:1250,y:330,width:180,height:150},
+    extension:{x:1475,y:420,width:200,height:110},
   }
-  console.log(JSON.stringify({ok:true,blinkFrame,results},null,2))
+  const limits={
+    background:{meanAbsoluteError:0,changedPixelRatio:0,p95AbsoluteError:0},
+    backgroundArt:{meanAbsoluteError:.02,changedPixelRatio:.01,p95AbsoluteError:0,maxChannelError:4},
+    character:{meanAbsoluteError:.55,changedPixelRatio:.085,p95AbsoluteError:2},
+    narrator:{meanAbsoluteError:2.1,changedPixelRatio:.055,p95AbsoluteError:1},
+    speech:{meanAbsoluteError:1.6,changedPixelRatio:.055,p95AbsoluteError:1},
+    thought:{meanAbsoluteError:2.0,changedPixelRatio:.055,p95AbsoluteError:1},
+    // The production HTML video decoder and FFmpeg frame decoder can differ by
+    // one channel value during YUV-to-RGB conversion; structural metrics remain tight.
+    video:{meanAbsoluteError:1,changedPixelRatio:.25,p95AbsoluteError:1},
+    extension:{meanAbsoluteError:1.5,changedPixelRatio:.18,p95AbsoluteError:5},
+  }
+  const results={}
+  const caseFrames=[...cases.map(({frame})=>frame),cases[0].frame]
+  const initialSnapshot=JSON.stringify(bootstrap.snapshot)
+  for(const variant of ['animated','static-characters']){
+    const program=sceneIr.compileVideoScene(bootstrap.snapshot,variant)
+    const evaluate=(frame)=>sceneIr.evaluateVideoSceneFrame(program,frame)
+    const findActor=(scene)=>scene.characters.find((character)=>character.elementId===actorId)
+    const mid=findActor(evaluate(22)), boundary=findActor(evaluate(30)), idle=findActor(evaluate(10)), talk=findActor(evaluate(65)), blink=findActor(evaluate(blinkFrame))
+    if(variant==='animated'){
+      if(!mid?.transition||mid.authoredState?.element.poseSlot!==1||mid.transition.from.element.faceAppearance?.expressionIndex!==0||mid.transition.to.element.faceAppearance?.expressionIndex!==1)throw new Error('animated não interpola pose/expressão mantendo a key authored de origem.')
+      if(mid.stageTransform?.x!==-14)throw new Error('animated não aplica o stage transform no intervalo de transição.')
+      if(boundary?.transition||boundary.authoredState?.element.poseSlot!==2||boundary.authoredState?.element.faceAppearance?.expressionIndex!==1)throw new Error('animated não aplica pose e expressão authored no limite da key.')
+      if(idle?.automaticMouth?.mode!=='idle')throw new Error('animated não identificou estado de boca idle no balão thought.')
+      if(talk?.automaticMouth?.mode!=='talk')throw new Error('animated não identificou fala e ciclo de boca.')
+      if(!blink?.automaticBlink)throw new Error('fixture não exercita o blink determinístico sem boca automática ativa.')
+    }else{
+      if(mid?.transition||mid?.authoredState?.element.poseSlot!==1||mid.authoredState?.element.faceAppearance?.expressionIndex!==0)throw new Error('static-characters alterou pose/expressão antes da key authored.')
+      if(boundary?.transition||boundary?.authoredState?.element.poseSlot!==2||boundary.authoredState?.element.faceAppearance?.expressionIndex!==1)throw new Error('static-characters não troca pose/expressão instantaneamente na key authored.')
+      if(idle?.automaticMouth||talk?.automaticMouth||blink?.automaticMouth||blink?.automaticBlink)throw new Error('static-characters habilitou automatismo de boca ou blink.')
+    }
+    const videoScene=evaluate(140)
+    if(videoScene.videos.length!==1||videoScene.videos[0].sourceTick!==140)throw new Error(`${variant} não mantém o vídeo importado no tick absoluto esperado.`)
+    if(!videoScene.background.assetDataUrl||!videoScene.layers.some((layer)=>layer.element?.kind==='narrator')||!videoScene.layers.some((layer)=>layer.element?.kind==='thought'))throw new Error(`${variant} perdeu fundo ou texto na avaliação de cena.`)
+    if(JSON.stringify(bootstrap.snapshot)!==initialSnapshot)throw new Error(`${variant} mutou o snapshot original.`)
+    const domSamples=await captureSequence('dom',variant,caseFrames)
+    const canvasSamples=await captureSequence('canvas',variant,caseFrames)
+    const domRepeat=Buffer.compare(domSamples[0].pixels,domSamples.at(-1).pixels)===0
+    const canvasRepeat=Buffer.compare(canvasSamples[0].pixels,canvasSamples.at(-1).pixels)===0
+    if(!domRepeat||!canvasRepeat)throw new Error(`${variant}: A-B-A não reproduziu exatamente o frame inicial no preview e Canvas.`)
+    results[variant]={}
+    for(let index=0;index<cases.length;index++){
+      const entry=cases[index]
+      const sampleScene=evaluate(entry.frame)
+      const ordered=sampleScene.layers.map((layer)=>layer.type==='video'?`video:${layer.zOrder}`:`${layer.element.kind}:${layer.zOrder}`)
+      const layerKinds=new Set(sampleScene.layers.filter((layer)=>layer.type==='element').map((layer)=>layer.element.kind))
+      if(!layerKinds.has('narrator')||layerKinds.has('speech')!==(entry.frame>=50&&entry.frame<90)||layerKinds.has('thought')!==(entry.frame<150))throw new Error(`${variant}/${entry.name}: clipes de texto mudaram de disponibilidade entre os modos.`)
+      if(!ordered.includes('image:9')||!ordered.includes('video:1'))throw new Error(`${variant}/${entry.name}: camadas de vídeo ou extensão V546 ausentes.`)
+      if(ordered.indexOf('video:1')>ordered.indexOf('image:9'))throw new Error(`${variant}/${entry.name}: o z-order da extensão ficou abaixo do vídeo.`)
+      const dom=domSamples[index].pixels
+      const canvas=canvasSamples[index].pixels
+      const full=visualOracle.comparePixelBuffers(dom,canvas,width,height)
+      const rois=Object.fromEntries(Object.entries(regions).map(([name,region])=>[name,visualOracle.comparePixelBuffers(dom,canvas,width,height,region,name==='video'?1:0)]))
+      for(const [name,metrics] of Object.entries(rois)){
+        const limit=limits[name]
+        if(metrics.meanAbsoluteError>limit.meanAbsoluteError||metrics.changedPixelRatio>limit.changedPixelRatio||metrics.p95AbsoluteError>limit.p95AbsoluteError||(limit.maxChannelError!==undefined&&metrics.maxChannelError>limit.maxChannelError)){
+          throw new Error(`${variant}/${entry.name}: ROI ${name} divergiu acima do limite calibrado: ${JSON.stringify({metrics,limit})}`)
+        }
+      }
+      const extensionPixel=(buffer)=>Array.from(buffer.subarray((475*width+1574)*4,(475*width+1574)*4+4))
+      const expectedExtensionPixel=[212,59,255,255]
+      if(JSON.stringify(extensionPixel(dom))!==JSON.stringify(expectedExtensionPixel)||JSON.stringify(extensionPixel(canvas))!==JSON.stringify(expectedExtensionPixel))throw new Error(`${variant}/${entry.name}: a extensão não ficou acima do vídeo com pixels V546 esperados.`)
+      results[variant][entry.name]={frame:entry.frame,full,rois}
+    }
+    results[variant].repeatability={
+      sequence:caseFrames,
+      domExact:domRepeat,
+      canvasExact:canvasRepeat,
+      domSha256:sha256(domSamples[0].pixels),
+      domSha256After:sha256(domSamples.at(-1).pixels),
+      canvasSha256:sha256(canvasSamples[0].pixels),
+      canvasSha256After:sha256(canvasSamples.at(-1).pixels),
+    }
+  }
+  if(JSON.stringify(bootstrap.snapshot)!==initialSnapshot)throw new Error('Oracle mutou o projeto fonte.')
+  console.log(JSON.stringify({ok:true,blinkFrame,variants:['animated','static-characters'],regions:Object.keys(regions),limits,results},null,2))
   finish()
 }).catch((error)=>{console.error(error.stack||error.message);process.exitCode=1;cleanSandboxAfterExit();app.exit(1)})

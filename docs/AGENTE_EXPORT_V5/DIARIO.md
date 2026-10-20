@@ -296,3 +296,12 @@ _Atualizações posteriores devem registrar o SHA real do gate e nunca declarar 
 - Correção: transformações globais agora sincronizam posição, rotação, espelhamento, escala uniforme/por eixo e camada. A largura e a altura do recorte continuam no estado de cada pose. Leituras de `characterTransforms` legados filtram `width`/`height` sem reescrever os saves.
 - Cobertura sintética: `tests/video-character-track.test.cjs` testa duas poses com recortes distintos, mudanças globais que devem alcançar ambas sem alterar os recortes, e compatibilidade com transformações antigas contendo dimensões. `tests/video-timeline-index.test.cjs` atualiza o contrato do resolver global.
 - Limite: testes de lógica, typecheck e build não substituem confirmação visual no Electron com roteiro real. Nenhum projeto ou personagem pessoal foi aberto ou alterado.
+
+### 2026-10-20 — oracle Electron DOM/Canvas com preview de vídeo real
+
+- Base de código: `1a4658e955a1b7e1160e1ef6f2b8a7360c69746b`, branch `master-desenvolvimento`; `origin` estava no mesmo SHA antes desta rodada. Sem dados pessoais, DEV AI ou auditorias completas.
+- `VideoPreviewOraclePage` agora monta o componente de produção `VideoStudioClipPreview` e aguarda o frame do `<video>` realmente buscado; o preload restrito pode usar a URI do fixture sem ampliar IPC. O harness valida oito seeks e A-B-A em `animated` e `static-characters`, compara ROIs de personagem/texto/vídeo/V546 e confere source tick, camadas e snapshot imutável.
+- Correções de paridade no Canvas: caixa de texto/alpha/padding, border radius e cauda de balões; geometria CSS `border-box` na extensão V546; z-order correspondente entre DOM e Canvas. Oracle diferencia contagem de pixel alterado acima de 1 canal sem ocultar MAE, p95 ou erro máximo.
+- Evidência: A-B-A binário em ambas as superfícies/variantes. Hashes e métricas de ROI estão em `docs/VIDEO_STUDIO_V5_MODERNIZACAO/04_LAB_E_GATES.md`. ROI de vídeo pior: MAE 0.931, changed ratio 7.68%, p95 1, máximo bruto 107, consistente com o limite documentado para dois decoders diferentes.
+- Verificações locais: `npm test` 117/117, `npm run typecheck`, `npm run build` e `GACHA_FFMPEG_PATH=<ffmpeg local> npm run test:video:character-media-oracle` passaram. `git diff --check` é repetido antes do commit. O Actions deste novo SHA ainda deve ser verificado depois do push.
+- Escopo continua parcial: prova sintética preview DOM ↔ Canvas não fecha paridade MP4/print/Studio normal nem os critérios completos de V501/V502/V504, V508/V510 e V546. Nenhum gate de release foi marcado como concluído.

@@ -49,3 +49,7 @@ Atualizado em 2026-10-20. Este arquivo é um **gate**, não uma declaração aut
 
 ## Critério de conclusão
 A missão termina quando todos os gates aplicáveis têm evidência no HEAD, experimentos rejeitados estão documentados como rejeitados por dados, nenhum MP4 parcial é publicado, o pacote Windows funciona sem ferramentas externas e o gate do hardware alvo foi executado por um agente/processo com acesso ao PC.
+
+## Evidência parcial registrada em 2026-10-20
+
+O oracle sintético Electron DOM ↔ Canvas passou em oito seeks, duas variantes e A-B-A binário. Cobre personagem, texto, vídeo importado, camadas e extensão V546; métricas e hashes constam em `04_LAB_E_GATES.md`. Os checkboxes acima permanecem desmarcados porque exportação MP4 comparada, print, cenários longos, distribuição, hardware e demais requisitos ainda não foram demonstrados.

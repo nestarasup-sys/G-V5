@@ -6,6 +6,8 @@ export type PixelDiffMetrics = Readonly<{
   changedPixelRatio: number
   meanAbsoluteError: number
   p95AbsoluteError: number
+  maxChannelError: number
+  /** @deprecated Use maxChannelError; retained while diagnostics migrate. */
   maxAbsoluteError: number
   differenceBounds: PixelRect | null
 }>
@@ -16,8 +18,10 @@ export function comparePixelBuffers(
   width: number,
   height: number,
   roi: PixelRect = { x: 0, y: 0, width, height },
+  changedPixelChannelTolerance = 0,
 ): PixelDiffMetrics {
   if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) || width < 1 || height < 1) throw new Error('Dimensões do oracle inválidas.')
+  if (!Number.isSafeInteger(changedPixelChannelTolerance) || changedPixelChannelTolerance < 0 || changedPixelChannelTolerance > 255) throw new Error('Tolerância do oracle inválida.')
   const expected = width * height * 4
   if (left.byteLength !== expected || right.byteLength !== expected) throw new Error('Buffers do oracle não possuem o tamanho RGBA/BGRA esperado.')
   const x0 = Math.max(0, Math.min(width, Math.floor(roi.x)))
@@ -41,7 +45,7 @@ export function comparePixelBuffers(
         histogram[diff] += 1
         total += diff
         if (diff > max) max = diff
-        if (diff !== 0) changed = true
+        if (diff > changedPixelChannelTolerance) changed = true
       }
       if (changed) {
         changedPixels += 1
@@ -66,6 +70,7 @@ export function comparePixelBuffers(
     changedPixelRatio: changedPixels / pixels,
     meanAbsoluteError: total / samples,
     p95AbsoluteError: p95,
+    maxChannelError: max,
     maxAbsoluteError: max,
     differenceBounds: changedPixels ? { x: minX, y: minY, width: maxX - minX + 1, height: maxY - minY + 1 } : null,
   }

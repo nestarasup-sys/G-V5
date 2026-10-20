@@ -1,12 +1,11 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
 import { compileVideoScene, evaluateVideoSceneFrame, type VideoSceneFrame } from '../../../../shared/videoSceneIR'
 import { videoCharacterTrackColor, type VideoCharacterState } from '../../../../shared/studio'
 import { VIDEO_STAGE_HEIGHT, VIDEO_STAGE_WIDTH, videoStageCssTransform } from '../../../../shared/videoStageGeometry'
-import { defaultVideoTransform } from '../../../../shared/videoMedia'
 import { VideoCharacterFrameRenderer } from './videoCharacterFrameRenderer'
 import { VideoStudioDomElement } from './VideoStudioDomElement'
-import { VideoExportMediaFramePool } from './videoExportMediaFramePool'
+import { VideoStudioClipPreview } from './VideoClipPreview'
 import './VideoStudioEditor.css'
 
 function jobIdFromHash(): string {
@@ -18,26 +17,31 @@ function jobIdFromHash(): string {
 function errorMessage(reason:unknown){return reason instanceof Error?reason.message:String(reason)}
 async function painted(){await new Promise<void>(r=>requestAnimationFrame(()=>r()));await new Promise<void>(r=>requestAnimationFrame(()=>r()))}
 
-type OracleState={scene:VideoSceneFrame;characters:ReadonlyMap<string,VideoCharacterState>;videoDataUrls:ReadonlyMap<string,string>}
-
-function bitmapDataUrl(bitmap:CanvasImageSource):string{
-  const width='width' in bitmap?Number(bitmap.width):0
-  const height='height' in bitmap?Number(bitmap.height):0
-  if(!width||!height)throw new Error('Frame do oracle de vídeo está vazio.')
-  const canvas=document.createElement('canvas');canvas.width=width;canvas.height=height
-  const context=canvas.getContext('2d');if(!context)throw new Error('Canvas auxiliar do oracle indisponível.')
-  context.drawImage(bitmap,0,0,width,height)
-  return canvas.toDataURL('image/png')
-}
+type OracleState={scene:VideoSceneFrame;characters:ReadonlyMap<string,VideoCharacterState>}
+type PendingOracleFrame={requestId:string;frame:number;waitingVideoClips:Set<string>;reported:boolean}
 
 export function VideoPreviewOraclePage(){
   const [state,setState]=useState<OracleState|null>(null)
   const bootstrapRef=useRef<Awaited<ReturnType<typeof window.desktop.prepareVideoExportSurface>>|null>(null)
+  const pendingFrameRef=useRef<PendingOracleFrame|null>(null)
+  const onVideoFramePresented=useCallback((frame:number,clipId:string)=>{
+    const pending=pendingFrameRef.current
+    if(!pending||pending.reported||pending.frame!==frame||!pending.waitingVideoClips.has(clipId))return
+    pending.waitingVideoClips.delete(clipId)
+    if(pending.waitingVideoClips.size!==0)return
+    pending.reported=true
+    window.desktop.reportVideoExportSurfaceFrame({requestId:pending.requestId,frame:pending.frame})
+  },[])
+  const onVideoPlaybackError=useCallback((message:string)=>{
+    const pending=pendingFrameRef.current
+    if(!pending||pending.reported)return
+    pending.reported=true
+    window.desktop.reportVideoExportSurfaceFrame({requestId:pending.requestId,frame:pending.frame,error:message})
+  },[])
 
   useEffect(()=>{
     let disposed=false
     let renderer:VideoCharacterFrameRenderer|null=null
-    let mediaPool:VideoExportMediaFramePool|null=null
     let unsubscribe:(()=>void)|null=null
     let jobId=''
     const bootstrap=(async()=>{
@@ -47,7 +51,6 @@ export function VideoPreviewOraclePage(){
       await document.fonts.ready
       if(disposed) throw new DOMException('Oracle descartado.','AbortError')
       renderer=new VideoCharacterFrameRenderer(data.characters,data.characterAssets)
-      mediaPool=new VideoExportMediaFramePool(jobId)
       return {data,program:compileVideoScene(data.snapshot,data.renderVariant)}
     })()
 
@@ -56,12 +59,16 @@ export function VideoPreviewOraclePage(){
         try{
           const runtime=await bootstrap
           const scene=evaluateVideoSceneFrame(runtime.program,request.frame)
-          const [characters,videoFrames]=await Promise.all([renderer!.renderFrame(scene),mediaPool!.framesForScene(scene)])
-          const videoDataUrls=new Map([...videoFrames.entries()].map(([clipId,frame])=>[clipId,bitmapDataUrl(frame)]))
+          const characters=await renderer!.renderFrame(scene)
           if(disposed) throw new DOMException('Oracle descartado.','AbortError')
-          flushSync(()=>setState({scene,characters,videoDataUrls}))
+          pendingFrameRef.current={requestId:request.requestId,frame:request.frame,waitingVideoClips:new Set(scene.videos.map((video)=>video.clipId)),reported:false}
+          flushSync(()=>setState({scene,characters}))
           await painted()
-          if(!disposed) window.desktop.reportVideoExportSurfaceFrame({requestId:request.requestId,frame:request.frame})
+          const pending=pendingFrameRef.current
+          if(!disposed&&pending&&pending.requestId===request.requestId&&pending.waitingVideoClips.size===0&&!pending.reported){
+            pending.reported=true
+            window.desktop.reportVideoExportSurfaceFrame({requestId:pending.requestId,frame:pending.frame})
+          }
         }catch(reason){
           if(!disposed) window.desktop.reportVideoExportSurfaceFrame({requestId:request.requestId,frame:request.frame,error:errorMessage(reason)})
         }
@@ -70,7 +77,7 @@ export function VideoPreviewOraclePage(){
     void bootstrap.then(()=>{if(!disposed)window.desktop.reportVideoExportSurfaceReady({jobId})}).catch(reason=>{
       if(!disposed)window.desktop.reportVideoExportSurfaceReady({jobId:jobId||'invalid',error:errorMessage(reason)})
     })
-    return()=>{disposed=true;unsubscribe?.();renderer?.clear();mediaPool?.dispose()}
+    return()=>{disposed=true;unsubscribe?.();renderer?.clear();pendingFrameRef.current=null}
   },[])
 
   const data=bootstrapRef.current
@@ -87,12 +94,10 @@ export function VideoPreviewOraclePage(){
     />}
     {scene?.layers.map((layer)=>{
       if(layer.type==='video'){
-        const source=state?.videoDataUrls.get(layer.clipId)
-        if(!source)return null
-        const transform=layer.transform??defaultVideoTransform
-        return <div key={layer.clipId} className="video-studio-video-composition" style={{...videoStageCssTransform(transform.x,transform.y,transform.width,transform.height,transform.rotation),zIndex:layer.zOrder,pointerEvents:'none'}}>
-          <img src={source} alt="" style={{width:'100%',height:'100%',objectFit:'contain',display:'block'}}/>
-        </div>
+        const clip=data?.snapshot.timeline.videoClips?.find((item)=>item.id===layer.clipId)
+        const asset=data?.snapshot.timeline.videoAssets?.find((item)=>item.id===layer.assetId)
+        if(!data||!clip||!asset||!scene)return null
+        return <VideoStudioClipPreview key={layer.clipId} studioId={data.snapshot.studio.id} asset={asset} clip={clip} playheadFrame={scene.frame} playing={false} onPlaybackError={onVideoPlaybackError} onFramePresented={onVideoFramePresented} selected={false} editable={false} onSelect={()=>{}} onBeginEdit={()=>{}} onTransform={()=>{}}/>
       }
       let element=layer.element
       let imageDataUrl=layer.assetDataUrl

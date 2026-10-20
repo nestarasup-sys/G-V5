@@ -78,11 +78,6 @@ function drawTransformed(
   context.restore()
 }
 
-function ellipsePath(context: CanvasRenderingContext2D, width: number, height: number) {
-  context.beginPath()
-  context.ellipse(0, 0, width / 2, height / 2, 0, 0, Math.PI * 2)
-}
-
 function wrappedLines(context: CanvasRenderingContext2D, text: string, maxWidth: number, maxLines: number): string[] {
   const paragraphs = String(text ?? '').split(/\n/)
   const lines: string[] = []
@@ -116,61 +111,53 @@ function drawTextLayer(
   context.save()
   context.translate(rect.centerX, rect.centerY)
   context.rotate(element.rotation * Math.PI / 180)
-  context.fillStyle = element.kind === 'narrator' ? 'rgba(255,255,255,.90)' : element.kind === 'thought' ? '#fffafd' : 'rgba(255,255,255,.94)'
+  context.fillStyle = element.kind === 'thought' ? '#fffafd' : '#fffffff0'
   context.strokeStyle = '#624d5b'
-  context.lineWidth = 1.5
+  context.lineWidth = 1
 
-  if (element.kind === 'speech' || element.kind === 'thought') ellipsePath(context, rect.width, rect.height)
-  else {
-    context.beginPath()
-    context.roundRect(-rect.width / 2, -rect.height / 2, rect.width, rect.height, 9)
-  }
+  const balloonRadius = element.kind === 'speech' ? .45 : element.kind === 'thought' ? .48 : null
+  context.beginPath()
+  context.roundRect(
+    -rect.width / 2 + .5,
+    -rect.height / 2 + .5,
+    Math.max(0, rect.width - 1),
+    Math.max(0, rect.height - 1),
+    balloonRadius === null ? 9 : { x: rect.width * balloonRadius, y: rect.height * balloonRadius },
+  )
   context.fill()
   context.stroke()
 
-  if (element.kind === 'speech') {
-    const x = rect.width * .22, y = rect.height / 2 - 1
-    context.beginPath()
-    context.moveTo(x - 8, y - 1)
-    context.lineTo(x + 5, y + 12)
-    context.lineTo(x + 8, y - 3)
-    context.fill()
-    context.stroke()
-  } else if (element.kind === 'thought') {
-    context.fillStyle = '#fffafd'
-    context.strokeStyle = '#624d5b'
-    for (const [x, y, radius] of [[rect.width * .35, rect.height * .48, 5], [rect.width * .42, rect.height * .60, 3]] as const) {
-      context.beginPath(); context.arc(x, y, radius, 0, Math.PI * 2); context.fill(); context.stroke()
-    }
-  }
-
-  const horizontalPadding = Math.min(28, Math.max(12, rect.width * .06))
-  const speakerHeight = speakerName ? 24 : 0
+  const horizontalPadding = 9
+  const innerTop = -rect.height / 2 + 6
+  const innerBottom = rect.height / 2 - 6
+  const speakerFontSize = 18 * .68
+  const speakerHeight = speakerName ? speakerFontSize * 1.1 + 4 : 0
+  const contentTop = innerTop + speakerHeight + (speakerName ? 2 : 0)
+  const contentHeight = Math.max(1, innerBottom - contentTop)
+  const maxWidth = Math.max(1, rect.width - horizontalPadding * 2)
+  const lineHeight = 18 * 1.2
+  const maxLines = Math.max(1, Math.min(8, Math.floor(contentHeight / lineHeight)))
   if (speakerName) {
     context.fillStyle = speakerColor
-    context.font = '850 12px sans-serif'
+    context.font = '850 12.24px Aptos, "Segoe UI", sans-serif'
     context.textAlign = 'center'
     context.textBaseline = 'middle'
-    context.fillText(speakerName, 0, -rect.height / 2 + 14, Math.max(1, rect.width - horizontalPadding * 2))
+    context.fillText(speakerName, 0, innerTop + speakerFontSize * .55, maxWidth)
     context.strokeStyle = speakerColor
     context.globalAlpha = .55
     context.beginPath()
-    context.moveTo(-rect.width / 2 + horizontalPadding, -rect.height / 2 + 27)
-    context.lineTo(rect.width / 2 - horizontalPadding, -rect.height / 2 + 27)
+    context.moveTo(-rect.width / 2 + horizontalPadding, innerTop + speakerHeight - 1)
+    context.lineTo(rect.width / 2 - horizontalPadding, innerTop + speakerHeight - 1)
     context.stroke()
     context.globalAlpha = 1
   }
 
   context.fillStyle = '#352d35'
-  context.font = '600 18px sans-serif'
+  context.font = '400 18px Aptos, "Segoe UI", sans-serif'
   context.textAlign = 'center'
   context.textBaseline = 'middle'
-  const maxWidth = Math.max(1, rect.width - horizontalPadding * 2)
-  const availableHeight = Math.max(1, rect.height - speakerHeight - 18)
-  const lineHeight = 22
-  const maxLines = Math.max(1, Math.min(8, Math.floor(availableHeight / lineHeight)))
   const lines = wrappedLines(context, element.text, maxWidth, maxLines)
-  const textCenterY = speakerName ? speakerHeight / 2 + 4 : 0
+  const textCenterY = (contentTop + innerBottom) / 2
   lines.forEach((line, index) => {
     const y = textCenterY + (index - (lines.length - 1) / 2) * lineHeight
     context.fillText(line, 0, y, maxWidth)

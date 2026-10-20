@@ -141,6 +141,10 @@ Próximo item desbloqueado:
 
 **Dependências recomendadas:** V541 antes de eliminar legado; V542 depende de V505/V507; V543 depende de V515–V517; V544 depende de V542/V543; V545 depende de V518/V543/V544; V546 depende de V505/V510/V512, validado antes de V540; V547 é transversal e só conclui após V541/V546/V538; V548 é gate final e depende das demais.
 
+### Evidência parcial — 2026-10-20
+
+O smoke Electron de `scripts/video-studio/character-media-oracle-smoke.cjs` agora passa pelo `VideoStudioClipPreview` real (HTML `<video>`) e compara com o compositor Canvas em oito seeks e duas variantes. A fixture valida ROI, A-B-A, pose/expressão, source tick, ordem das layers e extensão V546; execução local passou junto com os 117 testes, typecheck e build. Evidência e hashes estão em `04_LAB_E_GATES.md`. Isto amplia V501/V502/V504, V508/V510 e V546, mas não conclui nenhum deles: faltam etapas de print/serial/Turbo, duração longa, Linux/CI neste SHA, métricas de desempenho e os demais critérios listados na tabela.
+
 Todos os conceitos originais aprovados (Smart Scene Compiler, cache persistente, paralelismo, proxies, hardware autodetect, Smart Export, preview/export unificado e A/B open source) continuam requisitos; não reduza a tarefa a portar Turbo V4. O documento [09_MISSAO_CODEX_AUTONOMA.md](./09_MISSAO_CODEX_AUTONOMA.md) é o **brief de execução** para o agente local.
 
 ## Diário de implementação local

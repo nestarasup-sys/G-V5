@@ -55,9 +55,10 @@ registerVideoVisualPlugin({
     ctx.rotate(element.rotation*Math.PI/180)
     ctx.fillStyle='#ff3bd4'
     ctx.strokeStyle='#28e7ff'
+    // Match CSS border-box: the 12px border is inside the element's declared size.
     ctx.lineWidth=12
-    ctx.fillRect(-w/2,-h/2,w,h)
-    ctx.strokeRect(-w/2,-h/2,w,h)
+    ctx.fillRect(-w/2+12,-h/2+12,Math.max(0,w-24),Math.max(0,h-24))
+    ctx.strokeRect(-w/2+6,-h/2+6,Math.max(0,w-12),Math.max(0,h-12))
     ctx.restore()
     return true
   },

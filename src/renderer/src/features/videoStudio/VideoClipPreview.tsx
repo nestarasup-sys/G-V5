@@ -7,7 +7,7 @@ import { VideoMediaPlayback } from './videoMediaPlayback'
 type CompositionDrag = { pointerId: number; clientX: number; clientY: number; stageWidth: number; stageHeight: number; original: VideoClipTransform; corner?: { x: number; y: number }; started: boolean }
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value))
 
-export function VideoStudioClipPreview({ studioId, asset, clip, playheadFrame, playing, masterAudio, onPlaybackError, selected, editable, onSelect, onBeginEdit, onTransform }: {
+export function VideoStudioClipPreview({ studioId, asset, clip, playheadFrame, playing, masterAudio, onPlaybackError, onFramePresented, selected, editable, onSelect, onBeginEdit, onTransform }: {
   studioId: string
   asset?: VideoStudioAsset
   clip: VideoMediaClip
@@ -15,6 +15,8 @@ export function VideoStudioClipPreview({ studioId, asset, clip, playheadFrame, p
   playing: boolean
   masterAudio?: VideoAudioSettings
   onPlaybackError: (message: string) => void
+  /** Optional frame-ready signal used by the isolated visual oracle. */
+  onFramePresented?: (frame: number, clipId: string) => void
   selected: boolean
   editable: boolean
   onSelect: () => void
@@ -31,7 +33,11 @@ export function VideoStudioClipPreview({ studioId, asset, clip, playheadFrame, p
     let cancelled = false
     setProxyUrl(null)
     if (!asset) return () => { cancelled = true }
-    void window.desktop.prepareVideoPreviewMedia(studioId, asset).then((prepared) => {
+    const preparePreview = window.desktop.prepareVideoPreviewMedia
+    // The restricted export/oracle preload intentionally omits the regular
+    // app's proxy IPC; its already-authorized gacha-video source remains valid.
+    if (typeof preparePreview !== 'function') return () => { cancelled = true }
+    void preparePreview(studioId, asset).then((prepared) => {
       if (!cancelled) setProxyUrl(prepared.proxyUrl)
     }).catch(() => {
       // Proxy is an optimization only. Original project media remains the fallback.
@@ -45,8 +51,29 @@ export function VideoStudioClipPreview({ studioId, asset, clip, playheadFrame, p
     return () => { playback.dispose(); playbackRef.current = null }
   }, [sourceUrl, onPlaybackError])
   useEffect(() => {
+    const media = mediaRef.current
+    let disposed = false
+    const reportPresented = () => {
+      if (!media || disposed || !onFramePresented || media.readyState < HTMLMediaElement.HAVE_CURRENT_DATA || !Number.isFinite(media.duration)) return
+      const sourceTime = (clip.sourceStartFrame + playheadFrame - clip.startFrame) / 60
+      const target = Math.max(0, Math.min(sourceTime, media.duration - 0.001))
+      if (Math.abs(media.currentTime - target) > 0.001) return
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        if (!disposed && media === mediaRef.current && Math.abs(media.currentTime - target) <= 0.001) onFramePresented(playheadFrame, clip.id)
+      }))
+    }
+    media?.addEventListener('loadeddata', reportPresented)
+    media?.addEventListener('seeked', reportPresented)
+    media?.addEventListener('timeupdate', reportPresented)
     playbackRef.current?.update({ clip, frame: playheadFrame, playing, masterAudio })
-  }, [clip, playheadFrame, playing, masterAudio, sourceUrl, onPlaybackError])
+    reportPresented()
+    return () => {
+      disposed = true
+      media?.removeEventListener('loadeddata', reportPresented)
+      media?.removeEventListener('seeked', reportPresented)
+      media?.removeEventListener('timeupdate', reportPresented)
+    }
+  }, [clip, playheadFrame, playing, masterAudio, sourceUrl, onPlaybackError, onFramePresented])
   const transform = clip.transform ?? defaultVideoTransform
   const beginDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (event.button !== 0) return

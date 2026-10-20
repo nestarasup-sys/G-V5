@@ -32,6 +32,7 @@ on:
       - 'src/renderer/src/features/videoStudio/VideoExportSurfacePage.tsx'
       - 'src/renderer/src/features/videoStudio/VideoStudioEditor.tsx'
       - 'src/renderer/src/features/videoStudio/VideoStudioDomElement.tsx'
+      - 'src/renderer/src/features/videoStudio/VideoClipPreview.tsx'
       - 'src/renderer/src/features/videoStudio/VideoPreviewOraclePage.tsx'
       - 'src/renderer/src/ui/App.tsx'
       - 'src/renderer/src/main.tsx'

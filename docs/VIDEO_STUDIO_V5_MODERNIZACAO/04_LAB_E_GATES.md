@@ -1,5 +1,5 @@
 # LABORATÓRIO DE ENGINES — Benchmarks, paridade, quality gates e rollout
-Versão 1 · 2026-10-19. Documento experimental: **nenhuma medição desta matriz foi executada durante esta rodada**.
+Versão 1 · 2026-10-19. Documento experimental; evidências parciais locais registradas em 2026-10-20 abaixo.
 
 ## 0. Missão
 
@@ -57,6 +57,16 @@ Condições de falha:
 | publish/cleanup | ms, disk peak, orphan processes/files | robustez e recuperação |
 
 **Usar instrução de logging local sanitizado:** job IDs aleatórios, contagens, hashes de saída e tempos; nomes/paths/mídia reais omitidos por padrão. Diagnóstico com conteúdo só com decisão e controle explícitos, nunca no GitHub.
+
+## 8. Evidência parcial de paridade DOM ↔ Canvas (2026-10-20)
+
+- Harness: `scripts/video-studio/character-media-oracle-smoke.cjs`, Electron real no Windows, apenas fixture sintética; sem DEV AI, assets pessoais ou saves de usuário. O preview usa o componente de produção `VideoStudioClipPreview` e `<video>`; o outro caminho usa o compositor Canvas e o pool de frames FFmpeg.
+- Foram comparados oito seeks em sequência A-B-A (`5, 22, 30, 10, 65, 186, 140, 5`) nas variantes `animated` e `static-characters`, incluindo pose inicial/transição/final, idle/fala, blink, vídeo importado, texto, fundo e extensão V546. O harness também verifica IR de pose/expressão, `sourceTick`, ordem das camadas e snapshot imutável.
+- Repetibilidade do primeiro/último frame: igualdade binária dentro de cada superfície/variante. SHA-256 DOM/Canvas: animated `28d390a8c3ef292cbd2f651d77a294a0bea91257c9b3e47493645025b79b44b5` / `ad4b77de8dc7d28fda9ad776a91cb20fd0e9a7719ac597cda58b642cde0826ac`; static `21910b8072d9b470987d2141d6352aac3fe0864766e754db64d5342bd436606a` / `e4eef93eaa2d4a5340f7bb1b98d46d31ee591d392108a75766ba2609203c39ed`.
+- Pior ROI de vídeo nas oito capturas e duas variantes: MAE `0.931`, changed-pixel ratio `7.68%` (contando diferença RGB acima de 1), p95 por canal `1`, canal máximo `107`. O limite de mudança acima de 1 acomoda a diferença de conversão YUV→RGB entre Chromium e FFmpeg; MAE/p95 e valor bruto máximo continuam registrados. Não se afirma igualdade perfeita entre decoders.
+- Corrigidos pela comparação: texto/alpha e padding de balões, cantos arredondados e caudas cortadas no Canvas; geometria `border-box` do plugin V546; ordenação DOM de layers. As ROIs são separadas para fundo, arte, personagem, narrador, balões, vídeo e extensão, com limites individuais.
+- Resultado local: `npm run test:video:character-media-oracle` passou; `npm test` (117/117), `npm run typecheck` e `npm run build` passaram. A execução do workflow Linux/Windows para o novo SHA ainda é necessária após publicar.
+- Limite: isto é evidência sintética de preview DOM ↔ Canvas, não paridade de MP4 exportado, print, Studio normal, projetos longos, hardware ou empacotamento. V501/V502/V504, V508/V510 e V546 permanecem parciais; os gates de release seguem desmarcados.
 
 ## 4. Oráculo de paridade por camadas (não enganar pelo SSIM)
 
