@@ -56,4 +56,4 @@ window.__resultPromise=(async()=>{const canvas=canvasBench();const pixi=await pi
     fs.rmSync(root,{recursive:true,force:true,maxRetries:8,retryDelay:100})
     app.exit(0)
   }
-}).catch(error=>{console.error(error.stack||error.message);app.exit(1)})
+}).catch(error=>{console.error(error.stack||error.message);process.exitCode=1;app.exit(1)})
