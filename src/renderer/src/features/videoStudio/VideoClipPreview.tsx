@@ -24,6 +24,7 @@ export function VideoStudioClipPreview({ studioId, asset, clip, playheadFrame, p
   onTransform: (transform: VideoClipTransform) => void
 }) {
   const mediaRef = useRef<HTMLVideoElement>(null)
+  const pausedFrameRef = useRef<HTMLCanvasElement>(null)
   const wrapperRef = useRef<HTMLDivElement>(null)
   const dragRef = useRef<CompositionDrag | null>(null)
   const playbackRef = useRef<VideoMediaPlayback | null>(null)
@@ -60,12 +61,24 @@ export function VideoStudioClipPreview({ studioId, asset, clip, playheadFrame, p
     const target = media && Number.isFinite(media.duration) ? Math.max(0, Math.min(sourceTime, media.duration - 0.001)) : sourceTime
     const withinTarget = (value: number) => Math.abs(value - target) <= 1 / 120 + 0.001
     const finishPresented = () => {
-      if (presentationReported) return
+      if (presentationReported || !media) return
+      if (!playing) {
+        const canvas = pausedFrameRef.current
+        if (!canvas || !media.videoWidth || !media.videoHeight) return
+        if (canvas.width !== media.videoWidth) canvas.width = media.videoWidth
+        if (canvas.height !== media.videoHeight) canvas.height = media.videoHeight
+        const context = canvas.getContext('2d', { alpha: false })
+        if (!context) return
+        // drawImage reads the decoder's current frame directly. This avoids a
+        // Chromium compositor race where seeked/currentTime are correct but a
+        // paused <video> can still paint the pre-seek frame for a screenshot.
+        context.drawImage(media, 0, 0, canvas.width, canvas.height)
+      }
       presentationReported = true
       if (presentationTimeout !== null) window.clearTimeout(presentationTimeout)
       presentationTimeout = null
       requestAnimationFrame(() => requestAnimationFrame(() => {
-        if (!disposed && media && media === mediaRef.current && withinTarget(media.currentTime)) {
+        if (!disposed && media === mediaRef.current && withinTarget(media.currentTime)) {
           onFramePresented?.(playheadFrame, clip.id)
         }
       }))
@@ -166,7 +179,8 @@ export function VideoStudioClipPreview({ studioId, asset, clip, playheadFrame, p
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
   }
   return <div ref={wrapperRef} className={`video-studio-video-composition${selected ? ' selected' : ''}${editable ? '' : ' locked'}`} style={{ left: `${50 + transform.x}%`, top: `${50 + transform.y}%`, width: `${transform.width}%`, height: `${transform.height}%`, transform: `translate(-50%, -50%) rotate(${transform.rotation}deg)` }} onPointerDown={beginDrag} onPointerMove={moveDrag} onPointerUp={endDrag} onPointerCancel={endDrag} onLostPointerCapture={() => { dragRef.current = null }}>
-    <video ref={mediaRef} className="video-studio-video-clip-preview" src={sourceUrl} muted={videoAudioOutput(masterAudio, clip.audio, playing).muted} playsInline preload="auto" onLoadedMetadata={() => playbackRef.current?.refresh()} onError={() => playbackRef.current?.reportMediaError()} aria-hidden="true" />
+    <video ref={mediaRef} className="video-studio-video-clip-preview" src={sourceUrl} muted={videoAudioOutput(masterAudio, clip.audio, playing).muted} playsInline preload="auto" onLoadedMetadata={() => playbackRef.current?.refresh()} onError={() => playbackRef.current?.reportMediaError()} aria-hidden="true" style={playing ? undefined : { visibility: 'hidden' }} />
+    <canvas ref={pausedFrameRef} className="video-studio-video-clip-preview" aria-hidden="true" style={playing ? { display: 'none' } : undefined} />
     {selected && editable && ['nw', 'ne', 'sw', 'se'].map((corner) => <span key={corner} className={`video-studio-video-resize ${corner}`} data-video-corner={corner} aria-hidden="true" />)}
   </div>
 }
