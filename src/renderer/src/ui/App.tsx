@@ -304,6 +304,7 @@ function RoteiroWorkspace({ roteiro, onBack, onUpdate, onDeleteDraftVideo, chara
   const [roteiroExportBusy, setRoteiroExportBusy] = useState<string | null>(null)
   const [roteiroExportMessage, setRoteiroExportMessage] = useState('')
   const [roteiroExportError, setRoteiroExportError] = useState('')
+  const [openingExportFolder, setOpeningExportFolder] = useState<string | null>(null)
   const [backgroundPickerOpen, setBackgroundPickerOpen] = useState(false)
   const [backgrounds, setBackgrounds] = useState<VideoBackgroundLibraryItem[]>([])
   const [backgroundSearch, setBackgroundSearch] = useState('')
@@ -450,6 +451,12 @@ function RoteiroWorkspace({ roteiro, onBack, onUpdate, onDeleteDraftVideo, chara
     } catch (reason) { setRoteiroExportError(reason instanceof Error ? reason.message : 'Não foi possível exportar este conteúdo.') }
     finally { setRoteiroExportBusy(null) }
   }
+  const openExportFolder = async (kind: 'characters' | 'background' | 'videos' | 'script') => {
+    setOpeningExportFolder(kind); setRoteiroExportError('')
+    try { await window.desktop.openRoteiroExportFolder({ roteiro, kind }) }
+    catch (reason) { setRoteiroExportError(reason instanceof Error ? reason.message : 'Não foi possível abrir a pasta de exportação.') }
+    finally { setOpeningExportFolder(null) }
+  }
   const openBackgroundPicker = async () => {
     setBackgroundPickerOpen(true); setBackgroundSearch('')
     try { setBackgrounds(await window.desktop.listVideoBackgroundLibrary()) }
@@ -499,10 +506,14 @@ function RoteiroWorkspace({ roteiro, onBack, onUpdate, onDeleteDraftVideo, chara
       <button className="roteiro-export-characters" type="button" onClick={() => void exportCharacters()} disabled={exportingCharacters || !roteiro.characterIds.length}>
         {exportingCharacters ? 'Exportando personagens…' : 'Exportar personagens'}
       </button>
+      <button className="roteiro-export-characters roteiro-export-open-folder" type="button" onClick={() => void openExportFolder('characters')} disabled={Boolean(openingExportFolder)}>{openingExportFolder === 'characters' ? 'Abrindo…' : 'Abrir pasta'}</button>
       <button className="roteiro-export-characters roteiro-export-secondary" type="button" onClick={() => void exportRoteiroAsset('background')} disabled={Boolean(roteiroExportBusy)}>{roteiroExportBusy === 'background' ? 'Exportando fundo…' : 'Exportar fundo'}</button>
       <button className="roteiro-export-characters roteiro-export-select-background" type="button" onClick={() => void openBackgroundPicker()} disabled={Boolean(roteiroExportBusy)}>Selecionar fundo{roteiro.backgroundAssetId ? ' · selecionado' : ''}</button>
+      <button className="roteiro-export-characters roteiro-export-open-folder" type="button" onClick={() => void openExportFolder('background')} disabled={Boolean(openingExportFolder)}>{openingExportFolder === 'background' ? 'Abrindo…' : 'Abrir pasta'}</button>
       <button className="roteiro-export-characters roteiro-export-secondary" type="button" onClick={() => void exportRoteiroAsset('videos')} disabled={Boolean(roteiroExportBusy)}>{roteiroExportBusy === 'videos' ? 'Exportando vídeos…' : 'Exportar vídeos'}</button>
+      <button className="roteiro-export-characters roteiro-export-open-folder" type="button" onClick={() => void openExportFolder('videos')} disabled={Boolean(openingExportFolder)}>{openingExportFolder === 'videos' ? 'Abrindo…' : 'Abrir pasta'}</button>
       <button className="roteiro-export-characters roteiro-export-secondary" type="button" onClick={() => void exportRoteiroAsset('script')} disabled={Boolean(roteiroExportBusy)}>{roteiroExportBusy === 'script' ? 'Exportando roteiro…' : 'Exportar roteiro'}</button>
+      <button className="roteiro-export-characters roteiro-export-open-folder" type="button" onClick={() => void openExportFolder('script')} disabled={Boolean(openingExportFolder)}>{openingExportFolder === 'script' ? 'Abrindo…' : 'Abrir pasta'}</button>
       {characterExportStatus && <p className="roteiro-export-feedback" role="status">{characterExportStatus}</p>}
       {characterExportError && <p className="roteiro-export-error" role="alert">{characterExportError}</p>}
       {roteiroExportMessage && <p className="roteiro-export-feedback" role="status">{roteiroExportMessage}</p>}

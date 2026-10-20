@@ -2045,6 +2045,15 @@ async function registerFabricatorHandlers(): Promise<void> {
     if (!isRoteiroDocument(value.roteiro) || !['background', 'videos', 'script'].includes(String(value.kind))) throw new Error('Roteiro ou tipo de exportação inválido.')
     return getRoteiroProjectExportStore().export(value.roteiro, value.kind as 'background' | 'videos' | 'script')
   })
+  ipcMain.handle('roteiros:export-folder:open', async (event, request: unknown) => {
+    assertTrustedSender(event)
+    if (!request || typeof request !== 'object' || Array.isArray(request)) throw new Error('Solicitação para abrir pasta inválida.')
+    const value = request as { roteiro?: unknown; kind?: unknown }
+    if (!isRoteiroDocument(value.roteiro) || !['characters', 'background', 'videos', 'script'].includes(String(value.kind))) throw new Error('Roteiro ou pasta de exportação inválida.')
+    const folder = await getRoteiroProjectExportStore().ensureExportFolder(value.roteiro, value.kind as 'characters' | 'background' | 'videos' | 'script')
+    const error = await shell.openPath(folder)
+    if (error) throw new Error(`Não foi possível abrir a pasta: ${error}`)
+  })
   ipcMain.handle('roteiros:characters-export:start', async (event, request: unknown) => {
     assertTrustedSender(event)
     const result = await getRoteiroCharacterExportStore().start(request)

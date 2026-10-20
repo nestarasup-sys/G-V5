@@ -187,6 +187,8 @@ button:focus-visible, input:focus-visible { outline: 3px solid #ed8caf; outline-
 .roteiro-export-characters:disabled { opacity:.58;cursor:wait; }
 .roteiro-export-secondary { background:#fff;color:#5e4685;border-color:#dcd2eb;box-shadow:none; }
 .roteiro-export-select-background { margin-top:-10px;border-top-left-radius:0;border-top-right-radius:0;background:#f5f0fc;color:#6542a0;border-color:#dcd2eb;box-shadow:none; }
+.roteiro-export-open-folder { min-height:32px;margin-top:-10px;border-top-left-radius:0;border-top-right-radius:0;background:#faf8fc;color:#766788;border-color:#e5dfeb;box-shadow:none;font-size:13px;font-weight:700; }
+.roteiro-export-open-folder:hover:not(:disabled) { background:#f0ebf5;color:#604b79;box-shadow:none;transform:none; }
 .roteiro-export-secondary:hover:not(:disabled),.roteiro-export-select-background:hover:not(:disabled) { background:#f1eaff;box-shadow:0 3px 9px #6844b51c; }
 .roteiro-background-modal { width:min(860px,calc(100vw - 32px));max-height:min(82vh,820px);display:flex;flex-direction:column;overflow:hidden;border:1px solid #e4dceb;border-radius:20px;background:#fff;box-shadow:0 24px 80px #27163e40; }
 .roteiro-background-modal>header { display:flex;align-items:flex-start;justify-content:space-between;gap:20px;padding:22px 24px 16px;border-bottom:1px solid #eee8f3; }

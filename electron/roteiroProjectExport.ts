@@ -28,6 +28,15 @@ export class RoteiroProjectExportStore {
     await mkdir(folder, { recursive: true })
     return folder
   }
+  async ensureExportFolder(roteiro: RoteiroDocument, kind: 'characters' | 'background' | 'videos' | 'script') {
+    if (!idPattern.test(roteiro.id)) throw new Error('ID do roteiro inválido.')
+    const project = await this.projectFolder(roteiro)
+    const folder = kind === 'characters' ? join(project, 'assets', 'characters')
+      : kind === 'background' ? join(project, 'assets', 'backgrounds')
+      : kind === 'videos' ? join(project, 'assets', 'tiktoks') : project
+    await mkdir(folder, { recursive: true })
+    return folder
+  }
   private async writeOwned(folder: string, scriptId: string, outputs: Array<{ path: string; bytes?: Buffer; sourcePath?: string; expectedSize?: number }>, scope: string) {
     const manifestPath = join(folder, '.gacha-v5-roteiro-exports.json')
     let manifest: Manifest = { app: 'GACHA_V5_ROTEIRO_EXPORT', scriptId, files: [] }

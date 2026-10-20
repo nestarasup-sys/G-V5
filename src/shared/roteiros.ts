@@ -74,4 +74,5 @@ export type RoteirosDesktopApi = {
   finishRoteiroCharacterExport: (jobId: string) => Promise<{ folderName: string; path: string; characters: number; files: number }>
   cancelRoteiroCharacterExport: (jobId: string) => Promise<void>
   exportRoteiroAssets: (request: { roteiro: RoteiroDocument; kind: 'background' | 'videos' | 'script' }) => Promise<{ path: string; files: number }>
+  openRoteiroExportFolder: (request: { roteiro: RoteiroDocument; kind: 'characters' | 'background' | 'videos' | 'script' }) => Promise<void>
 }
