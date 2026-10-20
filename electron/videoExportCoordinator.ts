@@ -21,6 +21,7 @@ import { assembleVideoStudioOutput } from './videoExportAssembler'
 import { probeVideoMedia } from './videoMediaProbe'
 import { verifyVideoStudioOutput } from './videoOutputVerifier'
 import { VideoSemanticFrameCache } from './videoSemanticFrameCache'
+import { VideoPersistentFrameCache } from './videoPersistentFrameCache'
 import { chooseVideoExportWorkerCount, videoExportWorkerOverride } from './videoExportAutoTuner'
 
 type ReopenedVideoExportJob = Awaited<ReturnType<VideoExportJobStore['reopen']>>
@@ -274,6 +275,8 @@ export class VideoExportCoordinator {
 
     const sceneProgram = compileVideoScene(snapshot, renderVariant)
     const frameCache = new VideoSemanticFrameCache()
+    const persistentFrameCache = new VideoPersistentFrameCache(this.library.frameCacheRoot)
+    await persistentFrameCache.repair()
     const inFlightFrames = new Map<string, Promise<Buffer>>()
     const completedByChunk = new Map<number, number>(
       reopened.manifest.chunks.map((chunk) => [chunk.index, chunk.endFrame - chunk.startFrame]),
@@ -316,10 +319,17 @@ export class VideoExportCoordinator {
         reusedFrames += 1
         return cached
       }
+      const persistent = await persistentFrameCache.get(semantic, frameBytes)
+      if (persistent) {
+        reusedFrames += 1
+        frameCache.set(semantic, persistent)
+        return persistent
+      }
       renderedFrames += 1
       const rendering = surface.renderFrame(frame)
-        .then((rgba) => {
+        .then(async (rgba) => {
           frameCache.set(semantic, rgba)
+          await persistentFrameCache.set(semantic, rgba).catch(() => undefined)
           return rgba
         })
         .finally(() => inFlightFrames.delete(semantic))
