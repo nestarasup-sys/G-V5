@@ -31,7 +31,8 @@
     "bench:video:cache": "electron scripts/video-studio/persistent-cache-benchmark.cjs",
     "package:windows:portable": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/video-studio/package-windows-portable.ps1",
     "test:export:full-engine-soak:90": "electron scripts/video-studio/full-engine-soak.cjs 90",
-    "test:export:full-engine-soak:900": "electron scripts/video-studio/full-engine-soak.cjs 900"
+    "test:export:full-engine-soak:900": "electron scripts/video-studio/full-engine-soak.cjs 900",
+    "test:export:hybrid-recovery": "node scripts/video-studio/hybrid-fragmented-recovery-smoke.cjs"
   },
   "dependencies": {
     "better-sqlite3": "^13.0.3",
