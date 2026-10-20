@@ -4,6 +4,7 @@ import { Icon } from './Icon'
 const sections = [
   { label: 'Studio', path: '/estudio', icon: 'camera' },
   { label: 'Video Studio', path: '/video-studio', icon: 'frame' },
+  { label: 'Roteiros', path: '/roteiros', icon: 'message' },
   { label: 'Customizar', path: '/customizar', icon: 'bow' },
   { label: 'Opções', path: '/opcoes', icon: 'settings' },
   { label: 'Fabricador Dev', path: '/fabricador-dev', icon: 'box' }
