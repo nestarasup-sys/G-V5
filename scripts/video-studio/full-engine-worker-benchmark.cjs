@@ -133,6 +133,7 @@ app.whenReady().then(async()=>{
   const workerChunks=Array.from({length:workerCount},(_,workerIndex)=>indexes.filter(index=>index%workerCount===workerIndex))
   const activeWriters=new Set()
   let rendered=0,composeMs=0,readbackMs=0,frameAcquireMs=0,encoderReadyMs=0,frameWriteMs=0,writerFinishMs=0
+  const rawFrameHash=createHash('sha256')
   let layerCacheHits=0,layerCacheMisses=0,layerCacheEvictions=0,layerCacheBytes=0,layerCacheMaxBytes=0
   const createWriter=async(index)=>{
    const start=index*chunkFrames,end=Math.min(totalFrames,start+chunkFrames),out=path.join(dir,`chunk-${index}.mp4`)
@@ -160,6 +161,7 @@ app.whenReady().then(async()=>{
           const frameStarted=performance.now();const result=await surface.frame(frame);frameAcquireMs+=performance.now()-frameStarted
           composeMs+=result.timings.composeMs;readbackMs+=result.timings.readbackMs
           if(result.layerCache){layerCacheHits+=Math.max(0,result.layerCache.hits-previousLayerStats.hits);layerCacheMisses+=Math.max(0,result.layerCache.misses-previousLayerStats.misses);layerCacheEvictions+=Math.max(0,result.layerCache.evictions-previousLayerStats.evictions);layerCacheBytes=Math.max(layerCacheBytes,result.layerCache.bytes);layerCacheMaxBytes=Math.max(layerCacheMaxBytes,result.layerCache.maxBytes);previousLayerStats=result.layerCache}
+          rawFrameHash.update(result.pixels)
           const writeStarted=performance.now();await writer.writeFrame(result.pixels,{copy:false});frameWriteMs+=performance.now()-writeStarted;rendered++
         }
         const finishStarted=performance.now()
@@ -189,7 +191,7 @@ app.whenReady().then(async()=>{
      readbackRatio:(composeMs+readbackMs)>0?readbackMs/(composeMs+readbackMs):0,
      layerCache:{hits:layerCacheHits,misses:layerCacheMisses,evictions:layerCacheEvictions,bytesPeak:layerCacheBytes,maxBytes:layerCacheMaxBytes,avoidedLayerDraws:layerCacheHits},
      ramInitialBytes:memory.initialBytes,ramPeakBytes:peakBytes,ramScope:'Electron process tree working set; external FFmpeg process memory is not included',
-     rendered,chunkCount:indexes.length,codec:stream.codec_name,width:Number(stream.width),height:Number(stream.height),frameRate:stream.r_frame_rate,outputBytes:fs.statSync(final).size,outputSha256:sha256File(final),
+     rendered,rawFrameSha256:rawFrameHash.digest('hex'),chunkCount:indexes.length,codec:stream.codec_name,width:Number(stream.width),height:Number(stream.height),frameRate:stream.r_frame_rate,outputBytes:fs.statSync(final).size,outputSha256:sha256File(final),
     }
   }catch(error){
     await Promise.all([...activeWriters].map(writer=>writer.cancel().catch(()=>{})))
@@ -206,7 +208,7 @@ app.whenReady().then(async()=>{
   const speedup=serial.elapsedMs/turbo.elapsedMs
   const cacheOffSerial=runLayerCacheAb?await benchmark(1,false):null
   const layerCacheSpeedup=cacheOffSerial?cacheOffSerial.elapsedMs/serial.elapsedMs:null
-  if(cacheOffSerial&&cacheOffSerial.outputSha256!==serial.outputSha256)throw new Error('Layer cache ON/OFF produziu bytes finais diferentes.')
+  if(cacheOffSerial&&cacheOffSerial.rawFrameSha256!==serial.rawFrameSha256)throw new Error('Layer cache ON/OFF produziu pixels BGRA diferentes antes do encoder.')
   const report=JSON.stringify({ok:true,profile,durationSeconds,dimensions:`${width}x${height}`,frameRate:60,totalFrames,machine,fixture:profileCounts.counts,serial,turbo,speedup,cacheOffSerial,layerCacheSpeedup},null,2)
   await new Promise((resolve,reject)=>process.stdout.write(`${report}\n`,error=>error?reject(error):resolve()))
  }finally{
