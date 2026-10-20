@@ -39,6 +39,7 @@ function RoteiroSectionEditor({ title, subtitle, content, characters, characterI
 }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [blocksCollapsed, setBlocksCollapsed] = useState(false)
   const addVideo = async () => {
     setBusy(true)
     setError(null)
@@ -93,10 +94,10 @@ function RoteiroSectionEditor({ title, subtitle, content, characters, characterI
       </div>
     </section>
     <section className="roteiro-reaction-sequence" aria-label="Sequência de reações">
-      <header><div><Icon name="message" /><h2>Sequência de reações</h2><span>{content.blocks.length}</span></div></header>
+      <header><div><button className="roteiro-sequence-collapse" type="button" onClick={() => setBlocksCollapsed((collapsed) => !collapsed)} aria-label={blocksCollapsed ? 'Expandir sequência de reações' : 'Recolher sequência de reações'} aria-expanded={!blocksCollapsed}><Icon name="chevronDown" /></button><span>{content.blocks.length}</span><h2>Sequência de reações</h2></div></header>
       <button className="roteiro-add-block" type="button" onClick={addBlock}><Icon name="plus" />Adicionar bloco</button>
-      <div className="roteiro-reaction-blocks">{content.blocks.map((block, index) => <article className={`roteiro-reaction-block tone-${index % 3}`} key={block.id}>
-        <span className="roteiro-reaction-index">{String(index + 1).padStart(2, '0')}</span>
+      {!blocksCollapsed && <div className="roteiro-reaction-blocks">{content.blocks.map((block, index) => <article className={`roteiro-reaction-block tone-${index % 3}`} key={block.id}>
+        <div className="roteiro-reaction-identity">{(() => { const character = characters.find((item) => item.id === block.characterId); return character ? <CharacterPortrait character={character} /> : <span className="roteiro-reaction-avatar-empty"><Icon name="user" /></span> })()}<span className="roteiro-reaction-index">{String(index + 1).padStart(2, '0')}</span></div>
         <div className="roteiro-reaction-fields">
           <label>Personagem<select value={block.characterId} onChange={(event) => updateBlock(block.id, { characterId: event.target.value })}><option value="">Selecione personagem</option>{characters.filter((character) => characterIds.includes(character.id)).map((character) => <option value={character.id} key={character.id}>{character.name}</option>)}</select></label>
           <label>Tipo<select value={block.kind} onChange={(event) => updateBlock(block.id, { kind: event.target.value as RoteiroReactionBlock['kind'] })}><option value="fala">Fala</option><option value="pensamento">Pensamento</option></select></label>
@@ -110,7 +111,7 @@ function RoteiroSectionEditor({ title, subtitle, content, characters, characterI
           <button type="button" onClick={() => onUpdate({ ...content, blocks: [...content.blocks.slice(0, index + 1), { ...block, id: crypto.randomUUID() }, ...content.blocks.slice(index + 1)] })}>⊞ Duplicar</button>
           <button type="button" className="danger" onClick={() => onUpdate({ ...content, blocks: content.blocks.filter((item) => item.id !== block.id) })}>Excluir</button>
         </div>
-      </article>)}</div>
+      </article>)}</div>}
     </section>
   </main>
 }
