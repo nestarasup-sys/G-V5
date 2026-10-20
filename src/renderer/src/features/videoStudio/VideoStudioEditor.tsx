@@ -27,6 +27,7 @@ import type { VideoExportProgress, VideoExportRecoveryRecord } from '../../../..
 import type { RenderVariant } from '../../../../shared/videoSceneIR'
 import { createVideoCharacterRenderAssetSnapshot } from '../../../../shared/videoCharacterRenderAssets'
 import { captureVideoCharacterRenderAssets } from './videoCharacterAssetCapture'
+import { VideoStudioDomElement } from './VideoStudioDomElement'
 
 type StudioCard = StudioDocument
 type StudioSnapshot = Pick<StudioDocument, 'backgroundColor' | 'backgroundAssetId' | 'backgroundX' | 'backgroundY' | 'backgroundWidth' | 'backgroundHeight' | 'backgroundRotation' | 'assets' | 'elements' | 'videoTimeline'>
@@ -2358,10 +2359,20 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
               const speakerName = speaker?.text || element.speakerName
               const speakerColor = videoCharacterTrackColor(element.speakerCharacterId ?? element.id, speaker?.timelineColor ?? element.speakerColor)
               const imageDataUrl = automaticMouthState?.dataUrl ?? blinkState?.dataUrl ?? playbackState?.imageDataUrl ?? asset?.dataUrl
-              const size = studioElementSize(element)
-              return <div key={element.id} className={`video-studio-canvas-element video-studio-element-${element.kind}${selectedElementId === element.id && !fullView ? ' selected' : ''}`} style={{ ...imageStyle(element.x, element.y, size.width, size.height, element.rotation, element.kind === 'character' && element.flipX === true), zIndex: Math.max(0, element.zIndex) + 2, ...(speakerName ? { '--speaker-color': speakerColor } as CSSProperties : {}) }} onPointerDown={(event) => startDrag(event, element.id)} onPointerMove={moveDrag} onPointerUp={endDrag} onPointerCancel={endDrag}>
-                {(element.kind === 'image' || element.kind === 'character') && imageDataUrl ? <img src={imageDataUrl} alt={asset?.name ?? element.text} draggable={false} /> : element.kind === 'speech' || element.kind === 'thought' ? <span>{speakerName && <strong className="video-studio-balloon-speaker">{speakerName}</strong>}<span className="video-studio-balloon-text">{element.text}</span></span> : <span>{element.text}</span>}
-              </div>
+              return <VideoStudioDomElement
+                key={element.id}
+                element={element}
+                imageDataUrl={imageDataUrl}
+                assetName={asset?.name}
+                speakerName={speakerName}
+                speakerColor={speakerColor}
+                selected={selectedElementId === element.id && !fullView}
+                interactive={!fullView}
+                onPointerDown={(event) => startDrag(event, element.id)}
+                onPointerMove={moveDrag}
+                onPointerUp={endDrag}
+                onPointerCancel={endDrag}
+              />
             })}
             {isVideoWorkspace && (() => {
               const timeline = videoTimelineFor(activeStudio)
