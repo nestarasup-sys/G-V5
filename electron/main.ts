@@ -1865,6 +1865,28 @@ async function registerFabricatorHandlers(): Promise<void> {
         if (!videoExportCoordinator || videoExportJobOwners.get(jobId) !== event.sender.id) throw new Error('Job de exportação não pertence a esta janela.')
         await videoExportCoordinator.cancel(jobId)
       })
+      ipcMain.handle('video-studio:export:recoverable', async (event) => {
+        assertTrustedSender(event)
+        if (!videoExportCoordinator) throw new Error('Coordenador de exportação ainda não foi inicializado.')
+        return videoExportCoordinator.listRecoverable()
+      })
+      ipcMain.handle('video-studio:export:resume', async (event, jobId: string) => {
+        assertTrustedSender(event)
+        if (!videoExportCoordinator) throw new Error('Coordenador de exportação ainda não foi inicializado.')
+        const resumed = await videoExportCoordinator.resume(jobId)
+        videoExportJobOwners.set(resumed, event.sender.id)
+        const current = videoExportCoordinator.status(resumed)
+        if (current) event.sender.send('video-studio:export:progress', current)
+        return { jobId: resumed }
+      })
+      ipcMain.handle('video-studio:export:discard-recovery', async (event, jobId: string) => {
+        assertTrustedSender(event)
+        if (!videoExportCoordinator) throw new Error('Coordenador de exportação ainda não foi inicializado.')
+        const owner = videoExportJobOwners.get(jobId)
+        if (owner !== undefined && owner !== event.sender.id) throw new Error('Job de exportação pertence a outra janela.')
+        await videoExportCoordinator.discardRecovery(jobId)
+        videoExportJobOwners.delete(jobId)
+      })
       ipcMain.handle('video-studio:video-library:list', async (event) => { assertTrustedSender(event); return videoLibrary.list() })
       ipcMain.handle('video-studio:video-library:import', async (event) => {
         assertTrustedSender(event)
