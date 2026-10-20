@@ -119,6 +119,7 @@ export async function verifyVideoStudioOutput(
     outputPath: string
     expected: VideoStudioOutputExpectation
     timeoutMs?: number
+    signal?: AbortSignal
   },
 ): Promise<VideoStudioOutputVerification> {
   if (![input.ffprobeExecutable, input.ffmpegExecutable, input.outputPath].every(isAbsolute)) {
@@ -132,7 +133,7 @@ export async function verifyVideoStudioOutput(
     '-v', 'error', '-count_frames',
     '-show_entries', 'format=duration,format_name:stream=codec_type,codec_name,width,height,r_frame_rate,avg_frame_rate,nb_read_frames,sample_rate,channels,duration,start_time',
     '-of', 'json', input.outputPath,
-  ], { timeoutMs })
+  ], { timeoutMs, signal: input.signal })
   if (probe.code !== 0) throw new Error(`FFprobe rejeitou o MP4 final. ${probe.stderr}`)
   let payload: ProbePayload
   try { payload = JSON.parse(probe.stdout) as ProbePayload }
@@ -143,7 +144,7 @@ export async function verifyVideoStudioOutput(
     '-v', 'error', '-nostdin', '-i', input.outputPath, '-map', '0:v:0',
     ...(input.expected.audio ? ['-map', '0:a:0'] : []),
     '-f', 'null', '-',
-  ], { timeoutMs })
+  ], { timeoutMs, signal: input.signal })
   if (decode.code !== 0 || decode.stderr.trim()) throw new Error(`O decode integral do MP4 final falhou. ${decode.stderr}`)
   return verified
 }
