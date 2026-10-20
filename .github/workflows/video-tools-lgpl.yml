@@ -99,6 +99,15 @@ jobs:
             throw "Packaged tool resolution failed: $(Get-Content -Raw $report)"
           }
           Write-Host (Get-Content -Raw $report)
+      - name: Run full export against packaged renderer and bundled FFmpeg
+        shell: pwsh
+        run: |
+          $package = (Resolve-Path './dist/windows-portable').Path
+          $env:GACHA_FFMPEG_PATH = Join-Path $package 'resources/video-tools/ffmpeg.exe'
+          $env:GACHA_FFPROBE_PATH = Join-Path $package 'resources/video-tools/ffprobe.exe'
+          $env:GACHA_E2E_RENDERER_FILE = Join-Path $package 'resources/app/out/renderer/index.html'
+          $env:GACHA_E2E_PRELOAD_FILE = Join-Path $package 'resources/app/out/preload/video-export-preload.cjs'
+          npm run test:export:e2e-electron
       - name: Remove package and downloaded runtime
         if: always()
         shell: pwsh
