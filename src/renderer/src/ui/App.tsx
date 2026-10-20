@@ -40,11 +40,13 @@ function roteiroVideoReference(item: VideoLibraryItem): RoteiroVideoReference {
   return { id: item.id, name: item.name, mimeType: item.mimeType, extension: item.extension, size: item.size, durationFrames: item.durationFrames }
 }
 
-function RoteiroSectionEditor({ title, content, characters, characterIds, onUpdate, onDeleteDraftVideo }: {
+function RoteiroSectionEditor({ title, content, characters, characterIds, previewDetailsCollapsed, onTogglePreviewDetails, onUpdate, onDeleteDraftVideo }: {
   title: string
   content: RoteiroSectionContent
   characters: CustomizerCharacter[]
   characterIds: string[]
+  previewDetailsCollapsed: boolean
+  onTogglePreviewDetails: () => void
   onUpdate: (content: RoteiroSectionContent) => void
   onDeleteDraftVideo: (videoId: string, content: RoteiroSectionContent) => Promise<boolean>
 }) {
@@ -61,7 +63,6 @@ function RoteiroSectionEditor({ title, content, characters, characterIds, onUpda
   const [pickerSort, setPickerSort] = useState<'number' | 'name' | 'duration' | 'newest'>('number')
   const [pickerPreviewId, setPickerPreviewId] = useState<string | null>(null)
   const [blocksCollapsed, setBlocksCollapsed] = useState(false)
-  const [previewDetailsCollapsed, setPreviewDetailsCollapsed] = useState(false)
   const previewRef = useRef<HTMLVideoElement>(null)
   useEffect(() => {
     if (!pickerOpen) return
@@ -242,7 +243,7 @@ function RoteiroSectionEditor({ title, content, characters, characterIds, onUpda
           <button type="button" className="primary" onClick={() => void saveVideoDestination('base')} disabled={busy || !video}>{busy ? 'Salvando…' : 'Enviar para base de vídeos'}</button>
           <button type="button" onClick={() => void saveVideoDestination('draft')} disabled={busy || !video}>Salvar como rascunho</button>
           {libraryActionMessage && <span role="status">{libraryActionMessage}</span>}
-          <button className="roteiro-preview-toggle" type="button" aria-expanded={!previewDetailsCollapsed} onClick={() => setPreviewDetailsCollapsed((collapsed) => !collapsed)}>{previewDetailsCollapsed ? 'Mostrar' : 'Ocultar'}</button>
+          <button className="roteiro-preview-toggle" type="button" aria-expanded={!previewDetailsCollapsed} onClick={onTogglePreviewDetails}>{previewDetailsCollapsed ? 'Mostrar' : 'Ocultar'}</button>
         </div>
         <div className="roteiro-video-stage">
           {video ? <video ref={previewRef} key={video.id} src={`gacha-video://library/${video.id}`} controls playsInline preload="metadata" aria-label={'Prévia de ' + video.name} /> : <div className="roteiro-video-placeholder"><Icon name="camera" /><strong>Preview 1920 × 1080</strong><span>Adicione um vídeo para visualizar esta seção.</span></div>}
@@ -588,7 +589,7 @@ function RoteiroWorkspace({ roteiro, onBack, onUpdate, onDeleteDraftVideo, chara
           </article>)}{roteiro.tiktoks.length === 0 && <div className="roteiro-first-tiktok"><Icon name="message" /><strong>Seu roteiro começa aqui</strong><span>Adicione o primeiro TikTok quando estiver pronto.</span><button type="button" onClick={addTikTok}>Adicionar primeiro TikTok</button></div>}</div>
       </section>
     </aside>
-    <RoteiroSectionEditor title={activeContentId === 'opening' ? 'Abertura' : activeTikTok?.title ?? 'TikTok'} content={activeContent} characters={characters} characterIds={roteiro.characterIds} onUpdate={updateActiveContent} onDeleteDraftVideo={removeDraftVideo} />
+    <RoteiroSectionEditor title={activeContentId === 'opening' ? 'Abertura' : activeTikTok?.title ?? 'TikTok'} content={activeContent} characters={characters} characterIds={roteiro.characterIds} previewDetailsCollapsed={Boolean(roteiro.previewDetailsCollapsed)} onTogglePreviewDetails={() => onUpdate({ ...roteiro, previewDetailsCollapsed: !roteiro.previewDetailsCollapsed })} onUpdate={updateActiveContent} onDeleteDraftVideo={removeDraftVideo} />
     <aside className="roteiro-workspace-empty-panel" aria-label="Ferramentas do roteiro">
       <button className="roteiro-export-characters" type="button" onClick={() => void exportCharacters()} disabled={exportingCharacters || !roteiro.characterIds.length}>
         {exportingCharacters ? 'Exportando personagens…' : 'Exportar personagens'}

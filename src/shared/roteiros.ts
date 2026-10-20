@@ -61,6 +61,7 @@ export type RoteiroDocument = {
   characterIds: string[]
   backgroundAssetId?: string | null
   uiGifAssetId?: string | null
+  previewDetailsCollapsed?: boolean
   opening?: RoteiroSectionContent
   tiktoks: RoteiroTikTok[]
 }
