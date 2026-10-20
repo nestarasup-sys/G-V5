@@ -286,7 +286,23 @@ export class VideoExportCoordinator {
     let reusedFrames = 0
     let renderedFrames = 0
     let encodedChunkBytes = completedChunkBytes(reopened.manifest)
-    let persistentCacheHits = 0, persistentCacheMisses = 0, persistentCacheWrites = 0
+    let persistentCacheHits = 0, persistentCacheMisses = 0, persistentCacheWrites = 0, persistentCacheWriteSkips = 0
+    const pendingPersistentWrites = new Set<Promise<void>>()
+    const schedulePersistentWrite = (semantic: string, rgba: Buffer) => {
+      // L2 is an optimization: cold export must not wait on deflate+disk for
+      // every frame. Keep at most two writes queued; skip excess rather than
+      // turning a fast renderer into an unbounded memory/disk backlog.
+      if (pendingPersistentWrites.size >= 2) {
+        persistentCacheWriteSkips += 1
+        return
+      }
+      let write!: Promise<void>
+      write = persistentFrameCache.set(semantic, rgba)
+        .then(() => { persistentCacheWrites += 1 })
+        .catch(() => undefined)
+        .finally(() => pendingPersistentWrites.delete(write))
+      pendingPersistentWrites.add(write)
+    }
     let writerWaitMs = 0, writerPeakInFlight = 0
     const frameBytes = 1920 * 1080 * 4
 
@@ -307,6 +323,7 @@ export class VideoExportCoordinator {
         persistentCacheHits,
         persistentCacheMisses,
         persistentCacheWrites,
+        persistentCacheWriteSkips,
         writerWaitMs,
         writerPeakInFlight,
         workerCount,
@@ -338,9 +355,9 @@ export class VideoExportCoordinator {
       persistentCacheMisses += 1
       renderedFrames += 1
       const rendering = surface.renderFrame(frame)
-        .then(async (rgba) => {
+        .then((rgba) => {
           frameCache.set(semantic, rgba)
-          await persistentFrameCache.set(semantic, rgba).then(() => { persistentCacheWrites += 1 }).catch(() => undefined)
+          schedulePersistentWrite(semantic, rgba)
           return rgba
         })
         .finally(() => inFlightFrames.delete(semantic))
@@ -442,6 +459,8 @@ export class VideoExportCoordinator {
     }
     this.abort(active)
     await this.disposeSurfaces(active)
+    if (pendingPersistentWrites.size) await Promise.allSettled([...pendingPersistentWrites])
+    this.abort(active)
 
     const completed = await this.jobs.reopen(active.jobId)
     if (completed.manifest.chunks.length !== chunkCount) throw new Error('Nem todos os chunks foram confirmados antes da montagem.')
