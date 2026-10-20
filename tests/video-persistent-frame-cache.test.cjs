@@ -79,3 +79,23 @@ test('persistent cache rejects a frame whose authenticated RGBA checksum no long
     assert.match(VIDEO_RENDERER_CACHE_VERSION,/sha256/)
   }finally{fs.rmSync(root,{recursive:true,force:true})}
 })
+
+
+test('separate cache instances serialize mutations against the same root',async()=>{
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),'gv5-persistent-concurrent-root-'))
+  try{
+    const a=new VideoPersistentFrameCache(root,64*1024*1024)
+    const b=new VideoPersistentFrameCache(root,64*1024*1024)
+    const pixelsA=Buffer.alloc(2*1024*1024,31)
+    const pixelsB=Buffer.alloc(2*1024*1024,47)
+    await Promise.all([
+      a.set('scene-concurrent-a',pixelsA),
+      b.set('scene-concurrent-b',pixelsB),
+    ])
+    const reopened=new VideoPersistentFrameCache(root,64*1024*1024)
+    assert.deepEqual(await reopened.get('scene-concurrent-a',pixelsA.length),pixelsA)
+    assert.deepEqual(await reopened.get('scene-concurrent-b',pixelsB.length),pixelsB)
+    const stats=await reopened.stats()
+    assert.equal(stats.entries,2)
+  }finally{fs.rmSync(root,{recursive:true,force:true})}
+})
