@@ -131,7 +131,10 @@ const roteirosApi: RoteirosDesktopApi = {
   finishRoteiroCharacterExport: (jobId) => ipcRenderer.invoke('roteiros:characters-export:finish', jobId),
   cancelRoteiroCharacterExport: (jobId) => ipcRenderer.invoke('roteiros:characters-export:cancel', jobId),
   exportRoteiroAssets: (request) => ipcRenderer.invoke('roteiros:assets-export', request),
-  openRoteiroExportFolder: (request) => ipcRenderer.invoke('roteiros:export-folder:open', request)
+  openRoteiroExportFolder: (request) => ipcRenderer.invoke('roteiros:export-folder:open', request),
+  listRoteiroUiGifs: () => ipcRenderer.invoke('roteiros:ui-gifs:list'),
+  importRoteiroUiGif: () => ipcRenderer.invoke('roteiros:ui-gifs:import'),
+  deleteRoteiroUiGif: (id) => ipcRenderer.invoke('roteiros:ui-gifs:delete', id)
 }
 
 contextBridge.exposeInMainWorld('desktop', {

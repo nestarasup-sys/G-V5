@@ -139,7 +139,7 @@ class DataPlatform {
     this.database = new Database(dbPath, { timeout: 5000 })
     this.database.pragma('foreign_keys = ON')
     const currentSchema = this.database.pragma('user_version', { simple: true })
-    if (currentSchema > 10) {
+    if (currentSchema > 11) {
       this.database.close()
       this.database = null
       throw new Error(`O catálogo usa schema ${currentSchema}, mais novo que esta versão do app.`)
@@ -214,6 +214,7 @@ class DataPlatform {
         video_title TEXT NOT NULL,
         character_ids_json TEXT NOT NULL,
         background_asset_id TEXT,
+        ui_gif_asset_id TEXT,
         position INTEGER NOT NULL CHECK(position >= 0),
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
@@ -332,6 +333,9 @@ class DataPlatform {
     if (!roteiroColumns.has('background_asset_id')) this.database.exec('ALTER TABLE roteiros ADD COLUMN background_asset_id TEXT')
     this.database.prepare("INSERT OR IGNORE INTO schema_migrations(version, name, checksum, applied_at) VALUES (10, 'roteiro-background-library-reference', ?, ?)")
       .run(sha256('gacha-roteiro-background-library-reference-schema-v10'), now)
+    if (!roteiroColumns.has('ui_gif_asset_id')) this.database.exec('ALTER TABLE roteiros ADD COLUMN ui_gif_asset_id TEXT')
+    this.database.prepare("INSERT OR IGNORE INTO schema_migrations(version, name, checksum, applied_at) VALUES (11, 'roteiro-ui-gif-library-reference', ?, ?)")
+      .run(sha256('gacha-roteiro-ui-gif-library-reference-schema-v11'), now)
     this.database.prepare("INSERT OR IGNORE INTO schema_migrations(version, name, checksum, applied_at) VALUES (5, 'roteiros-position-compatibility', ?, ?)")
       .run(sha256('gacha-roteiros-position-compatibility-schema-v5'), now)
     this.database.prepare("INSERT OR IGNORE INTO schema_migrations(version, name, checksum, applied_at) VALUES (6, 'roteiro-section-content-and-blocks', ?, ?)")
@@ -354,7 +358,7 @@ class DataPlatform {
     this.database.exec('INSERT OR IGNORE INTO base_video_sequence(sequence_id, next_number) SELECT 1, COALESCE(MAX(video_number), 0) + 1 FROM base_video_details')
     this.database.prepare("INSERT OR IGNORE INTO schema_migrations(version, name, checksum, applied_at) VALUES (10, 'base-video-stable-sequence-numbers', ?, ?)")
       .run(sha256('gacha-base-video-stable-sequence-numbers-schema-v10'), now)
-    if (currentSchema < 10) this.database.pragma('user_version = 10')
+    if (currentSchema < 11) this.database.pragma('user_version = 11')
     const insertDomain = this.database.prepare(`INSERT OR IGNORE INTO domains(domain_id, schema_version, manifest_json, updated_at) VALUES (?, 1, '{}', ?)`)
     const registerBuiltins = this.database.transaction(() => BUILTIN_DOMAINS.forEach((id) => insertDomain.run(id, now)))
     registerBuiltins()

@@ -57,6 +57,7 @@ export type RoteiroDocument = {
   videoTitle: string
   characterIds: string[]
   backgroundAssetId?: string | null
+  uiGifAssetId?: string | null
   opening?: RoteiroSectionContent
   tiktoks: RoteiroTikTok[]
 }
@@ -73,6 +74,8 @@ export type RoteiroExportCharacterInfo = {
   expressions: string[]
 }
 
+export type RoteiroUiGifItem = { id: string; name: string; size: number; createdAt: string; builtIn?: boolean; available: boolean }
+
 export type RoteirosDesktopApi = {
   listRoteiros: () => Promise<RoteiroDocument[]>
   saveRoteiros: (roteiros: RoteiroDocument[]) => Promise<void>
@@ -85,6 +88,9 @@ export type RoteirosDesktopApi = {
   writeRoteiroCharacterExportAsset: (jobId: string, asset: { characterId: string; pose: number; expression: string; role: 'base' | 'blink' | 'talk' | 'pt' | 'pt-blink' | 'pt-talk'; dataUrl: string }) => Promise<void>
   finishRoteiroCharacterExport: (jobId: string) => Promise<{ folderName: string; path: string; characters: number; files: number }>
   cancelRoteiroCharacterExport: (jobId: string) => Promise<void>
-  exportRoteiroAssets: (request: { roteiro: RoteiroDocument; kind: 'background' | 'videos' | 'script'; characters?: RoteiroExportCharacterInfo[] }) => Promise<{ path: string; files: number }>
-  openRoteiroExportFolder: (request: { roteiro: RoteiroDocument; kind: 'characters' | 'background' | 'videos' | 'script' }) => Promise<void>
+  exportRoteiroAssets: (request: { roteiro: RoteiroDocument; kind: 'background' | 'videos' | 'script' | 'gif'; characters?: RoteiroExportCharacterInfo[] }) => Promise<{ path: string; files: number }>
+  openRoteiroExportFolder: (request: { roteiro: RoteiroDocument; kind: 'characters' | 'background' | 'videos' | 'script' | 'ui' }) => Promise<void>
+  listRoteiroUiGifs: () => Promise<RoteiroUiGifItem[]>
+  importRoteiroUiGif: () => Promise<RoteiroUiGifItem | null>
+  deleteRoteiroUiGif: (id: string) => Promise<void>
 }

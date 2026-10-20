@@ -18,7 +18,7 @@ const displayTime = (seconds: number | undefined) => seconds === undefined ? 'n�
 const characterFolder = (name: string, id: string) => safeSegment(name || 'personagem') || `personagem-${id.slice(0, 8)}`
 
 export class RoteiroProjectExportStore {
-  constructor(private readonly resolveBackground: (id: string) => Promise<string>, private readonly resolveVideo: (video: RoteiroVideoReference) => Promise<string>, private readonly projectsRoot = rootDefault) {}
+  constructor(private readonly resolveBackground: (id: string) => Promise<string>, private readonly resolveGif: (id: string) => Promise<string>, private readonly resolveVideo: (video: RoteiroVideoReference) => Promise<string>, private readonly projectsRoot = rootDefault) {}
   private async projectFolder(roteiro: RoteiroDocument) {
     const root = resolve(this.projectsRoot)
     const info = await lstat(root).catch(() => null)
@@ -30,12 +30,12 @@ export class RoteiroProjectExportStore {
     await mkdir(folder, { recursive: true })
     return folder
   }
-  async ensureExportFolder(roteiro: RoteiroDocument, kind: 'characters' | 'background' | 'videos' | 'script') {
+  async ensureExportFolder(roteiro: RoteiroDocument, kind: 'characters' | 'background' | 'videos' | 'script' | 'ui') {
     if (!idPattern.test(roteiro.id)) throw new Error('ID do roteiro inválido.')
     const project = await this.projectFolder(roteiro)
     const folder = kind === 'characters' ? join(project, 'assets', 'characters')
       : kind === 'background' ? join(project, 'assets', 'backgrounds')
-      : kind === 'videos' ? join(project, 'assets', 'tiktoks') : project
+      : kind === 'videos' ? join(project, 'assets', 'tiktoks') : kind === 'ui' ? join(project, 'assets', 'ui') : project
     await mkdir(folder, { recursive: true })
     return folder
   }
@@ -99,11 +99,17 @@ export class RoteiroProjectExportStore {
     }
     return { folder, files: outputs.length }
   }
-  async export(roteiro: RoteiroDocument, kind: 'background' | 'videos' | 'script', characterInfo: RoteiroExportCharacterInfo[] = []) {
+  async export(roteiro: RoteiroDocument, kind: 'background' | 'videos' | 'script' | 'gif', characterInfo: RoteiroExportCharacterInfo[] = []) {
     if (!idPattern.test(roteiro.id)) throw new Error('ID do roteiro inválido.')
     const folder = await this.projectFolder(roteiro)
     const outputs: Array<{ path: string; bytes?: Buffer; sourcePath?: string; expectedSize?: number }> = []
-    if (kind === 'background') {
+    if (kind === 'gif') {
+      if (!roteiro.uiGifAssetId || !idPattern.test(roteiro.uiGifAssetId)) throw new Error('Selecione um GIF para este roteiro antes de exportar.')
+      const source = await this.resolveGif(roteiro.uiGifAssetId)
+      const info = await stat(source)
+      if (!info.size || info.size > 50 * 1024 ** 2) throw new Error('O GIF está vazio ou excede 50 MB.')
+      outputs.push({ path: 'assets/ui/loading.gif', sourcePath: source, expectedSize: info.size })
+    } else if (kind === 'background') {
       if (!roteiro.backgroundAssetId || !idPattern.test(roteiro.backgroundAssetId)) throw new Error('Selecione um fundo para este roteiro antes de exportar.')
       const source = await this.resolveBackground(roteiro.backgroundAssetId)
       const info = await stat(source)
@@ -178,7 +184,7 @@ export class RoteiroProjectExportStore {
       }
       outputs.push({ path: 'roteiro.txt', bytes: Buffer.from(`${lines.join('\n').trim()}\n`, 'utf8') })
     }
-    const result = await this.writeOwned(folder, roteiro.id, outputs, kind === 'background' ? 'assets/backgrounds/' : kind === 'videos' ? 'assets/tiktoks/' : 'roteiro.txt')
+    const result = await this.writeOwned(folder, roteiro.id, outputs, kind === 'gif' ? 'assets/ui/' : kind === 'background' ? 'assets/backgrounds/' : kind === 'videos' ? 'assets/tiktoks/' : 'roteiro.txt')
     return { path: result.folder, files: result.files }
   }
 }

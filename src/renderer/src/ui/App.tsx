@@ -6,7 +6,7 @@ import { Icon } from './components/Icon'
 import { CharacterPortrait } from './components/CharacterPortrait'
 import { RenderedCharacterPortrait } from './components/RenderedCharacterPortrait'
 import type { CustomizerCharacter } from '../../../shared/customizer'
-import type { BaseVideoDetails, RoteiroDocument, RoteiroExportCharacterInfo, RoteiroReactionBlock, RoteiroSectionContent, RoteiroTikTok, RoteiroVideoReference } from '../../../shared/roteiros'
+import type { BaseVideoDetails, RoteiroDocument, RoteiroExportCharacterInfo, RoteiroReactionBlock, RoteiroSectionContent, RoteiroTikTok, RoteiroUiGifItem, RoteiroVideoReference } from '../../../shared/roteiros'
 import type { VideoLibraryItem } from '../../../shared/studio'
 import type { VideoBackgroundLibraryItem } from '../../../shared/studio'
 
@@ -310,6 +310,10 @@ function RoteiroWorkspace({ roteiro, onBack, onUpdate, onDeleteDraftVideo, chara
   const [backgroundPickerOpen, setBackgroundPickerOpen] = useState(false)
   const [backgrounds, setBackgrounds] = useState<VideoBackgroundLibraryItem[]>([])
   const [backgroundSearch, setBackgroundSearch] = useState('')
+  const [gifPickerOpen, setGifPickerOpen] = useState(false)
+  const [gifs, setGifs] = useState<RoteiroUiGifItem[]>([])
+  const [gifSearch, setGifSearch] = useState('')
+  const [gifLibraryError, setGifLibraryError] = useState('')
   const [exportLogs, setExportLogs] = useState<RoteiroExportLog[]>([])
   const addExportLog = (action: string, status: RoteiroExportLog['status'], details: string) => setExportLogs((current) => [{ id: crypto.randomUUID(), createdAt: new Date().toISOString(), action, status, details }, ...current].slice(0, 50))
   const activeTikTok = roteiro.tiktoks.find((item) => item.id === activeContentId)
@@ -456,7 +460,7 @@ function RoteiroWorkspace({ roteiro, onBack, onUpdate, onDeleteDraftVideo, chara
       setCharacterExportError(message); addExportLog('Exportar personagens', 'error', message)
     } finally { setExportingCharacters(false) }
   }
-  const exportRoteiroAsset = async (kind: 'background' | 'videos' | 'script') => {
+  const exportRoteiroAsset = async (kind: 'background' | 'videos' | 'script' | 'gif') => {
     setRoteiroExportBusy(kind); setRoteiroExportError(''); setRoteiroExportMessage('')
     try {
       const characterInfo = kind === 'script' ? await Promise.all(roteiro.characterIds.map(async (id): Promise<RoteiroExportCharacterInfo | null> => {
@@ -486,16 +490,16 @@ function RoteiroWorkspace({ roteiro, onBack, onUpdate, onDeleteDraftVideo, chara
         return { id, name: character.name, modelSlot, hair: character.hair, outfit: character.outfit, skin: character.skin, hasFaceAppearance: Boolean(character.customization.faceAppearance), poseSlots: poseSlots.length ? poseSlots : [0], expressions }
       })) : undefined
       const result = await window.desktop.exportRoteiroAssets({ roteiro, kind, ...(characterInfo ? { characters: characterInfo.filter((item): item is RoteiroExportCharacterInfo => Boolean(item)) } : {}) })
-      const label = kind === 'background' ? 'Fundo' : kind === 'videos' ? 'Vídeos' : 'Roteiro'
+      const label = kind === 'background' ? 'Fundo' : kind === 'videos' ? 'Vídeos' : kind === 'gif' ? 'GIF' : 'Roteiro'
       setRoteiroExportMessage(`${label} exportado${kind === 'videos' && result.files !== 1 ? 's' : ''}: ${result.files} arquivo(s) · ${result.path}`)
       addExportLog(`Exportar ${label.toLocaleLowerCase('pt-BR')}`, 'success', `${result.files} arquivo(s) · ${result.path}`)
     } catch (reason) {
       const message = reason instanceof Error ? reason.message : 'Não foi possível exportar este conteúdo.'
-      setRoteiroExportError(message); addExportLog(kind === 'background' ? 'Exportar fundo' : kind === 'videos' ? 'Exportar vídeos' : 'Exportar roteiro', 'error', message)
+      setRoteiroExportError(message); addExportLog(kind === 'background' ? 'Exportar fundo' : kind === 'videos' ? 'Exportar vídeos' : kind === 'gif' ? 'Exportar GIF' : 'Exportar roteiro', 'error', message)
     }
     finally { setRoteiroExportBusy(null) }
   }
-  const openExportFolder = async (kind: 'characters' | 'background' | 'videos' | 'script') => {
+  const openExportFolder = async (kind: 'characters' | 'background' | 'videos' | 'script' | 'ui') => {
     setOpeningExportFolder(kind); setRoteiroExportError('')
     try { await window.desktop.openRoteiroExportFolder({ roteiro, kind }) }
     catch (reason) { setRoteiroExportError(reason instanceof Error ? reason.message : 'Não foi possível abrir a pasta de exportação.') }
@@ -520,6 +524,22 @@ function RoteiroWorkspace({ roteiro, onBack, onUpdate, onDeleteDraftVideo, chara
       if (roteiro.backgroundAssetId === item.id) onUpdate({ ...roteiro, backgroundAssetId: null })
       setRoteiroExportError('')
     } catch (reason) { setRoteiroExportError(reason instanceof Error ? reason.message : 'Não foi possível excluir o fundo.') }
+  }
+  const openGifPicker = async () => {
+    setGifPickerOpen(true); setGifSearch(''); setGifLibraryError('')
+    try { setGifs(await window.desktop.listRoteiroUiGifs()) }
+    catch (reason) { setGifLibraryError(reason instanceof Error ? reason.message : 'Não foi possível carregar a biblioteca de GIFs.') }
+  }
+  const importRoteiroGif = async () => {
+    try {
+      const item = await window.desktop.importRoteiroUiGif()
+      if (item) { setGifs((current) => [item, ...current]); onUpdate({ ...roteiro, uiGifAssetId: item.id }) }
+    } catch (reason) { setGifLibraryError(reason instanceof Error ? reason.message : 'Não foi possível importar o GIF.') }
+  }
+  const deleteRoteiroGif = async (item: RoteiroUiGifItem) => {
+    if (!window.confirm(`Excluir permanentemente “${item.name}” da biblioteca de GIFs?`)) return
+    try { await window.desktop.deleteRoteiroUiGif(item.id); setGifs((current) => current.filter((entry) => entry.id !== item.id)) }
+    catch (reason) { setGifLibraryError(reason instanceof Error ? reason.message : 'Não foi possível excluir o GIF.') }
   }
 
   return <div className="roteiro-workspace-layout">
@@ -554,6 +574,9 @@ function RoteiroWorkspace({ roteiro, onBack, onUpdate, onDeleteDraftVideo, chara
       <button className="roteiro-export-characters roteiro-export-secondary" type="button" onClick={() => void exportRoteiroAsset('background')} disabled={Boolean(roteiroExportBusy)}>{roteiroExportBusy === 'background' ? 'Exportando fundo…' : 'Exportar fundo'}</button>
       <button className="roteiro-export-characters roteiro-export-select-background" type="button" onClick={() => void openBackgroundPicker()} disabled={Boolean(roteiroExportBusy)}>Selecionar fundo{roteiro.backgroundAssetId ? ' · selecionado' : ''}</button>
       <button className="roteiro-export-characters roteiro-export-open-folder" type="button" onClick={() => void openExportFolder('background')} disabled={Boolean(openingExportFolder)}>{openingExportFolder === 'background' ? 'Abrindo…' : 'Abrir pasta'}</button>
+      <button className="roteiro-export-characters roteiro-export-secondary" type="button" onClick={() => void exportRoteiroAsset('gif')} disabled={Boolean(roteiroExportBusy)}>{roteiroExportBusy === 'gif' ? 'Exportando GIF…' : 'Exportar GIF'}</button>
+      <button className="roteiro-export-characters roteiro-export-select-background" type="button" onClick={() => void openGifPicker()} disabled={Boolean(roteiroExportBusy)}>Selecionar GIF{roteiro.uiGifAssetId ? ' · selecionado' : ''}</button>
+      <button className="roteiro-export-characters roteiro-export-open-folder" type="button" onClick={() => void openExportFolder('ui')} disabled={Boolean(openingExportFolder)}>{openingExportFolder === 'ui' ? 'Abrindo…' : 'Abrir pasta'}</button>
       <button className="roteiro-export-characters roteiro-export-secondary" type="button" onClick={() => void exportRoteiroAsset('videos')} disabled={Boolean(roteiroExportBusy)}>{roteiroExportBusy === 'videos' ? 'Exportando vídeos…' : 'Exportar vídeos'}</button>
       <button className="roteiro-export-characters roteiro-export-open-folder" type="button" onClick={() => void openExportFolder('videos')} disabled={Boolean(openingExportFolder)}>{openingExportFolder === 'videos' ? 'Abrindo…' : 'Abrir pasta'}</button>
       <button className="roteiro-export-characters roteiro-export-secondary" type="button" onClick={() => void exportRoteiroAsset('script')} disabled={Boolean(roteiroExportBusy)}>{roteiroExportBusy === 'script' ? 'Exportando roteiro…' : 'Exportar roteiro'}</button>
@@ -570,6 +593,7 @@ function RoteiroWorkspace({ roteiro, onBack, onUpdate, onDeleteDraftVideo, chara
       </section>
     </aside>
     {backgroundPickerOpen && <div className="roteiro-modal-backdrop" onPointerDown={(event) => { if (event.target === event.currentTarget) setBackgroundPickerOpen(false) }}><section className="roteiro-background-modal" role="dialog" aria-modal="true" aria-labelledby="roteiro-background-title"><header><div><span>BIBLIOTECA COMPARTILHADA</span><h2 id="roteiro-background-title">Selecionar fundo</h2><p>O fundo fica associado pelo ID a este roteiro.</p></div><button onClick={() => setBackgroundPickerOpen(false)} aria-label="Fechar" type="button">×</button></header><div className="roteiro-background-toolbar"><input type="search" value={backgroundSearch} onChange={(event) => setBackgroundSearch(event.target.value)} placeholder="Buscar fundo…" aria-label="Buscar fundo"/><button type="button" onClick={() => void importRoteiroBackground()}><Icon name="plus"/>Adicionar novo fundo</button></div><div className="roteiro-background-grid">{backgrounds.filter((item) => item.name.toLocaleLowerCase('pt-BR').includes(backgroundSearch.toLocaleLowerCase('pt-BR'))).map((item) => <article className={roteiro.backgroundAssetId === item.id ? 'selected' : ''} key={item.id}><button type="button" className="roteiro-background-option" disabled={!item.available} onClick={() => { onUpdate({ ...roteiro, backgroundAssetId: item.id }); setBackgroundPickerOpen(false) }}><img src={`gacha-background://library/${item.id}`} alt=""/><strong title={item.name}>{item.name}</strong><small>{item.extension.toUpperCase()} · {(item.size / 1024 / 1024).toFixed(1)} MB</small></button><button type="button" className="roteiro-background-delete" onClick={() => void deleteRoteiroBackground(item)} aria-label={`Excluir permanentemente ${item.name}`}><Icon name="trash"/></button></article>)}{backgrounds.length === 0 && <p>Nenhum fundo cadastrado. Use “Adicionar novo fundo” para importar.</p>}</div><footer><span>{backgrounds.length} fundo(s) na biblioteca</span><button type="button" onClick={() => { onUpdate({ ...roteiro, backgroundAssetId: null }); setBackgroundPickerOpen(false) }}>Remover do roteiro</button></footer></section></div>}
+    {gifPickerOpen && <div className="roteiro-modal-backdrop" onPointerDown={(event) => { if (event.target === event.currentTarget) setGifPickerOpen(false) }}><section className="roteiro-background-modal" role="dialog" aria-modal="true" aria-labelledby="roteiro-gif-title"><header><div><span>ASSETS / UI</span><h2 id="roteiro-gif-title">Selecionar GIF</h2><p>Escolha o GIF que será copiado para <code>assets/ui/loading.gif</code> no projeto exportado.</p></div><button onClick={() => setGifPickerOpen(false)} aria-label="Fechar" type="button">×</button></header><div className="roteiro-background-toolbar"><input type="search" value={gifSearch} onChange={(event) => setGifSearch(event.target.value)} placeholder="Buscar GIF…" aria-label="Buscar GIF"/><button type="button" onClick={() => void importRoteiroGif()}><Icon name="plus"/>Adicionar GIF</button></div>{gifLibraryError && <p className="roteiro-export-error roteiro-gif-error" role="alert">{gifLibraryError}</p>}<div className="roteiro-background-grid roteiro-gif-grid">{gifs.filter((item) => item.name.toLocaleLowerCase('pt-BR').includes(gifSearch.toLocaleLowerCase('pt-BR'))).map((item) => <article className={roteiro.uiGifAssetId === item.id ? 'selected' : ''} key={item.id}><button type="button" className="roteiro-background-option" disabled={!item.available} onClick={() => { onUpdate({ ...roteiro, uiGifAssetId: item.id }); setGifPickerOpen(false) }}><img src={`gacha-gif://library/${item.id}`} alt={item.name}/><strong title={item.name}>{item.name}{item.builtIn ? ' · padrão' : ''}</strong><small>GIF · {(item.size / 1024).toFixed(0)} KB{item.available ? '' : ' · arquivo ausente'}</small></button>{!item.builtIn && <button type="button" className="roteiro-background-delete" onClick={() => void deleteRoteiroGif(item)} aria-label={`Excluir permanentemente ${item.name}`}><Icon name="trash"/></button>}</article>)}{gifs.length === 0 && <p>Nenhum GIF cadastrado. Use “Adicionar GIF” para importar.</p>}</div><footer><span>{gifs.length} GIF(s) na biblioteca</span><button type="button" onClick={() => { onUpdate({ ...roteiro, uiGifAssetId: null }); setGifPickerOpen(false) }}>Remover do roteiro</button></footer></section></div>}
     {editingTikTok && <div className="roteiro-modal-backdrop" onPointerDown={(event) => { if (event.target === event.currentTarget) setEditingTikTok(null) }}><section className="roteiro-video-title-modal" role="dialog" aria-modal="true" aria-labelledby="roteiro-tiktok-edit-heading"><header><strong id="roteiro-tiktok-edit-heading">Editar TikTok</strong><button onClick={() => setEditingTikTok(null)} aria-label="Fechar" type="button">×</button></header><label>Nome do TikTok<input autoFocus value={editingTitle} onChange={(event) => setEditingTitle(event.target.value)} maxLength={100} /></label><label>Título do vídeo<input value={editingVideoTitle} onChange={(event) => setEditingVideoTitle(event.target.value)} maxLength={100} /></label><footer><button onClick={() => setEditingTikTok(null)} type="button">Cancelar</button><button className="roteiro-create-confirm" onClick={saveTikTok} disabled={!editingTitle.trim() || !editingVideoTitle.trim()} type="button"><Icon name="check" />Salvar</button></footer></section></div>}
     {deletingTikTok && <div className="roteiro-modal-backdrop" onPointerDown={(event) => { if (event.target === event.currentTarget) setDeletingTikTok(null) }}><section className="roteiro-delete-confirm-modal" role="alertdialog" aria-modal="true" aria-labelledby="roteiro-tiktok-delete-heading"><span className="roteiro-delete-confirm-icon"><Icon name="trash" /></span><h2 id="roteiro-tiktok-delete-heading">Excluir {deletingTikTok.title}?</h2><p>O TikTok e seus blocos serão removidos deste roteiro. Um vídeo vinculado à Base de vídeos continuará salvo nela.</p><footer><button type="button" onClick={() => setDeletingTikTok(null)}>Cancelar</button><button type="button" className="danger" onClick={confirmDeleteTikTok}>Excluir TikTok</button></footer></section></div>}
   </div>

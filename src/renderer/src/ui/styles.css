@@ -209,6 +209,8 @@ button:focus-visible, input:focus-visible { outline: 3px solid #ed8caf; outline-
 .roteiro-background-delete { position:absolute;top:14px;right:14px;width:30px;height:30px;border:0;border-radius:9px;background:#fff;color:#d34656;box-shadow:0 2px 7px #26182a26;cursor:pointer; }
 .roteiro-background-modal>footer { display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 20px;border-top:1px solid #eee8f3;color:#756d80;font-size:12px; }
 .roteiro-background-modal>footer button { padding:9px 12px;border:1px solid #ddd4e8;border-radius:9px;background:#fff;color:#6542a0;font:inherit;font-weight:700;cursor:pointer; }
+.roteiro-gif-grid .roteiro-background-option img { height:150px;object-fit:contain;padding:10px;background:linear-gradient(135deg,#211b27,#3b3045); }
+.roteiro-gif-grid .roteiro-background-option:disabled { opacity:.55;cursor:not-allowed; }
 .roteiro-export-feedback,.roteiro-export-error { margin:0;padding:9px 10px;border-radius:8px;font-size:12px;line-height:1.45;overflow-wrap:anywhere; }
 .roteiro-export-feedback { background:#f3effa;color:#634a85; }
 .roteiro-export-error { background:#fff0f1;color:#a42f3e; }

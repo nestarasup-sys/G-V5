@@ -18,6 +18,7 @@ import { isValidVideoMediaClip } from '../src/shared/videoMedia'
 import { isValidVideoAudioSettings } from '../src/shared/videoAudio'
 import { VideoLibraryStore, configureVideoLibraryStorage } from './videoLibrary'
 import { VideoBackgroundLibraryStore, configureBackgroundLibraryStorage } from './backgroundLibrary'
+import { RoteiroUiGifLibraryStore, configureRoteiroUiGifStorage } from './roteiroUiGifLibrary'
 import { VideoExportLibrary } from './videoExports'
 import { VideoExportJobStore } from './videoExportJobs'
 import { VideoExportSurfaceHost } from './videoExportSurfaceHost'
@@ -79,6 +80,7 @@ function isRoteiroDocument(value: unknown): value is RoteiroDocument {
   return isId(roteiro.id) && isText(roteiro.title, 100) && isText(roteiro.videoTitle, 100)
     && Array.isArray(roteiro.characterIds) && roteiro.characterIds.length <= 500 && roteiro.characterIds.every(isId)
     && (roteiro.backgroundAssetId === undefined || roteiro.backgroundAssetId === null || isId(roteiro.backgroundAssetId))
+    && (roteiro.uiGifAssetId === undefined || roteiro.uiGifAssetId === null || isId(roteiro.uiGifAssetId))
     && Array.isArray(roteiro.tiktoks) && roteiro.tiktoks.length <= 500
     && isContent(roteiro.opening, roteiro.characterIds ?? [])
     && roteiro.tiktoks.every((item: RoteiroTikTok) => Boolean(item && isId(item.id) && isText(item.title, 100) && isText(item.videoTitle, 100)
@@ -219,6 +221,7 @@ const dataPlatform = new DataPlatform(configuredAppDataRoot ?? dirname(app.getPa
 const dataFileSystem = new DomainFileSystem(dataPlatform, app.getPath('userData'))
 configureVideoLibraryStorage(dataFileSystem)
 configureBackgroundLibraryStorage(dataFileSystem)
+configureRoteiroUiGifStorage(dataFileSystem)
 configureAssetImageStorage(dataFileSystem)
 const mkdir = dataFileSystem.mkdir.bind(dataFileSystem) as typeof nativeMkdir
 const readFile = dataFileSystem.readFile.bind(dataFileSystem) as typeof nativeReadFile
@@ -238,7 +241,8 @@ let dataMigrationTask: Promise<unknown> | null = null
 
 protocol.registerSchemesAsPrivileged([
   { scheme: 'gacha-video', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true } },
-  { scheme: 'gacha-background', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true } }
+  { scheme: 'gacha-background', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true } },
+  { scheme: 'gacha-gif', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true } }
 ])
 
 const slotCount = 10
@@ -273,6 +277,7 @@ const studioLibraryPath = (workspace: StudioWorkspaceStorage = 'studio') => join
 const studioPath = (id: string, workspace: StudioWorkspaceStorage = 'studio') => join(studioLibraryPath(workspace), `studio-${id}`)
 const videoLibrary = new VideoLibraryStore(() => studioLibraryPath('video'))
 const videoBackgroundLibrary = new VideoBackgroundLibraryStore(() => studioLibraryPath('video'))
+const roteiroUiGifLibrary = new RoteiroUiGifLibraryStore(() => studioLibraryPath('video'))
 const studioSaveQueues: Record<StudioWorkspaceStorage, Promise<void>> = { studio: Promise.resolve(), video: Promise.resolve() }
 const characterManifestPath = () => join(characterLibraryPath(), 'characters.json')
 const fabricatorSaveQueues = new Map<number, Promise<void>>()
@@ -1983,6 +1988,26 @@ async function registerFabricatorHandlers(): Promise<void> {
         return videoBackgroundLibrary.delete(id)
       })
       ipcMain.handle('video-studio:background-library:attach', async (event, studioId: string, id: string) => { assertTrustedSender(event); return videoBackgroundLibrary.attach(studioId, id) })
+      ipcMain.handle('roteiros:ui-gifs:list', async (event) => {
+        assertTrustedSender(event)
+        const roots = [join(app.getAppPath(), 'src', 'renderer', 'public', 'assets', 'ui', 'loading.gif'), join(app.getAppPath(), 'out', 'renderer', 'assets', 'ui', 'loading.gif')]
+        const defaultGifPath = roots.find((path) => existsSync(path))
+        if (!defaultGifPath) throw new Error('O GIF padrão do Gacha V5 não foi encontrado na instalação.')
+        return roteiroUiGifLibrary.list(defaultGifPath)
+      })
+      ipcMain.handle('roteiros:ui-gifs:import', async (event) => {
+        assertTrustedSender(event)
+        const result = await dialog.showOpenDialog({ title: 'Biblioteca de GIFs: adicionar', properties: ['openFile'], filters: [{ name: 'GIF animado', extensions: ['gif'] }] })
+        if (result.canceled || !result.filePaths[0]) return null
+        return roteiroUiGifLibrary.importFile(result.filePaths[0])
+      })
+      ipcMain.handle('roteiros:ui-gifs:delete', async (event, id: string) => {
+        assertTrustedSender(event)
+        if (typeof id !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)) throw new Error('Identificador de GIF inválido.')
+        const reference = dataPlatform.database?.prepare('SELECT id, title FROM roteiros WHERE ui_gif_asset_id=? LIMIT 1').get(id) as { id: string; title: string } | undefined
+        if (reference) throw new Error(`Este GIF está selecionado no roteiro “${reference.title}”. Remova a associação ao roteiro antes de excluí-lo permanentemente.`)
+        return roteiroUiGifLibrary.delete(id)
+      })
 
     }
     ipcMain.handle(`${channel}:save-print`, async (event, id: string, dataUrl: string): Promise<string | null> => {
@@ -2030,6 +2055,7 @@ async function registerFabricatorHandlers(): Promise<void> {
   const getRoteiroProjectExportStore = () => {
     if (!roteiroProjectExportStore) roteiroProjectExportStore = new RoteiroProjectExportStore(
       async (id) => { const resolved = await videoBackgroundLibrary.resolve(id); return await dataFileSystem.resolvePhysicalPath(resolved.path) ?? resolved.path },
+      async (id) => { const resolved = await roteiroUiGifLibrary.resolve(id); return await dataFileSystem.resolvePhysicalPath(resolved) ?? resolved },
       async (video) => {
         const resolved = await videoLibrary.resolveMedia(video.id)
         if (resolved.extension !== video.extension || resolved.durationFrames !== null && resolved.durationFrames !== video.durationFrames) throw new Error(`O vídeo “${video.name}” não corresponde ao arquivo da biblioteca.`)
@@ -2042,7 +2068,7 @@ async function registerFabricatorHandlers(): Promise<void> {
     assertTrustedSender(event)
     if (!request || typeof request !== 'object' || Array.isArray(request)) throw new Error('Solicitação de exportação inválida.')
     const value = request as { roteiro?: unknown; kind?: unknown; characters?: unknown }
-    if (!isRoteiroDocument(value.roteiro) || !['background', 'videos', 'script'].includes(String(value.kind))) throw new Error('Roteiro ou tipo de exportação inválido.')
+    if (!isRoteiroDocument(value.roteiro) || !['background', 'videos', 'script', 'gif'].includes(String(value.kind))) throw new Error('Roteiro ou tipo de exportação inválido.')
     const roteiro = value.roteiro
     let characters: RoteiroExportCharacterInfo[] = []
     if (value.characters !== undefined) {
@@ -2056,14 +2082,14 @@ async function registerFabricatorHandlers(): Promise<void> {
         || new Set(value.characters.map((item: RoteiroExportCharacterInfo) => item.id)).size !== value.characters.length) throw new Error('Dados de personagens inválidos para o TXT.')
       characters = value.characters as RoteiroExportCharacterInfo[]
     }
-    return getRoteiroProjectExportStore().export(roteiro, value.kind as 'background' | 'videos' | 'script', characters)
+    return getRoteiroProjectExportStore().export(roteiro, value.kind as 'background' | 'videos' | 'script' | 'gif', characters)
   })
   ipcMain.handle('roteiros:export-folder:open', async (event, request: unknown) => {
     assertTrustedSender(event)
     if (!request || typeof request !== 'object' || Array.isArray(request)) throw new Error('Solicitação para abrir pasta inválida.')
     const value = request as { roteiro?: unknown; kind?: unknown }
-    if (!isRoteiroDocument(value.roteiro) || !['characters', 'background', 'videos', 'script'].includes(String(value.kind))) throw new Error('Roteiro ou pasta de exportação inválida.')
-    const folder = await getRoteiroProjectExportStore().ensureExportFolder(value.roteiro, value.kind as 'characters' | 'background' | 'videos' | 'script')
+    if (!isRoteiroDocument(value.roteiro) || !['characters', 'background', 'videos', 'script', 'ui'].includes(String(value.kind))) throw new Error('Roteiro ou pasta de exportação inválida.')
+    const folder = await getRoteiroProjectExportStore().ensureExportFolder(value.roteiro, value.kind as 'characters' | 'background' | 'videos' | 'script' | 'ui')
     const error = await shell.openPath(folder)
     if (error) throw new Error(`Não foi possível abrir a pasta: ${error}`)
   })
@@ -2104,7 +2130,7 @@ async function registerFabricatorHandlers(): Promise<void> {
     await roteirosSaveQueue.catch(() => undefined)
     const db = dataPlatform.database
     if (!db) throw new Error('Catálogo de dados não inicializado.')
-    const roteiroRows = db.prepare('SELECT id, title, video_title, character_ids_json, background_asset_id FROM roteiros ORDER BY position, created_at, id').all() as Array<{ id: string; title: string; video_title: string; character_ids_json: string; background_asset_id: string | null }>
+    const roteiroRows = db.prepare('SELECT id, title, video_title, character_ids_json, background_asset_id, ui_gif_asset_id FROM roteiros ORDER BY position, created_at, id').all() as Array<{ id: string; title: string; video_title: string; character_ids_json: string; background_asset_id: string | null; ui_gif_asset_id: string | null }>
     const tiktokRows = db.prepare('SELECT id, roteiro_id, title, video_title FROM roteiro_tiktoks ORDER BY roteiro_id, position').all() as Array<{ id: string; roteiro_id: string; title: string; video_title: string }>
     const sectionRows = db.prepare('SELECT section_id, roteiro_id, section_kind, video_asset_json, blocks_json, description_text, timeline, scene_end_seconds, first_group_reaction_seconds, second_group_reaction_seconds FROM roteiro_sections').all() as Array<{ section_id: string; roteiro_id: string; section_kind: 'opening' | 'tiktok'; video_asset_json: string | null; blocks_json: string; description_text: string; timeline: RoteiroSectionContent['timeline']; scene_end_seconds: number | null; first_group_reaction_seconds: number | null; second_group_reaction_seconds: number | null }>
     const contentById = new Map(sectionRows.map((row) => [row.section_id, {
@@ -2126,6 +2152,7 @@ async function registerFabricatorHandlers(): Promise<void> {
       id: row.id, title: row.title, videoTitle: row.video_title,
       characterIds: JSON.parse(row.character_ids_json) as string[],
       ...(row.background_asset_id ? { backgroundAssetId: row.background_asset_id } : {}),
+      ...(row.ui_gif_asset_id ? { uiGifAssetId: row.ui_gif_asset_id } : {}),
       opening: contentById.get(`${row.id}:opening`) ?? { video: null, blocks: [], description: '' },
       tiktoks: tiktoksByRoteiro.get(row.id) ?? []
     }))
@@ -2172,9 +2199,9 @@ async function registerFabricatorHandlers(): Promise<void> {
           if (roteiro.tiktoks.some((tiktok, position) => oldById.has(tiktok.id) && oldById.get(tiktok.id)!.position !== position)) shiftTikTokPositions.run(roteiro.id)
         }
 
-        const upsertRoteiro = db.prepare(`INSERT INTO roteiros(id, title, video_title, character_ids_json, background_asset_id, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-          ON CONFLICT(id) DO UPDATE SET title=excluded.title, video_title=excluded.video_title, character_ids_json=excluded.character_ids_json, background_asset_id=excluded.background_asset_id, position=excluded.position, updated_at=excluded.updated_at
-          WHERE roteiros.title IS NOT excluded.title OR roteiros.video_title IS NOT excluded.video_title OR roteiros.character_ids_json IS NOT excluded.character_ids_json OR roteiros.background_asset_id IS NOT excluded.background_asset_id OR roteiros.position IS NOT excluded.position`)
+        const upsertRoteiro = db.prepare(`INSERT INTO roteiros(id, title, video_title, character_ids_json, background_asset_id, ui_gif_asset_id, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(id) DO UPDATE SET title=excluded.title, video_title=excluded.video_title, character_ids_json=excluded.character_ids_json, background_asset_id=excluded.background_asset_id, ui_gif_asset_id=excluded.ui_gif_asset_id, position=excluded.position, updated_at=excluded.updated_at
+          WHERE roteiros.title IS NOT excluded.title OR roteiros.video_title IS NOT excluded.video_title OR roteiros.character_ids_json IS NOT excluded.character_ids_json OR roteiros.background_asset_id IS NOT excluded.background_asset_id OR roteiros.ui_gif_asset_id IS NOT excluded.ui_gif_asset_id OR roteiros.position IS NOT excluded.position`)
         const upsertTikTok = db.prepare(`INSERT INTO roteiro_tiktoks(id, roteiro_id, title, video_title, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)
           ON CONFLICT(id) DO UPDATE SET roteiro_id=excluded.roteiro_id, title=excluded.title, video_title=excluded.video_title, position=excluded.position, updated_at=excluded.updated_at
           WHERE roteiro_tiktoks.roteiro_id IS NOT excluded.roteiro_id OR roteiro_tiktoks.title IS NOT excluded.title OR roteiro_tiktoks.video_title IS NOT excluded.video_title OR roteiro_tiktoks.position IS NOT excluded.position`)
@@ -2182,7 +2209,7 @@ async function registerFabricatorHandlers(): Promise<void> {
           ON CONFLICT(section_id) DO UPDATE SET roteiro_id=excluded.roteiro_id, section_kind=excluded.section_kind, video_asset_json=excluded.video_asset_json, blocks_json=excluded.blocks_json, description_text=excluded.description_text, timeline=excluded.timeline, scene_end_seconds=excluded.scene_end_seconds, first_group_reaction_seconds=excluded.first_group_reaction_seconds, second_group_reaction_seconds=excluded.second_group_reaction_seconds, updated_at=excluded.updated_at
           WHERE roteiro_sections.roteiro_id IS NOT excluded.roteiro_id OR roteiro_sections.section_kind IS NOT excluded.section_kind OR roteiro_sections.video_asset_json IS NOT excluded.video_asset_json OR roteiro_sections.blocks_json IS NOT excluded.blocks_json OR roteiro_sections.description_text IS NOT excluded.description_text OR roteiro_sections.timeline IS NOT excluded.timeline OR roteiro_sections.scene_end_seconds IS NOT excluded.scene_end_seconds OR roteiro_sections.first_group_reaction_seconds IS NOT excluded.first_group_reaction_seconds OR roteiro_sections.second_group_reaction_seconds IS NOT excluded.second_group_reaction_seconds`)
         documents.forEach((roteiro, position) => {
-          upsertRoteiro.run(roteiro.id, roteiro.title.trim(), roteiro.videoTitle.trim(), JSON.stringify(roteiro.characterIds), roteiro.backgroundAssetId ?? null, position, now, now)
+          upsertRoteiro.run(roteiro.id, roteiro.title.trim(), roteiro.videoTitle.trim(), JSON.stringify(roteiro.characterIds), roteiro.backgroundAssetId ?? null, roteiro.uiGifAssetId ?? null, position, now, now)
           const opening = roteiro.opening ?? { video: null, blocks: [], description: '' }
           upsertSection.run(`${roteiro.id}:opening`, roteiro.id, 'opening', opening.video ? JSON.stringify(opening.video) : null, JSON.stringify(opening.blocks), opening.description ?? '', opening.timeline ?? 'unspecified', opening.sceneEndSeconds ?? null, opening.firstGroupReactionSeconds ?? null, opening.secondGroupReactionSeconds ?? null, now)
           roteiro.tiktoks.forEach((tiktok, tiktokPosition) => {
@@ -3082,6 +3109,17 @@ function registerVideoBackgroundProtocol(): void {
       const image = await videoBackgroundLibrary.resolve(parts[0])
       const bytes = await readFile(image.path)
       return new Response(bytes, { headers: { 'content-type': image.mimeType, 'cache-control': 'no-store' } })
+    } catch { return new Response('Not found', { status: 404 }) }
+  })
+  protocol.handle('gacha-gif', async (request) => {
+    try {
+      const url = new URL(request.url)
+      const parts = url.pathname.split('/').filter(Boolean)
+      const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+      if (url.hostname !== 'library' || parts.length !== 1 || !uuid.test(parts[0])) return new Response('Not found', { status: 404 })
+      const path = await roteiroUiGifLibrary.resolve(parts[0])
+      const gif = await readFile(path)
+      return new Response(gif, { headers: { 'content-type': 'image/gif', 'cache-control': 'no-store' } })
     } catch { return new Response('Not found', { status: 404 }) }
   })
 }
