@@ -136,7 +136,7 @@ app.whenReady().then(async()=>{
   if(!ffmpeg||!path.isAbsolute(ffmpeg))throw new Error('GACHA_FFMPEG_PATH obrigatório.')
   const root=fs.mkdtempSync(path.join(os.tmpdir(),'gv5-character-oracle-'))
   const videoPath=path.join(root,'oracle-video.mp4')
-  run(ffmpeg,['-hide_banner','-loglevel','error','-y','-f','lavfi','-i','testsrc2=size=480x270:rate=60:duration=5','-an','-c:v','mpeg4','-q:v','3','-pix_fmt','yuv420p','-movflags','+faststart',videoPath])
+  run(ffmpeg,['-hide_banner','-loglevel','error','-y','-f','lavfi','-i','testsrc2=size=480x270:rate=60:duration=5','-an','-c:v','h264_mf','-b:v','3M','-pix_fmt','yuv420p','-movflags','+faststart',videoPath])
   const bootstrap=fixtureBootstrap()
   bootstrap.snapshot.timeline.videoAssets[0].size=fs.statSync(videoPath).size
   protocol.handle('gacha-video',(request)=>{
