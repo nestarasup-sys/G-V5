@@ -2431,6 +2431,36 @@ async function registerFabricatorHandlers(): Promise<void> {
     return requestedModelSlot === undefined ? allSlots : Array.from({ length: poseSlotCount }, (_, index) => allSlots.find((item) => item?.slot === index + 1) ?? null)
   })
 
+  ipcMain.handle('fabricator:poses:export-slots:get', async (event, modelSlot: number): Promise<Array<number | null> | null> => {
+    assertTrustedSender(event)
+    if (!isValidModelSlot(modelSlot)) throw new Error('Modelo inválido.')
+    try {
+      const parsed = JSON.parse(await readFile(join(poseModelPath(modelSlot), 'export-slots.json'), 'utf8')) as unknown
+      if (!Array.isArray(parsed) || parsed.length !== 5 || parsed.some((slot) => slot !== null && (typeof slot !== 'number' || !isValidPoseSlot(slot)))) return null
+      return parsed
+    } catch (reason) {
+      if ((reason as NodeJS.ErrnoException).code === 'ENOENT') return null
+      throw reason
+    }
+  })
+
+  ipcMain.handle('fabricator:poses:export-slots:save', async (event, modelSlot: number, slots: unknown): Promise<void> => {
+    assertTrustedSender(event)
+    if (!isValidModelSlot(modelSlot) || !Array.isArray(slots) || slots.length !== 5 || slots.some((slot) => slot !== null && (typeof slot !== 'number' || !isValidPoseSlot(slot)))) throw new Error('Os cinco slots de poses para exportação são inválidos.')
+    const unique = slots.filter((slot): slot is number => slot !== null)
+    if (new Set(unique).size !== unique.length) throw new Error('Cada pose pode ocupar apenas um slot de exportação.')
+    await queuePoseWrite(async () => {
+      const summaries = await Promise.all(unique.map(async (slot) => readPoseProject(modelSlot, slot)))
+      if (summaries.some((pose) => !pose)) throw new Error('Uma das poses selecionadas não existe mais nesta biblioteca.')
+      const folder = poseModelPath(modelSlot)
+      await mkdir(folder, { recursive: true })
+      const target = join(folder, 'export-slots.json')
+      const temporary = `${target}.tmp`
+      await writeFile(temporary, JSON.stringify(slots), 'utf8')
+      await rename(temporary, target)
+    })
+  })
+
   ipcMain.handle('fabricator:poses:load', async (event, modelSlot: number, slot: number): Promise<FabricatorPose | null> => {
     assertTrustedSender(event)
     let loaded: FabricatorPose | null = null

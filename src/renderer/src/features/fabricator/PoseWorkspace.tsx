@@ -12,8 +12,14 @@ type PanGesture = { pointerId: number; x: number; y: number; originX: number; or
 type PartGesture = { pointerId: number; partId: string; x: number; y: number; lastAngle: number; startRotation: number; accumulatedRotation: number; pivotX: number; pivotY: number; includeConnectedChildren: boolean; movePiece: boolean; canMove: boolean; before: DraftProject }
 
 const SLOT_COUNT = 12
+const EXPORT_POSE_SLOT_COUNT = 5
 const HISTORY_LIMIT = 50
 const emptyHistory = (): PoseHistory => ({ undo: [], redo: [] })
+
+function defaultExportPoseSlots(summaries: FabricatorPoseSummary[], modelSlot: number): Array<number | null> {
+  const available = summaries.filter((pose): pose is NonNullable<FabricatorPoseSummary> => Boolean(pose && pose.sourceModelSlot === modelSlot)).sort((a, b) => a.slot - b.slot).slice(0, EXPORT_POSE_SLOT_COUNT)
+  return [...available.map((pose) => pose.slot), ...Array.from({ length: EXPORT_POSE_SLOT_COUNT - available.length }, () => null)]
+}
 
 function cloneProject(project: DraftProject): DraftProject {
   return structuredClone(project)
@@ -106,6 +112,8 @@ export function PoseWorkspace() {
   const [previewBackground] = usePreviewBackground()
   const [models, setModels] = useState<FabricatorSlotSummary[]>(Array.from({ length: 10 }, () => null))
   const [allPoseSlots, setAllPoseSlots] = useState<FabricatorPoseSummary[]>([])
+  const [exportPoseSlots, setExportPoseSlots] = useState<Array<number | null>>(Array.from({ length: EXPORT_POSE_SLOT_COUNT }, () => null))
+  const [savingExportPoseSlots, setSavingExportPoseSlots] = useState(false)
   const [selectedModelSlot, setSelectedModelSlot] = useState(1)
   const [activeSlot, setActiveSlot] = useState(1)
   const [project, setProject] = useState<DraftProject | null>(null)
@@ -165,6 +173,10 @@ export function PoseWorkspace() {
       setModels(modelSlots)
       setAllPoseSlots(poseSummaries)
       setSelectedModelSlot(displayedModelSlot)
+      const configuredExportSlots = await window.desktop.getFabricatorExportPoseSlots(displayedModelSlot)
+      const initialExportSlots = configuredExportSlots ?? defaultExportPoseSlots(poseSummaries, displayedModelSlot)
+      if (configuredExportSlots === null) await window.desktop.saveFabricatorExportPoseSlots(displayedModelSlot, initialExportSlots)
+      setExportPoseSlots(initialExportSlots)
       setRecoveredDraft(draft)
       setSourcePreview(sourceModel ? poseFromModel(sourceModel) : null)
     } catch (reason) {
@@ -278,6 +290,23 @@ export function PoseWorkspace() {
     return true
   }
 
+  const assignExportPose = async (index: number, value: number | null) => {
+    const next = [...exportPoseSlots]
+    if (value !== null && next.some((slot, slotIndex) => slotIndex !== index && slot === value)) {
+      setError('Cada pose pode ocupar apenas um dos cinco slots de exportação.')
+      return
+    }
+    next[index] = value
+    setSavingExportPoseSlots(true)
+    setError('')
+    try {
+      await window.desktop.saveFabricatorExportPoseSlots(selectedModelSlot, next)
+      setExportPoseSlots(next)
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Não foi possível salvar os slots de poses para exportação.')
+    } finally { setSavingExportPoseSlots(false) }
+  }
+
   const beginNewPose = async (modelSlot: number) => {
     const model = await window.desktop.loadFabricatorSlot(modelSlot)
     if (!model) { setError('Não foi possível carregar esse modelo.'); return }
@@ -387,6 +416,11 @@ export function PoseWorkspace() {
     if (!window.confirm(`Excluir permanentemente a pose “${project.name}” do slot ${editingSlot}?`)) return
     try {
       await window.desktop.deleteFabricatorPose(selectedModelSlot, editingSlot)
+      const nextExportSlots = exportPoseSlots.map((slot) => slot === editingSlot ? null : slot)
+      if (nextExportSlots.some((slot, index) => slot !== exportPoseSlots[index])) {
+        await window.desktop.saveFabricatorExportPoseSlots(selectedModelSlot, nextExportSlots)
+        setExportPoseSlots(nextExportSlots)
+      }
       await discardDraft()
       setAllPoseSlots((current) => current.filter((slot) => !(slot?.sourceModelSlot === selectedModelSlot && slot.slot === editingSlot)))
       setActiveSlot(editingSlot)
@@ -482,6 +516,10 @@ export function PoseWorkspace() {
       setRecoveredDraft(draft)
       if (draft) setActiveSlot(draft.editingSlot ?? 1)
       const sourceModel = await window.desktop.loadFabricatorSlot(modelSlot)
+      const savedExportSlots = await window.desktop.getFabricatorExportPoseSlots(modelSlot)
+      const initialExportSlots = savedExportSlots ?? defaultExportPoseSlots(allPoseSlots, modelSlot)
+      if (savedExportSlots === null) await window.desktop.saveFabricatorExportPoseSlots(modelSlot, initialExportSlots)
+      setExportPoseSlots(initialExportSlots)
       if (sourceModel) setSourcePreview(poseFromModel(sourceModel))
       else {
         const firstSavedPose = allPoseSlots.find((pose) => pose?.sourceModelSlot === modelSlot)
@@ -616,6 +654,17 @@ export function PoseWorkspace() {
               {slots.map((slot, index) => {
                 const number = index + 1
                 return <button key={number} role="tab" aria-selected={activeSlot === number} className={`pose-slot${activeSlot === number ? ' active' : ''}${slot ? ' filled' : ' empty'}`} onClick={() => { setCategoryPickerOpen(false); void selectPoseSlot(number) }} title={slot ? `${slot.name} · ${resolvePoseCategory(slot)}` : `Slot ${number}: vazio`} type="button"><b>{String(number).padStart(2, '0')}</b><small>{slot ? resolvePoseCategory(slot) : 'Vazio'}</small></button>
+              })}
+            </div>
+          </section>
+
+          <section className="pose-export-slots-panel" aria-label="Poses usadas na exportação de personagens">
+            <header><span><strong>Poses para exportação</strong><small>Escolha até cinco poses deste modelo</small></span><span className="pose-slot-count">{exportPoseSlots.filter((slot) => slot !== null).length}/5</span></header>
+            <div className="pose-export-slot-list">
+              {exportPoseSlots.map((poseSlot, index) => {
+                const available = allPoseSlots.filter((pose): pose is NonNullable<FabricatorPoseSummary> => Boolean(pose && pose.sourceModelSlot === selectedModelSlot))
+                const selectedPose = available.find((pose) => pose.slot === poseSlot)
+                return <label className="pose-export-slot-row" key={index}><b>{String(index + 1).padStart(2, '0')}</b><select aria-label={`Pose ${index + 1} para exportação`} disabled={savingExportPoseSlots} value={poseSlot ?? ''} onChange={(event) => void assignExportPose(index, event.target.value ? Number(event.target.value) : null)}><option value="">Vazio</option>{poseSlot !== null && !selectedPose && <option value={poseSlot}>Pose removida</option>}{available.map((pose) => <option key={pose.slot} value={pose.slot} disabled={exportPoseSlots.some((slot, slotIndex) => slotIndex !== index && slot === pose.slot)}>{pose.name} · slot {String(pose.slot).padStart(2, '0')}</option>)}</select></label>
               })}
             </div>
           </section>
