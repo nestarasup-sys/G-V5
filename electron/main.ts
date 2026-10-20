@@ -2752,6 +2752,28 @@ async function activateFabricatorDesignSettingsDomain(): Promise<void> {
 }
 
 app.whenReady().then(async () => {
+  const packagedToolsSmokeOutput = process.env.GACHA_VIDEO_TOOLS_SMOKE_OUTPUT
+  if (packagedToolsSmokeOutput) {
+    if (!app.isPackaged) throw new Error('O smoke de ferramentas empacotadas exige app.isPackaged=true.')
+    const output = resolve(packagedToolsSmokeOutput)
+    if (output !== packagedToolsSmokeOutput) throw new Error('Smoke output precisa usar caminho absoluto.')
+    const paths = await resolveVideoStudioTools()
+    if (paths.source !== 'packaged') throw new Error(`Smoke empacotado resolveu ferramentas de origem inesperada: ${paths.source}.`)
+    const capability = await probeVideoStudioFfmpeg(paths.ffmpeg)
+    const report = {
+      schemaVersion: 1,
+      packaged: app.isPackaged,
+      resourcesPath: process.resourcesPath,
+      toolSource: paths.source,
+      videoEncoder: capability.videoEncoder,
+      audioEncoder: capability.audioEncoder,
+      smokeEncoded: capability.smokeEncoded,
+      versionLine: capability.versionLine,
+    }
+    await nativeWriteFile(output, `${JSON.stringify(report, null, 2)}\n`, 'utf8')
+    app.quit()
+    return
+  }
   dataBackupService = new DataBackupService({ dataRoot: app.getPath('appData'), catalog: dataPlatform })
   await dataBackupService.applyPendingRestore()
   dataPlatform.initialize()
