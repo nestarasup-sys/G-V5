@@ -121,6 +121,7 @@ const roteirosApi: RoteirosDesktopApi = {
   listBaseVideoDetails: () => ipcRenderer.invoke('base-videos:list-details'),
   saveBaseVideoDetails: (details) => ipcRenderer.invoke('base-videos:save-details', details),
   deleteBaseVideoDetails: (videoId) => ipcRenderer.invoke('base-videos:delete-details', videoId),
+  deleteBaseVideo: (videoId) => ipcRenderer.invoke('base-videos:delete', videoId),
   publishBaseVideo: (videoId) => ipcRenderer.invoke('base-videos:publish', videoId)
 }
 

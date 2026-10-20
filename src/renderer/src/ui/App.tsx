@@ -372,8 +372,7 @@ function EmptyRoteirosPage() {
     setRoteiros(nextRoteiros)
     const stillReferenced = nextRoteiros.some((item) => item.opening?.video?.id === videoId || item.tiktoks.some((tiktok) => tiktok.video?.id === videoId))
     if (stillReferenced) return false
-    await window.desktop.deleteVideoLibraryItem(videoId)
-    await window.desktop.deleteBaseVideoDetails(videoId)
+    await window.desktop.deleteBaseVideo(videoId)
     return true
   }
 

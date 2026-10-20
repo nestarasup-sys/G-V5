@@ -152,8 +152,7 @@ export function BaseVideosPage() {
         const pending = pendingSaves.current.get(id)
         if (pending) await window.desktop.saveBaseVideoDetails(pending)
         pendingSaves.current.delete(id)
-        await window.desktop.deleteVideoLibraryItem(id)
-        await window.desktop.deleteBaseVideoDetails(id)
+        await window.desktop.deleteBaseVideo(id)
         deletedIds.push(id)
       }
       setItems((current) => current.filter((item) => !deletedIds.includes(item.id)))

@@ -66,5 +66,6 @@ export type RoteirosDesktopApi = {
   listBaseVideoDetails: () => Promise<BaseVideoDetails[]>
   saveBaseVideoDetails: (details: BaseVideoDetails) => Promise<void>
   deleteBaseVideoDetails: (videoId: string) => Promise<void>
+  deleteBaseVideo: (videoId: string) => Promise<void>
   publishBaseVideo: (videoId: string) => Promise<number>
 }

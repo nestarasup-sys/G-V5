@@ -174,7 +174,10 @@ export class VideoLibraryStore {
       catalog.items = catalog.items.filter((entry) => entry.id !== id)
       catalog.deleted.push({ id, extension: item.extension })
       await this.writeCatalog(catalog)
-      await this.migrate(catalog, [])
+      // The catalog tombstone is the logical deletion commit point. A locked
+      // file is retried by the next library scan, so cleanup errors must not
+      // turn a completed deletion into an ambiguous partial failure.
+      try { await this.migrate(catalog, []) } catch { /* retry from the tombstone on next access */ }
     })
   }
   async attach(studioId: string, ids: string[]): Promise<VideoStudioAsset[]> {
