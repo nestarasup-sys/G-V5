@@ -2,14 +2,14 @@ import { spawn } from 'node:child_process'
 import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { basename, isAbsolute, join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
-import { assertCompatibleFfmpegBuild } from './videoRawFrameWriter'
+import { assertCompatibleFfmpegBuild, videoStudioH264EncoderPreference, type VideoStudioH264Encoder } from './videoRawFrameWriter'
 
 export type VideoStudioFfmpegCapabilities = Readonly<{
   executable: string
   versionLine: string
   buildConfiguration: string
   encoderList: string
-  videoEncoder: 'h264_mf'
+  videoEncoder: VideoStudioH264Encoder
   audioEncoder: 'aac'
   smokeEncoded: true
 }>
@@ -72,11 +72,42 @@ function parseBuildConfiguration(output: string): string {
   return configuration?.slice(configuration.toLowerCase().indexOf('configuration:') + 'configuration:'.length).trim() ?? ''
 }
 
-/** Probe the exact FFmpeg binary that will be used by the Video Studio.
- *
- * Merely listing h264_mf is not enough: the smoke test sends two real BGRA
- * frames through the encoder and requires a non-empty MP4 before the binary can
- * be promoted to a job. No user media or project data is involved.
+function encoderAdvertised(encoderList: string, encoder: VideoStudioH264Encoder): boolean {
+  return new RegExp(`\\b${encoder}\\b`, 'i').test(encoderList)
+}
+
+async function smokeH264Encoder(
+  executable: string,
+  encoder: VideoStudioH264Encoder,
+  output: string,
+  timeoutMs: number,
+): Promise<{ ok: true } | { ok: false; diagnostic: string }> {
+  const width = 64, height = 64, frameBytes = width * height * 4
+  const pixels = Buffer.alloc(frameBytes * 2)
+  pixels.fill(0, 0, frameBytes)
+  pixels.fill(255, frameBytes)
+  for (let offset = 3; offset < pixels.length; offset += 4) pixels[offset] = 255
+  const smoke = await runVideoStudioProcess(executable, [
+    '-hide_banner', '-loglevel', 'error', '-nostdin', '-y',
+    '-f', 'rawvideo', '-pixel_format', 'bgra', '-video_size', `${width}x${height}`, '-framerate', '60', '-i', 'pipe:0',
+    '-an', '-c:v', encoder, '-b:v', '1M', '-pix_fmt', 'yuv420p', '-frames:v', '2',
+    '-color_primaries', 'bt709', '-color_trc', 'bt709', '-colorspace', 'bt709', '-color_range', 'tv',
+    '-movflags', '+faststart', '-f', 'mp4', output,
+  ], { input: pixels, timeoutMs })
+  if (smoke.code !== 0) return { ok: false, diagnostic: smoke.stderr.slice(-4000) }
+  const encoded = await stat(output).catch(() => null)
+  if (!encoded?.isFile() || encoded.size < 128) return { ok: false, diagnostic: 'arquivo MP4 ausente ou pequeno' }
+  const header = await readFile(output)
+  if (!header.subarray(0, Math.min(header.length, 128)).includes(Buffer.from('ftyp'))) {
+    return { ok: false, diagnostic: 'arquivo sem cabeçalho MP4' }
+  }
+  return { ok: true }
+}
+
+/** Probe the exact FFmpeg binary used by Video Studio and choose the first
+ * advertised H.264 backend that completes a real encode on this machine.
+ * Listing an encoder is insufficient because hardware/driver availability can
+ * make it unusable at runtime.
  */
 export async function probeVideoStudioFfmpeg(
   executable: string,
@@ -102,35 +133,27 @@ export async function probeVideoStudioFfmpeg(
 
   const root = resolve(options.tempRoot ?? tmpdir())
   const folder = await mkdtemp(join(root, 'gacha-video-ffmpeg-probe-'))
-  const output = join(folder, 'probe.mp4')
+  const failures: string[] = []
   try {
-    const width = 64, height = 64, frameBytes = width * height * 4
-    const pixels = Buffer.alloc(frameBytes * 2)
-    // Deliberately distinct frames: catches children that close stdin without consuming the advertised payload.
-    pixels.fill(0, 0, frameBytes)
-    pixels.fill(255, frameBytes)
-    for (let offset = 3; offset < pixels.length; offset += 4) pixels[offset] = 255
-    const smoke = await runVideoStudioProcess(executable, [
-      '-hide_banner', '-loglevel', 'error', '-nostdin', '-y',
-      '-f', 'rawvideo', '-pixel_format', 'bgra', '-video_size', `${width}x${height}`, '-framerate', '60', '-i', 'pipe:0',
-      '-an', '-c:v', 'h264_mf', '-b:v', '1M', '-pix_fmt', 'yuv420p', '-frames:v', '2',
-      '-color_primaries', 'bt709', '-color_trc', 'bt709', '-colorspace', 'bt709', '-color_range', 'tv',
-      '-movflags', '+faststart', '-f', 'mp4', output,
-    ], { input: pixels, timeoutMs })
-    if (smoke.code !== 0) throw new Error(`O encoder H.264 Media Foundation falhou no teste real. ${smoke.stderr}`)
-    const encoded = await stat(output).catch(() => null)
-    if (!encoded?.isFile() || encoded.size < 128) throw new Error('O teste do FFmpeg não produziu um MP4 H.264 válido em tamanho mínimo.')
-    const header = await readFile(output)
-    if (!header.subarray(0, Math.min(header.length, 128)).includes(Buffer.from('ftyp'))) throw new Error('O teste do FFmpeg produziu um arquivo sem cabeçalho MP4 reconhecível.')
-    return {
-      executable,
-      versionLine,
-      buildConfiguration,
-      encoderList,
-      videoEncoder: 'h264_mf',
-      audioEncoder: 'aac',
-      smokeEncoded: true,
+    for (const encoder of videoStudioH264EncoderPreference) {
+      if (!encoderAdvertised(encoderList, encoder)) continue
+      const output = join(folder, `probe-${encoder}.mp4`)
+      const result = await smokeH264Encoder(executable, encoder, output, timeoutMs)
+      await rm(output, { force: true }).catch(() => undefined)
+      if (result.ok) {
+        return {
+          executable,
+          versionLine,
+          buildConfiguration,
+          encoderList,
+          videoEncoder: encoder,
+          audioEncoder: 'aac',
+          smokeEncoded: true,
+        }
+      }
+      failures.push(`${encoder}: ${result.diagnostic}`)
     }
+    throw new Error(`Nenhum encoder H.264 disponível passou pelo encode real. ${failures.join(' | ')}`)
   } finally {
     await rm(folder, { recursive: true, force: true }).catch(() => undefined)
   }
