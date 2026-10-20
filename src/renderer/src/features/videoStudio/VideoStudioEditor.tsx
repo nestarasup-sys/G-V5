@@ -160,87 +160,12 @@ function makeElement(kind: StudioElement['kind'], zIndex: number): StudioElement
   }
 }
 
-function makeCanvasPrint(studio: StudioDocument): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const canvas = document.createElement('canvas')
-    canvas.width = 1920
-    canvas.height = 1080
-    const context = canvas.getContext('2d')
-    if (!context) return reject(new Error('Não foi possível preparar a imagem do print.'))
-    context.fillStyle = studio.backgroundColor
-    context.fillRect(0, 0, canvas.width, canvas.height)
-    const load = (src: string) => new Promise<HTMLImageElement>((ok, fail) => {
-      const image = new Image()
-      image.onload = () => ok(image)
-      image.onerror = () => fail(new Error('Uma imagem da cena não pôde ser carregada para o print.'))
-      image.src = src
-    })
-    const drawImage = async (src: string, x: number, y: number, width: number, height: number, rotation: number, flipX = false) => {
-      const image = await load(src)
-      context.save()
-      context.translate((50 + x) * 19.2, (50 + y) * 10.8)
-      context.rotate(rotation * Math.PI / 180)
-      if (flipX) context.scale(-1, 1)
-      context.drawImage(image, -width * 9.6, -height * 5.4, width * 19.2, height * 10.8)
-      context.restore()
-    }
-    const drawText = (element: StudioElement) => {
-      const cx = (50 + element.x) * 19.2
-      const cy = (50 + element.y) * 10.8
-      const width = element.width * 19.2
-      const height = element.height * 10.8
-      context.save()
-      context.translate(cx, cy)
-      context.rotate(element.rotation * Math.PI / 180)
-      context.fillStyle = element.kind === 'narrator' ? 'rgba(255,255,255,.90)' : 'rgba(255,250,253,.96)'
-      context.strokeStyle = '#604b59'
-      context.lineWidth = 4
-      context.beginPath()
-      context.roundRect(-width / 2, -height / 2, width, height, element.kind === 'narrator' ? 20 : height / 2)
-      context.fill()
-      context.stroke()
-      context.fillStyle = '#352d35'
-      context.font = `600 ${Math.max(22, Math.round(height * .3))}px sans-serif`
-      context.textAlign = 'center'
-      context.textBaseline = 'middle'
-      const words = element.text.split(/\s+/)
-      const lines: string[] = []
-      let line = ''
-      for (const word of words) {
-        const candidate = line ? `${line} ${word}` : word
-        if (context.measureText(candidate).width > width - 36 && line) { lines.push(line); line = word } else line = candidate
-      }
-      if (line) lines.push(line)
-      lines.slice(0, 5).forEach((value, index, values) => context.fillText(value, 0, (index - (values.length - 1) / 2) * Math.max(28, height * .32), width - 30))
-      context.restore()
-    }
-    void (async () => {
-      try {
-        const bg = studio.assets.find((asset) => asset.id === studio.backgroundAssetId)
-        if (bg) await drawImage(bg.dataUrl, studio.backgroundX, studio.backgroundY, studio.backgroundWidth, studio.backgroundHeight, studio.backgroundRotation)
-        for (const element of [...studio.elements].sort((a, b) => a.zIndex - b.zIndex)) {
-          if (element.kind === 'image' || element.kind === 'character') {
-            const asset = studio.assets.find((item) => item.id === element.assetId)
-            if (asset) {
-              const size = studioElementSize(element)
-              await drawImage(asset.dataUrl, element.x, element.y, size.width, size.height, element.rotation, element.kind === 'character' && element.flipX === true)
-            }
-          } else drawText(element)
-        }
-        resolve(canvas.toDataURL('image/png'))
-      } catch (reason) { reject(reason) }
-    })()
-  })
-}
-
 type VideoStudioPersistence = {
   list: () => Promise<StudioDocument[]>
   save: (studio: StudioDocument) => Promise<void>
   delete: (id: string) => Promise<void>
   getFolder: () => Promise<string>
   importImage: (category: StudioAsset['category']) => Promise<StudioAsset | null>
-  savePrint: (id: string, dataUrl: string) => Promise<string | null>
-  openPrints: (id: string) => Promise<void>
 }
 
 function videoStudioPersistence(): VideoStudioPersistence {
@@ -250,9 +175,7 @@ function videoStudioPersistence(): VideoStudioPersistence {
     save: desktop.saveVideoStudio,
     delete: desktop.deleteVideoStudio,
     getFolder: desktop.getVideoStudioFolder,
-    importImage: desktop.importVideoStudioImage,
-    savePrint: desktop.saveVideoStudioPrint,
-    openPrints: desktop.openVideoStudioPrints
+    importImage: desktop.importVideoStudioImage
   }
 }
 
