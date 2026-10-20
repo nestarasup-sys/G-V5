@@ -57,7 +57,7 @@ app.whenReady().then(async()=>{
  if(!ffmpeg||!ffprobe)throw new Error('FFmpeg/FFprobe obrigatórios.')
  const root=fs.mkdtempSync(path.join(os.tmpdir(),'gv5-full-engine-bench-'))
  const source=path.join(root,'dynamic.mp4')
- run(ffmpeg,['-hide_banner','-loglevel','error','-y','-f','lavfi','-i',`testsrc2=size=640x360:rate=60:duration=${totalFrames/60}`,'-an','-c:v','mpeg4','-q:v','3','-pix_fmt','yuv420p','-movflags','+faststart',source])
+ run(ffmpeg,['-hide_banner','-loglevel','error','-y','-f','lavfi','-i',`testsrc2=size=640x360:rate=60:duration=${totalFrames/60}`,'-an','-c:v','h264_mf','-b:v','3M','-pix_fmt','yuv420p','-movflags','+faststart',source])
  bootstrap.snapshot.timeline.videoAssets[0].size=fs.statSync(source).size
  protocol.handle('gacha-video',(request)=>{const u=new URL(request.url);return u.hostname==='export-job'&&u.pathname===`/${jobId}/${assetId}`?serve(request,source):new Response('not found',{status:404})})
 
