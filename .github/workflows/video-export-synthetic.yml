@@ -69,6 +69,7 @@ on:
       - 'scripts/video-studio/export-surface-electron-smoke.cjs'
       - 'scripts/video-studio/export-e2e-electron-smoke.cjs'
       - 'scripts/video-studio/av-fixture-smoke.cjs'
+      - 'scripts/video-studio/audio-assembly-smoke.cjs'
   workflow_dispatch:
 
 permissions:
@@ -136,3 +137,7 @@ jobs:
         if: always() && steps.install.outcome == 'success'
         shell: pwsh
         run: npm run test:export:av-fixtures
+      - name: Validate real AAC trim delay and final MP4 audio
+        if: always() && steps.install.outcome == 'success'
+        shell: pwsh
+        run: npm run test:export:audio-assembly
