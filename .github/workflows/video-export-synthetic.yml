@@ -164,6 +164,10 @@ jobs:
         if: always() && steps.install.outcome == 'success'
         shell: pwsh
         run: npm run test:export:preview-oracle
+      - name: Compare character animation and imported video against export Canvas
+        if: always() && steps.install.outcome == 'success'
+        shell: pwsh
+        run: npm run test:video:character-media-oracle
       - name: Run two-worker Turbo surface/encoder concat smoke
         if: always() && steps.install.outcome == 'success'
         shell: pwsh

@@ -7,6 +7,7 @@ export type PixelDiffMetrics = Readonly<{
   meanAbsoluteError: number
   p95AbsoluteError: number
   maxAbsoluteError: number
+  differenceBounds: PixelRect | null
 }>
 
 export function comparePixelBuffers(
@@ -29,6 +30,7 @@ export function comparePixelBuffers(
   let changedPixels = 0
   let total = 0
   let max = 0
+  let minX = width, minY = height, maxX = -1, maxY = -1
   const histogram = new Uint32Array(256)
   for (let y = y0; y < y1; y += 1) {
     for (let x = x0; x < x1; x += 1) {
@@ -41,7 +43,11 @@ export function comparePixelBuffers(
         if (diff > max) max = diff
         if (diff !== 0) changed = true
       }
-      if (changed) changedPixels += 1
+      if (changed) {
+        changedPixels += 1
+        minX = Math.min(minX, x); minY = Math.min(minY, y)
+        maxX = Math.max(maxX, x); maxY = Math.max(maxY, y)
+      }
       pixels += 1
     }
   }
@@ -61,5 +67,6 @@ export function comparePixelBuffers(
     meanAbsoluteError: total / samples,
     p95AbsoluteError: p95,
     maxAbsoluteError: max,
+    differenceBounds: changedPixels ? { x: minX, y: minY, width: maxX - minX + 1, height: maxY - minY + 1 } : null,
   }
 }

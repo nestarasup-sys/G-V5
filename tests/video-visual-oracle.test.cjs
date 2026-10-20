@@ -12,7 +12,7 @@ new Function('require','module','exports',compiled)(require,mod,mod.exports)
 test('pixel oracle reports exact equality',()=>{
   const a=Uint8Array.from([1,2,3,255,4,5,6,255])
   const result=mod.exports.comparePixelBuffers(a,a,2,1)
-  assert.deepEqual(result,{pixels:2,changedPixels:0,changedPixelRatio:0,meanAbsoluteError:0,p95AbsoluteError:0,maxAbsoluteError:0})
+  assert.deepEqual(result,{pixels:2,changedPixels:0,changedPixelRatio:0,meanAbsoluteError:0,p95AbsoluteError:0,maxAbsoluteError:0,differenceBounds:null})
 })
 
 test('pixel oracle isolates ROI and ignores alpha channel',()=>{
@@ -29,4 +29,5 @@ test('pixel oracle isolates ROI and ignores alpha channel',()=>{
   assert.equal(result.changedPixels,1)
   assert.equal(result.changedPixelRatio,0.5)
   assert.equal(result.maxAbsoluteError,10)
+  assert.deepEqual(result.differenceBounds,{x:1,y:1,width:1,height:1})
 })

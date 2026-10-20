@@ -67,6 +67,7 @@ registerVideoVisualPlugin({
       position:'absolute',left:`calc(50% + ${element.x}%)`,top:`calc(50% + ${element.y}%)`,
       width:`${element.width}%`,height:`${element.height}%`,
       transform:`translate(-50%,-50%) rotate(${element.rotation}deg)`,
+      zIndex:Math.max(0,element.zIndex)+2,
       background:'#ff3bd4',border:'12px solid #28e7ff',boxSizing:'border-box',pointerEvents:'none'
     }}
   />
