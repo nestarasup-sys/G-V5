@@ -47,23 +47,25 @@ export async function runVideoStudioProcess(
       if (settled || terminationError) return
       terminationError = error
       try { child.stdin.destroy() } catch { /* best effort */ }
-      try { child.kill('SIGKILL') } catch { /* exit/error handlers remain authoritative */ }
-      // Windows runners and user machines can invoke wrappers/drivers that keep
-      // descendants alive after killing the immediate process. Escalate to a
-      // process-tree kill before giving up, but keep the child's exit/error
-      // event authoritative whenever it arrives.
-      killFallback = setTimeout(() => {
-        if (settled) return
+      const forceKill = () => {
         if (process.platform === 'win32' && child.pid) {
           try {
             const killer = spawn('taskkill.exe', ['/PID', String(child.pid), '/T', '/F'], {
               shell: false, windowsHide: true, stdio: 'ignore',
             })
             killer.unref()
-          } catch { /* watchdog below reports inability to confirm exit */ }
+          } catch {
+            try { child.kill('SIGKILL') } catch { /* watchdog below */ }
+          }
         } else {
           try { child.kill('SIGKILL') } catch { /* watchdog below */ }
         }
+      }
+      // Kill the whole Windows process tree immediately. Waiting until the
+      // wrapper exits can orphan its real FFmpeg descendant and lose the tree.
+      forceKill()
+      killFallback = setTimeout(() => {
+        if (!settled) forceKill()
       }, 2_000)
       killWatchdog = setTimeout(() => {
         finish(() => rejectPromise(new Error(`${error.message} Não foi possível confirmar o encerramento do processo de mídia (pid=${child.pid ?? 'desconhecido'}) em 8 segundos.`)))
