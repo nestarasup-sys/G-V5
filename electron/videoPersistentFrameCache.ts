@@ -14,6 +14,7 @@ type IndexEntry = { key: string; bytes: number; rawBytes: number; touchedAt: num
 type Index = { schemaVersion: 1; rendererVersion: string; entries: IndexEntry[] }
 
 const rootQueues = new Map<string, Promise<unknown>>()
+const rootIndexes = new Map<string, Index>()
 
 export type PersistentFrameCacheStats = Readonly<{
   hits: number
@@ -61,6 +62,8 @@ export class VideoPersistentFrameCache {
   private framePath(hash: string) { return join(this.root, 'frames', `${hash}.bin`) }
 
   private async readIndex(): Promise<Index> {
+    const cached = rootIndexes.get(this.canonicalRoot)
+    if (cached) return cached
     try {
       const parsed = JSON.parse(await readFile(this.indexPath(), 'utf8')) as Index
       if (parsed.schemaVersion !== 1 || parsed.rendererVersion !== VIDEO_RENDERER_CACHE_VERSION || !Array.isArray(parsed.entries)
@@ -68,12 +71,18 @@ export class VideoPersistentFrameCache {
           || !Number.isSafeInteger(e.rawBytes) || e.rawBytes < 4 || !Number.isFinite(e.touchedAt))) {
         throw new Error('Índice do cache persistente inválido.')
       }
+      rootIndexes.set(this.canonicalRoot, parsed)
       return parsed
     } catch (reason) {
-      if ((reason as NodeJS.ErrnoException).code === 'ENOENT') return { schemaVersion: 1, rendererVersion: VIDEO_RENDERER_CACHE_VERSION, entries: [] }
+      const empty: Index = { schemaVersion: 1, rendererVersion: VIDEO_RENDERER_CACHE_VERSION, entries: [] }
+      if ((reason as NodeJS.ErrnoException).code === 'ENOENT') {
+        rootIndexes.set(this.canonicalRoot, empty)
+        return empty
+      }
       // Renderer upgrades/corrupt metadata invalidate only cache, never project data.
       await rm(this.root, { recursive: true, force: true }).catch(() => undefined)
-      return { schemaVersion: 1, rendererVersion: VIDEO_RENDERER_CACHE_VERSION, entries: [] }
+      rootIndexes.set(this.canonicalRoot, empty)
+      return empty
     }
   }
 
@@ -94,6 +103,7 @@ export class VideoPersistentFrameCache {
     } finally {
       await rm(temp, { force: true }).catch(() => undefined)
     }
+    rootIndexes.set(this.canonicalRoot, index)
   }
 
   private async enforceBudget(index: Index): Promise<void> {
@@ -170,7 +180,10 @@ export class VideoPersistentFrameCache {
   }
 
   async clear(): Promise<void> {
-    await this.run(async () => { await rm(this.root, { recursive: true, force: true }) })
+    await this.run(async () => {
+      await rm(this.root, { recursive: true, force: true })
+      rootIndexes.delete(this.canonicalRoot)
+    })
   }
 
   async stats(): Promise<PersistentFrameCacheStats> {
