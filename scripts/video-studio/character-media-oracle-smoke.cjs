@@ -236,6 +236,11 @@ app.whenReady().then(async()=>{
     const domSamples=await captureSequence('dom',variant,caseFrames)
     const canvasSamples=await captureSequence('canvas',variant,caseFrames)
     const videoRegion=regions.video
+    // The comparison ROI above samples an interior video patch. Repeatability
+    // must mask the entire transformed clip footprint (30% x 28%, rotated 4°),
+    // otherwise changed video pixels outside the small diagnostic ROI are
+    // incorrectly attributed to the rest of the DOM.
+    const videoRepeatRegion={x:1100,y:230,width:700,height:420}
     const withoutRegion=(buffer,region)=>{
       const copy=Buffer.from(buffer)
       const left=Math.max(0,Math.floor(region.x)), top=Math.max(0,Math.floor(region.y))
@@ -249,7 +254,7 @@ app.whenReady().then(async()=>{
     // while the video ROI is checked with the same calibrated structural
     // tolerance used by the DOM-vs-Canvas oracle. The export Canvas path uses
     // its timestamp-keyed bitmap cache and must remain fully byte-identical.
-    const domRepeat=Buffer.compare(withoutRegion(domSamples[0].pixels,videoRegion),withoutRegion(domSamples.at(-1).pixels,videoRegion))===0
+    const domRepeat=Buffer.compare(withoutRegion(domSamples[0].pixels,videoRepeatRegion),withoutRegion(domSamples.at(-1).pixels,videoRepeatRegion))===0
     const canvasRepeat=Buffer.compare(canvasSamples[0].pixels,canvasSamples.at(-1).pixels)===0
     const domVideoRepeat=visualOracle.comparePixelBuffers(domSamples[0].pixels,domSamples.at(-1).pixels,width,height,videoRegion,1)
     const videoRepeatLimit=limits.video
