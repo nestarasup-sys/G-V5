@@ -23,7 +23,7 @@ import { captureVideoCharacter, characterStateAt, normalizeVideoCharacterTransfo
 import type { CustomizerCharacter } from '../../../../shared/customizer'
 import type { CustomizerFaceAppearance } from '../../../../shared/customizer'
 import type { FaceCatalogItem, FaceCatalogItemSummary, FaceExpressionCollection, FaceExpressionEffects, FaceExpressionPreset, FaceExpressionPresetSummary, FaceSheetKind, FabricatorPoseSummary } from '../../../../shared/fabricator'
-import type { VideoExportProgress } from '../../../../shared/videoExportRuntime'
+import type { VideoExportProgress, VideoExportRecoveryRecord } from '../../../../shared/videoExportRuntime'
 import type { RenderVariant } from '../../../../shared/videoSceneIR'
 import { createVideoCharacterRenderAssetSnapshot } from '../../../../shared/videoCharacterRenderAssets'
 import { captureVideoCharacterRenderAssets } from './videoCharacterAssetCapture'
@@ -196,6 +196,8 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
   const [exportPreparing, setExportPreparing] = useState(false)
   const [activeExportJobId, setActiveExportJobId] = useState<string | null>(null)
   const [exportProgress, setExportProgress] = useState<VideoExportProgress | null>(null)
+  const [exportRecoveries, setExportRecoveries] = useState<VideoExportRecoveryRecord[]>([])
+  const [exportRecoveryBusy, setExportRecoveryBusy] = useState<string | null>(null)
   const [availableCharacters, setAvailableCharacters] = useState<CustomizerCharacter[]>([])
   const [assetLibraryRevision, setAssetLibraryRevision] = useState(0)
   const appliedAssetRevisionRef = useRef(new Map<string, number>())
@@ -2058,6 +2060,45 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
   }), [])
 
   useEffect(() => {
+    if (!exportDialogOpen) return
+    let cancelled = false
+    void window.desktop.listRecoverableVideoExports()
+      .then((records) => { if (!cancelled) setExportRecoveries(records) })
+      .catch((reason) => { if (!cancelled) setError(reason instanceof Error ? reason.message : 'Não foi possível listar exports interrompidos.') })
+    return () => { cancelled = true }
+  }, [exportDialogOpen, exportProgress?.stage])
+
+  const resumeVideoExport = async (recovery: VideoExportRecoveryRecord) => {
+    if (exportRecoveryBusy || (exportProgress && !['done', 'failed', 'cancelled'].includes(exportProgress.stage))) return
+    setExportRecoveryBusy(recovery.jobId)
+    setError(null)
+    try {
+      const result = await window.desktop.resumeVideoExport(recovery.jobId)
+      setActiveExportJobId(result.jobId)
+      setExportProgress(await window.desktop.getVideoExportStatus(result.jobId))
+      setExportRecoveries((current) => current.filter((item) => item.jobId !== recovery.jobId))
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Não foi possível retomar a exportação.')
+    } finally {
+      setExportRecoveryBusy(null)
+    }
+  }
+
+  const discardVideoExportRecovery = async (recovery: VideoExportRecoveryRecord) => {
+    if (exportRecoveryBusy) return
+    setExportRecoveryBusy(recovery.jobId)
+    setError(null)
+    try {
+      await window.desktop.discardVideoExportRecovery(recovery.jobId)
+      setExportRecoveries((current) => current.filter((item) => item.jobId !== recovery.jobId))
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Não foi possível descartar a recuperação.')
+    } finally {
+      setExportRecoveryBusy(null)
+    }
+  }
+
+  useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (videoLibraryOpen || backgroundLibraryOpen) return
       const target = event.target
@@ -2344,6 +2385,14 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
                   <strong>Sem animações</strong><span>Mantém poses/expressões authored como cortes, sem microanimações.</span>
                 </button>
               </div>
+              {exportRecoveries.length > 0 && <section className="video-export-recoveries">
+                <strong>Exportações interrompidas</strong>
+                {exportRecoveries.map((recovery) => <article key={recovery.jobId}>
+                  <span><b>{recovery.studioTitle}</b><small>{recovery.completedFrames.toLocaleString('pt-BR')} / {recovery.durationFrames.toLocaleString('pt-BR')} frames · {recovery.renderVariant === 'animated' ? 'Completo' : 'Sem animações'}</small></span>
+                  <button type="button" disabled={exportRecoveryBusy !== null} onClick={() => void resumeVideoExport(recovery)}>{exportRecoveryBusy === recovery.jobId ? 'Abrindo…' : 'Retomar'}</button>
+                  <button type="button" className="danger" disabled={exportRecoveryBusy !== null} onClick={() => void discardVideoExportRecovery(recovery)}>Descartar</button>
+                </article>)}
+              </section>}
               {exportProgress?.stage === 'done' && <p className="video-export-success">Última exportação concluída e verificada.</p>}
               {exportProgress?.stage === 'failed' && <p className="video-studio-error-message">{exportProgress.message}</p>}
               <footer>
