@@ -19,6 +19,7 @@ on:
       - 'src/shared/videoExportRuntime.ts'
       - 'src/shared/videoExportSurface.ts'
       - 'src/shared/videoStageGeometry.ts'
+      - 'src/shared/videoVisualOracle.ts'
       - 'src/renderer/src/features/videoStudio/characterTrack.ts'
       - 'src/renderer/src/features/videoStudio/characterTransitions.ts'
       - 'src/renderer/src/features/videoStudio/transitionRenderer.ts'
@@ -29,6 +30,8 @@ on:
       - 'src/renderer/src/features/videoStudio/videoExportMediaFramePool.ts'
       - 'src/renderer/src/features/videoStudio/VideoExportSurfacePage.tsx'
       - 'src/renderer/src/features/videoStudio/VideoStudioEditor.tsx'
+      - 'src/renderer/src/features/videoStudio/VideoStudioDomElement.tsx'
+      - 'src/renderer/src/features/videoStudio/VideoPreviewOraclePage.tsx'
       - 'src/renderer/src/ui/App.tsx'
       - 'src/renderer/src/main.tsx'
       - 'src/renderer/src/desktop.d.ts'
@@ -65,11 +68,13 @@ on:
       - 'tests/video-output-verifier.test.cjs'
       - 'tests/video-media-probe.test.cjs'
       - 'tests/video-stage-geometry.test.cjs'
+      - 'tests/video-visual-oracle.test.cjs'
       - 'tests/video-pixel-format.test.cjs'
       - 'scripts/video-studio/export-surface-electron-smoke.cjs'
       - 'scripts/video-studio/export-e2e-electron-smoke.cjs'
       - 'scripts/video-studio/av-fixture-smoke.cjs'
       - 'scripts/video-studio/audio-assembly-smoke.cjs'
+      - 'scripts/video-studio/preview-export-oracle-smoke.cjs'
   workflow_dispatch:
 
 permissions:
@@ -141,3 +146,7 @@ jobs:
         if: always() && steps.install.outcome == 'success'
         shell: pwsh
         run: npm run test:export:audio-assembly
+      - name: Compare production preview DOM against export Canvas
+        if: always() && steps.install.outcome == 'success'
+        shell: pwsh
+        run: npm run test:export:preview-oracle
