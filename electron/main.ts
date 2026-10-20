@@ -2074,8 +2074,8 @@ async function registerFabricatorHandlers(): Promise<void> {
     assertTrustedSender(event)
     const db = dataPlatform.database
     if (!db) throw new Error('Catálogo de dados não inicializado.')
-    const rows = db.prepare('SELECT video_id, description_text, timeline, scene_end_seconds, first_group_reaction_seconds, second_group_reaction_seconds FROM base_video_details ORDER BY updated_at DESC').all() as Array<{ video_id: string; description_text: string; timeline: BaseVideoDetails['timeline']; scene_end_seconds: number | null; first_group_reaction_seconds: number | null; second_group_reaction_seconds: number | null }>
-    return rows.map((row) => ({ videoId: row.video_id, description: row.description_text, timeline: row.timeline,
+    const rows = db.prepare('SELECT video_id, video_number, description_text, timeline, scene_end_seconds, first_group_reaction_seconds, second_group_reaction_seconds FROM base_video_details ORDER BY CASE WHEN video_number IS NULL THEN 1 ELSE 0 END, video_number, updated_at DESC').all() as Array<{ video_id: string; video_number: number | null; description_text: string; timeline: BaseVideoDetails['timeline']; scene_end_seconds: number | null; first_group_reaction_seconds: number | null; second_group_reaction_seconds: number | null }>
+    return rows.map((row) => ({ videoId: row.video_id, ...(row.video_number === null ? {} : { videoNumber: row.video_number }), description: row.description_text, timeline: row.timeline,
       ...(row.scene_end_seconds === null ? {} : { sceneEndSeconds: row.scene_end_seconds }),
       ...(row.first_group_reaction_seconds === null ? {} : { firstGroupReactionSeconds: row.first_group_reaction_seconds }),
       ...(row.second_group_reaction_seconds === null ? {} : { secondGroupReactionSeconds: row.second_group_reaction_seconds }) }))
@@ -2105,6 +2105,32 @@ async function registerFabricatorHandlers(): Promise<void> {
     const db = dataPlatform.database
     if (!db) throw new Error('Catálogo de dados não inicializado.')
     db.prepare('DELETE FROM base_video_details WHERE video_id=?').run(videoId)
+  })
+
+  ipcMain.handle('base-videos:publish', async (event, videoId: unknown): Promise<number> => {
+    assertTrustedSender(event)
+    if (typeof videoId !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(videoId)) throw new Error('Identificador de vídeo inválido.')
+    const media = await videoLibrary.resolveMedia(videoId)
+    await nativeAccess(media.path)
+    const db = dataPlatform.database
+    if (!db) throw new Error('Catálogo de dados não inicializado.')
+    const publish = db.transaction((id: string) => {
+      const existing = db.prepare('SELECT video_number FROM base_video_details WHERE video_id=?').get(id) as { video_number: number | null } | undefined
+      if (existing?.video_number !== null && existing?.video_number !== undefined) return existing.video_number
+      let sequence = db.prepare('SELECT next_number FROM base_video_sequence WHERE sequence_id=1').get() as { next_number: number } | undefined
+      if (!sequence) {
+        db.prepare('INSERT INTO base_video_sequence(sequence_id, next_number) SELECT 1, COALESCE(MAX(video_number), 0) + 1 FROM base_video_details').run()
+        sequence = db.prepare('SELECT next_number FROM base_video_sequence WHERE sequence_id=1').get() as { next_number: number }
+      }
+      const videoNumber = sequence.next_number
+      if (!Number.isSafeInteger(videoNumber) || videoNumber < 1 || !Number.isSafeInteger(videoNumber + 1)) throw new Error('A sequência numérica da Base de vídeos atingiu um valor inválido.')
+      db.prepare('UPDATE base_video_sequence SET next_number=? WHERE sequence_id=1').run(videoNumber + 1)
+      db.prepare(`INSERT INTO base_video_details(video_id, video_number, description_text, timeline, updated_at)
+        VALUES (?, ?, '', 'unspecified', ?) ON CONFLICT(video_id) DO UPDATE SET video_number=excluded.video_number, updated_at=excluded.updated_at`)
+        .run(id, videoNumber, new Date().toISOString())
+      return videoNumber
+    })
+    return publish(videoId)
   })
 
   ipcMain.handle('customizer:characters:list', async (event): Promise<CustomizerCharacter[]> => {

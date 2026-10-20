@@ -139,7 +139,7 @@ class DataPlatform {
     this.database = new Database(dbPath, { timeout: 5000 })
     this.database.pragma('foreign_keys = ON')
     const currentSchema = this.database.pragma('user_version', { simple: true })
-    if (currentSchema > 9) {
+    if (currentSchema > 10) {
       this.database.close()
       this.database = null
       throw new Error(`O catálogo usa schema ${currentSchema}, mais novo que esta versão do app.`)
@@ -244,6 +244,7 @@ class DataPlatform {
       CREATE INDEX IF NOT EXISTS roteiro_sections_by_parent ON roteiro_sections(roteiro_id, section_kind);
       CREATE TABLE IF NOT EXISTS base_video_details (
         video_id TEXT PRIMARY KEY,
+        video_number INTEGER,
         description_text TEXT NOT NULL DEFAULT '',
         timeline TEXT NOT NULL DEFAULT 'unspecified' CHECK(timeline IN ('unspecified', 'past', 'present', 'future')),
         scene_end_seconds REAL,
@@ -251,6 +252,10 @@ class DataPlatform {
         second_group_reaction_seconds REAL,
         updated_at TEXT NOT NULL
       ) WITHOUT ROWID;
+      CREATE TABLE IF NOT EXISTS base_video_sequence (
+        sequence_id INTEGER PRIMARY KEY CHECK(sequence_id = 1),
+        next_number INTEGER NOT NULL CHECK(next_number > 0)
+      );
       CREATE TABLE IF NOT EXISTS domain_files (
         domain_id TEXT NOT NULL REFERENCES domains(domain_id),
         relative_path TEXT NOT NULL,
@@ -339,12 +344,18 @@ class DataPlatform {
       .run(sha256('gacha-roteiro-section-timeline-and-reaction-timing-schema-v8'), now)
     this.database.prepare("INSERT OR IGNORE INTO schema_migrations(version, name, checksum, applied_at) VALUES (9, 'base-video-details', ?, ?)")
       .run(sha256('gacha-base-video-details-schema-v9'), now)
-    if (currentSchema < 9) this.database.pragma('user_version = 9')
+    const baseVideoColumns = new Set(this.database.prepare('PRAGMA table_info(base_video_details)').all().map((column) => column.name))
+    if (!baseVideoColumns.has('video_number')) this.database.exec('ALTER TABLE base_video_details ADD COLUMN video_number INTEGER')
+    this.database.exec('CREATE UNIQUE INDEX IF NOT EXISTS base_video_details_by_number ON base_video_details(video_number) WHERE video_number IS NOT NULL')
+    this.database.exec('INSERT OR IGNORE INTO base_video_sequence(sequence_id, next_number) SELECT 1, COALESCE(MAX(video_number), 0) + 1 FROM base_video_details')
+    this.database.prepare("INSERT OR IGNORE INTO schema_migrations(version, name, checksum, applied_at) VALUES (10, 'base-video-stable-sequence-numbers', ?, ?)")
+      .run(sha256('gacha-base-video-stable-sequence-numbers-schema-v10'), now)
+    if (currentSchema < 10) this.database.pragma('user_version = 10')
     const insertDomain = this.database.prepare(`INSERT OR IGNORE INTO domains(domain_id, schema_version, manifest_json, updated_at) VALUES (?, 1, '{}', ?)`)
     const registerBuiltins = this.database.transaction(() => BUILTIN_DOMAINS.forEach((id) => insertDomain.run(id, now)))
     registerBuiltins()
     this.database.prepare("INSERT OR IGNORE INTO app_metadata(key, value) VALUES ('schema_version', '1')").run()
-    this.database.prepare("UPDATE app_metadata SET value='9' WHERE key='schema_version'").run()
+    this.database.prepare("UPDATE app_metadata SET value='10' WHERE key='schema_version'").run()
     this.migrateRoteirosJson()
     return this
   }

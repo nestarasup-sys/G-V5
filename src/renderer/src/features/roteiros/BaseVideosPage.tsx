@@ -83,7 +83,12 @@ export function BaseVideosPage() {
 
   const visibleItems = useMemo(() => items.filter((item) => {
     const details = detailsById[item.id] ?? emptyDetails(item.id)
-    return activeView === 'drafts' ? !details.description.trim() : Boolean(details.description.trim())
+    return activeView === 'drafts' ? details.videoNumber === undefined : details.videoNumber !== undefined
+  }).sort((a, b) => {
+    const numberA = detailsById[a.id]?.videoNumber
+    const numberB = detailsById[b.id]?.videoNumber
+    if (activeView === 'main') return (numberA ?? Number.MAX_SAFE_INTEGER) - (numberB ?? Number.MAX_SAFE_INTEGER)
+    return b.createdAt.localeCompare(a.createdAt)
   }), [items, detailsById, activeView])
 
   useEffect(() => { setVisibleCount(18) }, [activeView])
@@ -101,6 +106,17 @@ export function BaseVideosPage() {
       setActiveView('drafts')
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Não foi possível adicionar o vídeo.')
+    } finally { setBusy(false) }
+  }
+
+  const sendToBase = async (videoId: string) => {
+    setBusy(true); setError(null)
+    try {
+      const videoNumber = await window.desktop.publishBaseVideo(videoId)
+      setDetailsById((current) => ({ ...current, [videoId]: { ...(current[videoId] ?? emptyDetails(videoId)), videoNumber } }))
+      setActiveView('main')
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Não foi possível enviar o vídeo para a Base.')
     } finally { setBusy(false) }
   }
 
@@ -152,18 +168,19 @@ export function BaseVideosPage() {
         <button className={deleteMode ? 'base-videos-cancel-delete' : 'base-videos-delete'} type="button" onClick={() => void handleDelete()} disabled={busy || (!deleteMode && !items.length) || (deleteMode && !selectedIds.length)}>{deleteMode ? `Confirmar (${selectedIds.length})` : 'Excluir'}</button>
         {deleteMode && <button className="base-videos-cancel" type="button" disabled={busy} onClick={() => { setDeleteMode(false); setSelectedIds([]) }}>Cancelar</button>}
         <span className="base-videos-action-divider" />
-        <button className={`base-videos-view${activeView === 'drafts' ? ' active' : ''}`} type="button" onClick={() => { setActiveView((view) => view === 'main' ? 'drafts' : 'main'); setDeleteMode(false); setSelectedIds([]) }}>{activeView === 'drafts' ? 'Vídeos' : 'Rascunhos'} <span>{items.filter((item) => !(detailsById[item.id]?.description ?? '').trim()).length}</span></button>
+        <button className={`base-videos-view${activeView === 'drafts' ? ' active' : ''}`} type="button" onClick={() => { setActiveView((view) => view === 'main' ? 'drafts' : 'main'); setDeleteMode(false); setSelectedIds([]) }}>{activeView === 'drafts' ? 'Vídeos' : 'Rascunhos'} <span>{items.filter((item) => detailsById[item.id]?.videoNumber === undefined).length}</span></button>
       </div>
     </header>
     <div className="base-videos-content">
       {error && <div className="base-videos-error" role="alert"><span>{error}</span><button type="button" onClick={() => setError(null)}>Fechar</button></div>}
-      <div className="base-videos-view-heading"><div><h2>{activeView === 'main' ? 'Vídeos' : 'Rascunhos'}</h2><p>{activeView === 'main' ? 'Vídeos com descrição preenchida.' : 'Vídeos que ainda precisam de uma descrição.'}</p></div><span>{visibleItems.length} vídeo{visibleItems.length === 1 ? '' : 's'}</span></div>
+      <div className="base-videos-view-heading"><div><h2>{activeView === 'main' ? 'Vídeos' : 'Rascunhos'}</h2><p>{activeView === 'main' ? 'Vídeos enviados para a Base, em ordem de identificação.' : 'Vídeos aguardando envio para a Base de vídeos.'}</p></div><span>{visibleItems.length} vídeo{visibleItems.length === 1 ? '' : 's'}</span></div>
       {!loaded ? <div className="base-videos-empty">Carregando vídeos…</div> : visibleItems.length ? <><div className="base-videos-grid">{visibleItems.slice(0, visibleCount).map((item) => {
         const details = detailsById[item.id] ?? emptyDetails(item.id)
         const selected = selectedIds.includes(item.id)
         return <article className={`base-video-card${deleteMode ? ' selecting' : ''}${selected ? ' selected' : ''}`} key={item.id}>
           {deleteMode && <button className="base-video-select" type="button" aria-pressed={selected} onClick={() => setSelectedIds((current) => selected ? current.filter((id) => id !== item.id) : [...current, item.id])}><span>{selected ? '✓' : ''}</span>{selected ? 'Selecionado' : 'Selecionar'}</button>}
-          <header className="base-video-card-header"><div><strong title={item.name}>{item.name}</strong><small>{item.durationFrames ? `${(item.durationFrames / 60).toFixed(1)} s` : 'Duração não reconhecida'} · {(item.size / 1024 / 1024).toFixed(1)} MB</small></div>{!item.available && <span className="base-video-unavailable">Arquivo indisponível</span>}</header>
+          <header className="base-video-card-header"><div>{details.videoNumber !== undefined && <span className="base-video-number">VÍDEO {String(details.videoNumber).padStart(2, '0')}</span>}<strong title={item.name}>{item.name}</strong><small>ID {item.id.slice(0, 8).toUpperCase()} · {item.durationFrames ? `${(item.durationFrames / 60).toFixed(1)} s` : 'Duração não reconhecida'} · {(item.size / 1024 / 1024).toFixed(1)} MB</small></div>{!item.available && <span className="base-video-unavailable">Arquivo indisponível</span>}</header>
+          {activeView === 'drafts' && !deleteMode && <button className="base-video-send" type="button" disabled={busy || !item.available} onClick={() => void sendToBase(item.id)}>{busy ? 'Enviando…' : 'Enviar para base de vídeos'}<span>Ao enviar, recebe um número permanente</span></button>}
           <div className="roteiro-video-preview-panel base-video-notes-panel">
             <div className="roteiro-video-stage"><video src={`gacha-video://library/${item.id}`} controls playsInline preload="none" aria-label={`Prévia de ${item.name}`} /></div>
             <label className="roteiro-video-description"><span>Descrição do que acontece no vídeo</span><textarea value={details.description} onChange={(event) => updateDetails(item.id, { description: event.target.value })} placeholder="Descreva o que acontece neste vídeo…" maxLength={20000} /></label>
@@ -175,7 +192,7 @@ export function BaseVideosPage() {
             </div>
           </div>
         </article>
-      })}</div>{visibleItems.length > visibleCount && <button className="base-videos-load-more" type="button" onClick={() => setVisibleCount((current) => current + 18)}>Carregar mais vídeos ({visibleItems.length - visibleCount} restantes)</button>}</> : <div className="base-videos-empty"><span className="base-videos-empty-icon"><Icon name={activeView === 'main' ? 'frame' : 'edit'} /></span><strong>{activeView === 'main' ? 'Nenhum vídeo descrito ainda' : 'Nenhum rascunho'}</strong><span>{activeView === 'main' ? 'Quando preencher a descrição de um vídeo, ele aparecerá aqui.' : 'Adicione um vídeo ou apague a descrição de um vídeo existente para criar um rascunho.'}</span></div>}
+      })}</div>{visibleItems.length > visibleCount && <button className="base-videos-load-more" type="button" onClick={() => setVisibleCount((current) => current + 18)}>Carregar mais vídeos ({visibleItems.length - visibleCount} restantes)</button>}</> : <div className="base-videos-empty"><span className="base-videos-empty-icon"><Icon name={activeView === 'main' ? 'frame' : 'edit'} /></span><strong>{activeView === 'main' ? 'A Base de vídeos está vazia' : 'Nenhum rascunho'}</strong><span>{activeView === 'main' ? 'Envie vídeos a partir da área Rascunhos para gerar a numeração permanente.' : 'Adicione um vídeo para começar a organizar os rascunhos.'}</span></div>}
     </div>
   </main>
 }

@@ -43,6 +43,7 @@ export type RoteiroTimeline = 'unspecified' | 'past' | 'present' | 'future'
 
 export type BaseVideoDetails = {
   videoId: string
+  videoNumber?: number
   description: string
   timeline: RoteiroTimeline
   sceneEndSeconds?: number
@@ -65,4 +66,5 @@ export type RoteirosDesktopApi = {
   listBaseVideoDetails: () => Promise<BaseVideoDetails[]>
   saveBaseVideoDetails: (details: BaseVideoDetails) => Promise<void>
   deleteBaseVideoDetails: (videoId: string) => Promise<void>
+  publishBaseVideo: (videoId: string) => Promise<number>
 }
