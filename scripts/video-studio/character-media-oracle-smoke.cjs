@@ -149,7 +149,7 @@ app.whenReady().then(async()=>{
   let pending=null
   let timer=setTimeout(()=>finish(new Error('Oracle character/media excedeu 120 segundos.')),120000)
   let finished=false
-  function cleanup(){clearTimeout(timer);try{ipcMain.removeHandler('video-studio:export-surface:prepare')}catch{};ipcMain.removeAllListeners('video-studio:export-surface:ready');ipcMain.removeAllListeners('video-studio:export-surface:frame-ready');for(const w of BrowserWindow.getAllWindows())if(!w.isDestroyed())w.destroy();fs.rmSync(root,{recursive:true,force:true})}
+  function cleanup(){clearTimeout(timer);try{ipcMain.removeHandler('video-studio:export-surface:prepare')}catch{};ipcMain.removeAllListeners('video-studio:export-surface:ready');ipcMain.removeAllListeners('video-studio:export-surface:frame-ready');for(const w of BrowserWindow.getAllWindows())if(!w.isDestroyed())w.destroy();try{fs.rmSync(root,{recursive:true,force:true,maxRetries:12,retryDelay:150})}catch(error){console.warn('Temp cleanup warning:',error.message)}}
   function finish(error){if(finished)return;finished=true;cleanup();if(error){console.error(error.stack||error.message);app.exit(1)}else app.exit(0)}
 
   ipcMain.handle('video-studio:export-surface:prepare',(event,id)=>{
