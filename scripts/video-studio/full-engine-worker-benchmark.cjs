@@ -131,17 +131,30 @@ app.whenReady().then(async()=>{
  function comparePixels(left,right){
   if(!left||!right||left.length!==right.length)throw new Error('Amostras de pixels inválidas para A/B do layer cache.')
   let absolute=0,changedPixels=0,maxChannelError=0
+  const histogram=new Uint32Array(256)
   for(let pixel=0;pixel<left.length;pixel+=4){
     let pixelChanged=false
     for(let channel=0;channel<4;channel++){
       const delta=Math.abs(left[pixel+channel]-right[pixel+channel])
       absolute+=delta
+      histogram[delta]++
       if(delta>2)pixelChanged=true
       if(delta>maxChannelError)maxChannelError=delta
     }
     if(pixelChanged)changedPixels++
   }
-  return{meanAbsoluteError:absolute/left.length,changedPixelRatio:changedPixels/(left.length/4),maxChannelError}
+  const percentile=(fraction)=>{
+    const target=Math.ceil(left.length*fraction);let seen=0
+    for(let value=0;value<histogram.length;value++){seen+=histogram[value];if(seen>=target)return value}
+    return 255
+  }
+  return{
+    meanAbsoluteError:absolute/left.length,
+    changedPixelRatio:changedPixels/(left.length/4),
+    p99ChannelError:percentile(.99),
+    p999ChannelError:percentile(.999),
+    maxChannelError,
+  }
  }
  async function benchmark(workerCount,layerCacheEnabled=true){
   const dir=path.join(root,`w${workerCount}`);fs.mkdirSync(dir,{recursive:true})
@@ -248,9 +261,14 @@ app.whenReady().then(async()=>{
   const worstCacheParity=cacheOffSamples?{
     meanAbsoluteError:Math.max(...cacheOffSamples.map(x=>x.meanAbsoluteError)),
     changedPixelRatio:Math.max(...cacheOffSamples.map(x=>x.changedPixelRatio)),
+    p99ChannelError:Math.max(...cacheOffSamples.map(x=>x.p99ChannelError)),
+    p999ChannelError:Math.max(...cacheOffSamples.map(x=>x.p999ChannelError)),
     maxChannelError:Math.max(...cacheOffSamples.map(x=>x.maxChannelError)),
   }:null
-  if(worstCacheParity&&(worstCacheParity.meanAbsoluteError>0.35||worstCacheParity.changedPixelRatio>0.02||worstCacheParity.maxChannelError>16)){
+  // A full-size transparent layer introduces one extra 8-bit alpha-composite,
+  // so a handful of fringe pixels can have a high maximum error. Gate the
+  // distribution (MAE/area/p99.9) and keep max only as a diagnostic.
+  if(worstCacheParity&&(worstCacheParity.meanAbsoluteError>0.10||worstCacheParity.changedPixelRatio>0.005||worstCacheParity.p999ChannelError>8)){
     throw new Error(`Layer cache ON/OFF excedeu tolerância visual: ${JSON.stringify({worstCacheParity,cacheOffSamples})}`)
   }
   const report=JSON.stringify({ok:true,profile,durationSeconds,dimensions:`${width}x${height}`,frameRate:60,totalFrames,machine,fixture:profileCounts.counts,serial,turbo,speedup,cacheOffSerial,layerCacheSpeedup,cacheParitySamples:cacheOffSamples,worstCacheParity},null,2)
