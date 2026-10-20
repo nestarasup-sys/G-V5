@@ -10,9 +10,13 @@ function errorMessage(reason: unknown): string {
   return reason instanceof Error ? reason.message : String(reason)
 }
 
-function jobIdFromHash(): string {
+function surfaceQuery(): URLSearchParams {
   const query = window.location.hash.includes('?') ? window.location.hash.slice(window.location.hash.indexOf('?') + 1) : ''
-  const value = new URLSearchParams(query).get('jobId') ?? ''
+  return new URLSearchParams(query)
+}
+
+function jobIdFromHash(): string {
+  const value = surfaceQuery().get('jobId') ?? ''
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)) {
     throw new Error('Surface recebeu jobId inválido.')
   }
@@ -44,7 +48,9 @@ export function VideoExportSurfacePage() {
       if (!canvas) throw new Error('Canvas da surface não foi montado.')
       canvas.width = VIDEO_STAGE_WIDTH
       canvas.height = VIDEO_STAGE_HEIGHT
-      layerCacheRef.current ??= new VideoCanvasLayerCache()
+      const layerCacheEnabled = surfaceQuery().get('layerCache') !== '0'
+      if (layerCacheEnabled) layerCacheRef.current ??= new VideoCanvasLayerCache()
+      else layerCacheRef.current = null
       return { program, canvas }
     })()
 
