@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { Navigate, Route, Routes, useLocation } from 'react-router'
 import { TopBar } from './components/TopBar'
 import { AppErrorBoundary } from './components/AppErrorBoundary'
@@ -31,12 +31,13 @@ function roteiroVideoReference(item: VideoLibraryItem): RoteiroVideoReference {
   return { id: item.id, name: item.name, mimeType: item.mimeType, extension: item.extension, size: item.size, durationFrames: item.durationFrames }
 }
 
-function RoteiroSectionEditor({ title, subtitle, content, characters, characterIds, onUpdate, onDeleteDraftVideo }: {
+function RoteiroSectionEditor({ title, subtitle, content, characters, characterIds, saveStatus, onUpdate, onDeleteDraftVideo }: {
   title: string
   subtitle: string
   content: RoteiroSectionContent
   characters: CustomizerCharacter[]
   characterIds: string[]
+  saveStatus: 'saving' | 'saved' | 'error'
   onUpdate: (content: RoteiroSectionContent) => void
   onDeleteDraftVideo: (videoId: string, content: RoteiroSectionContent) => Promise<boolean>
 }) {
@@ -45,10 +46,26 @@ function RoteiroSectionEditor({ title, subtitle, content, characters, characterI
   const [libraryActionMessage, setLibraryActionMessage] = useState<string | null>(null)
   const [pickerOpen, setPickerOpen] = useState(false)
   const [pickerLoading, setPickerLoading] = useState(false)
-  const [pickerItems, setPickerItems] = useState<VideoLibraryItem[]>([])
+  const [pickerItems, setPickerItems] = useState<Array<VideoLibraryItem & { durationFrames: number }>>([])
   const [pickerNumbers, setPickerNumbers] = useState<Record<string, number>>({})
+  const [pickerDetails, setPickerDetails] = useState<Record<string, BaseVideoDetails>>({})
+  const [pickerQuery, setPickerQuery] = useState('')
+  const [pickerTimeline, setPickerTimeline] = useState('all')
+  const [pickerSort, setPickerSort] = useState<'number' | 'name' | 'duration' | 'newest'>('number')
+  const [pickerPreviewId, setPickerPreviewId] = useState<string | null>(null)
   const [blocksCollapsed, setBlocksCollapsed] = useState(false)
   const previewRef = useRef<HTMLVideoElement>(null)
+  useEffect(() => {
+    if (!pickerOpen) return
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        if (pickerPreviewId) setPickerPreviewId(null)
+        else setPickerOpen(false)
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [pickerOpen, pickerPreviewId])
   const addVideo = async () => {
     setBusy(true)
     setError(null)
@@ -82,11 +99,13 @@ function RoteiroSectionEditor({ title, subtitle, content, characters, characterI
     setPickerOpen(true)
     setPickerLoading(true)
     setPickerItems([])
+    setPickerQuery(''); setPickerTimeline('all'); setPickerSort('number'); setPickerPreviewId(null)
     try {
       const [library, details] = await Promise.all([window.desktop.listVideoLibrary(), window.desktop.listBaseVideoDetails()])
       const numberById = Object.fromEntries(details.flatMap((item: BaseVideoDetails) => item.videoNumber === undefined ? [] : [[item.videoId, item.videoNumber]])) as Record<string, number>
+      setPickerDetails(Object.fromEntries(details.map((item) => [item.videoId, item])))
       setPickerNumbers(numberById)
-      setPickerItems(library.filter((item) => item.available && item.durationFrames !== null && numberById[item.id] !== undefined)
+      setPickerItems(library.filter((item): item is VideoLibraryItem & { durationFrames: number } => item.available && item.durationFrames !== null && numberById[item.id] !== undefined)
         .sort((a, b) => numberById[a.id] - numberById[b.id]))
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Não foi possível carregar os vídeos da Base.')
@@ -98,6 +117,20 @@ function RoteiroSectionEditor({ title, subtitle, content, characters, characterI
     setPickerOpen(false)
     setLibraryActionMessage(`Vídeo ${String(pickerNumbers[item.id]).padStart(2, '0')} vinculado ao roteiro pelo ID.`)
   }
+  const filteredPickerItems = useMemo(() => pickerItems.filter((item) => {
+    const details = pickerDetails[item.id]
+    const query = pickerQuery.trim().toLocaleLowerCase('pt-BR')
+    const matchesQuery = !query || item.name.toLocaleLowerCase('pt-BR').includes(query)
+      || item.id.toLocaleLowerCase().includes(query)
+      || String(pickerNumbers[item.id] ?? '').includes(query)
+      || (details?.description ?? '').toLocaleLowerCase('pt-BR').includes(query)
+    return matchesQuery && (pickerTimeline === 'all' || details?.timeline === pickerTimeline)
+  }).sort((a, b) => {
+    if (pickerSort === 'name') return a.name.localeCompare(b.name, 'pt-BR')
+    if (pickerSort === 'duration') return (a.durationFrames ?? 0) - (b.durationFrames ?? 0)
+    if (pickerSort === 'newest') return b.createdAt.localeCompare(a.createdAt)
+    return (pickerNumbers[a.id] ?? Number.MAX_SAFE_INTEGER) - (pickerNumbers[b.id] ?? Number.MAX_SAFE_INTEGER)
+  }), [pickerItems, pickerDetails, pickerQuery, pickerTimeline, pickerSort, pickerNumbers])
   const removeVideo = async () => {
     if (!video) return
     setBusy(true)
@@ -189,7 +222,7 @@ function RoteiroSectionEditor({ title, subtitle, content, characters, characterI
   }
 
   return <><main className="roteiro-workspace-editor" aria-label={'Área de edição: ' + title}>
-    <header className="roteiro-editor-subbar"><div><strong>{title}</strong><span>{subtitle}</span></div></header>
+    <header className="roteiro-editor-subbar"><div><strong>{title}</strong><span>{subtitle}</span></div><span className={`roteiro-save-indicator ${saveStatus}`} role="status">{saveStatus === 'saving' ? 'Salvando roteiro…' : saveStatus === 'error' ? 'Falha ao salvar roteiro' : 'Roteiro salvo'}</span></header>
     {error && <p className="roteiro-editor-error" role="alert">{error}</p>}
     <section className="roteiro-video-stage-wrap" aria-label="Preview 1920 por 1080">
       <div className="roteiro-video-preview-panel">
@@ -211,6 +244,7 @@ function RoteiroSectionEditor({ title, subtitle, content, characters, characterI
           <section className="roteiro-group-reaction first"><header><strong>Primeira reação em grupo</strong><span>REAÇÃO 1</span></header><div className="roteiro-timing-input"><input aria-label="Primeira reação em grupo em segundos" type="number" min="0" max="86400" step="0.01" value={content.firstGroupReactionSeconds ?? ''} onChange={(event) => updateSeconds('firstGroupReactionSeconds', event.target.value)} placeholder="0" /><button type="button" onClick={() => captureReactionTime('firstGroupReactionSeconds')}>Tempo real</button><small>segundos</small></div></section>
           <section className="roteiro-group-reaction second"><header><strong>Segunda reação em grupo</strong><span>REAÇÃO 2</span></header><div className="roteiro-timing-input"><input aria-label="Segunda reação em grupo em segundos" type="number" min="0" max="86400" step="0.01" value={content.secondGroupReactionSeconds ?? ''} onChange={(event) => updateSeconds('secondGroupReactionSeconds', event.target.value)} placeholder="0" /><button type="button" onClick={() => captureReactionTime('secondGroupReactionSeconds')}>Tempo real</button><small>segundos</small></div></section>
         </div>
+        {video && [content.sceneEndSeconds, content.firstGroupReactionSeconds, content.secondGroupReactionSeconds].some((seconds) => seconds !== undefined && seconds > video.durationFrames / 60) && <p className="roteiro-time-warning" role="status"><Icon name="warning" /> Um ou mais tempos ultrapassam a duração do vídeo ({(video.durationFrames / 60).toFixed(2)} s).</p>}
       </div>
     </section>
     <section className="roteiro-reaction-sequence" aria-label="Sequência de reações">
@@ -234,16 +268,24 @@ function RoteiroSectionEditor({ title, subtitle, content, characters, characterI
     </section>
   </main>{pickerOpen && <div className="roteiro-modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setPickerOpen(false) }}>
     <section className="roteiro-video-picker-modal" role="dialog" aria-modal="true" aria-labelledby="roteiro-video-picker-title">
-      <header><div><span>BASE DE VÍDEOS</span><h2 id="roteiro-video-picker-title">Selecionar vídeo</h2></div><button type="button" aria-label="Fechar" onClick={() => setPickerOpen(false)}>×</button></header>
-      <div className="roteiro-video-picker-list">{pickerLoading ? <p>Carregando vídeos…</p> : pickerItems.length ? pickerItems.map((item) => <button type="button" key={item.id} onClick={() => selectBaseVideo(item)}>
-        <span className="roteiro-video-picker-number">VÍDEO {String(pickerNumbers[item.id]).padStart(2, '0')}</span><span className="roteiro-video-picker-info"><strong>{item.name}</strong><small>{item.durationFrames === null ? 'Duração não reconhecida' : `${(item.durationFrames / 60).toFixed(1)} s`} · ID ${item.id.slice(0, 8).toUpperCase()}</small></span><span className="roteiro-video-picker-select">Selecionar</span>
-      </button>) : <p>Nenhum vídeo publicado na Base. Os rascunhos não aparecem aqui.</p>}</div>
+      <header><div><span>BASE DE VÍDEOS</span><h2 id="roteiro-video-picker-title">Selecionar vídeo</h2><p>Escolha um vídeo publicado para vincular a esta seção.</p></div><button type="button" aria-label="Fechar" onClick={() => setPickerOpen(false)}>×</button></header>
+      {pickerPreviewId ? (() => {
+        const item = pickerItems.find((candidate) => candidate.id === pickerPreviewId)
+        if (!item) return null
+        return <div className="roteiro-picker-focused"><button type="button" className="roteiro-picker-back" onClick={() => setPickerPreviewId(null)}>← Voltar à galeria</button><div className="roteiro-picker-large-preview"><video key={item.id} src={`gacha-video://library/${item.id}`} controls autoPlay playsInline preload="metadata" /></div><div className="roteiro-picker-focus-info"><span className="roteiro-video-picker-number">VÍDEO {String(pickerNumbers[item.id]).padStart(2, '0')}</span><div><strong>{item.name}</strong><small>{(item.durationFrames / 60).toFixed(2)} s · {(item.size / 1024 ** 2).toFixed(1)} MB · ID {item.id.slice(0, 8).toUpperCase()}</small></div><button className="primary" type="button" onClick={() => selectBaseVideo(item)}>{content.video?.id === item.id ? 'Manter este vídeo' : 'Usar este vídeo'}</button></div></div>
+      })() : <>
+        <div className="roteiro-video-picker-filters"><label className="roteiro-picker-search"><Icon name="search" /><input autoFocus value={pickerQuery} onChange={(event) => setPickerQuery(event.target.value)} placeholder="Buscar por nome, número, ID ou descrição" /></label><label><span>Linha do tempo</span><select value={pickerTimeline} onChange={(event) => setPickerTimeline(event.target.value)}><option value="all">Todas</option><option value="past">Passado</option><option value="present">Presente</option><option value="future">Futuro</option><option value="unspecified">Indefinido</option></select></label><label><span>Ordenar</span><select value={pickerSort} onChange={(event) => setPickerSort(event.target.value as typeof pickerSort)}><option value="number">Número</option><option value="name">Nome</option><option value="duration">Duração</option><option value="newest">Mais recente</option></select></label><span className="roteiro-picker-result-count">{filteredPickerItems.length} vídeo(s)</span></div>
+        <div className="roteiro-video-picker-list">{pickerLoading ? <div className="roteiro-picker-skeleton-grid" aria-label="Carregando vídeos">{Array.from({ length: 6 }, (_, index) => <div className="roteiro-picker-skeleton" key={index}><i /><span /><span /></div>)}</div> : filteredPickerItems.length ? filteredPickerItems.map((item) => <article className={`roteiro-video-picker-card${content.video?.id === item.id ? ' linked' : ''}`} key={item.id} onDoubleClick={() => selectBaseVideo(item)}>
+          <button className="roteiro-picker-thumb" type="button" onClick={() => setPickerPreviewId(item.id)} aria-label={`Abrir prévia de ${item.name}`}><video src={`gacha-video://library/${item.id}`} muted playsInline preload="metadata" tabIndex={-1} /><span className="roteiro-picker-play">▶</span><small>{(item.durationFrames / 60).toFixed(2)} s</small></button>
+          <div className="roteiro-picker-card-info"><div><span className="roteiro-video-picker-number">VÍDEO {String(pickerNumbers[item.id]).padStart(2, '0')}</span><strong title={item.name}>{item.name}</strong>{content.video?.id === item.id && <span className="roteiro-picker-linked-badge">Vinculado</span>}</div><small>{(item.size / 1024 ** 2).toFixed(1)} MB · ID {item.id.slice(0, 8).toUpperCase()}</small><div className="roteiro-picker-card-actions"><button type="button" onClick={() => setPickerPreviewId(item.id)}>▶ Prévia</button><button className="primary" type="button" onClick={() => selectBaseVideo(item)}>{content.video?.id === item.id ? 'Selecionado' : 'Selecionar'}</button></div></div>
+        </article>) : <div className="roteiro-picker-empty"><Icon name="frame" /><strong>{pickerItems.length ? 'Nenhum resultado para esse filtro' : 'A Base de vídeos está vazia'}</strong><span>{pickerItems.length ? 'Tente outro nome ou ajuste os filtros.' : 'Os rascunhos não aparecem aqui. Publique um vídeo na Base para selecioná-lo.'}</span></div>}</div>
+      </>}
       <footer><button type="button" onClick={() => setPickerOpen(false)}>Fechar</button></footer>
     </section>
   </div>}</>
 }
 
-function RoteiroWorkspace({ roteiro, onBack, onUpdate, onDeleteDraftVideo, characters }: { roteiro: SidebarRoteiro; onBack: () => void; onUpdate: (next: SidebarRoteiro) => void; onDeleteDraftVideo: (next: SidebarRoteiro, videoId: string) => Promise<boolean>; characters: CustomizerCharacter[] }) {
+function RoteiroWorkspace({ roteiro, onBack, onUpdate, onDeleteDraftVideo, characters, saveStatus }: { roteiro: SidebarRoteiro; onBack: () => void; onUpdate: (next: SidebarRoteiro) => void; onDeleteDraftVideo: (next: SidebarRoteiro, videoId: string) => Promise<boolean>; characters: CustomizerCharacter[]; saveStatus: 'saving' | 'saved' | 'error' }) {
   const [activeContentId, setActiveContentId] = useState('opening')
   const [editingTikTok, setEditingTikTok] = useState<RoteiroTikTok | null>(null)
   const [editingTitle, setEditingTitle] = useState('')
@@ -299,10 +341,10 @@ function RoteiroWorkspace({ roteiro, onBack, onUpdate, onDeleteDraftVideo, chara
               <span className="roteiro-tiktok-cast">{roteiro.characterIds.length}/{roteiro.characterIds.length}</span>
             </button>
             <div className="roteiro-tiktok-actions"><button onClick={() => moveTikTok(index, -1)} disabled={index === 0} aria-label={'Mover ' + item.title + ' para cima'} type="button">↑</button><button onClick={() => moveTikTok(index, 1)} disabled={index === roteiro.tiktoks.length - 1} aria-label={'Mover ' + item.title + ' para baixo'} type="button">↓</button><button onClick={() => { setEditingTikTok(item); setEditingTitle(item.title); setEditingVideoTitle(item.videoTitle) }} type="button">Editar</button></div>
-        </article>)}</div>
+          </article>)}{roteiro.tiktoks.length === 0 && <div className="roteiro-first-tiktok"><Icon name="message" /><strong>Seu roteiro começa aqui</strong><span>Adicione o primeiro TikTok quando estiver pronto.</span><button type="button" onClick={addTikTok}>Adicionar primeiro TikTok</button></div>}</div>
       </section>
     </aside>
-    <RoteiroSectionEditor title={activeContentId === 'opening' ? 'Abertura' : activeTikTok?.title ?? 'TikTok'} subtitle={activeContentId === 'opening' ? 'Início do roteiro' : activeTikTok?.videoTitle ?? ''} content={activeContent} characters={characters} characterIds={roteiro.characterIds} onUpdate={updateActiveContent} onDeleteDraftVideo={removeDraftVideo} />
+    <RoteiroSectionEditor title={activeContentId === 'opening' ? 'Abertura' : activeTikTok?.title ?? 'TikTok'} subtitle={activeContentId === 'opening' ? 'Início do roteiro' : activeTikTok?.videoTitle ?? ''} content={activeContent} characters={characters} characterIds={roteiro.characterIds} saveStatus={saveStatus} onUpdate={updateActiveContent} onDeleteDraftVideo={removeDraftVideo} />
     <aside className="roteiro-workspace-empty-panel" aria-label="Painel lateral vazio do roteiro" />
     {editingTikTok && <div className="roteiro-modal-backdrop" onPointerDown={(event) => { if (event.target === event.currentTarget) setEditingTikTok(null) }}><section className="roteiro-video-title-modal" role="dialog" aria-modal="true" aria-labelledby="roteiro-tiktok-edit-heading"><header><strong id="roteiro-tiktok-edit-heading">Editar TikTok</strong><button onClick={() => setEditingTikTok(null)} aria-label="Fechar" type="button">×</button></header><label>Nome do TikTok<input autoFocus value={editingTitle} onChange={(event) => setEditingTitle(event.target.value)} maxLength={100} /></label><label>Título do vídeo<input value={editingVideoTitle} onChange={(event) => setEditingVideoTitle(event.target.value)} maxLength={100} /></label><footer><button onClick={() => setEditingTikTok(null)} type="button">Cancelar</button><button className="roteiro-create-confirm" onClick={saveTikTok} disabled={!editingTitle.trim() || !editingVideoTitle.trim()} type="button"><Icon name="check" />Salvar</button></footer></section></div>}
   </div>
@@ -317,18 +359,27 @@ function EmptyRoteirosPage() {
   const [openedRoteiroId, setOpenedRoteiroId] = useState<string | null>(null)
   const [deleteMode, setDeleteMode] = useState(false)
   const [deleteSelection, setDeleteSelection] = useState<string[]>([])
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [roteiroSearch, setRoteiroSearch] = useState('')
+  const [roteiroSaveStatus, setRoteiroSaveStatus] = useState<'saving' | 'saved' | 'error'>('saved')
+  const [libraryItems, setLibraryItems] = useState<VideoLibraryItem[]>([])
+  const [libraryLoaded, setLibraryLoaded] = useState(false)
   const [createOpen, setCreateOpen] = useState(false)
   const [newTitle, setNewTitle] = useState('')
   const [newCharacterIds, setNewCharacterIds] = useState<string[]>([])
   const [editingVideoId, setEditingVideoId] = useState<string | null>(null)
   const [editingVideoTitle, setEditingVideoTitle] = useState('')
   const [editingCharacterIds, setEditingCharacterIds] = useState<string[]>([])
+  const roteiroListRef = useRef<HTMLDivElement>(null)
+  const roteiroListScroll = useRef(0)
+  const saveRevision = useRef(0)
   const active = roteiroAreas.find((area) => area.id === activeArea) ?? roteiroAreas[0]
   const openedRoteiro = roteiros.find((roteiro) => roteiro.id === openedRoteiroId) ?? null
 
   useEffect(() => {
     let cancelled = false
     void window.desktop.listCustomizerCharacters().then((items) => { if (!cancelled) setCharacters(items) }).catch(() => undefined)
+    void window.desktop.listVideoLibrary().then((items) => { if (!cancelled) { setLibraryItems(items); setLibraryLoaded(true) } }).catch(() => { if (!cancelled) setLibraryLoaded(true) })
     return () => { cancelled = true }
   }, [])
 
@@ -345,17 +396,26 @@ function EmptyRoteirosPage() {
 
   useEffect(() => {
     if (!roteirosLoaded) return
-    void window.desktop.saveRoteiros(roteiros).catch((error) => console.error('Não foi possível salvar os roteiros.', error))
+    const revision = ++saveRevision.current
+    setRoteiroSaveStatus('saving')
+    void window.desktop.saveRoteiros(roteiros).then(() => { if (revision === saveRevision.current) setRoteiroSaveStatus('saved') }).catch((error) => {
+      console.error('Não foi possível salvar os roteiros.', error)
+      if (revision === saveRevision.current) setRoteiroSaveStatus('error')
+    })
   }, [roteiros, roteirosLoaded])
+
+  useEffect(() => {
+    if (!openedRoteiroId && roteiroListRef.current) roteiroListRef.current.scrollTop = roteiroListScroll.current
+  }, [openedRoteiroId])
 
   useEffect(() => {
     if (!deleteMode) return
     const cancelOnEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') { setDeleteMode(false); setDeleteSelection([]) }
+      if (event.key === 'Escape') { if (deleteDialogOpen) setDeleteDialogOpen(false); else { setDeleteMode(false); setDeleteSelection([]) } }
     }
     window.addEventListener('keydown', cancelOnEscape)
     return () => window.removeEventListener('keydown', cancelOnEscape)
-  }, [deleteMode])
+  }, [deleteMode, deleteDialogOpen])
 
   const createRoteiro = () => {
     const title = newTitle.trim()
@@ -376,6 +436,19 @@ function EmptyRoteirosPage() {
     return true
   }
 
+  const duplicateRoteiro = (source: SidebarRoteiro) => {
+    const remapBlocks = (blocks: RoteiroReactionBlock[] = []) => blocks.map((block) => ({ ...block, id: crypto.randomUUID() }))
+    const copy: SidebarRoteiro = {
+      ...source,
+      id: crypto.randomUUID(),
+      title: `${source.title.slice(0, 92)} (cópia)`,
+      opening: source.opening ? { ...source.opening, blocks: remapBlocks(source.opening.blocks) } : emptyRoteiroContent(),
+      tiktoks: source.tiktoks.map((item) => ({ ...item, id: crypto.randomUUID(), blocks: remapBlocks(item.blocks) }))
+    }
+    setRoteiros((current) => [copy, ...current])
+    setSelectedRoteiroId(copy.id)
+  }
+
   const handleDeleteButton = () => {
     if (!deleteMode) {
       setDeleteSelection([])
@@ -383,11 +456,17 @@ function EmptyRoteirosPage() {
       return
     }
     if (deleteSelection.length === 0) return
+    setDeleteDialogOpen(true)
+  }
+
+  const confirmDeleteRoteiros = () => {
+    if (deleteSelection.length === 0) return
     setRoteiros((current) => current.filter((roteiro) => !deleteSelection.includes(roteiro.id)))
     if (selectedRoteiroId && deleteSelection.includes(selectedRoteiroId)) setSelectedRoteiroId(null)
     if (openedRoteiroId && deleteSelection.includes(openedRoteiroId)) setOpenedRoteiroId(null)
     setDeleteSelection([])
     setDeleteMode(false)
+    setDeleteDialogOpen(false)
   }
 
   const toggleRoteiroSelection = (roteiroId: string) => {
@@ -404,7 +483,10 @@ function EmptyRoteirosPage() {
     setEditingVideoId(null); setEditingVideoTitle(''); setEditingCharacterIds([])
   }
 
-  if (openedRoteiro) return <RoteiroWorkspace roteiro={openedRoteiro} characters={characters} onBack={() => setOpenedRoteiroId(null)} onUpdate={(updated) => setRoteiros((current) => current.map((item) => item.id === updated.id ? updated : item))} onDeleteDraftVideo={deleteDraftVideoFromRoteiro} />
+  const visibleRoteiros = roteiros.filter((roteiro) => !roteiroSearch.trim() || roteiro.title.toLocaleLowerCase('pt-BR').includes(roteiroSearch.trim().toLocaleLowerCase('pt-BR')) || roteiro.videoTitle.toLocaleLowerCase('pt-BR').includes(roteiroSearch.trim().toLocaleLowerCase('pt-BR')))
+  const availableVideoIds = new Set(libraryItems.filter((item) => item.available).map((item) => item.id))
+
+  if (openedRoteiro) return <RoteiroWorkspace roteiro={openedRoteiro} characters={characters} saveStatus={roteiroSaveStatus} onBack={() => setOpenedRoteiroId(null)} onUpdate={(updated) => setRoteiros((current) => current.map((item) => item.id === updated.id ? updated : item))} onDeleteDraftVideo={deleteDraftVideoFromRoteiro} />
 
   return <div className="roteiros-layout">
     <aside className="roteiros-sidebar-empty" aria-label="Navegação de roteiros">
@@ -414,17 +496,20 @@ function EmptyRoteirosPage() {
     </aside>
     <section className="roteiros-main-empty" aria-label={`Área ${active.label}`}>
       <header className="roteiros-area-titlebar"><div className="roteiros-title-content">{activeArea === 'roteiros' && <div className="roteiros-title-actions"><button className="add" onClick={() => { setDeleteMode(false); setDeleteSelection([]); setNewTitle(''); setNewCharacterIds([]); setCreateOpen(true) }} title="Adicionar roteiro" type="button">Adicionar</button><button className={deleteMode ? 'confirm-delete' : 'delete'} onClick={handleDeleteButton} disabled={deleteMode ? deleteSelection.length === 0 : roteiros.length === 0} title={deleteMode ? `Confirmar exclusão de ${deleteSelection.length} roteiro(s)` : 'Selecionar roteiros para excluir'} type="button">{deleteMode ? 'Confirmar' : 'Excluir'}</button></div>}<h1>{active.label}</h1></div></header>
-      {activeArea === 'roteiros' && <div className="roteiro-main-library" aria-label="Lista de roteiros"><div className="roteiro-main-cards">{roteiros.map((roteiro) => {
+      {activeArea === 'roteiros' && <div className="roteiro-main-library" aria-label="Lista de roteiros" ref={roteiroListRef}><div className="roteiro-library-toolbar"><label><Icon name="search" /><input value={roteiroSearch} onChange={(event) => setRoteiroSearch(event.target.value)} placeholder="Buscar roteiro…" /></label><span className={`roteiro-save-indicator ${roteiroSaveStatus}`} role="status">{roteiroSaveStatus === 'saving' ? 'Salvando…' : roteiroSaveStatus === 'error' ? 'Falha ao salvar' : 'Tudo salvo'}</span>{roteiroSaveStatus === 'error' && <button className="roteiro-save-retry" type="button" onClick={() => { void window.desktop.saveRoteiros(roteiros).then(() => setRoteiroSaveStatus('saved')).catch(() => setRoteiroSaveStatus('error')) }}>Tentar novamente</button>}</div><div className="roteiro-main-cards">{visibleRoteiros.map((roteiro) => {
         const firstCharacter = characters.find((character) => roteiro.characterIds.includes(character.id))
         const markedForDelete = deleteSelection.includes(roteiro.id)
+        const refs = [roteiro.opening?.video, ...roteiro.tiktoks.map((item) => item.video)].filter((item): item is RoteiroVideoReference => Boolean(item))
+        const hasUnavailableVideo = libraryLoaded && refs.some((item) => !availableVideoIds.has(item.id))
         return <article className={`roteiro-main-card${selectedRoteiroId === roteiro.id && !deleteMode ? ' selected' : ''}${deleteMode ? ' delete-mode' : ''}${markedForDelete ? ' delete-selected' : ''}`} key={roteiro.id}>
-          <div className="roteiro-main-video-strip"><span title={roteiro.videoTitle}>{roteiro.videoTitle}</span><button onClick={() => { setEditingVideoId(roteiro.id); setEditingVideoTitle(roteiro.videoTitle); setEditingCharacterIds([...roteiro.characterIds]) }} disabled={deleteMode} aria-label={`Editar roteiro ${roteiro.title}`} title="Editar roteiro e elenco" type="button"><Icon name="edit" /></button></div>
-          <button className="roteiro-main-thumbnail" onClick={() => { if (deleteMode) toggleRoteiroSelection(roteiro.id); else { setSelectedRoteiroId(roteiro.id); setOpenedRoteiroId(roteiro.id) } }} aria-pressed={deleteMode ? markedForDelete : selectedRoteiroId === roteiro.id} type="button">{firstCharacter ? <CharacterPortrait character={firstCharacter} /> : <span className="roteiro-thumbnail-placeholder"><Icon name="message" /></span>}<strong title={roteiro.title}>{roteiro.title}</strong></button>
+          <div className="roteiro-main-video-strip"><span title={roteiro.videoTitle}>{roteiro.videoTitle}</span><div><button className="roteiro-card-duplicate" onClick={() => duplicateRoteiro(roteiro)} disabled={deleteMode} type="button">Duplicar</button><button onClick={() => { setEditingVideoId(roteiro.id); setEditingVideoTitle(roteiro.videoTitle); setEditingCharacterIds([...roteiro.characterIds]) }} disabled={deleteMode} aria-label={`Editar roteiro ${roteiro.title}`} title="Editar roteiro e elenco" type="button"><Icon name="edit" /></button></div></div>
+          <button className="roteiro-main-thumbnail" onClick={() => { if (deleteMode) toggleRoteiroSelection(roteiro.id); else { setSelectedRoteiroId(roteiro.id); roteiroListScroll.current = roteiroListRef.current?.scrollTop ?? 0; setOpenedRoteiroId(roteiro.id) } }} aria-pressed={deleteMode ? markedForDelete : selectedRoteiroId === roteiro.id} type="button">{firstCharacter ? <CharacterPortrait character={firstCharacter} /> : <span className="roteiro-thumbnail-placeholder"><Icon name="message" /></span>}<strong title={roteiro.title}>{roteiro.title}</strong><small>{roteiro.tiktoks.length} TikTok(s) · {roteiro.characterIds.length} personagem(ns)</small>{hasUnavailableVideo && <em className="roteiro-missing-video"><Icon name="warning" /> Vídeo indisponível</em>}</button>
         </article>
-      })}</div></div>}
+      })}{visibleRoteiros.length === 0 && <div className="roteiro-library-empty"><Icon name="message" /><strong>{roteiros.length ? 'Nenhum roteiro encontrado' : 'Crie seu primeiro roteiro'}</strong><span>{roteiros.length ? 'Tente outra busca.' : 'Adicione um roteiro para organizar abertura, TikToks e reações.'}</span>{!roteiros.length && <button type="button" onClick={() => setCreateOpen(true)}>Adicionar roteiro</button>}</div>}</div></div>}
     </section>
     {createOpen && <div className="roteiro-modal-backdrop" onPointerDown={(event) => { if (event.target === event.currentTarget) setCreateOpen(false) }}><section className="roteiro-create-modal" role="dialog" aria-modal="true" aria-labelledby="roteiro-create-title"><header><div><span>NOVO ROTEIRO</span><h2 id="roteiro-create-title">Criar roteiro</h2></div><button onClick={() => setCreateOpen(false)} aria-label="Fechar" type="button">×</button></header><label className="roteiro-modal-name">Nome do roteiro<input autoFocus value={newTitle} onChange={(event) => setNewTitle(event.target.value)} placeholder="Digite o nome do roteiro" maxLength={100} /></label><div className="roteiro-modal-cast-heading"><strong>Seleção de elenco</strong><span>{newCharacterIds.length} selecionado(s)</span></div><div className="roteiro-modal-cast-list">{characters.length ? characters.map((character) => { const checked = newCharacterIds.includes(character.id); return <button className={checked ? 'selected' : ''} key={character.id} onClick={() => setNewCharacterIds((current) => checked ? current.filter((id) => id !== character.id) : [...current, character.id])} type="button"><CharacterPortrait character={character} /><span>{character.name}</span><i>{checked ? '✓' : '+'}</i></button> }) : <p>Não há personagens disponíveis no Customizador.</p>}</div><footer><button onClick={() => setCreateOpen(false)} type="button">Cancelar</button><button className="roteiro-create-confirm" onClick={createRoteiro} disabled={!newTitle.trim()} type="button"><Icon name="check" />Criar roteiro</button></footer></section></div>}
     {editingVideoId && <div className="roteiro-modal-backdrop" onPointerDown={(event) => { if (event.target === event.currentTarget) setEditingVideoId(null) }}><section className="roteiro-video-title-modal" role="dialog" aria-modal="true" aria-labelledby="roteiro-video-title-heading"><header><strong id="roteiro-video-title-heading">Editar roteiro e elenco</strong><button onClick={() => setEditingVideoId(null)} aria-label="Fechar" type="button">×</button></header><label>Título do vídeo<input autoFocus value={editingVideoTitle} onChange={(event) => setEditingVideoTitle(event.target.value)} maxLength={100} /></label><div className="roteiro-modal-cast-heading"><strong>Elenco</strong><span>{editingCharacterIds.length} selecionado(s)</span></div><div className="roteiro-modal-cast-list">{characters.length ? characters.map((character) => { const checked = editingCharacterIds.includes(character.id); return <button className={checked ? 'selected' : ''} key={character.id} onClick={() => setEditingCharacterIds((current) => checked ? current.filter((id) => id !== character.id) : [...current, character.id])} type="button"><CharacterPortrait character={character} /><span>{character.name}</span><i>{checked ? '✓' : '+'}</i></button> }) : <p>Não há personagens disponíveis no Customizador.</p>}</div><footer><button onClick={() => setEditingVideoId(null)} type="button">Cancelar</button><button className="roteiro-create-confirm" onClick={saveVideoTitle} disabled={!editingVideoTitle.trim()} type="button"><Icon name="check" />Salvar</button></footer></section></div>}
+    {deleteDialogOpen && <div className="roteiro-modal-backdrop" onPointerDown={(event) => { if (event.target === event.currentTarget) setDeleteDialogOpen(false) }}><section className="roteiro-delete-confirm-modal" role="alertdialog" aria-modal="true" aria-labelledby="roteiro-delete-confirm-title"><span className="roteiro-delete-confirm-icon"><Icon name="trash" /></span><h2 id="roteiro-delete-confirm-title">Excluir {deleteSelection.length} roteiro(s)?</h2><p>O conteúdo desses roteiros será removido do armazenamento local. Os vídeos publicados na Base continuam preservados.</p><footer><button type="button" onClick={() => setDeleteDialogOpen(false)}>Cancelar</button><button type="button" className="danger" onClick={confirmDeleteRoteiros}>Excluir roteiro(s)</button></footer></section></div>}
   </div>
 }
 

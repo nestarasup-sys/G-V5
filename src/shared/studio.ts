@@ -282,6 +282,7 @@ export type VideoStudioDesktopApi = {
   importVideoLibrary: () => Promise<VideoLibraryItem | null>
   finishVideoLibraryImport: (id: string, durationFrames: number) => Promise<VideoLibraryItem>
   deleteVideoLibraryItem: (id: string) => Promise<void>
+  renameVideoLibraryItem: (id: string, name: string) => Promise<VideoLibraryItem>
   attachVideoLibraryItems: (studioId: string, ids: string[]) => Promise<VideoStudioAsset[]>
   prepareVideoPreviewMedia: (studioId: string, asset: VideoStudioAsset) => Promise<VideoPreviewMedia>
   listVideoBackgroundLibrary: () => Promise<VideoBackgroundLibraryItem[]>

@@ -165,6 +165,19 @@ export class VideoLibraryStore {
       return { ...item, available: await exists(this.mediaPath(item)), studios: [] }
     })
   }
+  async rename(id: string, name: string): Promise<VideoLibraryItem> {
+    requireId(id)
+    const nextName = name.trim()
+    if (!nextName || nextName.length > 255 || /[\\/\0-\x1f]/.test(nextName)) throw new Error('Nome de exibição inválido.')
+    return this.run(async () => {
+      const catalog = await this.readCatalog()
+      const item = catalog.items.find((entry) => entry.id === id)
+      if (!item) throw new Error('Vídeo não encontrado na biblioteca.')
+      item.name = nextName
+      await this.writeCatalog(catalog)
+      return { ...item, available: await exists(this.mediaPath(item)), studios: [] }
+    })
+  }
   async delete(id: string): Promise<void> {
     requireId(id)
     return this.run(async () => {

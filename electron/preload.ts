@@ -91,6 +91,7 @@ const videoStudioApi: VideoStudioDesktopApi = {
   importVideoLibrary: () => ipcRenderer.invoke('video-studio:video-library:import'),
   finishVideoLibraryImport: (id, durationFrames) => ipcRenderer.invoke('video-studio:video-library:finish', id, durationFrames),
   deleteVideoLibraryItem: (id) => ipcRenderer.invoke('video-studio:video-library:delete', id),
+  renameVideoLibraryItem: (id, name) => ipcRenderer.invoke('video-studio:video-library:rename', id, name),
   attachVideoLibraryItems: (studioId, ids) => ipcRenderer.invoke('video-studio:video-library:attach', studioId, ids),
   prepareVideoPreviewMedia: (studioId, asset) => ipcRenderer.invoke('video-studio:preview-media:prepare', studioId, asset),
   listVideoBackgroundLibrary: () => ipcRenderer.invoke('video-studio:background-library:list'),

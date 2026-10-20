@@ -1935,6 +1935,7 @@ async function registerFabricatorHandlers(): Promise<void> {
         return videoLibrary.importFile(result.filePaths[0])
       })
       ipcMain.handle('video-studio:video-library:finish', async (event, id: string, durationFrames: number) => { assertTrustedSender(event); return videoLibrary.finishImport(id, durationFrames) })
+      ipcMain.handle('video-studio:video-library:rename', async (event, id: string, name: string) => { assertTrustedSender(event); return videoLibrary.rename(id, name) })
       ipcMain.handle('video-studio:video-library:delete', async (event, id: string) => {
         assertTrustedSender(event)
         const next = roteirosSaveQueue.catch(() => undefined).then(async () => {
