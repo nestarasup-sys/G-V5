@@ -75,6 +75,7 @@ on:
       - 'tests/video-pixel-format.test.cjs'
       - 'tests/video-semantic-frame-cache.test.cjs'
       - 'tests/video-persistent-frame-cache.test.cjs'
+      - 'tests/video-preview-seek-scheduler.test.cjs'
       - 'tests/video-export-auto-tuner.test.cjs'
       - 'scripts/video-studio/export-surface-electron-smoke.cjs'
       - 'scripts/video-studio/export-e2e-electron-smoke.cjs'
