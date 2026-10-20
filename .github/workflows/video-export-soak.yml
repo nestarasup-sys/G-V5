@@ -1,0 +1,55 @@
+name: Video Studio Export soak
+
+on:
+  push:
+    branches: [master-desenvolvimento]
+    paths:
+      - 'scripts/video-studio/export-soak-local.cjs'
+      - '.github/workflows/video-export-soak.yml'
+  workflow_dispatch:
+    inputs:
+      seconds:
+        description: 'Soak duration'
+        required: true
+        default: '90'
+        type: choice
+        options: ['90','900']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: video-export-soak-${{ github.ref }}-${{ inputs.seconds || '90' }}
+  cancel-in-progress: true
+
+jobs:
+  soak-windows:
+    name: 1080p60 raw pipeline soak / Windows
+    runs-on: windows-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install TypeScript only from lockfile
+        shell: pwsh
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Resolve FFmpeg tools
+        shell: pwsh
+        run: |
+          $ffmpeg = Get-Command ffmpeg -ErrorAction SilentlyContinue
+          $ffprobe = Get-Command ffprobe -ErrorAction SilentlyContinue
+          if (-not $ffmpeg -or -not $ffprobe) {
+            choco install ffmpeg -y --no-progress
+            $ffmpeg = Get-Command ffmpeg -ErrorAction Stop
+            $ffprobe = Get-Command ffprobe -ErrorAction Stop
+          }
+          "GACHA_FFMPEG_PATH=$($ffmpeg.Source)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "GACHA_FFPROBE_PATH=$($ffprobe.Source)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+      - name: Run rawvideo soak
+        shell: pwsh
+        env:
+          GACHA_SOAK_SECONDS: ${{ inputs.seconds || '90' }}
+        run: node scripts/video-studio/export-soak-local.cjs
