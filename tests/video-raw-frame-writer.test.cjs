@@ -33,11 +33,15 @@ test('chunk args are fixed to the V5 profile and GPL/nonfree FFmpeg builds are r
   assert.equal(args.includes('1920x1080'), true)
   assert.equal(args.includes('60'), true)
   assert.equal(args.includes('h264_mf'), true)
+  const nvenc = buildVideoStudioChunkArgs('C:/app-data/temp/job/chunk-000001.mp4', 60, 'bgra', 'h264_nvenc')
+  assert.equal(nvenc[nvenc.indexOf('-c:v') + 1], 'h264_nvenc')
+  assert.equal(nvenc[nvenc.indexOf('-pixel_format') + 1], 'bgra')
   assert.equal(args[args.length - 1], 'C:/app-data/temp/job/chunk-000000.mp4')
   assert.throws(() => buildVideoStudioChunkArgs('C:/out.mp4', 601), /inválidos/)
   assertCompatibleFfmpegBuild('--enable-mediafoundation --disable-gpl', 'V..... h264_mf V..... aac')
+  assertCompatibleFfmpegBuild('--disable-gpl', 'V..... h264_nvenc A..... aac')
   assert.throws(() => assertCompatibleFfmpegBuild('--enable-gpl --enable-libx264', 'V..... h264_mf A..... aac'), /GPL/)
-  assert.throws(() => assertCompatibleFfmpegBuild('--disable-gpl', 'V..... libx264 A..... aac'), /h264_mf/)
+  assert.throws(() => assertCompatibleFfmpegBuild('--disable-gpl', 'V..... libx264 A..... aac'), /H\.264/)
 })
 
 test('incomplete chunk cancellation terminates its child process', async (t) => {
