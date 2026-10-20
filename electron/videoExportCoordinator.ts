@@ -1,11 +1,12 @@
 import { createHash, randomUUID } from 'node:crypto'
+import { performance } from 'node:perf_hooks'
 import type { CustomizerCharacter } from '../src/shared/customizer'
 import type { StudioDocument, VideoExportRecord as SharedVideoExportRecord } from '../src/shared/studio'
 import { createVideoExportSnapshot } from '../src/shared/videoExportSnapshot'
 import { createVideoExportCharacterSnapshot } from '../src/shared/videoExportCharacters'
 import type { VideoCharacterRenderAssetSnapshot } from '../src/shared/videoCharacterRenderAssets'
 import { compileVideoScene, evaluateVideoSceneFrame, type RenderVariant } from '../src/shared/videoSceneIR'
-import type { VideoExportProgress, VideoExportRecoveryRecord } from '../src/shared/videoExportRuntime'
+import type { VideoExportMetrics, VideoExportProgress, VideoExportRecoveryRecord } from '../src/shared/videoExportRuntime'
 import { buildVideoStudioAudioPlan, type VideoStudioAudioSource } from '../src/shared/videoStudioAudioPlan'
 import { buildVideoExportMediaManifest, type ResolveVideoExportMedia } from './videoExportAssets'
 import { prepareVideoExportSnapshot } from './videoExportSnapshotAssets'
@@ -21,6 +22,10 @@ import { verifyVideoStudioOutput } from './videoOutputVerifier'
 import { rgbaToBgra } from './videoPixelFormat'
 
 type ReopenedVideoExportJob = Awaited<ReturnType<VideoExportJobStore['reopen']>>
+
+function completedChunkBytes(manifest: ReopenedVideoExportJob['manifest']): number {
+  return manifest.chunks.reduce((sum, chunk) => sum + chunk.sizeBytes, 0)
+}
 
 type ActiveExport = {
   jobId: string
@@ -78,6 +83,7 @@ export class VideoExportCoordinator {
       renderVariant: input.renderVariant,
       completedFrames: 0,
       totalFrames,
+      metrics: { startedAt: new Date().toISOString() },
     })
     const active: ActiveExport = {
       jobId,
@@ -127,6 +133,7 @@ export class VideoExportCoordinator {
       totalFrames: reopened.manifest.durationFrames,
       chunkCount: Math.ceil(reopened.manifest.durationFrames / reopened.manifest.chunkFrames),
       message: completedFrames > 0 ? 'Retomando exportação verificada…' : 'Reiniciando job preparado…',
+      metrics: { startedAt: new Date().toISOString() },
     })
     const active: ActiveExport = {
       jobId,
@@ -186,13 +193,21 @@ export class VideoExportCoordinator {
   }
 
   private async run(active: ActiveExport, input: VideoExportCoordinatorInput, resumeJob?: ReopenedVideoExportJob): Promise<void> {
+    const totalStarted = performance.now()
+    const startedAt = active.progress.metrics?.startedAt ?? new Date().toISOString()
+    let metrics: VideoExportMetrics = { startedAt }
+    const applyMetrics = (patch: Partial<VideoExportMetrics>) => {
+      metrics = { ...metrics, ...patch }
+      return metrics
+    }
     const renderVariant = resumeJob?.manifest.renderVariant ?? input.renderVariant
     if (!renderVariant) throw new Error('Job sem modo de renderização.')
     const snapshot = resumeJob?.snapshot ?? createVideoExportSnapshot(input.studio)
     if (!snapshot) throw new Error('Job sem snapshot de cena.')
     const studio = snapshot.studio
     const timeline = snapshot.timeline
-    this.update(active, { stage: 'preparing', message: 'Fixando projeto, personagens e mídias…' })
+    const prepareStarted = performance.now()
+    this.update(active, { stage: 'preparing', message: 'Fixando projeto, personagens e mídias…', metrics })
     this.abort(active)
 
     const preparedSnapshot = prepareVideoExportSnapshot(snapshot)
@@ -227,23 +242,27 @@ export class VideoExportCoordinator {
       media.set(dependency.assetId, { path: pinned.path, hasAudio: probe.audio !== null })
     }
 
+    const renderStarted = performance.now()
     this.update(active, {
       stage: 'rendering',
       chunkCount,
       message: 'Inicializando compositor canônico…',
+      metrics: applyMetrics({ prepareMs: renderStarted - prepareStarted }),
     })
     active.surface = await this.surfaceHost.open(active.jobId)
     this.abort(active)
     const sceneProgram = compileVideoScene(snapshot, renderVariant)
     let cachedPixels: { key: string; pixels: Buffer } | null = null
     let reusedFrames = 0
+    let encodedChunkBytes = completedChunkBytes(reopened.manifest)
+    let rawFrameBytes = reopened.manifest.chunks.reduce((sum, chunk) => sum + (chunk.endFrame - chunk.startFrame) * 1920 * 1080 * 4, 0)
 
     for (let index = reopened.nextChunkIndex; index < chunkCount; index += 1) {
       this.abort(active)
       const startFrame = index * reopened.manifest.chunkFrames
       const endFrameExclusive = Math.min(timeline.durationFrames, startFrame + reopened.manifest.chunkFrames)
       const outputPath = this.jobs.chunkOutputPath(active.jobId, index)
-      await encodeVideoStudioSerialChunk({
+      const encodedChunk = await encodeVideoStudioSerialChunk({
         ffmpeg,
         outputPath,
         startFrame,
@@ -268,10 +287,18 @@ export class VideoExportCoordinator {
             chunkCount,
             completedFrames: startFrame + completedFrames,
             reusedFrames,
+            metrics: applyMetrics({
+              renderedFrames: startFrame + completedFrames - reusedFrames,
+              reusedFrames,
+              rawFrameBytes: rawFrameBytes + completedFrames * 1920 * 1080 * 4,
+              encodedChunkBytes,
+            }),
             message: `Renderizando trecho ${index + 1}/${chunkCount}…`,
           })
         },
       })
+      encodedChunkBytes += encodedChunk.outputBytes
+      rawFrameBytes += encodedChunk.writer.bytesWritten
       await this.jobs.recordChunk(active.jobId, index)
     }
 
@@ -288,12 +315,21 @@ export class VideoExportCoordinator {
       path: this.jobs.chunkOutputPath(active.jobId, chunk.index),
     }))
 
+    const renderEnded = performance.now()
     this.update(active, {
       stage: 'assembling',
       completedFrames: timeline.durationFrames,
       reusedFrames,
+      metrics: applyMetrics({
+        renderMs: renderEnded - renderStarted,
+        renderedFrames: timeline.durationFrames - reusedFrames,
+        reusedFrames,
+        rawFrameBytes,
+        encodedChunkBytes,
+      }),
       message: 'Montando vídeo e áudio…',
     })
+    const assembleStarted = performance.now()
     const finalPath = this.jobs.finalOutputPath(active.jobId)
     const assembly = await assembleVideoStudioOutput({
       ffmpeg,
@@ -306,7 +342,9 @@ export class VideoExportCoordinator {
     })
 
     this.abort(active)
-    this.update(active, { stage: 'verifying', message: 'Verificando MP4 inteiro…' })
+    const assembleEnded = performance.now()
+    this.update(active, { stage: 'verifying', message: 'Verificando MP4 inteiro…', metrics: applyMetrics({ assembleMs: assembleEnded - assembleStarted, finalBytes: assembly.outputBytes }) })
+    const verifyStarted = performance.now()
     await verifyVideoStudioOutput({
       ffprobeExecutable: paths.ffprobe,
       ffmpegExecutable: paths.ffmpeg,
@@ -327,7 +365,9 @@ export class VideoExportCoordinator {
     if (plannedAudio !== assembly.audio) throw new Error('Plano de áudio mudou durante a montagem final.')
 
     this.abort(active)
-    this.update(active, { stage: 'publishing', message: 'Publicando exportação verificada…' })
+    const verifyEnded = performance.now()
+    this.update(active, { stage: 'publishing', message: 'Publicando exportação verificada…', metrics: applyMetrics({ verifyMs: verifyEnded - verifyStarted }) })
+    const publishStarted = performance.now()
     const record = await this.library.finalize(active.jobId, {
       id: randomUUID(),
       studioId: studio.id,
@@ -341,10 +381,16 @@ export class VideoExportCoordinator {
     })
     await this.jobs.cleanup(active.jobId)
     const sharedRecord: SharedVideoExportRecord = { ...record, available: true }
+    const finishedAt = performance.now()
     this.update(active, {
       stage: 'done',
       completedFrames: timeline.durationFrames,
       reusedFrames,
+      metrics: applyMetrics({
+        publishMs: finishedAt - publishStarted,
+        totalMs: finishedAt - totalStarted,
+        finalBytes: record.sizeBytes,
+      }),
       message: 'Exportação concluída e verificada.',
       record: sharedRecord,
     })
