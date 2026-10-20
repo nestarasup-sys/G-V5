@@ -16,6 +16,7 @@ export type VideoSceneProgram = Readonly<{
   videoIntervals: IntervalIndex<NonNullable<Timeline['videoClips']>[number]>
   assetsById: ReadonlyMap<string, string>
   elementsById: ReadonlyMap<string, StudioElement>
+  artworkTokens: ReadonlyMap<string, number>
 }>
 
 type IndexedInterval<T> = Readonly<{ item: T; startFrame: number; endFrame: number; order: number }>
@@ -147,6 +148,13 @@ export function compileVideoScene(snapshot: VideoExportSnapshot, variant: Render
   }
   const assetsById = new Map(snapshot.studio.assets.flatMap((asset) => asset.dataUrl ? [[asset.id, asset.dataUrl] as const] : []))
   const elementsById = new Map(snapshot.studio.elements.map((element) => [element.id, element]))
+  const artworkTokens = new Map<string, number>()
+  const rememberArtwork = (source: string | undefined) => {
+    if (source && !artworkTokens.has(source)) artworkTokens.set(source, artworkTokens.size + 1)
+  }
+  for (const asset of snapshot.studio.assets) rememberArtwork(asset.dataUrl)
+  for (const state of Object.values(snapshot.timeline.characterBases ?? {})) rememberArtwork(state.imageDataUrl)
+  for (const key of snapshot.timeline.characterKeys) rememberArtwork(key.state?.imageDataUrl)
   return {
     snapshot,
     variant,
@@ -157,6 +165,7 @@ export function compileVideoScene(snapshot: VideoExportSnapshot, variant: Render
     videoIntervals: buildIntervalIndex(snapshot.timeline.videoClips ?? [], (clip) => clip.startFrame, (clip) => clip.endFrame),
     assetsById,
     elementsById,
+    artworkTokens,
   }
 }
 
@@ -225,8 +234,7 @@ export function evaluateVideoSceneFrame(program: VideoSceneProgram, frame: numbe
         element.characterHeightScale ?? 100, element.text ?? '', element.timelineColor ?? '',
       ] : []
       const artwork = character.authoredState?.imageDataUrl
-        ? program.assetsById.size + [...program.snapshot.timeline.characterKeys, ...Object.values(program.snapshot.timeline.characterBases ?? {})]
-            .findIndex((candidate) => ('state' in candidate ? candidate.state?.imageDataUrl : candidate.imageDataUrl) === character.authoredState!.imageDataUrl)
+        ? program.artworkTokens.get(character.authoredState.imageDataUrl) ?? -1
         : -1
       if (character.transition) return [character.elementId, 'transition', frame, artwork, geometry]
       if (character.automaticMouth) {
