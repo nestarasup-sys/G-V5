@@ -1,5 +1,5 @@
 import { constants, createReadStream } from 'node:fs'
-import { copyFile, mkdir, lstat, readFile, realpath, rename, rm, writeFile } from 'node:fs/promises'
+import { copyFile, mkdir, lstat, readFile, readdir, realpath, rename, rm, writeFile } from 'node:fs/promises'
 import { createHash, randomUUID } from 'node:crypto'
 import { basename, join, relative, resolve, sep } from 'node:path'
 import { verifyVideoExportMediaManifest, type ResolveVideoExportMedia, type VideoExportMediaDependency } from './videoExportAssets'
@@ -8,6 +8,7 @@ import type { RenderVariant } from '../src/shared/videoSceneIR'
 import { hydrateVideoExportImagePayload, hydrateVideoExportSnapshotImages, prepareVideoExportImagePayload, prepareVideoExportSnapshot, type PinnedVideoExportSnapshotImage, type VideoExportSnapshotImage } from './videoExportSnapshotAssets'
 import { parseVideoCharacterRenderAssetSnapshot, serializeVideoCharacterRenderAssetSnapshot, type VideoCharacterRenderAssetSnapshot } from '../src/shared/videoCharacterRenderAssets'
 import { parseVideoExportCharacterSnapshot, serializeVideoExportCharacterSnapshot, type VideoExportCharacterSnapshot } from '../src/shared/videoExportCharacters'
+import type { VideoExportRecoveryRecord } from '../src/shared/videoExportRuntime'
 
 const idPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const shaPattern = /^[a-f0-9]{64}$/
@@ -553,6 +554,39 @@ export class VideoExportJobStore {
     const updated = { ...manifest, updatedAt: new Date().toISOString(), chunks: [...manifest.chunks, chunk] }
     await this.writeManifest(folder, updated)
     return updated
+  }
+
+  async listRecoverable(): Promise<VideoExportRecoveryRecord[]> {
+    await mkdir(this.root, { recursive: true })
+    const rootInfo = await lstat(this.root)
+    if (!rootInfo.isDirectory() || rootInfo.isSymbolicLink()) throw new Error('Raiz de jobs de exportação inválida.')
+    const records: VideoExportRecoveryRecord[] = []
+    const entries = (await readdir(this.root, { withFileTypes: true }))
+      .filter((entry) => entry.isDirectory() && !entry.isSymbolicLink() && idPattern.test(entry.name))
+      .slice(0, 100)
+    for (const entry of entries) {
+      try {
+        const reopened = await this.reopen(entry.name)
+        const { manifest, snapshot } = reopened
+        if (!snapshot || !manifest.renderVariant) continue
+        const completedFrames = manifest.chunks.at(-1)?.endFrame ?? 0
+        const totalChunks = Math.ceil(manifest.durationFrames / manifest.chunkFrames)
+        records.push({
+          jobId: manifest.jobId,
+          studioId: manifest.studioId,
+          studioTitle: snapshot.studio.title,
+          renderVariant: manifest.renderVariant,
+          durationFrames: manifest.durationFrames,
+          completedFrames,
+          completedChunks: manifest.chunks.length,
+          totalChunks,
+          updatedAt: manifest.updatedAt,
+        })
+      } catch {
+        // Invalid/corrupt job folders are intentionally omitted from resumable UI.
+      }
+    }
+    return records.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
   }
 
   async cleanup(jobId: string): Promise<void> {
