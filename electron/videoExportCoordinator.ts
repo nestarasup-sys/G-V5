@@ -20,7 +20,6 @@ import { encodeVideoStudioSerialChunk } from './videoSerialChunkEncoder'
 import { assembleVideoStudioOutput } from './videoExportAssembler'
 import { probeVideoMedia } from './videoMediaProbe'
 import { verifyVideoStudioOutput } from './videoOutputVerifier'
-import { rgbaToBgra } from './videoPixelFormat'
 import { VideoSemanticFrameCache } from './videoSemanticFrameCache'
 import { chooseVideoExportWorkerCount, videoExportWorkerOverride } from './videoExportAutoTuner'
 
@@ -320,9 +319,8 @@ export class VideoExportCoordinator {
       renderedFrames += 1
       const rendering = surface.renderFrame(frame)
         .then((rgba) => {
-          const pixels = rgbaToBgra(rgba)
-          frameCache.set(semantic, pixels)
-          return pixels
+          frameCache.set(semantic, rgba)
+          return rgba
         })
         .finally(() => inFlightFrames.delete(semantic))
       inFlightFrames.set(semantic, rendering)
