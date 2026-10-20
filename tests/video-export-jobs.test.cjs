@@ -352,3 +352,64 @@ test('v2 manifest serializes concurrent out-of-order chunk checkpoints without l
   assert.deepEqual(reopened.missingChunkIndexes, [0])
   assert.equal(reopened.nextChunkIndex, 0)
 })
+
+
+test('recovery torture drops only corrupted chunks and preserves verified non-contiguous checkpoints', async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'gacha-video-job-torture-'))
+  t.after(() => fs.rm(root, { recursive: true, force: true }))
+  const store = new VideoExportJobStore(root)
+  const snapshot = createVideoExportSnapshot({ ...syntheticStudio(), videoTimeline: { ...syntheticStudio().videoTimeline, durationFrames: 1201 } })
+  const characterAssets = createVideoCharacterRenderAssetSnapshot([])
+  const characters = { schemaVersion: 1, characters: [] }
+  const expected = {
+    studioId, snapshotSha256: hashSnapshot(snapshot), mediaSha256: [], durationFrames: 1201,
+    renderVariant: 'static-characters',
+  }
+  await store.create({ jobId, ...expected, snapshot, characterAssets, characters, renderVariant: expected.renderVariant })
+  for (const index of [0, 2]) {
+    await fs.writeFile(store.chunkOutputPath(jobId, index), `verified-${index}`)
+    await store.recordChunk(jobId, index)
+  }
+  await fs.appendFile(store.chunkOutputPath(jobId, 2), '-truncated-after-checkpoint')
+  await fs.writeFile(store.finalOutputPath(jobId), 'partial-final-from-crash')
+
+  const reopened = await store.reopen(jobId)
+  assert.deepEqual(reopened.manifest.chunks.map((chunk) => chunk.index), [0], 'only damaged checkpoint is discarded')
+  assert.deepEqual(reopened.missingChunkIndexes, [1, 2])
+  assert.equal(reopened.nextChunkIndex, 1)
+  assert.equal(await fs.readFile(store.finalOutputPath(jobId), 'utf8'), 'partial-final-from-crash', 'reopen never promotes or trusts a partial final')
+  const recoverable = await store.listRecoverable()
+  assert.equal(recoverable.length, 1)
+  assert.equal(recoverable[0].completedChunks, 1)
+  assert.equal(recoverable[0].completedFrames, 600)
+})
+
+test('recovery torture ignores orphan temp files and cleanup/discard is idempotent', async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'gacha-video-job-orphan-temp-'))
+  t.after(() => fs.rm(root, { recursive: true, force: true }))
+  const store = new VideoExportJobStore(root)
+  const snapshot = createVideoExportSnapshot(syntheticStudio())
+  const expected = { studioId, snapshotSha256: hashSnapshot(snapshot), mediaSha256: [], durationFrames: 30, renderVariant: 'static-characters' }
+  await store.create({ jobId, ...expected, snapshot, characterAssets: createVideoCharacterRenderAssetSnapshot([]), characters: { schemaVersion: 1, characters: [] }, renderVariant: expected.renderVariant })
+  await fs.writeFile(path.join(root, jobId, '.manifest-crash.tmp'), '{bad')
+  await fs.writeFile(path.join(root, jobId, '.chunk-crash.tmp'), 'partial')
+  assert.equal((await store.reopen(jobId)).nextChunkIndex, 0)
+  assert.equal((await store.listRecoverable()).length, 1)
+  await store.cleanup(jobId)
+  await store.cleanup(jobId)
+  await assert.rejects(fs.stat(path.join(root, jobId)), { code: 'ENOENT' })
+})
+
+test('recovery torture never advertises a corrupted manifest and leaves neighboring jobs intact', async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'gacha-video-job-corrupt-manifest-'))
+  t.after(() => fs.rm(root, { recursive: true, force: true }))
+  const store = new VideoExportJobStore(root)
+  const snapshot = createVideoExportSnapshot(syntheticStudio())
+  const expected = { studioId, snapshotSha256: hashSnapshot(snapshot), mediaSha256: [], durationFrames: 30, renderVariant: 'static-characters' }
+  for (const id of [jobId, otherJobId]) await store.create({ jobId: id, ...expected, snapshot, characterAssets: createVideoCharacterRenderAssetSnapshot([]), characters: { schemaVersion: 1, characters: [] }, renderVariant: expected.renderVariant })
+  await fs.writeFile(path.join(root, jobId, 'manifest.json'), '{ definitely-corrupt')
+  const records = await store.listRecoverable()
+  assert.deepEqual(records.map((record) => record.jobId), [otherJobId])
+  await assert.rejects(store.reopen(jobId))
+  assert.equal((await fs.stat(path.join(root, otherJobId))).isDirectory(), true)
+})
