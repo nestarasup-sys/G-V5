@@ -5,6 +5,8 @@ on:
     branches: [master-desenvolvimento]
     paths:
       - 'scripts/video-studio/full-engine-worker-benchmark.cjs'
+      - 'scripts/video-studio/persistent-cache-benchmark.cjs'
+      - 'electron/videoPersistentFrameCache.ts'
       - 'electron/videoExportAutoTuner.ts'
       - 'src/renderer/src/features/videoStudio/videoCanvasCompositor.ts'
       - 'src/renderer/src/features/videoStudio/videoCanvasLayerCache.ts'
@@ -49,3 +51,5 @@ jobs:
           "GACHA_FFPROBE_PATH=$($ffprobe.Source)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
       - name: Benchmark serial vs Turbo
         run: npm run bench:video:workers
+      - name: Benchmark cold vs persistent warm cache
+        run: npm run bench:video:cache
