@@ -285,6 +285,7 @@ export class VideoExportCoordinator {
     let reusedFrames = 0
     let renderedFrames = 0
     let encodedChunkBytes = completedChunkBytes(reopened.manifest)
+    let persistentCacheHits = 0, persistentCacheMisses = 0, persistentCacheWrites = 0
     const frameBytes = 1920 * 1080 * 4
 
     const aggregateCompletedFrames = () => [...completedByChunk.values()].reduce((sum, value) => sum + value, 0)
@@ -301,6 +302,9 @@ export class VideoExportCoordinator {
         cacheEntries: stats.entries,
         cacheBytes: stats.bytes,
         cacheMaxBytes: stats.maxBytes,
+        persistentCacheHits,
+        persistentCacheMisses,
+        persistentCacheWrites,
         workerCount,
         workerStrategy,
         fallbackCount,
@@ -322,15 +326,17 @@ export class VideoExportCoordinator {
       }
       const persistent = await persistentFrameCache.get(semantic, frameBytes)
       if (persistent) {
+        persistentCacheHits += 1
         reusedFrames += 1
         frameCache.set(semantic, persistent)
         return persistent
       }
+      persistentCacheMisses += 1
       renderedFrames += 1
       const rendering = surface.renderFrame(frame)
         .then(async (rgba) => {
           frameCache.set(semantic, rgba)
-          await persistentFrameCache.set(semantic, rgba).catch(() => undefined)
+          await persistentFrameCache.set(semantic, rgba).then(() => { persistentCacheWrites += 1 }).catch(() => undefined)
           return rgba
         })
         .finally(() => inFlightFrames.delete(semantic))
