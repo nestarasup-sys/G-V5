@@ -2,6 +2,7 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
+const os = require('node:os')
 const path = require('node:path')
 const ts = require('typescript')
 
@@ -52,4 +53,30 @@ test('media process runner aborts a live child instead of waiting for timeout', 
   setTimeout(() => controller.abort(new Error('cancelled-by-test')), 100)
   await assert.rejects(pending, /cancelled-by-test/)
   assert.ok(Date.now() - started < 5_000, 'abort should kill the child promptly')
+})
+
+
+test('Windows media cancellation kills descendants instead of orphaning wrapper children', { skip: process.platform !== 'win32' }, async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gv5-media-tree-kill-'))
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }))
+  const pidFile = path.join(root, 'child.pid')
+  const wrapper = [
+    "const {spawn}=require('node:child_process');",
+    "const fs=require('node:fs');",
+    "const child=spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{stdio:'ignore'});",
+    `fs.writeFileSync(${JSON.stringify(pidFile)},String(child.pid));`,
+    "setInterval(()=>{},1000);",
+  ].join('')
+  const controller = new AbortController()
+  const pending = capabilities.runVideoStudioProcess(process.execPath, ['-e', wrapper], { timeoutMs: 30_000, signal: controller.signal })
+  const started = Date.now()
+  while (!fs.existsSync(pidFile)) {
+    if (Date.now() - started > 5000) throw new Error('Wrapper não publicou PID do descendente.')
+    await new Promise((resolve) => setTimeout(resolve, 20))
+  }
+  const descendantPid = Number(fs.readFileSync(pidFile, 'utf8'))
+  controller.abort(new Error('tree-kill-test'))
+  await assert.rejects(pending, /tree-kill-test/)
+  await new Promise((resolve) => setTimeout(resolve, 100))
+  assert.throws(() => process.kill(descendantPid, 0), /ESRCH|not found|no such process/i)
 })
