@@ -192,3 +192,59 @@ Consulte [04_LAB_E_GATES.md](./04_LAB_E_GATES.md).
 6. Nenhuma limpeza irreversível, migração de dados sem backup ou ocultação de falhas para alcançar métricas de velocidade.
 
 **Gate adicional:** comparar os dois modos lado a lado frame-a-frame, com intermediários de transição, fala/blink, corte de key authored, vídeos em movimento, áudio correto; mesmo preset output e codec, sem artefatos ou "2×" inventados.
+
+
+## Rebaseline operacional — 2026-10-20
+
+As seções iniciais deste documento registram o diagnóstico de 2026-10-19 e permanecem úteis como histórico arquitetural, mas vários itens ali descritos como ausentes já foram implementados. Para estado atual e pesquisa externa, ler primeiro [11_PESQUISA_OPEN_SOURCE_E_FECHAMENTO_EXPORTADOR.md](./11_PESQUISA_OPEN_SOURCE_E_FECHAMENTO_EXPORTADOR.md).
+
+### Escopo reafirmado
+
+Esta iniciativa cobre **somente Video Studio**. Roteiros e Base de Vídeos não entram no backlog deste plano, salvo a interface mínima de mídia consumida pelo Video Studio.
+
+### Nova ordem de prioridade
+
+A sequência técnica atual deixa de ser “construir engine do zero” e passa a ser:
+
+1. fechar deterministicidade/paridade A-B-A;
+2. manter serial como oracle de correção;
+3. completar recovery/crash/cancel;
+4. medir e limitar memória/backpressure;
+5. medir workers × threads para evitar oversubscription;
+6. validar cache/layer cache por A/B;
+7. fechar Turbo/autotuner;
+8. fechar runtime/pacote Windows LGPL sem PATH;
+9. executar hardware gate;
+10. decidir Pixi/WebCodecs/sharedTexture por dados;
+11. só então explorar bindings libav*/GPU mais profundos.
+
+### Backbone reafirmado
+
+```text
+RenderIR específico do G-V5
+  + compositor específico do G-V5
+  + FFmpeg como backbone de encode/audio/mux/verify
+```
+
+MLT, GES e libopenshot continuam candidatos de laboratório/referência, **não candidatos a migração imediata**. A nova pesquisa encontrou mais valor em extrair padrões de MLT/Kdenlive/Shotcut/mpv/VapourSynth/AviSynth/Natron/GStreamer do que em importar um NLE inteiro.
+
+### Hipóteses novas que entram no laboratório
+
+- oversubscription entre Turbo workers e threads internas do FFmpeg;
+- limite explícito de frames/buffers em voo;
+- métrica de pipe/writer stall;
+- RAM total incluindo subprocessos;
+- estado de proxy `pending/ready/failed/stale`;
+- readahead de preview adaptativo ao modo playback vs scrub;
+- dirty rectangles do Electron OSR antes de um sistema custom complexo;
+- NodeAV/libav* direto somente como spike pós-release se cópia/subprocesso aparecer como gargalo.
+
+### Regra de fechamento
+
+O exportador tem prioridade sobre novas engines. Nenhuma POC pode atrasar:
+
+- recovery;
+- clean Windows package;
+- 90 s/15 min;
+- hardware gate;
+- output validado e publicação transacional.
