@@ -8,7 +8,7 @@ import { fitStudioCharacterToStage } from '../../../../shared/studioCharacterGeo
 import type { StudioAsset, StudioDocument, StudioElement, StudioFaceMode, StudioFaceTransform, StudioFaceTransforms, VideoAudioSettings, VideoMediaClip, VideoTimelineDocument } from '../../../../shared/studio'
 import { automaticBlinkFrameFor, resolveVideoFrameSelection } from '../../../../shared/videoFrame'
 import { defaultVideoTransform, editVideoMediaClip, isValidVideoMediaClip, splitVideoMediaClip as splitMediaClip } from '../../../../shared/videoMedia'
-import { videoCharacterElementSize, videoStageCssTransform } from '../../../../shared/videoStageGeometry'
+import { videoStageCssTransform } from '../../../../shared/videoStageGeometry'
 import { faceRenderGeometry, trimTransparentImage, type TrimmedImage } from './characterGeometry'
 import { useCharacterTransitions } from './useCharacterTransitions'
 import { PreviewTransport } from './PreviewTransport'
@@ -151,7 +151,6 @@ function studioCharacterRenderKey(character: CustomizerCharacter): string {
   return JSON.stringify({ id: character.id, customization })
 }
 
-const studioElementSize = videoCharacterElementSize
 
 function makeElement(kind: StudioElement['kind'], zIndex: number): StudioElement {
   return {
