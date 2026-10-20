@@ -36,7 +36,7 @@ function serve(request,file){
  headers.set('content-length',String(info.size));return new Response(Readable.toWeb(createReadStream(file)),{status:200,headers})
 }
 
-const image='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwJ/lz9zNwAAAABJRU5ErkJggg=='
+const image='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M/wHwAF/gL+3F6WAAAAAElFTkSuQmCC'
 const actor={id:'benchmark-actor',kind:'character',characterId:'bench-char',text:'Bench',x:-22,y:4,width:22,height:44,rotation:0,zIndex:4}
 const state={element:actor,imageDataUrl:image}
 const narrator={id:'bench-text',kind:'narrator',text:'FULL ENGINE BENCHMARK',x:0,y:-35,width:42,height:11,rotation:0,zIndex:5}
