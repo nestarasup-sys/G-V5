@@ -299,6 +299,7 @@ function RoteiroWorkspace({ roteiro, onBack, onUpdate, onDeleteDraftVideo, chara
   const [editingTikTok, setEditingTikTok] = useState<RoteiroTikTok | null>(null)
   const [editingTitle, setEditingTitle] = useState('')
   const [editingVideoTitle, setEditingVideoTitle] = useState('')
+  const [deletingTikTok, setDeletingTikTok] = useState<RoteiroTikTok | null>(null)
   const [exportingCharacters, setExportingCharacters] = useState(false)
   const [characterExportStatus, setCharacterExportStatus] = useState('')
   const [characterExportError, setCharacterExportError] = useState('')
@@ -340,6 +341,14 @@ function RoteiroWorkspace({ roteiro, onBack, onUpdate, onDeleteDraftVideo, chara
     if (!editingTikTok || !editingTitle.trim() || !editingVideoTitle.trim()) return
     onUpdate({ ...roteiro, tiktoks: roteiro.tiktoks.map((item) => item.id === editingTikTok.id ? { ...item, title: editingTitle.trim(), videoTitle: editingVideoTitle.trim() } : item) })
     setEditingTikTok(null)
+  }
+  const confirmDeleteTikTok = () => {
+    if (!deletingTikTok) return
+    const deletedId = deletingTikTok.id
+    onUpdate({ ...roteiro, tiktoks: roteiro.tiktoks.filter((item) => item.id !== deletedId) })
+    if (activeContentId === deletedId) setActiveContentId('opening')
+    if (editingTikTok?.id === deletedId) setEditingTikTok(null)
+    setDeletingTikTok(null)
   }
   const exportCharacters = async () => {
     if (exportingCharacters) return
@@ -506,7 +515,7 @@ function RoteiroWorkspace({ roteiro, onBack, onUpdate, onDeleteDraftVideo, chara
               <span className="roteiro-tiktok-info"><strong>{item.title}</strong><span>{item.videoTitle}</span></span>
               <span className="roteiro-tiktok-cast">{roteiro.characterIds.length}/{roteiro.characterIds.length}</span>
             </button>
-            <div className="roteiro-tiktok-actions"><button onClick={() => moveTikTok(index, -1)} disabled={index === 0} aria-label={'Mover ' + item.title + ' para cima'} type="button">↑</button><button onClick={() => moveTikTok(index, 1)} disabled={index === roteiro.tiktoks.length - 1} aria-label={'Mover ' + item.title + ' para baixo'} type="button">↓</button><button onClick={() => { setEditingTikTok(item); setEditingTitle(item.title); setEditingVideoTitle(item.videoTitle) }} type="button">Editar</button></div>
+            <div className="roteiro-tiktok-actions"><button onClick={() => moveTikTok(index, -1)} disabled={index === 0} aria-label={'Mover ' + item.title + ' para cima'} type="button">↑</button><button onClick={() => moveTikTok(index, 1)} disabled={index === roteiro.tiktoks.length - 1} aria-label={'Mover ' + item.title + ' para baixo'} type="button">↓</button><button onClick={() => { setEditingTikTok(item); setEditingTitle(item.title); setEditingVideoTitle(item.videoTitle) }} type="button">Editar</button><button className="roteiro-tiktok-delete" onClick={() => setDeletingTikTok(item)} aria-label={'Excluir ' + item.title} title={'Excluir ' + item.title} type="button"><Icon name="trash" /></button></div>
           </article>)}{roteiro.tiktoks.length === 0 && <div className="roteiro-first-tiktok"><Icon name="message" /><strong>Seu roteiro começa aqui</strong><span>Adicione o primeiro TikTok quando estiver pronto.</span><button type="button" onClick={addTikTok}>Adicionar primeiro TikTok</button></div>}</div>
       </section>
     </aside>
@@ -536,6 +545,7 @@ function RoteiroWorkspace({ roteiro, onBack, onUpdate, onDeleteDraftVideo, chara
     </aside>
     {backgroundPickerOpen && <div className="roteiro-modal-backdrop" onPointerDown={(event) => { if (event.target === event.currentTarget) setBackgroundPickerOpen(false) }}><section className="roteiro-background-modal" role="dialog" aria-modal="true" aria-labelledby="roteiro-background-title"><header><div><span>BIBLIOTECA COMPARTILHADA</span><h2 id="roteiro-background-title">Selecionar fundo</h2><p>O fundo fica associado pelo ID a este roteiro.</p></div><button onClick={() => setBackgroundPickerOpen(false)} aria-label="Fechar" type="button">×</button></header><div className="roteiro-background-toolbar"><input type="search" value={backgroundSearch} onChange={(event) => setBackgroundSearch(event.target.value)} placeholder="Buscar fundo…" aria-label="Buscar fundo"/><button type="button" onClick={() => void importRoteiroBackground()}><Icon name="plus"/>Adicionar novo fundo</button></div><div className="roteiro-background-grid">{backgrounds.filter((item) => item.name.toLocaleLowerCase('pt-BR').includes(backgroundSearch.toLocaleLowerCase('pt-BR'))).map((item) => <article className={roteiro.backgroundAssetId === item.id ? 'selected' : ''} key={item.id}><button type="button" className="roteiro-background-option" disabled={!item.available} onClick={() => { onUpdate({ ...roteiro, backgroundAssetId: item.id }); setBackgroundPickerOpen(false) }}><img src={`gacha-background://library/${item.id}`} alt=""/><strong title={item.name}>{item.name}</strong><small>{item.extension.toUpperCase()} · {(item.size / 1024 / 1024).toFixed(1)} MB</small></button><button type="button" className="roteiro-background-delete" onClick={() => void deleteRoteiroBackground(item)} aria-label={`Excluir permanentemente ${item.name}`}><Icon name="trash"/></button></article>)}{backgrounds.length === 0 && <p>Nenhum fundo cadastrado. Use “Adicionar novo fundo” para importar.</p>}</div><footer><span>{backgrounds.length} fundo(s) na biblioteca</span><button type="button" onClick={() => { onUpdate({ ...roteiro, backgroundAssetId: null }); setBackgroundPickerOpen(false) }}>Remover do roteiro</button></footer></section></div>}
     {editingTikTok && <div className="roteiro-modal-backdrop" onPointerDown={(event) => { if (event.target === event.currentTarget) setEditingTikTok(null) }}><section className="roteiro-video-title-modal" role="dialog" aria-modal="true" aria-labelledby="roteiro-tiktok-edit-heading"><header><strong id="roteiro-tiktok-edit-heading">Editar TikTok</strong><button onClick={() => setEditingTikTok(null)} aria-label="Fechar" type="button">×</button></header><label>Nome do TikTok<input autoFocus value={editingTitle} onChange={(event) => setEditingTitle(event.target.value)} maxLength={100} /></label><label>Título do vídeo<input value={editingVideoTitle} onChange={(event) => setEditingVideoTitle(event.target.value)} maxLength={100} /></label><footer><button onClick={() => setEditingTikTok(null)} type="button">Cancelar</button><button className="roteiro-create-confirm" onClick={saveTikTok} disabled={!editingTitle.trim() || !editingVideoTitle.trim()} type="button"><Icon name="check" />Salvar</button></footer></section></div>}
+    {deletingTikTok && <div className="roteiro-modal-backdrop" onPointerDown={(event) => { if (event.target === event.currentTarget) setDeletingTikTok(null) }}><section className="roteiro-delete-confirm-modal" role="alertdialog" aria-modal="true" aria-labelledby="roteiro-tiktok-delete-heading"><span className="roteiro-delete-confirm-icon"><Icon name="trash" /></span><h2 id="roteiro-tiktok-delete-heading">Excluir {deletingTikTok.title}?</h2><p>O TikTok e seus blocos serão removidos deste roteiro. Um vídeo vinculado à Base de vídeos continuará salvo nela.</p><footer><button type="button" onClick={() => setDeletingTikTok(null)}>Cancelar</button><button type="button" className="danger" onClick={confirmDeleteTikTok}>Excluir TikTok</button></footer></section></div>}
   </div>
 }
 

@@ -246,10 +246,13 @@ button:focus-visible, input:focus-visible { outline: 3px solid #ed8caf; outline-
 .roteiro-tiktok-info>strong { overflow:hidden;color:#19161b;font-size:19.2px;font-weight:750;text-overflow:ellipsis;white-space:nowrap; }
 .roteiro-tiktok-info>span { overflow:hidden;color:#7d7181;font-size:19.2px;text-overflow:ellipsis;white-space:nowrap; }
 .roteiro-tiktok-cast { grid-column:3;grid-row:1;padding:5px 7px;border:1px solid #b9ead9;border-radius:9px;background:#f1fbf6;color:#14805d;font-size:12px;font-weight:800; }
-.roteiro-tiktok-actions { grid-column:1/4;grid-row:2;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px; }
+.roteiro-tiktok-actions { grid-column:1/5;grid-row:2;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:7px; }
 .roteiro-tiktok-actions>button { min-width:0;height:29px;border:1px solid #e7deed;border-radius:8px;background:#fff;color:#856ba4;font-size:13.2px;cursor:pointer; }
 .roteiro-tiktok-actions>button:hover:not(:disabled) { border-color:#c8b3e4;background:#faf7fd; }
 .roteiro-tiktok-actions>button:disabled { color:#d8d1dd;cursor:default; }
+.roteiro-tiktok-actions>.roteiro-tiktok-delete { display:grid;place-items:center;border-color:#f0d6da;color:#c84152; }
+.roteiro-tiktok-actions>.roteiro-tiktok-delete:hover { border-color:#d95361;background:#fff0f2;color:#b9253a; }
+.roteiro-tiktok-actions>.roteiro-tiktok-delete svg { width:14px;height:14px; }
 .roteiro-workspace-editor { min-width:0;min-height:0;flex:1;display:flex;flex-direction:column;overflow:auto;background:#f7f5f7; }
 .roteiro-editor-subbar { min-height:62px;position:sticky;top:0;z-index:2;display:flex;align-items:center;justify-content:space-between;gap:16px;padding:8px 18px;border-bottom:1px solid #e8e1e9;background:#fff; }
 .roteiro-editor-subbar>div:first-child { min-width:0;display:flex;flex-direction:column;gap:3px; }
