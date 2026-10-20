@@ -12,6 +12,7 @@ function fail(reason) {
   app.exit(1)
 }
 
+app.disableHardwareAcceleration()
 app.commandLine.appendSwitch('disable-background-timer-throttling')
 
 app.whenReady().then(async () => {
