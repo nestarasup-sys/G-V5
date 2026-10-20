@@ -113,6 +113,10 @@
 .video-timeline-actions { margin-left:auto; }
 .video-timeline-actions button:disabled { opacity:.35;cursor:default; }
 .video-timeline-actions button.active { border-color:#9b7cc0;background:#352943;color:#f2dfff; }
+.video-timeline-actions .video-export-quick-button { border-color:#6c6ad0;background:#393d8f;color:#fff; }
+.video-timeline-actions .video-export-quick-button:hover { border-color:#a5a2ff;background:#4b4fb0;color:#fff; }
+.video-timeline-actions .video-fit-duration-button { border-color:#59618b;background:#252b49;color:#e0e6ff; }
+.video-timeline-actions .video-fit-duration-button:hover { border-color:#939ee0;background:#343c65;color:#fff; }
 .video-track-settings { width:310px;max-height:min(330px,60vh);position:absolute;z-index:20;top:52px;right:185px;overflow:auto;padding:7px;border:1px solid #555d75;border-radius:7px;background:#1b2030;box-shadow:0 12px 32px #05070dbb; }
 .video-track-settings-row { display:flex;align-items:center;gap:5px;padding:3px 0; }
 .video-track-settings-row input { width:0;min-width:0;flex:1;height:25px;padding:0 7px;border:1px solid #394259;border-radius:4px;background:#111622;color:#e8eaf2;font-size:10px; }
