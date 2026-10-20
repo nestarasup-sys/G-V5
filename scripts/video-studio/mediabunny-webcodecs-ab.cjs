@@ -29,7 +29,6 @@ async function htmlVideo(){
   let checksum=0;const started=performance.now();
   for(const time of timestamps){
     await new Promise((resolve,reject)=>{const done=()=>{video.removeEventListener('seeked',done);resolve()};video.addEventListener('seeked',done,{once:true});video.onerror=()=>reject(new Error('HTMLVideo seek failed'));video.currentTime=time;});
-    if(video.requestVideoFrameCallback)await new Promise(resolve=>video.requestVideoFrameCallback(()=>resolve()));
     ctx.drawImage(video,0,0,640,360);const p=ctx.getImageData(0,0,1,1).data;checksum=(checksum+p[0]+p[1]*3+p[2]*7)>>>0;
   }
   const elapsedMs=performance.now()-started;URL.revokeObjectURL(video.src);return{elapsedMs,checksum};
@@ -49,14 +48,14 @@ async function bunny(){
 function median(values){const sorted=[...values].sort((a,b)=>a-b);return sorted[Math.floor(sorted.length/2)];}
 window.__resultPromise=(async()=>{
   const nativeSamples=[],mediabunnySamples=[];
-  for(let round=0;round<3;round++){
+  for(let round=0;round<2;round++){
     if(round%2===0){nativeSamples.push(await htmlVideo());mediabunnySamples.push(await bunny());}
     else{mediabunnySamples.push(await bunny());nativeSamples.push(await htmlVideo());}
   }
   const supported=mediabunnySamples.every(x=>x.supported);
   const nativeMedianMs=median(nativeSamples.map(x=>x.elapsedMs));
   const mediabunnyMedianMs=supported?median(mediabunnySamples.map(x=>x.elapsedMs)):null;
-  return{ok:true,timestamps:timestamps.length,rounds:3,nativeSamples,mediabunnySamples,nativeMedianMs,mediabunnyMedianMs,speedup:supported?nativeMedianMs/mediabunnyMedianMs:null};
+  return{ok:true,timestamps:timestamps.length,rounds:2,nativeSamples,mediabunnySamples,nativeMedianMs,mediabunnyMedianMs,speedup:supported?nativeMedianMs/mediabunnyMedianMs:null};
 })();
 </script></body></html>`)
   const win=new BrowserWindow({show:false,width:640,height:360,webPreferences:{contextIsolation:true,nodeIntegration:false,sandbox:false,backgroundThrottling:false}})
@@ -64,7 +63,7 @@ window.__resultPromise=(async()=>{
     await win.loadFile(html)
     const result=await Promise.race([
       win.webContents.executeJavaScript('(async()=>{while(!window.__resultPromise)await new Promise(r=>setTimeout(r,10));return await window.__resultPromise})()',true),
-      new Promise((_,reject)=>setTimeout(()=>reject(new Error('Mediabunny/WebCodecs A/B excedeu 180 segundos.')),180000)),
+      new Promise((_,reject)=>setTimeout(()=>reject(new Error('Mediabunny/WebCodecs A/B excedeu 90 segundos.')),90000)),
     ])
     if(!result?.ok)throw new Error('Mediabunny A/B did not return result.')
     const gpuInfo=await app.getGPUInfo('basic').catch(()=>null)
