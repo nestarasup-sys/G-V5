@@ -290,3 +290,46 @@ test('job creation rolls back its own folder when source media no longer matches
   await assert.rejects(store.create({ jobId, ...parameters, mediaSha256: [dependency.sha256], mediaDependencies: [dependency] }), /mudou desde o snapshot/)
   await assert.rejects(fs.stat(path.join(root, jobId)), { code: 'ENOENT' })
 })
+
+
+test('recoverable job listing exposes only fully resumable verified checkpoints', async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'gacha-video-job-recovery-list-'))
+  t.after(() => fs.rm(root, { recursive: true, force: true }))
+  const store = new VideoExportJobStore(root)
+  const snapshot = createVideoExportSnapshot(syntheticStudio())
+  const characterAssets = createVideoCharacterRenderAssetSnapshot([])
+  const characters = { schemaVersion: 1, characters: [] }
+  const expected = {
+    studioId,
+    snapshotSha256: hashSnapshot(snapshot),
+    mediaSha256: [],
+    durationFrames: 30,
+    renderVariant: 'static-characters',
+  }
+  await store.create({ jobId, ...expected, snapshot, characterAssets, characters, renderVariant: expected.renderVariant })
+
+  let records = await store.listRecoverable()
+  assert.equal(records.length, 1)
+  assert.deepEqual({
+    jobId: records[0].jobId,
+    studioTitle: records[0].studioTitle,
+    completedFrames: records[0].completedFrames,
+    completedChunks: records[0].completedChunks,
+    totalChunks: records[0].totalChunks,
+  }, {
+    jobId,
+    studioTitle: 'synthetic export',
+    completedFrames: 0,
+    completedChunks: 0,
+    totalChunks: 1,
+  })
+
+  await fs.writeFile(store.chunkOutputPath(jobId, 0), 'verified-recovery-chunk')
+  await store.recordChunk(jobId, 0)
+  records = await store.listRecoverable()
+  assert.equal(records[0].completedFrames, 30)
+  assert.equal(records[0].completedChunks, 1)
+
+  await fs.appendFile(path.join(root, jobId, 'characters.json'), 'corrupt')
+  assert.deepEqual(await store.listRecoverable(), [], 'corrupt snapshot jobs are never advertised as resumable')
+})
