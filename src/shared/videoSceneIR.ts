@@ -47,6 +47,8 @@ export type VideoSceneFrame = Readonly<{
   characters: ReadonlyArray<EvaluatedCharacter>
   layers: ReadonlyArray<VideoSceneLayer>
   videos: ReadonlyArray<Readonly<{ clipId: string; assetId: string; sourceTick: number; sourceTimeNumerator: number; sourceTimeDenominator: 60; transform?: VideoClipTransform; zOrder: 1 }>>
+  /** Exact within one compiled program; equal keys guarantee equal canonical pixels. */
+  reuseKey: string
 }>
 
 function buildIntervalIndex<T>(items: ReadonlyArray<T>, getStart: (item: T) => number, getEnd: (item: T) => number): IntervalIndex<T> {
@@ -211,6 +213,36 @@ export function evaluateVideoSceneFrame(program: VideoSceneProgram, frame: numbe
   })
   videos.forEach((video, documentOrder) => layers.push({ type: 'video', kind: 'video', ...video, documentOrder }))
   layers.sort((a, b) => a.zOrder - b.zOrder || a.documentOrder - b.documentOrder)
+
+  const reuseKey = JSON.stringify([
+    program.variant,
+    characters.map((character) => {
+      if (character.hidden) return [character.elementId, 'hidden']
+      const element = character.authoredState?.element
+      const geometry = element ? [
+        element.x, element.y, element.width, element.height, element.rotation, element.zIndex,
+        element.flipX === true, element.characterScale ?? 100, element.characterWidthScale ?? 100,
+        element.characterHeightScale ?? 100, element.text ?? '', element.timelineColor ?? '',
+      ] : []
+      const artwork = character.authoredState?.imageDataUrl
+        ? program.assetsById.size + [...program.snapshot.timeline.characterKeys, ...Object.values(program.snapshot.timeline.characterBases ?? {})]
+            .findIndex((candidate) => ('state' in candidate ? candidate.state?.imageDataUrl : candidate.imageDataUrl) === character.authoredState!.imageDataUrl)
+        : -1
+      if (character.transition) return [character.elementId, 'transition', frame, artwork, geometry]
+      if (character.automaticMouth) {
+        const phase = character.automaticMouth.mode === 'talk'
+          ? Math.floor((Math.max(0, frame - character.automaticMouth.speechStartFrame) % 36) / 6)
+          : 0
+        return [character.elementId, 'mouth', character.automaticMouth.mode, phase, artwork, geometry]
+      }
+      if (character.automaticBlink) return [character.elementId, 'blink', artwork, geometry]
+      return [character.elementId, 'static', artwork, geometry]
+    }),
+    layers.map((layer) => layer.type === 'video'
+      ? ['video', layer.clipId, layer.sourceTick]
+      : [layer.kind, layer.element.id, layer.clipId ?? '', layer.zOrder]),
+  ])
+
   return {
     frame,
     timestampNumerator: frame,
@@ -224,5 +256,6 @@ export function evaluateVideoSceneFrame(program: VideoSceneProgram, frame: numbe
     characters,
     layers,
     videos,
+    reuseKey,
   }
 }
