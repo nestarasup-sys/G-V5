@@ -2011,9 +2011,10 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .pose-export-slots-panel small { color:#c3bec8;font-size:10px; }
 .pose-export-slots-panel .pose-slot-count { color:#fff; }
 .pose-export-slot-list { display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-top:7px; }
-.pose-export-slot-row { min-width:0;display:flex;align-items:center;gap:5px;padding:4px;border:1px solid #eee6f4;border-radius:7px;background:#fff; }
-.pose-export-slot-row>b { color:#8056b5;font-size:10px; }
-.pose-export-slot-row>select { min-width:0;width:100%;height:27px;border:0;background:transparent;color:#514852;font:inherit;font-size:10px; }
+.pose-export-slot-row { min-width:0;display:flex;align-items:center;gap:7px;padding:5px;border:1px solid #eee6f4;border-radius:8px;background:#fff; }
+.pose-export-slot-row>b { min-width:22px;color:#8056b5;font-size:11px;font-weight:800;text-align:center; }
+.pose-export-slot-row>select { min-width:0;width:100%;height:32px;padding:0 9px;border:1px solid #e4dce7;border-radius:6px;background:#fff;color:#514852;font:inherit;font-size:11px;font-weight:700;cursor:pointer; }
+.pose-export-slot-row>select:focus-visible { outline:2px solid #9871c8;outline-offset:1px; }
 .pose-slots-panel > header, .pose-tools-heading { min-height: 31px; display: flex; align-items: center; justify-content: space-between; gap: 6px; }
 .pose-slots-panel > header > span:first-child, .pose-tools-heading > span { display: flex; flex-direction: column; gap: 3px; }
 .pose-slots-panel strong, .pose-tools-heading strong { color: #514852; font-size: 12px; }
