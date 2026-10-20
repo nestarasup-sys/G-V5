@@ -55,57 +55,67 @@ export function VideoStudioClipPreview({ studioId, asset, clip, playheadFrame, p
     let disposed = false
     let frameCallback: number | null = null
     let presentationTimeout: number | null = null
-    let presentationPending = false
+    let presentationReported = false
     const sourceTime = (clip.sourceStartFrame + playheadFrame - clip.startFrame) / 60
     const target = media && Number.isFinite(media.duration) ? Math.max(0, Math.min(sourceTime, media.duration - 0.001)) : sourceTime
+    const withinTarget = (value: number) => Math.abs(value - target) <= 1 / 120 + 0.001
     const finishPresented = () => {
+      if (presentationReported) return
+      presentationReported = true
+      if (presentationTimeout !== null) window.clearTimeout(presentationTimeout)
+      presentationTimeout = null
       requestAnimationFrame(() => requestAnimationFrame(() => {
-        if (!disposed && media && media === mediaRef.current && Math.abs(media.currentTime - target) <= 0.001) onFramePresented?.(playheadFrame, clip.id)
+        if (!disposed && media && media === mediaRef.current && withinTarget(media.currentTime)) {
+          onFramePresented?.(playheadFrame, clip.id)
+        }
       }))
     }
-    const reportPresented = () => {
-      if (!media || disposed || !onFramePresented || presentationPending
-        || media.readyState < HTMLMediaElement.HAVE_CURRENT_DATA || !Number.isFinite(media.duration)
-        || Math.abs(media.currentTime - target) > 0.001) return
-      // For the isolated oracle, currentTime/seeked alone is not a presentation
-      // barrier: Chromium can expose the target timestamp while capturePage still
-      // contains the previously decoded frame. requestVideoFrameCallback confirms
-      // that a frame for the sought media time reached the compositor.
-      if (typeof media.requestVideoFrameCallback === 'function') {
-        presentationPending = true
-        presentationTimeout = window.setTimeout(() => {
-          presentationPending = false
-          presentationTimeout = null
-          if (!disposed) onPlaybackError('O decoder não apresentou o frame solicitado em até 2 segundos.')
-        }, 2000)
-        frameCallback = media.requestVideoFrameCallback((_now, metadata) => {
-          frameCallback = null
-          presentationPending = false
-          if (presentationTimeout !== null) window.clearTimeout(presentationTimeout)
-          presentationTimeout = null
-          if (disposed || Math.abs(media.currentTime - target) > 0.001) return
-          if (Math.abs(metadata.mediaTime - target) > 1 / 120 + 0.001) {
-            reportPresented()
-            return
-          }
+    const armVideoFrameBarrier = () => {
+      if (!media || disposed || !onFramePresented || presentationReported || frameCallback !== null
+        || typeof media.requestVideoFrameCallback !== 'function') return
+      frameCallback = media.requestVideoFrameCallback((_now, metadata) => {
+        frameCallback = null
+        if (disposed || presentationReported) return
+        if (withinTarget(metadata.mediaTime) && withinTarget(media.currentTime)) {
           finishPresented()
-        })
+          return
+        }
+        // This can be the frame that was visible before a reverse seek. Keep
+        // listening until Chromium actually presents the requested mediaTime.
+        armVideoFrameBarrier()
+      })
+    }
+    const reportPresentedFallback = () => {
+      if (!media || disposed || !onFramePresented || presentationReported
+        || media.readyState < HTMLMediaElement.HAVE_CURRENT_DATA || !Number.isFinite(media.duration)
+        || !withinTarget(media.currentTime)) return
+      if (typeof media.requestVideoFrameCallback === 'function') {
+        armVideoFrameBarrier()
         return
       }
       finishPresented()
     }
-    media?.addEventListener('loadeddata', reportPresented)
-    media?.addEventListener('seeked', reportPresented)
-    media?.addEventListener('timeupdate', reportPresented)
+
+    media?.addEventListener('loadeddata', reportPresentedFallback)
+    media?.addEventListener('seeked', reportPresentedFallback)
+    media?.addEventListener('timeupdate', reportPresentedFallback)
+    if (media && onFramePresented && typeof media.requestVideoFrameCallback === 'function') {
+      // Arm before update()/currentTime so the callback observes the actual
+      // seek presentation instead of waiting for a non-existent next frame.
+      armVideoFrameBarrier()
+      presentationTimeout = window.setTimeout(() => {
+        if (!disposed && !presentationReported) onPlaybackError('O decoder não apresentou o frame solicitado em até 4 segundos.')
+      }, 4000)
+    }
     playbackRef.current?.update({ clip, frame: playheadFrame, playing, masterAudio })
-    reportPresented()
+    reportPresentedFallback()
     return () => {
       disposed = true
       if (frameCallback !== null && media && typeof media.cancelVideoFrameCallback === 'function') media.cancelVideoFrameCallback(frameCallback)
       if (presentationTimeout !== null) window.clearTimeout(presentationTimeout)
-      media?.removeEventListener('loadeddata', reportPresented)
-      media?.removeEventListener('seeked', reportPresented)
-      media?.removeEventListener('timeupdate', reportPresented)
+      media?.removeEventListener('loadeddata', reportPresentedFallback)
+      media?.removeEventListener('seeked', reportPresentedFallback)
+      media?.removeEventListener('timeupdate', reportPresentedFallback)
     }
   }, [clip, playheadFrame, playing, masterAudio, sourceUrl, onPlaybackError, onFramePresented])
   const transform = clip.transform ?? defaultVideoTransform
