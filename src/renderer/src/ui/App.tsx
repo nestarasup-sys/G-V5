@@ -6,7 +6,7 @@ import { Icon } from './components/Icon'
 import { CharacterPortrait } from './components/CharacterPortrait'
 import { RenderedCharacterPortrait } from './components/RenderedCharacterPortrait'
 import type { CustomizerCharacter } from '../../../shared/customizer'
-import type { RoteiroDocument, RoteiroReactionBlock, RoteiroSectionContent, RoteiroTikTok, RoteiroVideoReference } from '../../../shared/roteiros'
+import type { BaseVideoDetails, RoteiroDocument, RoteiroReactionBlock, RoteiroSectionContent, RoteiroTikTok, RoteiroVideoReference } from '../../../shared/roteiros'
 import type { VideoLibraryItem } from '../../../shared/studio'
 
 const LazyCustomizerPage = lazy(async () => ({ default: (await import('../features/customizer/CustomizerPage')).CustomizerPage }))
@@ -42,6 +42,10 @@ function RoteiroSectionEditor({ title, subtitle, content, characters, characterI
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [libraryActionMessage, setLibraryActionMessage] = useState<string | null>(null)
+  const [pickerOpen, setPickerOpen] = useState(false)
+  const [pickerLoading, setPickerLoading] = useState(false)
+  const [pickerItems, setPickerItems] = useState<VideoLibraryItem[]>([])
+  const [pickerNumbers, setPickerNumbers] = useState<Record<string, number>>({})
   const [blocksCollapsed, setBlocksCollapsed] = useState(false)
   const previewRef = useRef<HTMLVideoElement>(null)
   const addVideo = async () => {
@@ -72,6 +76,26 @@ function RoteiroSectionEditor({ title, subtitle, content, characters, characterI
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Não foi possível adicionar o vídeo.')
     } finally { setBusy(false) }
+  }
+  const openVideoPicker = async () => {
+    setPickerOpen(true)
+    setPickerLoading(true)
+    setPickerItems([])
+    try {
+      const [library, details] = await Promise.all([window.desktop.listVideoLibrary(), window.desktop.listBaseVideoDetails()])
+      const numberById = Object.fromEntries(details.flatMap((item: BaseVideoDetails) => item.videoNumber === undefined ? [] : [[item.videoId, item.videoNumber]])) as Record<string, number>
+      setPickerNumbers(numberById)
+      setPickerItems(library.filter((item) => item.available && item.durationFrames !== null && numberById[item.id] !== undefined)
+        .sort((a, b) => numberById[a.id] - numberById[b.id]))
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Não foi possível carregar os vídeos da Base.')
+      setPickerOpen(false)
+    } finally { setPickerLoading(false) }
+  }
+  const selectBaseVideo = (item: VideoLibraryItem) => {
+    onUpdate({ ...content, video: roteiroVideoReference(item) })
+    setPickerOpen(false)
+    setLibraryActionMessage(`Vídeo ${String(pickerNumbers[item.id]).padStart(2, '0')} vinculado ao roteiro pelo ID.`)
   }
   const updateBlock = (id: string, patch: Partial<RoteiroReactionBlock>) => onUpdate({ ...content, blocks: content.blocks.map((block) => block.id === id ? { ...block, ...patch } : block) })
   const moveBlock = (index: number, direction: -1 | 1) => {
@@ -142,14 +166,14 @@ function RoteiroSectionEditor({ title, subtitle, content, characters, characterI
   }
 
   return <main className="roteiro-workspace-editor" aria-label={'Área de edição: ' + title}>
-    <header className="roteiro-editor-subbar"><div><strong>{title}</strong><span>{subtitle}</span></div><div className="roteiro-video-actions">
-      <button type="button" onClick={() => void addVideo()} disabled={busy}>{busy ? 'Importando…' : video ? 'Substituir vídeo' : 'Adicionar vídeo'}</button>
-      <button type="button" className="danger" onClick={() => onUpdate({ ...content, video: null })} disabled={!video || busy}>Excluir vídeo</button>
-    </div></header>
+    <header className="roteiro-editor-subbar"><div><strong>{title}</strong><span>{subtitle}</span></div></header>
     {error && <p className="roteiro-editor-error" role="alert">{error}</p>}
     <section className="roteiro-video-stage-wrap" aria-label="Preview 1920 por 1080">
       <div className="roteiro-video-preview-panel">
         <div className="roteiro-library-actions" aria-label="Destino do vídeo">
+          <button type="button" onClick={() => void addVideo()} disabled={busy}>{busy ? 'Importando…' : 'Adicionar vídeo'}</button>
+          <button type="button" className="danger" onClick={() => onUpdate({ ...content, video: null })} disabled={!video || busy}>Excluir vídeo</button>
+          <button type="button" onClick={() => void openVideoPicker()} disabled={busy}>Selecionar da base de vídeos</button>
           <button type="button" className="primary" onClick={() => void saveVideoDestination('base')} disabled={busy || !video}>{busy ? 'Salvando…' : 'Enviar para base de vídeos'}</button>
           <button type="button" onClick={() => void saveVideoDestination('draft')} disabled={busy || !video}>Salvar como rascunho</button>
           {libraryActionMessage && <span role="status">{libraryActionMessage}</span>}
@@ -185,7 +209,15 @@ function RoteiroSectionEditor({ title, subtitle, content, characters, characterI
         </div>
       </article>)}</div>}
     </section>
-  </main>
+  </main>{pickerOpen && <div className="roteiro-modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setPickerOpen(false) }}>
+    <section className="roteiro-video-picker-modal" role="dialog" aria-modal="true" aria-labelledby="roteiro-video-picker-title">
+      <header><div><span>BASE DE VÍDEOS</span><h2 id="roteiro-video-picker-title">Selecionar vídeo</h2></div><button type="button" aria-label="Fechar" onClick={() => setPickerOpen(false)}>×</button></header>
+      <div className="roteiro-video-picker-list">{pickerLoading ? <p>Carregando vídeos…</p> : pickerItems.length ? pickerItems.map((item) => <button type="button" key={item.id} onClick={() => selectBaseVideo(item)}>
+        <span className="roteiro-video-picker-number">VÍDEO {String(pickerNumbers[item.id]).padStart(2, '0')}</span><span className="roteiro-video-picker-info"><strong>{item.name}</strong><small>{item.durationFrames === null ? 'Duração não reconhecida' : `${(item.durationFrames / 60).toFixed(1)} s`} · ID ${item.id.slice(0, 8).toUpperCase()}</small></span><span className="roteiro-video-picker-select">Selecionar</span>
+      </button>) : <p>Nenhum vídeo publicado na Base. Os rascunhos não aparecem aqui.</p>}</div>
+      <footer><button type="button" onClick={() => setPickerOpen(false)}>Fechar</button></footer>
+    </section>
+  </div>}
 }
 
 function RoteiroWorkspace({ roteiro, onBack, onUpdate, characters }: { roteiro: SidebarRoteiro; onBack: () => void; onUpdate: (next: SidebarRoteiro) => void; characters: CustomizerCharacter[] }) {
