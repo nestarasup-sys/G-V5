@@ -73,6 +73,10 @@ export class VideoPreviewProxyStore {
     if(existing) return existing
 
     const folder=this.folderFor(sha)
+    // A stale/corrupt derivative is disposable by definition. Remove the
+    // content-addressed folder before regenerating so Windows rename semantics
+    // can never preserve an invalid preview.mp4/waveform from an older attempt.
+    await rm(folder,{recursive:true,force:true})
     await mkdir(folder,{recursive:true})
     const proxyTemp=join(folder,`.preview-${randomUUID()}.tmp.mp4`)
     const waveTemp=join(folder,`.waveform-${randomUUID()}.tmp.png`)
