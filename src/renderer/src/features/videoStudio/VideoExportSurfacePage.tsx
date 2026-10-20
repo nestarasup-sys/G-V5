@@ -4,6 +4,7 @@ import { VIDEO_STAGE_HEIGHT, VIDEO_STAGE_WIDTH } from '../../../../shared/videoS
 import { VideoCharacterFrameRenderer } from './videoCharacterFrameRenderer'
 import { VideoExportMediaFramePool } from './videoExportMediaFramePool'
 import { renderVideoSceneFrameToCanvas, clearVideoCanvasImageCache } from './videoCanvasCompositor'
+import { VideoCanvasLayerCache } from './videoCanvasLayerCache'
 
 function errorMessage(reason: unknown): string {
   return reason instanceof Error ? reason.message : String(reason)
@@ -20,6 +21,7 @@ function jobIdFromHash(): string {
 
 export function VideoExportSurfacePage() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  const layerCacheRef = useRef<VideoCanvasLayerCache | null>(null)
 
   useEffect(() => {
     let disposed = false
@@ -42,6 +44,7 @@ export function VideoExportSurfacePage() {
       if (!canvas) throw new Error('Canvas da surface não foi montado.')
       canvas.width = VIDEO_STAGE_WIDTH
       canvas.height = VIDEO_STAGE_HEIGHT
+      layerCacheRef.current ??= new VideoCanvasLayerCache()
       return { program, canvas }
     })()
 
@@ -56,7 +59,7 @@ export function VideoExportSurfacePage() {
             mediaPool!.framesForScene(scene),
           ])
           if (disposed) throw new DOMException('Surface descartada.', 'AbortError')
-          const context = await renderVideoSceneFrameToCanvas(scene, runtime.canvas, { characterStates: characters, videoFrames: videos })
+          const context = await renderVideoSceneFrameToCanvas(scene, runtime.canvas, { characterStates: characters, videoFrames: videos, layerCache: layerCacheRef.current ?? undefined })
           const rgba = context.getImageData(0, 0, VIDEO_STAGE_WIDTH, VIDEO_STAGE_HEIGHT).data
           const pixels = new Uint8Array(rgba.buffer, rgba.byteOffset, rgba.byteLength)
           if (!disposed) window.desktop.reportVideoExportSurfaceFrame({ requestId: request.requestId, frame: request.frame, pixels })
@@ -81,6 +84,8 @@ export function VideoExportSurfacePage() {
       unsubscribe?.()
       characterRenderer?.clear()
       mediaPool?.dispose()
+      layerCacheRef.current?.clear()
+      layerCacheRef.current = null
       clearVideoCanvasImageCache()
     }
   }, [])
