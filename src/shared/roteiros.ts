@@ -55,7 +55,7 @@ export type BaseVideoDetails = {
   additionalContext?: string
 }
 
-export type BaseVideoCategory = { id: string; name: string; createdAt: string }
+export type BaseVideoCategory = { id: string; name: string; color: string; createdAt: string }
 
 export type RoteiroDocument = {
   id: string

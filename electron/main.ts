@@ -2245,7 +2245,7 @@ async function registerFabricatorHandlers(): Promise<void> {
     assertTrustedSender(event)
     const db = dataPlatform.database
     if (!db) throw new Error('Catálogo de dados não inicializado.')
-    return (db.prepare('SELECT category_id, name, created_at FROM base_video_categories ORDER BY name COLLATE NOCASE, created_at').all() as Array<{ category_id: string; name: string; created_at: string }>).map((row) => ({ id: row.category_id, name: row.name, createdAt: row.created_at }))
+    return (db.prepare('SELECT category_id, name, color_hex, created_at FROM base_video_categories ORDER BY name COLLATE NOCASE, created_at').all() as Array<{ category_id: string; name: string; color_hex: string; created_at: string }>).map((row) => ({ id: row.category_id, name: row.name, color: row.color_hex, createdAt: row.created_at }))
   })
 
   ipcMain.handle('base-videos:categories:create', async (event, value: unknown): Promise<BaseVideoCategory> => {
@@ -2254,8 +2254,26 @@ async function registerFabricatorHandlers(): Promise<void> {
     if (!name || name.length > 60) throw new Error('O nome da categoria deve ter de 1 a 60 caracteres.')
     const db = dataPlatform.database
     if (!db) throw new Error('Catálogo de dados não inicializado.')
-    const category = { id: randomUUID(), name, createdAt: new Date().toISOString() }
-    try { db.prepare('INSERT INTO base_video_categories(category_id, name, created_at) VALUES (?, ?, ?)').run(category.id, category.name, category.createdAt) }
+    const usedColors = new Set((db.prepare('SELECT color_hex FROM base_video_categories').all() as Array<{ color_hex: string }>).map((row) => row.color_hex))
+    const palette = ['#dc5368', '#e58b3a', '#b39a32', '#4d9b68', '#279e9b', '#3988c7', '#5262bd', '#8559c5', '#c14d9d', '#8a684f', '#536f8b', '#698b42', '#d36b48', '#3c9ab8', '#a84e69', '#7663c2']
+    let color = palette.find((candidate) => !usedColors.has(candidate))
+    if (!color) {
+      for (let index = 0; index < 10000; index += 1) {
+        const hue = (index * 137.508) % 360
+        const saturation = 0.62
+        const lightness = 0.52
+        const chroma = (1 - Math.abs(2 * lightness - 1)) * saturation
+        const segment = hue / 60
+        const secondary = chroma * (1 - Math.abs(segment % 2 - 1))
+        const rgb = segment < 1 ? [chroma, secondary, 0] : segment < 2 ? [secondary, chroma, 0] : segment < 3 ? [0, chroma, secondary] : segment < 4 ? [0, secondary, chroma] : segment < 5 ? [secondary, 0, chroma] : [chroma, 0, secondary]
+        const offset = lightness - chroma / 2
+        const candidate = `#${rgb.map((channel) => Math.round((channel + offset) * 255).toString(16).padStart(2, '0')).join('')}`
+        if (!usedColors.has(candidate)) { color = candidate; break }
+      }
+    }
+    if (!color) throw new Error('Não foi possível gerar uma cor exclusiva para a categoria.')
+    const category = { id: randomUUID(), name, color, createdAt: new Date().toISOString() }
+    try { db.prepare('INSERT INTO base_video_categories(category_id, name, color_hex, created_at) VALUES (?, ?, ?, ?)').run(category.id, category.name, category.color, category.createdAt) }
     catch (reason) { if (String(reason).includes('UNIQUE')) throw new Error('Já existe uma categoria com esse nome.'); throw reason }
     return category
   })
@@ -2269,9 +2287,9 @@ async function registerFabricatorHandlers(): Promise<void> {
     if (!db) throw new Error('Catálogo de dados não inicializado.')
     try { db.prepare('UPDATE base_video_categories SET name=? WHERE category_id=?').run(name, id) }
     catch (reason) { if (String(reason).includes('UNIQUE')) throw new Error('Já existe uma categoria com esse nome.'); throw reason }
-    const row = db.prepare('SELECT category_id, name, created_at FROM base_video_categories WHERE category_id=?').get(id) as { category_id: string; name: string; created_at: string } | undefined
+    const row = db.prepare('SELECT category_id, name, color_hex, created_at FROM base_video_categories WHERE category_id=?').get(id) as { category_id: string; name: string; color_hex: string; created_at: string } | undefined
     if (!row) throw new Error('Categoria não encontrada.')
-    return { id: row.category_id, name: row.name, createdAt: row.created_at }
+    return { id: row.category_id, name: row.name, color: row.color_hex, createdAt: row.created_at }
   })
 
   ipcMain.handle('base-videos:categories:delete', async (event, id: unknown): Promise<void> => {

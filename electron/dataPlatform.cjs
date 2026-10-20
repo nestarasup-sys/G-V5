@@ -52,6 +52,27 @@ function sha256(bytes) {
   return crypto.createHash('sha256').update(bytes).digest('hex')
 }
 
+function categoryHslColor(hue) {
+  const saturation = 0.62
+  const lightness = 0.52
+  const chroma = (1 - Math.abs(2 * lightness - 1)) * saturation
+  const segment = hue / 60
+  const secondary = chroma * (1 - Math.abs(segment % 2 - 1))
+  const rgb = segment < 1 ? [chroma, secondary, 0] : segment < 2 ? [secondary, chroma, 0] : segment < 3 ? [0, chroma, secondary] : segment < 4 ? [0, secondary, chroma] : segment < 5 ? [secondary, 0, chroma] : [chroma, 0, secondary]
+  const offset = lightness - chroma / 2
+  return `#${rgb.map((channel) => Math.round((channel + offset) * 255).toString(16).padStart(2, '0')).join('')}`
+}
+
+function nextCategoryColor(usedColors) {
+  const palette = ['#dc5368', '#e58b3a', '#b39a32', '#4d9b68', '#279e9b', '#3988c7', '#5262bd', '#8559c5', '#c14d9d', '#8a684f', '#536f8b', '#698b42', '#d36b48', '#3c9ab8', '#a84e69', '#7663c2']
+  for (const color of palette) if (!usedColors.has(color)) return color
+  for (let index = 0; index < 10000; index += 1) {
+    const color = categoryHslColor((index * 137.508) % 360)
+    if (!usedColors.has(color)) return color
+  }
+  throw new Error('Não foi possível gerar uma cor exclusiva para a categoria.')
+}
+
 async function hashFile(filePath) {
   const hash = crypto.createHash('sha256')
   for await (const chunk of createReadStream(filePath)) hash.update(chunk)
@@ -139,7 +160,7 @@ class DataPlatform {
     this.database = new Database(dbPath, { timeout: 5000 })
     this.database.pragma('foreign_keys = ON')
     const currentSchema = this.database.pragma('user_version', { simple: true })
-    if (currentSchema > 14) {
+    if (currentSchema > 15) {
       this.database.close()
       this.database = null
       throw new Error(`O catálogo usa schema ${currentSchema}, mais novo que esta versão do app.`)
@@ -260,6 +281,7 @@ class DataPlatform {
       CREATE TABLE IF NOT EXISTS base_video_categories (
         category_id TEXT PRIMARY KEY,
         name TEXT NOT NULL COLLATE NOCASE UNIQUE,
+        color_hex TEXT NOT NULL DEFAULT '#7955c4',
         created_at TEXT NOT NULL
       ) WITHOUT ROWID;
       CREATE TABLE IF NOT EXISTS base_video_category_assignments (
@@ -381,12 +403,26 @@ class DataPlatform {
       .run(sha256('gacha-roteiro-preview-details-collapsed-schema-v13'), now)
     this.database.prepare("INSERT OR IGNORE INTO schema_migrations(version, name, checksum, applied_at) VALUES (14, 'base-video-categories', ?, ?)")
       .run(sha256('gacha-base-video-categories-schema-v14'), now)
-    if (currentSchema < 14) this.database.pragma('user_version = 14')
+    const categoryColumns = new Set(this.database.prepare('PRAGMA table_info(base_video_categories)').all().map((column) => column.name))
+    if (!categoryColumns.has('color_hex')) {
+      this.database.exec("ALTER TABLE base_video_categories ADD COLUMN color_hex TEXT NOT NULL DEFAULT '#7955c4'")
+      const categoryRows = this.database.prepare('SELECT category_id FROM base_video_categories ORDER BY created_at, category_id').all()
+      const assignColor = this.database.prepare('UPDATE base_video_categories SET color_hex=? WHERE category_id=?')
+      const migrationUsedColors = new Set()
+      this.database.transaction(() => categoryRows.forEach((row) => {
+        const color = nextCategoryColor(migrationUsedColors)
+        migrationUsedColors.add(color)
+        assignColor.run(color, row.category_id)
+      }))()
+    }
+    this.database.prepare("INSERT OR IGNORE INTO schema_migrations(version, name, checksum, applied_at) VALUES (15, 'base-video-category-colors', ?, ?)")
+      .run(sha256('gacha-base-video-category-colors-schema-v15'), now)
+    if (currentSchema < 15) this.database.pragma('user_version = 15')
     const insertDomain = this.database.prepare(`INSERT OR IGNORE INTO domains(domain_id, schema_version, manifest_json, updated_at) VALUES (?, 1, '{}', ?)`)
     const registerBuiltins = this.database.transaction(() => BUILTIN_DOMAINS.forEach((id) => insertDomain.run(id, now)))
     registerBuiltins()
     this.database.prepare("INSERT OR IGNORE INTO app_metadata(key, value) VALUES ('schema_version', '1')").run()
-    this.database.prepare("UPDATE app_metadata SET value='14' WHERE key='schema_version'").run()
+    this.database.prepare("UPDATE app_metadata SET value='15' WHERE key='schema_version'").run()
     this.migrateRoteirosJson()
     return this
   }
