@@ -340,7 +340,7 @@ function RoteiroWorkspace({ roteiro, onBack, onUpdate, onDeleteDraftVideo, chara
     try {
       const job = await window.desktop.startRoteiroCharacterExport({ id: roteiro.id, title: roteiro.title, characters: cast.map(({ id, name }) => ({ id, name })) })
       jobId = job.jobId
-      const [{ prepareSavedCharacterRenderer }, { buildStudioExpressionAppearance, buildStudioExpressionTransforms }] = await Promise.all([
+      const [{ prepareSavedCharacterRenderer }, { appearanceWithPupilsLookingLeft, buildStudioExpressionAppearance, buildStudioExpressionTransforms, presetWithPupilsLookingLeft }] = await Promise.all([
         import('../features/customizer/CustomizerPage'), import('../features/studio/expressionTransforms')
       ])
       let completedFiles = 0
@@ -381,7 +381,7 @@ function RoteiroWorkspace({ roteiro, onBack, onUpdate, onDeleteDraftVideo, chara
           expression.name = name
           seenExpressionNames.add(expressionKey(name))
         }
-        const estimated = cast.reduce((total, item) => total + (item.id === character.id ? renderPoses.length * expressions.length * 3 : 0), 0)
+        const estimated = cast.reduce((total, item) => total + (item.id === character.id ? renderPoses.length * expressions.length * 6 : 0), 0)
         if (completedFiles + estimated > job.assetCountLimit) throw new Error('O elenco e as poses gerariam mais de 20 mil imagens. Reduza as poses ou expressões salvas antes de exportar.')
         const { loadComponent, loadCatalog } = componentProvider(modelSlot)
         for (let poseIndex = 0; poseIndex < renderPoses.length; poseIndex += 1) {
@@ -390,25 +390,36 @@ function RoteiroWorkspace({ roteiro, onBack, onUpdate, onDeleteDraftVideo, chara
           for (const expression of expressions) {
             let appearance = character.customization.faceAppearance
             let transforms: Record<string, import('../../../shared/studio').StudioFaceTransform> = {}
+            let ptTransforms: Record<string, import('../../../shared/studio').StudioFaceTransform> | null = null
             let effects: import('../../../shared/fabricator').FaceExpressionEffects | undefined
             if (expression.presetId && appearance) {
               const preset = await window.desktop.loadFaceExpressionPreset(modelSlot, expression.presetId)
               if (!preset) throw new Error(`O preset “${expression.name}” de ${character.name} não pôde ser carregado.`)
               appearance = await buildStudioExpressionAppearance(preset, appearance, loadCatalog)
               transforms = await buildStudioExpressionTransforms(preset, appearance, {}, loadComponent, loadCatalog)
+              const ptPreset = await presetWithPupilsLookingLeft(preset, loadComponent)
+              ptTransforms = ptPreset
+                ? await buildStudioExpressionTransforms(ptPreset, appearance, {}, loadComponent, loadCatalog)
+                : await appearanceWithPupilsLookingLeft(appearance, loadComponent)
               effects = preset.effects
-            }
+            } else if (appearance) ptTransforms = await appearanceWithPupilsLookingLeft(appearance, loadComponent)
             setCharacterExportStatus(`Exportando ${character.name} · POSE ${poseIndex + 1} · ${expression.name}…`)
-            for (const role of ['base', 'blink', 'talk'] as const) {
+            const variants: Array<{ role: 'base' | 'blink' | 'talk' | 'pt' | 'pt-blink' | 'pt-talk'; mode: 'idle' | 'blink' | 'talk'; transforms: Record<string, import('../../../shared/studio').StudioFaceTransform> }> = [
+              { role: 'base', mode: 'idle', transforms }, { role: 'blink', mode: 'blink', transforms }, { role: 'talk', mode: 'talk', transforms }
+            ]
+            if (ptTransforms) variants.push(
+              { role: 'pt', mode: 'idle', transforms: ptTransforms }, { role: 'pt-blink', mode: 'blink', transforms: ptTransforms }, { role: 'pt-talk', mode: 'talk', transforms: ptTransforms }
+            )
+            for (const variant of variants) {
               let rendered: { dataUrl: string; width: number; height: number }
               try {
-                rendered = await renderer.render(appearance, transforms, effects, role === 'base' ? 'idle' : role)
+                rendered = await renderer.render(appearance, variant.transforms, effects, variant.mode)
               } catch (reason) {
-                if (role === 'base') throw reason
+                if (variant.role === 'base') throw reason
                 omittedVariants += 1
                 continue
               }
-              await window.desktop.writeRoteiroCharacterExportAsset(job.jobId, { characterId: character.id, pose: poseIndex + 1, expression: expression.name, role, dataUrl: rendered.dataUrl })
+              await window.desktop.writeRoteiroCharacterExportAsset(job.jobId, { characterId: character.id, pose: poseIndex + 1, expression: expression.name, role: variant.role, dataUrl: rendered.dataUrl })
               completedFiles += 1
             }
           }
@@ -416,7 +427,7 @@ function RoteiroWorkspace({ roteiro, onBack, onUpdate, onDeleteDraftVideo, chara
       }
       const result = await window.desktop.finishRoteiroCharacterExport(job.jobId)
       jobId = null
-      setCharacterExportStatus(`Exportação concluída: ${result.characters} personagem(ns), ${result.files} imagens em ${result.path}${omittedVariants ? ` · ${omittedVariants} variantes blink/talk indisponíveis foram omitidas` : ''}`)
+      setCharacterExportStatus(`Exportação concluída: ${result.characters} personagem(ns), ${result.files} imagens em ${result.path}${omittedVariants ? ` · ${omittedVariants} variantes faciais indisponíveis foram omitidas` : ''}`)
     } catch (reason) {
       if (jobId) await window.desktop.cancelRoteiroCharacterExport(jobId).catch(() => undefined)
       setCharacterExportStatus('')

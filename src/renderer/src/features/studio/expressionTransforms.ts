@@ -6,6 +6,47 @@ export function studioExpressionCollection(element: Pick<StudioElement, 'activeE
   return element?.activeExpressionCollectionId ?? presets.find((preset) => preset.id === element?.activeExpressionPresetId)?.collectionId ?? 'standard'
 }
 
+/** Apply the same left-looking pupil offset as the Expressão Dev `pt` button. */
+export async function presetWithPupilsLookingLeft(preset: FaceExpressionPreset, loadComponent: (id: string) => Promise<FaceComponentAsset | null>): Promise<FaceExpressionPreset | null> {
+  const next = structuredClone(preset)
+  let changed = false
+  for (const side of ['left', 'right'] as const) {
+    const eyeId = preset.selections.eyes[side]
+    const pupilId = preset.selections.pupils[side]
+    if (!eyeId || !pupilId) continue
+    const [eye, pupil] = await Promise.all([loadComponent(eyeId), loadComponent(pupilId)])
+    if (!eye || !pupil) continue
+    const eyeTransform = next.transforms[side === 'left' ? 'eyeLeft' : 'eyeRight']
+    const key = side === 'left' ? 'pupilLeft' : 'pupilRight'
+    const pointsLeft = side === 'left' || pupil.rightSidePositioned === true
+    next.transforms[key] = { ...next.transforms[key], x: (pointsLeft ? -1 : 1) * eye.width * eyeTransform.scaleX * .16 }
+    changed = true
+  }
+  return changed ? next : null
+}
+
+/** Fallback for characters whose default face has no saved expression preset. */
+export async function appearanceWithPupilsLookingLeft(appearance: CustomizerFaceAppearance, loadComponent: (id: string) => Promise<FaceComponentAsset | null>): Promise<StudioFaceTransforms | null> {
+  const transforms: StudioFaceTransforms = {}
+  let changed = false
+  for (const side of ['left', 'right'] as const) {
+    const eyeSelection = appearance.components?.[`eye-${side}`]
+    const pupilSelection = appearance.components?.[`pupil-${side}`]
+    if (!eyeSelection?.assetId || !pupilSelection?.assetId) continue
+    const [eye, pupil] = await Promise.all([loadComponent(eyeSelection.assetId), loadComponent(pupilSelection.assetId)])
+    if (!eye || !pupil) continue
+    const eyeTransform = eyeSelection.transform ?? eye.defaultTransform
+    const pupilTransform = pupilSelection.transform ?? pupil.defaultTransform
+    const pointsLeft = side === 'left' || pupil.rightSidePositioned === true
+    transforms[`expression-component:pupil-${side}`] = {
+      x: 0, y: 0, width: 100, height: 100, rotation: 0,
+      sourceTransformOverride: { ...pupilTransform, x: (pointsLeft ? -1 : 1) * eye.width * eyeTransform.scaleX * .16 }
+    }
+    changed = true
+  }
+  return changed ? transforms : null
+}
+
 export function resolveStudioExpressionBase(element: Pick<StudioElement, 'expressionBase' | 'faceTransforms'>, characterAppearance: CustomizerFaceAppearance): StudioExpressionBase {
   return structuredClone(element.expressionBase ?? {
     appearance: characterAppearance,

@@ -69,7 +69,7 @@ export type RoteirosDesktopApi = {
   deleteBaseVideo: (videoId: string) => Promise<void>
   publishBaseVideo: (videoId: string) => Promise<number>
   startRoteiroCharacterExport: (request: { id: string; title: string; characters: Array<{ id: string; name: string }> }) => Promise<{ jobId: string; folderName: string; assetCountLimit: number }>
-  writeRoteiroCharacterExportAsset: (jobId: string, asset: { characterId: string; pose: number; expression: string; role: 'base' | 'blink' | 'talk'; dataUrl: string }) => Promise<void>
+  writeRoteiroCharacterExportAsset: (jobId: string, asset: { characterId: string; pose: number; expression: string; role: 'base' | 'blink' | 'talk' | 'pt' | 'pt-blink' | 'pt-talk'; dataUrl: string }) => Promise<void>
   finishRoteiroCharacterExport: (jobId: string) => Promise<{ folderName: string; path: string; characters: number; files: number }>
   cancelRoteiroCharacterExport: (jobId: string) => Promise<void>
 }

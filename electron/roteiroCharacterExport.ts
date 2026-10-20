@@ -4,7 +4,7 @@ import { basename, dirname, join, relative, resolve, sep } from 'node:path'
 
 export type RoteiroExportCharacter = { id: string; name: string }
 export type RoteiroExportStart = { id: string; title: string; characters: RoteiroExportCharacter[] }
-export type RoteiroExportAsset = { characterId: string; pose: number; expression: string; role: 'base' | 'blink' | 'talk'; dataUrl: string }
+export type RoteiroExportAsset = { characterId: string; pose: number; expression: string; role: 'base' | 'blink' | 'talk' | 'pt' | 'pt-blink' | 'pt-talk'; dataUrl: string }
 
 type ExportJob = {
   id: string
@@ -109,15 +109,18 @@ export class RoteiroCharacterExportStore {
     if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('Asset de personagem inválido.')
     const value = input as Partial<RoteiroExportAsset>
     const character = typeof value.characterId === 'string' ? job.namesById.get(value.characterId) : undefined
-    if (!character || !Number.isInteger(value.pose) || value.pose! < 1 || value.pose! > 100 || !['base', 'blink', 'talk'].includes(value.role ?? '')) throw new Error('Referência de asset inválida.')
+    if (!character || !Number.isInteger(value.pose) || value.pose! < 1 || value.pose! > 100 || !['base', 'blink', 'talk', 'pt', 'pt-blink', 'pt-talk'].includes(value.role ?? '')) throw new Error('Referência de asset inválida.')
     const expression = safeSegment(safeDisplayName(value.expression, 'Expressão'), 'expressao').toLowerCase()
     if (typeof value.dataUrl !== 'string' || value.dataUrl.length > 36 * 1024 * 1024) throw new Error('Imagem de personagem excede o limite de exportação.')
     const match = /^data:image\/png;base64,([a-z0-9+/=]+)$/i.exec(value.dataUrl)
     if (!match) throw new Error('A exportação aceita somente imagens PNG renderizadas pelo aplicativo.')
     const bytes = Buffer.from(match[1], 'base64')
     if (bytes.length < 24 || bytes.length > 24 * 1024 * 1024 || !bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) throw new Error('O PNG exportado está vazio, inválido ou acima do limite.')
-    const roleSuffix = value.role === 'base' ? '' : `_${value.role}`
-    const relativeFile = join('assets', 'characters', character.folderName, `POSE ${value.pose}`, `${expression}${roleSuffix}.png`)
+    const isPupilsLeft = value.role === 'pt' || value.role === 'pt-blink' || value.role === 'pt-talk'
+    const visualRole = value.role === 'pt' ? 'base' : value.role === 'pt-blink' ? 'blink' : value.role === 'pt-talk' ? 'talk' : value.role!
+    const roleSuffix = visualRole === 'base' ? '' : `_${visualRole}`
+    const filenameExpression = isPupilsLeft ? `pt-${expression}` : expression
+    const relativeFile = join('assets', 'characters', character.folderName, `POSE ${value.pose}`, `${filenameExpression}${roleSuffix}.png`)
     if (job.files.has(relativeFile)) throw new Error(`A expressão ${expression} foi gerada mais de uma vez para ${character.characterName}, POSE ${value.pose}.`)
     const target = resolve(job.stageFolder, relativeFile)
     if (!target.startsWith(`${job.stageFolder}${sep}`)) throw new Error('Destino de imagem fora da pasta temporária da exportação.')
