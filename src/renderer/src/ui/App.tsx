@@ -23,6 +23,30 @@ const roteiroAreas = [
 type SidebarRoteiro = RoteiroDocument
 
 const emptyRoteiroContent = (): RoteiroSectionContent => ({ video: null, blocks: [] })
+const roteiroCharacterPortraitCache = new Map<string, Promise<string | null>>()
+
+function RoteiroCharacterPortrait({ character }: { character: CustomizerCharacter }) {
+  const [image, setImage] = useState<string | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    const cacheKey = `${character.id}:${character.updatedAt}`
+    let rendered = roteiroCharacterPortraitCache.get(cacheKey)
+    if (!rendered) {
+      rendered = import('../features/customizer/CustomizerPage')
+        .then(({ renderSavedCharacter }) => renderSavedCharacter(character))
+        .then((result) => result.dataUrl)
+        .catch(() => null)
+      roteiroCharacterPortraitCache.set(cacheKey, rendered)
+      if (roteiroCharacterPortraitCache.size > 32) roteiroCharacterPortraitCache.delete(roteiroCharacterPortraitCache.keys().next().value!)
+    }
+    void rendered.then((dataUrl) => { if (!cancelled) setImage(dataUrl) })
+    return () => { cancelled = true }
+  }, [character])
+
+  return image
+    ? <img className="roteiro-reaction-avatar" src={image} alt={character.name} />
+    : <span className="roteiro-reaction-avatar-fallback" aria-label={`Carregando imagem de ${character.name}`}><CharacterPortrait character={character} /></span>
+}
 
 function roteiroVideoReference(item: VideoLibraryItem): RoteiroVideoReference {
   if (item.durationFrames === null) throw new Error('A duração do vídeo ainda não foi reconhecida.')
@@ -97,7 +121,7 @@ function RoteiroSectionEditor({ title, subtitle, content, characters, characterI
       <header><div><button className="roteiro-sequence-collapse" type="button" onClick={() => setBlocksCollapsed((collapsed) => !collapsed)} aria-label={blocksCollapsed ? 'Expandir sequência de reações' : 'Recolher sequência de reações'} aria-expanded={!blocksCollapsed}><Icon name="chevronDown" /></button><span>{content.blocks.length}</span><h2>Sequência de reações</h2></div></header>
       <button className="roteiro-add-block" type="button" onClick={addBlock}><Icon name="plus" />Adicionar bloco</button>
       {!blocksCollapsed && <div className="roteiro-reaction-blocks">{content.blocks.map((block, index) => <article className={`roteiro-reaction-block tone-${index % 3}`} key={block.id}>
-        <div className="roteiro-reaction-identity">{(() => { const character = characters.find((item) => item.id === block.characterId); return character ? <CharacterPortrait character={character} /> : <span className="roteiro-reaction-avatar-empty"><Icon name="user" /></span> })()}<span className="roteiro-reaction-index">{String(index + 1).padStart(2, '0')}</span></div>
+        <div className="roteiro-reaction-identity">{(() => { const character = characters.find((item) => item.id === block.characterId); return character ? <RoteiroCharacterPortrait character={character} /> : <span className="roteiro-reaction-avatar-empty"><Icon name="user" /></span> })()}<span className="roteiro-reaction-index">{String(index + 1).padStart(2, '0')}</span></div>
         <div className="roteiro-reaction-fields">
           <label>Personagem<select value={block.characterId} onChange={(event) => updateBlock(block.id, { characterId: event.target.value })}><option value="">Selecione personagem</option>{characters.filter((character) => characterIds.includes(character.id)).map((character) => <option value={character.id} key={character.id}>{character.name}</option>)}</select></label>
           <label>Tipo<select value={block.kind} onChange={(event) => updateBlock(block.id, { kind: event.target.value as RoteiroReactionBlock['kind'] })}><option value="fala">Fala</option><option value="pensamento">Pensamento</option></select></label>
