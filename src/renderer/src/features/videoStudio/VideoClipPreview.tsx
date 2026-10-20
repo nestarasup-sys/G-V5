@@ -60,7 +60,7 @@ export function VideoStudioClipPreview({ studioId, asset, clip, playheadFrame, p
     const target = media && Number.isFinite(media.duration) ? Math.max(0, Math.min(sourceTime, media.duration - 0.001)) : sourceTime
     const finishPresented = () => {
       requestAnimationFrame(() => requestAnimationFrame(() => {
-        if (!disposed && media === mediaRef.current && Math.abs(media.currentTime - target) <= 0.001) onFramePresented?.(playheadFrame, clip.id)
+        if (!disposed && media && media === mediaRef.current && Math.abs(media.currentTime - target) <= 0.001) onFramePresented?.(playheadFrame, clip.id)
       }))
     }
     const reportPresented = () => {
