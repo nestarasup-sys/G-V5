@@ -91,8 +91,23 @@ export function VideoTimeline({ preparing, onEnterFullscreen, canUndo, canRedo, 
   const [previewVideoClip, setPreviewVideoClip] = useState<VideoMediaClip | null>(null)
   const [previewBoundary, setPreviewBoundary] = useState<{ elementId: string; keyId: string; frame: number } | null>(null)
   const [trackMenuOpen, setTrackMenuOpen] = useState(false)
+  const [videoWaveforms, setVideoWaveforms] = useState<Record<string, string>>({})
   const [pixelsPerSecond, setPixelsPerSecond] = useState(() => Math.max(1, Math.min(120, studio.videoTimeline?.timelineZoom ?? 37)))
   const timeline = videoTimelineFor(studio)
+  useEffect(() => {
+    let cancelled = false
+    const referencedIds = [...new Set((timeline.videoClips ?? []).map((clip) => clip.assetId))]
+    const assets = referencedIds.map((id) => timeline.videoAssets?.find((asset) => asset.id === id)).filter(Boolean)
+    void Promise.all(assets.map(async (asset) => {
+      try {
+        const prepared = await window.desktop.prepareVideoPreviewMedia(studio.id, asset!)
+        return prepared.waveformUrl ? [asset!.id, prepared.waveformUrl] as const : null
+      } catch { return null }
+    })).then((rows) => {
+      if (!cancelled) setVideoWaveforms(Object.fromEntries(rows.filter((row): row is readonly [string,string] => Boolean(row))))
+    })
+    return () => { cancelled = true }
+  }, [studio.id, timeline.videoAssets, timeline.videoClips])
   const timelineIndex = useMemo(() => indexVideoTimeline(timeline), [timeline.characterKeys, timeline.characterGaps, timeline.textClips, timeline.videoClips, timeline.saveMarkers])
   useEffect(() => {
     const node = timelineScrollRef.current
@@ -464,7 +479,7 @@ export function VideoTimeline({ preparing, onEnterFullscreen, canUndo, canRedo, 
                 const clip = previewVideoClip?.id === savedClip.id ? previewVideoClip : savedClip
                 const asset = timeline.videoAssets?.find((item) => item.id === clip.assetId)
                 const selected = selection?.kind === 'video' && selection.clipId === clip.id
-                return <button key={clip.id} type="button" className={`video-master-span${selected ? ' selected' : ''}${isLocked('video') ? ' locked' : ''}`} style={{ left: `${clip.startFrame / 60 * pixelsPerSecond}px`, width: `${Math.max(3, (clip.endFrame - clip.startFrame) / 60 * pixelsPerSecond)}px` }} title={`${asset?.name ?? 'Vídeo'} · ${formatTime(clip.endFrame - clip.startFrame)}`}
+                return <button key={clip.id} type="button" className={`video-master-span${selected ? ' selected' : ''}${isLocked('video') ? ' locked' : ''}`} style={{ left: `${clip.startFrame / 60 * pixelsPerSecond}px`, width: `${Math.max(3, (clip.endFrame - clip.startFrame) / 60 * pixelsPerSecond)}px`, ...(videoWaveforms[clip.assetId] ? { backgroundImage: `linear-gradient(#262d3ddd,#262d3ddd),url("${videoWaveforms[clip.assetId]}")`, backgroundSize: '100% 100%', backgroundPosition: 'center', backgroundRepeat: 'no-repeat' } : {}) }} title={`${asset?.name ?? 'Vídeo'} · ${formatTime(clip.endFrame - clip.startFrame)}`}
                   onPointerDown={(event) => beginVideoClipDrag(event, clip)} onPointerMove={moveVideoClipDrag} onPointerUp={finishVideoClipDrag} onPointerCancel={finishVideoClipDrag}
                   onClick={(event) => {
                     event.stopPropagation()
