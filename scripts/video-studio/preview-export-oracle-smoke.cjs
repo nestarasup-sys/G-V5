@@ -1,6 +1,6 @@
 'use strict'
 
-const { app, BrowserWindow, ipcMain } = require('electron')
+const { app, BrowserWindow, ipcMain, nativeImage } = require('electron')
 const fs = require('node:fs')
 const path = require('node:path')
 const ts = require('typescript')
@@ -62,10 +62,10 @@ function fail(reason){
   app.exit(1)
 }
 
-function createWindow(){
+function createWindow(offscreen){
   const win=new BrowserWindow({
     show:false,frame:false,resizable:false,width,height,useContentSize:true,backgroundColor:'#000000',
-    webPreferences:{preload:preloadPath,contextIsolation:true,nodeIntegration:false,sandbox:true,backgroundThrottling:false,offscreen:true},
+    webPreferences:{preload:preloadPath,contextIsolation:true,nodeIntegration:false,sandbox:true,backgroundThrottling:false,offscreen},
   })
   win.webContents.on('render-process-gone',(_event,details)=>fail(new Error(`Oracle renderer encerrou: ${details.reason}`)))
   activeWindow=win
@@ -94,10 +94,18 @@ app.whenReady().then(async()=>{
     try{
       if(currentMode==='dom'){
         pending.win.setContentSize(width,height,false)
-        const image=await pending.win.webContents.capturePage({x:0,y:0,width,height})
-        const captured=image.getSize()
-        if(captured.width!==width||captured.height!==height)throw new Error(`Captura DOM é ${captured.width}x${captured.height}; esperava 1920x1080.`)
-        pending.resolve(Buffer.from(image.toBitmap()))
+        const debuggerApi=pending.win.webContents.debugger
+        if(!debuggerApi.isAttached())debuggerApi.attach('1.3')
+        try{
+          await debuggerApi.sendCommand('Emulation.setDeviceMetricsOverride',{width,height,deviceScaleFactor:1,mobile:false})
+          const shot=await debuggerApi.sendCommand('Page.captureScreenshot',{format:'png',fromSurface:false,captureBeyondViewport:false})
+          const image=nativeImage.createFromBuffer(Buffer.from(shot.data,'base64'))
+          const captured=image.getSize()
+          if(captured.width!==width||captured.height!==height)throw new Error(`Captura DOM CDP é ${captured.width}x${captured.height}; esperava 1920x1080.`)
+          pending.resolve(Buffer.from(image.toBitmap()))
+        }finally{
+          if(debuggerApi.isAttached())debuggerApi.detach()
+        }
       }else{
         if(!(ready.pixels instanceof Uint8Array)||ready.pixels.byteLength!==width*height*4)throw new Error('Canvas export não devolveu pixels esperados.')
         pending.resolve(pixelFormat.rgbaToBgra(ready.pixels))
@@ -105,7 +113,7 @@ app.whenReady().then(async()=>{
     }catch(error){pending.reject(error)}
   })
 
-  const dom=createWindow()
+  const dom=createWindow(false)
   allowed.add(dom.webContents.id)
   currentMode='dom'
   const domReady=new Promise((resolve,reject)=>{pendingResolve={resolve,reject,win:dom}})
@@ -113,7 +121,7 @@ app.whenReady().then(async()=>{
   const domPixels=await domReady
   allowed.delete(dom.webContents.id);dom.destroy()
 
-  const canvas=createWindow()
+  const canvas=createWindow(true)
   allowed.add(canvas.webContents.id)
   currentMode='canvas'
   const canvasReady=new Promise((resolve,reject)=>{pendingResolve={resolve,reject,win:canvas}})
