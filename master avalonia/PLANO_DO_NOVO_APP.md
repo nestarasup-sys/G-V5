@@ -29,7 +29,7 @@ Não existe arquitetura que impeça todos os erros. A meta é limitar o alcance 
 
 ### Plataforma escolhida
 
-O novo G5 é uma reconstrução de produto, não uma conversão mecânica de telas. Fabricador, Customizador, Studio, Video Studio, Roteiros, Base de Vídeos e Opções poderão ser reconstruídos nessa stack, cada um após seus modelos, fluxos e formatos de dados terem sido definidos.
+O novo G5 é uma reconstrução de produto, não uma conversão mecânica de telas. A ordem planejada é Fabricador, Customizador, Studio, Base de Vídeos, Roteiros e Video Studio por último; Opções e demais fluxos entram quando seus modelos, responsabilidades e formatos de dados estiverem definidos.
 
 ```text
 C# / .NET 10
@@ -86,11 +86,11 @@ master avalonia/
     GV5.Jobs/                   # filas, workers, cancelamento e progresso
     GV5.Modules.Fabricador/     # telas e fluxos próprios do Fabricador
     GV5.Modules.Customizador/   # telas e fluxos próprios do Customizador
-    GV5.Modules.Studio/         # criado quando seus contratos forem definidos
+    GV5.Modules.Studio/         # criado depois do fluxo Fabricador/Customizador
+    GV5.Modules.BaseDeVideos/   # biblioteca independente de vídeos
+    GV5.Modules.Roteiros/       # roteiros referenciam VideoId
     GV5.Timeline/               # modelo e avaliação temporal, sem UI/FFmpeg
-    GV5.Modules.VideoStudio/    # edição; reprodução e exportação em serviços
-    GV5.Modules.Roteiros/
-    GV5.Modules.BaseDeVideos/
+    GV5.Modules.VideoStudio/    # última grande área; edição e exportação
     GV5.SharedUi/               # estilos e controles visuais realmente comuns
   tests/
     GV5.Core.Tests/
@@ -102,7 +102,7 @@ master avalonia/
   tools/                       # ferramentas reproduzíveis de desenvolvimento
 ```
 
-Essa lista é um mapa de responsabilidades, não uma ordem para criar projetos vazios. A engine é esse conjunto de bibliotecas C#/.NET, sem um monólito obrigatório chamado Engine. Começar com Core, Application, Geometry, Assets, Characters, Rendering, Data, Jobs, App e os módulos Fabricador/Customizador. Scene e Timeline entram ao iniciar esses domínios; os demais módulos entram quando começarem a ser implementados. `GV5.SharedUi` só recebe controles ou estilos com uso realmente compartilhado; não vira uma pasta para regras de negócio.
+Essa lista é um mapa de responsabilidades, não uma ordem para criar projetos vazios. A engine é esse conjunto de bibliotecas C#/.NET, sem um monólito obrigatório chamado Engine. Primeiro estabelecer a plataforma compartilhada e construir Fabricador e Customizador. Depois avançar por Studio, Base de Vídeos, Roteiros e, por último, Video Studio. `GV5.Timeline` e `GV5.Media` podem existir como contratos pequenos antes, mas sua implementação específica para edição de vídeo fica bloqueada até a etapa final. `GV5.SharedUi` só recebe controles ou estilos com uso realmente compartilhado; não vira uma pasta para regras de negócio.
 
 Direção das dependências:
 
@@ -326,13 +326,14 @@ Cada nova área declara rota, título, permissões de edição quando necessári
 
 Criar desde cedo um conjunto consistente de cores, espaçamentos, tipografia, botões, formulários, estados de carregamento e mensagens de erro. Suportar escala de tela, atalhos com contexto, foco de teclado e textos acessíveis.
 
-Primeiras áreas: Fabricador e Customizador. Poses, Rosto e Roupas podem começar como seções do Fabricador. Studio, Roteiros e Base de Vídeos só entram quando seus contratos estiverem definidos; não criar páginas fictícias para antecipar todo o produto.
+Ordem oficial das áreas reconstruídas: Fabricador → Customizador → Studio → Base de Vídeos → Roteiros → Video Studio. Poses, Rosto, Roupas, Cabelos, Faces, Expressões e Animações começam como fluxos/seções do Fabricador conforme o modelo de domínio amadurecer; não criar páginas fictícias para antecipar o produto.
 
 Quando forem implementadas, as áreas adicionais seguem estes limites:
 
 - **Studio:** uma cena contém entidades com IDs e transformações próprias: fundo, personagem, imagem, balão e texto. Alterar `Transform.X`/`Transform.Y` atualiza o item e sua visualização, preservando o restante da cena.
-- **Video Studio:** `TimelineControl` apresenta faixas de vídeo, áudio, texto, personagem, keyframes e playhead. Edição de timeline vive em regras testáveis; reprodução e exportação usam serviços/jobs separados da View. FFmpeg continua apto a ser encapsulado para processamento de vídeo.
-- **Roteiros e Base de Vídeos:** ViewModels e casos de uso próprios, com entidades, vínculos e operações explícitas. Recursos grandes são referências ao AssetStore. Nenhuma dessas áreas depende dos controles internos do Studio ou do Video Studio.
+- **Base de Vídeos:** biblioteca própria com `VideoAsset` (ID estável, arquivo original/AssetId, hash, duração, resolução, FPS, codecs, data de criação, categorias/tags, thumbnail e estado de proxy), além de `VideoLibraryService`, `VideoMetadataService` e `ThumbnailService`. Metadados e arquivos são geridos pela plataforma de dados/assets; não pertencem ao módulo Roteiros.
+- **Roteiros:** entidades próprias como `Roteiro`, Sections, TikToks, Dialogues, Reactions, CharacterReferences e VideoReferences. Referenciar vídeos da biblioteca por `VideoId`, sem copiar nem persistir a biblioteca dentro do roteiro. Persistir alterações por entidade/ID/revisão (por exemplo `RoteiroId`, `SectionId`, `BlockId`, `Revision`), agrupando mudanças rápidas e gravando apenas o que mudou.
+- **Video Studio:** última grande área da reconstrução. `TimelineControl` apresenta faixas de vídeo, áudio, texto, personagem, keyframes e playhead. Edição de timeline vive em regras testáveis; playback, frame decode e exportação usam serviços/jobs separados da View. FFmpeg pode ser encapsulado para processamento de vídeo.
 - **Opções e navegação:** preferências da interface não são gravadas junto de dados de personagem. Janelas e diálogos pertencem ao shell e aos serviços de interação com o sistema.
 
 ## 15. Prévia, jobs e desempenho
@@ -383,12 +384,29 @@ Antes de excluir o legado, provar que uma cópia contendo somente `master avalon
 
 ## 19. Primeiras entregas, na ordem
 
-1. **Fundação executável:** solução C#, janela Avalonia, navegação entre Fabricador e Customizador, tema e diretório de dados próprios. Critério: abrir e fechar no Windows com logs e configuração persistente.
-2. **Pipeline gráfico mínimo:** `ModelPart`, Transform, Pivot, Joint e ordem de camadas; `AssetStore`, decoder e cache compartilhado; `RenderScene` e `SkiaRenderer`; `CharacterResolver` fornecendo a cena. Critério: abrir um modelo real, renderizar, selecionar, mover, girar, salvar, fechar e reabrir com o mesmo resultado.
-3. **Edição confiável:** articulações, comandos, desfazer/refazer e SQLite integrados ao pipeline gráfico. Critério: salvar, fechar e reabrir preserva o resultado, inclusive após falha simulada de gravação.
-4. **Primeiro Customizador:** criar personagem a partir do modelo, aplicar roupa e aparência facial usando o mesmo resolver e renderer do Fabricador. Critério: ambas as áreas concordam sobre encaixe, camadas e proporções.
-5. **Bibliotecas úteis:** miniaturas leves, busca, filtros, duplicação, lixeira e importação com progresso e cancelamento.
-6. **Expansão controlada:** completar poses, rosto, cabelo, roupas e proporções, uma seção validada por vez.
+1. **Plataforma:** solução, shell Avalonia, SQLite/migrations, AssetStore, Geometry, Jobs, logs e pipeline `RenderScene`/SkiaRenderer em fatias pequenas. Critério: app abre, salva dados próprios e renderiza um asset real sem depender do legado.
+2. **Fabricador:** modelos, parts/layers, joints/pivôs/transformações, poses, roupas, cabelo, face/expressões, animações, importação/chroma, undo/redo e publicação de assets. Critério: criar/editar/publicar e reabrir conteúdo preservando geometria, transparência, vínculos e aparência.
+3. **Customizador:** consumir por IDs estáveis (`ModelId`, `PoseId`, `WardrobeId`, `HairId`, `FaceId`, `ExpressionId`), montar `Character` por `CharacterResolver` e salvar overrides próprios sem alterar assets globais. Critério: Fabricador e Customizador renderizam o mesmo conteúdo de forma consistente.
+4. **Studio:** reutilizar `CharacterResolver` e `RenderingEngine`; adicionar Scene Engine e entidades de fundo, personagem, imagem, objeto, texto, fala e pensamento. Critério: montar uma cena com personagens salvos, reabrir e obter o mesmo resultado visual. Este é o primeiro grande marco de validação da plataforma compartilhada.
+5. **Base de Vídeos:** implementar biblioteca e serviços de metadados/miniaturas, categorias/tags, IDs, arquivos originais e integridade. Critério: importar, catalogar, reabrir, localizar e remover referências sem misturar a biblioteca com roteiros.
+6. **Roteiros:** construir seções/blocos e referências a personagens e `VideoId`; salvar incrementalmente por entidade/revisão. Critério: editar texto e vínculos sem regravar a biblioteca nem o roteiro inteiro por tecla; fechar/reabrir preserva a estrutura.
+7. **Video Studio, por último:** iniciar timeline, playback/frame decoder, áudio, keyframes, transições e export somente após as etapas anteriores estarem persistentes e utilizáveis. Escolher backends com a prova de conceito da seção de mídia.
+
+### Gate obrigatório antes do Video Studio
+
+Nenhum código específico de edição/playback/export do Video Studio será desenvolvido antes de Fabricador → Customizador → Studio completar um fluxo vertical persistente. Contratos gerais e decisões de arquitetura podem ser documentados antes; o gate bloqueia implementar o módulo de vídeo antecipadamente.
+
+```text
+Fabricador: criar/publicar modelo, pose e roupa
+        ↓
+Customizador: criar personagem, aplicar modelo/pose/roupa e ajustes
+        ↓ salvar e fechar o aplicativo
+Reabrir: os dados permanecem íntegros
+        ↓
+Studio: carregar o mesmo personagem com aparência correta
+```
+
+Esse fluxo deve ser demonstrado com assets reais e dados persistidos antes de avançar para Base de Vídeos e Roteiros. Para cada fase, exigir critérios de saída documentados: funcionalidade, persistência, comparação visual e recuperação de erros aplicáveis. Não avançar apenas porque a tela está desenhada.
 
 ## 20. Ideias adicionais para evoluir sem perder controle
 
