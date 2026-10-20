@@ -180,7 +180,7 @@ export function VideoStudioClipPreview({ studioId, asset, clip, playheadFrame, p
   }
   return <div ref={wrapperRef} className={`video-studio-video-composition${selected ? ' selected' : ''}${editable ? '' : ' locked'}`} style={{ left: `${50 + transform.x}%`, top: `${50 + transform.y}%`, width: `${transform.width}%`, height: `${transform.height}%`, transform: `translate(-50%, -50%) rotate(${transform.rotation}deg)` }} onPointerDown={beginDrag} onPointerMove={moveDrag} onPointerUp={endDrag} onPointerCancel={endDrag} onLostPointerCapture={() => { dragRef.current = null }}>
     <video ref={mediaRef} className="video-studio-video-clip-preview" src={sourceUrl} muted={videoAudioOutput(masterAudio, clip.audio, playing).muted} playsInline preload="auto" onLoadedMetadata={() => playbackRef.current?.refresh()} onError={() => playbackRef.current?.reportMediaError()} aria-hidden="true" style={playing ? undefined : { visibility: 'hidden' }} />
-    <canvas ref={pausedFrameRef} className="video-studio-video-clip-preview" aria-hidden="true" style={playing ? { display: 'none' } : undefined} />
+    <canvas ref={pausedFrameRef} className="video-studio-video-clip-preview" aria-hidden="true" style={playing ? { display: 'none' } : { position: 'absolute', inset: 0 }} />
     {selected && editable && ['nw', 'ne', 'sw', 'se'].map((corner) => <span key={corner} className={`video-studio-video-resize ${corner}`} data-video-corner={corner} aria-hidden="true" />)}
   </div>
 }
