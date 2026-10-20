@@ -69,7 +69,7 @@ export class VideoRawFrameWriter {
 
   async ready(): Promise<void> { await this.readyPromise; if (this.fatalError) throw this.fatalError }
 
-  async writeFrame(frame: Buffer): Promise<void> {
+  async writeFrame(frame: Buffer, options: { copy?: boolean } = {}): Promise<void> {
     await this.ready()
     if (this.ended || this.fatalError) throw this.fatalError ?? new Error('O encoder já foi encerrado.')
     if (frame.byteLength !== this.frameBytes) throw new Error(`Frame inválido: ${frame.byteLength} bytes; esperava ${this.frameBytes}.`)
@@ -79,7 +79,9 @@ export class VideoRawFrameWriter {
       if (this.fatalError) throw this.fatalError
     }
     this.inFlight += 1
-    const ownedFrame = Buffer.from(frame)
+    // Generic callers keep copy=true. The export pipeline may opt out only for
+    // immutable frame leases that remain alive until this awaited write callback.
+    const ownedFrame = options.copy === false ? frame : Buffer.from(frame)
     await new Promise<void>((resolveWrite, rejectWrite) => {
       this.process.stdin.write(ownedFrame, (error) => {
         this.inFlight = Math.max(0, this.inFlight - 1)
