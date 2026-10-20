@@ -612,7 +612,7 @@ export class VideoExportJobStore {
         const reopened = await this.reopen(entry.name)
         const { manifest, snapshot } = reopened
         if (!snapshot || !reopened.characters || !reopened.characterAssets || !manifest.renderVariant) continue
-        const completedFrames = manifest.chunks.at(-1)?.endFrame ?? 0
+        const completedFrames = manifest.chunks.reduce((sum, chunk) => sum + (chunk.endFrame - chunk.startFrame), 0)
         const totalChunks = Math.ceil(manifest.durationFrames / manifest.chunkFrames)
         records.push({
           jobId: manifest.jobId,
