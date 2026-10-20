@@ -245,6 +245,22 @@ Riscos:
 
 **Decisão:** não substituir o FFmpeg CLI antes do release. Criar spike posterior isolado se profiling mostrar que subprocess/pipe/copy é gargalo relevante.
 
+
+
+### 3.13 MP4 recuperável / chunk container (FFmpeg)
+
+A documentação atual do muxer MOV/MP4 do FFmpeg oferece `hybrid_fragmented`: durante a escrita o arquivo permanece fragmentado e legível mesmo se a gravação for abortada; ao terminar normalmente, é convertido para MP4 não fragmentado. Um arquivo interrompido pode ser remuxado posteriormente.
+
+Isso cria uma hipótese útil para exports longos, mas **não substitui automaticamente** o modelo atual de chunks validados:
+
+- chunk independente continua melhor para Turbo/retry seletivo;
+- `hybrid_fragmented` pode ser útil para o caminho serial ou para o estágio final de mux;
+- medir compatibilidade, overhead, tamanho, seek e tempo de finalização;
+- crash test deve matar FFmpeg sem cleanup e depois provar recuperação/remux;
+- saída recuperada nunca é publicada sem o verifier normal.
+
+Também manter como alternativa de laboratório Matroska para temporários, pois clusters têm limites explícitos de tempo/tamanho; porém a entrega final continua MP4/H.264/AAC.
+
 ## 4. Prioridade revisada — FINALIZAR EXPORTADOR
 
 ### P0 — Determinismo/paridade
@@ -376,6 +392,16 @@ Mesma sequência A-B-A de timestamps contra pool atual.
 
 ### EXP-06 — packaged clean machine
 Não é benchmark; é gate operacional obrigatório.
+
+### EXP-07 — hybrid fragmented serial recovery
+Comparar o temporário serial atual com MP4 `hybrid_fragmented`:
+- tempo/overhead;
+- kill sem trailer;
+- remux de recuperação;
+- ffprobe/decode;
+- compatibilidade do arquivo final;
+- nenhum publish antes do verifier.
+Só adotar se simplificar recuperação sem regressão de throughput/compatibilidade.
 
 ## 8. Métricas mínimas por export
 
