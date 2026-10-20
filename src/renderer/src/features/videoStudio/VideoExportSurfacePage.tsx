@@ -59,10 +59,14 @@ export function VideoExportSurfacePage() {
             mediaPool!.framesForScene(scene),
           ])
           if (disposed) throw new DOMException('Surface descartada.', 'AbortError')
+          const composeStarted = performance.now()
           const context = await renderVideoSceneFrameToCanvas(scene, runtime.canvas, { characterStates: characters, videoFrames: videos, layerCache: layerCacheRef.current ?? undefined })
+          const composeMs = performance.now() - composeStarted
+          const readbackStarted = performance.now()
           const rgba = context.getImageData(0, 0, VIDEO_STAGE_WIDTH, VIDEO_STAGE_HEIGHT).data
           const pixels = new Uint8Array(rgba.buffer, rgba.byteOffset, rgba.byteLength)
-          if (!disposed) window.desktop.reportVideoExportSurfaceFrame({ requestId: request.requestId, frame: request.frame, pixels })
+          const readbackMs = performance.now() - readbackStarted
+          if (!disposed) window.desktop.reportVideoExportSurfaceFrame({ requestId: request.requestId, frame: request.frame, pixels, timings: { composeMs, readbackMs } })
         } catch (reason) {
           if (!disposed) window.desktop.reportVideoExportSurfaceFrame({
             requestId: request.requestId,
