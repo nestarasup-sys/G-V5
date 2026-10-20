@@ -107,7 +107,10 @@ const videoStudioApi: VideoStudioDesktopApi = {
     const listener = (_event: Electron.IpcRendererEvent, progress: VideoExportProgress) => callback(progress)
     ipcRenderer.on('video-studio:export:progress', listener)
     return () => ipcRenderer.removeListener('video-studio:export:progress', listener)
-  }
+  },
+  listRecoverableVideoExports: () => ipcRenderer.invoke('video-studio:export:recoverable'),
+  resumeVideoExport: (jobId) => ipcRenderer.invoke('video-studio:export:resume', jobId),
+  discardVideoExportRecovery: (jobId) => ipcRenderer.invoke('video-studio:export:discard-recovery', jobId)
 }
 
 contextBridge.exposeInMainWorld('desktop', {
