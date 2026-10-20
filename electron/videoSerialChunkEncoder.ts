@@ -70,12 +70,18 @@ export async function encodeVideoStudioSerialChunk(
   })
   try {
     await writer.ready()
+    // Keep exactly one render ahead of the writer. This overlaps Canvas/IPC
+    // composition with FFmpeg stdin without allowing an unbounded frame queue.
+    let pendingRender = renderFrame(startFrame, controller.signal)
     for (let absoluteFrame = startFrame; absoluteFrame < endFrameExclusive; absoluteFrame += 1) {
       if (controller.signal.aborted) throw controller.signal.reason instanceof Error
         ? controller.signal.reason : new Error('Exportação cancelada.')
-      const pixels = await renderFrame(absoluteFrame, controller.signal)
+      const pixels = await pendingRender
       if (!Buffer.isBuffer(pixels)) throw new Error(`Renderer não devolveu Buffer RGBA no frame ${absoluteFrame}.`)
       if (pixels.byteLength !== frameBytes) throw new Error(`Renderer devolveu ${pixels.byteLength} bytes no frame ${absoluteFrame}; esperava ${frameBytes}.`)
+      if (absoluteFrame + 1 < endFrameExclusive) {
+        pendingRender = renderFrame(absoluteFrame + 1, controller.signal)
+      }
       await writer.writeFrame(pixels, { copy: false })
       options.onProgress?.({
         startFrame,
