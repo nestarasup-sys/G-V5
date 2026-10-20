@@ -74,7 +74,19 @@ export class VideoPersistentFrameCache {
     await mkdir(this.root, { recursive: true })
     const temp = join(this.root, `.index-${randomUUID()}.tmp`)
     await writeFile(temp, `${JSON.stringify(index)}\n`, { flag: 'wx' })
-    await rename(temp, this.indexPath())
+    try {
+      await rename(temp, this.indexPath())
+    } catch (reason) {
+      const code = (reason as NodeJS.ErrnoException).code
+      if (code !== 'EEXIST' && code !== 'EPERM') throw reason
+      // Windows does not reliably replace an existing destination with rename.
+      // This is cache metadata only: if the process dies in this tiny window,
+      // the cache safely reopens empty/corrupt and never affects user data.
+      await rm(this.indexPath(), { force: true })
+      await rename(temp, this.indexPath())
+    } finally {
+      await rm(temp, { force: true }).catch(() => undefined)
+    }
   }
 
   private async enforceBudget(index: Index): Promise<void> {
