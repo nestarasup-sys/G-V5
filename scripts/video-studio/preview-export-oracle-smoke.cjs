@@ -24,6 +24,7 @@ const pixelFormat=loadTs('electron/videoPixelFormat.ts')
 const narrator={id:'narrator',kind:'narrator',text:'Narrador de paridade PT-BR',x:0,y:-20,width:50,height:15,rotation:0,zIndex:2}
 const speech={id:'speech',kind:'speech',text:'Fala curta com acentuação: ação, você, coração.',speakerName:'Luna',speakerColor:'#8e63b8',x:-18,y:15,width:34,height:20,rotation:0,zIndex:3}
 const thought={id:'thought',kind:'thought',text:'Pensamento em silêncio.',speakerName:'Nymi',speakerColor:'#3b8794',x:20,y:18,width:30,height:18,rotation:0,zIndex:4}
+const extension={id:'extension',kind:'image',assetId:'@g-v5-fixture:extension-box',text:'Extensão V546',x:30,y:-25,width:18,height:14,rotation:0,zIndex:5}
 const timeline={
   schemaVersion:1,frameRate:60,durationFrames:60,playheadFrame:0,playing:false,
   characterKeys:[],videoClips:[],videoAssets:[],saveMarkers:[],
@@ -38,7 +39,7 @@ const studio={
   createdAt:'2026-01-01T00:00:00.000Z',updatedAt:'2026-01-01T00:00:00.000Z',
   backgroundColor:'#29435f',backgroundAssetId:null,
   backgroundX:0,backgroundY:0,backgroundWidth:100,backgroundHeight:100,backgroundRotation:0,
-  assets:[],elements:[narrator,speech,thought],videoTimeline:timeline,
+  assets:[{id:'@g-v5-fixture:extension-box',category:'object',name:'Extensão V546',mimeType:'image/png',dataUrl:'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M/wHwAF/gL+3F6WAAAAAElFTkSuQmCC'}],elements:[narrator,speech,thought,extension],videoTimeline:timeline,
 }
 const bootstrap={
   jobId,snapshot:{studio,timeline,frameRate:60,durationFrames:60},
@@ -126,8 +127,10 @@ app.whenReady().then(async()=>{
     narrator:oracle.comparePixelBuffers(domPixels,canvasPixels,width,height,{x:480,y:230,width:960,height:220}),
     speech:oracle.comparePixelBuffers(domPixels,canvasPixels,width,height,{x:250,y:540,width:720,height:300}),
     thought:oracle.comparePixelBuffers(domPixels,canvasPixels,width,height,{x:950,y:550,width:700,height:280}),
+    extension:oracle.comparePixelBuffers(domPixels,canvasPixels,width,height,{x:1300,y:180,width:420,height:230}),
   }
   if(metrics.background.meanAbsoluteError>1||metrics.background.changedPixelRatio>0.01)throw new Error(`Background divergiu: ${JSON.stringify(metrics.background)}`)
+  if(metrics.extension.meanAbsoluteError>3||metrics.extension.changedPixelRatio>0.04)throw new Error(`Plugin V546 divergiu entre preview/export: ${JSON.stringify(metrics.extension)}`)
   if(metrics.full.meanAbsoluteError>25||metrics.full.changedPixelRatio>0.22)throw new Error(`Preview/export divergiu além do gate inicial: ${JSON.stringify(metrics.full)}`)
   console.log(JSON.stringify({ok:true,frame:0,metrics},null,2))
   clearTimeout(timer)
