@@ -37,6 +37,33 @@ try {
   New-Item -ItemType Directory -Path $OutputDirectory | Out-Null
   Copy-Item -LiteralPath $ffmpeg.FullName -Destination (Join-Path $OutputDirectory 'ffmpeg.exe')
   Copy-Item -LiteralPath $ffprobe.FullName -Destination (Join-Path $OutputDirectory 'ffprobe.exe')
+  $license = Get-ChildItem $extract -Recurse -File | Where-Object { $_.Name -match '^(LICENSE|COPYING)(\.txt)?  $version = (& $ffmpeg.FullName -hide_banner -version 2>&1 | Select-Object -First 1)
+  $info = [ordered]@{
+    schemaVersion = 1
+    provider = $manifest.provider
+    assetName = $manifest.assetName
+    assetSha256 = $actual
+    versionLine = [string]$version
+    license = $manifest.license
+    h264Encoders = $h264
+    preparedAtUtc = [DateTime]::UtcNow.ToString('o')
+    redistributionStatus = 'runtime validated; release still requires FFmpeg LGPL source/compliance checklist'
+  }
+  $info | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $OutputDirectory 'BUILD_INFO.json') -Encoding UTF8
+  Write-Host ($info | ConvertTo-Json -Compress)
+}
+finally {
+  if (Test-Path -LiteralPath $temp) { Remove-Item -LiteralPath $temp -Recurse -Force }
+}
+ } | Select-Object -First 1
+  if ($license) { Copy-Item -LiteralPath $license.FullName -Destination (Join-Path $OutputDirectory 'FFMPEG_LICENSE.txt') }
+  @"
+Pinned FFmpeg source/compliance information
+Upstream source: https://ffmpeg.org/releases/
+Build scripts/source provider: https://github.com/BtbN/FFmpeg-Builds
+Pinned binary URL and SHA-256: see video-tools.manifest.json and BUILD_INFO.json.
+A final release should preserve the applicable LGPL text/source-compliance information.
+"@ | Set-Content -LiteralPath (Join-Path $OutputDirectory 'SOURCE_INFO.txt') -Encoding UTF8
   $version = (& $ffmpeg.FullName -hide_banner -version 2>&1 | Select-Object -First 1)
   $info = [ordered]@{
     schemaVersion = 1
