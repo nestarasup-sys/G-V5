@@ -3,16 +3,26 @@ import { videoCharacterTrackColor } from '../../../../shared/studio'
 import type { VideoSceneFrame, VideoSceneLayer } from '../../../../shared/videoSceneIR'
 import { videoCharacterElementSize, videoClipStageRect, videoStageRect, VIDEO_STAGE_HEIGHT, VIDEO_STAGE_WIDTH } from '../../../../shared/videoStageGeometry'
 import { matchingVideoVisualPlugin } from './videoVisualPluginRegistry'
+import type { VideoCanvasLayerCache } from './videoCanvasLayerCache'
 
 export type VideoCanvasFrameResources = Readonly<{
   /** Transition/blink/mouth renderer output keyed by Studio character element id. */
   characterStates?: ReadonlyMap<string, VideoCharacterState>
   /** Exact source video frame keyed by clip id. */
   videoFrames?: ReadonlyMap<string, CanvasImageSource>
+  layerCache?: VideoCanvasLayerCache
 }>
 
 const imageCache = new Map<string, Promise<HTMLImageElement>>()
 const MAX_IMAGE_CACHE = 256
+const sourceTokens=new Map<string,number>()
+let nextSourceToken=0
+function sourceToken(source:string|undefined):number{
+  if(!source)return 0
+  let token=sourceTokens.get(source)
+  if(!token){token=++nextSourceToken;sourceTokens.set(source,token);if(sourceTokens.size>512)sourceTokens.delete(sourceTokens.keys().next().value!)}
+  return token
+}
 
 async function loadImage(source: string): Promise<HTMLImageElement> {
   let pending = imageCache.get(source)
@@ -213,18 +223,34 @@ export async function renderVideoSceneFrameToCanvas(
   context.setTransform(1, 0, 0, 1, 0, 0)
   context.globalAlpha = 1
   context.globalCompositeOperation = 'source-over'
-  context.fillStyle = frame.background.color
-  context.fillRect(0, 0, VIDEO_STAGE_WIDTH, VIDEO_STAGE_HEIGHT)
-  if (frame.background.assetDataUrl) {
-    const image = await loadImage(frame.background.assetDataUrl)
-    drawTransformed(context, image, {
-      x: frame.background.x, y: frame.background.y, width: frame.background.width,
-      height: frame.background.height, rotation: frame.background.rotation,
-    })
+  const layerCache=resources.layerCache
+  const backgroundKey=JSON.stringify(['background',frame.background.color,sourceToken(frame.background.assetDataUrl),frame.background.x,frame.background.y,frame.background.width,frame.background.height,frame.background.rotation])
+  const drawBackground=async(target:CanvasRenderingContext2D)=>{
+    target.fillStyle=frame.background.color
+    target.fillRect(0,0,VIDEO_STAGE_WIDTH,VIDEO_STAGE_HEIGHT)
+    if(frame.background.assetDataUrl){
+      const image=await loadImage(frame.background.assetDataUrl)
+      drawTransformed(target,image,{x:frame.background.x,y:frame.background.y,width:frame.background.width,height:frame.background.height,rotation:frame.background.rotation})
+    }
   }
+  if(layerCache){
+    const background=await layerCache.create(backgroundKey,VIDEO_STAGE_WIDTH,VIDEO_STAGE_HEIGHT,drawBackground)
+    context.drawImage(background,0,0)
+  }else await drawBackground(context)
+
   for (const layer of frame.layers) {
     if (layer.type === 'element') {
-      await drawElementLayer(context, layer, frame, resources)
+      if(layerCache){
+        const override=resources.characterStates?.get(layer.element.id)
+        const effective=override?.element??layer.element
+        const source=override?.imageDataUrl??layer.assetDataUrl
+        const speaker=effective.speakerCharacterId
+          ? frame.layers.find((candidate)=>candidate.type==='element'&&candidate.element.id===effective.speakerCharacterId)
+          : undefined
+        const key=JSON.stringify(['element',effective,sourceToken(source),speaker?.type==='element'?speaker.element:null,layer.clipId??'',layer.zOrder])
+        const raster=await layerCache.create(key,VIDEO_STAGE_WIDTH,VIDEO_STAGE_HEIGHT,(target)=>drawElementLayer(target,layer,frame,resources))
+        context.drawImage(raster,0,0)
+      }else await drawElementLayer(context, layer, frame, resources)
       continue
     }
     const videoFrame = resources.videoFrames?.get(layer.clipId)
@@ -241,4 +267,6 @@ export async function renderVideoSceneFrameToCanvas(
 export function clearVideoCanvasImageCache(): void {
   for (const promise of imageCache.values()) void promise.then((image) => { image.src = '' }).catch(() => undefined)
   imageCache.clear()
+  sourceTokens.clear()
+  nextSourceToken=0
 }
