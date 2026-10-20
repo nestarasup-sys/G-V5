@@ -5,7 +5,7 @@ import { createVideoExportSnapshot } from '../src/shared/videoExportSnapshot'
 import { createVideoExportCharacterSnapshot } from '../src/shared/videoExportCharacters'
 import type { VideoCharacterRenderAssetSnapshot } from '../src/shared/videoCharacterRenderAssets'
 import { compileVideoScene, evaluateVideoSceneFrame, type RenderVariant } from '../src/shared/videoSceneIR'
-import type { VideoExportProgress } from '../src/shared/videoExportRuntime'
+import type { VideoExportProgress, VideoExportRecoveryRecord } from '../src/shared/videoExportRuntime'
 import { buildVideoStudioAudioPlan, type VideoStudioAudioSource } from '../src/shared/videoStudioAudioPlan'
 import { buildVideoExportMediaManifest, type ResolveVideoExportMedia } from './videoExportAssets'
 import { prepareVideoExportSnapshot } from './videoExportSnapshotAssets'
@@ -19,6 +19,8 @@ import { assembleVideoStudioOutput } from './videoExportAssembler'
 import { probeVideoMedia } from './videoMediaProbe'
 import { verifyVideoStudioOutput } from './videoOutputVerifier'
 import { rgbaToBgra } from './videoPixelFormat'
+
+type ReopenedVideoExportJob = Awaited<ReturnType<VideoExportJobStore['reopen']>>
 
 type ActiveExport = {
   jobId: string
@@ -106,6 +108,57 @@ export class VideoExportCoordinator {
     return this.active.get(jobId)?.progress ?? null
   }
 
+  async listRecoverable(): Promise<VideoExportRecoveryRecord[]> {
+    return this.jobs.listRecoverable()
+  }
+
+  async resume(jobId: string): Promise<string> {
+    if (this.active.has(jobId)) throw new Error('Este job já está ativo nesta sessão.')
+    const reopened = await this.jobs.reopen(jobId)
+    if (!reopened.snapshot || !reopened.characters || !reopened.characterAssets || !reopened.manifest.renderVariant) {
+      throw new Error('Job não possui snapshots suficientes para retomada segura.')
+    }
+    const completedFrames = reopened.manifest.chunks.at(-1)?.endFrame ?? 0
+    const initial: VideoExportProgress = Object.freeze({
+      jobId,
+      stage: 'queued',
+      renderVariant: reopened.manifest.renderVariant,
+      completedFrames,
+      totalFrames: reopened.manifest.durationFrames,
+      chunkCount: Math.ceil(reopened.manifest.durationFrames / reopened.manifest.chunkFrames),
+      message: completedFrames > 0 ? 'Retomando exportação verificada…' : 'Reiniciando job preparado…',
+    })
+    const active: ActiveExport = {
+      jobId,
+      variant: reopened.manifest.renderVariant,
+      controller: new AbortController(),
+      progress: initial,
+      surface: null,
+      task: Promise.resolve(),
+    }
+    this.active.set(jobId, active)
+    this.onProgress(initial)
+    const input: VideoExportCoordinatorInput = {
+      studio: reopened.snapshot.studio,
+      characters: reopened.characters.characters,
+      characterAssets: reopened.characterAssets,
+      renderVariant: reopened.manifest.renderVariant,
+    }
+    active.task = this.run(active, input, reopened).catch((reason: unknown) => {
+      const cancelled = active.controller.signal.aborted
+      this.update(active, {
+        stage: cancelled ? 'cancelled' : 'failed',
+        message: reason instanceof Error ? reason.message : String(reason),
+      })
+    }).finally(async () => {
+      const surface = active.surface
+      active.surface = null
+      await surface?.dispose().catch(() => undefined)
+      if (active.controller.signal.aborted) await this.jobs.cleanup(jobId).catch(() => undefined)
+    })
+    return jobId
+  }
+
   async cancel(jobId: string): Promise<void> {
     const active = this.active.get(jobId)
     if (!active) throw new Error('Job de exportação não encontrado.')
@@ -123,20 +176,23 @@ export class VideoExportCoordinator {
     }
   }
 
-  private async run(active: ActiveExport, input: VideoExportCoordinatorInput): Promise<void> {
-    const { studio, renderVariant } = input
-    const timeline = studio.videoTimeline!
+  private async run(active: ActiveExport, input: VideoExportCoordinatorInput, resumeJob?: ReopenedVideoExportJob): Promise<void> {
+    const renderVariant = resumeJob?.manifest.renderVariant ?? input.renderVariant
+    if (!renderVariant) throw new Error('Job sem modo de renderização.')
+    const snapshot = resumeJob?.snapshot ?? createVideoExportSnapshot(input.studio)
+    if (!snapshot) throw new Error('Job sem snapshot de cena.')
+    const studio = snapshot.studio
+    const timeline = snapshot.timeline
     this.update(active, { stage: 'preparing', message: 'Fixando projeto, personagens e mídias…' })
     this.abort(active)
 
-    const snapshot = createVideoExportSnapshot(studio)
     const preparedSnapshot = prepareVideoExportSnapshot(snapshot)
     const snapshotSha256 = createHash('sha256').update(preparedSnapshot.serialized).digest('hex')
-    const characters = createVideoExportCharacterSnapshot(studio, input.characters)
-    const mediaDependencies = await buildVideoExportMediaManifest(studio, this.resolveMedia)
+    const characters = resumeJob?.characters ?? createVideoExportCharacterSnapshot(studio, input.characters)
+    const mediaDependencies = resumeJob?.manifest.mediaDependencies ?? await buildVideoExportMediaManifest(studio, this.resolveMedia)
     this.abort(active)
 
-    await this.jobs.create({
+    if (!resumeJob) await this.jobs.create({
       jobId: active.jobId,
       studioId: studio.id,
       snapshotSha256,
@@ -152,7 +208,7 @@ export class VideoExportCoordinator {
     const { paths, ffmpeg } = await this.tools()
     this.abort(active)
 
-    const reopened = await this.jobs.reopen(active.jobId)
+    const reopened = resumeJob ?? await this.jobs.reopen(active.jobId)
     const chunkCount = Math.ceil(timeline.durationFrames / reopened.manifest.chunkFrames)
     const media = new Map<string, VideoStudioAudioSource>()
     for (const dependency of reopened.manifest.mediaDependencies ?? []) {
