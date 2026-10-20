@@ -6,6 +6,8 @@ on:
     paths:
       - 'resources/video-tools.manifest.json'
       - 'scripts/video-studio/prepare-ffmpeg-lgpl.ps1'
+      - 'scripts/video-studio/package-windows-portable.ps1'
+      - 'electron/main.ts'
       - 'electron/videoRawFrameWriter.ts'
       - 'electron/videoFfmpegCapabilities.ts'
       - 'electron/videoToolsResolver.ts'
@@ -26,6 +28,16 @@ jobs:
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install locked dependencies
+        shell: pwsh
+        run: npm ci --no-audit --no-fund
+      - name: Build application
+        shell: pwsh
+        run: npm run build
       - name: Prepare pinned runtime
         shell: pwsh
         run: |
@@ -59,7 +71,31 @@ jobs:
           if ($probe.streams[0].codec_name -ne 'h264' -or $probe.streams[0].nb_read_frames -ne '6') { throw 'Encoded probe failed validation.' }
           & $ffmpeg -v error -i $out -f null -
           if ($LASTEXITCODE -ne 0) { throw 'Full decode failed.' }
-      - name: Remove downloaded runtime
+      - name: Build portable Windows package
+        shell: pwsh
+        run: npm run package:windows:portable
+      - name: Run packaged executable with bundled tools only
+        shell: pwsh
+        run: |
+          $report = Join-Path $env:RUNNER_TEMP 'gacha-packaged-video-tools.json'
+          $exe = Resolve-Path './dist/windows-portable/Gacha Nymi V5.exe'
+          $env:GACHA_VIDEO_TOOLS_SMOKE_OUTPUT = $report
+          Remove-Item Env:GACHA_FFMPEG_PATH -ErrorAction SilentlyContinue
+          Remove-Item Env:GACHA_FFPROBE_PATH -ErrorAction SilentlyContinue
+          $process = Start-Process -FilePath $exe -PassThru
+          if (-not $process.WaitForExit(120000)) {
+            $process.Kill()
+            throw 'Packaged application tools smoke timed out.'
+          }
+          if (-not (Test-Path $report)) { throw "Packaged smoke report was not produced. Exit: $($process.ExitCode)" }
+          $json = Get-Content -Raw $report | ConvertFrom-Json
+          if (-not $json.packaged -or $json.toolSource -ne 'packaged' -or -not $json.smokeEncoded) {
+            throw "Packaged tool resolution failed: $(Get-Content -Raw $report)"
+          }
+          Write-Host (Get-Content -Raw $report)
+      - name: Remove package and downloaded runtime
         if: always()
         shell: pwsh
-        run: Remove-Item ./resources/video-tools -Recurse -Force -ErrorAction SilentlyContinue
+        run: |
+          Remove-Item ./dist/windows-portable -Recurse -Force -ErrorAction SilentlyContinue
+          Remove-Item ./resources/video-tools -Recurse -Force -ErrorAction SilentlyContinue
