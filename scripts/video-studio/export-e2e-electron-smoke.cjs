@@ -9,8 +9,12 @@ const ts = require('typescript')
 
 const jobId = 'f3c40c08-5be8-476f-8132-4dafca4f3d57'
 const studioId = '360d7ac8-27c8-4aab-b8be-2397e1c46a76'
-const rendererFile = path.resolve(__dirname, '../../out/renderer/index.html')
-const preloadPath = path.resolve(__dirname, '../../out/preload/video-export-preload.cjs')
+const rendererFile = process.env.GACHA_E2E_RENDERER_FILE
+  ? path.resolve(process.env.GACHA_E2E_RENDERER_FILE)
+  : path.resolve(__dirname, '../../out/renderer/index.html')
+const preloadPath = process.env.GACHA_E2E_PRELOAD_FILE
+  ? path.resolve(process.env.GACHA_E2E_PRELOAD_FILE)
+  : path.resolve(__dirname, '../../out/preload/video-export-preload.cjs')
 const ffmpeg = process.env.GACHA_FFMPEG_PATH
 const ffprobe = process.env.GACHA_FFPROBE_PATH
 const width = 1920
@@ -45,6 +49,8 @@ app.commandLine.appendSwitch('disable-background-timer-throttling')
 app.whenReady().then(async () => {
   requireTool(ffmpeg, 'GACHA_FFMPEG_PATH')
   requireTool(ffprobe, 'GACHA_FFPROBE_PATH')
+  requireTool(rendererFile, 'Renderer do smoke')
+  requireTool(preloadPath, 'Preload do smoke')
 
   const rawWriter = loadPureTs('electron/videoRawFrameWriter.ts')
   const pixels = loadPureTs('electron/videoPixelFormat.ts')
