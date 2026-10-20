@@ -1,0 +1,47 @@
+name: Video Studio Export 15min gate
+
+on:
+  push:
+    branches: [master-desenvolvimento]
+    paths:
+      - '.github/workflows/video-export-soak-15min.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: video-export-soak-15min-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  soak-15min-windows:
+    name: 15min 1080p60 raw pipeline / Windows
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install locked dependencies
+        shell: pwsh
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Resolve FFmpeg tools
+        shell: pwsh
+        run: |
+          $ffmpeg = Get-Command ffmpeg -ErrorAction SilentlyContinue
+          $ffprobe = Get-Command ffprobe -ErrorAction SilentlyContinue
+          if (-not $ffmpeg -or -not $ffprobe) {
+            choco install ffmpeg -y --no-progress
+            $ffmpeg = Get-Command ffmpeg -ErrorAction Stop
+            $ffprobe = Get-Command ffprobe -ErrorAction Stop
+          }
+          "GACHA_FFMPEG_PATH=$($ffmpeg.Source)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "GACHA_FFPROBE_PATH=$($ffprobe.Source)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+      - name: Run 15 minute 1080p60 soak
+        shell: pwsh
+        env:
+          GACHA_SOAK_SECONDS: '900'
+        run: node scripts/video-studio/export-soak-local.cjs
