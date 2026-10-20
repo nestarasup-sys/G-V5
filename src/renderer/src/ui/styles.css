@@ -238,6 +238,19 @@ button:focus-visible, input:focus-visible { outline: 3px solid #ed8caf; outline-
 .roteiro-tiktoks-panel>header>button { width:38px;height:38px;display:grid;place-items:center;border:1px solid #e8dfed;border-radius:10px;background:#fff;color:#7956bc;cursor:pointer; }
 .roteiro-tiktoks-panel>header>button:hover { border-color:#c8b3e4;background:#f8f4fc; }
 .roteiro-tiktoks-panel>header>button svg { width:17px;height:17px; }
+.roteiro-tiktok-header-actions { display:flex;align-items:center;gap:7px; }
+.roteiro-tiktok-header-actions>.roteiro-tiktok-add { width:38px;height:38px;display:grid;place-items:center;border:1px solid #e8dfed;border-radius:10px;background:#fff;color:#7956bc;cursor:pointer; }
+.roteiro-tiktok-header-actions>.roteiro-tiktok-add:hover { border-color:#c8b3e4;background:#f8f4fc; }
+.roteiro-tiktok-header-actions>.roteiro-tiktok-add svg { width:17px;height:17px; }
+.roteiro-cast-open { min-height:36px;display:flex;align-items:center;gap:6px;padding:0 9px;border:1px solid #e8dfed;border-radius:9px;background:#fff;color:#665274;font-size:12px;font-weight:800;cursor:pointer; }
+.roteiro-cast-open:hover { border-color:#c8b3e4;background:#f8f4fc;color:#6845a5; }
+.roteiro-cast-open svg { width:14px;height:14px; }
+.roteiro-cast-open>span { min-width:18px;height:18px;display:grid;place-items:center;padding:0 4px;border-radius:99px;background:#f0e9f8;color:#7652b0;font-size:10px; }
+.roteiro-cast-modal { width:min(560px,calc(100vw - 32px)); }
+.roteiro-cast-search { display:flex;align-items:center;gap:8px;margin:12px 19px 8px;padding:0 11px;border:1px solid #e7dfeb;border-radius:9px;background:#fff;color:#95879e; }
+.roteiro-cast-search svg { width:16px;height:16px; }
+.roteiro-cast-search input { width:100%;height:38px;border:0;outline:0;background:transparent;color:#54485b;font:inherit; }
+.roteiro-cast-missing { margin:0 19px 10px;padding:9px 11px;border:1px solid #f0d8af;border-radius:8px;background:#fff9ed;color:#8a6225;font-size:11px;line-height:1.4; }
 .roteiro-tiktoks-list { min-height:0;display:flex;flex-direction:column;gap:11px;overflow:auto;padding:1px 2px 9px 0; }
 .roteiro-tiktok-card { min-height:128px;position:relative;display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:1fr 33px;align-items:center;row-gap:8px;padding:12px;border:1px solid #e7deed;border-radius:16px;background:#fff; }
 .roteiro-tiktok-card.active { border-color:#9875ed;box-shadow:0 0 0 1px #9875ed24; }
