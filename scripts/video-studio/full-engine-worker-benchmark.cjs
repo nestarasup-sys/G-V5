@@ -19,6 +19,7 @@ const preloadPath=path.resolve(__dirname,'../../out/preload/video-export-preload
 const width=1920,height=1080,durationSeconds=Number(process.env.GACHA_BENCH_SECONDS||5),totalFrames=durationSeconds*60,chunkFrames=60
 const profile=process.env.GACHA_BENCH_PROFILE||'mixed-realistic'
 const runLayerCacheAb=process.env.GACHA_BENCH_LAYER_CACHE_AB==='1'
+const runReadbackAb=process.env.GACHA_BENCH_READBACK_AB==='1'
 const machine={platform:process.platform,release:os.release(),cpuModel:os.cpus()[0]?.model??'unknown',logicalCpuCount:os.cpus().length,totalMemoryBytes:os.totalmem(),freeMemoryBytesAtStart:os.freemem()}
 const jobId='726e2b84-aa60-4cf5-95b0-8d2557d9447f'
 const studioId='f2ff96c8-ce44-45fc-9251-34e89ad4c45f'
@@ -111,7 +112,7 @@ app.whenReady().then(async()=>{
  ipcMain.on('video-studio:export-surface:ready',(event,ready)=>{const session=sessions.get(event.sender.id);if(!session)return;if(ready.error)session.reject(new Error(ready.error));else{session.ready=true;session.resolveReady()}})
  ipcMain.on('video-studio:export-surface:frame-ready',(event,ready)=>{const s=sessions.get(event.sender.id);const p=s?.pending.get(ready.requestId);if(!p)return;s.pending.delete(ready.requestId);if(ready.error)p.reject(new Error(ready.error));else if(!(ready.pixels instanceof Uint8Array))p.reject(new Error('pixels ausentes'));else p.resolve({pixels:Buffer.from(ready.pixels.buffer,ready.pixels.byteOffset,ready.pixels.byteLength),timings:ready.timings||{composeMs:0,readbackMs:0},layerCache:ready.layerCache||null})})
 
- async function openSurface(layerCacheEnabled=true){
+ async function openSurface(layerCacheEnabled=true,readbackOptimized=true){
   const win=new BrowserWindow({show:false,width,height,useContentSize:true,backgroundColor:'#000',webPreferences:{preload:preloadPath,contextIsolation:true,nodeIntegration:false,sandbox:true,backgroundThrottling:false,offscreen:true}})
   allowed.add(win.webContents.id)
   const diagnostics=[]
@@ -121,7 +122,7 @@ app.whenReady().then(async()=>{
   const session={win,pending:new Map(),ready:false,resolveReady,reject:rejectReady}
   sessions.set(win.webContents.id,session)
   const timeout=setTimeout(()=>rejectReady(new Error('timeout aguardando ready da surface')),30000)
-  try{await Promise.all([win.loadFile(rendererFile,{hash:`/video-export-surface?jobId=${jobId}&layerCache=${layerCacheEnabled?'1':'0'}`}),readyPromise])}catch(error){await new Promise(resolve=>setTimeout(resolve,100));throw new Error(`${error.message}; renderer=${JSON.stringify(diagnostics)}`)}finally{clearTimeout(timeout)}
+  try{await Promise.all([win.loadFile(rendererFile,{hash:`/video-export-surface?jobId=${jobId}&layerCache=${layerCacheEnabled?'1':'0'}&readbackCpu=${readbackOptimized?'1':'0'}`}),readyPromise])}catch(error){await new Promise(resolve=>setTimeout(resolve,100));throw new Error(`${error.message}; renderer=${JSON.stringify(diagnostics)}`)}finally{clearTimeout(timeout)}
   return{win,async frame(frame){const requestId=`${win.webContents.id}-${frame}-${Math.random()}`;return new Promise((resolve,reject)=>{session.pending.set(requestId,{resolve,reject});win.webContents.send('video-studio:export-surface:render',{requestId,frame})})},close(){allowed.delete(win.webContents.id);sessions.delete(win.webContents.id);win.destroy()}}
  }
 
@@ -155,8 +156,8 @@ app.whenReady().then(async()=>{
     maxChannelError,
   }
  }
- async function benchmark(workerCount,layerCacheEnabled=true){
-  const dir=path.join(root,`w${workerCount}`);fs.mkdirSync(dir,{recursive:true})
+ async function benchmark(workerCount,layerCacheEnabled=true,readbackOptimized=true){
+  const dir=path.join(root,`w${workerCount}-lc${layerCacheEnabled?1:0}-rb${readbackOptimized?1:0}`);fs.mkdirSync(dir,{recursive:true})
   const started=performance.now(),memory=createMemorySampler()
   const indexes=Array.from({length:Math.ceil(totalFrames/chunkFrames)},(_,i)=>i)
   const workerChunks=Array.from({length:workerCount},(_,workerIndex)=>indexes.filter(index=>index%workerCount===workerIndex))
@@ -177,7 +178,7 @@ app.whenReady().then(async()=>{
   try{
     const initialWriters=await Promise.all(workerChunks.map(chunks=>createWriter(chunks[0])))
     const surfaceStart=performance.now()
-    for(let index=0;index<workerCount;index++)surfaces.push(await openSurface(layerCacheEnabled))
+    for(let index=0;index<workerCount;index++)surfaces.push(await openSurface(layerCacheEnabled,readbackOptimized))
     const surfaceStartupMs=performance.now()-surfaceStart
     const renderEncodeStarted=performance.now()
     async function worker(surface,chunks,initialWriter){
@@ -221,7 +222,7 @@ app.whenReady().then(async()=>{
     const peakBytes=memory.stop()
     if(rendered!==totalFrames)throw new Error(`benchmark enviou ${rendered}/${totalFrames} frames`)
     return{
-     workerCount,layerCacheEnabled,durationSeconds,frames:totalFrames,elapsedMs,throughputFps:totalFrames/(elapsedMs/1000),realtimeFactor:durationSeconds/(elapsedMs/1000),
+     workerCount,layerCacheEnabled,readbackOptimized,durationSeconds,frames:totalFrames,elapsedMs,throughputFps:totalFrames/(elapsedMs/1000),realtimeFactor:durationSeconds/(elapsedMs/1000),
      surfaceStartupMs,renderEncodeWallMs,composeMs,readbackMs,frameAcquireMs,encoderReadyMs,frameWriteMs,writerFinishMs,assembleMs,verifyMs,
      readbackRatio:(composeMs+readbackMs)>0?readbackMs/(composeMs+readbackMs):0,
      layerCache:{hits:layerCacheHits,misses:layerCacheMisses,evictions:layerCacheEvictions,bytesPeak:layerCacheBytes,maxBytes:layerCacheMaxBytes,avoidedLayerDraws:layerCacheHits},
@@ -238,8 +239,8 @@ app.whenReady().then(async()=>{
  }
 
  try{
-  const serial=await benchmark(1,true)
-  const turbo=await benchmark(2,true)
+  const serial=await benchmark(1,true,true)
+  const turbo=await benchmark(2,true,true)
   const speedup=serial.elapsedMs/turbo.elapsedMs
   let cacheOffSamples=null
   if(runLayerCacheAb){
@@ -248,7 +249,7 @@ app.whenReady().then(async()=>{
     // rounding instead of requiring impossible byte identity.
     const originalFrames=Array.from(parityFrames)
     cacheOffSamples=[]
-    const sampleSurface=await openSurface(false)
+    const sampleSurface=await openSurface(false,true)
     try{
       for(const frame of originalFrames){
         const uncached=await sampleSurface.frame(frame)
@@ -258,8 +259,10 @@ app.whenReady().then(async()=>{
       }
     }finally{sampleSurface.close()}
   }
-  const cacheOffSerial=runLayerCacheAb?await benchmark(1,false):null
+  const cacheOffSerial=runLayerCacheAb?await benchmark(1,false,true):null
   const layerCacheSpeedup=cacheOffSerial?cacheOffSerial.elapsedMs/serial.elapsedMs:null
+  const readbackOffSerial=runReadbackAb?await benchmark(1,true,false):null
+  const readbackSpeedup=readbackOffSerial?readbackOffSerial.elapsedMs/serial.elapsedMs:null
   const worstCacheParity=cacheOffSamples?{
     meanAbsoluteError:Math.max(...cacheOffSamples.map(x=>x.meanAbsoluteError)),
     changedPixelRatio:Math.max(...cacheOffSamples.map(x=>x.changedPixelRatio)),
@@ -273,7 +276,7 @@ app.whenReady().then(async()=>{
   if(worstCacheParity&&(worstCacheParity.meanAbsoluteError>0.10||worstCacheParity.changedPixelRatio>0.005||worstCacheParity.p999ChannelError>8)){
     throw new Error(`Layer cache ON/OFF excedeu tolerância visual: ${JSON.stringify({worstCacheParity,cacheOffSamples})}`)
   }
-  const report=JSON.stringify({ok:true,profile,durationSeconds,dimensions:`${width}x${height}`,frameRate:60,totalFrames,machine,fixture:profileCounts.counts,serial,turbo,speedup,cacheOffSerial,layerCacheSpeedup,cacheParitySamples:cacheOffSamples,worstCacheParity},null,2)
+  const report=JSON.stringify({ok:true,profile,durationSeconds,dimensions:`${width}x${height}`,frameRate:60,totalFrames,machine,fixture:profileCounts.counts,serial,turbo,speedup,cacheOffSerial,layerCacheSpeedup,readbackOffSerial,readbackSpeedup,cacheParitySamples:cacheOffSamples,worstCacheParity},null,2)
   await new Promise((resolve,reject)=>process.stdout.write(`${report}\n`,error=>error?reject(error):resolve()))
  }finally{
   for(const w of BrowserWindow.getAllWindows())if(!w.isDestroyed())w.destroy()
