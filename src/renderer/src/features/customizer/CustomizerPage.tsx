@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { CharacterPortrait } from '../../ui/components/CharacterPortrait'
+import { RenderedCharacterPortrait } from '../../ui/components/RenderedCharacterPortrait'
 import { Icon, type IconName } from '../../ui/components/Icon'
 import type { FaceCatalogItem, FaceCatalogItemSummary, FaceComponentAsset, FaceComponentAssetSummary, FaceComponentKind, FaceDetailKind, FaceElementKind, FaceExpressionEffects, FaceSet, FaceSheetKind, FabricatorPose, FabricatorPoseSummary, FabricatorProject, FabricatorSlotSummary, HairStyle, HairStyleSummary, WardrobeCategory, WardrobeSet, WardrobeSetSummary } from '../../../../shared/fabricator'
 import { resolvePoseCategory } from '../../../../shared/fabricator'
@@ -3969,7 +3969,7 @@ export function CustomizerPage() {
                 onClick={() => selectCharacter(character.id)}
                 aria-pressed={selectedCharacter?.id === character.id}
               >
-                <CharacterPortrait character={character} />
+                <RenderedCharacterPortrait className="customizer-character-headshot" character={character} />
                 <span>{character.name}</span>
               </button>
             ))}

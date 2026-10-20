@@ -159,9 +159,9 @@ button:focus-visible, input:focus-visible { outline: 3px solid #ed8caf; outline-
 .roteiro-reaction-block.tone-1 { border-color:#d6def4;border-left-color:#6687e7;background:#e7edfb; }
 .roteiro-reaction-block.tone-2 { border-color:#c9e8df;border-left-color:#34aa8d;background:#e3f4ef; }
 .roteiro-reaction-identity { grid-column:1;grid-row:1/3;align-self:center;display:flex;align-items:center;gap:5px; }
-.roteiro-reaction-avatar,.roteiro-reaction-identity>.roteiro-reaction-avatar-fallback,.roteiro-reaction-avatar-empty { width:48px;height:48px;flex:0 0 48px;display:grid;place-items:center;overflow:hidden;border:1px solid #ffffffb8;border-radius:50%;background:#fff;box-shadow:0 2px 6px #34243b26; }
-.roteiro-reaction-avatar>img { width:100%;height:100%;display:block;object-fit:cover;object-position:center top;transform:scale(1.65);transform-origin:center top; }
-.roteiro-reaction-identity>.roteiro-reaction-avatar-fallback>.portrait-art { width:100%;height:100%;border-radius:50%; }
+.roteiro-reaction-avatar,.roteiro-reaction-avatar-empty { width:48px;height:48px;flex:0 0 48px;display:grid;place-items:center;overflow:hidden;border:1px solid #ffffffb8;border-radius:50%;background:#fff;box-shadow:0 2px 6px #34243b26; }
+.rendered-character-headshot>img { width:100%;height:100%;display:block;object-fit:cover;object-position:center top;transform:scale(1.65);transform-origin:center top; }
+.rendered-character-headshot-fallback>.portrait-art { width:100%;height:100%;border-radius:inherit; }
 .roteiro-reaction-identity>.portrait-art svg { width:100%;height:100%; }
 .roteiro-reaction-avatar-empty { color:#8b79a0; }
 .roteiro-reaction-avatar-empty svg { width:18px;height:18px; }
@@ -1063,6 +1063,7 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .character-card.selected { border-color: #e987aa; background: #fff3f7; color: #a43c65; box-shadow: inset 0 0 0 1px #f9d8e4; }
 .character-card.selected::after { width: 6px; height: 6px; position: absolute; top: 7px; right: 7px; border-radius: 50%; background: var(--rose); content: ''; }
 .portrait-art { width: 46px; height: 46px; display: block; position: relative; overflow: hidden; border-radius: 14px; background: #f2e8ed; }
+.customizer-character-headshot { width:56px;height:56px;flex:0 0 56px;overflow:hidden;border:1px solid #ffffffc7;border-radius:50%;background:#fff;box-shadow:0 2px 6px #34243b26; }
 .portrait-art svg { width: 100%; height: 100%; }
 .portrait-initial { display: none; }
 .character-card > span:last-child { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
