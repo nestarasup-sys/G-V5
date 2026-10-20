@@ -25,6 +25,8 @@ test('V4-style raw frame writer keeps bounded writes and confirms exact frame co
   const result = await writer.finish()
   assert.equal(result.framesWritten, 3)
   assert.equal(result.bytesWritten, 12)
+  assert.ok(result.writeCallbackWaitMs >= 0)
+  assert.ok(result.peakInFlight >= 1 && result.peakInFlight <= 2)
   assert.deepEqual(await fs.readFile(outputPath), Buffer.from([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]))
 })
 
