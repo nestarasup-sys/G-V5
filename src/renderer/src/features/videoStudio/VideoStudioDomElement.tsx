@@ -1,6 +1,7 @@
 import type { CSSProperties, PointerEventHandler } from 'react'
 import type { StudioElement } from '../../../../shared/studio'
 import { videoCharacterElementSize, videoStageCssTransform } from '../../../../shared/videoStageGeometry'
+import { matchingVideoVisualPlugin } from './videoVisualPluginRegistry'
 
 export type VideoStudioDomElementProps = Readonly<{
   element: StudioElement
@@ -30,6 +31,10 @@ export function VideoStudioDomElement({
   onPointerUp,
   onPointerCancel,
 }: VideoStudioDomElementProps) {
+  const plugin = matchingVideoVisualPlugin({ element, imageDataUrl })
+  const extension = plugin?.renderDom?.({ element, imageDataUrl })
+  if (extension) return <>{extension}</>
+
   const size = videoCharacterElementSize(element)
   const style: CSSProperties = {
     ...videoStageCssTransform(
