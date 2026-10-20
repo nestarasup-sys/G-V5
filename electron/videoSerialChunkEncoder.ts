@@ -63,7 +63,7 @@ export async function encodeVideoStudioSerialChunk(
 
   const writer = new VideoRawFrameWriter({
     executable: ffmpeg.executable,
-    args: buildVideoStudioChunkArgs(outputPath, frameCount),
+    args: buildVideoStudioChunkArgs(outputPath, frameCount, 'rgba'),
     outputPath,
     frameBytes,
     frameCount,
