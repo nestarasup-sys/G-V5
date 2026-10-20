@@ -232,6 +232,12 @@ export function evaluateVideoSceneFrame(program: VideoSceneProgram, frame: numbe
         element.x, element.y, element.width, element.height, element.rotation, element.zIndex,
         element.flipX === true, element.characterScale ?? 100, element.characterWidthScale ?? 100,
         element.characterHeightScale ?? 100, element.text ?? '', element.timelineColor ?? '',
+        element.poseSlot ?? null,
+        element.activeFaceMode ?? null,
+        element.activeExpressionPresetId ?? null,
+        element.faceAppearance ?? null,
+        element.faceTransforms ?? null,
+        element.activeExpressionEffects ?? null,
       ] : []
       const artwork = character.authoredState?.imageDataUrl
         ? program.artworkTokens.get(character.authoredState.imageDataUrl) ?? -1
