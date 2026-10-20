@@ -3,6 +3,21 @@ import type { StudioDocument, VideoExportRecord } from './studio'
 import type { VideoCharacterRenderAssetSnapshot } from './videoCharacterRenderAssets'
 import type { RenderVariant } from './videoSceneIR'
 
+export type VideoExportMetrics = Readonly<{
+  startedAt: string
+  totalMs?: number
+  prepareMs?: number
+  renderMs?: number
+  assembleMs?: number
+  verifyMs?: number
+  publishMs?: number
+  renderedFrames?: number
+  reusedFrames?: number
+  rawFrameBytes?: number
+  encodedChunkBytes?: number
+  finalBytes?: number
+}>
+
 export type VideoExportStage =
   | 'queued' | 'preparing' | 'rendering' | 'assembling' | 'verifying' | 'publishing'
   | 'done' | 'cancelled' | 'failed'
@@ -18,6 +33,7 @@ export type VideoExportProgress = Readonly<{
   reusedFrames?: number
   message?: string
   record?: VideoExportRecord
+  metrics?: VideoExportMetrics
 }>
 
 export type VideoExportStartRequest = Readonly<{
