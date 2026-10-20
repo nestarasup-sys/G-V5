@@ -5,7 +5,7 @@ import { stat } from 'node:fs/promises'
 export type VideoStudioH264Encoder = 'h264_mf' | 'h264_nvenc' | 'h264_qsv' | 'h264_amf'
 export const videoStudioH264EncoderPreference: ReadonlyArray<VideoStudioH264Encoder> = ['h264_mf', 'h264_nvenc', 'h264_qsv', 'h264_amf']
 
-export type RawFrameWriterResult = { code: 0; stderr: string; bytesWritten: number; framesWritten: number }
+export type RawFrameWriterResult = { code: 0; stderr: string; bytesWritten: number; framesWritten: number; writeCallbackWaitMs: number; peakInFlight: number }
 export type RawFrameWriterOptions = {
   executable: string
   args: string[]
@@ -29,6 +29,8 @@ export class VideoRawFrameWriter {
   private inFlight = 0
   private framesWritten = 0
   private bytesWritten = 0
+  private writeCallbackWaitMs = 0
+  private peakInFlight = 0
   private fatalError: Error | null = null
   private ended = false
   private readonly waiters: Array<() => void> = []
@@ -79,11 +81,14 @@ export class VideoRawFrameWriter {
       if (this.fatalError) throw this.fatalError
     }
     this.inFlight += 1
+    this.peakInFlight = Math.max(this.peakInFlight, this.inFlight)
+    const writeStarted = performance.now()
     // Generic callers keep copy=true. The export pipeline may opt out only for
     // immutable frame leases that remain alive until this awaited write callback.
     const ownedFrame = options.copy === false ? frame : Buffer.from(frame)
     await new Promise<void>((resolveWrite, rejectWrite) => {
       this.process.stdin.write(ownedFrame, (error) => {
+        this.writeCallbackWaitMs += performance.now() - writeStarted
         this.inFlight = Math.max(0, this.inFlight - 1)
         if (!error) { this.framesWritten += 1; this.bytesWritten += ownedFrame.byteLength; resolveWrite() }
         else { this.fail(error); rejectWrite(error) }
@@ -106,7 +111,7 @@ export class VideoRawFrameWriter {
     if (exit.code !== 0) throw new Error(`O encoder terminou com código ${exit.code ?? exit.signal}. ${this.stderr}`)
     const output = await stat(this.outputPath)
     if (!output.isFile() || output.size < 1) throw new Error('O encoder não produziu um arquivo de saída válido.')
-    return { code: 0, stderr: this.stderr, bytesWritten: this.bytesWritten, framesWritten: this.framesWritten }
+    return { code: 0, stderr: this.stderr, bytesWritten: this.bytesWritten, framesWritten: this.framesWritten, writeCallbackWaitMs: this.writeCallbackWaitMs, peakInFlight: this.peakInFlight }
   }
 
   async cancel(): Promise<void> {
