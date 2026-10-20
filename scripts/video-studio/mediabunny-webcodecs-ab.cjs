@@ -62,7 +62,10 @@ window.__resultPromise=(async()=>{
   const win=new BrowserWindow({show:false,width:640,height:360,webPreferences:{contextIsolation:true,nodeIntegration:false,sandbox:false,backgroundThrottling:false}})
   try{
     await win.loadFile(html)
-    const result=await win.webContents.executeJavaScript('(async()=>{while(!window.__resultPromise)await new Promise(r=>setTimeout(r,10));return await window.__resultPromise})()',true)
+    const result=await Promise.race([
+      win.webContents.executeJavaScript('(async()=>{while(!window.__resultPromise)await new Promise(r=>setTimeout(r,10));return await window.__resultPromise})()',true),
+      new Promise((_,reject)=>setTimeout(()=>reject(new Error('Mediabunny/WebCodecs A/B excedeu 180 segundos.')),180000)),
+    ])
     if(!result?.ok)throw new Error('Mediabunny A/B did not return result.')
     const gpuInfo=await app.getGPUInfo('basic').catch(()=>null)
     console.log(JSON.stringify({...result,machine:{platform:process.platform,release:os.release(),cpu:os.cpus()[0]?.model??'unknown',logicalCpuCount:os.cpus().length,totalMemoryBytes:os.totalmem()},gpuInfo},null,2))
