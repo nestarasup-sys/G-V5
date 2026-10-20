@@ -56,6 +56,7 @@ export type BaseVideoDetails = {
 }
 
 export type BaseVideoCategory = { id: string; name: string; color: string; createdAt: string }
+export type RoteiroExportLog = { id: string; roteiroId: string; createdAt: string; action: string; status: 'success' | 'error'; details: string }
 
 export type RoteiroDocument = {
   id: string
@@ -92,6 +93,9 @@ export type RoteirosDesktopApi = {
   createBaseVideoCategory: (name: string) => Promise<BaseVideoCategory>
   renameBaseVideoCategory: (id: string, name: string) => Promise<BaseVideoCategory>
   deleteBaseVideoCategory: (id: string) => Promise<void>
+  listRoteiroExportLogs: (roteiroId: string) => Promise<RoteiroExportLog[]>
+  appendRoteiroExportLog: (roteiroId: string, entry: RoteiroExportLog) => Promise<void>
+  clearRoteiroExportLogs: (roteiroId: string) => Promise<void>
   deleteBaseVideoDetails: (videoId: string) => Promise<void>
   deleteBaseVideo: (videoId: string) => Promise<void>
   publishBaseVideo: (videoId: string) => Promise<number>

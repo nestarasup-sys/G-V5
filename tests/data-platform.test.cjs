@@ -85,7 +85,7 @@ test('roteiros migra JSON para SQLite sem apagar a origem e adapta o schema lega
 
   const catalog = catalogAt(root)
   const db = catalog.database
-  assert.equal(db.pragma('user_version', { simple: true }), 10)
+  assert.equal(db.pragma('user_version', { simple: true }), 16)
   assert.ok(db.prepare('PRAGMA table_info(roteiros)').all().some((column) => column.name === 'position'))
   assert.ok(db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='roteiro_sections'").get())
   assert.deepEqual(db.prepare('SELECT id, title, video_title, character_ids_json, position FROM roteiros ORDER BY position').all(), [{
@@ -102,6 +102,13 @@ test('roteiros migra JSON para SQLite sem apagar a origem e adapta o schema lega
     video_title: fixture[0].tiktoks[0].videoTitle,
     position: 0
   }])
+  const categoryId = 'f29e855f-79a2-4b21-a938-650ef8df645b'
+  const videoId = '7c44e765-c7aa-4412-9187-7c828cb36cdf'
+  db.prepare('INSERT INTO base_video_categories(category_id, name, color_hex, created_at) VALUES (?, ?, ?, ?)').run(categoryId, 'Categoria sintética', '#dc5368', new Date().toISOString())
+  db.prepare("INSERT INTO base_video_details(video_id, video_number, description_text, timeline, additional_context, updated_at) VALUES (?, 1, 'Descrição preservada', 'past', 'Contexto sintético', ?)").run(videoId, new Date().toISOString())
+  db.prepare('INSERT INTO base_video_category_assignments(video_id, category_id, assigned_at) VALUES (?, ?, ?)').run(videoId, categoryId, new Date().toISOString())
+  const exportLogId = '40a2d12e-96e3-4bd9-9c9e-f21f837a468f'
+  db.prepare("INSERT INTO roteiro_export_logs(id, roteiro_id, created_at, action, status, details) VALUES (?, ?, ?, 'Exportar teste', 'success', 'Resultado sintético')").run(exportLogId, fixture[0].id, new Date().toISOString())
   const migration = JSON.parse(db.prepare("SELECT value FROM app_metadata WHERE key = 'roteiros-json-to-sqlite-v1'").get().value)
   assert.equal(migration.sourceSha256, sha256(sourceBytes))
   assert.deepEqual(await fs.readFile(sourcePath), sourceBytes)
@@ -112,8 +119,41 @@ test('roteiros migra JSON para SQLite sem apagar a origem e adapta o schema lega
   const reopened = catalogAt(root)
   assert.equal(reopened.database.prepare('SELECT count(*) AS count FROM roteiros').get().count, 1)
   assert.equal(reopened.database.prepare('SELECT count(*) AS count FROM roteiro_tiktoks').get().count, 1)
+  assert.deepEqual(reopened.database.prepare('SELECT description_text, timeline, additional_context FROM base_video_details WHERE video_id=?').get(videoId), { description_text: 'Descrição preservada', timeline: 'past', additional_context: 'Contexto sintético' })
+  assert.equal(reopened.database.prepare('SELECT category_id FROM base_video_category_assignments WHERE video_id=?').get(videoId).category_id, categoryId)
+  assert.equal(reopened.database.prepare('SELECT count(*) AS count FROM roteiro_export_logs WHERE id=?').get(exportLogId).count, 1)
+  reopened.database.prepare('DELETE FROM base_video_categories WHERE category_id=?').run(categoryId)
+  assert.equal(reopened.database.prepare('SELECT count(*) AS count FROM base_video_category_assignments WHERE video_id=?').get(videoId).count, 0)
+  assert.equal(reopened.database.prepare('SELECT count(*) AS count FROM base_video_details WHERE video_id=?').get(videoId).count, 1)
+  assert.equal(reopened.database.pragma('integrity_check', { simple: true }), 'ok')
+  assert.deepEqual(reopened.database.pragma('foreign_key_check'), [])
   assert.equal(JSON.parse(reopened.database.prepare("SELECT value FROM app_metadata WHERE key = 'roteiros-json-to-sqlite-v1'").get().value).migratedAt, migration.migratedAt)
   reopened.close()
+}))
+
+test('schema de categorias V14 migra para cores exclusivas e persiste os valores', async () => withRoot(async (root) => {
+  await fs.mkdir(path.join(root, 'database'), { recursive: true })
+  const legacyDb = new Database(path.join(root, 'database', 'catalog.sqlite'))
+  legacyDb.exec(`CREATE TABLE base_video_categories (
+    category_id TEXT PRIMARY KEY,
+    name TEXT NOT NULL COLLATE NOCASE UNIQUE,
+    created_at TEXT NOT NULL
+  ) WITHOUT ROWID;
+  INSERT INTO base_video_categories VALUES ('cat-a', 'A', '2026-01-01T00:00:00.000Z');
+  INSERT INTO base_video_categories VALUES ('cat-b', 'B', '2026-01-02T00:00:00.000Z');
+  PRAGMA user_version = 14;`)
+  legacyDb.close()
+  const catalog = catalogAt(root)
+  const colors = catalog.database.prepare('SELECT color_hex FROM base_video_categories ORDER BY category_id').all().map((row) => row.color_hex)
+  assert.equal(catalog.database.pragma('user_version', { simple: true }), 16)
+  assert.equal(new Set(colors).size, 2)
+  catalog.close()
+  const reopened = catalogAt(root)
+  assert.deepEqual(reopened.database.prepare('SELECT category_id, color_hex FROM base_video_categories ORDER BY category_id').all(), [
+    { category_id: 'cat-a', color_hex: colors[0] },
+    { category_id: 'cat-b', color_hex: colors[1] }
+  ])
+  assert.equal(reopened.database.pragma('integrity_check', { simple: true }), 'ok')
 }))
 
 test('synthetic scale index handles 600 characters and 2000 hair assets with bounded first-page latency', async (t) => withRoot(async (root) => {

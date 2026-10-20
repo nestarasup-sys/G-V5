@@ -42,6 +42,7 @@ export function BaseVideosPage() {
   const [busy, setBusy] = useState(false)
   const [publishErrors, setPublishErrors] = useState<Record<string, string>>({})
   const [error, setError] = useState<string | null>(null)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [deleteMode, setDeleteMode] = useState(false)
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [visibleCount, setVisibleCount] = useState(18)
@@ -59,6 +60,7 @@ export function BaseVideosPage() {
   const [saveStatusById, setSaveStatusById] = useState<Record<string, 'saving' | 'saved' | 'error'>>({})
   const pendingSaves = useRef(new Map<string, BaseVideoDetails>())
   const saveTimers = useRef(new Map<string, number>())
+  const inFlightSaves = useRef(new Map<string, Promise<void>>())
   const recognizingDurations = useRef(new Set<string>())
 
   useEffect(() => {
@@ -72,16 +74,15 @@ export function BaseVideosPage() {
       setCategories(loadedCategories)
       setLoaded(true)
     }).catch((reason: unknown) => {
-      if (!cancelled) { setError(reason instanceof Error ? reason.message : 'Não foi possível abrir a Base de vídeos.'); setLoaded(true) }
+      if (!cancelled) { setLoadError(reason instanceof Error ? reason.message : 'Não foi possível abrir a Base de vídeos.'); setLoaded(true) }
     })
     return () => { cancelled = true }
   }, [])
 
   useEffect(() => () => {
     for (const timer of saveTimers.current.values()) window.clearTimeout(timer)
-    for (const details of pendingSaves.current.values()) void window.desktop.saveBaseVideoDetails(details).catch((reason: unknown) => console.error('Falha ao salvar dados da Base de vídeos.', reason))
+    for (const videoId of pendingSaves.current.keys()) void persistPendingSave(videoId, false).catch((reason: unknown) => console.error('Falha ao salvar dados da Base de vídeos.', reason))
     saveTimers.current.clear()
-    pendingSaves.current.clear()
   }, [])
 
   useEffect(() => {
@@ -96,6 +97,30 @@ export function BaseVideosPage() {
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [deleteConfirmOpen, renameTarget, categoryVideoId, deleteMode])
 
+  const persistPendingSave = async (videoId: string, updateUi = true) => {
+    while (true) {
+      const inFlight = inFlightSaves.current.get(videoId)
+      if (inFlight) { await inFlight; continue }
+      const details = pendingSaves.current.get(videoId)
+      if (!details) return
+      if (updateUi) setSaveStatusById((current) => ({ ...current, [videoId]: 'saving' }))
+      const request = window.desktop.saveBaseVideoDetails(details).catch((reason: unknown) => {
+        if (updateUi) { setSaveStatusById((current) => ({ ...current, [videoId]: 'error' })); setError(reason instanceof Error ? reason.message : 'Não foi possível salvar este vídeo.') }
+        throw reason
+      })
+      inFlightSaves.current.set(videoId, request)
+      try {
+        await request
+        if (pendingSaves.current.get(videoId) === details) {
+          pendingSaves.current.delete(videoId)
+          if (updateUi) setSaveStatusById((current) => ({ ...current, [videoId]: 'saved' }))
+        }
+      } finally {
+        if (inFlightSaves.current.get(videoId) === request) inFlightSaves.current.delete(videoId)
+      }
+    }
+  }
+
   const scheduleSave = (details: BaseVideoDetails) => {
     setSaveStatusById((current) => ({ ...current, [details.videoId]: 'saving' }))
     pendingSaves.current.set(details.videoId, details)
@@ -103,9 +128,8 @@ export function BaseVideosPage() {
     if (existing !== undefined) window.clearTimeout(existing)
     const timer = window.setTimeout(() => {
       saveTimers.current.delete(details.videoId)
-      pendingSaves.current.delete(details.videoId)
       setSaveStatusById((current) => ({ ...current, [details.videoId]: 'saving' }))
-      void window.desktop.saveBaseVideoDetails(details).then(() => setSaveStatusById((current) => ({ ...current, [details.videoId]: 'saved' }))).catch((reason: unknown) => { setSaveStatusById((current) => ({ ...current, [details.videoId]: 'error' })); setError(reason instanceof Error ? reason.message : 'Não foi possível salvar este vídeo.') })
+      void persistPendingSave(details.videoId).catch(() => undefined)
     }, 350)
     saveTimers.current.set(details.videoId, timer)
   }
@@ -143,6 +167,7 @@ export function BaseVideosPage() {
     if (busy) return
     setBusy(true); setCategoryError(null)
     try {
+      for (const [videoId, details] of Object.entries(detailsById)) if (details.categoryId === category.id) await flushPendingSave(videoId)
       await window.desktop.deleteBaseVideoCategory(category.id)
       setCategories((current) => current.filter((entry) => entry.id !== category.id))
       for (const [videoId, details] of Object.entries(detailsById)) if (details.categoryId === category.id) updateDetails(videoId, { categoryId: null })
@@ -155,17 +180,7 @@ export function BaseVideosPage() {
     const timer = saveTimers.current.get(videoId)
     if (timer !== undefined) window.clearTimeout(timer)
     saveTimers.current.delete(videoId)
-    const pending = pendingSaves.current.get(videoId)
-    if (!pending) return
-    setSaveStatusById((current) => ({ ...current, [videoId]: 'saving' }))
-    try {
-      await window.desktop.saveBaseVideoDetails(pending)
-      setSaveStatusById((current) => ({ ...current, [videoId]: 'saved' }))
-    } catch (reason) {
-      setSaveStatusById((current) => ({ ...current, [videoId]: 'error' }))
-      throw reason
-    }
-    if (pendingSaves.current.get(videoId) === pending) pendingSaves.current.delete(videoId)
+    await persistPendingSave(videoId)
   }
 
   const visibleItems = useMemo(() => items.filter((item) => {
@@ -187,21 +202,24 @@ export function BaseVideosPage() {
 
   const addVideo = async () => {
     setBusy(true); setError(null)
+    let imported: VideoLibraryItem | null = null
     try {
-      const imported = await window.desktop.importVideoLibrary()
-      if (!imported) return
-      const details = emptyDetails(imported.id)
+      const importedItem = await window.desktop.importVideoLibrary()
+      if (!importedItem) return
+      imported = importedItem
+      const details = emptyDetails(importedItem.id)
       await window.desktop.saveBaseVideoDetails(details)
-      setItems((current) => [imported, ...current.filter((item) => item.id !== imported.id)])
-      setDetailsById((current) => ({ ...current, [imported.id]: details }))
+      setItems((current) => [importedItem, ...current.filter((item) => item.id !== importedItem.id)])
+      setDetailsById((current) => ({ ...current, [importedItem.id]: details }))
       setActiveView('drafts')
       try {
-        const ready = await recognizeDuration(imported)
+        const ready = await recognizeDuration(importedItem)
         setItems((current) => current.map((item) => item.id === ready.id ? ready : item))
       } catch (reason) {
         setError(reason instanceof Error ? reason.message : 'O vídeo foi importado como rascunho, mas não foi possível reconhecer sua duração.')
       }
     } catch (reason) {
+      if (imported) await window.desktop.deleteBaseVideo(imported.id).catch((cleanupReason: unknown) => console.error('Falha ao limpar a importação incompleta do vídeo.', cleanupReason))
       setError(reason instanceof Error ? reason.message : 'Não foi possível adicionar o vídeo.')
     } finally { setBusy(false) }
   }
@@ -232,12 +250,7 @@ export function BaseVideosPage() {
     const deletedIds: string[] = []
     try {
       for (const id of selectedIds) {
-        const timer = saveTimers.current.get(id)
-        if (timer !== undefined) window.clearTimeout(timer)
-        saveTimers.current.delete(id)
-        const pending = pendingSaves.current.get(id)
-        if (pending) await window.desktop.saveBaseVideoDetails(pending)
-        pendingSaves.current.delete(id)
+        await flushPendingSave(id)
         await window.desktop.deleteBaseVideo(id)
         deletedIds.push(id)
       }
@@ -290,12 +303,25 @@ export function BaseVideosPage() {
     }).catch((reason) => setPublishErrors((current) => ({ ...current, [item.id]: reason instanceof Error ? reason.message : 'Não foi possível salvar a duração do vídeo.' }))).finally(() => recognizingDurations.current.delete(item.id))
   }
 
+  const retryLoad = async () => {
+    if (busy) return
+    setBusy(true); setLoaded(false); setLoadError(null)
+    try {
+      const [library, saved, loadedCategories] = await Promise.all([window.desktop.listVideoLibrary(), window.desktop.listBaseVideoDetails(), window.desktop.listBaseVideoCategories()])
+      const savedById = Object.fromEntries(saved.map((entry) => [entry.videoId, entry]))
+      setItems(library)
+      setDetailsById(Object.fromEntries(library.map((item) => [item.id, savedById[item.id] ?? emptyDetails(item.id)])))
+      setCategories(loadedCategories)
+    } catch (reason) { setLoadError(reason instanceof Error ? reason.message : 'Não foi possível abrir a Base de vídeos.') }
+    finally { setLoaded(true); setBusy(false) }
+  }
+
   return <main className="base-videos-page">
     <header className="base-videos-subbar">
       <div className="base-videos-heading"><span className="base-videos-heading-icon"><Icon name="frame" /></span><div><h1>Base de vídeos</h1><small>Descrições e tempos compartilhados com os roteiros</small></div></div>
       <div className="base-videos-actions">
-        <button className="base-videos-add" type="button" onClick={() => void addVideo()} disabled={busy || !loaded}>{busy ? 'Importando…' : 'Adicionar'}</button>
-        <button className={deleteMode ? 'base-videos-cancel-delete' : 'base-videos-delete'} type="button" onClick={() => void handleDelete()} disabled={!loaded || busy || (!deleteMode && !items.length) || (deleteMode && !selectedIds.length)}>{deleteMode ? `Confirmar (${selectedIds.length})` : 'Excluir'}</button>
+        <button className="base-videos-add" type="button" onClick={() => void addVideo()} disabled={busy || !loaded || Boolean(loadError)}>{busy ? 'Importando…' : 'Adicionar'}</button>
+        <button className={deleteMode ? 'base-videos-cancel-delete' : 'base-videos-delete'} type="button" onClick={() => void handleDelete()} disabled={!loaded || Boolean(loadError) || busy || (!deleteMode && !items.length) || (deleteMode && !selectedIds.length)}>{deleteMode ? `Confirmar (${selectedIds.length})` : 'Excluir'}</button>
         {deleteMode && <button className="base-videos-cancel" type="button" disabled={busy || !loaded} onClick={() => { setDeleteMode(false); setSelectedIds([]) }}>Cancelar</button>}
         <span className="base-videos-action-divider" />
         <button className={`base-videos-view${activeView === 'drafts' ? ' active' : ''}`} type="button" disabled={!loaded} onClick={() => { setActiveView((view) => view === 'main' ? 'drafts' : 'main'); setDeleteMode(false); setSelectedIds([]) }}>{activeView === 'drafts' ? 'Vídeos' : 'Rascunhos'} <span>{items.filter((item) => detailsById[item.id]?.videoNumber === undefined).length}</span></button>
@@ -305,7 +331,7 @@ export function BaseVideosPage() {
       {error && <div className="base-videos-error" role="alert"><span>{error}</span><button type="button" onClick={() => setError(null)}>Fechar</button></div>}
       <div className="base-videos-filters"><label className="base-videos-search"><Icon name="search" /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar por nome, ID, número ou descrição" /></label><label><span>Linha do tempo</span><select value={timelineFilter} onChange={(event) => setTimelineFilter(event.target.value)}><option value="all">Todas</option><option value="past">Passado</option><option value="present">Presente</option><option value="future">Futuro</option><option value="unspecified">Indefinido</option></select></label><label><span>Ordenar</span><select value={sort} onChange={(event) => setSort(event.target.value as typeof sort)}><option value="order">Ordem padrão</option><option value="name">Nome</option><option value="duration">Duração</option><option value="newest">Mais recente</option></select></label>{deleteMode && <strong className="base-videos-selection-count">{selectedIds.length} selecionado(s)</strong>}</div>
       <div className="base-videos-view-heading"><div><h2>{activeView === 'main' ? 'Vídeos' : 'Rascunhos'}</h2><p>{activeView === 'main' ? 'Vídeos enviados para a Base, em ordem de identificação.' : 'Vídeos aguardando envio para a Base de vídeos.'}</p></div><span>{visibleItems.length} vídeo{visibleItems.length === 1 ? '' : 's'}</span></div>
-      {!loaded ? <div className="base-videos-grid base-videos-skeleton-grid" aria-label="Carregando vídeos">{Array.from({ length: 6 }, (_, index) => <div className="base-videos-skeleton-card" key={index}><i /><b /><span /><span /></div>)}</div> : visibleItems.length ? <><div className="base-videos-grid">{visibleItems.slice(0, visibleCount).map((item) => {
+      {!loaded ? <div className="base-videos-grid base-videos-skeleton-grid" aria-label="Carregando vídeos">{Array.from({ length: 6 }, (_, index) => <div className="base-videos-skeleton-card" key={index}><i /><b /><span /><span /></div>)}</div> : loadError ? <div className="base-videos-empty"><span className="base-videos-empty-icon"><Icon name="warning" /></span><strong>Não foi possível carregar a Base de vídeos</strong><span>{loadError}</span><button type="button" disabled={busy} onClick={() => void retryLoad()}>{busy ? 'Carregando…' : 'Tentar novamente'}</button></div> : visibleItems.length ? <><div className="base-videos-grid">{visibleItems.slice(0, visibleCount).map((item) => {
         const details = detailsById[item.id] ?? emptyDetails(item.id)
         const selected = selectedIds.includes(item.id)
         const currentCategory = categories.find((category) => category.id === details.categoryId)
@@ -315,7 +341,7 @@ export function BaseVideosPage() {
             <header className="base-video-card-heading"><div><strong title={item.name}>{item.name}</strong><small>{details.videoNumber === undefined ? 'RASCUNHO' : `VÍDEO ${String(details.videoNumber).padStart(2, '0')}`} · {formatDuration(item.durationFrames)} · {(item.size / 1024 ** 2).toFixed(1)} MB</small></div><button type="button" disabled={busy} onClick={() => { setRenameTarget(item); setRenameValue(item.name) }} aria-label={`Renomear ${item.name}`} title="Renomear vídeo"><Icon name="edit" /></button></header>
             <div className="roteiro-video-stage"><video src={`gacha-video://library/${item.id}`} controls playsInline preload="metadata" onLoadedMetadata={(event) => recognizeCardDuration(item, event.currentTarget)} aria-label={`Prévia de ${item.name}`} />{details.videoNumber !== undefined && <span className="base-video-number" title={`ID ${item.id}`}>VÍDEO {String(details.videoNumber).padStart(2, '0')}</span>}<span className="base-video-duration-overlay">{formatDuration(item.durationFrames)}</span></div>
             {item.durationFrames === null && <p className="base-video-duration-warning" role="status"><Icon name="warning" /> Duração não reconhecida; carregue a prévia para tentar identificá-la automaticamente.</p>}
-            <div className="base-video-category-row"><span className={`base-video-category-current${saveStatusById[item.id] === 'error' ? ' save-error' : ''}`} role="status">{saveStatusById[item.id] === 'saving' ? 'Salvando alterações…' : saveStatusById[item.id] === 'error' ? 'Erro ao salvar' : <><span className="base-video-category-dot" style={{ backgroundColor: currentCategory?.color ?? '#b6aebd' }} />{currentCategory?.name ?? 'Sem categoria'}</>}</span><button className="base-video-category-button" type="button" disabled={busy} onClick={() => { setCategoryVideoId(item.id); setCategoryName(''); setCategoryEditingId(null); setCategoryError(null) }}>Categoria</button></div>
+            <div className="base-video-category-row"><span className={`base-video-category-current${saveStatusById[item.id] === 'error' ? ' save-error' : ''}`} role="status">{saveStatusById[item.id] === 'saving' ? 'Salvando alterações…' : saveStatusById[item.id] === 'error' ? 'Erro ao salvar' : <><span className="base-video-category-dot" style={{ backgroundColor: currentCategory?.color ?? '#b6aebd' }} />{currentCategory?.name ?? 'Sem categoria'}</>}</span><div className="base-video-category-row-actions">{saveStatusById[item.id] === 'error' && pendingSaves.current.has(item.id) && <button className="base-video-save-retry" type="button" onClick={() => void persistPendingSave(item.id).catch(() => undefined)}>Tentar salvar</button>}<button className="base-video-category-button" type="button" disabled={busy} onClick={() => { setCategoryVideoId(item.id); setCategoryName(''); setCategoryEditingId(null); setCategoryError(null) }}>Categoria</button></div></div>
             <label className="roteiro-video-description"><span>Descrição do que acontece no vídeo</span><textarea value={details.description} disabled={busy} onChange={(event) => updateDetails(item.id, { description: event.target.value })} placeholder="Descreva o que acontece neste vídeo…" maxLength={20000} /></label>
             <div className="roteiro-scene-settings">
               <label className="roteiro-timeline-field"><span>Linha do tempo</span><select disabled={busy} value={details.timeline} onChange={(event) => updateDetails(item.id, { timeline: event.target.value as RoteiroTimeline })}><option value="unspecified">Indefinido</option><option value="past">Passado</option><option value="present">Presente</option><option value="future">Futuro</option></select></label>

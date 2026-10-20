@@ -27,7 +27,7 @@ import { VideoPreviewProxyStore } from './videoPreviewProxyStore'
 import { resolveVideoStudioTools } from './videoToolsResolver'
 import { probeVideoStudioFfmpeg, type VideoStudioFfmpegCapabilities } from './videoFfmpegCapabilities'
 import type { VideoExportProgress, VideoExportStartRequest } from '../src/shared/videoExportRuntime'
-import type { BaseVideoCategory, BaseVideoDetails, RoteiroDocument, RoteiroExportCharacterInfo, RoteiroReactionBlock, RoteiroSectionContent, RoteiroTikTok, RoteiroVideoReference } from '../src/shared/roteiros'
+import type { BaseVideoCategory, BaseVideoDetails, RoteiroDocument, RoteiroExportCharacterInfo, RoteiroExportLog, RoteiroReactionBlock, RoteiroSectionContent, RoteiroTikTok, RoteiroVideoReference } from '../src/shared/roteiros'
 import { RoteiroCharacterExportStore } from './roteiroCharacterExport'
 import { RoteiroProjectExportStore } from './roteiroProjectExport'
 import { serializeVideoCharacterRenderAssetSnapshot } from '../src/shared/videoCharacterRenderAssets'
@@ -2229,6 +2229,47 @@ async function registerFabricatorHandlers(): Promise<void> {
     await next
   })
 
+  ipcMain.handle('roteiros:export-logs:list', async (event, roteiroId: unknown): Promise<RoteiroExportLog[]> => {
+    assertTrustedSender(event)
+    if (typeof roteiroId !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(roteiroId)) throw new Error('Identificador de roteiro inválido.')
+    await roteirosSaveQueue.catch(() => undefined)
+    const db = dataPlatform.database
+    if (!db) throw new Error('Catálogo de dados não inicializado.')
+    return (db.prepare('SELECT id, roteiro_id, created_at, action, status, details FROM roteiro_export_logs WHERE roteiro_id=? ORDER BY created_at DESC, id DESC LIMIT 50').all(roteiroId) as Array<{ id: string; roteiro_id: string; created_at: string; action: string; status: 'success' | 'error'; details: string }>).map((row) => ({ id: row.id, roteiroId: row.roteiro_id, createdAt: row.created_at, action: row.action, status: row.status, details: row.details }))
+  })
+
+  ipcMain.handle('roteiros:export-logs:append', async (event, roteiroId: unknown, value: unknown): Promise<void> => {
+    assertTrustedSender(event)
+    if (typeof roteiroId !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(roteiroId)
+      || !value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Dados do log de exportação inválidos.')
+    const entry = value as RoteiroExportLog
+    if (entry.roteiroId !== roteiroId || typeof entry.id !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(entry.id)
+      || typeof entry.createdAt !== 'string' || !Number.isFinite(Date.parse(entry.createdAt))
+      || typeof entry.action !== 'string' || !entry.action.trim() || entry.action.length > 120
+      || !['success', 'error'].includes(entry.status) || typeof entry.details !== 'string' || entry.details.length > 5000) throw new Error('Dados do log de exportação inválidos.')
+    const db = dataPlatform.database
+    if (!db) throw new Error('Catálogo de dados não inicializado.')
+    const next = roteirosSaveQueue.catch(() => undefined).then(() => {
+      const save = db.transaction(() => {
+        db.prepare('INSERT INTO roteiro_export_logs(id, roteiro_id, created_at, action, status, details) VALUES (?, ?, ?, ?, ?, ?)').run(entry.id, roteiroId, entry.createdAt, entry.action.trim(), entry.status, entry.details)
+        db.prepare('DELETE FROM roteiro_export_logs WHERE roteiro_id=? AND id NOT IN (SELECT id FROM roteiro_export_logs WHERE roteiro_id=? ORDER BY created_at DESC, id DESC LIMIT 50)').run(roteiroId, roteiroId)
+      })
+      save()
+    })
+    roteirosSaveQueue = next
+    await next
+  })
+
+  ipcMain.handle('roteiros:export-logs:clear', async (event, roteiroId: unknown): Promise<void> => {
+    assertTrustedSender(event)
+    if (typeof roteiroId !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(roteiroId)) throw new Error('Identificador de roteiro inválido.')
+    const db = dataPlatform.database
+    if (!db) throw new Error('Catálogo de dados não inicializado.')
+    const next = roteirosSaveQueue.catch(() => undefined).then(() => { db.prepare('DELETE FROM roteiro_export_logs WHERE roteiro_id=?').run(roteiroId) })
+    roteirosSaveQueue = next
+    await next
+  })
+
   ipcMain.handle('base-videos:list-details', async (event): Promise<BaseVideoDetails[]> => {
     assertTrustedSender(event)
     const db = dataPlatform.database
@@ -2297,7 +2338,9 @@ async function registerFabricatorHandlers(): Promise<void> {
     if (typeof id !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)) throw new Error('Identificador de categoria inválido.')
     const db = dataPlatform.database
     if (!db) throw new Error('Catálogo de dados não inicializado.')
-    db.prepare('DELETE FROM base_video_categories WHERE category_id=?').run(id)
+    const next = roteirosSaveQueue.catch(() => undefined).then(() => { db.prepare('DELETE FROM base_video_categories WHERE category_id=?').run(id) })
+    roteirosSaveQueue = next
+    await next
   })
 
   ipcMain.handle('base-videos:save-details', async (event, value: unknown): Promise<void> => {
