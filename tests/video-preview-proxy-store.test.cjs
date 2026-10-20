@@ -100,3 +100,33 @@ test('proxy cache quota evicts older derivatives while preserving the freshly ge
     assert.ok(pruned.bytes<=3000)
   }finally{fs.rmSync(root,{recursive:true,force:true})}
 })
+
+
+test('concurrent ensure calls for the same source share one FFmpeg generation',async()=>{
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),'gv5-proxy-concurrent-'))
+  const source=path.join(root,'source.mp4')
+  fs.writeFileSync(source,Buffer.alloc(8192,6))
+  let calls=0
+  const mod=load({'./videoFfmpegCapabilities':{
+    runVideoStudioProcess:async(_exe,args)=>{
+      calls++
+      await new Promise(resolve=>setTimeout(resolve,15))
+      const out=args.at(-1)
+      if(args.includes('showwavespic=s=1200x120:colors=white')) fs.writeFileSync(out,Buffer.alloc(256,4))
+      else fs.writeFileSync(out,Buffer.alloc(2048,5))
+      return {code:0,stdout:'',stderr:''}
+    }
+  }})
+  const store=new mod.VideoPreviewProxyStore(path.join(root,'cache'))
+  const ffmpeg={executable:path.resolve(process.execPath),videoEncoder:'h264_mf',smokeEncoded:true}
+  try{
+    const [a,b,c]=await Promise.all([
+      store.ensure({sourcePath:source,ffmpeg}),
+      store.ensure({sourcePath:source,ffmpeg}),
+      store.ensure({sourcePath:source,ffmpeg}),
+    ])
+    assert.deepEqual(a,b)
+    assert.deepEqual(b,c)
+    assert.equal(calls,2,'one proxy encode plus one waveform generation is shared across callers')
+  }finally{fs.rmSync(root,{recursive:true,force:true})}
+})
