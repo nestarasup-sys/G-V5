@@ -30,29 +30,35 @@ export async function runVideoStudioProcess(
   const timeoutMs = Math.max(1_000, Math.min(30 * 60_000, Math.round(options.timeoutMs ?? 15_000)))
   return await new Promise<ProcessResult>((resolvePromise, rejectPromise) => {
     let stdout = '', stderr = '', settled = false
+    let terminationError: Error | null = null
+    let killFallback: ReturnType<typeof setTimeout> | null = null
     const child = spawn(executable, [...args], { shell: false, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] })
     const finish = (fn: () => void) => {
       if (settled) return
       settled = true
       clearTimeout(timer)
+      if (killFallback) clearTimeout(killFallback)
       options.signal?.removeEventListener('abort', onAbort)
       fn()
     }
-    const onAbort = () => {
-      try { child.kill('SIGKILL') } catch { /* best effort */ }
-      const reason = options.signal?.reason
-      finish(() => rejectPromise(reason instanceof Error ? reason : new Error('Processo de mídia cancelado.')))
+    const terminate = (error: Error) => {
+      if (settled || terminationError) return
+      terminationError = error
+      try { child.kill('SIGKILL') } catch { /* exit/error handlers remain authoritative */ }
+      killFallback = setTimeout(() => finish(() => rejectPromise(error)), 3_000)
     }
-    const timer = setTimeout(() => {
-      try { child.kill('SIGKILL') } catch { /* best effort */ }
-      finish(() => rejectPromise(new Error(`Processo de mídia excedeu ${timeoutMs} ms. ${stderr}`)))
-    }, timeoutMs)
+    const onAbort = () => {
+      const reason = options.signal?.reason
+      terminate(reason instanceof Error ? reason : new Error('Processo de mídia cancelado.'))
+    }
+    const timer = setTimeout(() => terminate(new Error(`Processo de mídia excedeu ${timeoutMs} ms. ${stderr}`)), timeoutMs)
     if (options.signal?.aborted) { onAbort(); return }
     options.signal?.addEventListener('abort', onAbort, { once: true })
     child.stdout.on('data', (chunk) => { stdout = appendBounded(stdout, chunk) })
     child.stderr.on('data', (chunk) => { stderr = appendBounded(stderr, chunk) })
-    child.once('error', (error) => finish(() => rejectPromise(error)))
+    child.once('error', (error) => finish(() => rejectPromise(terminationError ?? error)))
     child.once('exit', (code, signal) => finish(() => {
+      if (terminationError) { rejectPromise(terminationError); return }
       if (code === null) rejectPromise(new Error(`Processo de mídia terminou por sinal ${signal ?? 'desconhecido'}. ${stderr}`))
       else resolvePromise({ code, stdout, stderr })
     }))
