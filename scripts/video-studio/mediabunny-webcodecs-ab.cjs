@@ -23,12 +23,13 @@ const raw=Uint8Array.from(atob(${JSON.stringify(bytes)}),c=>c.charCodeAt(0));
 const blob=new Blob([raw],{type:'video/mp4'});
 const timestamps=[0.10,4.20,1.30,3.70,0.65,2.85,4.70,1.85,3.15,0.25,4.45,2.25,0.95,3.95,1.55,2.55,4.90,0.45,3.45,2.05];
 const canvas=document.createElement('canvas');canvas.width=640;canvas.height=360;const ctx=canvas.getContext('2d',{willReadFrequently:true});
+const bounded=(promise,label,ms=8000)=>Promise.race([promise,new Promise((_,reject)=>setTimeout(()=>reject(new Error(label+' timeout')),ms))]);
 async function htmlVideo(){
   const video=document.createElement('video');video.muted=true;video.preload='auto';video.src=URL.createObjectURL(blob);
-  await new Promise((resolve,reject)=>{video.onloadedmetadata=resolve;video.onerror=()=>reject(new Error('HTMLVideo metadata failed'));});
+  await bounded(new Promise((resolve,reject)=>{video.onloadedmetadata=resolve;video.onerror=()=>reject(new Error('HTMLVideo metadata failed'));}),'HTMLVideo metadata');
   let checksum=0;const started=performance.now();
   for(const time of timestamps){
-    await new Promise((resolve,reject)=>{const done=()=>{video.removeEventListener('seeked',done);resolve()};video.addEventListener('seeked',done,{once:true});video.onerror=()=>reject(new Error('HTMLVideo seek failed'));video.currentTime=time;});
+    await bounded(new Promise((resolve,reject)=>{const done=()=>{video.removeEventListener('seeked',done);resolve()};video.addEventListener('seeked',done,{once:true});video.onerror=()=>reject(new Error('HTMLVideo seek failed'));video.currentTime=time;}),'HTMLVideo seek '+time);
     ctx.drawImage(video,0,0,640,360);const p=ctx.getImageData(0,0,1,1).data;checksum=(checksum+p[0]+p[1]*3+p[2]*7)>>>0;
   }
   const elapsedMs=performance.now()-started;URL.revokeObjectURL(video.src);return{elapsedMs,checksum};
@@ -40,7 +41,7 @@ async function bunny(){
   if(!await track.canDecode())return{supported:false,reason:'track cannot decode'};
   const sink=new VideoSampleSink(track);let checksum=0;const started=performance.now();
   for(const time of timestamps){
-    const sample=await sink.getSample(time);if(!sample)throw new Error('Mediabunny sample missing at '+time);
+    const sample=await bounded(sink.getSample(time),'Mediabunny sample '+time);if(!sample)throw new Error('Mediabunny sample missing at '+time);
     sample.draw(ctx,0,0,640,360);const p=ctx.getImageData(0,0,1,1).data;checksum=(checksum+p[0]+p[1]*3+p[2]*7)>>>0;sample.close();
   }
   return{supported:true,elapsedMs:performance.now()-started,checksum,duration:await input.computeDuration()};
@@ -48,14 +49,18 @@ async function bunny(){
 function median(values){const sorted=[...values].sort((a,b)=>a-b);return sorted[Math.floor(sorted.length/2)];}
 window.__resultPromise=(async()=>{
   const nativeSamples=[],mediabunnySamples=[];
-  for(let round=0;round<2;round++){
-    if(round%2===0){nativeSamples.push(await htmlVideo());mediabunnySamples.push(await bunny());}
-    else{mediabunnySamples.push(await bunny());nativeSamples.push(await htmlVideo());}
+  try{
+    for(let round=0;round<2;round++){
+      if(round%2===0){nativeSamples.push(await htmlVideo());mediabunnySamples.push(await bunny());}
+      else{mediabunnySamples.push(await bunny());nativeSamples.push(await htmlVideo());}
+    }
+  }catch(error){
+    return{ok:true,supported:false,reason:error instanceof Error?error.message:String(error),timestamps:timestamps.length,nativeSamples,mediabunnySamples};
   }
   const supported=mediabunnySamples.every(x=>x.supported);
   const nativeMedianMs=median(nativeSamples.map(x=>x.elapsedMs));
   const mediabunnyMedianMs=supported?median(mediabunnySamples.map(x=>x.elapsedMs)):null;
-  return{ok:true,timestamps:timestamps.length,rounds:2,nativeSamples,mediabunnySamples,nativeMedianMs,mediabunnyMedianMs,speedup:supported?nativeMedianMs/mediabunnyMedianMs:null};
+  return{ok:true,supported,timestamps:timestamps.length,rounds:2,nativeSamples,mediabunnySamples,nativeMedianMs,mediabunnyMedianMs,speedup:supported?nativeMedianMs/mediabunnyMedianMs:null};
 })();
 </script></body></html>`)
   const win=new BrowserWindow({show:false,width:640,height:360,webPreferences:{contextIsolation:true,nodeIntegration:false,sandbox:false,backgroundThrottling:false}})
