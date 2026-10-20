@@ -101,6 +101,8 @@ button:focus-visible, input:focus-visible { outline: 3px solid #ed8caf; outline-
 .roteiros-title-actions button.delete:hover:not(:disabled) { background:#c3323e; }
 .roteiros-title-actions button.confirm-delete { background:#b8202c; }
 .roteiros-title-actions button.confirm-delete:hover:not(:disabled) { background:#a01924; }
+.roteiros-title-actions button.cancel-delete { border-color:#e5ddee;background:#f5f1f8;color:#665873; }
+.roteiros-title-actions button.cancel-delete:hover { background:#ebe4f1;color:#51425f; }
 .roteiros-title-actions button:disabled { opacity:.45;cursor:default; }
 .roteiros-area-titlebar h1 { margin:0;color:#342e36;font:800 31.2px/1.25 Manrope,sans-serif;letter-spacing:-.4px; }
 .base-videos-page { min-width:0;min-height:0;flex:1;display:flex;flex-direction:column;background:#f6f4f7; }

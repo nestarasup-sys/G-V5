@@ -462,7 +462,11 @@ function EmptyRoteirosPage() {
       setDeleteMode(true)
       return
     }
-    if (deleteSelection.length === 0) return
+    if (deleteSelection.length === 0) {
+      setDeleteSelection([])
+      setDeleteMode(false)
+      return
+    }
     setDeleteDialogOpen(true)
   }
 
@@ -502,7 +506,7 @@ function EmptyRoteirosPage() {
       </nav>
     </aside>
     <section className="roteiros-main-empty" aria-label={`Área ${active.label}`}>
-      <header className="roteiros-area-titlebar"><div className="roteiros-title-content">{activeArea === 'roteiros' && <div className="roteiros-title-actions"><button className="add" onClick={() => { setDeleteMode(false); setDeleteSelection([]); setNewTitle(''); setNewCharacterIds([]); setCreateOpen(true) }} title="Adicionar roteiro" type="button">Adicionar</button><button className={deleteMode ? 'confirm-delete' : 'delete'} onClick={handleDeleteButton} disabled={deleteMode ? deleteSelection.length === 0 : roteiros.length === 0} title={deleteMode ? `Confirmar exclusão de ${deleteSelection.length} roteiro(s)` : 'Selecionar roteiros para excluir'} type="button">{deleteMode ? 'Confirmar' : 'Excluir'}</button></div>}<h1>{active.label}</h1></div></header>
+      <header className="roteiros-area-titlebar"><div className="roteiros-title-content">{activeArea === 'roteiros' && <div className="roteiros-title-actions"><button className="add" onClick={() => { setDeleteMode(false); setDeleteSelection([]); setNewTitle(''); setNewCharacterIds([]); setCreateOpen(true) }} title="Adicionar roteiro" type="button">Adicionar</button><button className={deleteMode ? deleteSelection.length ? 'confirm-delete' : 'cancel-delete' : 'delete'} onClick={handleDeleteButton} disabled={!deleteMode && roteiros.length === 0} title={deleteMode ? deleteSelection.length ? `Confirmar exclusão de ${deleteSelection.length} roteiro(s)` : 'Voltar sem excluir roteiros' : 'Selecionar roteiros para excluir'} type="button">{deleteMode ? deleteSelection.length ? 'Confirmar' : 'Voltar' : 'Excluir'}</button></div>}<h1>{active.label}</h1></div></header>
       {activeArea === 'roteiros' && <div className="roteiro-main-library" aria-label="Lista de roteiros" ref={roteiroListRef}><div className="roteiro-library-toolbar"><label><Icon name="search" /><input value={roteiroSearch} onChange={(event) => setRoteiroSearch(event.target.value)} placeholder="Buscar roteiro…" /></label><span className={`roteiro-save-indicator ${roteiroSaveStatus}`} role="status">{roteiroSaveStatus === 'saving' ? 'Salvando…' : roteiroSaveStatus === 'error' ? 'Falha ao salvar' : 'Tudo salvo'}</span>{roteiroSaveStatus === 'error' && <button className="roteiro-save-retry" type="button" onClick={() => { void window.desktop.saveRoteiros(roteiros).then(() => setRoteiroSaveStatus('saved')).catch(() => setRoteiroSaveStatus('error')) }}>Tentar novamente</button>}</div><div className="roteiro-main-cards">{visibleRoteiros.map((roteiro) => {
         const roteiroCharacters = roteiro.characterIds.map((id) => characters.find((character) => character.id === id)).filter((character): character is CustomizerCharacter => Boolean(character))
         const markedForDelete = deleteSelection.includes(roteiro.id)
