@@ -41,6 +41,7 @@ function RoteiroSectionEditor({ title, subtitle, content, characters, characterI
 }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [libraryActionMessage, setLibraryActionMessage] = useState<string | null>(null)
   const [blocksCollapsed, setBlocksCollapsed] = useState(false)
   const previewRef = useRef<HTMLVideoElement>(null)
   const addVideo = async () => {
@@ -98,6 +99,47 @@ function RoteiroSectionEditor({ title, subtitle, content, characters, characterI
     if (seconds !== undefined && (!Number.isFinite(seconds) || seconds < 0 || seconds > 86400)) return
     onUpdate({ ...content, [field]: seconds })
   }
+  const saveVideoDestination = async (destination: 'base' | 'draft') => {
+    if (!video) { setError('Adicione um vídeo antes de enviá-lo.'); return }
+    setBusy(true)
+    setError(null)
+    setLibraryActionMessage(null)
+    const details = {
+      videoId: video.id,
+      description: content.description ?? '',
+      timeline: content.timeline ?? 'unspecified',
+      sceneEndSeconds: content.sceneEndSeconds,
+      firstGroupReactionSeconds: content.firstGroupReactionSeconds,
+      secondGroupReactionSeconds: content.secondGroupReactionSeconds
+    }
+    try {
+      await window.desktop.saveBaseVideoDetails(details)
+      const saved = await window.desktop.listBaseVideoDetails()
+      const existing = saved.find((item) => item.videoId === video.id)
+      const hasFilledContent = Boolean(details.description.trim()
+        || details.timeline !== 'unspecified'
+        || details.sceneEndSeconds !== undefined
+        || details.firstGroupReactionSeconds !== undefined
+        || details.secondGroupReactionSeconds !== undefined
+        || content.blocks.some((block) => block.expression.trim() || block.textPortuguese.trim() || block.textEnglish.trim()))
+      if (destination === 'base' && !hasFilledContent) {
+        setLibraryActionMessage(existing?.videoNumber === undefined
+          ? 'Sem conteúdo preenchido: o vídeo ficou em Rascunhos.'
+          : `Este vídeo já está na Base como VÍDEO ${String(existing.videoNumber).padStart(2, '0')}.`)
+        return
+      }
+      if (destination === 'base') {
+        const number = await window.desktop.publishBaseVideo(video.id)
+        setLibraryActionMessage(`Enviado para a Base de vídeos como VÍDEO ${String(number).padStart(2, '0')}.`)
+      } else {
+        setLibraryActionMessage(existing?.videoNumber === undefined
+          ? 'Vídeo salvo em Rascunhos.'
+          : `Este vídeo já está na Base como VÍDEO ${String(existing.videoNumber).padStart(2, '0')}.`)
+      }
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Não foi possível atualizar a Base de vídeos.')
+    } finally { setBusy(false) }
+  }
 
   return <main className="roteiro-workspace-editor" aria-label={'Área de edição: ' + title}>
     <header className="roteiro-editor-subbar"><div><strong>{title}</strong><span>{subtitle}</span></div><div className="roteiro-video-actions">
@@ -107,6 +149,11 @@ function RoteiroSectionEditor({ title, subtitle, content, characters, characterI
     {error && <p className="roteiro-editor-error" role="alert">{error}</p>}
     <section className="roteiro-video-stage-wrap" aria-label="Preview 1920 por 1080">
       <div className="roteiro-video-preview-panel">
+        <div className="roteiro-library-actions" aria-label="Destino do vídeo">
+          <button type="button" className="primary" onClick={() => void saveVideoDestination('base')} disabled={busy || !video}>{busy ? 'Salvando…' : 'Enviar para base de vídeos'}</button>
+          <button type="button" onClick={() => void saveVideoDestination('draft')} disabled={busy || !video}>Salvar como rascunho</button>
+          {libraryActionMessage && <span role="status">{libraryActionMessage}</span>}
+        </div>
         <div className="roteiro-video-stage">
           {video ? <video ref={previewRef} key={video.id} src={`gacha-video://library/${video.id}`} controls playsInline preload="metadata" aria-label={'Prévia de ' + video.name} /> : <div className="roteiro-video-placeholder"><Icon name="camera" /><strong>Preview 1920 × 1080</strong><span>Adicione um vídeo para visualizar esta seção.</span></div>}
         </div>
