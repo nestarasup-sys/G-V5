@@ -287,6 +287,7 @@ export class VideoExportCoordinator {
     let renderedFrames = 0
     let encodedChunkBytes = completedChunkBytes(reopened.manifest)
     let persistentCacheHits = 0, persistentCacheMisses = 0, persistentCacheWrites = 0
+    let writerWaitMs = 0, writerPeakInFlight = 0
     const frameBytes = 1920 * 1080 * 4
 
     const aggregateCompletedFrames = () => [...completedByChunk.values()].reduce((sum, value) => sum + value, 0)
@@ -306,6 +307,8 @@ export class VideoExportCoordinator {
         persistentCacheHits,
         persistentCacheMisses,
         persistentCacheWrites,
+        writerWaitMs,
+        writerPeakInFlight,
         workerCount,
         workerStrategy,
         fallbackCount,
@@ -383,6 +386,8 @@ export class VideoExportCoordinator {
           },
         })
         encodedChunkBytes += encodedChunk.outputBytes
+        writerWaitMs += encodedChunk.writer.writeCallbackWaitMs
+        writerPeakInFlight = Math.max(writerPeakInFlight, encodedChunk.writer.peakInFlight)
         completedByChunk.set(index, endFrameExclusive - startFrame)
         await this.jobs.recordChunk(active.jobId, index)
         this.update(active, {
@@ -464,6 +469,8 @@ export class VideoExportCoordinator {
         cacheEntries: frameCache.stats().entries,
         cacheBytes: frameCache.stats().bytes,
         cacheMaxBytes: frameCache.stats().maxBytes,
+        writerWaitMs,
+        writerPeakInFlight,
       }),
       message: 'Montando vídeo e áudio…',
     })
@@ -534,6 +541,8 @@ export class VideoExportCoordinator {
         cacheEntries: frameCache.stats().entries,
         cacheBytes: frameCache.stats().bytes,
         cacheMaxBytes: frameCache.stats().maxBytes,
+        writerWaitMs,
+        writerPeakInFlight,
       }),
       message: 'Exportação concluída e verificada.',
       record: sharedRecord,
