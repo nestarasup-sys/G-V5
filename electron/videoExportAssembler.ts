@@ -53,13 +53,14 @@ async function concatenateChunks(
   chunks: ReadonlyArray<VideoStudioEncodedChunk>,
   outputPath: string,
   timeoutMs: number,
+  signal?: AbortSignal,
 ): Promise<void> {
   const list = Buffer.from(chunks.map((chunk) => `file '${concatEscape(chunk.path)}'`).join('\n') + '\n', 'utf8')
   const result = await runVideoStudioProcess(ffmpeg.executable, [
     '-hide_banner', '-loglevel', 'error', '-nostdin', '-y',
     '-f', 'concat', '-safe', '0', '-protocol_whitelist', 'file,pipe,crypto,data', '-i', 'pipe:0',
     '-map', '0:v:0', '-c:v', 'copy', '-an', '-movflags', '+faststart', '-f', 'mp4', outputPath,
-  ], { input: list, timeoutMs })
+  ], { input: list, timeoutMs, signal })
   if (result.code !== 0) throw new Error(`Concatenação dos chunks falhou. ${result.stderr}`)
   const info = await stat(outputPath).catch(() => null)
   if (!info?.isFile() || info.size < 1) throw new Error('Concatenação não produziu vídeo intermediário.')
@@ -79,6 +80,7 @@ export async function assembleVideoStudioOutput(
     outputPath: string
     tempRoot: string
     timeoutMs?: number
+    signal?: AbortSignal
   },
 ): Promise<VideoStudioAssemblyResult> {
   if (!input.ffmpeg?.smokeEncoded) throw new Error('FFmpeg não passou pelo capability probe.')
@@ -94,7 +96,7 @@ export async function assembleVideoStudioOutput(
   const folder = await mkdtemp(join(resolve(input.tempRoot), 'gacha-video-assemble-'))
   const videoInput = input.chunks.length === 1 ? input.chunks[0].path : join(folder, 'joined-video.mp4')
   try {
-    if (input.chunks.length > 1) await concatenateChunks(input.ffmpeg, input.chunks, videoInput, timeoutMs)
+    if (input.chunks.length > 1) await concatenateChunks(input.ffmpeg, input.chunks, videoInput, timeoutMs, input.signal)
     const audio = buildVideoStudioAudioPlan(input.timeline, input.media, 1)
     const args = [
       '-hide_banner', '-loglevel', 'error', '-nostdin', '-y',
@@ -106,7 +108,7 @@ export async function assembleVideoStudioOutput(
       '-t', (input.timeline.durationFrames / 60).toFixed(6),
       '-movflags', '+faststart', '-f', 'mp4', outputPath,
     ]
-    const mux = await runVideoStudioProcess(input.ffmpeg.executable, args, { timeoutMs })
+    const mux = await runVideoStudioProcess(input.ffmpeg.executable, args, { timeoutMs, signal: input.signal })
     if (mux.code !== 0) throw new Error(`Mux final de vídeo/áudio falhou. ${mux.stderr}`)
     const final = await stat(outputPath).catch(() => null)
     if (!final?.isFile() || final.size < 128) throw new Error('Mux final não produziu MP4 válido em tamanho mínimo.')
