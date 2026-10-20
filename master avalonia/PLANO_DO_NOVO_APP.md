@@ -45,7 +45,7 @@ Windows
 
 Não há Chromium nessa pilha. No Windows, Avalonia usa APIs Win32 para serviços de janela e interação do sistema. A documentação atual descreve Skia sobre Direct3D 11 através do ANGLE como caminho de GPU padrão, com fallback por software quando a aceleração não está disponível. Isso é uma característica da plataforma, não garantia de FPS: o desenho da cena, a quantidade de trabalho por alteração e o custo da prévia continuam sob responsabilidade do G5. Referência: [Avalonia no Windows](https://docs.avaloniaui.net/docs/platform-specific-guides/windows).
 
-Avalonia é a camada da interface. Ela não será o lugar das regras de personagem, do esquema do banco, da codificação de vídeo ou de tarefas pesadas. XAML descreve a estrutura visual; C# liga eventos de interface a ViewModels e casos de uso. Controles especializados, como canvas e timeline, podem tratar input e desenho, mas chamam contratos do módulo e não implementam as regras de domínio.
+Avalonia é a camada da interface e o cliente da engine do G5; não será a engine. Ela não será o lugar das regras de personagem, do esquema do banco, da codificação de vídeo ou de tarefas pesadas. XAML descreve a estrutura visual; C# liga eventos de interface a ViewModels e casos de uso. Controles especializados, como canvas e timeline, tratam input e hospedam a apresentação do resultado da engine, sem implementar as regras de domínio.
 
 ## 2. Princípios de construção
 
@@ -76,12 +76,17 @@ master avalonia/
     GV5.App/                    # shell Avalonia, Views, ViewModels, navegação
     GV5.Core/                   # domínio: personagens, modelos, roupas, poses, expressões
     GV5.Application/            # casos de uso, comandos e interfaces de serviço
-    GV5.Rendering/              # composição, geometria, cache e miniaturas
-    GV5.Data/                   # SQLite, AssetStore, migrations, backups
+    GV5.Geometry/               # matemática 2D, hit testing, joints, pivôs e snap
+    GV5.Assets/                 # AssetId, AssetStore, decoders e caches
+    GV5.Characters/             # CharacterResolver e regras de personagem
+    GV5.Scene/                  # cena resolvida e composição de entidades
+    GV5.Rendering/              # RenderScene, SkiaRenderer e superfícies de desenho
+    GV5.Data/                   # SQLite, implementação de arquivos e migrations
     GV5.Jobs/                   # filas, workers, cancelamento e progresso
     GV5.Modules.Fabricador/     # telas e fluxos próprios do Fabricador
     GV5.Modules.Customizador/   # telas e fluxos próprios do Customizador
     GV5.Modules.Studio/         # criado quando seus contratos forem definidos
+    GV5.Timeline/               # modelo e avaliação temporal, sem UI/FFmpeg
     GV5.Modules.VideoStudio/    # edição; reprodução e exportação em serviços
     GV5.Modules.Roteiros/
     GV5.Modules.BaseDeVideos/
@@ -96,22 +101,25 @@ master avalonia/
   tools/                       # ferramentas reproduzíveis de desenvolvimento
 ```
 
-Essa lista é um mapa de responsabilidades, não uma ordem para criar projetos vazios. Começar com Core, Application, Rendering, Data, Jobs, App e os módulos Fabricador/Customizador. Os demais módulos entram quando começarem a ser implementados. `GV5.SharedUi` só recebe controles ou estilos com uso realmente compartilhado; não vira uma pasta para regras de negócio.
+Essa lista é um mapa de responsabilidades, não uma ordem para criar projetos vazios. A engine é esse conjunto de bibliotecas C#/.NET, sem um monólito obrigatório chamado Engine. Começar com Core, Application, Geometry, Assets, Characters, Rendering, Data, Jobs, App e os módulos Fabricador/Customizador. Scene e Timeline entram ao iniciar esses domínios; os demais módulos entram quando começarem a ser implementados. `GV5.SharedUi` só recebe controles ou estilos com uso realmente compartilhado; não vira uma pasta para regras de negócio.
 
 Direção das dependências:
 
 ```text
 GV5.App ───────────────→ GV5.Modules.*
 GV5.Modules.* ─────────→ GV5.Application ─→ GV5.Core
-GV5.Application ───────→ contratos de Rendering, Data e Jobs
-GV5.Rendering ─────────→ GV5.Core
-GV5.Data ──────────────→ GV5.Application / GV5.Core
+GV5.Application ───────→ contratos de engine e dados
+GV5.Characters ────────→ GV5.Core + GV5.Geometry + GV5.Assets
+GV5.Scene ─────────────→ GV5.Characters + GV5.Assets + GV5.Geometry
+GV5.Rendering ─────────→ GV5.Scene + GV5.Assets + SkiaSharp
+GV5.Timeline ──────────→ GV5.Scene / GV5.Core
+GV5.Data ──────────────→ contratos de GV5.Application / GV5.Assets
 GV5.Jobs ──────────────→ contratos de GV5.Application
 ```
 
 Módulos de produto não importam implementações internas uns dos outros. Fabricador e Customizador usam o mesmo modelo e os mesmos serviços públicos do domínio. Integrações passam por contratos em Application ou Core. Referências proibidas devem ser verificadas no build ou em uma verificação de arquitetura; uma orientação escrita sozinha não impede dependências acidentais.
 
-`GV5.Core` não depende de Avalonia, SQLite, sistema de arquivos ou FFmpeg. `GV5.Application` expressa operações como comandos e casos de uso. `GV5.Data` implementa persistência e arquivos. `GV5.Rendering` produz a composição visual a partir de dados do domínio. `GV5.Jobs` coordena trabalho demorado. `GV5.App` monta serviços, abre janelas e hospeda Views/ViewModels.
+`GV5.Core`, `GV5.Geometry`, `GV5.Assets`, `GV5.Characters`, `GV5.Scene`, `GV5.Rendering` e `GV5.Timeline` não dependem de Avalonia. `GV5.Core` também não conhece SQLite, sistema de arquivos ou FFmpeg. `GV5.Application` expressa operações como comandos e casos de uso. `GV5.Data` implementa persistência. `GV5.Rendering` compõe a cena com SkiaSharp. `GV5.Jobs` coordena trabalho demorado. `GV5.App` monta serviços, abre janelas e hospeda Views, ViewModels e controles que fazem a ponte entre input Avalonia e a engine.
 
 Usar MVVM com Views e ViewModels pequenos por fluxo. A View encaminha intenção; o ViewModel coordena estado da tela e solicita casos de uso; o domínio mantém invariantes. Evitar code-behind com regras e um ViewModel global com acesso a todas as áreas. Cada módulo publica uma entrada pequena de navegação e seus serviços; não criar um sistema de plugins dinâmico no início.
 
@@ -147,26 +155,84 @@ Character + Model + WardrobeOverrides + Pose/Expression
                          ↓
                  CharacterScene
                          ↓
-                ICharacterRenderer
+                 SkiaRenderer
                          ↓
            prévia Avalonia / exportação
 ```
 
 Trocar uma roupa altera uma seleção ou `CharacterWardrobeOverride`; o resolver recompõe a cena usando o modelo, encaixes e regras atuais. A mesma composição atende Customizador e Studio. O Video Studio consome estados de personagem em instantes de timeline. Isso evita que cada tela crie sua própria interpretação de camadas, articulações e aparência.
 
-`CharacterResolver` resolve dados; `CharacterRenderer` desenha. A prévia pode reter recursos de desenho, enquanto o documento persistido contém identificadores, transformações e overrides. Um contrato de renderer deve existir para separar consumidor e implementação, sem prometer ou construir um segundo backend antes que haja caso real. No Avalonia 12, Skia é o backend recomendado e o Direct2D antigo foi removido; qualquer renderer alternativo futuro exigirá avaliação de compatibilidade.
+`CharacterResolver` não desenha. Ele recebe Character, Model, Pose, Wardrobe, Hair, Face, Expression e Overrides e produz `ResolvedCharacter`. Essa resolução inclui as camadas e transformações necessárias para construir uma descrição de cena reutilizável pelo Fabricador, Customizador, Studio e Video Studio.
 
-## 6. Rendering, recursos e imagens
+## 6. Geometria independente da interface
 
-Referenciar mídia por `AssetId` e resolver o conteúdo através do `AssetStore`. Acesso a bytes usa streams ou buffers adequados ao trabalho; não serializar PNG em strings Base64 para transportar imagens entre camadas. A prévia pode manter `Bitmap` e cache de GPU limitados à sessão, mas esses objetos não são entidades do domínio nem persistência.
+`GV5.Geometry` contém as regras matemáticas em C# puro, sem Avalonia ou SkiaSharp:
+
+- Matrix, Transform2D, bounds, pivô e crop.
+- Joints, bones e transformações locais/ancestrais.
+- Hit testing, seleção, snap e validação geométrica.
+- Conversões entre coordenadas do modelo, da cena, do canvas e da tela ficam em adaptadores explícitos; zoom e pan de visualização não alteram transformações salvas.
+
+Fabricador, Studio e Video Studio podem consultar a mesma geometria, por exemplo para descobrir qual peça está sob o cursor. O input do mouse vem da UI; a resposta espacial é calculada pela biblioteca de geometria.
+
+## 7. Scene Engine e Rendering Engine
+
+`GV5.Scene` descreve o que deve aparecer. `CharacterRenderSceneBuilder` converte um personagem resolvido em `RenderScene`, uma lista ordenada de layers. Cada layer contém `AssetId`, Transform, Opacity, Crop, Flip, ZIndex e BlendMode. Scene também representa Background, Character, Image, Text, SpeechBubble e Effect com IDs, visibilidade, seleção e transformações próprias.
+
+`GV5.Rendering` começa com `SkiaRenderer`, implementado em C#/.NET sobre SkiaSharp. Ele recebe uma cena pronta e desenha a composição. Regras de personagem, hit testing, timeline e persistência não entram no renderer. FabricatorCanvas pode pedir `engine.GetScene(...)`, receber uma cena imutável e solicitar nova apresentação quando seus dados mudarem.
+
+No app interativo, um controle Avalonia usa a integração de desenho customizado: `DrawingContext` para desenho comum ou `ICustomDrawOperation` com a lease de Skia que Avalonia fornece, quando o canvas complexo precisar de `SKCanvas`. Isso deixa Avalonia como cliente e superfície de apresentação; o contrato de `RenderScene` e o código do SkiaRenderer pertencem à engine. O desenho customizado deve permanecer rápido, reutilizar recursos e não decodificar mídia nem resolver roupas dentro do callback. A documentação informa que `Control.Render()` roda na UI thread e recomenda mantê-lo leve; o caminho de Skia e os callbacks de composição têm contratos próprios de thread e recurso, que devem ser respeitados. Referência: [custom rendering no Avalonia](https://docs.avaloniaui.net/docs/graphics-animation/custom-rendering).
+
+Avalonia usa Skia para desenhar a própria UI no Windows, mas isso é independente do G5 possuir `SkiaRenderer`. A engine usa a API SkiaSharp e uma cena explícita; o adaptador Avalonia apresenta o resultado. Rasterização em background e superfícies GPU são caminhos diferentes: superfície GPU precisa de contexto e propriedade de thread corretos. Não presumir que criar um `GRContext` à parte compartilha a GPU de Avalonia automaticamente. Primeiro implementar o renderer e medir; depois escolher a estratégia de superfície e interop adequada. SkiaSharp documenta canvases para superfícies raster e GPU: [SKCanvas](https://learn.microsoft.com/en-us/dotnet/api/skiasharp.skcanvas?view=skiasharp-3.119), [SKSurface](https://learn.microsoft.com/en-us/dotnet/api/skiasharp.sksurface?view=skiasharp).
+
+O contrato de cena não deve expor tipos Avalonia ou SkiaSharp. Isso preserva regras e módulos caso um backend gráfico seja necessário no futuro. SkiaSharp é a implementação inicial escolhida, não uma promessa de construir Skia, Direct2D, Direct3D e Vulkan desde já. Avalonia 12 removeu seu backend Direct2D; a opção considerada no futuro teria de ser uma implementação do G5 com custo e justificativa demonstrados, e não uma configuração hipotética do Avalonia.
+
+## 8. Recursos, imagens e miniaturas
+
+Nenhuma área ou documento mantém strings Base64 como identidade de mídia. Todos usam `AssetId` — uma representação textual como `asset://<id>` é uma URI conceitual, não caminho físico nem conteúdo embutido. `GV5.Assets` oferece `AssetStore.Open(assetId)` para bytes/streams e `DecodedImageCache.Get(assetId)` para imagem decodificada.
 
 ```text
-AssetId → AssetStore → stream/arquivo → decoder → bitmap ou desenho em Skia
+AssetId
+  ↓
+AssetStore ── original, thumbnail, metadata, hash
+  ↓
+stream → ImageDecoder → DecodedImageCache → SkiaRenderer
 ```
 
-O caminho exato de decode/render será medido e seguirá as APIs do Avalonia/Skia da versão selecionada. A composição usada pela prévia e pelo export precisa compartilhar regras visuais, ainda que use alvos de renderização distintos. Thumbnails são derivados regeneráveis e podem ter tamanho menor que os originais.
+O armazenamento mantém o original, thumbnails derivados, metadados, hash de conteúdo e cache local. Vários personagens referenciam o mesmo `AssetId`; a mesma imagem decodificada pode ser compartilhada, evitando decodificar um PNG de 4 MB vinte vezes. Cache de bitmaps tem LRU, orçamento de memória, invalidação por hash/versão do decoder e leases/referências de uso para não liberar um recurso ainda em desenho. **512 MB é um teto inicial para benchmark, não configuração garantida**; o limite final será medido no hardware e poderá ser configurável. Objetos GPU possuem regras de descarte específicas e não vivem para sempre só porque há referências no documento.
 
-## 7. Modelo de personagem único
+Catálogos não abrem imagens originais para desenhar cartões. `ThumbnailService` gera miniaturas, por exemplo 256×256, em background, mantém cache em disco por hash do original e versão das transformações, e entrega o thumbnail para a UI. Gerar thumbnail novamente só quando não existe ou quando original/transformação mudou.
+
+A composição usada pela prévia e pelo export compartilha `RenderScene` e regras visuais, embora possa usar superfícies distintas. A implementação raster CPU em SkiaSharp pode ser usada em trabalhos isolados e testáveis. GPU offscreen fica para depois de confirmar como contexts e superfícies serão geridos; nunca criar/destruir recursos GPU por item ou dentro de cada frame.
+
+## 9. Jobs, filas e cancelamento
+
+`GV5.Jobs` é o ponto coordenado para trabalho que não deve bloquear interação:
+
+- RenderCharacter e GeneratePosePreview.
+- CreateThumbnail e ProcessChroma.
+- ImportModel e ImportVideo.
+- ExportVideo, Backup e Migration.
+
+Cada job tem ID, prioridade, progresso, `CancellationToken`, status e erro/result. Limitar concorrência e aplicar contrapressão; thumbnail em segundo plano não deve impedir uma prévia interativa. Decodificação, análise de assets, cálculo de geometria derivada e preparação de cenas ocorrem em workers apropriados. Resultados retornam como dados imutáveis; só a UI atualiza ViewModels e controles pelo Dispatcher.
+
+Renderizações são identificadas pela versão/assinatura da entrada. Quando o usuário escolhe Pose 1, 2, 3, 4 e rapidamente chega à Pose 5, jobs ainda não iniciados ou canceláveis das quatro poses anteriores são cancelados; somente o resultado ainda atual pode substituir a prévia. Cancelamento em trabalho já iniciado é cooperativo nos pontos seguros. A UI ignora resultados atrasados mesmo quando uma biblioteca não pode interromper a operação imediatamente.
+
+## 10. Timeline Engine e mídia
+
+Quando o Video Studio começar, `GV5.Timeline` será outro consumidor da Scene Engine. Ele resolve tracks, clips, frames, keyframes, transitions, áudio e estados de personagens. Para um frame pedido, produz uma `Scene` daquele instante; Scene Engine resolve entidades e `GV5.Rendering` desenha o frame. Preview e export usam a mesma avaliação temporal, evitando duas interpretações da timeline.
+
+```text
+Timeline
+  ↓ evaluate frame 1230
+Scene at frame 1230
+  ↓
+Scene Engine → Rendering Engine → frame
+```
+
+FFmpeg continua responsável pelo trabalho especializado de mídia. `VideoEngine` encapsula decoder/probing e `ExportEngine` reúne frames e áudio para produzir o arquivo final. A decisão entre bindings como FFmpeg.AutoGen e processo FFmpeg controlado fica adiada; os módulos dependem de contratos de serviço, não da escolha de binding/processo.
+
+## 11. Modelo de personagem único
 
 Definir uma representação canônica que sirva às ferramentas de criação e de personalização:
 
@@ -182,7 +248,7 @@ O tronco e as articulações reais orientam as transformações conectadas. As r
 
 Antes de implementar todos os ajustes, estabelecer exemplos de referência com resultados visuais conhecidos: pose neutra, rotação de braço, espelhamento, roupa vinculada e personagem com proporções alteradas.
 
-## 8. Dados e arquivos do usuário
+## 12. Dados e arquivos do usuário
 
 Usar SQLite para metadados estruturados e relacionamentos. Guardar imagens e outros arquivos grandes no armazenamento de recursos, referenciados pelo banco. Não persistir imagens repetidas como base64 em cada registro de personagem ou pose.
 
@@ -214,7 +280,7 @@ Regras essenciais:
 
 Banco e arquivos não participam da mesma transação automaticamente. A importação deve preparar o recurso em área temporária, validar, publicar o arquivo e confirmar suas referências no banco, com recuperação de operações interrompidas. A limpeza de recursos órfãos será uma operação explícita e recuperável.
 
-## 9. Edição, desfazer e salvamento
+## 13. Edição, desfazer e salvamento
 
 Representar ações importantes por comandos: mover peça, alterar pivô, aplicar pose, trocar roupa, duplicar personagem e excluir item. Uma interação contínua de arrastar gera uma única entrada no histórico, não centenas.
 
@@ -224,7 +290,7 @@ Agrupar mudanças rápidas e gravar apenas os registros necessários, dentro de 
 
 Exclusões comuns podem ir para uma lixeira com restauração. Exclusão permanente é uma ação separada. Recursos necessários a uma sessão ou exportação em andamento não podem ser removidos silenciosamente.
 
-## 10. Interface e novas áreas
+## 14. Interface e novas áreas
 
 Usar MVVM com ViewModels pequenos por tela ou painel e bindings compilados onde forem adequados. A composição da aplicação registra os serviços e as áreas disponíveis. Evitar um ViewModel global que conheça todos os detalhes do produto.
 
@@ -241,7 +307,7 @@ Quando forem implementadas, as áreas adicionais seguem estes limites:
 - **Roteiros e Base de Vídeos:** ViewModels e casos de uso próprios, com entidades, vínculos e operações explícitas. Recursos grandes são referências ao AssetStore. Nenhuma dessas áreas depende dos controles internos do Studio ou do Video Studio.
 - **Opções e navegação:** preferências da interface não são gravadas junto de dados de personagem. Janelas e diálogos pertencem ao shell e aos serviços de interação com o sistema.
 
-## 11. Prévia, jobs e desempenho
+## 15. Prévia, jobs e desempenho
 
 - Uma superfície de composição de personagem, em vez de reconstruir a tela inteira para cada ajuste.
 - Atualização limitada às peças e propriedades alteradas.
@@ -255,11 +321,11 @@ Quando forem implementadas, as áreas adicionais seguem estes limites:
 
 `GV5.Jobs` fornece filas com concorrência limitada, `CancellationToken`, estado de progresso e resultados explícitos. Usar `async/await` para aguardar I/O e tarefas de worker para trabalho de CPU; não criar uma thread ou processo por item. As operações que podem ser interrompidas devem verificar cancelamento em limites seguros. FFmpeg pode continuar como processo externo para probing, encode e mux de vídeo, encapsulado por serviços que reportam saída, erro, cancelamento e recuperação. A UI só exibe o progresso e envia comandos de iniciar/cancelar.
 
-Escolher primeiro os recursos de desenho do próprio Avalonia e medir. Uma integração direta adicional com Skia ou outra biblioteca só deve entrar por necessidade demonstrada. GPU e C# não garantem fluidez se a interface continuar fazendo trabalho desnecessário.
+Usar `SkiaRenderer` como engine de desenho do G5 desde o primeiro fluxo de personagem. Avalonia apresenta o resultado e desenha a interface; `DrawingContext` atende elementos simples da UI, e a ponte de desenho customizado apresenta a saída do renderer no canvas. Manter raster CPU como primeiro caminho funcional, medir e só então decidir a estratégia GPU. GPU e C# não garantem fluidez se a interface continuar fazendo trabalho desnecessário.
 
 Registrar abertura fria e quente, tempo até a primeira prévia, latência de arraste, tempo de salvamento, memória e recursos retidos depois de fechar um projeto. Definir metas com um primeiro cenário medido no computador de uso, em vez de prometer números sem evidência.
 
-## 12. Falhas, logs e suporte
+## 16. Falhas, logs e suporte
 
 Erros esperados devem ter resultado tipado: arquivo ausente, formato inválido, conflito de revisão, acesso negado e falta de espaço. Exibir uma mensagem útil com a ação que falhou e a possibilidade de tentar novamente quando aplicável.
 
@@ -267,7 +333,7 @@ Logs locais devem incluir operação, duração, módulo e identificador de corr
 
 Falhas inesperadas precisam preservar o último estado confirmado e informar quando uma operação ficou incompleta. Não usar um capturador global de exceções para fingir que uma operação foi concluída.
 
-## 13. Verificações que acompanham a arquitetura
+## 17. Verificações que acompanham a arquitetura
 
 - Regras geométricas: articulações, pivôs, espelhamento, encaixe de roupas e ordem de camadas.
 - Persistência: criar, editar, fechar, reabrir, migrar e recuperar uma gravação interrompida.
@@ -279,7 +345,7 @@ Falhas inesperadas precisam preservar o último estado confirmado e informar qua
 
 Compilar não comprova correção visual. Uma verificação automática também não substitui executar o aplicativo no Windows e manipular um personagem real. Novos testes devem proteger regras e riscos concretos, sem apenas repetir a implementação.
 
-## 14. Importação do legado e independência
+## 18. Importação do legado e independência
 
 O legado será fonte de referência e importação, nunca biblioteca obrigatória do novo aplicativo. Criar importadores versionados em C# que copiem os dados selecionados e gerem um relatório de itens importados, ignorados e incompatíveis.
 
@@ -287,16 +353,16 @@ Não escrever no banco ou nos arquivos originais do Electron. Conservar IDs de o
 
 Antes de excluir o legado, provar que uma cópia contendo somente `master avalonia` compila e executa, que os recursos necessários foram importados, que backups e restauração funcionam e que os fluxos usados foram aceitos. A exclusão futura do legado será uma ação explícita do usuário.
 
-## 15. Primeiras entregas, na ordem
+## 19. Primeiras entregas, na ordem
 
 1. **Fundação executável:** solução C#, janela Avalonia, navegação entre Fabricador e Customizador, tema e diretório de dados próprios. Critério: abrir e fechar no Windows com logs e configuração persistente.
-2. **Personagem mínimo real:** importar um modelo de referência com peças, desenhar camadas, selecionar e transformar uma peça. Critério: geometria e transparência corretas em zoom e espelhamento.
-3. **Edição confiável:** articulações, comando de edição, desfazer/refazer e SQLite. Critério: salvar, fechar e reabrir preserva o resultado, inclusive após falha simulada de gravação.
-4. **Primeiro Customizador:** criar personagem a partir do modelo, aplicar uma roupa e uma aparência facial usando o mesmo motor. Critério: Fabricador e Customizador concordam sobre encaixe e proporções.
+2. **Pipeline gráfico mínimo:** `ModelPart`, Transform, Pivot, Joint e ordem de camadas; `AssetStore`, decoder e cache compartilhado; `RenderScene` e `SkiaRenderer`; `CharacterResolver` fornecendo a cena. Critério: abrir um modelo real, renderizar, selecionar, mover, girar, salvar, fechar e reabrir com o mesmo resultado.
+3. **Edição confiável:** articulações, comandos, desfazer/refazer e SQLite integrados ao pipeline gráfico. Critério: salvar, fechar e reabrir preserva o resultado, inclusive após falha simulada de gravação.
+4. **Primeiro Customizador:** criar personagem a partir do modelo, aplicar roupa e aparência facial usando o mesmo resolver e renderer do Fabricador. Critério: ambas as áreas concordam sobre encaixe, camadas e proporções.
 5. **Bibliotecas úteis:** miniaturas leves, busca, filtros, duplicação, lixeira e importação com progresso e cancelamento.
 6. **Expansão controlada:** completar poses, rosto, cabelo, roupas e proporções, uma seção validada por vez.
 
-## 16. Ideias adicionais para evoluir sem perder controle
+## 20. Ideias adicionais para evoluir sem perder controle
 
 - Recuperar rascunhos após encerramento inesperado.
 - Prévia de importação antes de confirmar alterações na biblioteca.
@@ -309,7 +375,7 @@ Antes de excluir o legado, provar que uma cópia contendo somente `master avalon
 - Recursos experimentais liberados por opção, com formato de dados protegido por versão.
 - Modo de diagnóstico que mede desempenho por operação, ativado explicitamente.
 
-## 17. O que não construir antecipadamente
+## 21. O que não construir antecipadamente
 
 Evitar microserviços, servidor obrigatório, sistema de plugins de terceiros, barramento global de eventos para qualquer alteração e dezenas de camadas genéricas. Começar com módulos claros dentro de uma solução e expandir a estrutura quando houver uma necessidade demonstrada.
 
