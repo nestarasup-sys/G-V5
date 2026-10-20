@@ -55,3 +55,23 @@ test('completed job is never reopened as recovery',async()=>{
   await assert.rejects(()=>coordinator.resume(jobId),/concluída/)
   assert.equal(reopenedCount,0)
 })
+
+
+test('terminal history can be forgotten but an active job cannot be evicted',()=>{
+  const coordinator=new VideoExportCoordinator({},{}, {}, async()=>{}, ()=>{})
+  coordinator.active.set(jobId,{
+    jobId,variant:'animated',controller:new AbortController(),
+    progress:{jobId,stage:'failed',renderVariant:'animated',completedFrames:0,totalFrames:60},
+    surfaces:new Set(),task:Promise.resolve(),
+  })
+  coordinator.forgetTerminal(jobId)
+  assert.equal(coordinator.status(jobId),null)
+
+  coordinator.active.set(jobId,{
+    jobId,variant:'animated',controller:new AbortController(),
+    progress:{jobId,stage:'rendering',renderVariant:'animated',completedFrames:1,totalFrames:60},
+    surfaces:new Set(),task:Promise.resolve(),
+  })
+  assert.throws(()=>coordinator.forgetTerminal(jobId),/ainda está ativo/)
+  assert.equal(coordinator.status(jobId).stage,'rendering')
+})
