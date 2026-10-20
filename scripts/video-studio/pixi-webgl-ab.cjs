@@ -13,7 +13,7 @@ app.whenReady().then(async()=>{
   const html=path.join(root,'bench.html')
   fs.writeFileSync(html,`<!doctype html><html><body><script type="module">
 import {Application,Container,Graphics} from ${JSON.stringify(pixiUrl)};
-const width=960,height=540,frames=120,objects=64;
+const width=960,height=540,frames=30,objects=64;
 function canvasBench(){
   const canvas=document.createElement('canvas');canvas.width=width;canvas.height=height;
   const ctx=canvas.getContext('2d',{alpha:false,willReadFrequently:true});
@@ -57,7 +57,10 @@ window.__resultPromise=(async()=>{
   const win=new BrowserWindow({show:false,width:960,height:540,webPreferences:{contextIsolation:true,nodeIntegration:false,sandbox:false,backgroundThrottling:false}})
   try{
     await win.loadFile(html)
-    const result=await win.webContents.executeJavaScript('(async()=>{while(!window.__resultPromise)await new Promise(r=>setTimeout(r,10));return await window.__resultPromise})()',true)
+    const result=await Promise.race([
+      win.webContents.executeJavaScript('(async()=>{while(!window.__resultPromise)await new Promise(r=>setTimeout(r,10));return await window.__resultPromise})()',true),
+      new Promise((_,reject)=>setTimeout(()=>reject(new Error('Pixi A/B excedeu 180 segundos.')),180000)),
+    ])
     if(!result?.ok||!Number.isFinite(result.pixiMedianMs)||result.pixiMedianMs<=0)throw new Error('Pixi benchmark did not return valid timing.')
     const gpuInfo=await app.getGPUInfo('basic').catch(()=>null)
     const gpuFeatures=app.getGPUFeatureStatus()
