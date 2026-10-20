@@ -11,6 +11,8 @@ export type VideoCanvasFrameResources = Readonly<{
   /** Exact source video frame keyed by clip id. */
   videoFrames?: ReadonlyMap<string, CanvasImageSource>
   layerCache?: VideoCanvasLayerCache
+  /** Export reads every frame back to RGBA; ask Chromium for a CPU-readback friendly backing store. */
+  willReadFrequently?: boolean
 }>
 
 const imageCache = new Map<string, Promise<HTMLImageElement>>()
@@ -204,7 +206,7 @@ export async function renderVideoSceneFrameToCanvas(
 ): Promise<CanvasRenderingContext2D> {
   if (canvas.width !== VIDEO_STAGE_WIDTH) canvas.width = VIDEO_STAGE_WIDTH
   if (canvas.height !== VIDEO_STAGE_HEIGHT) canvas.height = VIDEO_STAGE_HEIGHT
-  const context = canvas.getContext('2d', { alpha: false })
+  const context = canvas.getContext('2d', { alpha: false, willReadFrequently: resources.willReadFrequently === true })
   if (!context) throw new Error('Canvas 2D indisponível para o compositor do Video Studio.')
   context.save()
   context.setTransform(1, 0, 0, 1, 0, 0)
