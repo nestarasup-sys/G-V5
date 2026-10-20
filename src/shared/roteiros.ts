@@ -56,6 +56,7 @@ export type RoteiroDocument = {
   title: string
   videoTitle: string
   characterIds: string[]
+  backgroundAssetId?: string | null
   opening?: RoteiroSectionContent
   tiktoks: RoteiroTikTok[]
 }
@@ -72,4 +73,5 @@ export type RoteirosDesktopApi = {
   writeRoteiroCharacterExportAsset: (jobId: string, asset: { characterId: string; pose: number; expression: string; role: 'base' | 'blink' | 'talk' | 'pt' | 'pt-blink' | 'pt-talk'; dataUrl: string }) => Promise<void>
   finishRoteiroCharacterExport: (jobId: string) => Promise<{ folderName: string; path: string; characters: number; files: number }>
   cancelRoteiroCharacterExport: (jobId: string) => Promise<void>
+  exportRoteiroAssets: (request: { roteiro: RoteiroDocument; kind: 'background' | 'videos' | 'script' }) => Promise<{ path: string; files: number }>
 }

@@ -8,6 +8,7 @@ import { RenderedCharacterPortrait } from './components/RenderedCharacterPortrai
 import type { CustomizerCharacter } from '../../../shared/customizer'
 import type { BaseVideoDetails, RoteiroDocument, RoteiroReactionBlock, RoteiroSectionContent, RoteiroTikTok, RoteiroVideoReference } from '../../../shared/roteiros'
 import type { VideoLibraryItem } from '../../../shared/studio'
+import type { VideoBackgroundLibraryItem } from '../../../shared/studio'
 
 const LazyCustomizerPage = lazy(async () => ({ default: (await import('../features/customizer/CustomizerPage')).CustomizerPage }))
 const LazyStudioPage = lazy(async () => ({ default: (await import('../features/studio/StudioPage')).StudioPage }))
@@ -300,6 +301,12 @@ function RoteiroWorkspace({ roteiro, onBack, onUpdate, onDeleteDraftVideo, chara
   const [exportingCharacters, setExportingCharacters] = useState(false)
   const [characterExportStatus, setCharacterExportStatus] = useState('')
   const [characterExportError, setCharacterExportError] = useState('')
+  const [roteiroExportBusy, setRoteiroExportBusy] = useState<string | null>(null)
+  const [roteiroExportMessage, setRoteiroExportMessage] = useState('')
+  const [roteiroExportError, setRoteiroExportError] = useState('')
+  const [backgroundPickerOpen, setBackgroundPickerOpen] = useState(false)
+  const [backgrounds, setBackgrounds] = useState<VideoBackgroundLibraryItem[]>([])
+  const [backgroundSearch, setBackgroundSearch] = useState('')
   const activeTikTok = roteiro.tiktoks.find((item) => item.id === activeContentId)
   const activeContent = activeContentId === 'opening' ? roteiro.opening ?? emptyRoteiroContent() : { video: activeTikTok?.video ?? null, blocks: activeTikTok?.blocks ?? [], description: activeTikTok?.description ?? '', timeline: activeTikTok?.timeline ?? 'unspecified', sceneEndSeconds: activeTikTok?.sceneEndSeconds, firstGroupReactionSeconds: activeTikTok?.firstGroupReactionSeconds, secondGroupReactionSeconds: activeTikTok?.secondGroupReactionSeconds }
   const updateActiveContent = (content: RoteiroSectionContent) => {
@@ -434,6 +441,35 @@ function RoteiroWorkspace({ roteiro, onBack, onUpdate, onDeleteDraftVideo, chara
       setCharacterExportError(reason instanceof Error ? reason.message : 'Não foi possível exportar os personagens deste roteiro.')
     } finally { setExportingCharacters(false) }
   }
+  const exportRoteiroAsset = async (kind: 'background' | 'videos' | 'script') => {
+    setRoteiroExportBusy(kind); setRoteiroExportError(''); setRoteiroExportMessage('')
+    try {
+      const result = await window.desktop.exportRoteiroAssets({ roteiro, kind })
+      const label = kind === 'background' ? 'Fundo' : kind === 'videos' ? 'Vídeos' : 'Roteiro'
+      setRoteiroExportMessage(`${label} exportado${kind === 'videos' && result.files !== 1 ? 's' : ''}: ${result.files} arquivo(s) · ${result.path}`)
+    } catch (reason) { setRoteiroExportError(reason instanceof Error ? reason.message : 'Não foi possível exportar este conteúdo.') }
+    finally { setRoteiroExportBusy(null) }
+  }
+  const openBackgroundPicker = async () => {
+    setBackgroundPickerOpen(true); setBackgroundSearch('')
+    try { setBackgrounds(await window.desktop.listVideoBackgroundLibrary()) }
+    catch (reason) { setRoteiroExportError(reason instanceof Error ? reason.message : 'Não foi possível carregar a biblioteca de fundos.') }
+  }
+  const importRoteiroBackground = async () => {
+    try {
+      const item = await window.desktop.importVideoBackground()
+      if (item) { setBackgrounds((current) => [item, ...current]); onUpdate({ ...roteiro, backgroundAssetId: item.id }) }
+    } catch (reason) { setRoteiroExportError(reason instanceof Error ? reason.message : 'Não foi possível importar o fundo.') }
+  }
+  const deleteRoteiroBackground = async (item: VideoBackgroundLibraryItem) => {
+    if (!window.confirm(`Excluir permanentemente “${item.name}” da biblioteca? Essa ação não pode ser desfeita.`)) return
+    try {
+      await window.desktop.deleteVideoBackground(item.id)
+      setBackgrounds((current) => current.filter((entry) => entry.id !== item.id))
+      if (roteiro.backgroundAssetId === item.id) onUpdate({ ...roteiro, backgroundAssetId: null })
+      setRoteiroExportError('')
+    } catch (reason) { setRoteiroExportError(reason instanceof Error ? reason.message : 'Não foi possível excluir o fundo.') }
+  }
 
   return <div className="roteiro-workspace-layout">
     <aside className="roteiro-workspace-sidebar">
@@ -463,9 +499,16 @@ function RoteiroWorkspace({ roteiro, onBack, onUpdate, onDeleteDraftVideo, chara
       <button className="roteiro-export-characters" type="button" onClick={() => void exportCharacters()} disabled={exportingCharacters || !roteiro.characterIds.length}>
         {exportingCharacters ? 'Exportando personagens…' : 'Exportar personagens'}
       </button>
+      <button className="roteiro-export-characters roteiro-export-secondary" type="button" onClick={() => void exportRoteiroAsset('background')} disabled={Boolean(roteiroExportBusy)}>{roteiroExportBusy === 'background' ? 'Exportando fundo…' : 'Exportar fundo'}</button>
+      <button className="roteiro-export-characters roteiro-export-select-background" type="button" onClick={() => void openBackgroundPicker()} disabled={Boolean(roteiroExportBusy)}>Selecionar fundo{roteiro.backgroundAssetId ? ' · selecionado' : ''}</button>
+      <button className="roteiro-export-characters roteiro-export-secondary" type="button" onClick={() => void exportRoteiroAsset('videos')} disabled={Boolean(roteiroExportBusy)}>{roteiroExportBusy === 'videos' ? 'Exportando vídeos…' : 'Exportar vídeos'}</button>
+      <button className="roteiro-export-characters roteiro-export-secondary" type="button" onClick={() => void exportRoteiroAsset('script')} disabled={Boolean(roteiroExportBusy)}>{roteiroExportBusy === 'script' ? 'Exportando roteiro…' : 'Exportar roteiro'}</button>
       {characterExportStatus && <p className="roteiro-export-feedback" role="status">{characterExportStatus}</p>}
       {characterExportError && <p className="roteiro-export-error" role="alert">{characterExportError}</p>}
+      {roteiroExportMessage && <p className="roteiro-export-feedback" role="status">{roteiroExportMessage}</p>}
+      {roteiroExportError && <p className="roteiro-export-error" role="alert">{roteiroExportError}</p>}
     </aside>
+    {backgroundPickerOpen && <div className="roteiro-modal-backdrop" onPointerDown={(event) => { if (event.target === event.currentTarget) setBackgroundPickerOpen(false) }}><section className="roteiro-background-modal" role="dialog" aria-modal="true" aria-labelledby="roteiro-background-title"><header><div><span>BIBLIOTECA COMPARTILHADA</span><h2 id="roteiro-background-title">Selecionar fundo</h2><p>O fundo fica associado pelo ID a este roteiro.</p></div><button onClick={() => setBackgroundPickerOpen(false)} aria-label="Fechar" type="button">×</button></header><div className="roteiro-background-toolbar"><input type="search" value={backgroundSearch} onChange={(event) => setBackgroundSearch(event.target.value)} placeholder="Buscar fundo…" aria-label="Buscar fundo"/><button type="button" onClick={() => void importRoteiroBackground()}><Icon name="plus"/>Adicionar novo fundo</button></div><div className="roteiro-background-grid">{backgrounds.filter((item) => item.name.toLocaleLowerCase('pt-BR').includes(backgroundSearch.toLocaleLowerCase('pt-BR'))).map((item) => <article className={roteiro.backgroundAssetId === item.id ? 'selected' : ''} key={item.id}><button type="button" className="roteiro-background-option" disabled={!item.available} onClick={() => { onUpdate({ ...roteiro, backgroundAssetId: item.id }); setBackgroundPickerOpen(false) }}><img src={`gacha-background://library/${item.id}`} alt=""/><strong title={item.name}>{item.name}</strong><small>{item.extension.toUpperCase()} · {(item.size / 1024 / 1024).toFixed(1)} MB</small></button><button type="button" className="roteiro-background-delete" onClick={() => void deleteRoteiroBackground(item)} aria-label={`Excluir permanentemente ${item.name}`}><Icon name="trash"/></button></article>)}{backgrounds.length === 0 && <p>Nenhum fundo cadastrado. Use “Adicionar novo fundo” para importar.</p>}</div><footer><span>{backgrounds.length} fundo(s) na biblioteca</span><button type="button" onClick={() => { onUpdate({ ...roteiro, backgroundAssetId: null }); setBackgroundPickerOpen(false) }}>Remover do roteiro</button></footer></section></div>}
     {editingTikTok && <div className="roteiro-modal-backdrop" onPointerDown={(event) => { if (event.target === event.currentTarget) setEditingTikTok(null) }}><section className="roteiro-video-title-modal" role="dialog" aria-modal="true" aria-labelledby="roteiro-tiktok-edit-heading"><header><strong id="roteiro-tiktok-edit-heading">Editar TikTok</strong><button onClick={() => setEditingTikTok(null)} aria-label="Fechar" type="button">×</button></header><label>Nome do TikTok<input autoFocus value={editingTitle} onChange={(event) => setEditingTitle(event.target.value)} maxLength={100} /></label><label>Título do vídeo<input value={editingVideoTitle} onChange={(event) => setEditingVideoTitle(event.target.value)} maxLength={100} /></label><footer><button onClick={() => setEditingTikTok(null)} type="button">Cancelar</button><button className="roteiro-create-confirm" onClick={saveTikTok} disabled={!editingTitle.trim() || !editingVideoTitle.trim()} type="button"><Icon name="check" />Salvar</button></footer></section></div>}
   </div>
 }

@@ -213,6 +213,7 @@ class DataPlatform {
         title TEXT NOT NULL,
         video_title TEXT NOT NULL,
         character_ids_json TEXT NOT NULL,
+        background_asset_id TEXT,
         position INTEGER NOT NULL CHECK(position >= 0),
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
@@ -328,6 +329,9 @@ class DataPlatform {
       const updatePosition = this.database.prepare('UPDATE roteiros SET position = ? WHERE id = ?')
       this.database.transaction(() => existingRoutes.forEach((route, index) => updatePosition.run(index, route.id)))()
     }
+    if (!roteiroColumns.has('background_asset_id')) this.database.exec('ALTER TABLE roteiros ADD COLUMN background_asset_id TEXT')
+    this.database.prepare("INSERT OR IGNORE INTO schema_migrations(version, name, checksum, applied_at) VALUES (10, 'roteiro-background-library-reference', ?, ?)")
+      .run(sha256('gacha-roteiro-background-library-reference-schema-v10'), now)
     this.database.prepare("INSERT OR IGNORE INTO schema_migrations(version, name, checksum, applied_at) VALUES (5, 'roteiros-position-compatibility', ?, ?)")
       .run(sha256('gacha-roteiros-position-compatibility-schema-v5'), now)
     this.database.prepare("INSERT OR IGNORE INTO schema_migrations(version, name, checksum, applied_at) VALUES (6, 'roteiro-section-content-and-blocks', ?, ?)")

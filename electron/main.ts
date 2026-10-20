@@ -28,6 +28,7 @@ import { probeVideoStudioFfmpeg, type VideoStudioFfmpegCapabilities } from './vi
 import type { VideoExportProgress, VideoExportStartRequest } from '../src/shared/videoExportRuntime'
 import type { BaseVideoDetails, RoteiroDocument, RoteiroReactionBlock, RoteiroSectionContent, RoteiroTikTok, RoteiroVideoReference } from '../src/shared/roteiros'
 import { RoteiroCharacterExportStore } from './roteiroCharacterExport'
+import { RoteiroProjectExportStore } from './roteiroProjectExport'
 import { serializeVideoCharacterRenderAssetSnapshot } from '../src/shared/videoCharacterRenderAssets'
 import { DataPlatform, getAppDataUsage } from './dataPlatform.cjs'
 import { DomainFileSystem } from './domainFileSystem.cjs'
@@ -48,6 +49,7 @@ let videoPreviewToolsPromise: Promise<{ ffmpeg: VideoStudioFfmpegCapabilities }>
 const videoExportJobOwners = new Map<string, number>()
 let roteirosSaveQueue: Promise<void> = Promise.resolve()
 let roteiroCharacterExportStore: RoteiroCharacterExportStore | null = null
+let roteiroProjectExportStore: RoteiroProjectExportStore | null = null
 const roteiroCharacterExportJobOwners = new Map<string, number>()
 
 function isRoteiroDocument(value: unknown): value is RoteiroDocument {
@@ -76,6 +78,7 @@ function isRoteiroDocument(value: unknown): value is RoteiroDocument {
       && typeof block.textEnglish === 'string' && block.textEnglish.length <= 10000)))
   return isId(roteiro.id) && isText(roteiro.title, 100) && isText(roteiro.videoTitle, 100)
     && Array.isArray(roteiro.characterIds) && roteiro.characterIds.length <= 500 && roteiro.characterIds.every(isId)
+    && (roteiro.backgroundAssetId === undefined || roteiro.backgroundAssetId === null || isId(roteiro.backgroundAssetId))
     && Array.isArray(roteiro.tiktoks) && roteiro.tiktoks.length <= 500
     && isContent(roteiro.opening, roteiro.characterIds ?? [])
     && roteiro.tiktoks.every((item: RoteiroTikTok) => Boolean(item && isId(item.id) && isText(item.title, 100) && isText(item.videoTitle, 100)
@@ -1972,7 +1975,13 @@ async function registerFabricatorHandlers(): Promise<void> {
         if (result.canceled || !result.filePaths[0]) return null
         return videoBackgroundLibrary.importFile(result.filePaths[0])
       })
-      ipcMain.handle('video-studio:background-library:delete', async (event, id: string) => { assertTrustedSender(event); return videoBackgroundLibrary.delete(id) })
+      ipcMain.handle('video-studio:background-library:delete', async (event, id: string) => {
+        assertTrustedSender(event)
+        if (typeof id !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)) throw new Error('Identificador de fundo inválido.')
+        const reference = dataPlatform.database?.prepare('SELECT id, title FROM roteiros WHERE background_asset_id=? LIMIT 1').get(id) as { id: string; title: string } | undefined
+        if (reference) throw new Error(`Este fundo está selecionado no roteiro “${reference.title}”. Troque ou remova o fundo antes de excluí-lo permanentemente.`)
+        return videoBackgroundLibrary.delete(id)
+      })
       ipcMain.handle('video-studio:background-library:attach', async (event, studioId: string, id: string) => { assertTrustedSender(event); return videoBackgroundLibrary.attach(studioId, id) })
 
     }
@@ -2018,6 +2027,24 @@ async function registerFabricatorHandlers(): Promise<void> {
   function assertRoteiroExportOwner(event: IpcMainInvokeEvent, jobId: unknown): asserts jobId is string {
     if (typeof jobId !== 'string' || roteiroCharacterExportJobOwners.get(jobId) !== event.sender.id) throw new Error('Esta exportação não pertence a esta janela.')
   }
+  const getRoteiroProjectExportStore = () => {
+    if (!roteiroProjectExportStore) roteiroProjectExportStore = new RoteiroProjectExportStore(
+      async (id) => { const resolved = await videoBackgroundLibrary.resolve(id); return await dataFileSystem.resolvePhysicalPath(resolved.path) ?? resolved.path },
+      async (video) => {
+        const resolved = await videoLibrary.resolveMedia(video.id)
+        if (resolved.extension !== video.extension || resolved.durationFrames !== null && resolved.durationFrames !== video.durationFrames) throw new Error(`O vídeo “${video.name}” não corresponde ao arquivo da biblioteca.`)
+        return await dataFileSystem.resolvePhysicalPath(resolved.path) ?? resolved.path
+      }
+    )
+    return roteiroProjectExportStore
+  }
+  ipcMain.handle('roteiros:assets-export', async (event, request: unknown) => {
+    assertTrustedSender(event)
+    if (!request || typeof request !== 'object' || Array.isArray(request)) throw new Error('Solicitação de exportação inválida.')
+    const value = request as { roteiro?: unknown; kind?: unknown }
+    if (!isRoteiroDocument(value.roteiro) || !['background', 'videos', 'script'].includes(String(value.kind))) throw new Error('Roteiro ou tipo de exportação inválido.')
+    return getRoteiroProjectExportStore().export(value.roteiro, value.kind as 'background' | 'videos' | 'script')
+  })
   ipcMain.handle('roteiros:characters-export:start', async (event, request: unknown) => {
     assertTrustedSender(event)
     const result = await getRoteiroCharacterExportStore().start(request)
@@ -2055,7 +2082,7 @@ async function registerFabricatorHandlers(): Promise<void> {
     await roteirosSaveQueue.catch(() => undefined)
     const db = dataPlatform.database
     if (!db) throw new Error('Catálogo de dados não inicializado.')
-    const roteiroRows = db.prepare('SELECT id, title, video_title, character_ids_json FROM roteiros ORDER BY position, created_at, id').all() as Array<{ id: string; title: string; video_title: string; character_ids_json: string }>
+    const roteiroRows = db.prepare('SELECT id, title, video_title, character_ids_json, background_asset_id FROM roteiros ORDER BY position, created_at, id').all() as Array<{ id: string; title: string; video_title: string; character_ids_json: string; background_asset_id: string | null }>
     const tiktokRows = db.prepare('SELECT id, roteiro_id, title, video_title FROM roteiro_tiktoks ORDER BY roteiro_id, position').all() as Array<{ id: string; roteiro_id: string; title: string; video_title: string }>
     const sectionRows = db.prepare('SELECT section_id, roteiro_id, section_kind, video_asset_json, blocks_json, description_text, timeline, scene_end_seconds, first_group_reaction_seconds, second_group_reaction_seconds FROM roteiro_sections').all() as Array<{ section_id: string; roteiro_id: string; section_kind: 'opening' | 'tiktok'; video_asset_json: string | null; blocks_json: string; description_text: string; timeline: RoteiroSectionContent['timeline']; scene_end_seconds: number | null; first_group_reaction_seconds: number | null; second_group_reaction_seconds: number | null }>
     const contentById = new Map(sectionRows.map((row) => [row.section_id, {
@@ -2076,6 +2103,7 @@ async function registerFabricatorHandlers(): Promise<void> {
     return roteiroRows.map((row) => ({
       id: row.id, title: row.title, videoTitle: row.video_title,
       characterIds: JSON.parse(row.character_ids_json) as string[],
+      ...(row.background_asset_id ? { backgroundAssetId: row.background_asset_id } : {}),
       opening: contentById.get(`${row.id}:opening`) ?? { video: null, blocks: [], description: '' },
       tiktoks: tiktoksByRoteiro.get(row.id) ?? []
     }))
@@ -2122,9 +2150,9 @@ async function registerFabricatorHandlers(): Promise<void> {
           if (roteiro.tiktoks.some((tiktok, position) => oldById.has(tiktok.id) && oldById.get(tiktok.id)!.position !== position)) shiftTikTokPositions.run(roteiro.id)
         }
 
-        const upsertRoteiro = db.prepare(`INSERT INTO roteiros(id, title, video_title, character_ids_json, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)
-          ON CONFLICT(id) DO UPDATE SET title=excluded.title, video_title=excluded.video_title, character_ids_json=excluded.character_ids_json, position=excluded.position, updated_at=excluded.updated_at
-          WHERE roteiros.title IS NOT excluded.title OR roteiros.video_title IS NOT excluded.video_title OR roteiros.character_ids_json IS NOT excluded.character_ids_json OR roteiros.position IS NOT excluded.position`)
+        const upsertRoteiro = db.prepare(`INSERT INTO roteiros(id, title, video_title, character_ids_json, background_asset_id, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(id) DO UPDATE SET title=excluded.title, video_title=excluded.video_title, character_ids_json=excluded.character_ids_json, background_asset_id=excluded.background_asset_id, position=excluded.position, updated_at=excluded.updated_at
+          WHERE roteiros.title IS NOT excluded.title OR roteiros.video_title IS NOT excluded.video_title OR roteiros.character_ids_json IS NOT excluded.character_ids_json OR roteiros.background_asset_id IS NOT excluded.background_asset_id OR roteiros.position IS NOT excluded.position`)
         const upsertTikTok = db.prepare(`INSERT INTO roteiro_tiktoks(id, roteiro_id, title, video_title, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)
           ON CONFLICT(id) DO UPDATE SET roteiro_id=excluded.roteiro_id, title=excluded.title, video_title=excluded.video_title, position=excluded.position, updated_at=excluded.updated_at
           WHERE roteiro_tiktoks.roteiro_id IS NOT excluded.roteiro_id OR roteiro_tiktoks.title IS NOT excluded.title OR roteiro_tiktoks.video_title IS NOT excluded.video_title OR roteiro_tiktoks.position IS NOT excluded.position`)
@@ -2132,7 +2160,7 @@ async function registerFabricatorHandlers(): Promise<void> {
           ON CONFLICT(section_id) DO UPDATE SET roteiro_id=excluded.roteiro_id, section_kind=excluded.section_kind, video_asset_json=excluded.video_asset_json, blocks_json=excluded.blocks_json, description_text=excluded.description_text, timeline=excluded.timeline, scene_end_seconds=excluded.scene_end_seconds, first_group_reaction_seconds=excluded.first_group_reaction_seconds, second_group_reaction_seconds=excluded.second_group_reaction_seconds, updated_at=excluded.updated_at
           WHERE roteiro_sections.roteiro_id IS NOT excluded.roteiro_id OR roteiro_sections.section_kind IS NOT excluded.section_kind OR roteiro_sections.video_asset_json IS NOT excluded.video_asset_json OR roteiro_sections.blocks_json IS NOT excluded.blocks_json OR roteiro_sections.description_text IS NOT excluded.description_text OR roteiro_sections.timeline IS NOT excluded.timeline OR roteiro_sections.scene_end_seconds IS NOT excluded.scene_end_seconds OR roteiro_sections.first_group_reaction_seconds IS NOT excluded.first_group_reaction_seconds OR roteiro_sections.second_group_reaction_seconds IS NOT excluded.second_group_reaction_seconds`)
         documents.forEach((roteiro, position) => {
-          upsertRoteiro.run(roteiro.id, roteiro.title.trim(), roteiro.videoTitle.trim(), JSON.stringify(roteiro.characterIds), position, now, now)
+          upsertRoteiro.run(roteiro.id, roteiro.title.trim(), roteiro.videoTitle.trim(), JSON.stringify(roteiro.characterIds), roteiro.backgroundAssetId ?? null, position, now, now)
           const opening = roteiro.opening ?? { video: null, blocks: [], description: '' }
           upsertSection.run(`${roteiro.id}:opening`, roteiro.id, 'opening', opening.video ? JSON.stringify(opening.video) : null, JSON.stringify(opening.blocks), opening.description ?? '', opening.timeline ?? 'unspecified', opening.sceneEndSeconds ?? null, opening.firstGroupReactionSeconds ?? null, opening.secondGroupReactionSeconds ?? null, now)
           roteiro.tiktoks.forEach((tiktok, tiktokPosition) => {
