@@ -183,3 +183,8 @@ CI pode registrar checksums/JSON de estatísticas/fixtures geradas sem dados pri
 **Gate de substituição do editor:** inventário de recursos atuais completo, projetos v1 reabertos e editados, undo/redo/autosave/exportPrint/import/dedup/face/pose/transforms/UI mouse/teclado assegurados. Remover implementação antiga apenas depois desse gate. Ver [07_MODOS_DE_EXPORTACAO.md](./07_MODOS_DE_EXPORTACAO.md) e [08_ARQUITETURA_EXTENSIVEL_E_RECONSTRUCAO.md](./08_ARQUITETURA_EXTENSIVEL_E_RECONSTRUCAO.md).
 
 A conclusão da missão local depende de testes reais no PC alvo, não apenas da matriz sintética; [09_MISSAO_CODEX_AUTONOMA.md](./09_MISSAO_CODEX_AUTONOMA.md).
+
+### 13. Instrumentação observável do layer cache no full-engine
+
+- O full-engine benchmark recebe contadores reais por surface e agrega deltas por worker: hits, misses, evictions, bytes usados/pico e layers cuja rasterização foi evitada. Perfil misto de 5 s: serial 3.042 hits/148 misses/136 evictions; dois workers 3.032/158/134; ambas surfaces chegaram a 99.532.800 bytes, perto do orçamento de 96 MiB. Serial e Turbo mantiveram o mesmo SHA final (`47544666d67287f60e96c0b568014f06fe467ca0dac59d0a17b0a0e830e768cc`), 300 frames e decode íntegro.
+- Medições mostram que o cache está integrado e reutiliza layers, mas ainda não isolam seu ganho de tempo: falta o ensaio A/B com cache desativado na mesma fixture. Não declarar ganho causal nem implementar dirty rectangles até comparar tempo, RAM e pixels.

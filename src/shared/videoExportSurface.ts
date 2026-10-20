@@ -23,6 +23,8 @@ export type VideoExportSurfaceFrameReady = Readonly<{
   /** Canonical Canvas RGBA bytes; present only on successful frame acknowledgements. */
   pixels?: Uint8Array
   timings?: Readonly<{ composeMs: number; readbackMs: number }>
+  /** Diagnostic-only cumulative canvas layer-cache counters for local benchmarks. */
+  layerCache?: Readonly<{ hits: number; misses: number; evictions: number; entries: number; bytes: number; maxBytes: number }>
 }>
 
 export type VideoExportSurfaceReady = Readonly<{

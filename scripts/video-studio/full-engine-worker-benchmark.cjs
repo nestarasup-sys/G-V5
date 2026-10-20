@@ -109,7 +109,7 @@ app.whenReady().then(async()=>{
  const allowed=new Set(),sessions=new Map()
  ipcMain.handle('video-studio:export-surface:prepare',(event,id)=>{if(id!==jobId||!allowed.has(event.sender.id))throw new Error('sender inválido');return bootstrap})
  ipcMain.on('video-studio:export-surface:ready',(event,ready)=>{const session=sessions.get(event.sender.id);if(!session)return;if(ready.error)session.reject(new Error(ready.error));else{session.ready=true;session.resolveReady()}})
- ipcMain.on('video-studio:export-surface:frame-ready',(event,ready)=>{const s=sessions.get(event.sender.id);const p=s?.pending.get(ready.requestId);if(!p)return;s.pending.delete(ready.requestId);if(ready.error)p.reject(new Error(ready.error));else if(!(ready.pixels instanceof Uint8Array))p.reject(new Error('pixels ausentes'));else p.resolve({pixels:pixel.rgbaToBgra(ready.pixels),timings:ready.timings||{composeMs:0,readbackMs:0}})})
+ ipcMain.on('video-studio:export-surface:frame-ready',(event,ready)=>{const s=sessions.get(event.sender.id);const p=s?.pending.get(ready.requestId);if(!p)return;s.pending.delete(ready.requestId);if(ready.error)p.reject(new Error(ready.error));else if(!(ready.pixels instanceof Uint8Array))p.reject(new Error('pixels ausentes'));else p.resolve({pixels:pixel.rgbaToBgra(ready.pixels),timings:ready.timings||{composeMs:0,readbackMs:0},layerCache:ready.layerCache||null})})
 
  async function openSurface(){
   const win=new BrowserWindow({show:false,width,height,useContentSize:true,backgroundColor:'#000',webPreferences:{preload:preloadPath,contextIsolation:true,nodeIntegration:false,sandbox:true,backgroundThrottling:false,offscreen:true}})
@@ -132,6 +132,7 @@ app.whenReady().then(async()=>{
   const workerChunks=Array.from({length:workerCount},(_,workerIndex)=>indexes.filter(index=>index%workerCount===workerIndex))
   const activeWriters=new Set()
   let rendered=0,composeMs=0,readbackMs=0,frameAcquireMs=0,encoderReadyMs=0,frameWriteMs=0,writerFinishMs=0
+  let layerCacheHits=0,layerCacheMisses=0,layerCacheEvictions=0,layerCacheBytes=0,layerCacheMaxBytes=0
   const createWriter=async(index)=>{
    const start=index*chunkFrames,end=Math.min(totalFrames,start+chunkFrames),out=path.join(dir,`chunk-${index}.mp4`)
    const writer=new raw.VideoRawFrameWriter({executable:ffmpeg,args:raw.buildVideoStudioChunkArgs(out,end-start,'bgra','h264_mf'),outputPath:out,frameBytes:width*height*4,frameCount:end-start})
@@ -150,12 +151,14 @@ app.whenReady().then(async()=>{
     const renderEncodeStarted=performance.now()
     async function worker(surface,chunks,initialWriter){
       let writer=initialWriter
+      let previousLayerStats={hits:0,misses:0,evictions:0}
       for(let chunkIndex=0;chunkIndex<chunks.length;chunkIndex++){
         const index=chunks[chunkIndex],start=index*chunkFrames,end=Math.min(totalFrames,start+chunkFrames)
         if(chunkIndex>0)writer=await createWriter(index)
         for(let frame=start;frame<end;frame++){
           const frameStarted=performance.now();const result=await surface.frame(frame);frameAcquireMs+=performance.now()-frameStarted
           composeMs+=result.timings.composeMs;readbackMs+=result.timings.readbackMs
+          if(result.layerCache){layerCacheHits+=Math.max(0,result.layerCache.hits-previousLayerStats.hits);layerCacheMisses+=Math.max(0,result.layerCache.misses-previousLayerStats.misses);layerCacheEvictions+=Math.max(0,result.layerCache.evictions-previousLayerStats.evictions);layerCacheBytes=Math.max(layerCacheBytes,result.layerCache.bytes);layerCacheMaxBytes=Math.max(layerCacheMaxBytes,result.layerCache.maxBytes);previousLayerStats=result.layerCache}
           const writeStarted=performance.now();await writer.writeFrame(result.pixels,{copy:false});frameWriteMs+=performance.now()-writeStarted;rendered++
         }
         const finishStarted=performance.now()
@@ -183,6 +186,7 @@ app.whenReady().then(async()=>{
      workerCount,durationSeconds,frames:totalFrames,elapsedMs,throughputFps:totalFrames/(elapsedMs/1000),realtimeFactor:durationSeconds/(elapsedMs/1000),
      surfaceStartupMs,renderEncodeWallMs,composeMs,readbackMs,frameAcquireMs,encoderReadyMs,frameWriteMs,writerFinishMs,assembleMs,verifyMs,
      readbackRatio:(composeMs+readbackMs)>0?readbackMs/(composeMs+readbackMs):0,
+     layerCache:{hits:layerCacheHits,misses:layerCacheMisses,evictions:layerCacheEvictions,bytesPeak:layerCacheBytes,maxBytes:layerCacheMaxBytes,avoidedLayerDraws:layerCacheHits},
      ramInitialBytes:memory.initialBytes,ramPeakBytes:peakBytes,ramScope:'Electron process tree working set; external FFmpeg process memory is not included',
      rendered,chunkCount:indexes.length,codec:stream.codec_name,width:Number(stream.width),height:Number(stream.height),frameRate:stream.r_frame_rate,outputBytes:fs.statSync(final).size,outputSha256:sha256File(final),
     }

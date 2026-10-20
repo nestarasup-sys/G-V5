@@ -66,7 +66,13 @@ export function VideoExportSurfacePage() {
           const rgba = context.getImageData(0, 0, VIDEO_STAGE_WIDTH, VIDEO_STAGE_HEIGHT).data
           const pixels = new Uint8Array(rgba.buffer, rgba.byteOffset, rgba.byteLength)
           const readbackMs = performance.now() - readbackStarted
-          if (!disposed) window.desktop.reportVideoExportSurfaceFrame({ requestId: request.requestId, frame: request.frame, pixels, timings: { composeMs, readbackMs } })
+          if (!disposed) window.desktop.reportVideoExportSurfaceFrame({
+            requestId: request.requestId,
+            frame: request.frame,
+            pixels,
+            timings: { composeMs, readbackMs },
+            layerCache: layerCacheRef.current?.stats(),
+          })
         } catch (reason) {
           if (!disposed) window.desktop.reportVideoExportSurfaceFrame({
             requestId: request.requestId,
