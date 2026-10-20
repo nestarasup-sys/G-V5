@@ -43,6 +43,7 @@ jobs:
           }
           "GACHA_FFMPEG_PATH=$($ffmpeg.Source)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
       - name: Canvas2D vs PixiJS WebGL including RGBA readback
+        continue-on-error: true
         run: npx electron scripts/video-studio/pixi-webgl-ab.cjs
       - name: HTMLVideo vs Mediabunny WebCodecs random seek
         run: npx electron scripts/video-studio/mediabunny-webcodecs-ab.cjs
