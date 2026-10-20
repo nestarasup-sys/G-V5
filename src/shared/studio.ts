@@ -215,6 +215,12 @@ export type VideoStudioAsset = {
   durationFrames: number
 }
 
+export type VideoPreviewMedia = {
+  sourceSha256: string
+  proxyUrl: string
+  waveformUrl: string | null
+}
+
 export type VideoLibraryItem = Omit<VideoStudioAsset, 'durationFrames'> & {
   durationFrames: number | null
   createdAt: string
@@ -277,6 +283,7 @@ export type VideoStudioDesktopApi = {
   finishVideoLibraryImport: (id: string, durationFrames: number) => Promise<VideoLibraryItem>
   deleteVideoLibraryItem: (id: string) => Promise<void>
   attachVideoLibraryItems: (studioId: string, ids: string[]) => Promise<VideoStudioAsset[]>
+  prepareVideoPreviewMedia: (studioId: string, asset: VideoStudioAsset) => Promise<VideoPreviewMedia>
   listVideoBackgroundLibrary: () => Promise<VideoBackgroundLibraryItem[]>
   importVideoBackground: () => Promise<VideoBackgroundLibraryItem | null>
   deleteVideoBackground: (id: string) => Promise<void>
