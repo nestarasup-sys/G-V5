@@ -7,12 +7,12 @@ if not exist "%DOTNET_ROOT%\dotnet.exe" (
   pause
   exit /b 1
 )
-if not exist "src\GachaNymi.Desktop\GachaNymi.Desktop.csproj" (
-  echo Ambiente preparado. O projeto do aplicativo ainda sera criado na proxima etapa.
+if not exist "src\GV5.App\GV5.App.csproj" (
+  echo Projeto Desktop nao encontrado. Consulte PLANO_DO_NOVO_APP.md.
   pause
   exit /b 1
 )
-"%DOTNET_ROOT%\dotnet.exe" watch --project "src\GachaNymi.Desktop\GachaNymi.Desktop.csproj" run
+"%DOTNET_ROOT%\dotnet.exe" watch --project "src\GV5.App\GV5.App.csproj" run
 set "result=%errorlevel%"
 if not "%result%"=="0" pause
 exit /b %result%

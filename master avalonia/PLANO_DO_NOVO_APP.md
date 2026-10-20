@@ -1,6 +1,8 @@
 # Novo Gacha Nymi — C# + Avalonia
 
-Status: proposta de arquitetura, antes da implementação.
+Status: plano de arquitetura com solução inicial criada. O shell Avalonia e os projetos-base compilam; as funcionalidades de Fabricador, Customizador e demais áreas ainda serão implementadas por etapas.
+
+Estrutura inicial atual: `GV5.sln`, shell `GV5.App`, bibliotecas `Core`, `Application`, `Geometry`, `Assets`, `Characters`, `Scene`, `Rendering`, `Data` e `Jobs`, além dos módulos-base de Fabricador e Customizador. A janela inicial só demonstra a navegação do shell; ela não representa as áreas de produto prontas.
 
 ## Ambiente de desenvolvimento sem Visual Studio
 

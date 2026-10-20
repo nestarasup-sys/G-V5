@@ -1,0 +1,32 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Folder Include="Models\" />
+    <AvaloniaResource Include="Assets\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Avalonia" />
+    <PackageReference Include="Avalonia.Desktop" />
+    <PackageReference Include="Avalonia.Themes.Fluent" />
+    <PackageReference Include="Avalonia.Fonts.Inter" />
+    <PackageReference Include="AvaloniaUI.DiagnosticsSupport">
+      <IncludeAssets Condition="'$(Configuration)' != 'Debug'">None</IncludeAssets>
+      <PrivateAssets Condition="'$(Configuration)' != 'Debug'">All</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="CommunityToolkit.Mvvm" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\GV5.Application\GV5.Application.csproj" />
+    <ProjectReference Include="..\GV5.Modules.Fabricador\GV5.Modules.Fabricador.csproj" />
+    <ProjectReference Include="..\GV5.Modules.Customizador\GV5.Modules.Customizador.csproj" />
+    <ProjectReference Include="..\GV5.Rendering\GV5.Rendering.csproj" />
+    <ProjectReference Include="..\GV5.Data\GV5.Data.csproj" />
+    <ProjectReference Include="..\GV5.Jobs\GV5.Jobs.csproj" />
+  </ItemGroup>
+</Project>
