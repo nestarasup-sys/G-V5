@@ -81,6 +81,7 @@ master avalonia/
     GV5.Characters/             # CharacterResolver e regras de personagem
     GV5.Scene/                  # cena resolvida e composição de entidades
     GV5.Rendering/              # RenderScene, SkiaRenderer e superfícies de desenho
+    GV5.Media/                  # contratos e serviços de playback/decoding de mídia
     GV5.Data/                   # SQLite, implementação de arquivos e migrations
     GV5.Jobs/                   # filas, workers, cancelamento e progresso
     GV5.Modules.Fabricador/     # telas e fluxos próprios do Fabricador
@@ -112,6 +113,7 @@ GV5.Application ───────→ contratos de engine e dados
 GV5.Characters ────────→ GV5.Core + GV5.Geometry + GV5.Assets
 GV5.Scene ─────────────→ GV5.Characters + GV5.Assets + GV5.Geometry
 GV5.Rendering ─────────→ GV5.Scene + GV5.Assets + SkiaSharp
+GV5.Media ─────────────→ contratos de GV5.Application + backend isolado
 GV5.Timeline ──────────→ GV5.Scene / GV5.Core
 GV5.Data ──────────────→ contratos de GV5.Application / GV5.Assets
 GV5.Jobs ──────────────→ contratos de GV5.Application
@@ -119,7 +121,7 @@ GV5.Jobs ──────────────→ contratos de GV5.Applicat
 
 Módulos de produto não importam implementações internas uns dos outros. Fabricador e Customizador usam o mesmo modelo e os mesmos serviços públicos do domínio. Integrações passam por contratos em Application ou Core. Referências proibidas devem ser verificadas no build ou em uma verificação de arquitetura; uma orientação escrita sozinha não impede dependências acidentais.
 
-`GV5.Core`, `GV5.Geometry`, `GV5.Assets`, `GV5.Characters`, `GV5.Scene`, `GV5.Rendering` e `GV5.Timeline` não dependem de Avalonia. `GV5.Core` também não conhece SQLite, sistema de arquivos ou FFmpeg. `GV5.Application` expressa operações como comandos e casos de uso. `GV5.Data` implementa persistência. `GV5.Rendering` compõe a cena com SkiaSharp. `GV5.Jobs` coordena trabalho demorado. `GV5.App` monta serviços, abre janelas e hospeda Views, ViewModels e controles que fazem a ponte entre input Avalonia e a engine.
+`GV5.Core`, `GV5.Geometry`, `GV5.Assets`, `GV5.Characters`, `GV5.Scene`, `GV5.Rendering`, `GV5.Media` e `GV5.Timeline` não dependem de Avalonia. `GV5.Core` também não conhece SQLite, sistema de arquivos ou APIs de backend de mídia. `GV5.Application` expressa operações como comandos e casos de uso. `GV5.Data` implementa persistência. `GV5.Rendering` compõe a cena com SkiaSharp. `GV5.Media` implementa contratos de mídia por adaptadores substituíveis. `GV5.Jobs` coordena trabalho demorado. `GV5.App` monta serviços, abre janelas e hospeda Views, ViewModels e controles que fazem a ponte entre input Avalonia e as engines.
 
 Usar MVVM com Views e ViewModels pequenos por fluxo. A View encaminha intenção; o ViewModel coordena estado da tela e solicita casos de uso; o domínio mantém invariantes. Evitar code-behind com regras e um ViewModel global com acesso a todas as áreas. Cada módulo publica uma entrada pequena de navegação e seus serviços; não criar um sistema de plugins dinâmico no início.
 
@@ -218,19 +220,45 @@ Cada job tem ID, prioridade, progresso, `CancellationToken`, status e erro/resul
 
 Renderizações são identificadas pela versão/assinatura da entrada. Quando o usuário escolhe Pose 1, 2, 3, 4 e rapidamente chega à Pose 5, jobs ainda não iniciados ou canceláveis das quatro poses anteriores são cancelados; somente o resultado ainda atual pode substituir a prévia. Cancelamento em trabalho já iniciado é cooperativo nos pontos seguros. A UI ignora resultados atrasados mesmo quando uma biblioteca não pode interromper a operação imediatamente.
 
-## 10. Timeline Engine e mídia
+## 10. Mídia, timeline e Video Studio
 
-Quando o Video Studio começar, `GV5.Timeline` será outro consumidor da Scene Engine. Ele resolve tracks, clips, frames, keyframes, transitions, áudio e estados de personagens. Para um frame pedido, produz uma `Scene` daquele instante; Scene Engine resolve entidades e `GV5.Rendering` desenha o frame. Preview e export usam a mesma avaliação temporal, evitando duas interpretações da timeline.
+O controle premium `MediaPlayerControl` do Avalonia é um componente pronto de interface e playback, disponível no Avalonia Pro ou superior. Ele não é requisito para o G5 tocar vídeo. A interface de player — Play, Pause, seek bar, volume e preview canvas — será nossa, ligada a contratos em `GV5.Media`. O Video Studio não dependerá de `Avalonia.Controls.MediaPlayer` nem de licença Pro para funcionar. O framework Avalonia continua MIT; ferramentas e componentes comerciais têm licenças próprias. Como licenciamento e preços podem mudar, consultar as páginas oficiais antes de fixar versões ou custos no orçamento. Referências: [MediaPlayerControl](https://docs.avaloniaui.net/controls/media/mediaplayer), [FAQ de licença](https://docs.avaloniaui.net/tools/faq), [planos Avalonia](https://avaloniaui.net/pricing).
+
+Playback de usuário, decodificação precisa para edição e export são trabalhos diferentes. Separar serviços, mesmo que uma implementação futura compartilhe bibliotecas nativas:
+
+- `PlaybackEngine`: reprodução fluida, relógio, sincronização de áudio e vídeo, volume e seek interativo.
+- `FrameDecoder`: seek por frame, frame anterior/próximo, scrubbing, thumbnails e extração de waveform.
+- `ExportEngine`: render determinístico da timeline, áudio e mux final, com opções de formato/qualidade.
+
+`GV5.Timeline` resolve tracks, clips, frames, keyframes, áudio e estados de personagens. Para um instante solicitado, produz uma cena temporal; `GV5.Scene` e `GV5.Rendering` compõem vídeo, personagens, balões, texto e overlays. A avaliação temporal deve ser compartilhada entre preview e export para evitar interpretações divergentes, mas o playback pode usar decodificação em tempo real e cache adequados à fluidez, enquanto o export prioriza resultado determinístico.
 
 ```text
-Timeline
-  ↓ evaluate frame 1230
-Scene at frame 1230
-  ↓
-Scene Engine → Rendering Engine → frame
+Avalonia UI própria
+  ├── controles de transporte e preview canvas
+  └── GV5.Media contracts
+        ├── PlaybackEngine
+        ├── FrameDecoder
+        ├── AudioEngine / clock
+        └── ExportEngine ── FFmpeg para encode/mux quando adequado
+
+Timeline → cena do instante → vídeo + camadas do G5 → preview/export
 ```
 
-FFmpeg continua responsável pelo trabalho especializado de mídia. `VideoEngine` encapsula decoder/probing e `ExportEngine` reúne frames e áudio para produzir o arquivo final. A decisão entre bindings como FFmpeg.AutoGen e processo FFmpeg controlado fica adiada; os módulos dependem de contratos de serviço, não da escolha de binding/processo.
+### Backend de mídia: decisão adiada e testável
+
+Definir interfaces independentes de fornecedor, por exemplo `IMediaPlayback`, `IFrameDecoder` e `IAudioClock`. O Video Studio chama esses contratos, nunca LibVLC, Media Foundation, mpv ou FFmpeg diretamente. Começar com um backend por vez; não construir uma matriz de backends antes de haver medições e requisitos concretos.
+
+Candidatos para uma prova de conceito no Windows:
+
+- **Media Foundation (`IMFMediaEngine` ou APIs adequadas):** backend nativo do Windows para playback. É uma opção promissora para o foco Windows, mas exige interop e validação do fluxo de frames para a composição do G5.
+- **LibVLCSharp:** projeto mantido pela VideoLAN, com pacote de integração Avalonia e suporte listado a Windows/macOS/Linux. O `VideoView` Avalonia documenta limitações de airspace: overlays e controles sobre uma superfície nativa exigem tratamento específico. Isso é um risco para seleção, guias, personagens e texto por cima do vídeo. Verificar também os termos LGPL da distribuição escolhida. Referências: [LibVLCSharp.Avalonia](https://github.com/videolan/libvlcsharp/tree/3.x/src/LibVLCSharp.Avalonia), [repositório e licença](https://github.com/videolan/libvlcsharp).
+- **libmpv:** candidato alternativo se a integração entregar frames/texture que possam ser compostos no canvas. Qualquer implementação Avalonia de terceiros precisa de avaliação de manutenção, licença, compatibilidade de versão e estabilidade; não assumir zero-copy nem integração GPU pelo material promocional.
+
+A escolha não será feita pela facilidade de mostrar um MP4 isolado. Fazer uma comparação com o mesmo vídeo e cenário do G5: precisão e latência de seek, frame stepping, sincronização de áudio, CPU/GPU/RAM, codecs necessários, hardware decode, cancelamento, estabilidade ao abrir/fechar projetos e custo de distribuir dependências. O critério decisivo de integração é compor vídeo e camadas G5 na mesma superfície, sem depender de uma janela nativa que impeça overlays livres. O teste pode concluir por backend diferente para playback e frame decode.
+
+FFmpeg permanece candidato para probing, processamento, encode e mux, encapsulado por `ExportEngine`/serviços. Não assumir que playback, edição e export devem usar a mesma biblioteca. A decisão entre bindings .NET e processo FFmpeg controlado também fica para a prova de conceito e análise de distribuição/licença.
+
+Referências técnicas: [MediaPlayerControl e backend Media Foundation no Windows](https://docs.avaloniaui.net/controls/media/mediaplayer/media-playback), [Microsoft: Media Foundation em vez de DirectShow quando possível](https://learn.microsoft.com/en-us/windows/win32/directshow/processing-data-in-a-dmo), [IMFMediaEngine](https://learn.microsoft.com/en-us/windows/win32/api/mfmediaengine/).
 
 ## 11. Modelo de personagem único
 
