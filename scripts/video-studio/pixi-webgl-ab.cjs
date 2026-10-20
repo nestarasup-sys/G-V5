@@ -7,6 +7,14 @@ app.commandLine.appendSwitch('disable-background-timer-throttling')
 app.commandLine.appendSwitch('force-device-scale-factor','1')
 
 app.whenReady().then(async()=>{
+  const gpuInfo=await app.getGPUInfo('basic').catch(()=>null)
+  const gpuFeatures=app.getGPUFeatureStatus()
+  const gpuText=JSON.stringify({gpuInfo,gpuFeatures}).toLowerCase()
+  const softwareGpu=/swiftshader|software|llvmpipe|microsoft basic render/.test(gpuText)
+  if(gpuFeatures.webgl!=='enabled'||softwareGpu){
+    console.log(JSON.stringify({ok:true,supported:false,reason:'Hosted runner has no eligible hardware WebGL path',gpuFeatures,gpuInfo},null,2))
+    app.exit(0);return
+  }
   const entry=require.resolve('pixi.js')
   const pixiUrl=pathToFileURL(entry).href
   const root=fs.mkdtempSync(path.join(os.tmpdir(),'gv5-pixi-ab-'))
@@ -62,9 +70,7 @@ window.__resultPromise=(async()=>{
       new Promise((_,reject)=>setTimeout(()=>reject(new Error('Pixi A/B excedeu 75 segundos.')),75000)),
     ])
     if(!result?.ok||!Number.isFinite(result.pixiMedianMs)||result.pixiMedianMs<=0)throw new Error('Pixi benchmark did not return valid timing.')
-    const gpuInfo=await app.getGPUInfo('basic').catch(()=>null)
-    const gpuFeatures=app.getGPUFeatureStatus()
-    console.log(JSON.stringify({...result,machine:{platform:process.platform,release:os.release(),cpu:os.cpus()[0]?.model??'unknown',logicalCpuCount:os.cpus().length,totalMemoryBytes:os.totalmem()},gpuInfo,gpuFeatures},null,2))
+    console.log(JSON.stringify({...result,supported:true,machine:{platform:process.platform,release:os.release(),cpu:os.cpus()[0]?.model??'unknown',logicalCpuCount:os.cpus().length,totalMemoryBytes:os.totalmem()},gpuInfo,gpuFeatures},null,2))
   }finally{
     if(!win.isDestroyed())win.destroy()
     fs.rmSync(root,{recursive:true,force:true,maxRetries:8,retryDelay:100})
