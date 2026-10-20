@@ -63,6 +63,6 @@ app.whenReady().then(async()=>{
    if(warm.surfaceRenders!==0)throw new Error(`Warm ainda renderizou ${warm.surfaceRenders} estados.`)
    console.log(JSON.stringify({ok:true,cold,warm,speedup},null,2))
  }finally{
-   if(win&&!win.isDestroyed())win.destroy();fs.rmSync(root,{recursive:true,force:true,maxRetries:12,retryDelay:150});app.exit(0)
+   if(win&&!win.isDestroyed())win.destroy();try{fs.rmSync(root,{recursive:true,force:true,maxRetries:12,retryDelay:150})}catch(error){console.warn('Temp cleanup warning:',error.message)};app.exit(0)
  }
 }).catch(error=>{console.error(error.stack||error.message);app.exit(1)})
