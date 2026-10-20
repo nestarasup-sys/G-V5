@@ -48,7 +48,7 @@ window.__resultPromise=(async()=>{const canvas=canvasBench();const pixi=await pi
   const win=new BrowserWindow({show:false,width:960,height:540,webPreferences:{contextIsolation:true,nodeIntegration:false,sandbox:false,backgroundThrottling:false}})
   try{
     await win.loadFile(html)
-    const result=await win.webContents.executeJavaScript('window.__resultPromise',true)
+    const result=await win.webContents.executeJavaScript('(async()=>{while(!window.__resultPromise)await new Promise(r=>setTimeout(r,10));return await window.__resultPromise})()',true)
     if(!result?.ok||!Number.isFinite(result.pixi?.elapsedMs)||result.pixi.elapsedMs<=0)throw new Error('Pixi benchmark did not return valid timing.')
     console.log(JSON.stringify(result,null,2))
   }finally{
