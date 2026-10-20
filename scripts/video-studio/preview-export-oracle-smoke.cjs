@@ -1,6 +1,6 @@
 'use strict'
 
-const { app, BrowserWindow, ipcMain, nativeImage } = require('electron')
+const { app, BrowserWindow, ipcMain } = require('electron')
 const fs = require('node:fs')
 const path = require('node:path')
 const ts = require('typescript')
@@ -94,18 +94,10 @@ app.whenReady().then(async()=>{
     try{
       if(currentMode==='dom'){
         pending.win.setContentSize(width,height,false)
-        const debuggerApi=pending.win.webContents.debugger
-        if(!debuggerApi.isAttached())debuggerApi.attach('1.3')
-        try{
-          await debuggerApi.sendCommand('Emulation.setDeviceMetricsOverride',{width,height,deviceScaleFactor:1,mobile:false})
-          const shot=await debuggerApi.sendCommand('Page.captureScreenshot',{format:'png',fromSurface:false,captureBeyondViewport:false})
-          const image=nativeImage.createFromBuffer(Buffer.from(shot.data,'base64'))
-          const captured=image.getSize()
-          if(captured.width!==width||captured.height!==height)throw new Error(`Captura DOM CDP é ${captured.width}x${captured.height}; esperava 1920x1080.`)
-          pending.resolve(Buffer.from(image.toBitmap()))
-        }finally{
-          if(debuggerApi.isAttached())debuggerApi.detach()
-        }
+        const image=await pending.win.webContents.capturePage({x:0,y:0,width,height})
+        const captured=image.getSize()
+        if(captured.width!==width||captured.height!==height)throw new Error(`Captura DOM é ${captured.width}x${captured.height}; esperava 1920x1080.`)
+        pending.resolve(Buffer.from(image.toBitmap()))
       }else{
         if(!(ready.pixels instanceof Uint8Array)||ready.pixels.byteLength!==width*height*4)throw new Error('Canvas export não devolveu pixels esperados.')
         pending.resolve(pixelFormat.rgbaToBgra(ready.pixels))
