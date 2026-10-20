@@ -120,7 +120,19 @@ export class VideoExportCoordinator {
   }
 
   async resume(jobId: string): Promise<string> {
-    if (this.active.has(jobId)) throw new Error('Este job já está ativo nesta sessão.')
+    const previous = this.active.get(jobId)
+    if (previous) {
+      if (!['done', 'failed', 'cancelled'].includes(previous.progress.stage)) {
+        throw new Error('Este job já está ativo nesta sessão.')
+      }
+      // A terminal progress event can arrive just before the task's finally()
+      // disposes surfaces. Drain it before reusing the same persisted job id.
+      await previous.task.catch(() => undefined)
+      if (previous.progress.stage === 'done') {
+        throw new Error('Uma exportação já concluída não pode ser retomada.')
+      }
+      this.active.delete(jobId)
+    }
     const reopened = await this.jobs.reopen(jobId)
     if (!reopened.snapshot || !reopened.characters || !reopened.characterAssets || !reopened.manifest.renderVariant) {
       throw new Error('Job não possui snapshots suficientes para retomada segura.')
