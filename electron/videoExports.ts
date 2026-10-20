@@ -25,11 +25,13 @@ export type VideoExportRecord = {
 export class VideoExportLibrary {
   readonly exportRoot: string
   readonly jobRoot: string
+  readonly frameCacheRoot: string
 
   constructor(appDataRoot: string) {
     const root = resolve(appDataRoot)
     this.exportRoot = join(root, 'EXPORT')
     this.jobRoot = join(root, 'temp', 'video-studio', 'export')
+    this.frameCacheRoot = join(root, 'CACHE', 'video-studio', 'frames')
   }
 
   private assertUuid(value: string, label: string): void {
