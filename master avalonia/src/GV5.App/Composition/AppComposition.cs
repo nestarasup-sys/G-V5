@@ -18,6 +18,7 @@ internal static class AppComposition
         var routes = new[] { FabricadorModule.Route, CustomizadorModule.Route };
 
         services.AddSingleton<IAppDataPaths>(_ => AppDataPaths.ForCurrentUser());
+        services.AddSingleton<IGv5Database, SqliteDatabase>();
         services.AddSingleton(new ModuleRouteCatalog(routes));
         services.AddTransient<IModulePageFactory, ServiceProviderModulePageFactory>();
         foreach (var route in routes)
