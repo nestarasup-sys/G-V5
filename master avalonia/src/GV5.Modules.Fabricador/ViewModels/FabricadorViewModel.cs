@@ -630,7 +630,8 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
         DuplicatePoseService? duplicatePoseService = null,
         IAnimationRepository? animationRepository = null,
         HairSheetImportService? hairSheetImportService = null,
-        HairRoleTintProcessor? hairRoleTintProcessor = null)
+        HairRoleTintProcessor? hairRoleTintProcessor = null,
+        IHairStyleRepository? hairStyleRepository = null)
     {
         _repository = repository ?? throw new ArgumentNullException(nameof(repository));
         _dataInitializer = dataInitializer ?? throw new ArgumentNullException(nameof(dataInitializer));
@@ -639,7 +640,8 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
         _correlationContext = correlationContext;
         _filePicker = filePicker;
         _modelSourceImportService = modelSourceImportService;
-        HairWorkspace = new HairWorkspaceViewModel(_filePicker, hairSheetImportService, hairRoleTintProcessor);
+        HairWorkspace = new HairWorkspaceViewModel(_filePicker, hairSheetImportService, hairRoleTintProcessor,
+            hairStyleRepository, assetStore);
         _assetStore = assetStore;
         _contentRepository = contentRepository;
         _sceneRenderer = sceneRenderer;
@@ -858,6 +860,8 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
                 if (latest is not null)
                 {
                     HairWorkspace.OpenModelRevision(latest);
+                    if (HairWorkspace.HasError) return;
+                    await HairWorkspace.LoadSavedDraftsAsync();
                     if (HairWorkspace.HasError) return;
                 }
             }

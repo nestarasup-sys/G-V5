@@ -26,6 +26,20 @@ public sealed class HairStyleEditorSession
             throw new ArgumentException("The hair draft must be pinned to the exact model publication supplied to the editor.", nameof(draft));
     }
 
+    /// <summary>Replaces the working snapshot after load or persistence without retaining history from another draft.</summary>
+    public void LoadDraft(HairStyleDraft draft)
+    {
+        ArgumentNullException.ThrowIfNull(draft);
+        if (draft.Model != Draft.Model)
+            throw new ArgumentException("The loaded hair draft must reference the exact model publication pinned to this session.", nameof(draft));
+        Draft = draft;
+        _undo.Clear();
+        _redo.Clear();
+        if (SelectedPart is { } selected && Draft.Layers.All(layer => layer.Part != selected)) SelectedPart = null;
+    }
+
+    public bool Rename(string name) => Apply(Draft.WithName(name));
+
     public void Select(HairPartId part)
     {
         if (!Enum.IsDefined(part)) throw new ArgumentOutOfRangeException(nameof(part));

@@ -134,6 +134,20 @@ public readonly record struct HairId : IEntityId
     public override string ToString() => Value.ToString("D");
 }
 
+public readonly record struct HairRevisionId : IEntityId
+{
+    public Guid Value { get; }
+    public bool IsValid => Value != Guid.Empty;
+
+    private HairRevisionId(Guid value) => Value = value;
+
+    public static HairRevisionId New() => new(Guid.NewGuid());
+    public static HairRevisionId From(Guid value) => new(IdValue.RequireValid(value, nameof(value)));
+    public static HairRevisionId Parse(string value) => new(IdValue.Parse(value, nameof(HairRevisionId)));
+    public static bool TryParse(string? value, out HairRevisionId id) => IdValue.TryParse(value, static parsed => new HairRevisionId(parsed), out id);
+    public override string ToString() => Value.ToString("D");
+}
+
 public readonly record struct CharacterId : IEntityId
 {
     public Guid Value { get; }

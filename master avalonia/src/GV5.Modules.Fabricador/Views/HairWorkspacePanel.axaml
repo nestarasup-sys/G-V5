@@ -77,18 +77,21 @@
                         <ItemsControl.ItemTemplate>
                             <DataTemplate x:DataType="vm:HairLayerListItem">
                                 <Border Background="#FFFFFF" BorderBrush="#EEE9ED" BorderThickness="1" CornerRadius="7" Padding="6" Margin="0,2">
-                                    <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto" ColumnSpacing="4">
+                                    <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto,Auto" ColumnSpacing="4">
                                         <StackPanel Spacing="2" VerticalAlignment="Center">
                                             <TextBlock Text="{Binding Label}" FontSize="11" FontWeight="SemiBold" Foreground="#342E36" />
                                             <TextBlock Text="{Binding AssetLabel}" FontSize="9" Foreground="#AAA1AA" />
                                         </StackPanel>
-                                        <Button Grid.Column="1" Content="↑" ToolTip.Tip="Mover para trás" Padding="5,3"
+                                        <Button Grid.Column="1" Content="Editar" ToolTip.Tip="Editar posição, escala e rotação"
+                                                Padding="5,3" Command="{Binding $parent[ItemsControl].DataContext.SelectLayerCommand}"
+                                                CommandParameter="{Binding}" />
+                                        <Button Grid.Column="2" Content="↑" ToolTip.Tip="Mover para trás" Padding="5,3"
                                                 Command="{Binding $parent[ItemsControl].DataContext.MoveLayerUpCommand}" CommandParameter="{Binding}" />
-                                        <Button Grid.Column="2" Content="↓" ToolTip.Tip="Mover para frente" Padding="5,3"
+                                        <Button Grid.Column="3" Content="↓" ToolTip.Tip="Mover para frente" Padding="5,3"
                                                 Command="{Binding $parent[ItemsControl].DataContext.MoveLayerDownCommand}" CommandParameter="{Binding}" />
-                                        <Button Grid.Column="3" Content="{Binding VisibilityButtonLabel}" Padding="5,3"
+                                        <Button Grid.Column="4" Content="{Binding VisibilityButtonLabel}" Padding="5,3"
                                                 Command="{Binding $parent[ItemsControl].DataContext.ToggleLayerVisibilityCommand}" CommandParameter="{Binding}" />
-                                        <Button Grid.Column="4" Content="×" ToolTip.Tip="Remover da sessão" Foreground="#B4233C" Padding="5,3"
+                                        <Button Grid.Column="5" Content="×" ToolTip.Tip="Remover da sessão" Foreground="#B4233C" Padding="5,3"
                                                 Command="{Binding $parent[ItemsControl].DataContext.RemoveLayerCommand}" CommandParameter="{Binding}" />
                                     </Grid>
                                 </Border>
@@ -97,6 +100,31 @@
                     </ItemsControl>
                     <TextBlock Text="{Binding EmptyLayerMessage}" IsVisible="{Binding HasNoLayers}"
                                FontSize="11" Foreground="#AAA1AA" TextWrapping="Wrap" />
+                    <Border Background="#F5F1F5" BorderBrush="#EEE9ED" BorderThickness="1" CornerRadius="7" Padding="7"
+                            IsVisible="{Binding HasSelectedLayer}">
+                        <StackPanel Spacing="6">
+                            <TextBlock Text="{Binding SelectedLayerLabel}" FontWeight="SemiBold" Foreground="#342E36" />
+                            <Grid ColumnDefinitions="*,*,*" ColumnSpacing="5">
+                                <TextBox Text="{Binding LayerX}" PlaceholderText="X" IsEnabled="{Binding CanEditDraftName}" />
+                                <TextBox Grid.Column="1" Text="{Binding LayerY}" PlaceholderText="Y" IsEnabled="{Binding CanEditDraftName}" />
+                                <TextBox Grid.Column="2" Text="{Binding LayerRotation}" PlaceholderText="Rotação °" IsEnabled="{Binding CanEditDraftName}" />
+                            </Grid>
+                            <Grid ColumnDefinitions="*,*,Auto" ColumnSpacing="5">
+                                <TextBox Text="{Binding LayerScaleX}" PlaceholderText="Escala X" IsEnabled="{Binding CanEditDraftName}" />
+                                <TextBox Grid.Column="1" Text="{Binding LayerScaleY}" PlaceholderText="Escala Y" IsEnabled="{Binding CanEditDraftName}" />
+                                <CheckBox Grid.Column="2" Content="Espelhar" IsChecked="{Binding LayerFlipX}"
+                                          IsEnabled="{Binding CanEditDraftName}" VerticalAlignment="Center" />
+                            </Grid>
+                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="5">
+                                <Button Content="Aplicar transformação" Command="{Binding ApplyLayerTransformCommand}"
+                                        IsEnabled="{Binding CanEditDraftName}" Background="#6450A5" Foreground="White" Padding="8,5" />
+                                <Button Grid.Column="1" Content="Resetar" Command="{Binding ResetLayerTransformCommand}"
+                                        IsEnabled="{Binding CanEditDraftName}" Padding="8,5" />
+                            </Grid>
+                            <TextBlock Text="X/Y são deslocamentos; escala é independente por eixo; rotação em graus."
+                                       FontSize="9" Foreground="#706872" TextWrapping="Wrap" />
+                        </StackPanel>
+                    </Border>
                 </StackPanel>
             </Border>
 
@@ -129,14 +157,46 @@
                 </StackPanel>
             </Border>
 
+            <Border Background="#F4F0F8" BorderBrush="#DDD4E7" BorderThickness="1" CornerRadius="9" Padding="9"
+                    IsVisible="{Binding CanEditLayers}">
+                <StackPanel Spacing="7">
+                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
+                        <TextBox Text="{Binding DraftName}" PlaceholderText="Nome do penteado" MaxLength="120"
+                                 IsEnabled="{Binding CanEditDraftName}" />
+                        <TextBlock Grid.Column="1" Text="{Binding DraftStateLabel}" VerticalAlignment="Center"
+                                   FontSize="10" Foreground="#6450A5" />
+                    </Grid>
+                    <Grid ColumnDefinitions="*,*,*" ColumnSpacing="6">
+                        <Button Content="＋ Novo penteado" Command="{Binding NewDraftCommand}"
+                                IsEnabled="{Binding CanStartNewDraft}" Padding="8,6" />
+                        <Button Grid.Column="1" Content="Salvar rascunho" Command="{Binding SaveDraftCommand}"
+                                IsEnabled="{Binding CanSaveDraft}" Background="#6450A5" Foreground="White" Padding="8,6" />
+                        <Button Grid.Column="2" Content="Publicar revisão" Command="{Binding PublishDraftCommand}"
+                                IsEnabled="{Binding CanPublishDraft}" Background="#C74677" Foreground="White" Padding="8,6" />
+                    </Grid>
+                    <TextBlock Text="Rascunhos deste modelo" FontSize="11" FontWeight="Bold" Foreground="#342E36"
+                               IsVisible="{Binding HasSavedDrafts}" />
+                    <ItemsControl ItemsSource="{Binding SavedDrafts}" IsVisible="{Binding HasSavedDrafts}"
+                                  IsEnabled="{Binding CanLoadDrafts}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:HairDraftListItem">
+                                <Button Content="{Binding Label}" HorizontalContentAlignment="Left" Padding="8,5" Margin="0,1"
+                                        Command="{Binding $parent[ItemsControl].DataContext.LoadDraftCommand}"
+                                        CommandParameter="{Binding}" />
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <TextBlock Text="Salvar grava o rascunho com IDs permanentes de asset. Publicar cria uma revisão imutável para o Customizador."
+                               FontSize="10" Foreground="#706872" TextWrapping="Wrap" />
+                </StackPanel>
+            </Border>
+
             <Border Background="#F8F6FF" BorderBrush="#DDD6F4" BorderThickness="1" CornerRadius="8" Padding="8"
                     IsVisible="{Binding IsBusy}">
                 <TextBlock Text="Processando a folha em segundo plano…" FontSize="11" Foreground="#6450A5" />
             </Border>
             <TextBlock Text="{Binding Status}" IsVisible="{Binding HasStatus}" TextWrapping="Wrap" FontSize="11" Foreground="#26734D" />
             <TextBlock Text="{Binding Error}" IsVisible="{Binding HasError}" TextWrapping="Wrap" FontSize="11" Foreground="#B4233C" />
-            <TextBlock Text="Salvar e publicar as peças será conectado à persistência do catálogo de cabelos." FontSize="10"
-                       Foreground="#AAA1AA" TextWrapping="Wrap" />
         </StackPanel>
     </ScrollViewer>
 </UserControl>
