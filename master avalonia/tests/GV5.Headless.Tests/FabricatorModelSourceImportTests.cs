@@ -201,6 +201,42 @@ public sealed class FabricatorModelSourceImportTests
         }
     }
 
+    [Fact]
+    public async Task SegmentedPngRetainsFeatheredChromaEdgeColorAndAlpha()
+    {
+        var root = NewTempRoot();
+        var service = CreateService(CreateStager(root));
+        var store = new RecordingAssetStore();
+
+        try
+        {
+            var prepared = await service.PrepareAsync(new MemoryStream(CreateFeatheredModelSheetPng()), "image/png", TestContext.Current.CancellationToken);
+            Assert.True(prepared.IsSuccess, prepared.Error?.Message);
+            await using var preview = prepared.Value;
+            var source = await service.PublishAsync(preview, store, TestContext.Current.CancellationToken);
+            Assert.True(source.IsSuccess, source.Error?.Message);
+
+            var separated = await service.ImportSeparatedPartsAsync(preview, store, TestContext.Current.CancellationToken);
+            Assert.True(separated.IsSuccess, separated.Error?.Message);
+            var part = Assert.Single(separated.Value);
+            Assert.Equal(new ImageCropBounds(5, 4, 19, 18), part.SourceBounds);
+
+            var asset = await store.OpenReadAsync(part.Asset.Id, TestContext.Current.CancellationToken);
+            Assert.True(asset.IsSuccess, asset.Error?.Message);
+            await using var stream = asset.Value;
+            using var bitmap = SKBitmap.Decode(stream);
+            Assert.NotNull(bitmap);
+            Assert.Equal(19, bitmap.Width);
+            Assert.Equal(18, bitmap.Height);
+            Assert.Equal(new SKColor(157, 98, 20, 117), bitmap.GetPixel(4, 4));
+            Assert.Equal(new SKColor(240, 30, 30, 255), bitmap.GetPixel(5, 4));
+        }
+        finally
+        {
+            DeleteTempRoot(root);
+        }
+    }
+
     private static AssetImportStager CreateStager(string root) => new(
         root,
         new AssetImportLimits(MaximumBytes: 50L * 1024 * 1024, MaximumDimension: 16_384, MaximumPixels: 32_000_000));
@@ -230,6 +266,18 @@ public sealed class FabricatorModelSourceImportTests
         for (var x = 10; x < 20; x++) bitmap.SetPixel(x, y, new SKColor(240, 30, 30, 255));
         for (var y = 25; y < 35; y++)
         for (var x = 38; x < 48; x++) bitmap.SetPixel(x, y, new SKColor(30, 30, 240, 255));
+        using var image = SKImage.FromBitmap(bitmap);
+        using var encoded = image.Encode(SKEncodedImageFormat.Png, 100);
+        return encoded!.ToArray();
+    }
+
+    private static byte[] CreateFeatheredModelSheetPng()
+    {
+        using var bitmap = new SKBitmap(new SKImageInfo(64, 48, SKColorType.Rgba8888, SKAlphaType.Unpremul));
+        bitmap.Erase(new SKColor(0, 230, 0, 255));
+        for (var y = 8; y < 18; y++)
+        for (var x = 10; x < 20; x++) bitmap.SetPixel(x, y, new SKColor(240, 30, 30, 255));
+        bitmap.SetPixel(9, 8, new SKColor(72, 170, 9, 255));
         using var image = SKImage.FromBitmap(bitmap);
         using var encoded = image.Encode(SKEncodedImageFormat.Png, 100);
         return encoded!.ToArray();
