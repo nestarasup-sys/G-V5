@@ -48,6 +48,38 @@ public sealed class SkiaRendererTests
     }
 
     [Fact]
+    public async Task RenderAsyncMatchesTransparentSyntheticGarmentGoldenPixelForPixel()
+    {
+        var fixtureDirectory = Path.Combine(AppContext.BaseDirectory, "Fixtures", "rendering");
+        var sourcePath = Path.Combine(fixtureDirectory, "synthetic-garment.png");
+        var goldenPath = Path.Combine(fixtureDirectory, "synthetic-garment.golden.png");
+        var sourceBytes = await File.ReadAllBytesAsync(sourcePath, TestContext.Current.CancellationToken);
+        using var assets = new TestRenderAssetProvider(sourceBytes);
+        using var golden = SKBitmap.Decode(goldenPath)
+            ?? throw new InvalidDataException($"Could not decode renderer golden: {goldenPath}");
+
+        var transform = new Transform2D(new Point2D(10, 8), new Point2D(1, 1), 0, Point2D.Zero);
+        var scene = Scene([Layer(new Rect2D(0, 0, 12, 16), transform)], width: 32, height: 32);
+        using var actual = await new SkiaRenderer(assets).RenderAsync(scene, TestContext.Current.CancellationToken);
+
+        Assert.Equal(32, golden.Width);
+        Assert.Equal(32, golden.Height);
+        Assert.Equal(golden.Width, actual.Width);
+        Assert.Equal(golden.Height, actual.Height);
+        for (var y = 0; y < golden.Height; y++)
+        {
+            for (var x = 0; x < golden.Width; x++)
+            {
+                Assert.True(
+                    golden.GetPixel(x, y) == actual.Bitmap.GetPixel(x, y),
+                    $"Pixel mismatch at ({x},{y}): expected {golden.GetPixel(x, y)}, actual {actual.Bitmap.GetPixel(x, y)}.");
+            }
+        }
+
+        Assert.Equal(0, assets.Cache.Metrics.ActiveLeaseCount);
+    }
+
+    [Fact]
     public async Task RenderAsyncRejectsTargetsBeyondTheConfiguredBudgetAndHonorsCancellation()
     {
         using var assets = new TestRenderAssetProvider(CreateFourColorPng());
@@ -59,13 +91,13 @@ public sealed class SkiaRendererTests
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => renderer.RenderAsync(Scene([]), cancellation.Token));
     }
 
-    private static RenderScene Scene(IEnumerable<RenderLayer> layers, int width = 8) => new(SceneId.New(), width, 8, layers);
+    private static RenderScene Scene(IEnumerable<RenderLayer> layers, int width = 8, int height = 8) => new(SceneId.New(), width, height, layers);
 
-    private static RenderLayer Layer(Rect2D crop) => new(
+    private static RenderLayer Layer(Rect2D crop, Transform2D? transform = null) => new(
         RenderLayerId.New(),
         AssetId.New(),
         crop,
-        Transform2D.Identity,
+        transform ?? Transform2D.Identity,
         1,
         RenderBlendMode.Normal,
         0);
