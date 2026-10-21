@@ -7,6 +7,7 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="xunit.v3" />
+    <PackageReference Include="SkiaSharp" />
     <ProjectReference Include="../../src/GV5.Rendering/GV5.Rendering.csproj" />
     <Content Include="../GV5.Core.Tests/xunit.runner.json" Link="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
