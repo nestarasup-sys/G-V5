@@ -74,6 +74,7 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
     [NotifyPropertyChangedFor(nameof(SelectedPartName))]
     [NotifyPropertyChangedFor(nameof(SelectedPartBounds))]
     [NotifyPropertyChangedFor(nameof(SelectedPartPivot))]
+    [NotifyPropertyChangedFor(nameof(PartLayers))]
     private ModelPartId? selectedModelPartId;
 
     [ObservableProperty]
@@ -88,6 +89,7 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanSave))]
     [NotifyPropertyChangedFor(nameof(CanEdit))]
+    [NotifyPropertyChangedFor(nameof(PartLayers))]
     [NotifyCanExecuteChangedFor(nameof(SaveCommand))]
     [NotifyCanExecuteChangedFor(nameof(RestoreCheckpointCommand))]
     [NotifyCanExecuteChangedFor(nameof(DiscardCheckpointCommand))]
@@ -97,6 +99,7 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
     [NotifyPropertyChangedFor(nameof(HasPendingRecovery))]
     [NotifyPropertyChangedFor(nameof(CanSave))]
     [NotifyPropertyChangedFor(nameof(CanEdit))]
+    [NotifyPropertyChangedFor(nameof(PartLayers))]
     [NotifyCanExecuteChangedFor(nameof(SaveCommand))]
     [NotifyCanExecuteChangedFor(nameof(RestoreCheckpointCommand))]
     [NotifyCanExecuteChangedFor(nameof(DiscardCheckpointCommand))]
@@ -109,6 +112,7 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanSave))]
     [NotifyPropertyChangedFor(nameof(CanEdit))]
+    [NotifyPropertyChangedFor(nameof(PartLayers))]
     [NotifyCanExecuteChangedFor(nameof(SaveCommand))]
     private bool isCheckingRecovery;
 
@@ -150,6 +154,38 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
     public Point2D? SelectedPartPivot => _modelContent is null || SelectedModelPartId is not { } id
         ? null
         : ModelDraftHitTester.GetPartPivot(_modelContent, id);
+    public IReadOnlyList<ModelPartLayerItem> PartLayers
+    {
+        get
+        {
+            if (_modelContent is null)
+            {
+                return [];
+            }
+
+            var partsById = _modelContent.Parts.ToDictionary(part => part.Id);
+            return _modelContent.LayerOrder
+                .Select((id, index) => (id, index))
+                .Reverse()
+                .Select(item =>
+                {
+                    var part = partsById[item.id];
+                    return new ModelPartLayerItem(
+                        part.Id,
+                        part.Name,
+                        item.index + 1,
+                        $"Camada {item.index + 1} · {(part.IsVisible ? "Visível" : "Oculta")}",
+                        part.IsVisible,
+                        SelectedModelPartId == part.Id,
+                        part.IsVisible ? "Ocultar" : "Mostrar",
+                        CanEdit,
+                        CanEdit && item.index < _modelContent.LayerOrder.Length - 1,
+                        CanEdit && item.index > 0);
+                })
+                .ToArray();
+        }
+    }
+    public bool HasModelParts => _modelContent is { Parts.IsDefaultOrEmpty: false };
     public int PendingTransformCommandCount => _completedTransformCommands.Count;
     public bool HasPendingTransformCommands => PendingTransformCommandCount > 0;
     public bool HasPendingRecovery => PendingRecoveryCheckpoint is not null;
@@ -350,6 +386,8 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
 
             _modelContent = content;
             SelectedModelPartId = null;
+            OnPropertyChanged(nameof(PartLayers));
+            OnPropertyChanged(nameof(HasModelParts));
             OnPropertyChanged(nameof(SelectedPartName));
             OnPropertyChanged(nameof(SelectedPartBounds));
             OnPropertyChanged(nameof(SelectedPartPivot));
@@ -377,9 +415,95 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
 
     public void SelectModelPartAt(Point2D scenePoint)
     {
-        SelectedModelPartId = _modelContent is null
-            ? null
-            : ModelDraftHitTester.HitTest(_modelContent, scenePoint);
+        SelectModelPart(_modelContent is null ? null : ModelDraftHitTester.HitTest(_modelContent, scenePoint));
+    }
+
+    [RelayCommand]
+    private void SelectPartLayer(ModelPartId partId) => SelectModelPart(partId);
+
+    [RelayCommand]
+    private void ClearSelection() => SelectModelPart(null);
+
+    [RelayCommand]
+    private void TogglePartVisibility(ModelPartId partId)
+    {
+        if (!CanEdit || _modelContent is null)
+        {
+            return;
+        }
+
+        var part = _modelContent.Parts.FirstOrDefault(candidate => candidate.Id == partId);
+        if (part is null)
+        {
+            return;
+        }
+
+        ReplaceModelContent(_modelContent.Parts.Select(candidate => candidate.Id == partId
+            ? candidate.WithVisibility(!candidate.IsVisible)
+            : candidate), _modelContent.LayerOrder);
+    }
+
+    [RelayCommand]
+    private void BringPartForward(ModelPartId partId) => MovePartLayer(partId, 1);
+
+    [RelayCommand]
+    private void SendPartBackward(ModelPartId partId) => MovePartLayer(partId, -1);
+
+    private void SelectModelPart(ModelPartId? partId)
+    {
+        if (partId is { } id && (_modelContent is null || !_modelContent.Parts.Any(part => part.Id == id)))
+        {
+            return;
+        }
+
+        SelectedModelPartId = partId;
+    }
+
+    private void MovePartLayer(ModelPartId partId, int direction)
+    {
+        if (!CanEdit || _modelContent is null)
+        {
+            return;
+        }
+
+        var currentIndex = _modelContent.LayerOrder.IndexOf(partId);
+        if (currentIndex < 0)
+        {
+            return;
+        }
+        var targetIndex = currentIndex + direction;
+        if (targetIndex < 0 || targetIndex >= _modelContent.LayerOrder.Length)
+        {
+            return;
+        }
+
+        var layerOrder = _modelContent.LayerOrder.ToArray();
+        (layerOrder[currentIndex], layerOrder[targetIndex]) = (layerOrder[targetIndex], layerOrder[currentIndex]);
+        ReplaceModelContent(_modelContent.Parts, layerOrder);
+    }
+
+    private void ReplaceModelContent(IEnumerable<ModelPart> parts, IEnumerable<ModelPartId> layerOrder)
+    {
+        if (_modelContent is null)
+        {
+            return;
+        }
+
+        _modelContent = ModelDraftContent.Restore(
+            _modelContent.SchemaVersion,
+            _modelContent.ModelId,
+            _modelContent.Revision,
+            _modelContent.Slot,
+            _modelContent.SourceAssetId,
+            _modelContent.SourceWidth,
+            _modelContent.SourceHeight,
+            parts,
+            layerOrder);
+        OnPropertyChanged(nameof(PartLayers));
+        OnPropertyChanged(nameof(HasModelParts));
+        OnPropertyChanged(nameof(SelectedPartBounds));
+        OnPropertyChanged(nameof(SelectedPartPivot));
+        _ = RenderModelPreviewAsync(_modelContent);
     }
 
     public void BeginModelPartTransform(TransformGestureStart gesture)

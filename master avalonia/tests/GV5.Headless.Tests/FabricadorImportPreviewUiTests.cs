@@ -83,15 +83,43 @@ public sealed class FabricadorImportPreviewUiTests
             Assert.Equal(9, persisted.Value.SourceWidth);
             Assert.Equal(6, persisted.Value.SourceHeight);
 
-            var part = Assert.Single(persisted.Value.Parts);
+            var parts = persisted.Value.Parts;
+            Assert.Equal(3, parts.Length);
+            Assert.Equal(3, viewModel.PartLayers.Count);
+            Assert.Equal(parts.Select(partItem => partItem.Id).Reverse(), viewModel.PartLayers.Select(item => item.Id));
+            Assert.False(viewModel.PartLayers.Single(item => item.Id == parts[2].Id).CanMoveForward);
+            Assert.False(viewModel.PartLayers.Single(item => item.Id == parts[0].Id).CanMoveBackward);
+
+            var layerList = Assert.Single(window.GetVisualDescendants().OfType<ListBox>(), control => control.Name == "ModelPartLayerList");
+            Assert.Equal(3, layerList.Items.Count);
+            viewModel.SelectPartLayerCommand.Execute(parts[0].Id);
+            Assert.Equal(parts[0].Id, viewModel.SelectedModelPartId);
+            Assert.True(viewModel.PartLayers.Single(item => item.Id == parts[0].Id).IsSelected);
+            Assert.True(viewModel.PartLayers.Single(item => item.Id == parts[0].Id).CanMoveForward);
+            viewModel.BringPartForwardCommand.Execute(parts[0].Id);
+            Assert.Equal([parts[2].Id, parts[0].Id, parts[1].Id], viewModel.PartLayers.Select(item => item.Id));
+            viewModel.SendPartBackwardCommand.Execute(parts[0].Id);
+            Assert.Equal(parts.Select(partItem => partItem.Id).Reverse(), viewModel.PartLayers.Select(item => item.Id));
+
+            viewModel.TogglePartVisibilityCommand.Execute(parts[2].Id);
+            Assert.False(viewModel.PartLayers.Single(item => item.Id == parts[2].Id).IsVisible);
+            viewModel.SelectModelPartAt(new Point2D(3, 3));
+            Assert.Equal(parts[1].Id, viewModel.SelectedModelPartId);
+            viewModel.TogglePartVisibilityCommand.Execute(parts[2].Id);
+            Assert.True(viewModel.PartLayers.Single(item => item.Id == parts[2].Id).IsVisible);
+            viewModel.ClearSelectionCommand.Execute(null);
+            Assert.Null(viewModel.SelectedModelPartId);
+
+            var part = parts[^1];
+            viewModel.SelectPartLayerCommand.Execute(part.Id);
             var bounds = ModelDraftHitTester.GetPartBounds(persisted.Value, part.Id)!.Value;
             var afterTransform = new Transform2D(new Point2D(8, 9), new Point2D(2, 3), 0.35, new Point2D(1, 1));
             var transformCommand = new ModelPartTransformCommand(part.Id, part.Transform, afterTransform);
             var applied = transformCommand.Apply(persisted.Value);
-            Assert.Equal(afterTransform, Assert.Single(applied.Parts).Transform);
+            Assert.Equal(afterTransform, applied.Parts.Single(candidate => candidate.Id == part.Id).Transform);
             Assert.Equal(persisted.Value.Revision, applied.Revision);
             var reverted = transformCommand.Revert(applied);
-            Assert.Equal(part.Transform, Assert.Single(reverted.Parts).Transform);
+            Assert.Equal(part.Transform, reverted.Parts.Single(candidate => candidate.Id == part.Id).Transform);
 
             var gestureStart = new Point2D(bounds.X + bounds.Width / 2, bounds.Y + bounds.Height / 2);
             viewModel.SelectModelPartAt(gestureStart);
@@ -106,7 +134,7 @@ public sealed class FabricadorImportPreviewUiTests
             var movedBounds = viewModel.SelectedPartBounds!.Value;
             Assert.Equal(bounds.X + 20, movedBounds.X, precision: 6);
             Assert.Equal(bounds.Y - 6, movedBounds.Y, precision: 6);
-            Assert.Equal(part.Transform, contentRepository.LastSaved!.Parts.Single().Transform);
+            Assert.Equal(part.Transform, contentRepository.LastSaved!.Parts.Single(candidate => candidate.Id == part.Id).Transform);
 
             var beforeScale = viewModel.SelectedPartBounds!.Value;
             var scaleStart = new Point2D(beforeScale.Right, beforeScale.Top);
@@ -217,15 +245,16 @@ public sealed class FabricadorImportPreviewUiTests
         {
             if (LastSaved is null && includePiece && store.LastImported is { } source)
             {
-                var partId = ModelPartId.New();
                 var crop = new Rect2D(0, 0, 2, 2);
-                var part = new ModelPart(
-                    partId,
-                    "Peça sintética",
-                    source.Id,
-                    crop,
-                    new Transform2D(new Point2D(2, 2), new Point2D(1, 1), 0, Point2D.Zero),
-                    new ModelPartSourceTransform(crop, Transform2D.Identity));
+                var parts = Enumerable.Range(0, 3)
+                    .Select(index => new ModelPart(
+                        ModelPartId.New(),
+                        $"Peça sintética {index + 1}",
+                        source.Id,
+                        crop,
+                        new Transform2D(new Point2D(2, 2), new Point2D(1, 1), 0, Point2D.Zero),
+                        new ModelPartSourceTransform(crop, Transform2D.Identity)))
+                    .ToArray();
                 LastSaved = ModelDraftContent.Restore(
                     ModelDraftContent.CurrentSchemaVersion,
                     modelId,
@@ -234,8 +263,8 @@ public sealed class FabricadorImportPreviewUiTests
                     source.Id,
                     9,
                     6,
-                    [part],
-                    [partId]);
+                    parts,
+                    parts.Select(part => part.Id));
                 SaveCount = 1;
             }
 
