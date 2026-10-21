@@ -14,6 +14,7 @@ Estado: definido em F07.09; ainda sem editor, player, persistência ou migraçã
 - Uma animação contém de 1 a 300 frames ordenados.
 - Cada frame tem um `AnimationFrameId` estável e duração própria entre 40 ms e 10.000 ms; a duração total é a soma dos frames.
 - Cada frame tem exatamente uma `AnimationPartKey` para cada peça animada. A key guarda `ModelPartId`, `Transform2D` e visibilidade.
+- A animação mantém uma ordem de camadas completa e estável, herdada da pose-base ao iniciar por uma pose.
 - Keys de transform exigem identidade válida, valores finitos e escala positiva.
 - Cada frame guarda o snapshot do rig com IDs, relações pai/filho, anchors e modo das juntas. IDs e ligações do rig permanecem constantes na animação; anchors e modos podem variar ao longo dos frames.
 - O grafo de cada frame é validado pelo `RigSkeleton` canônico. Juntas órfãs, duplicadas, cíclicas ou com múltiplos pais são recusadas.

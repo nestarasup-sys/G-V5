@@ -95,7 +95,7 @@ public sealed record AnimationDraft
     public const double MaximumPlaybackSpeed = 4.0;
 
     private AnimationDraft(AnimationId id, ModelRevisionReference model, Revision revision, string name,
-        PoseId? basePoseId, ImmutableArray<AnimationFrame> frames, AnimationEasing easing,
+        PoseId? basePoseId, ImmutableArray<AnimationFrame> frames, ImmutableArray<ModelPartId> layerOrder, AnimationEasing easing,
         AnimationLoopMode loopMode, double playbackSpeed)
     {
         Id = id;
@@ -104,6 +104,7 @@ public sealed record AnimationDraft
         Name = name;
         BasePoseId = basePoseId;
         Frames = frames;
+        LayerOrder = layerOrder;
         Easing = easing;
         LoopMode = loopMode;
         PlaybackSpeed = playbackSpeed;
@@ -116,6 +117,7 @@ public sealed record AnimationDraft
     public string Name { get; }
     public PoseId? BasePoseId { get; }
     public ImmutableArray<AnimationFrame> Frames { get; }
+    public ImmutableArray<ModelPartId> LayerOrder { get; }
     public AnimationEasing Easing { get; }
     public AnimationLoopMode LoopMode { get; }
     public double PlaybackSpeed { get; }
@@ -127,12 +129,12 @@ public sealed record AnimationDraft
         var frame = AnimationFrame.Create(firstFrameDurationMs,
             pose.PartTransforms.Select(key => AnimationPartKey.Create(key.PartId, key.Transform, key.IsVisible)), pose.RigJoints);
         return Restore(AnimationId.New(), pose.Model, Revision.Initial, name, pose.Id, [frame],
-            AnimationEasing.Smooth, AnimationLoopMode.Once, 1.0);
+            AnimationEasing.Smooth, AnimationLoopMode.Once, 1.0, pose.LayerOrder);
     }
 
     public static AnimationDraft Restore(AnimationId id, ModelRevisionReference model, Revision revision,
         string name, PoseId? basePoseId, IEnumerable<AnimationFrame> frames, AnimationEasing easing,
-        AnimationLoopMode loopMode, double playbackSpeed)
+        AnimationLoopMode loopMode, double playbackSpeed, IEnumerable<ModelPartId>? layerOrder = null)
     {
         if (!id.IsValid || !revision.IsValid) throw new ArgumentException("An animation requires valid identity and revision.");
         ArgumentNullException.ThrowIfNull(model);
@@ -152,6 +154,10 @@ public sealed record AnimationDraft
             throw new ArgumentOutOfRangeException(nameof(playbackSpeed));
 
         var firstKeys = frameArray[0].Keys.Select(key => key.PartId).ToHashSet();
+        var order = (layerOrder ?? frameArray[0].Keys.Select(key => key.PartId)).ToImmutableArray();
+        if (order.Any(partId => !partId.IsValid) || order.Distinct().Count() != order.Length
+            || !order.ToHashSet().SetEquals(firstKeys))
+            throw new ArgumentException("Animation layer order must contain every keyed model part exactly once.", nameof(layerOrder));
         var firstJoints = frameArray[0].RigJoints.ToDictionary(joint => joint.Id);
         foreach (var frame in frameArray)
         {
@@ -165,10 +171,10 @@ public sealed record AnimationDraft
             _ = RigSkeleton.Create(firstKeys.Select(partId => TransformNodeId.From(partId.Value)), frame.RigJoints);
         }
 
-        return new AnimationDraft(id, model, revision, normalizedName, basePoseId, frameArray, easing, loopMode, playbackSpeed);
+        return new AnimationDraft(id, model, revision, normalizedName, basePoseId, frameArray, order, easing, loopMode, playbackSpeed);
     }
 
     public AnimationDraft WithContent(string name, PoseId? basePoseId, IEnumerable<AnimationFrame> frames,
-        AnimationEasing easing, AnimationLoopMode loopMode, double playbackSpeed) =>
-        Restore(Id, Model, Revision.Next(), name, basePoseId, frames, easing, loopMode, playbackSpeed);
+        AnimationEasing easing, AnimationLoopMode loopMode, double playbackSpeed, IEnumerable<ModelPartId>? layerOrder = null) =>
+        Restore(Id, Model, Revision.Next(), name, basePoseId, frames, easing, loopMode, playbackSpeed, layerOrder ?? LayerOrder);
 }

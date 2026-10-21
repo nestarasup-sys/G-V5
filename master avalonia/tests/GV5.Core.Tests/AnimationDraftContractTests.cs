@@ -17,6 +17,7 @@ public sealed class AnimationDraftContractTests
         Assert.Equal(Revision.Initial, animation.Revision);
         Assert.Equal(pose.Model, animation.Model);
         Assert.Equal(pose.Id, animation.BasePoseId);
+        Assert.Equal(pose.LayerOrder, animation.LayerOrder);
         Assert.Equal(AnimationEasing.Smooth, animation.Easing);
         Assert.Equal(AnimationLoopMode.Once, animation.LoopMode);
         Assert.Equal(250, animation.DurationMs);
@@ -36,6 +37,7 @@ public sealed class AnimationDraftContractTests
         Assert.Equal(AnimationEasing.Linear, edited.Easing);
         Assert.Equal(AnimationLoopMode.PingPong, edited.LoopMode);
         Assert.Equal(new Point2D(31, 10), Assert.Single(edited.Frames[1].RigJoints).ChildAnchor);
+        Assert.Equal(pose.LayerOrder, edited.LayerOrder);
         Assert.Equal(Revision.Initial, animation.Revision);
         Assert.Equal("Aceno", animation.Name);
     }
@@ -55,11 +57,11 @@ public sealed class AnimationDraftContractTests
 
         var incomplete = AnimationFrame.Create(250, [keys[0]]);
         Assert.Throws<ArgumentException>(() => AnimationDraft.Restore(AnimationId.New(), pose.Model,
-            Revision.Initial, "Teste", pose.Id, [frame, incomplete], AnimationEasing.Smooth, AnimationLoopMode.Once, 1));
+            Revision.Initial, "Teste", pose.Id, [frame, incomplete], AnimationEasing.Smooth, AnimationLoopMode.Once, 1, pose.LayerOrder));
 
         var changedRig = AnimationFrame.Create(250, keys, []);
         Assert.Throws<ArgumentException>(() => AnimationDraft.Restore(AnimationId.New(), pose.Model,
-            Revision.Initial, "Teste", pose.Id, [frame, changedRig], AnimationEasing.Smooth, AnimationLoopMode.Once, 1));
+            Revision.Initial, "Teste", pose.Id, [frame, changedRig], AnimationEasing.Smooth, AnimationLoopMode.Once, 1, pose.LayerOrder));
 
         var joint = Assert.Single(frame.RigJoints);
         var changedTopology = AnimationFrame.Create(250, keys, [joint with
@@ -70,7 +72,7 @@ public sealed class AnimationDraftContractTests
             ChildAnchor = joint.ParentAnchor
         }]);
         Assert.Throws<ArgumentException>(() => AnimationDraft.Restore(AnimationId.New(), pose.Model,
-            Revision.Initial, "Teste", pose.Id, [frame, changedTopology], AnimationEasing.Smooth, AnimationLoopMode.Once, 1));
+            Revision.Initial, "Teste", pose.Id, [frame, changedTopology], AnimationEasing.Smooth, AnimationLoopMode.Once, 1, pose.LayerOrder));
     }
 
     [Fact]
@@ -82,7 +84,7 @@ public sealed class AnimationDraftContractTests
             .Select(_ => AnimationFrame.Create(40, frame.Keys, frame.RigJoints));
 
         Assert.Throws<ArgumentException>(() => AnimationDraft.Restore(AnimationId.New(), pose.Model,
-            Revision.Initial, "Teste", pose.Id, tooMany, AnimationEasing.Step, AnimationLoopMode.Loop, 4));
+            Revision.Initial, "Teste", pose.Id, tooMany, AnimationEasing.Step, AnimationLoopMode.Loop, 4, pose.LayerOrder));
         Assert.Throws<ArgumentException>(() => AnimationPartKey.Create(frame.Keys[0].PartId,
             new Transform2D(Point2D.Zero, new Point2D(-1, 1), 0, Point2D.Zero)));
     }
