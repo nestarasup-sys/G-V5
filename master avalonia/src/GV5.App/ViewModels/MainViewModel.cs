@@ -14,22 +14,28 @@ public partial class MainViewModel : ViewModelBase
     private IModulePageViewModel currentPage = null!;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasNavigationError))]
     private string? navigationError;
+
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(NavigateCommand))]
+    private bool isNavigating;
 
     private readonly ModuleRouteCatalog _routeCatalog;
     private readonly IModulePageFactory _pageFactory;
 
     public IReadOnlyList<ModuleRoute> Routes => _routeCatalog.Routes;
+    public bool HasNavigationError => !string.IsNullOrWhiteSpace(NavigationError);
 
     public MainViewModel(ModuleRouteCatalog routeCatalog, IModulePageFactory pageFactory)
     {
         _routeCatalog = routeCatalog;
         _pageFactory = pageFactory;
-        Navigate(_routeCatalog.DefaultRoute.Id);
+        SetRoute(_routeCatalog.DefaultRoute);
     }
 
-    [RelayCommand]
-    private void Navigate(string? routeId)
+    [RelayCommand(CanExecute = nameof(CanNavigate))]
+    private async Task NavigateAsync(string? routeId)
     {
         if (!_routeCatalog.TryGet(routeId, out var route) || route is null)
         {
@@ -37,9 +43,50 @@ public partial class MainViewModel : ViewModelBase
             return;
         }
 
+        if (route.Id == ActiveRoute.Id)
+        {
+            NavigationError = null;
+            return;
+        }
+
+        IsNavigating = true;
+        try
+        {
+            if (!await FlushCurrentPageAsync())
+            {
+                NavigationError = "Não foi possível salvar as alterações pendentes. A área atual foi mantida; corrija o erro e tente novamente.";
+                return;
+            }
+
+            SetRoute(route);
+            NavigationError = null;
+        }
+        catch (Exception)
+        {
+            NavigationError = "Não foi possível salvar as alterações pendentes. A área atual foi mantida; tente novamente.";
+        }
+        finally
+        {
+            IsNavigating = false;
+        }
+    }
+
+    public async Task<bool> FlushCurrentPageAsync(CancellationToken cancellationToken = default)
+    {
+        if (CurrentPage is not IFlushablePageViewModel flushable)
+        {
+            return true;
+        }
+
+        return await flushable.FlushPendingChangesAsync(cancellationToken);
+    }
+
+    private bool CanNavigate(string? _) => !IsNavigating;
+
+    private void SetRoute(ModuleRoute route)
+    {
         var page = _pageFactory.Create(route);
         ActiveRoute = route;
         CurrentPage = page;
-        NavigationError = null;
     }
 }

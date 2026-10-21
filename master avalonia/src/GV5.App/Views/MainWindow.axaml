@@ -35,12 +35,18 @@
             </StackPanel>
         </Border>
 
-        <Grid Grid.Column="1" RowDefinitions="Auto,*" Margin="{DynamicResource Gv5SpacePage}">
+        <Grid Grid.Column="1" RowDefinitions="Auto,*,Auto" Margin="{DynamicResource Gv5SpacePage}">
             <StackPanel Spacing="6" Margin="0,0,0,24">
                 <TextBlock Text="{Binding ActiveRoute.Title}" FontSize="{DynamicResource Gv5FontSizeHeading}" FontWeight="Bold" Foreground="{DynamicResource Gv5BrushTextPrimary}" />
                 <TextBlock Text="{Binding ActiveRoute.Description}" FontSize="{DynamicResource Gv5FontSizeBody}" Foreground="{DynamicResource Gv5BrushTextSecondary}" />
             </StackPanel>
             <ContentControl Grid.Row="1" Content="{Binding CurrentPage}" />
+            <TextBlock Grid.Row="2"
+                       Text="{Binding NavigationError}"
+                       IsVisible="{Binding HasNavigationError}"
+                       TextWrapping="Wrap"
+                       Foreground="{DynamicResource Gv5BrushAccent}"
+                       Margin="0,12,0,0" />
         </Grid>
     </Grid>
 

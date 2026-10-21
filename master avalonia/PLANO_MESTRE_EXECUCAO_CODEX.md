@@ -143,7 +143,7 @@ Ambiente/SDK/CI: <comandos e resultados reais>
 - [x] **F02.07** — Implementar expectedRevision e teste de dois escritores com revisão divergente (Conflict).
 - [x] **F02.08** — Implementar gravação de apenas deltas/entidades dirty, sem regravar arquivo completo por gesto.
 - [x] **F02.09** — Expor estado Saved/Dirty/Saving/Error confirmado em UI e teste de falha de save.
-- [ ] **F02.10** — Implementar debounce de autosave e flush de fechamento sem sobrescrever versões recentes.
+- [x] **F02.10** — Implementar debounce de autosave e flush de fechamento sem sobrescrever versões recentes.
 - [ ] **F02.11** — Implementar checkpoint/journal de operação incompleta com recuperação do último estado consistente.
 - [ ] **F02.12** — Implementar backup consistente com WAL, manifesto/hashes e restore testado em cópia isolada.
 - [ ] **F02.13** — Implementar log estruturado mínimo/correlation ID com rotação e sem dados pessoais.

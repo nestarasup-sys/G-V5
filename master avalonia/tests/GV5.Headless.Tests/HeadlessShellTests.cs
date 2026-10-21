@@ -22,7 +22,7 @@ namespace GV5.Headless.Tests;
 public sealed class HeadlessShellTests
 {
     [AvaloniaFact]
-    public void Shell_Navigates_Between_Real_Module_ViewModels_Without_Desktop()
+    public async Task Shell_Navigates_Between_Real_Module_ViewModels_Without_Desktop()
     {
         using var data = new TestDatabaseFixture();
         var vm = MakeMainViewModel(data);
@@ -40,7 +40,7 @@ public sealed class HeadlessShellTests
         Assert.NotNull(customizer.Command);
         Assert.Equal("customizador", customizer.CommandParameter as string);
         Assert.True(customizer.Command!.CanExecute(customizer.CommandParameter));
-        customizer.Command.Execute(customizer.CommandParameter);
+        await vm.NavigateCommand.ExecuteAsync(customizer.CommandParameter as string);
 
         Assert.Null(vm.NavigationError);
         Assert.Equal("customizador", vm.ActiveRoute.Id);
