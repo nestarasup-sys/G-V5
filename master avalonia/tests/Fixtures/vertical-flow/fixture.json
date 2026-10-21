@@ -1,0 +1,66 @@
+{
+  "fixtureId": "gv5-vertical-flow-synthetic-v1",
+  "fixtureVersion": 1,
+  "syntheticOnly": true,
+  "coordinateContract": "ADR-0001",
+  "model": {
+    "legacySlot": 1,
+    "modelId": "fixture-model-001",
+    "name": "Modelo sintético 001",
+    "canvas": { "width": 256, "height": 384, "unit": "gv5-logical-pixel", "origin": "top-left", "positiveY": "down" },
+    "parts": [
+      { "id": "torso", "name": "Tronco", "shape": { "kind": "rect", "x": 86, "y": 142, "width": 84, "height": 122, "radius": 14 }, "fill": "#e9a2bb", "pivot": { "x": 128, "y": 170 } },
+      { "id": "head", "name": "Cabeça", "shape": { "kind": "ellipse", "x": 84, "y": 30, "width": 88, "height": 100 }, "fill": "#f1cfb9", "pivot": { "x": 128, "y": 126 } },
+      { "id": "arm-left", "name": "Braço esquerdo", "shape": { "kind": "rect", "x": 47, "y": 150, "width": 32, "height": 112, "radius": 14 }, "fill": "#f1cfb9", "pivot": { "x": 76, "y": 164 } },
+      { "id": "arm-right", "name": "Braço direito", "shape": { "kind": "rect", "x": 177, "y": 150, "width": 32, "height": 112, "radius": 14 }, "fill": "#f1cfb9", "pivot": { "x": 180, "y": 164 } },
+      { "id": "leg-left", "name": "Perna esquerda", "shape": { "kind": "rect", "x": 92, "y": 255, "width": 30, "height": 104, "radius": 12 }, "fill": "#536a9b", "pivot": { "x": 108, "y": 264 } },
+      { "id": "leg-right", "name": "Perna direita", "shape": { "kind": "rect", "x": 134, "y": 255, "width": 30, "height": 104, "radius": 12 }, "fill": "#536a9b", "pivot": { "x": 148, "y": 264 } }
+    ],
+    "joints": [
+      { "parentId": "torso", "childId": "head", "parentAnchor": { "x": 128, "y": 145 }, "childAnchor": { "x": 128, "y": 125 } },
+      { "parentId": "torso", "childId": "arm-left", "parentAnchor": { "x": 88, "y": 166 }, "childAnchor": { "x": 76, "y": 164 } },
+      { "parentId": "torso", "childId": "arm-right", "parentAnchor": { "x": 168, "y": 166 }, "childAnchor": { "x": 180, "y": 164 } },
+      { "parentId": "torso", "childId": "leg-left", "parentAnchor": { "x": 108, "y": 258 }, "childAnchor": { "x": 108, "y": 264 } },
+      { "parentId": "torso", "childId": "leg-right", "parentAnchor": { "x": 148, "y": 258 }, "childAnchor": { "x": 148, "y": 264 } }
+    ],
+    "layerOrder": ["leg-left", "leg-right", "arm-left", "arm-right", "torso", "head"],
+    "poses": [
+      { "poseId": "fixture-pose-standing", "name": "Parado", "transforms": {} },
+      { "poseId": "fixture-pose-wave", "name": "Acenando", "transforms": { "arm-right": { "rotationDegrees": -135 } } }
+    ]
+  },
+  "wardrobe": {
+    "setId": "fixture-wardrobe-shirt-001",
+    "name": "Camiseta de teste",
+    "modelId": "fixture-model-001",
+    "components": [
+      { "componentId": "fixture-shirt-front", "category": "camisa", "attachedPartId": "torso", "shape": { "kind": "rect", "x": 91, "y": 153, "width": 74, "height": 91, "radius": 12 }, "fill": "#5f83c8", "binding": { "boneId": "torso", "localCenter": { "x": 0, "y": 0 }, "widthRatio": 0.88, "heightRatio": 0.74, "rotationDegrees": 0 } }
+    ]
+  },
+  "character": {
+    "characterId": "fixture-character-001",
+    "name": "Personagem de teste",
+    "modelId": "fixture-model-001",
+    "poseId": "fixture-pose-wave",
+    "wardrobeSetIds": ["fixture-wardrobe-shirt-001"],
+    "privateOverrides": { "shirtColor": "#68a889", "skinColor": "#edc4a8", "flipX": false }
+  },
+  "studioScene": {
+    "sceneId": "fixture-scene-001",
+    "width": 1920,
+    "height": 1080,
+    "background": { "kind": "solid", "color": "#dcecf5" },
+    "elements": [
+      { "id": "fixture-character-instance-001", "kind": "character", "characterId": "fixture-character-001", "pivotParent": { "x": 960, "y": 850 }, "scale": { "x": 2.2, "y": 2.2 }, "rotationDegrees": 0, "zIndex": 1 },
+      { "id": "fixture-caption-001", "kind": "text", "text": "Cena de validação", "pivotParent": { "x": 960, "y": 140 }, "zIndex": 2 }
+    ]
+  },
+  "expectedInvariants": [
+    "Publicar o modelo, a pose e a roupa mantém os IDs estáveis.",
+    "O Customizador cria um personagem novo e grava overrides privados sem alterar ativos publicados.",
+    "O Studio resolve o mesmo CharacterId pela API de aplicação, sem importar UI do Fabricador ou Customizador.",
+    "Salvar, fechar e reabrir mantém geometria, pose, roupa, cor privada e composição.",
+    "A ordem de layers mantém pernas atrás do tronco, camisa presa ao tronco e texto na frente.",
+    "Zoom/pan da prévia não altera nenhum campo persistido da cena ou personagem."
+  ]
+}
