@@ -15,19 +15,21 @@
 | Commit-base inspecionado antes deste arquivo | `53b7f7a97321e85063a8dd4f9635e48d36548323` |
 | Último commit de implementação validado | `9751212` (F09.13: slots persistentes e miniaturas do Animador) |
 | Checkout local revalidado | `TestarLocal.bat rapido` passou em 2026-10-21: build Debug; **303 testes, 0 falhas**; 2 avisos CS0618 preexistentes no `ThumbnailService` e 1 xUnit1051 preexistente em `HairRoleTintProcessorTests` |
-| Fase ativa | **F09 — Fabricador IV — cabelos, face, expressões e completação (F09.13 validada; próxima F09.14)** |
+| Fase ativa | **F09 — Fabricador IV — cabelos, face, expressões e completação (F09.14 em execução)** |
 | Última tarefa VALIDADA | **F09.13** — slots de animação por modelo, miniaturas derivadas e decisão do contexto `CharacterId` |
-| Próxima tarefa PENDENTE | **F09.14** — testar salvar/reabrir/import inválido/cancelamento de cada subárea e fechar gaps de paridade |
+| Tarefa em execução | **F09.14** — testar salvar/reabrir/import inválido/cancelamento de cada subárea e fechar gaps de paridade |
 | Requisito transversal atualizado | ADR-0006: aparência reconhecível, não pixel-perfect; todos os botões e funcionalidades; revisão final visual pendente |
 | Gate atual | **GATE-F08 PASSOU tecnicamente; UI/visual Windows/GPU e paridade completa continuam pendentes** |
 | Progresso validado neste controle | **125 / 247 tarefas (50,6%)** |
-| Tarefas em execução | Nenhuma neste instante; F09.14 é a próxima tarefa autorizada |
+| Tarefas em execução | **F09.14** — auditoria dos fluxos Fabricador; lacunas e evidências continuam sendo fechadas |
 | Pendências conhecidas | F06: folha real/capturas/worker não testados; ferramentas de Modelos ausentes catalogadas em `docs/legacy-contracts/PENDENCIAS_FUNCIONAIS_FABRICADOR.md` e obrigatórias antes do G2. Isso não impede a programação F07, mas impede declarar Fabricador completo. Limite download F01 documentado |
 | Aceite Windows/GPU | **F06 Windows/visual não executado; GPU continua fora do escopo comprovado** |
 
 **Importante:** a contagem acima representa **tarefas com evidência de validação registrada neste documento**, não a porcentagem de código já implementado. O shell, a solution, os projetos-base e os scripts de preparação podem estar presentes. O Codex deve auditar o que existe antes de implementar.
 
 **Atualização 2026-10-21 (ADR-0006):** prioridade do usuário alterada de pixel-perfect para semelhança geral com cobertura completa de botões/funções. Política e F06 atualizadas sem executar testes novos ou validar aparência. Menções históricas a bloqueio estrito permanecem como registros do critério anterior.
+
+**F09.14 em execução — primeira fatia local:** auditoria dos fluxos de import e persistência identificou cobertura existente para revisão facial, checksum, publicação e reabertura; foram adicionados testes explícitos de cancelamento no repositório de expressões (leitura/gravação canceladas propagam `OperationCanceledException` sem mudar a coleção) e de import de roupa (bytes malformados rejeitados e cancelamento após início da cópia limpa o stage parcial). Suítes direcionadas passaram: Data **62/62** e Headless **59/59**. A matriz completa de subáreas, a execução do gate rápido e o fechamento de gaps seguem pendentes; F09.14 não está validada.
 
 ## 2. Fontes e regras de leitura
 

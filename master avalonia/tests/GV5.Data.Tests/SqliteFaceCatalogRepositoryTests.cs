@@ -19,6 +19,40 @@ namespace GV5.Data.Tests;
 public sealed class SqliteFaceCatalogRepositoryTests
 {
     [Fact]
+    public async Task FaceExpressionRepositoryPropagatesCancellationWithoutConvertingItToPersistenceFailure()
+    {
+        var token = TestContext.Current.CancellationToken;
+        var root = Path.Combine(Path.GetTempPath(), $"gv5-face-expression-cancel-{Guid.NewGuid():N}");
+        try
+        {
+            using var database = new SqliteDatabase(new AppDataPaths(root));
+            await CreateInitializer(database).InitializeAsync(token);
+            var model = await CreatePublishedModelAsync(database, token);
+            Assert.True(model.IsSuccess, model.Error?.Message);
+            var repository = new SqliteFaceExpressionRepository(database);
+            var collection = FaceExpressionCollection.Create(ModelRevisionReference.From(model.Value), "Cancelamento", 10);
+            var created = await repository.CreateCollectionAsync(collection, token);
+            Assert.True(created.IsSuccess, created.Error?.Message);
+
+            using var cancellation = new CancellationTokenSource();
+            cancellation.Cancel();
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+                repository.GetCollectionAsync(collection.Id, cancellation.Token));
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+                repository.SaveCollectionAsync(collection.WithName("Não deve salvar", 20), collection.Revision, cancellation.Token));
+
+            var unchanged = await repository.GetCollectionAsync(collection.Id, token);
+            Assert.True(unchanged.IsSuccess, unchanged.Error?.Message);
+            Assert.Equal("Cancelamento", unchanged.Value.Name);
+            Assert.Equal(collection.Revision, unchanged.Value.Revision);
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task FaceDraftsRoundTripWithPinnedModelOptimisticRevisionAndPerComponentAssetReferences()
     {
         var token = TestContext.Current.CancellationToken;

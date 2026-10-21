@@ -86,6 +86,32 @@ public sealed class FabricatorWardrobeImportTests
         }
     }
 
+    [Fact]
+    public async Task PrepareRejectsMalformedImageAndCancellationRemovesPartiallyStagedSource()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"gv5-wardrobe-import-cancel-{Guid.NewGuid():N}");
+        try
+        {
+            var service = CreateService(root);
+            var malformed = await service.PrepareAsync(new MemoryStream([1, 2, 3, 4]), "image/png",
+                cancellationToken: TestContext.Current.CancellationToken);
+            Assert.True(malformed.IsFailure);
+            Assert.Equal(ApplicationErrorCode.Validation, malformed.Error!.Code);
+            Assert.Empty(Directory.GetFiles(root, "*.stage", SearchOption.AllDirectories));
+
+            var bytes = CreateNoisyPng();
+            using var cancellation = new CancellationTokenSource();
+            await using var source = new CancelAfterFirstReadStream(bytes, cancellation);
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+                service.PrepareAsync(source, "image/png", cancellationToken: cancellation.Token));
+            Assert.Empty(Directory.GetFiles(root, "*.stage", SearchOption.AllDirectories));
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+        }
+    }
+
     private static WardrobeComponentImportService CreateService(string root) => new(
         new AssetImportStager(Path.Combine(root, "staging"), new AssetImportLimits(8 * 1024 * 1024, 8192, 32_000_000)),
         new AssetImageDecoder(new AssetImageDecodeLimits(8192, 32_000_000, 128L * 1024 * 1024)),
@@ -97,6 +123,49 @@ public sealed class FabricatorWardrobeImportTests
         paint(bitmap);
         using var image = bitmap.Encode(SKEncodedImageFormat.Png, 100);
         return image!.ToArray();
+    }
+
+    private static byte[] CreateNoisyPng()
+    {
+        using var bitmap = new SKBitmap(new SKImageInfo(512, 512, SKColorType.Rgba8888, SKAlphaType.Unpremul));
+        var random = new Random(57);
+        for (var y = 0; y < bitmap.Height; y++)
+        for (var x = 0; x < bitmap.Width; x++)
+            bitmap.SetPixel(x, y, new SKColor((byte)random.Next(256), (byte)random.Next(256), (byte)random.Next(256), 255));
+        using var image = bitmap.Encode(SKEncodedImageFormat.Png, 100);
+        return image!.ToArray();
+    }
+
+    private sealed class CancelAfterFirstReadStream(byte[] bytes, CancellationTokenSource cancellation) : MemoryStream(bytes)
+    {
+        private bool _canceled;
+
+        public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            var read = base.ReadAsync(buffer, cancellationToken);
+            if (read.IsCompletedSuccessfully)
+            {
+                var count = read.Result;
+                if (count > 0 && !_canceled)
+                {
+                    _canceled = true;
+                    cancellation.Cancel();
+                }
+                return ValueTask.FromResult(count);
+            }
+            return CancelAfterReadAsync(read);
+        }
+
+        private async ValueTask<int> CancelAfterReadAsync(ValueTask<int> read)
+        {
+            var count = await read.ConfigureAwait(false);
+            if (count > 0 && !_canceled)
+            {
+                _canceled = true;
+                cancellation.Cancel();
+            }
+            return count;
+        }
     }
 
     private static async Task<DecodedAssetImage> DecodeAsync(byte[] bytes)
