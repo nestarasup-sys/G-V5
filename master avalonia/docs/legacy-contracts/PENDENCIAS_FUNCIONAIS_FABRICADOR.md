@@ -30,4 +30,4 @@
 
 ## Estado atual
 
-**0 lacunas deste inventário estão declaradas resolvidas por esta auditoria.** A F07.02 está EM_EXECUCAO: RigJointGraph/ModelRigEditor e testes escritos; um teste Headless falhou no CI 39646435562 por asserção incorreta, corrigida em 32beda0. A integração com View/ViewModel, persistência de juntas e testes de reopen ainda não foi concluída. A fase F07 só encerra quando seu gate técnico passar.
+**0 lacunas funcionais deste inventário estão declaradas resolvidas por esta auditoria.** A F07.02 foi validada localmente no commit `8f11586`: UI de CRUD de juntas, validação de ciclos/referências, revisão otimista, undo/redo e persistência/reabertura foram cobertos. Continuam pendentes as guias/handles e arrasto de pivôs (F07.04), a heurística de conexões automáticas e outras lacunas listadas acima. A fase F07 só encerra quando seu gate técnico passar.
