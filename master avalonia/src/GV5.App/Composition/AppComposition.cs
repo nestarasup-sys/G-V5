@@ -55,6 +55,7 @@ internal static class AppComposition
         services.AddSingleton<IDataPlatformBackupService, DatabaseBackupService>();
         services.AddSingleton<AssetImageDecoder>();
         services.AddSingleton<ChromaCropProcessor>();
+        services.AddSingleton<ModelSheetSegmentationProcessor>();
         services.AddSingleton(provider => new AssetImportStager(
             Path.Combine(provider.GetRequiredService<IAppDataPaths>().TempDirectory, "fabricator-source-imports"),
             new AssetImportLimits(

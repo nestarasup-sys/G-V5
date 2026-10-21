@@ -1,15 +1,18 @@
 using GV5.Application.Contracts;
 using GV5.Assets.Decoding;
 using GV5.Assets.Import;
+using GV5.Assets.Processing;
 using GV5.Core.Identity;
+using GV5.Geometry;
 
 namespace GV5.Modules.Fabricador.Import;
 
 /// <summary>Stages and decodes a model sheet for review; publishing only happens after explicit confirmation.</summary>
-public sealed class ModelSourceImportService(AssetImportStager stager, AssetImageDecoder decoder)
+public sealed class ModelSourceImportService(AssetImportStager stager, AssetImageDecoder decoder, ModelSheetSegmentationProcessor segmentationProcessor)
 {
     private readonly AssetImportStager _stager = stager ?? throw new ArgumentNullException(nameof(stager));
     private readonly AssetImageDecoder _decoder = decoder ?? throw new ArgumentNullException(nameof(decoder));
+    private readonly ModelSheetSegmentationProcessor _segmentationProcessor = segmentationProcessor ?? throw new ArgumentNullException(nameof(segmentationProcessor));
 
     public async Task<Result<ModelSourceImportPreview>> PrepareAsync(
         Stream source,
@@ -121,7 +124,78 @@ public sealed class ModelSourceImportService(AssetImportStager stager, AssetImag
             }
         }
     }
+
+    /// <summary>Reprocesses the persisted source and publishes each legacy-compatible connected component as an asset.</summary>
+    public async Task<Result<IReadOnlyList<ModelSourcePartAsset>>> ImportSeparatedPartsAsync(
+        ModelSourceImportPreview preview,
+        IAssetStore assetStore,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(preview);
+        ArgumentNullException.ThrowIfNull(assetStore);
+        if (!preview.IsPublished || preview.PublishedAssetId is not { } sourceAssetId)
+        {
+            return Result<IReadOnlyList<ModelSourcePartAsset>>.Failure(new ApplicationError(
+                ApplicationErrorCode.Validation,
+                "Publique a imagem-fonte antes de separar as peças do modelo."));
+        }
+
+        var sourceStream = await assetStore.OpenReadAsync(sourceAssetId, cancellationToken).ConfigureAwait(false);
+        if (sourceStream.IsFailure)
+        {
+            return Result<IReadOnlyList<ModelSourcePartAsset>>.Failure(sourceStream.Error!);
+        }
+
+        await using var stream = sourceStream.Value;
+        var decoded = await _decoder.DecodeAsync(stream, cancellationToken).ConfigureAwait(false);
+        if (decoded.IsFailure)
+        {
+            return Result<IReadOnlyList<ModelSourcePartAsset>>.Failure(new ApplicationError(ApplicationErrorCode.Validation, decoded.Error!.Message));
+        }
+
+        using var source = decoded.Image!;
+        ModelSheetSegmentationResult segmentation;
+        try
+        {
+            segmentation = await _segmentationProcessor.ProcessAsync(source, cancellationToken: cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException or OutOfMemoryException)
+        {
+            return Result<IReadOnlyList<ModelSourcePartAsset>>.Failure(new ApplicationError(
+                ApplicationErrorCode.Validation,
+                "Não foi possível separar as peças da imagem-fonte."));
+        }
+
+        if (segmentation.Parts.Count == 0)
+        {
+            return Result<IReadOnlyList<ModelSourcePartAsset>>.Failure(new ApplicationError(
+                ApplicationErrorCode.Validation,
+                "Nenhuma peça visível foi encontrada. Confira o fundo/chroma e tente outra imagem."));
+        }
+
+        var importedParts = new List<ModelSourcePartAsset>(segmentation.Parts.Count);
+        foreach (var part in segmentation.Parts)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            await using var partStream = new MemoryStream(part.PngBytes, writable: false);
+            var imported = await assetStore.ImportAsync(partStream, "image/png", cancellationToken).ConfigureAwait(false);
+            if (imported.IsFailure)
+            {
+                return Result<IReadOnlyList<ModelSourcePartAsset>>.Failure(imported.Error!);
+            }
+
+            importedParts.Add(new ModelSourcePartAsset(part.Name, part.SourceBounds, imported.Value));
+        }
+
+        return Result<IReadOnlyList<ModelSourcePartAsset>>.Success(importedParts.AsReadOnly());
+    }
 }
+
+public sealed record ModelSourcePartAsset(string Name, ImageCropBounds SourceBounds, AssetMetadata Asset);
 
 /// <summary>Owns a validated stage file and decoded preview until publication or cancellation.</summary>
 public sealed class ModelSourceImportPreview : IAsyncDisposable

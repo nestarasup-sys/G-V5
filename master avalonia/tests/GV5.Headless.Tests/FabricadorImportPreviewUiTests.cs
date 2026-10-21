@@ -8,8 +8,14 @@ using GV5.Application.Contracts;
 using GV5.Application.Services;
 using GV5.Assets.Decoding;
 using GV5.Assets.Import;
+using GV5.Assets.Processing;
 using GV5.Core.Identity;
 using GV5.Core.Models;
+using GV5.Data.Assets;
+using GV5.Data.Diagnostics;
+using GV5.Data.Migrations;
+using GV5.Data.Repositories;
+using GV5.Data.Storage;
 using GV5.Geometry;
 using GV5.Modules.Fabricador.Import;
 using GV5.Modules.Fabricador.Interaction;
@@ -24,22 +30,148 @@ namespace GV5.Headless.Tests;
 public sealed class FabricadorImportPreviewUiTests
 {
     [AvaloniaFact]
+    public async Task RealSqliteImportEditUndoSaveReopenAndPublishKeepsModelAssetsAndRevision()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var root = Path.Combine(Path.GetTempPath(), $"gv5-fabricator-real-flow-{Guid.NewGuid():N}");
+        var paths = new AppDataPaths(root);
+        var decoder = new AssetImageDecoder();
+        var sourceBytes = CreateModelSheetPng();
+        ModelId modelId;
+        ModelDraftContent savedContent;
+
+        try
+        {
+            using (var database = new SqliteDatabase(paths))
+            {
+                var initializer = CreateDataInitializer(database);
+                await initializer.InitializeAsync(cancellationToken);
+                var correlation = new OperationCorrelationContext();
+                var assetPipeline = new SqliteAssetImportPipeline(paths, database, initializer, new StructuredFileLogger(paths, correlation), correlation);
+                var assetStore = new SqliteAssetStore(assetPipeline, database, initializer);
+                var draftRepository = new SqliteModelDraftRepository(database);
+                var contentRepository = new SqliteModelDraftContentRepository(database);
+                var revisionRepository = new SqliteModelRevisionRepository(database);
+                using var renderAssetsCache = new AssetBitmapCache(16 * 1024 * 1024);
+                var sceneRenderer = new SkiaRenderer(new TestRenderAssetProvider(assetStore, decoder, renderAssetsCache));
+                var importService = new ModelSourceImportService(
+                    new AssetImportStager(Path.Combine(paths.TempDirectory, "fabricator-test-staging"), new AssetImportLimits(2 * 1024 * 1024, 16_384, 32_000_000)),
+                    decoder,
+                    new ModelSheetSegmentationProcessor(new ChromaCropProcessor()));
+                var publishService = new PublishModelRevisionService(draftRepository, contentRepository, revisionRepository);
+                var viewModel = new FabricadorViewModel(
+                    draftRepository,
+                    initializer,
+                    filePicker: new RecordingFilePicker(sourceBytes),
+                    modelSourceImportService: importService,
+                    assetStore: assetStore,
+                    contentRepository: contentRepository,
+                    sceneRenderer: sceneRenderer,
+                    autosaveDelay: TimeSpan.FromHours(1),
+                    publishModelRevisionService: publishService);
+                viewModel.ModelName = "Modelo SQLite real";
+                var window = new Window { Width = 900, Height = 700, Content = new FabricadorView { DataContext = viewModel } };
+                window.Show();
+
+                try
+                {
+                    await viewModel.SelectModelSourceCommand.ExecuteAsync(null);
+                    await viewModel.PublishModelSourceCommand.ExecuteAsync(null);
+                    Assert.True(viewModel.HasModelParts);
+                    Assert.Equal(2, viewModel.PartLayers.Count);
+
+                    var originalOrder = viewModel.PartLayers.Select(item => item.Id).ToArray();
+                    var editedId = viewModel.PartLayers[0].Id;
+                    viewModel.TogglePartVisibilityCommand.Execute(editedId);
+                    viewModel.UndoCommand.Execute(null);
+                    Assert.True(viewModel.PartLayers.Single(item => item.Id == editedId).IsVisible);
+                    Assert.Equal(originalOrder, viewModel.PartLayers.Select(item => item.Id));
+
+                    var loadedContent = await contentRepository.GetAsync(Assert.Single((await draftRepository.ListAsync(cancellationToken)).Value).Id, cancellationToken);
+                    Assert.True(loadedContent.IsSuccess, loadedContent.Error?.Message);
+                    var sceneBounds = ModelDraftHitTester.GetPartBounds(loadedContent.Value, editedId)!.Value;
+                    viewModel.SelectPartLayerCommand.Execute(editedId);
+                    var start = new Point2D(sceneBounds.X + sceneBounds.Width / 2, sceneBounds.Y + sceneBounds.Height / 2);
+                    viewModel.BeginModelPartTransform(new TransformGestureStart(ModelPartTransformKind.Move, start));
+                    viewModel.UpdateModelPartTransform(new Point2D(start.X + 3, start.Y + 2));
+                    viewModel.CompleteModelPartTransform();
+                    Assert.True(await viewModel.FlushPendingChangesAsync(cancellationToken));
+                    Assert.Equal(PersistenceState.Saved, viewModel.SaveState);
+                }
+                finally
+                {
+                    window.Close();
+                    viewModel.Dispose();
+                }
+
+                var list = await draftRepository.ListAsync(cancellationToken);
+                Assert.True(list.IsSuccess);
+                modelId = Assert.Single(list.Value).Id;
+                Assert.True((await contentRepository.GetAsync(modelId, cancellationToken)).IsSuccess);
+            }
+
+            using (var reopenedDatabase = new SqliteDatabase(paths))
+            {
+                var initializer = CreateDataInitializer(reopenedDatabase);
+                await initializer.InitializeAsync(cancellationToken);
+                var reopenedDrafts = new SqliteModelDraftRepository(reopenedDatabase);
+                var reopenedContents = new SqliteModelDraftContentRepository(reopenedDatabase);
+                var correlation = new OperationCorrelationContext();
+                var reopenedStore = new SqliteAssetStore(
+                    new SqliteAssetImportPipeline(paths, reopenedDatabase, initializer,
+                        new StructuredFileLogger(paths, correlation), correlation),
+                    reopenedDatabase,
+                    initializer);
+                var draft = await reopenedDrafts.GetAsync(modelId, cancellationToken);
+                var content = await reopenedContents.GetAsync(modelId, cancellationToken);
+                Assert.True(draft.IsSuccess, draft.Error?.Message);
+                Assert.True(content.IsSuccess, content.Error?.Message);
+                savedContent = content.Value;
+                Assert.Equal(2, savedContent.Parts.Length);
+                Assert.Equal(Revision.From(2), savedContent.Revision);
+                Assert.Single(savedContent.Parts.Where(part => part.SourceTransform.Transform != part.Transform));
+                foreach (var assetId in savedContent.Parts.Select(part => part.AssetId).Append(savedContent.SourceAssetId!.Value))
+                {
+                    var metadata = await reopenedStore.GetMetadataAsync(assetId, cancellationToken);
+                    Assert.True(metadata.IsSuccess, metadata.Error?.Message);
+                    Assert.Equal(AssetVerificationState.Available, metadata.Value.VerificationState);
+                }
+
+                var revisions = new SqliteModelRevisionRepository(reopenedDatabase);
+                var published = await new PublishModelRevisionService(reopenedDrafts, reopenedContents, revisions)
+                    .PublishAsync(modelId, 1234, cancellationToken);
+                Assert.True(published.IsSuccess, published.Error?.Message);
+                Assert.Equal(Revision.Initial, published.Value.Revision);
+                Assert.Equal(savedContent.Parts.Select(part => part.AssetId), published.Value.Content.Parts.Select(part => part.AssetId));
+                var persistedPublication = await revisions.GetAsync(modelId, Revision.Initial, cancellationToken);
+                Assert.True(persistedPublication.IsSuccess, persistedPublication.Error?.Message);
+                Assert.Equal(savedContent.Parts.Select(part => part.Transform), persistedPublication.Value.Content.Parts.Select(part => part.Transform));
+            }
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+            {
+                Directory.Delete(root, recursive: true);
+            }
+        }
+    }
+
+    [AvaloniaFact]
     public async Task PieceEdits_AreDebouncedAndOnlyMarkedSavedAfterContentRepositoryConfirms()
     {
         var cancellationToken = TestContext.Current.CancellationToken;
         var root = Path.Combine(Path.GetTempPath(), $"gv5-fabricator-autosave-{Guid.NewGuid():N}");
         var store = new RecordingAssetStore();
-        var contentRepository = new RecordingContentRepository(store, includePiece: true);
+        var contentRepository = new RecordingContentRepository();
         var draftRepository = new EmptyDraftRepository();
         using var renderAssetsCache = new AssetBitmapCache(4 * 1024 * 1024);
         var renderAssets = new TestRenderAssetProvider(store, new AssetImageDecoder(), renderAssetsCache);
-        var service = new ModelSourceImportService(
-            new AssetImportStager(root, new AssetImportLimits(MaximumBytes: 1024 * 1024, MaximumDimension: 16_384, MaximumPixels: 32_000_000)),
-            new AssetImageDecoder());
+        var service = CreateService(root);
         var viewModel = new FabricadorViewModel(
             draftRepository,
             new NoopInitializer(),
-            filePicker: new RecordingFilePicker(CreatePng(9, 6)),
+            filePicker: new RecordingFilePicker(CreateModelSheetPng()),
             modelSourceImportService: service,
             assetStore: store,
             contentRepository: contentRepository,
@@ -84,19 +216,17 @@ public sealed class FabricadorImportPreviewUiTests
     public async Task FilePickerFlowShowsReviewedBitmapAndPublishesOnlyAfterConfirmation()
     {
         var root = Path.Combine(Path.GetTempPath(), $"gv5-fabricator-preview-{Guid.NewGuid():N}");
-        var bytes = CreatePng(9, 6);
+        var bytes = CreateModelSheetPng();
         var picker = new RecordingFilePicker(bytes);
         var store = new RecordingAssetStore();
-        var contentRepository = new RecordingContentRepository(store, includePiece: true);
+        var contentRepository = new RecordingContentRepository();
         var draftRepository = new EmptyDraftRepository();
         var revisionRepository = new RecordingModelRevisionRepository();
         var publishService = new PublishModelRevisionService(draftRepository, contentRepository, revisionRepository);
         using var renderAssetsCache = new AssetBitmapCache(4 * 1024 * 1024);
         var renderAssets = new TestRenderAssetProvider(store, new AssetImageDecoder(), renderAssetsCache);
         var sceneRenderer = new SkiaRenderer(renderAssets);
-        var service = new ModelSourceImportService(
-            new AssetImportStager(root, new AssetImportLimits(MaximumBytes: 1024 * 1024, MaximumDimension: 16_384, MaximumPixels: 32_000_000)),
-            new AssetImageDecoder());
+        var service = CreateService(root);
         var viewModel = new FabricadorViewModel(
             draftRepository,
             new NoopInitializer(),
@@ -118,23 +248,23 @@ public sealed class FabricadorImportPreviewUiTests
 
             var previewImage = Assert.IsType<Image>(window.GetVisualDescendants().Single(control => control.Name == "ModelSourcePreviewImage"));
             var previewBitmap = Assert.IsType<WriteableBitmap>(previewImage.Source);
-            Assert.Equal(9, previewBitmap.PixelSize.Width);
-            Assert.Equal(6, previewBitmap.PixelSize.Height);
-            Assert.Equal("Fonte: 9 × 6 px · prévia 9 × 6 px", viewModel.ImportPreviewDimensions);
+            Assert.Equal(64, previewBitmap.PixelSize.Width);
+            Assert.Equal(48, previewBitmap.PixelSize.Height);
+            Assert.Equal("Fonte: 64 × 48 px · prévia 64 × 48 px", viewModel.ImportPreviewDimensions);
             Assert.Contains(window.GetVisualDescendants().OfType<TextBlock>(), text => text.Text == viewModel.ImportPreviewDimensions);
             Assert.Equal(0, store.ImportCount);
             Assert.Single(Directory.GetFiles(root));
 
             await viewModel.PublishModelSourceCommand.ExecuteAsync(null);
 
-            Assert.Equal(1, store.ImportCount);
+            Assert.Equal(3, store.ImportCount);
             Assert.True(viewModel.ImportPreview!.IsPublished);
             Assert.False(viewModel.CanPublishModelSource);
             Assert.Contains("Modelo carregado", viewModel.ImportStatus);
             Assert.NotNull(viewModel.RenderedModelFrame);
-            Assert.Equal(9, viewModel.RenderedModelFrame!.Width);
-            Assert.Equal(6, viewModel.RenderedModelFrame.Height);
-            Assert.NotEqual(SKColors.Transparent, viewModel.RenderedModelFrame.Bitmap.GetPixel(2, 2));
+            Assert.Equal(64, viewModel.RenderedModelFrame!.Width);
+            Assert.Equal(48, viewModel.RenderedModelFrame.Height);
+            Assert.Equal(new SKColor(240, 30, 30, 255), viewModel.RenderedModelFrame.Bitmap.GetPixel(10, 8));
             viewModel.SetToolCommand.Execute(FabricatorTool.Pan);
             Assert.True(viewModel.IsPanTool);
             viewModel.SetToolCommand.Execute(FabricatorTool.Select);
@@ -143,44 +273,44 @@ public sealed class FabricadorImportPreviewUiTests
             Assert.IsType<WriteableBitmap>(canvas.Frame);
             var persisted = await contentRepository.GetAsync(contentRepository.LastSaved!.ModelId);
             Assert.True(persisted.IsSuccess);
-            Assert.Equal(store.LastImported!.Id, persisted.Value.SourceAssetId);
-            Assert.Equal(9, persisted.Value.SourceWidth);
-            Assert.Equal(6, persisted.Value.SourceHeight);
+            Assert.True(store.Contains(persisted.Value.SourceAssetId!.Value));
+            Assert.Equal(64, persisted.Value.SourceWidth);
+            Assert.Equal(48, persisted.Value.SourceHeight);
             Assert.True(viewModel.CanPublishRevision);
             await viewModel.PublishModelRevisionCommand.ExecuteAsync(null);
             Assert.Equal("Versão 01 publicada e preservada.", viewModel.PublishStatus);
             Assert.Single(revisionRepository.Revisions);
 
             var parts = persisted.Value.Parts;
-            Assert.Equal(3, parts.Length);
-            Assert.Equal(3, viewModel.PartLayers.Count);
+            Assert.Equal(2, parts.Length);
+            Assert.Equal(2, viewModel.PartLayers.Count);
             Assert.Equal(0, viewModel.UndoCount);
             Assert.False(viewModel.UndoCommand.CanExecute(null));
             Assert.Equal(parts.Select(partItem => partItem.Id).Reverse(), viewModel.PartLayers.Select(item => item.Id));
-            Assert.False(viewModel.PartLayers.Single(item => item.Id == parts[2].Id).CanMoveForward);
+            Assert.False(viewModel.PartLayers.Single(item => item.Id == parts[1].Id).CanMoveForward);
             Assert.False(viewModel.PartLayers.Single(item => item.Id == parts[0].Id).CanMoveBackward);
 
             var layerList = Assert.Single(window.GetVisualDescendants().OfType<ListBox>(), control => control.Name == "ModelPartLayerList");
-            Assert.Equal(3, layerList.Items.Count);
+            Assert.Equal(2, layerList.Items.Count);
             viewModel.SelectPartLayerCommand.Execute(parts[0].Id);
             Assert.Equal(parts[0].Id, viewModel.SelectedModelPartId);
             Assert.True(viewModel.PartLayers.Single(item => item.Id == parts[0].Id).IsSelected);
             Assert.True(viewModel.PartLayers.Single(item => item.Id == parts[0].Id).CanMoveForward);
             viewModel.BringPartForwardCommand.Execute(parts[0].Id);
             Assert.Equal(1, viewModel.UndoCount);
-            Assert.Equal([parts[2].Id, parts[0].Id, parts[1].Id], viewModel.PartLayers.Select(item => item.Id));
+            Assert.Equal([parts[0].Id, parts[1].Id], viewModel.PartLayers.Select(item => item.Id));
             viewModel.SendPartBackwardCommand.Execute(parts[0].Id);
             Assert.Equal(2, viewModel.UndoCount);
             Assert.Equal(parts.Select(partItem => partItem.Id).Reverse(), viewModel.PartLayers.Select(item => item.Id));
 
-            viewModel.TogglePartVisibilityCommand.Execute(parts[2].Id);
+            viewModel.TogglePartVisibilityCommand.Execute(parts[1].Id);
             Assert.Equal(3, viewModel.UndoCount);
-            Assert.False(viewModel.PartLayers.Single(item => item.Id == parts[2].Id).IsVisible);
-            viewModel.SelectModelPartAt(new Point2D(3, 3));
-            Assert.Equal(parts[1].Id, viewModel.SelectedModelPartId);
-            viewModel.TogglePartVisibilityCommand.Execute(parts[2].Id);
+            Assert.False(viewModel.PartLayers.Single(item => item.Id == parts[1].Id).IsVisible);
+            viewModel.SelectModelPartAt(new Point2D(10, 8));
+            Assert.Equal(parts[0].Id, viewModel.SelectedModelPartId);
+            viewModel.TogglePartVisibilityCommand.Execute(parts[1].Id);
             Assert.Equal(4, viewModel.UndoCount);
-            Assert.True(viewModel.PartLayers.Single(item => item.Id == parts[2].Id).IsVisible);
+            Assert.True(viewModel.PartLayers.Single(item => item.Id == parts[1].Id).IsVisible);
             viewModel.ClearSelectionCommand.Execute(null);
             Assert.Null(viewModel.SelectedModelPartId);
 
@@ -297,14 +427,31 @@ public sealed class FabricadorImportPreviewUiTests
         }
     }
 
-    private static byte[] CreatePng(int width, int height)
+    private static ModelSourceImportService CreateService(string root) => new(
+        new AssetImportStager(root, new AssetImportLimits(MaximumBytes: 1024 * 1024, MaximumDimension: 16_384, MaximumPixels: 32_000_000)),
+        new AssetImageDecoder(),
+        new ModelSheetSegmentationProcessor(new ChromaCropProcessor()));
+
+    private static SqliteMigrationRunner CreateDataInitializer(IGv5Database database) => new(database,
+    [
+        new InitialAssetSchemaMigration(),
+        new ModelDraftSchemaMigration(),
+        new ModelDraftCheckpointSchemaMigration(),
+        new AssetImportJournalSchemaMigration(),
+        new AssetReferenceSchemaMigration(),
+        new AssetGarbageCollectionSchemaMigration(),
+        new ModelDraftContentSchemaMigration(),
+        new ModelRevisionSchemaMigration()
+    ]);
+
+    private static byte[] CreateModelSheetPng()
     {
-        using var bitmap = new SKBitmap(new SKImageInfo(width, height, SKColorType.Rgba8888, SKAlphaType.Unpremul));
-        for (var y = 0; y < height; y++)
-        for (var x = 0; x < width; x++)
-        {
-            bitmap.SetPixel(x, y, new SKColor((byte)(x * 19), (byte)(y * 27), 160, 255));
-        }
+        using var bitmap = new SKBitmap(new SKImageInfo(64, 48, SKColorType.Rgba8888, SKAlphaType.Unpremul));
+        bitmap.Erase(new SKColor(0, 230, 0, 255));
+        for (var y = 8; y < 18; y++)
+        for (var x = 10; x < 20; x++) bitmap.SetPixel(x, y, new SKColor(240, 30, 30, 255));
+        for (var y = 25; y < 35; y++)
+        for (var x = 38; x < 48; x++) bitmap.SetPixel(x, y, new SKColor(30, 30, 240, 255));
 
         using var image = SKImage.FromBitmap(bitmap);
         using var encoded = image.Encode(SKEncodedImageFormat.Png, 100);
@@ -337,9 +484,10 @@ public sealed class FabricadorImportPreviewUiTests
 
     private sealed class RecordingAssetStore : IAssetStore
     {
+        private readonly Dictionary<AssetId, (AssetMetadata Metadata, byte[] Bytes)> _assets = [];
         public int ImportCount { get; private set; }
         public AssetMetadata? LastImported { get; private set; }
-        private byte[]? _bytes;
+        public bool Contains(AssetId assetId) => _assets.ContainsKey(assetId);
 
         public async Task<Result<AssetMetadata>> ImportAsync(Stream content, string mediaType, CancellationToken cancellationToken = default)
         {
@@ -347,7 +495,6 @@ public sealed class FabricadorImportPreviewUiTests
             using var copy = new MemoryStream();
             await content.CopyToAsync(copy, cancellationToken);
             var data = copy.ToArray();
-            _bytes = data;
             LastImported = new AssetMetadata(
                 AssetId.New(),
                 Convert.ToHexString(SHA256.HashData(data)).ToLowerInvariant(),
@@ -355,17 +502,18 @@ public sealed class FabricadorImportPreviewUiTests
                 data.LongLength,
                 AssetVerificationState.Available,
                 123);
+            _assets.Add(LastImported.Id, (LastImported, data));
             return Result<AssetMetadata>.Success(LastImported);
         }
 
         public Task<Result<Stream>> OpenReadAsync(AssetId assetId, CancellationToken cancellationToken = default) =>
-            Task.FromResult(LastImported?.Id == assetId && _bytes is not null
-                ? Result<Stream>.Success(new MemoryStream(_bytes, writable: false))
+            Task.FromResult(_assets.TryGetValue(assetId, out var asset)
+                ? Result<Stream>.Success(new MemoryStream(asset.Bytes, writable: false))
                 : Result<Stream>.Failure(new ApplicationError(ApplicationErrorCode.NotFound, "Not found.")));
 
         public Task<Result<AssetMetadata>> GetMetadataAsync(AssetId assetId, CancellationToken cancellationToken = default) =>
-            Task.FromResult(LastImported?.Id == assetId
-                ? Result<AssetMetadata>.Success(LastImported)
+            Task.FromResult(_assets.TryGetValue(assetId, out var asset)
+                ? Result<AssetMetadata>.Success(asset.Metadata)
                 : Result<AssetMetadata>.Failure(new ApplicationError(ApplicationErrorCode.NotFound, "Not found.")));
 
         public Task<Result<Unit>> AddReferenceAsync(AssetId assetId, AssetReferenceKey reference, CancellationToken cancellationToken = default) =>
@@ -375,38 +523,13 @@ public sealed class FabricadorImportPreviewUiTests
             Task.FromResult(Result<Unit>.Success(Unit.Value));
     }
 
-    private sealed class RecordingContentRepository(RecordingAssetStore store, bool includePiece) : IModelDraftContentRepository
+    private sealed class RecordingContentRepository : IModelDraftContentRepository
     {
         public ModelDraftContent? LastSaved { get; private set; }
         public int SaveCount { get; private set; }
 
         public Task<Result<ModelDraftContent>> GetAsync(ModelId modelId, CancellationToken cancellationToken = default)
         {
-            if (LastSaved is null && includePiece && store.LastImported is { } source)
-            {
-                var crop = new Rect2D(0, 0, 2, 2);
-                var parts = Enumerable.Range(0, 3)
-                    .Select(index => new ModelPart(
-                        ModelPartId.New(),
-                        $"Peça sintética {index + 1}",
-                        source.Id,
-                        crop,
-                        new Transform2D(new Point2D(2, 2), new Point2D(1, 1), 0, Point2D.Zero),
-                        new ModelPartSourceTransform(crop, Transform2D.Identity)))
-                    .ToArray();
-                LastSaved = ModelDraftContent.Restore(
-                    ModelDraftContent.CurrentSchemaVersion,
-                    modelId,
-                    Revision.Initial,
-                    null,
-                    source.Id,
-                    9,
-                    6,
-                    parts,
-                    parts.Select(part => part.Id));
-                SaveCount = 1;
-            }
-
             return Task.FromResult(LastSaved?.ModelId == modelId
                 ? Result<ModelDraftContent>.Success(LastSaved)
                 : Result<ModelDraftContent>.Failure(new ApplicationError(ApplicationErrorCode.NotFound, "Not found.")));
@@ -438,7 +561,7 @@ public sealed class FabricadorImportPreviewUiTests
     }
 
     private sealed class TestRenderAssetProvider(
-        RecordingAssetStore store,
+        IAssetStore store,
         AssetImageDecoder decoder,
         AssetBitmapCache cache) : IRenderAssetProvider
     {

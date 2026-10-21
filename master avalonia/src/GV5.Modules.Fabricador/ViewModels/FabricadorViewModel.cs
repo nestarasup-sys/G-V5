@@ -31,6 +31,7 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
     private readonly PublishModelRevisionService? _publishModelRevisionService;
     private readonly object _previewSync = new();
     private CancellationTokenSource? _previewCancellation;
+    private CancellationTokenSource? _modelImportCancellation;
     private long _previewVersion;
     private ModelDraftContent? _modelContent;
     private ModelDraftContent? _savedModelContent;
@@ -182,7 +183,7 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
     public bool HasImportPreview => ImportPreview is not null;
     public bool HasImportError => !string.IsNullOrWhiteSpace(ImportError);
     public bool HasImportStatus => !string.IsNullOrWhiteSpace(ImportStatus);
-    public bool CanCancelImport => !IsImporting;
+    public bool CanCancelImport => _modelImportCancellation is not null || (!IsImporting && ImportPreview is not null);
     public string ImportPreviewDimensions => ImportPreview is { } preview
         ? $"Fonte: {preview.Width} × {preview.Height} px · prévia {preview.PreviewWidth} × {preview.PreviewHeight} px"
         : string.Empty;
@@ -377,16 +378,19 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
 
         ImportError = null;
         ImportStatus = null;
+        using var operation = new CancellationTokenSource();
+        _modelImportCancellation = operation;
+        OnPropertyChanged(nameof(CanCancelImport));
         IsImporting = true;
         try
         {
-            await using var selected = await _filePicker.PickImageAsync();
+            await using var selected = await _filePicker.PickImageAsync(operation.Token);
             if (selected is null)
             {
                 return;
             }
 
-            var result = await _modelSourceImportService.PrepareAsync(selected.Content, selected.MediaType);
+            var result = await _modelSourceImportService.PrepareAsync(selected.Content, selected.MediaType, operation.Token);
             if (result.IsFailure)
             {
                 ImportError = result.Error!.Message;
@@ -406,9 +410,15 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
         {
             ImportError = "Não foi possível abrir ou validar essa folha de imagem.";
         }
+        catch (OperationCanceledException)
+        {
+            ImportStatus = "Importação cancelada.";
+        }
         finally
         {
+            _modelImportCancellation = null;
             IsImporting = false;
+            OnPropertyChanged(nameof(CanCancelImport));
         }
     }
 
@@ -422,6 +432,9 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
         }
 
         ImportError = null;
+        using var operation = new CancellationTokenSource();
+        _modelImportCancellation = operation;
+        OnPropertyChanged(nameof(CanCancelImport));
         IsImporting = true;
         try
         {
@@ -432,7 +445,7 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
             }
             else
             {
-                var result = await _modelSourceImportService.PublishAsync(preview, _assetStore);
+                var result = await _modelSourceImportService.PublishAsync(preview, _assetStore, operation.Token);
                 if (result.IsFailure)
                 {
                     ImportError = result.Error!.Message;
@@ -457,8 +470,15 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
                 return;
             }
 
-            await _dataInitializer.InitializeAsync();
-            var loaded = await _contentRepository.GetAsync(_savedDraft.Id);
+            var extractedParts = await _modelSourceImportService.ImportSeparatedPartsAsync(preview, _assetStore, operation.Token);
+            if (extractedParts.IsFailure)
+            {
+                ImportError = extractedParts.Error!.Message;
+                return;
+            }
+
+            await _dataInitializer.InitializeAsync(operation.Token);
+            var loaded = await _contentRepository.GetAsync(_savedDraft.Id, operation.Token);
             var existingContent = loaded.IsSuccess ? loaded.Value : null;
             if (loaded.IsFailure && loaded.Error!.Code != ApplicationErrorCode.NotFound)
             {
@@ -466,24 +486,15 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
                 return;
             }
 
-            var content = existingContent is null
-                ? ModelDraftContent.Restore(
-                    ModelDraftContent.CurrentSchemaVersion,
-                    _savedDraft.Id,
-                    Revision.From(1),
-                    null,
-                    assetId,
-                    preview.Width,
-                    preview.Height,
-                    [],
-                    [])
-                : existingContent.SourceAssetId == assetId
+            var content = existingContent is not null
+                && existingContent.SourceAssetId == assetId
+                && !existingContent.Parts.IsDefaultOrEmpty
                     ? existingContent
-                    : existingContent.WithSource(assetId, preview.Width, preview.Height);
+                    : CreateContentWithSeparatedParts(_savedDraft.Id, existingContent, assetId, preview, extractedParts.Value);
 
             if (!ReferenceEquals(content, existingContent))
             {
-                var savedContent = await _contentRepository.SaveAsync(content, existingContent?.Revision);
+                var savedContent = await _contentRepository.SaveAsync(content, existingContent?.Revision, operation.Token);
                 if (savedContent.IsFailure)
                 {
                     ImportError = savedContent.Error!.Message;
@@ -510,7 +521,7 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
             OnPropertyChanged(nameof(SelectedPartName));
             OnPropertyChanged(nameof(SelectedPartBounds));
             OnPropertyChanged(nameof(SelectedPartPivot));
-            ImportStatus = $"Modelo carregado · {preview.Width} × {preview.Height} · {assetId}";
+            ImportStatus = $"Modelo carregado · {content.Parts.Length} peças · {preview.Width} × {preview.Height} · {assetId}";
             OnPropertyChanged(nameof(CanPublishModelSource));
             OnPropertyChanged(nameof(CanPublishRevision));
             PublishModelRevisionCommand.NotifyCanExecuteChanged();
@@ -519,10 +530,55 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
         {
             ImportError = "Não foi possível publicar a folha de imagem. A prévia permanece disponível para nova tentativa.";
         }
+        catch (OperationCanceledException)
+        {
+            ImportStatus = "Separação cancelada. A imagem-fonte permanece disponível para nova tentativa.";
+        }
         finally
         {
+            _modelImportCancellation = null;
             IsImporting = false;
+            OnPropertyChanged(nameof(CanCancelImport));
         }
+    }
+
+    private static ModelDraftContent CreateContentWithSeparatedParts(
+        ModelId modelId,
+        ModelDraftContent? existing,
+        AssetId sourceAssetId,
+        ModelSourceImportPreview preview,
+        IReadOnlyList<ModelSourcePartAsset> extractedParts)
+    {
+        var parts = extractedParts.Select(item =>
+        {
+            var bounds = item.SourceBounds;
+            var crop = new Rect2D(0, 0, bounds.Width, bounds.Height);
+            var transform = new Transform2D(
+                new Point2D(bounds.X, preview.Height - bounds.Y - bounds.Height),
+                new Point2D(1, 1),
+                0,
+                Point2D.Zero);
+            return new ModelPart(
+                ModelPartId.New(),
+                item.Name,
+                item.Asset.Id,
+                crop,
+                transform,
+                new ModelPartSourceTransform(
+                    new Rect2D(bounds.X, bounds.Y, bounds.Width, bounds.Height),
+                    transform));
+        }).ToArray();
+
+        return ModelDraftContent.Restore(
+            ModelDraftContent.CurrentSchemaVersion,
+            modelId,
+            existing is null ? Revision.Initial : existing.Revision.Next(),
+            existing?.Slot,
+            sourceAssetId,
+            preview.Width,
+            preview.Height,
+            parts,
+            parts.Select(part => part.Id));
     }
 
     [RelayCommand]
@@ -942,6 +998,13 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
     [RelayCommand]
     private async Task CancelModelSourceImportAsync()
     {
+        if (_modelImportCancellation is { } operation)
+        {
+            operation.Cancel();
+            ImportStatus = "Cancelando operação…";
+            return;
+        }
+
         var preview = ImportPreview;
         ImportPreview = null;
         ImportError = null;
