@@ -5,6 +5,7 @@ using Avalonia.Headless.XUnit;
 using Avalonia.Media.Imaging;
 using Avalonia.VisualTree;
 using GV5.Application.Contracts;
+using GV5.Application.Services;
 using GV5.Assets.Decoding;
 using GV5.Assets.Import;
 using GV5.Core.Identity;
@@ -29,13 +30,14 @@ public sealed class FabricadorImportPreviewUiTests
         var root = Path.Combine(Path.GetTempPath(), $"gv5-fabricator-autosave-{Guid.NewGuid():N}");
         var store = new RecordingAssetStore();
         var contentRepository = new RecordingContentRepository(store, includePiece: true);
+        var draftRepository = new EmptyDraftRepository();
         using var renderAssetsCache = new AssetBitmapCache(4 * 1024 * 1024);
         var renderAssets = new TestRenderAssetProvider(store, new AssetImageDecoder(), renderAssetsCache);
         var service = new ModelSourceImportService(
             new AssetImportStager(root, new AssetImportLimits(MaximumBytes: 1024 * 1024, MaximumDimension: 16_384, MaximumPixels: 32_000_000)),
             new AssetImageDecoder());
         var viewModel = new FabricadorViewModel(
-            new EmptyDraftRepository(),
+            draftRepository,
             new NoopInitializer(),
             filePicker: new RecordingFilePicker(CreatePng(9, 6)),
             modelSourceImportService: service,
@@ -86,6 +88,9 @@ public sealed class FabricadorImportPreviewUiTests
         var picker = new RecordingFilePicker(bytes);
         var store = new RecordingAssetStore();
         var contentRepository = new RecordingContentRepository(store, includePiece: true);
+        var draftRepository = new EmptyDraftRepository();
+        var revisionRepository = new RecordingModelRevisionRepository();
+        var publishService = new PublishModelRevisionService(draftRepository, contentRepository, revisionRepository);
         using var renderAssetsCache = new AssetBitmapCache(4 * 1024 * 1024);
         var renderAssets = new TestRenderAssetProvider(store, new AssetImageDecoder(), renderAssetsCache);
         var sceneRenderer = new SkiaRenderer(renderAssets);
@@ -93,14 +98,15 @@ public sealed class FabricadorImportPreviewUiTests
             new AssetImportStager(root, new AssetImportLimits(MaximumBytes: 1024 * 1024, MaximumDimension: 16_384, MaximumPixels: 32_000_000)),
             new AssetImageDecoder());
         var viewModel = new FabricadorViewModel(
-            new EmptyDraftRepository(),
+            draftRepository,
             new NoopInitializer(),
             filePicker: picker,
             modelSourceImportService: service,
             assetStore: store,
             contentRepository: contentRepository,
             sceneRenderer: sceneRenderer,
-            autosaveDelay: TimeSpan.FromHours(1));
+            autosaveDelay: TimeSpan.FromHours(1),
+            publishModelRevisionService: publishService);
         viewModel.ModelName = "Modelo de teste";
         var view = new FabricadorView { DataContext = viewModel };
         var window = new Window { Width = 900, Height = 700, Content = view };
@@ -140,6 +146,10 @@ public sealed class FabricadorImportPreviewUiTests
             Assert.Equal(store.LastImported!.Id, persisted.Value.SourceAssetId);
             Assert.Equal(9, persisted.Value.SourceWidth);
             Assert.Equal(6, persisted.Value.SourceHeight);
+            Assert.True(viewModel.CanPublishRevision);
+            await viewModel.PublishModelRevisionCommand.ExecuteAsync(null);
+            Assert.Equal("Versão 01 publicada e preservada.", viewModel.PublishStatus);
+            Assert.Single(revisionRepository.Revisions);
 
             var parts = persisted.Value.Parts;
             Assert.Equal(3, parts.Length);
@@ -240,6 +250,12 @@ public sealed class FabricadorImportPreviewUiTests
             Assert.Equal(Revision.From(2), contentRepository.LastSaved!.Revision);
             Assert.Equal(parts.Select(item => item.Id), contentRepository.LastSaved.LayerOrder);
             Assert.Equal(viewModel.SelectedPartBounds, ModelDraftHitTester.GetPartBounds(contentRepository.LastSaved, part.Id));
+
+            await viewModel.PublishModelRevisionCommand.ExecuteAsync(null);
+            Assert.Equal("Versão 02 publicada e preservada.", viewModel.PublishStatus);
+            Assert.Equal(2, revisionRepository.Revisions.Count);
+            Assert.Equal(part.Transform, revisionRepository.Revisions[0].Content.Parts.Single(candidate => candidate.Id == part.Id).Transform);
+            Assert.NotEqual(part.Transform, revisionRepository.Revisions[1].Content.Parts.Single(candidate => candidate.Id == part.Id).Transform);
 
             for (var index = 0; index < 7; index++)
             {
@@ -452,16 +468,53 @@ public sealed class FabricadorImportPreviewUiTests
 
     private sealed class EmptyDraftRepository : IModelDraftRepository
     {
-        public Task<Result<ModelDraft>> CreateAsync(ModelDraft draft, CancellationToken cancellationToken = default) =>
-            Task.FromResult(Result<ModelDraft>.Success(draft));
+        private readonly Dictionary<ModelId, ModelDraft> _drafts = [];
+
+        public Task<Result<ModelDraft>> CreateAsync(ModelDraft draft, CancellationToken cancellationToken = default)
+        {
+            _drafts[draft.Id] = draft;
+            return Task.FromResult(Result<ModelDraft>.Success(draft));
+        }
         public Task<Result<IReadOnlyList<ModelDraft>>> ListAsync(CancellationToken cancellationToken = default) =>
-            Task.FromResult(Result<IReadOnlyList<ModelDraft>>.Success([]));
+            Task.FromResult(Result<IReadOnlyList<ModelDraft>>.Success(_drafts.Values.ToArray()));
         public Task<Result<ModelDraft>> GetAsync(ModelId id, CancellationToken cancellationToken = default) =>
-            Task.FromResult(Result<ModelDraft>.Failure(new ApplicationError(ApplicationErrorCode.NotFound, "Not found.")));
+            Task.FromResult(_drafts.TryGetValue(id, out var draft)
+                ? Result<ModelDraft>.Success(draft)
+                : Result<ModelDraft>.Failure(new ApplicationError(ApplicationErrorCode.NotFound, "Not found.")));
         public Task<Result<ModelDraft>> DuplicateAsync(ModelId sourceId, string name, long nowUtcMs, CancellationToken cancellationToken = default) =>
             Task.FromResult(Result<ModelDraft>.Failure(new ApplicationError(ApplicationErrorCode.NotFound, "Not found.")));
-        public Task<Result<ModelDraft>> UpdateAsync(ModelDraft draft, Revision expectedRevision, CancellationToken cancellationToken = default) =>
-            Task.FromResult(Result<ModelDraft>.Success(draft));
+        public Task<Result<ModelDraft>> UpdateAsync(ModelDraft draft, Revision expectedRevision, CancellationToken cancellationToken = default)
+        {
+            if (!_drafts.TryGetValue(draft.Id, out var current) || current.Revision != expectedRevision)
+            {
+                return Task.FromResult(Result<ModelDraft>.Failure(new ApplicationError(ApplicationErrorCode.Conflict, "The model draft changed.")));
+            }
+            _drafts[draft.Id] = draft;
+            return Task.FromResult(Result<ModelDraft>.Success(draft));
+        }
+    }
+
+    private sealed class RecordingModelRevisionRepository : IModelRevisionRepository
+    {
+        public List<PublishedModelRevision> Revisions { get; } = [];
+
+        public Task<Result<PublishedModelRevision>> PublishAsync(ModelDraft draft, ModelDraftContent content, long publishedUtcMs, CancellationToken cancellationToken = default)
+        {
+            var revision = Revisions.Count == 0 ? Revision.Initial : Revisions[^1].Revision.Next();
+            var published = PublishedModelRevision.Restore(
+                ModelRevisionId.New(), draft.Id, revision, draft.Revision, draft.Name, publishedUtcMs,
+                new string('a', 64), content);
+            Revisions.Add(published);
+            return Task.FromResult(Result<PublishedModelRevision>.Success(published));
+        }
+
+        public Task<Result<PublishedModelRevision>> GetAsync(ModelId modelId, Revision revision, CancellationToken cancellationToken = default) =>
+            Task.FromResult(Revisions.SingleOrDefault(item => item.ModelId == modelId && item.Revision == revision) is { } published
+                ? Result<PublishedModelRevision>.Success(published)
+                : Result<PublishedModelRevision>.Failure(new ApplicationError(ApplicationErrorCode.NotFound, "Not found.")));
+
+        public Task<Result<IReadOnlyList<PublishedModelRevision>>> ListAsync(ModelId modelId, CancellationToken cancellationToken = default) =>
+            Task.FromResult(Result<IReadOnlyList<PublishedModelRevision>>.Success(Revisions.Where(item => item.ModelId == modelId).ToArray()));
     }
 
     private sealed class NoopInitializer : IDataPlatformInitializer

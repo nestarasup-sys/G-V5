@@ -268,7 +268,7 @@
                     BorderThickness="1"
                     CornerRadius="10"
                     Padding="16">
-                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
+                <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="10">
                     <StackPanel Spacing="5" VerticalAlignment="Center">
                         <TextBlock x:Name="SaveStateText" Text="{Binding SaveStateLabel}" FontWeight="SemiBold" Foreground="{DynamicResource Gv5BrushTextPrimary}" />
                         <TextBlock x:Name="SaveErrorText"
@@ -276,8 +276,24 @@
                                    IsVisible="{Binding HasSaveError}"
                                    TextWrapping="Wrap"
                                    Foreground="#B4233C" />
+                        <TextBlock Text="{Binding PublishStatus}"
+                                   IsVisible="{Binding HasPublishStatus}"
+                                   TextWrapping="Wrap"
+                                   Foreground="{DynamicResource Gv5BrushTextPrimary}" />
+                        <TextBlock Text="{Binding PublishError}"
+                                   IsVisible="{Binding HasPublishError}"
+                                   TextWrapping="Wrap"
+                                   Foreground="#B4233C" />
                     </StackPanel>
                     <Button Grid.Column="1"
+                            Content="{Binding PublishRevisionButtonLabel}"
+                            Command="{Binding PublishModelRevisionCommand}"
+                            IsEnabled="{Binding CanPublishRevision}"
+                            VerticalAlignment="Center"
+                            Padding="18,11"
+                            BorderBrush="{DynamicResource Gv5BrushAccent}"
+                            Foreground="{DynamicResource Gv5BrushAccent}" />
+                    <Button Grid.Column="2"
                             Content="Salvar rascunho"
                             Command="{Binding SaveCommand}"
                             IsEnabled="{Binding CanSave}"

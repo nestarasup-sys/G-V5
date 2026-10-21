@@ -3,6 +3,7 @@ using CommunityToolkit.Mvvm.Input;
 using System.Collections.Immutable;
 using System.Diagnostics;
 using GV5.Application.Contracts;
+using GV5.Application.Services;
 using GV5.Core.Identity;
 using GV5.Core.Models;
 using GV5.Modules.Fabricador.Import;
@@ -27,6 +28,7 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
     private readonly IAssetStore? _assetStore;
     private readonly IModelDraftContentRepository? _contentRepository;
     private readonly IRenderSceneRenderer? _sceneRenderer;
+    private readonly PublishModelRevisionService? _publishModelRevisionService;
     private readonly object _previewSync = new();
     private CancellationTokenSource? _previewCancellation;
     private long _previewVersion;
@@ -55,6 +57,8 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
     [NotifyCanExecuteChangedFor(nameof(PublishModelSourceCommand))]
     [NotifyPropertyChangedFor(nameof(CanSelectModelSource))]
     [NotifyPropertyChangedFor(nameof(CanPublishModelSource))]
+    [NotifyPropertyChangedFor(nameof(CanPublishRevision))]
+    [NotifyCanExecuteChangedFor(nameof(PublishModelRevisionCommand))]
     [NotifyPropertyChangedFor(nameof(CanCancelImport))]
     private bool isImporting;
 
@@ -68,7 +72,9 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanSave))]
+    [NotifyPropertyChangedFor(nameof(CanPublishRevision))]
     [NotifyCanExecuteChangedFor(nameof(PublishModelSourceCommand))]
+    [NotifyCanExecuteChangedFor(nameof(PublishModelRevisionCommand))]
     [NotifyCanExecuteChangedFor(nameof(SaveCommand))]
     private string modelName = string.Empty;
 
@@ -102,6 +108,8 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
     [NotifyPropertyChangedFor(nameof(CanRedo))]
     [NotifyCanExecuteChangedFor(nameof(UndoCommand))]
     [NotifyCanExecuteChangedFor(nameof(RedoCommand))]
+    [NotifyPropertyChangedFor(nameof(CanPublishRevision))]
+    [NotifyCanExecuteChangedFor(nameof(PublishModelRevisionCommand))]
     private bool isSaving;
 
     [ObservableProperty]
@@ -116,6 +124,8 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
     [NotifyPropertyChangedFor(nameof(CanRedo))]
     [NotifyCanExecuteChangedFor(nameof(UndoCommand))]
     [NotifyCanExecuteChangedFor(nameof(RedoCommand))]
+    [NotifyPropertyChangedFor(nameof(CanPublishRevision))]
+    [NotifyCanExecuteChangedFor(nameof(PublishModelRevisionCommand))]
     private ModelDraftCheckpoint? pendingRecoveryCheckpoint;
 
     [ObservableProperty]
@@ -131,6 +141,8 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
     [NotifyPropertyChangedFor(nameof(CanRedo))]
     [NotifyCanExecuteChangedFor(nameof(UndoCommand))]
     [NotifyCanExecuteChangedFor(nameof(RedoCommand))]
+    [NotifyPropertyChangedFor(nameof(CanPublishRevision))]
+    [NotifyCanExecuteChangedFor(nameof(PublishModelRevisionCommand))]
     private bool isCheckingRecovery;
 
     [ObservableProperty]
@@ -141,10 +153,32 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
     [NotifyPropertyChangedFor(nameof(HasSaveError))]
     private string? saveError;
 
-    public bool CanSave => !IsSaving && !IsCheckingRecovery && !HasPendingRecovery
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasPublishError))]
+    private string? publishError;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasPublishStatus))]
+    private string? publishStatus;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanPublishRevision))]
+    [NotifyPropertyChangedFor(nameof(CanSave))]
+    [NotifyPropertyChangedFor(nameof(CanEdit))]
+    [NotifyPropertyChangedFor(nameof(PublishRevisionButtonLabel))]
+    [NotifyCanExecuteChangedFor(nameof(PublishModelRevisionCommand))]
+    [NotifyCanExecuteChangedFor(nameof(SaveCommand))]
+    private bool isPublishingRevision;
+
+    public bool CanSave => !IsSaving && !IsPublishingRevision && !IsCheckingRecovery && !HasPendingRecovery
         && !string.IsNullOrWhiteSpace(ModelName) && HasPendingChanges;
-    public bool CanEdit => !IsSaving && !IsCheckingRecovery && !HasPendingRecovery;
+    public bool CanEdit => !IsSaving && !IsPublishingRevision && !IsCheckingRecovery && !HasPendingRecovery;
+    public bool CanPublishRevision => _publishModelRevisionService is not null && _savedDraft is not null
+        && _modelContent is not null && !IsPublishingRevision && !IsSaving && !IsCheckingRecovery && !HasPendingRecovery;
+    public string PublishRevisionButtonLabel => IsPublishingRevision ? "Publicando…" : "Publicar versão";
     public bool HasSaveError => !string.IsNullOrWhiteSpace(SaveError);
+    public bool HasPublishError => !string.IsNullOrWhiteSpace(PublishError);
+    public bool HasPublishStatus => !string.IsNullOrWhiteSpace(PublishStatus);
     public bool HasImportPreview => ImportPreview is not null;
     public bool HasImportError => !string.IsNullOrWhiteSpace(ImportError);
     public bool HasImportStatus => !string.IsNullOrWhiteSpace(ImportStatus);
@@ -239,7 +273,8 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
         IAssetStore? assetStore = null,
         IModelDraftContentRepository? contentRepository = null,
         IRenderSceneRenderer? sceneRenderer = null,
-        TimeSpan? autosaveDelay = null)
+        TimeSpan? autosaveDelay = null,
+        PublishModelRevisionService? publishModelRevisionService = null)
     {
         _repository = repository ?? throw new ArgumentNullException(nameof(repository));
         _dataInitializer = dataInitializer ?? throw new ArgumentNullException(nameof(dataInitializer));
@@ -251,6 +286,7 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
         _assetStore = assetStore;
         _contentRepository = contentRepository;
         _sceneRenderer = sceneRenderer;
+        _publishModelRevisionService = publishModelRevisionService;
         _autosaveDelay = autosaveDelay ?? TimeSpan.FromMilliseconds(600);
         if (_autosaveDelay < TimeSpan.Zero)
         {
@@ -268,6 +304,8 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
         }
 
         SaveError = null;
+        PublishError = null;
+        PublishStatus = null;
         if (_savedDraft is not null && string.Equals(value.Trim(), _savedDraft.Name, StringComparison.Ordinal))
         {
             if (_isModelContentDirty)
@@ -288,6 +326,46 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
 
     [RelayCommand(CanExecute = nameof(CanSave))]
     private Task SaveAsync() => SaveDraftAsync(cancelPendingAutosave: true);
+
+    [RelayCommand(CanExecute = nameof(CanPublishRevision))]
+    private async Task PublishModelRevisionAsync()
+    {
+        if (_publishModelRevisionService is null || _savedDraft is null)
+        {
+            return;
+        }
+
+        PublishError = null;
+        PublishStatus = null;
+        try
+        {
+            if (!await FlushPendingChangesAsync())
+            {
+                PublishError = SaveError ?? "Salve as alterações do modelo antes de publicar a revisão.";
+                return;
+            }
+
+            IsPublishingRevision = true;
+            var published = await _publishModelRevisionService.PublishAsync(
+                _savedDraft.Id,
+                DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+            if (published.IsFailure)
+            {
+                PublishError = published.Error!.Message;
+                return;
+            }
+
+            PublishStatus = $"Versão {published.Value.Revision.Value:00} publicada e preservada.";
+        }
+        catch (Exception)
+        {
+            PublishError = "Não foi possível publicar esta revisão. O rascunho permanece intacto.";
+        }
+        finally
+        {
+            IsPublishingRevision = false;
+        }
+    }
 
     [RelayCommand(CanExecute = nameof(CanSelectModelSource))]
     private async Task SelectModelSourceAsync()
@@ -434,6 +512,8 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
             OnPropertyChanged(nameof(SelectedPartPivot));
             ImportStatus = $"Modelo carregado · {preview.Width} × {preview.Height} · {assetId}";
             OnPropertyChanged(nameof(CanPublishModelSource));
+            OnPropertyChanged(nameof(CanPublishRevision));
+            PublishModelRevisionCommand.NotifyCanExecuteChanged();
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidOperationException)
         {
@@ -975,6 +1055,8 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
                 _savedDraft = result.Value;
                 _pendingModelId = null;
                 ModelName = _savedDraft.Name;
+                OnPropertyChanged(nameof(CanPublishRevision));
+                PublishModelRevisionCommand.NotifyCanExecuteChanged();
             }
 
             if (_isModelContentDirty && _modelContent is { } currentContent)
@@ -1075,6 +1157,8 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
         }
 
         SaveError = null;
+        PublishError = null;
+        PublishStatus = null;
         SaveState = PersistenceState.Dirty;
         ScheduleAutosave();
     }
