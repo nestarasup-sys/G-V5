@@ -150,6 +150,143 @@ public sealed class HeadlessShellTests
     }
 
     [AvaloniaFact]
+    public async Task EditorOverlays_Render_Above_EngineFrame_Without_Changing_It()
+    {
+        using var provider = new TestRenderAssetProvider(CreateFourColorPng());
+        var layer = new RenderLayer(
+            RenderLayerId.New(),
+            AssetId.New(),
+            new Rect2D(0, 0, 2, 2),
+            new Transform2D(new Point2D(1, 1), new Point2D(1, 1), 0, Point2D.Zero),
+            1,
+            RenderBlendMode.Normal,
+            0);
+        var scene = new RenderScene(SceneId.New(), 4, 4, [layer]);
+        using var frame = await new SkiaRenderer(provider).RenderAsync(scene, TestContext.Current.CancellationToken);
+        var enginePixelsBefore = HashFrame(frame.Bitmap);
+        var bitmap = new AvaloniaRenderedFrameAdapter().CreateBitmap(frame);
+        var image = new Image { Source = bitmap, Width = 4, Height = 4, Stretch = Stretch.None };
+        var overlay = new RenderedFrameOverlayControl { Width = 4, Height = 4, FrameSize = new Size(4, 4) };
+        var canvas = new Grid { Width = 4, Height = 4 };
+        canvas.Children.Add(image);
+        canvas.Children.Add(overlay);
+        var window = new Window { Width = 4, Height = 4, Content = canvas };
+
+        try
+        {
+            window.Show();
+            using var baseCapture = CapturePixels(window);
+            SaveOverlayCapture(baseCapture, "base.png");
+
+            overlay.Overlay = new EditorOverlayState(
+                showGrid: false,
+                gridSpacing: 1,
+                selectionBounds: new Rect(0.5, 0.5, 3, 3),
+                pivots: [],
+                CreateOverlayStyle());
+            using var selectionCapture = CapturePixels(window);
+            SaveOverlayCapture(selectionCapture, "selection.png");
+            Assert.True(CountChangedPixels(baseCapture, selectionCapture) > 0, "Selection bounds were not drawn over the frame.");
+
+            overlay.Overlay = new EditorOverlayState(
+                showGrid: true,
+                gridSpacing: 2,
+                selectionBounds: null,
+                pivots: [],
+                CreateOverlayStyle());
+            using var gridCapture = CapturePixels(window);
+            SaveOverlayCapture(gridCapture, "grid.png");
+            Assert.True(CountChangedPixels(baseCapture, gridCapture) > 0, "Grid lines were not drawn over the frame.");
+
+            overlay.Overlay = new EditorOverlayState(
+                showGrid: false,
+                gridSpacing: 1,
+                selectionBounds: null,
+                pivots: [new Point(2.5, 2.5)],
+                CreateOverlayStyle());
+            using var pivotCapture = CapturePixels(window);
+            SaveOverlayCapture(pivotCapture, "pivots.png");
+            Assert.Equal(SKColors.White, pivotCapture.GetPixel(2, 2));
+            Assert.True(CountChangedPixels(baseCapture, pivotCapture) > 0, "Pivot handles were not drawn over the frame.");
+
+            Assert.Equal(enginePixelsBefore, HashFrame(frame.Bitmap));
+            Assert.Equal(1, provider.AcquireCount);
+            Assert.Equal(0, provider.Cache.Metrics.ActiveLeaseCount);
+            Assert.False(overlay.IsHitTestVisible, "The visual overlay must not intercept canvas input.");
+        }
+        finally
+        {
+            window.Close();
+            bitmap.Dispose();
+        }
+    }
+
+    [Fact]
+    public void EditorOverlayState_Copies_Pivot_Collection_And_Rejects_Invalid_Grid()
+    {
+        var pivots = new List<Point> { new(3, 4) };
+        var state = new EditorOverlayState(false, 1, null, pivots, CreateOverlayStyle());
+        pivots.Add(new Point(5, 6));
+
+        Assert.Single(state.Pivots);
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new EditorOverlayState(true, 0, null, [], CreateOverlayStyle()));
+    }
+
+    private static EditorOverlayStyle CreateOverlayStyle() => new(
+        gridColor: Color.FromRgb(0, 255, 255),
+        selectionColor: Color.FromRgb(255, 0, 255),
+        pivotColor: Color.FromRgb(255, 255, 255),
+        strokeThickness: 1,
+        pivotRadius: 1.25);
+
+    private static SKBitmap CapturePixels(Window window)
+    {
+        using var capture = window.CaptureRenderedFrame()
+            ?? throw new InvalidOperationException("Avalonia Headless did not capture the overlay window.");
+        using var png = new MemoryStream();
+        capture.Save(png, PngBitmapEncoderOptions.Default);
+        png.Position = 0;
+        return SKBitmap.Decode(png)
+            ?? throw new InvalidDataException("Could not decode the overlay capture.");
+    }
+
+    private static int CountChangedPixels(SKBitmap first, SKBitmap second)
+    {
+        Assert.Equal(first.Width, second.Width);
+        Assert.Equal(first.Height, second.Height);
+        var changed = 0;
+        for (var y = 0; y < first.Height; y++)
+        for (var x = 0; x < first.Width; x++)
+        {
+            if (first.GetPixel(x, y) != second.GetPixel(x, y))
+            {
+                changed++;
+            }
+        }
+
+        return changed;
+    }
+
+    private static string HashFrame(SKBitmap bitmap)
+    {
+        using var image = SKImage.FromBitmap(bitmap);
+        using var encoded = image.Encode(SKEncodedImageFormat.Png, 100)
+            ?? throw new InvalidOperationException("Could not encode the rendered frame for immutability verification.");
+        return Convert.ToHexString(SHA256.HashData(encoded.ToArray()));
+    }
+
+    private static void SaveOverlayCapture(SKBitmap bitmap, string fileName)
+    {
+        var folder = Path.Combine(AppContext.BaseDirectory, "TestResults", "Overlays");
+        Directory.CreateDirectory(folder);
+        using var image = SKImage.FromBitmap(bitmap);
+        using var encoded = image.Encode(SKEncodedImageFormat.Png, 100)
+            ?? throw new InvalidOperationException("Could not encode the overlay evidence capture.");
+        File.WriteAllBytes(Path.Combine(folder, fileName), encoded.ToArray());
+    }
+
+    [AvaloniaFact]
     public void TextInput_Is_Simulated_In_Memory()
     {
         var text = new TextBox();
