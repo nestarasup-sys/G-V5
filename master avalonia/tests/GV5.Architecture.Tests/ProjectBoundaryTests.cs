@@ -51,6 +51,51 @@ public sealed class ProjectBoundaryTests
     }
 
     [Fact]
+    public void AppViews_PresentStateWithoutOwningSceneCompositionOrSkiaRendering()
+    {
+        var root = FindSolutionRoot();
+        var viewsRoot = Path.Combine(root, "src", "GV5.App", "Views");
+        var forbiddenTokens = new[]
+        {
+            "GV5.Rendering",
+            "BodyRenderSceneBuilder",
+            "SkiaRenderer",
+            "SKCanvas",
+            "SKSurface",
+            "RenderScene"
+        };
+        var viewFiles = Directory.EnumerateFiles(viewsRoot, "*.*", SearchOption.AllDirectories)
+            .Where(path => Path.GetExtension(path) is ".cs" or ".axaml");
+
+        foreach (var viewFile in viewFiles)
+        {
+            var content = File.ReadAllText(viewFile);
+            foreach (var forbiddenToken in forbiddenTokens)
+            {
+                Assert.DoesNotContain(forbiddenToken, content, StringComparison.Ordinal);
+            }
+        }
+    }
+
+    [Fact]
+    public void Rendering_StaysOnCpuUntilGpuInteropHasAnExplicitOwnerAndLifecycle()
+    {
+        var root = FindSolutionRoot();
+        var renderingRoot = Path.Combine(root, "src", "GV5.Rendering");
+        var sourceFiles = Directory.EnumerateFiles(renderingRoot, "*.cs", SearchOption.AllDirectories);
+
+        foreach (var sourceFile in sourceFiles)
+        {
+            var content = File.ReadAllText(sourceFile);
+            Assert.DoesNotContain("GRContext", content, StringComparison.Ordinal);
+            Assert.DoesNotContain("GRGlInterface", content, StringComparison.Ordinal);
+        }
+
+        var skiaRenderer = File.ReadAllText(Path.Combine(renderingRoot, "SkiaRenderer.cs"));
+        Assert.Contains("SKSurface.Create(info)", skiaRenderer, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Solution_ContainsOnlyExistingProjectsInsideNewAppRoots()
     {
         var root = FindSolutionRoot();

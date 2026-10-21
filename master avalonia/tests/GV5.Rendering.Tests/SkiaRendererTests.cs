@@ -33,6 +33,59 @@ public sealed class SkiaRendererTests
     }
 
     [Fact]
+    public async Task BodySceneBuilderAndSkiaRenderer_RenderFirstSyntheticCharacter()
+    {
+        using var assets = new TestRenderAssetProvider(CreateCharacterPalettePng());
+        var assetId = AssetId.New();
+        BodyPartRenderSource Part(string id, double x, double y, double width, double height, Rect2D crop) => new(
+            id,
+            RenderLayerId.New(),
+            assetId,
+            crop,
+            new Transform2D(new Point2D(x, y), new Point2D(width, height), 0, Point2D.Zero));
+
+        var characterParts = new[]
+        {
+            Part("torso", 28, 21, 8, 16, new Rect2D(5, 1, 2, 2)),
+            Part("head", 26, 38, 12, 12, new Rect2D(1, 1, 2, 2)),
+            Part("arm-left", 20, 22, 4, 16, new Rect2D(1, 5, 2, 2)),
+            Part("arm-right", 40, 22, 4, 16, new Rect2D(1, 5, 2, 2)),
+            Part("leg-left", 28, 7, 4, 14, new Rect2D(5, 5, 2, 2)),
+            Part("leg-right", 32, 7, 4, 14, new Rect2D(5, 5, 2, 2))
+        };
+        var layerOrder = new[] { "leg-left", "leg-right", "arm-left", "arm-right", "torso", "head" };
+        var scene = BodyRenderSceneBuilder.Build(SceneId.New(), 64, 64, characterParts, layerOrder);
+
+        Assert.Equal(layerOrder, scene.Layers.Select(layer => characterParts.Single(part => part.LayerId == layer.Id).PartId));
+        using var frame = await new SkiaRenderer(assets).RenderAsync(scene, TestContext.Current.CancellationToken);
+
+        var coloredPixelCount = 0;
+        var seenRed = false;
+        var seenGreen = false;
+        var seenBlue = false;
+        var seenYellow = false;
+        for (var y = 0; y < frame.Height; y++)
+        for (var x = 0; x < frame.Width; x++)
+        {
+            var pixel = frame.Bitmap.GetPixel(x, y);
+            if (pixel.Alpha == 0)
+            {
+                continue;
+            }
+
+            coloredPixelCount++;
+            seenRed |= pixel.Red > 240 && pixel.Green < 15 && pixel.Blue < 15;
+            seenGreen |= pixel.Red < 15 && pixel.Green > 100 && pixel.Blue < 15;
+            seenBlue |= pixel.Red < 15 && pixel.Green < 15 && pixel.Blue > 240;
+            seenYellow |= pixel.Red > 240 && pixel.Green > 240 && pixel.Blue < 15;
+        }
+
+        Assert.True(coloredPixelCount > 400, $"Expected a visible six-part synthetic character, but only {coloredPixelCount} pixels were opaque.");
+        Assert.True(seenRed && seenGreen && seenBlue && seenYellow, "Expected head, torso, arms, and legs to contribute their synthetic source colors.");
+        Assert.Equal(0, assets.Cache.Metrics.ActiveLeaseCount);
+    }
+
+    [Fact]
     public async Task RenderAsyncHandlesEmptySceneAndAppliesSourceCrop()
     {
         using var assets = new TestRenderAssetProvider(CreateFourColorPng());
@@ -314,6 +367,28 @@ public sealed class SkiaRendererTests
         bitmap.SetPixel(1, 0, SKColors.Green);
         bitmap.SetPixel(0, 1, SKColors.Blue);
         bitmap.SetPixel(1, 1, SKColors.Yellow);
+        using var image = SKImage.FromBitmap(bitmap);
+        using var encoded = image.Encode(SKEncodedImageFormat.Png, 100);
+        Assert.NotNull(encoded);
+        return encoded!.ToArray();
+    }
+
+    private static byte[] CreateCharacterPalettePng()
+    {
+        using var bitmap = new SKBitmap(new SKImageInfo(8, 8, SKColorType.Rgba8888, SKAlphaType.Unpremul));
+        for (var y = 0; y < 8; y++)
+        for (var x = 0; x < 8; x++)
+        {
+            var color = (x < 4, y < 4) switch
+            {
+                (true, true) => SKColors.Red,
+                (false, true) => SKColors.Green,
+                (true, false) => SKColors.Blue,
+                (false, false) => SKColors.Yellow
+            };
+            bitmap.SetPixel(x, y, color);
+        }
+
         using var image = SKImage.FromBitmap(bitmap);
         using var encoded = image.Encode(SKEncodedImageFormat.Png, 100);
         Assert.NotNull(encoded);
