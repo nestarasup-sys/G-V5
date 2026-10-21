@@ -1,27 +1,45 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using GV5.App.Navigation;
+using GV5.Application.Contracts;
 
 namespace GV5.App.ViewModels;
 
 public partial class MainViewModel : ViewModelBase
 {
     [ObservableProperty]
-    private string activeArea = "Fabricador";
+    private ModuleRoute activeRoute = null!;
 
     [ObservableProperty]
-    private string areaDescription = "Fundação de modelos, peças, geometria e assets do G-V5.";
+    private IModulePageViewModel currentPage = null!;
 
-    [RelayCommand]
-    private void ShowFabricator()
+    [ObservableProperty]
+    private string? navigationError;
+
+    private readonly ModuleRouteCatalog _routeCatalog;
+    private readonly IModulePageFactory _pageFactory;
+
+    public IReadOnlyList<ModuleRoute> Routes => _routeCatalog.Routes;
+
+    public MainViewModel(ModuleRouteCatalog routeCatalog, IModulePageFactory pageFactory)
     {
-        ActiveArea = "Fabricador";
-        AreaDescription = "Fundação de modelos, peças, geometria e assets do G-V5.";
+        _routeCatalog = routeCatalog;
+        _pageFactory = pageFactory;
+        Navigate(_routeCatalog.DefaultRoute.Id);
     }
 
     [RelayCommand]
-    private void ShowCustomizer()
+    private void Navigate(string? routeId)
     {
-        ActiveArea = "Customizador";
-        AreaDescription = "Personagens e overrides serão construídos sobre os dados publicados pelo Fabricador.";
+        if (!_routeCatalog.TryGet(routeId, out var route) || route is null)
+        {
+            NavigationError = $"A área '{routeId}' não está registrada.";
+            return;
+        }
+
+        var page = _pageFactory.Create(route);
+        ActiveRoute = route;
+        CurrentPage = page;
+        NavigationError = null;
     }
 }

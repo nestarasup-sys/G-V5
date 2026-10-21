@@ -1,6 +1,10 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="using:GV5.App.ViewModels"
+        xmlns:fabricadorVm="using:GV5.Modules.Fabricador.ViewModels"
+        xmlns:fabricadorViews="using:GV5.Modules.Fabricador.Views"
+        xmlns:customizadorVm="using:GV5.Modules.Customizador.ViewModels"
+        xmlns:customizadorViews="using:GV5.Modules.Customizador.Views"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         mc:Ignorable="d" d:DesignWidth="1100" d:DesignHeight="700"
@@ -9,11 +13,14 @@
         Icon="/Assets/avalonia-logo.ico"
         Title="G-V5 Avalonia">
 
-    <Design.DataContext>
-        <!-- This only sets the DataContext for the previewer in an IDE,
-             to set the actual DataContext for runtime, set the DataContext property in code (look at App.axaml.cs) -->
-        <vm:MainViewModel />
-    </Design.DataContext>
+    <Window.DataTemplates>
+        <DataTemplate DataType="{x:Type fabricadorVm:FabricadorViewModel}">
+            <fabricadorViews:FabricadorView />
+        </DataTemplate>
+        <DataTemplate DataType="{x:Type customizadorVm:CustomizadorViewModel}">
+            <customizadorViews:CustomizadorView />
+        </DataTemplate>
+    </Window.DataTemplates>
 
     <Grid ColumnDefinitions="240,*" Background="#F5F3F8">
         <Border Grid.Column="0" Background="#211B2B" Padding="20">
@@ -22,24 +29,18 @@
                     <TextBlock Text="G-V5" FontSize="24" FontWeight="Bold" Foreground="White" />
                     <TextBlock Text="NOVA ESTRUTURA" FontSize="11" Foreground="#C6B8D8" />
                 </StackPanel>
-                <Button Content="Fabricador" Command="{Binding ShowFabricatorCommand}" HorizontalContentAlignment="Left" />
-                <Button Content="Customizador" Command="{Binding ShowCustomizerCommand}" HorizontalContentAlignment="Left" />
+                <Button Content="Fabricador" Command="{Binding NavigateCommand}" CommandParameter="fabricador" HorizontalContentAlignment="Left" />
+                <Button Content="Customizador" Command="{Binding NavigateCommand}" CommandParameter="customizador" HorizontalContentAlignment="Left" />
                 <TextBlock Text="Studio e demais áreas entram na ordem definida no plano." TextWrapping="Wrap" FontSize="12" Foreground="#C6B8D8" Margin="0,16,0,0" />
             </StackPanel>
         </Border>
 
         <Grid Grid.Column="1" RowDefinitions="Auto,*" Margin="32">
             <StackPanel Spacing="6" Margin="0,0,0,24">
-                <TextBlock Text="{Binding ActiveArea}" FontSize="28" FontWeight="Bold" Foreground="#2A2233" />
-                <TextBlock Text="{Binding AreaDescription}" FontSize="15" Foreground="#655B6D" />
+                <TextBlock Text="{Binding ActiveRoute.Title}" FontSize="28" FontWeight="Bold" Foreground="#2A2233" />
+                <TextBlock Text="{Binding ActiveRoute.Description}" FontSize="15" Foreground="#655B6D" />
             </StackPanel>
-            <Border Grid.Row="1" Background="White" BorderBrush="#E4DDEA" BorderThickness="1" CornerRadius="14" Padding="28">
-                <StackPanel Spacing="12" VerticalAlignment="Center" HorizontalAlignment="Center" MaxWidth="560">
-                    <TextBlock Text="Estrutura inicial pronta" FontSize="22" FontWeight="SemiBold" HorizontalAlignment="Center" Foreground="#2A2233" />
-                    <TextBlock Text="O shell Avalonia e os módulos da solução já estão separados. Esta área será implementada em fatias, começando pela persistência e pelo pipeline gráfico descritos no plano." TextWrapping="Wrap" TextAlignment="Center" Foreground="#655B6D" />
-                    <TextBlock Text="Nenhum dado do app Electron foi importado ou alterado." FontSize="12" HorizontalAlignment="Center" Foreground="#83778A" Margin="0,8,0,0" />
-                </StackPanel>
-            </Border>
+            <ContentControl Grid.Row="1" Content="{Binding CurrentPage}" />
         </Grid>
     </Grid>
 

@@ -1,5 +1,8 @@
 using GV5.App.ViewModels;
 using GV5.App.Views;
+using GV5.App.Navigation;
+using GV5.Modules.Customizador;
+using GV5.Modules.Fabricador;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace GV5.App.Composition;
@@ -10,6 +13,14 @@ internal static class AppComposition
     public static ServiceProvider CreateProvider()
     {
         var services = new ServiceCollection();
+        var routes = new[] { FabricadorModule.Route, CustomizadorModule.Route };
+
+        services.AddSingleton(new ModuleRouteCatalog(routes));
+        services.AddTransient<IModulePageFactory, ServiceProviderModulePageFactory>();
+        foreach (var route in routes)
+        {
+            services.AddTransient(route.ViewModelType);
+        }
 
         services.AddTransient<MainViewModel>();
         services.AddTransient<MainWindow>(provider => new MainWindow

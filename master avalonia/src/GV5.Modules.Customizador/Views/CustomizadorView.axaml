@@ -1,0 +1,12 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:GV5.Modules.Customizador.ViewModels"
+             x:Class="GV5.Modules.Customizador.Views.CustomizadorView"
+             x:DataType="vm:CustomizadorViewModel">
+    <Border Background="White" BorderBrush="#E4DDEA" BorderThickness="1" CornerRadius="14" Padding="28">
+        <StackPanel Spacing="14" VerticalAlignment="Center" HorizontalAlignment="Center" MaxWidth="620">
+            <TextBlock Text="Área de personagens" FontSize="22" FontWeight="SemiBold" Foreground="#2A2233" />
+            <TextBlock Text="{Binding Status}" TextWrapping="Wrap" TextAlignment="Center" Foreground="#655B6D" />
+        </StackPanel>
+    </Border>
+</UserControl>
