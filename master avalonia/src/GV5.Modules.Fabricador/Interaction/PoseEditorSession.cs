@@ -14,6 +14,8 @@ public sealed class PoseEditorSession
     public ModelPartId? SelectedPartId { get; private set; }
     public ModelDraftContent PreviewContent => Draft.ApplyToModelRevision(_modelRevision);
 
+    public void UpdateMetadata(string name, string? category) => Draft = Draft.WithMetadata(name, category);
+
     public PoseEditorSession(PublishedModelRevision modelRevision, PoseDraft? draft = null)
     {
         _modelRevision = modelRevision ?? throw new ArgumentNullException(nameof(modelRevision));

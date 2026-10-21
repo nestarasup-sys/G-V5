@@ -92,6 +92,13 @@ public sealed record PoseDraft
     public PoseDraft WithTransforms(IEnumerable<PosePartTransform> partTransforms) =>
         WithContent(partTransforms, RigJoints, LayerOrder, Category);
 
+    public PoseDraft WithMetadata(string name, string? category) =>
+        Restore(Id, Model, Revision.Next(), name, PartTransforms, RigJoints, LayerOrder, category);
+
+    /// <summary>Normalizes an unsaved editing session into its first persisted revision.</summary>
+    public PoseDraft PrepareInitialSave(string name, string? category) =>
+        Restore(Id, Model, Revision.Initial, name, PartTransforms, RigJoints, LayerOrder, category);
+
     public PoseDraft WithContent(IEnumerable<PosePartTransform> partTransforms, IEnumerable<RigJoint> rigJoints,
         IEnumerable<ModelPartId> layerOrder, string? category) =>
         Restore(Id, Model, Revision.Next(), Name, partTransforms, rigJoints, layerOrder, category);

@@ -38,6 +38,7 @@ public sealed class FabricadorImportPreviewUiTests
         var decoder = new AssetImageDecoder();
         var sourceBytes = CreateModelSheetPng();
         ModelId modelId;
+        PoseId savedPoseId;
         ModelDraftContent savedContent;
 
         try
@@ -52,6 +53,8 @@ public sealed class FabricadorImportPreviewUiTests
                 var draftRepository = new SqliteModelDraftRepository(database);
                 var contentRepository = new SqliteModelDraftContentRepository(database);
                 var revisionRepository = new SqliteModelRevisionRepository(database);
+                var poseRepository = new SqlitePoseRepository(database);
+                var duplicatePoseService = new DuplicatePoseService(poseRepository);
                 using var renderAssetsCache = new AssetBitmapCache(16 * 1024 * 1024);
                 var sceneRenderer = new SkiaRenderer(new TestRenderAssetProvider(assetStore, decoder, renderAssetsCache));
                 var importService = new ModelSourceImportService(
@@ -69,7 +72,9 @@ public sealed class FabricadorImportPreviewUiTests
                     sceneRenderer: sceneRenderer,
                     autosaveDelay: TimeSpan.FromHours(1),
                     publishModelRevisionService: publishService,
-                    modelRevisionRepository: revisionRepository);
+                    modelRevisionRepository: revisionRepository,
+                    poseRepository: poseRepository,
+                    duplicatePoseService: duplicatePoseService);
                 viewModel.ModelName = "Modelo SQLite real";
                 var window = new Window { Width = 900, Height = 700, Content = new FabricadorView { DataContext = viewModel } };
                 window.Show();
@@ -173,6 +178,30 @@ public sealed class FabricadorImportPreviewUiTests
                     var afterDrag = viewModel.PosePreviewContent!.Parts.Single(part => part.Id == movable.Id).Transform;
                     Assert.NotEqual(beforeDrag.Translation, afterDrag.Translation);
 
+                    viewModel.PoseName = "Pose de teste";
+                    viewModel.PoseCategory = "Braços";
+                    await viewModel.SavePoseCommand.ExecuteAsync(null);
+                    Assert.Null(viewModel.PoseEditorError);
+                    var savedPose = Assert.Single(viewModel.SavedPoses);
+                    Assert.NotNull(savedPose.Thumbnail);
+                    Assert.True(savedPose.Thumbnail!.PixelSize.Width <= 128);
+                    savedPoseId = savedPose.Id;
+                    Assert.Equal("Pose de teste", savedPose.Name);
+                    await viewModel.PublishPoseCommand.ExecuteAsync(null);
+                    Assert.Contains("publicada", viewModel.PoseEditorStatus, StringComparison.OrdinalIgnoreCase);
+
+                    await viewModel.DuplicatePoseCommand.ExecuteAsync(null);
+                    Assert.True(viewModel.SavedPoses.Count == 2, viewModel.PoseEditorError ?? viewModel.PoseEditorStatus);
+                    Assert.Contains(viewModel.SavedPoses, item => item.Name == "Pose de teste (cópia)");
+                    Assert.Single(viewModel.SavedPoses, item => item.Thumbnail is not null);
+                    await viewModel.LoadPoseCommand.ExecuteAsync(savedPoseId);
+                    Assert.Equal("Pose de teste", viewModel.PoseName);
+                    Assert.Equal("Braços", viewModel.PoseCategory);
+                    Assert.Single(viewModel.SavedPoses, item => item.Thumbnail is not null);
+                    viewModel.PoseName = "Pose de teste atualizada";
+                    viewModel.SelectPosePartCommand.Execute(movable.Id);
+                    viewModel.NudgePosePartCommand.Execute("left");
+
                     var afterPoseResult = await contentRepository.GetAsync(loadedContent.Value.ModelId, cancellationToken);
                     Assert.True(afterPoseResult.IsSuccess, afterPoseResult.Error?.Message);
                     Assert.Equal(modelBeforePose.Parts.Select(part => part.Transform), afterPoseResult.Value.Parts.Select(part => part.Transform));
@@ -234,6 +263,15 @@ public sealed class FabricadorImportPreviewUiTests
                 Assert.True(persistedPublication.IsSuccess, persistedPublication.Error?.Message);
                 Assert.Equal(savedContent.Parts.Select(part => part.Transform), persistedPublication.Value.Content.Parts.Select(part => part.Transform));
                 Assert.Equal(savedContent.RigJoints, persistedPublication.Value.Content.RigJoints);
+                var reopenedPoses = new SqlitePoseRepository(reopenedDatabase);
+                var pose = await reopenedPoses.GetAsync(savedPoseId, cancellationToken);
+                var publications = await reopenedPoses.ListPublishedAsync(savedPoseId, cancellationToken);
+                Assert.True(pose.IsSuccess, pose.Error?.Message);
+                Assert.Equal("Pose de teste atualizada", pose.Value.Name);
+                Assert.Equal(Revision.From(3), pose.Value.Revision);
+                Assert.Equal("Braços", pose.Value.Category);
+                Assert.Single(publications.Value);
+                Assert.Equal("Pose de teste", publications.Value[0].Name);
             }
         }
         finally
@@ -530,7 +568,8 @@ public sealed class FabricadorImportPreviewUiTests
         new AssetGarbageCollectionSchemaMigration(),
         new ModelDraftContentSchemaMigration(),
         new ModelRevisionSchemaMigration(),
-        new ModelRigJointSchemaMigration()
+        new ModelRigJointSchemaMigration(),
+        new PoseRepositorySchemaMigration()
     ]);
 
     private static byte[] CreateModelSheetPng()

@@ -303,9 +303,38 @@
                                 <TextBlock Text="{Binding PoseModelRevisionLabel}" FontSize="12" Foreground="#706872" TextWrapping="Wrap" />
                             </StackPanel>
                             <Border Background="#FFF9FB" BorderBrush="#F0D7E1" BorderThickness="1" CornerRadius="8" Padding="9">
-                                <StackPanel Spacing="4">
-                                    <TextBlock Text="Pose temporária" FontWeight="SemiBold" Foreground="#A84368" />
-                                    <TextBlock Text="Mover e girar atualizam a prévia a partir da revisão publicada. Salvar, duplicar e publicar poses entram na próxima etapa." FontSize="11" Foreground="#706872" TextWrapping="Wrap" />
+                                <StackPanel Spacing="7">
+                                    <TextBlock Text="Poses salvas" FontWeight="SemiBold" Foreground="#A84368" />
+                                    <Grid ColumnDefinitions="*,*" ColumnSpacing="7">
+                                        <TextBox PlaceholderText="Nome da pose" Text="{Binding PoseName}" />
+                                        <TextBox Grid.Column="1" PlaceholderText="Categoria (opcional)" Text="{Binding PoseCategory}" />
+                                    </Grid>
+                                    <WrapPanel Orientation="Horizontal" ItemSpacing="6" LineSpacing="6">
+                                        <Button Content="Nova pose" Command="{Binding CreateNewPoseCommand}" IsEnabled="{Binding CanCreateNewPose}" />
+                                        <Button Content="Salvar pose" Command="{Binding SavePoseCommand}" IsEnabled="{Binding CanSavePose}" />
+                                        <Button Content="Duplicar" Command="{Binding DuplicatePoseCommand}" IsEnabled="{Binding CanDuplicatePose}" />
+                                        <Button Content="Publicar" Command="{Binding PublishPoseCommand}" IsEnabled="{Binding CanPublishPose}" />
+                                    </WrapPanel>
+                                    <ItemsControl ItemsSource="{Binding SavedPoses}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate x:DataType="vm:PoseListItem">
+                                                <Button HorizontalContentAlignment="Left" Margin="0,0,0,4" Padding="8,6"
+                                                        Command="{Binding $parent[ItemsControl].DataContext.LoadPoseCommand}"
+                                                        CommandParameter="{Binding Id}">
+                                                    <Grid ColumnDefinitions="42,*,Auto" ColumnSpacing="8" Width="270">
+                                                        <Border Width="42" Height="42" CornerRadius="5" Background="#F2EBF4" ClipToBounds="True">
+                                                            <Image Source="{Binding Thumbnail}" Stretch="Uniform" />
+                                                        </Border>
+                                                        <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+                                                            <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                                            <TextBlock Text="{Binding Category, TargetNullValue=Sem categoria}" FontSize="11" Foreground="#706872" />
+                                                        </StackPanel>
+                                                        <TextBlock Grid.Column="2" Text="{Binding RevisionLabel}" FontSize="11" Foreground="#A84368" VerticalAlignment="Center" />
+                                                    </Grid>
+                                                </Button>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
                                 </StackPanel>
                             </Border>
                             <StackPanel Spacing="3">

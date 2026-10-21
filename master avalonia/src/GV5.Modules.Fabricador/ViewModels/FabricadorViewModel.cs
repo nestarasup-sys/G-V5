@@ -1,6 +1,7 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using System.Collections.Immutable;
+using System.Collections.ObjectModel;
 using System.Diagnostics;
 using GV5.Application.Contracts;
 using GV5.Application.Services;
@@ -9,9 +10,14 @@ using GV5.Core.Models;
 using GV5.Modules.Fabricador.Import;
 using GV5.Rendering;
 using Avalonia.Threading;
+using Avalonia;
+using Avalonia.Media.Imaging;
+using Avalonia.Platform;
 using GV5.Geometry;
 using GV5.Modules.Fabricador.Interaction;
 using System.Globalization;
+using System.Runtime.InteropServices;
+using SkiaSharp;
 
 namespace GV5.Modules.Fabricador.ViewModels;
 
@@ -31,8 +37,13 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
     private readonly IRenderSceneRenderer? _sceneRenderer;
     private readonly PublishModelRevisionService? _publishModelRevisionService;
     private readonly IModelRevisionRepository? _modelRevisionRepository;
+    private readonly IPoseRepository? _poseRepository;
+    private readonly DuplicatePoseService? _duplicatePoseService;
     private PoseEditorSession? _poseSession;
     private PublishedModelRevision? _poseModelRevision;
+    private Revision? _savedPoseRevision;
+    private string _poseName = "Nova pose";
+    private string? _poseCategory;
     private ActivePoseTransformGesture? _activePoseTransformGesture;
     private bool _isPoseWorkspace;
     private bool _poseRotateIncludesFixedDescendants = true;
@@ -271,6 +282,21 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
         ? "Selecione uma versão publicada do modelo"
         : $"{_poseModelRevision.Name} · versão {_poseModelRevision.Revision.Value:00}";
     public ModelDraftContent? PosePreviewContent => IsPoseWorkspace ? _poseSession?.PreviewContent : null;
+    public ObservableCollection<PoseListItem> SavedPoses { get; } = [];
+    public string PoseName
+    {
+        get => _poseName;
+        set => SetProperty(ref _poseName, value);
+    }
+    public string? PoseCategory
+    {
+        get => _poseCategory;
+        set => SetProperty(ref _poseCategory, value);
+    }
+    public bool CanSavePose => IsPoseWorkspace && _poseRepository is not null && _poseSession is not null;
+    public bool CanCreateNewPose => CanSavePose && (_savedPoseRevision is not null && _poseSession!.Draft.Revision == _savedPoseRevision);
+    public bool CanDuplicatePose => CanSavePose && _duplicatePoseService is not null;
+    public bool CanPublishPose => CanSavePose && _savedPoseRevision is not null;
     public string PoseEditorStatus
     {
         get => _poseEditorStatus;
@@ -419,7 +445,9 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
         IRenderSceneRenderer? sceneRenderer = null,
         TimeSpan? autosaveDelay = null,
         PublishModelRevisionService? publishModelRevisionService = null,
-        IModelRevisionRepository? modelRevisionRepository = null)
+        IModelRevisionRepository? modelRevisionRepository = null,
+        IPoseRepository? poseRepository = null,
+        DuplicatePoseService? duplicatePoseService = null)
     {
         _repository = repository ?? throw new ArgumentNullException(nameof(repository));
         _dataInitializer = dataInitializer ?? throw new ArgumentNullException(nameof(dataInitializer));
@@ -433,6 +461,8 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
         _sceneRenderer = sceneRenderer;
         _publishModelRevisionService = publishModelRevisionService;
         _modelRevisionRepository = modelRevisionRepository;
+        _poseRepository = poseRepository;
+        _duplicatePoseService = duplicatePoseService;
         _autosaveDelay = autosaveDelay ?? TimeSpan.FromMilliseconds(600);
         if (_autosaveDelay < TimeSpan.Zero)
         {
@@ -521,6 +551,11 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
         PoseEditorError = null;
         if (IsPoseWorkspace)
         {
+            if (CanSavePose)
+            {
+                await SavePoseAsync();
+                if (HasPoseEditorError) return;
+            }
             _activePoseTransformGesture = null;
             _poseSession = null;
             _poseModelRevision = null;
@@ -559,6 +594,24 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
 
             _poseModelRevision = latest;
             _poseSession = new PoseEditorSession(latest);
+            _savedPoseRevision = null;
+            PoseName = _poseSession.Draft.Name;
+            PoseCategory = _poseSession.Draft.Category;
+            ClearPoseThumbnails();
+            SavedPoses.Clear();
+            if (_poseRepository is not null)
+            {
+                var savedPoses = await _poseRepository.ListAsync(latest.Id);
+                if (savedPoses.IsSuccess)
+                {
+                    foreach (var pose in savedPoses.Value)
+                        SavedPoses.Add(new PoseListItem(pose.Id, pose.Name, pose.Category, pose.Revision));
+                }
+                else
+                {
+                    PoseEditorError = savedPoses.Error!.Message;
+                }
+            }
             if (!latest.Content.LayerOrder.IsDefaultOrEmpty)
             {
                 var firstPart = latest.Content.LayerOrder[0];
@@ -571,7 +624,9 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
             }
 
             IsPoseWorkspace = true;
-            PoseEditorStatus = "Edição temporária · as poses ainda não são salvas nesta etapa.";
+            PoseEditorStatus = _poseRepository is null
+                ? "Persistência de poses indisponível nesta sessão."
+                : "Nova pose · salve para guardar as alterações.";
             OnPropertyChanged(nameof(PoseModelRevisionLabel));
             OnPropertyChanged(nameof(PosePartItems));
             OnPropertyChanged(nameof(PosePreviewContent));
@@ -581,6 +636,7 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
             OnPropertyChanged(nameof(SelectedPartBounds));
             OnPropertyChanged(nameof(SelectedPartPivot));
             OnPropertyChanged(nameof(PartLayers));
+            NotifyPosePersistenceCommands();
             await RenderModelPreviewAsync(_poseSession.PreviewContent);
             if (HasModelRenderError)
             {
@@ -594,6 +650,266 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
             _poseModelRevision = null;
             PoseEditorError = "Não foi possível abrir a pose para esta versão do modelo.";
         }
+    }
+
+    [RelayCommand(CanExecute = nameof(CanCreateNewPose))]
+    private void CreateNewPose()
+    {
+        if (_poseModelRevision is null || !CanCreateNewPose) return;
+        _poseSession = new PoseEditorSession(_poseModelRevision);
+        _savedPoseRevision = null;
+        PoseName = _poseSession.Draft.Name;
+        PoseCategory = null;
+        SelectFirstPosePart();
+        PoseEditorError = null;
+        PoseEditorStatus = "Nova pose · salve para guardar as alterações.";
+        NotifyPosePreviewChanged();
+        NotifyPosePersistenceCommands();
+    }
+
+    [RelayCommand(CanExecute = nameof(CanSavePose))]
+    private async Task SavePoseAsync()
+    {
+        if (_poseRepository is null || _poseSession is null) return;
+        try
+        {
+            var draft = _poseSession.Draft;
+            if (_savedPoseRevision is null)
+                draft = draft.PrepareInitialSave(PoseName, PoseCategory);
+            else if (draft.Name != PoseName || draft.Category != PoseCategory)
+                draft = draft.WithMetadata(PoseName, PoseCategory);
+
+            var result = _savedPoseRevision is null
+                ? await _poseRepository.CreateAsync(draft)
+                : draft.Revision == _savedPoseRevision
+                    ? Result<PoseDraft>.Success(draft)
+                    : await _poseRepository.SaveAsync(draft, _savedPoseRevision.Value);
+            if (result.IsFailure)
+            {
+                PoseEditorError = result.Error!.Message;
+                PoseEditorStatus = "Não foi possível salvar; as alterações continuam abertas.";
+                return;
+            }
+
+            _poseSession = new PoseEditorSession(_poseModelRevision!, result.Value);
+            _savedPoseRevision = result.Value.Revision;
+            UpsertSavedPose(result.Value);
+            await EnsurePoseThumbnailAsync(result.Value);
+            PoseEditorError = null;
+            PoseEditorStatus = $"Pose salva · revisão {_savedPoseRevision.Value.Value:00}.";
+            NotifyPosePersistenceCommands();
+        }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException or IOException)
+        {
+            PoseEditorError = "Não foi possível salvar a pose. As alterações permanecem no editor.";
+        }
+    }
+
+    [RelayCommand(CanExecute = nameof(CanDuplicatePose))]
+    private async Task DuplicatePoseAsync()
+    {
+        if (_duplicatePoseService is null || _poseSession is null) return;
+        var duplicateName = string.IsNullOrWhiteSpace(PoseName) ? "Cópia da pose" : $"{PoseName.Trim()} (cópia)";
+        var result = await _duplicatePoseService.DuplicateAsync(_poseSession.Draft, duplicateName);
+        if (result.IsFailure)
+        {
+            PoseEditorError = result.Error!.Message;
+            return;
+        }
+
+        UpsertSavedPose(result.Value);
+        await ActivatePoseAsync(result.Value, saved: true);
+        PoseEditorStatus = "Pose duplicada e salva.";
+    }
+
+    [RelayCommand(CanExecute = nameof(CanPublishPose))]
+    private async Task PublishPoseAsync()
+    {
+        if (_poseRepository is null || _poseSession is null || _savedPoseRevision is null) return;
+        await SavePoseAsync();
+        if (PoseEditorError is not null || _savedPoseRevision is null) return;
+        var result = await _poseRepository.PublishAsync(
+            _poseSession.Draft.Id, _savedPoseRevision.Value, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+        if (result.IsFailure)
+        {
+            PoseEditorError = result.Error!.Message;
+            return;
+        }
+        PoseEditorError = null;
+        PoseEditorStatus = $"Pose publicada · versão {result.Value.Revision.Value:00}.";
+    }
+
+    [RelayCommand]
+    private async Task LoadPoseAsync(PoseId poseId)
+    {
+        if (_poseRepository is null || _modelRevisionRepository is null || _poseModelRevision is null) return;
+        var loaded = await _poseRepository.GetAsync(poseId);
+        if (loaded.IsFailure)
+        {
+            PoseEditorError = loaded.Error!.Message;
+            return;
+        }
+        var pinned = await _modelRevisionRepository.GetAsync(loaded.Value.Model.ModelId, loaded.Value.Model.Sequence);
+        if (pinned.IsFailure || pinned.Value.Id != loaded.Value.Model.RevisionId
+            || pinned.Value.SnapshotSha256 != loaded.Value.Model.SnapshotSha256)
+        {
+            PoseEditorError = "A revisão exata do modelo desta pose não está disponível.";
+            return;
+        }
+        await ActivatePoseAsync(loaded.Value, pinned.Value, saved: true);
+        PoseEditorStatus = $"Pose carregada · revisão {_savedPoseRevision!.Value:00}.";
+    }
+
+    private async Task ActivatePoseAsync(PoseDraft draft, bool saved)
+    {
+        if (_poseModelRevision is null || _modelRevisionRepository is null) return;
+        var revision = _poseModelRevision;
+        if (draft.Model != ModelRevisionReference.From(revision))
+        {
+            var loaded = await _modelRevisionRepository.GetAsync(draft.Model.ModelId, draft.Model.Sequence);
+            if (loaded.IsFailure) { PoseEditorError = loaded.Error!.Message; return; }
+            revision = loaded.Value;
+        }
+        await ActivatePoseAsync(draft, revision, saved);
+    }
+
+    private async Task ActivatePoseAsync(PoseDraft draft, PublishedModelRevision revision, bool saved)
+    {
+        _poseModelRevision = revision;
+        _poseSession = new PoseEditorSession(revision, draft);
+        _savedPoseRevision = saved ? draft.Revision : null;
+        PoseName = draft.Name;
+        PoseCategory = draft.Category;
+        SelectFirstPosePart();
+        PoseEditorError = null;
+        OnPropertyChanged(nameof(PoseModelRevisionLabel));
+        OnPropertyChanged(nameof(PosePartItems));
+        OnPropertyChanged(nameof(PosePreviewContent));
+        OnPropertyChanged(nameof(SelectedPartName));
+        OnPropertyChanged(nameof(SelectedPartBounds));
+        OnPropertyChanged(nameof(SelectedPartPivot));
+        OnPropertyChanged(nameof(PartLayers));
+        await RenderModelPreviewAsync(_poseSession.PreviewContent);
+        await EnsurePoseThumbnailAsync(draft);
+        NotifyPosePersistenceCommands();
+    }
+
+    private async Task EnsurePoseThumbnailAsync(PoseDraft draft)
+    {
+        if (_sceneRenderer is null) return;
+        var item = SavedPoses.FirstOrDefault(candidate => candidate.Id == draft.Id);
+        if (item is null || item.Thumbnail is not null) return;
+        foreach (var other in SavedPoses.Where(candidate => candidate.Thumbnail is not null).ToArray())
+        {
+            other.Thumbnail?.Dispose();
+            SavedPoses[SavedPoses.IndexOf(other)] = other with { Thumbnail = null };
+        }
+
+        PublishedModelRevision? revision = _poseModelRevision;
+        if (revision is null || ModelRevisionReference.From(revision) != draft.Model)
+        {
+            if (_modelRevisionRepository is null) return;
+            var loaded = await _modelRevisionRepository.GetAsync(draft.Model.ModelId, draft.Model.Sequence);
+            if (loaded.IsFailure || loaded.Value.Id != draft.Model.RevisionId
+                || loaded.Value.SnapshotSha256 != draft.Model.SnapshotSha256) return;
+            revision = loaded.Value;
+        }
+
+        RenderedFrame? frame = null;
+        try
+        {
+            var content = draft.ApplyToModelRevision(revision);
+            frame = await _sceneRenderer.RenderAsync(ModelDraftRenderSceneBuilder.Build(content, 128));
+            if (!Dispatcher.UIThread.CheckAccess())
+                throw new InvalidOperationException("Pose thumbnails must be attached on the UI dispatcher.");
+            var bitmap = CreatePoseThumbnailBitmap(frame);
+            var currentIndex = SavedPoses.IndexOf(item);
+            if (currentIndex >= 0) SavedPoses[currentIndex] = item with { Thumbnail = bitmap };
+            else bitmap.Dispose();
+        }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException or IOException)
+        {
+            PoseEditorStatus = "Pose salva; a miniatura será carregada ao selecioná-la novamente.";
+        }
+        finally
+        {
+            frame?.Dispose();
+        }
+    }
+
+    private static WriteableBitmap CreatePoseThumbnailBitmap(RenderedFrame frame)
+    {
+        var source = frame.Bitmap;
+        var pixelFormat = source.ColorType switch
+        {
+            SKColorType.Rgba8888 => PixelFormats.Rgba8888,
+            SKColorType.Bgra8888 => PixelFormats.Bgra8888,
+            _ => throw new ArgumentException("Unsupported pose thumbnail pixel format.", nameof(frame))
+        };
+        var bitmap = new WriteableBitmap(new PixelSize(source.Width, source.Height), new Avalonia.Vector(96, 96), pixelFormat, AlphaFormat.Premul);
+        try
+        {
+            using var framebuffer = bitmap.Lock();
+            var bytesPerRow = checked(source.Width * 4);
+            if (source.RowBytes < bytesPerRow || framebuffer.RowBytes < bytesPerRow)
+                throw new InvalidOperationException("A pose thumbnail row is shorter than its RGBA width.");
+            var row = new byte[bytesPerRow];
+            var pixels = source.GetPixels();
+            if (pixels == IntPtr.Zero || framebuffer.Address == IntPtr.Zero)
+                throw new InvalidOperationException("A pose thumbnail buffer could not be allocated.");
+            for (var y = 0; y < source.Height; y++)
+            {
+                Marshal.Copy(IntPtr.Add(pixels, checked(y * source.RowBytes)), row, 0, row.Length);
+                Marshal.Copy(row, 0, IntPtr.Add(framebuffer.Address, checked(y * framebuffer.RowBytes)), row.Length);
+            }
+            return bitmap;
+        }
+        catch
+        {
+            bitmap.Dispose();
+            throw;
+        }
+    }
+
+    private void SelectFirstPosePart()
+    {
+        var first = _poseSession?.Draft.LayerOrder.FirstOrDefault();
+        if (_poseSession is not null && first is { IsValid: true } partId)
+        {
+            SelectedModelPartId = partId;
+            _poseSession.SelectPart(partId);
+        }
+        else SelectedModelPartId = null;
+    }
+
+    private void UpsertSavedPose(PoseDraft pose)
+    {
+        var current = SavedPoses.FirstOrDefault(item => item.Id == pose.Id);
+        var updated = new PoseListItem(pose.Id, pose.Name, pose.Category, pose.Revision);
+        if (current is null) SavedPoses.Add(updated);
+        else
+        {
+            current.Thumbnail?.Dispose();
+            SavedPoses[SavedPoses.IndexOf(current)] = updated;
+        }
+    }
+
+    private void ClearPoseThumbnails()
+    {
+        foreach (var pose in SavedPoses)
+            pose.Thumbnail?.Dispose();
+    }
+
+    private void NotifyPosePersistenceCommands()
+    {
+        OnPropertyChanged(nameof(CanSavePose));
+        OnPropertyChanged(nameof(CanCreateNewPose));
+        OnPropertyChanged(nameof(CanDuplicatePose));
+        OnPropertyChanged(nameof(CanPublishPose));
+        SavePoseCommand.NotifyCanExecuteChanged();
+        CreateNewPoseCommand.NotifyCanExecuteChanged();
+        DuplicatePoseCommand.NotifyCanExecuteChanged();
+        PublishPoseCommand.NotifyCanExecuteChanged();
     }
 
     [RelayCommand]
@@ -1508,6 +1824,8 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
 
         CancelPreviewSafely(active);
         frame?.Dispose();
+        ClearPoseThumbnails();
+        SavedPoses.Clear();
         CancelPendingAutosave();
         var stagedPreview = ImportPreview;
         ImportPreview = null;
@@ -2011,4 +2329,10 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
         Point2D StartScenePoint,
         PoseDraft Before,
         double SceneScale);
+}
+
+public sealed record PoseListItem(PoseId Id, string Name, string? Category, Revision Revision)
+{
+    public WriteableBitmap? Thumbnail { get; init; }
+    public string RevisionLabel => $"r{Revision.Value:00}";
 }
