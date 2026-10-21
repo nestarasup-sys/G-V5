@@ -93,8 +93,21 @@ public sealed class FabricadorImportPreviewUiTests
                     Assert.True(viewModel.HasModelParts);
                     Assert.Equal(2, viewModel.PartLayers.Count);
 
+                    viewModel.SuggestRigConnectionsCommand.Execute(null);
+                    var automaticSuggestion = Assert.Single(viewModel.RigJointItems);
+                    Assert.True(automaticSuggestion.Joint.IsSuggested);
+                    Assert.Contains("sugestão", automaticSuggestion.Label, StringComparison.OrdinalIgnoreCase);
+                    Assert.Equal(1, viewModel.UndoCount);
+                    viewModel.UndoCommand.Execute(null);
+                    Assert.Empty(viewModel.RigJointItems);
+
                     viewModel.ConnectRigPartsCommand.Execute(null);
                     var createdJoint = Assert.Single(viewModel.RigJointItems).Joint;
+                    Assert.False(createdJoint.IsSuggested);
+                    viewModel.SuggestRigConnectionsCommand.Execute(null);
+                    Assert.Equal(createdJoint, Assert.Single(viewModel.RigJointItems).Joint);
+                    Assert.Contains("Não há novas conexões", viewModel.RigError, StringComparison.OrdinalIgnoreCase);
+                    Assert.Equal(1, viewModel.UndoCount);
                     var rigGuides = window.GetVisualDescendants().OfType<Canvas>().Single(canvas => canvas.Name == "RigGuideLayer");
                     Assert.Equal(3, rigGuides.Children.Count); // connection line plus both draggable anchors
                     viewModel.SelectedRigJoint = viewModel.RigJointItems.Single();

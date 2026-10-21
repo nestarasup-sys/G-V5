@@ -291,6 +291,11 @@
                                                 <ComboBox Grid.Column="1" ItemsSource="{Binding RigPartOptions}" SelectedItem="{Binding SelectedRigChild}" DisplayMemberBinding="{Binding Name}" IsEnabled="{Binding CanEditRig}" PlaceholderText="Peça filha" />
                                             </Grid>
                                             <Button Content="＋  Conectar peças" Command="{Binding ConnectRigPartsCommand}" IsEnabled="{Binding CanEditRig}" Background="#FFF1F6" BorderBrush="#EFCBD8" Foreground="#A84368" Padding="9,6" />
+                                            <Button Content="✦  Sugerir conexões"
+                                                    Command="{Binding SuggestRigConnectionsCommand}"
+                                                    IsEnabled="{Binding CanEditRig}"
+                                                    ToolTip.Tip="Gera sugestões pelo nome e posição das peças; você poderá revisar cada conexão."
+                                                    Background="#F4F0FF" BorderBrush="#DED5FF" Foreground="#6450A5" Padding="9,6" />
                                             <ListBox ItemsSource="{Binding RigJointItems}" SelectedItem="{Binding SelectedRigJoint}" IsEnabled="{Binding CanEditRig}" MinHeight="48" MaxHeight="130" Background="Transparent" BorderThickness="0">
                                                 <ListBox.ItemTemplate>
                                                     <DataTemplate x:DataType="vm:RigJointItem">

@@ -605,7 +605,7 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
             var names = content.Parts.ToDictionary(part => TransformNodeId.From(part.Id.Value), part => part.Name);
             return content.RigJoints.Select(joint => new RigJointItem(
                 joint,
-                $"{names[joint.ParentPartId]} → {names[joint.ChildPartId]}",
+                $"{names[joint.ParentPartId]} → {names[joint.ChildPartId]}{(joint.IsSuggested ? " · sugestão" : string.Empty)}",
                 joint.Mode == RigJointMode.Fixed ? "Fixa" : "Livre")).ToArray();
         }
     }
@@ -2418,6 +2418,58 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
         {
             RigError = exception.Message;
         }
+    }
+
+    [RelayCommand]
+    private void SuggestRigConnections()
+    {
+        if (!CanEditRig || _modelContent is null)
+        {
+            return;
+        }
+
+        var partNodes = _modelContent.Parts
+            .Select(part => TransformNodeId.From(part.Id.Value))
+            .ToArray();
+        var geometry = _modelContent.Parts.Select(part => new RigPartGeometry(
+            TransformNodeId.From(part.Id.Value),
+            part.Name,
+            ModelDraftHitTester.GetPartBounds(_modelContent, part.Id) ?? part.SourceTransform.Crop));
+        var candidates = RigJointSuggestionPlanner.Suggest(geometry);
+        var updated = _modelContent.RigJoints.ToList();
+        var parentedParts = updated.Select(joint => joint.ChildPartId).ToHashSet();
+        var added = new List<RigJoint>();
+
+        foreach (var suggestion in candidates)
+        {
+            if (parentedParts.Contains(suggestion.ChildPartId))
+            {
+                continue;
+            }
+
+            try
+            {
+                _ = RigSkeleton.Create(partNodes, updated.Append(suggestion));
+            }
+            catch (ArgumentException)
+            {
+                continue;
+            }
+
+            updated.Add(suggestion);
+            added.Add(suggestion);
+            parentedParts.Add(suggestion.ChildPartId);
+        }
+
+        if (added.Count == 0)
+        {
+            RigError = "Não há novas conexões sugeridas para as peças sem junta. Revise ou desconecte o rig atual para gerar outra estrutura.";
+            return;
+        }
+
+        ExecuteModelCommand(new RigJointCollectionCommand(_modelContent.RigJoints, updated.ToImmutableArray()));
+        RigError = null;
+        RefreshRigPanel(added[0].Id);
     }
 
     [RelayCommand]
