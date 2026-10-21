@@ -9,6 +9,31 @@ namespace GV5.Headless.Tests;
 public sealed class ModelRigEditorTests
 {
     [Fact]
+    public void MovingFixedParentMovesItsWholeFixedBranchAndUndoRestoresTransformsAndAnchors()
+    {
+        var (model, parts) = Model();
+        var first = new RigJoint(RigJointId.New(), TransformNodeId.From(parts[0].Value), TransformNodeId.From(parts[1].Value), new Point2D(10, 11), new Point2D(12, 13), RigJointMode.Fixed);
+        var second = new RigJoint(RigJointId.New(), TransformNodeId.From(parts[1].Value), TransformNodeId.From(parts[2].Value), new Point2D(20, 21), new Point2D(22, 23), RigJointMode.Fixed);
+        var content = ModelDraftContent.Restore(
+            model.SchemaVersion, model.ModelId, model.Revision, model.Slot, model.SourceAssetId,
+            model.SourceWidth, model.SourceHeight, model.Parts, model.LayerOrder, [first, second]);
+        var before = content.Parts.Select(part => part.Transform).ToArray();
+        var command = new ModelPartTransformCommand(parts[0], before[0], new Transform2D(new Point2D(7, 9), before[0].Scale, before[0].RotationRadians, before[0].Pivot), MoveFixedDescendants: true);
+
+        var moved = command.Apply(content);
+        Assert.Equal(new Point2D(7, 9), moved.Parts[0].Transform.Translation);
+        Assert.Equal(before[1].Translation + new Point2D(7, 9), moved.Parts[1].Transform.Translation);
+        Assert.Equal(before[2].Translation + new Point2D(7, 9), moved.Parts[2].Transform.Translation);
+        Assert.Equal(new Point2D(17, 20), moved.RigJoints[0].ParentAnchor);
+        Assert.Equal(new Point2D(29, 32), moved.RigJoints[1].ChildAnchor);
+
+        var reverted = command.Revert(moved);
+        Assert.Equal(before, reverted.Parts.Select(part => part.Transform).ToArray());
+        Assert.Equal(content.RigJoints, reverted.RigJoints);
+        Assert.Equal(content.Parts.Select(part => part.SourceTransform), reverted.Parts.Select(part => part.SourceTransform));
+    }
+
+    [Fact]
     public void ConnectAnchorEditFixReconnectAndDisconnectKeepModelSourceUntouched()
     {
         var (model, parts) = Model();

@@ -5,11 +5,15 @@ using GV5.Geometry;
 namespace GV5.Modules.Fabricador.Interaction;
 
 /// <summary>A reversible transform edit recorded once when a pointer gesture completes.</summary>
-public sealed record ModelPartTransformCommand(ModelPartId PartId, Transform2D Before, Transform2D After) : IModelDraftCommand
+public sealed record ModelPartTransformCommand(ModelPartId PartId, Transform2D Before, Transform2D After, bool MoveFixedDescendants = false) : IModelDraftCommand
 {
-    public ModelDraftContent Apply(ModelDraftContent content) => Replace(content, After);
+    public ModelDraftContent Apply(ModelDraftContent content) => MoveFixedDescendants
+        ? ModelRigMovement.Translate(content, PartId, After)
+        : Replace(content, After);
 
-    public ModelDraftContent Revert(ModelDraftContent content) => Replace(content, Before);
+    public ModelDraftContent Revert(ModelDraftContent content) => MoveFixedDescendants
+        ? ModelRigMovement.Translate(content, PartId, Before)
+        : Replace(content, Before);
 
     private ModelDraftContent Replace(ModelDraftContent content, Transform2D transform)
     {

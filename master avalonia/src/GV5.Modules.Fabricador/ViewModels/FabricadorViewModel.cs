@@ -967,7 +967,7 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
         }
 
         _activeTransformGesture = new ActiveModelTransformGesture(
-            new ModelPartTransformCommand(part.Id, part.Transform, part.Transform),
+            new ModelPartTransformCommand(part.Id, part.Transform, part.Transform, gesture.Kind == ModelPartTransformKind.Move),
             gesture.Kind,
             gesture.ScenePoint,
             localStart,
@@ -1058,6 +1058,7 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
         }
 
         _activeTransformGesture = null;
+        RefreshRigPanel();
         if (active.Command.Before != active.Command.After)
         {
             PushUndoCommand(active.Command);
