@@ -21,12 +21,12 @@ Evidências: `docs/gates/GATE-F07.md`, `EXECUTION_STATUS.md`, `AnimationDraftCon
 
 | Diferença do Electron | Estado Avalonia | Próxima etapa | Prova para encerrar |
 | --- | --- | --- | --- |
-| Até 12 slots identificados por modelo | Atualmente há biblioteca de drafts por modelo/revisão, sem slots numéricos fixos | F09.13 | Criar/carregar/substituir cada slot, preservar IDs, testar limite, fechar/reabrir e cobrir conflito |
-| Miniatura de cada animação | Não implementada | F09.13 | Thumbnail derivada e lazy, limite de cache e atualização após salvar |
-| Identidade opcional `characterId` | Não faz parte do contrato novo atual | F09.13, se ainda fizer sentido nos contratos nativos | Mapear a semântica de uso; decidir em ADR/contrato tipado e testar compatibilidade sem acoplar personagem ao editor |
+| Até 12 slots identificados por modelo | Implementado na migration 17 e no Animador: 12 associações por `ModelId`, persistentes entre revisões; liberar slot preserva o rascunho, substituir associação preserva ambos os IDs | F09.13 | Headless comprova criar, reabrir, mover, liberar e substituir sem apagar rascunhos; Data comprova limite 1–12 e backfill determinístico sem perder excedentes |
+| Miniatura de cada animação | Render derivado do primeiro frame, sob demanda ao abrir o slot e renovado depois de salvar; cache em memória limitado a 12 imagens | F09.13 | Teste Headless verifica thumbnail após salvar; implementação invalida a revisão anterior e o eviction mantém o limite |
+| Identidade opcional `characterId` | Sem campo no `AnimationDraft`. ADR-0007 decide mantê-la fora do documento; no legado, ela restaura personagem/contexto da prévia e alimenta geração corporal, não identifica os frames. Serviço persistente/resolver de personagem ainda não é consumido pelo Fabricador | Decisão arquitetural em F09.13; integração fica para a etapa de personagens/G2 | Fronteiras de módulos garantem que Fabricador e Customizador não dependam um do outro; reavaliar contexto opcional via `CharacterId` após o serviço persistente existir |
 | Validação interativa de UI | Headless cobre comandos e render CPU; Windows/GPU/DPI não testados | Aceite global/G2 | Executar a view no Windows com modelo sintético equivalente, conferir mouse, playback, DPI e registrar captura real |
 | Paridade visual completa do Animador | Não declarada | G2 | Capturas Electron/Avalonia do mesmo estado, resolução, DPI e conteúdo; comparar controles, slots, estados e preview |
 
 ## Decisão de escopo
 
-F07 está tecnicamente fechada: as funções mínimas definidas nas tarefas F07.10/F07.11 persistem e passam pelos casos sintéticos. As diferenças da tabela não devem ser escondidas pela palavra “validada”; elas permanecem abertas na matriz e devem ser consideradas por F09.13 antes do G2. Nenhuma delas autoriza antecipar o Video Studio.
+F07 está tecnicamente fechada: as funções mínimas definidas nas tarefas F07.10/F07.11 persistem e passam pelos casos sintéticos. F09.13 fecha os slots e miniaturas, e registra em ADR-0007 por que `characterId` não pertence ao documento de animação enquanto falta a fonte persistente de personagens. A escolha/restauração de personagem continua explicitamente pendente para a integração vertical; validação Windows/visual permanece em G2. Nenhuma dessas pendências autoriza antecipar o Video Studio.
