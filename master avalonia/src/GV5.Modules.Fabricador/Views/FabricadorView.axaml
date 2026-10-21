@@ -3,10 +3,10 @@
              xmlns:vm="using:GV5.Modules.Fabricador.ViewModels"
              x:Class="GV5.Modules.Fabricador.Views.FabricadorView"
              x:DataType="vm:FabricadorViewModel">
-    <Border Background="White" BorderBrush="#E4DDEA" BorderThickness="1" CornerRadius="14" Padding="28">
+    <Border Background="{DynamicResource Gv5BrushSurface}" BorderBrush="{DynamicResource Gv5BrushBorder}" BorderThickness="1" CornerRadius="{DynamicResource Gv5RadiusCard}" Padding="{DynamicResource Gv5SpaceCard}">
         <StackPanel Spacing="14" VerticalAlignment="Center" HorizontalAlignment="Center" MaxWidth="620">
-            <TextBlock Text="Área de modelos" FontSize="22" FontWeight="SemiBold" Foreground="#2A2233" />
-            <TextBlock Text="{Binding Status}" TextWrapping="Wrap" TextAlignment="Center" Foreground="#655B6D" />
+            <TextBlock Text="Área de modelos" FontSize="{DynamicResource Gv5FontSizeTitle}" FontWeight="SemiBold" Foreground="{DynamicResource Gv5BrushTextPrimary}" />
+            <TextBlock Text="{Binding Status}" FontSize="{DynamicResource Gv5FontSizeBody}" TextWrapping="Wrap" TextAlignment="Center" Foreground="{DynamicResource Gv5BrushTextSecondary}" />
         </StackPanel>
     </Border>
 </UserControl>

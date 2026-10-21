@@ -1,0 +1,19 @@
+<Styles xmlns="https://github.com/avaloniaui">
+    <Style Selector="Button.g-v5-nav">
+        <Setter Property="Background" Value="{DynamicResource Gv5BrushSidebar}" />
+        <Setter Property="Foreground" Value="{DynamicResource Gv5BrushOnAccent}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource Gv5BrushSidebar}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="Padding" Value="{DynamicResource Gv5SpaceNavButton}" />
+    </Style>
+
+    <Style Selector="Button.g-v5-nav:pointerover">
+        <Setter Property="Background" Value="{DynamicResource Gv5BrushAccent}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource Gv5BrushAccent}" />
+    </Style>
+
+    <Style Selector="Button.g-v5-nav:pressed">
+        <Setter Property="Background" Value="{DynamicResource Gv5BrushAccentHover}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource Gv5BrushAccentHover}" />
+    </Style>
+</Styles>

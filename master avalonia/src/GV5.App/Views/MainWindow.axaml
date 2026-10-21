@@ -22,23 +22,23 @@
         </DataTemplate>
     </Window.DataTemplates>
 
-    <Grid ColumnDefinitions="240,*" Background="#F5F3F8">
-        <Border Grid.Column="0" Background="#211B2B" Padding="20">
+    <Grid ColumnDefinitions="240,*" Background="{DynamicResource Gv5BrushCanvas}">
+        <Border Grid.Column="0" Background="{DynamicResource Gv5BrushSidebar}" Padding="{DynamicResource Gv5SpaceSidebar}">
             <StackPanel Spacing="18">
                 <StackPanel Spacing="3" Margin="0,4,0,16">
-                    <TextBlock Text="G-V5" FontSize="24" FontWeight="Bold" Foreground="White" />
-                    <TextBlock Text="NOVA ESTRUTURA" FontSize="11" Foreground="#C6B8D8" />
+                    <TextBlock Text="G-V5" FontSize="24" FontWeight="Bold" Foreground="{DynamicResource Gv5BrushOnAccent}" />
+                    <TextBlock Text="NOVA ESTRUTURA" FontSize="11" Foreground="{DynamicResource Gv5BrushSidebarMuted}" />
                 </StackPanel>
-                <Button Content="Fabricador" Command="{Binding NavigateCommand}" CommandParameter="fabricador" HorizontalContentAlignment="Left" />
-                <Button Content="Customizador" Command="{Binding NavigateCommand}" CommandParameter="customizador" HorizontalContentAlignment="Left" />
-                <TextBlock Text="Studio e demais áreas entram na ordem definida no plano." TextWrapping="Wrap" FontSize="12" Foreground="#C6B8D8" Margin="0,16,0,0" />
+                <Button Classes="g-v5-nav" Content="Fabricador" Command="{Binding NavigateCommand}" CommandParameter="fabricador" HorizontalContentAlignment="Left" />
+                <Button Classes="g-v5-nav" Content="Customizador" Command="{Binding NavigateCommand}" CommandParameter="customizador" HorizontalContentAlignment="Left" />
+                <TextBlock Text="Studio e demais áreas entram na ordem definida no plano." TextWrapping="Wrap" FontSize="{DynamicResource Gv5FontSizeCaption}" Foreground="{DynamicResource Gv5BrushSidebarMuted}" Margin="{DynamicResource Gv5SpaceNavNote}" />
             </StackPanel>
         </Border>
 
-        <Grid Grid.Column="1" RowDefinitions="Auto,*" Margin="32">
+        <Grid Grid.Column="1" RowDefinitions="Auto,*" Margin="{DynamicResource Gv5SpacePage}">
             <StackPanel Spacing="6" Margin="0,0,0,24">
-                <TextBlock Text="{Binding ActiveRoute.Title}" FontSize="28" FontWeight="Bold" Foreground="#2A2233" />
-                <TextBlock Text="{Binding ActiveRoute.Description}" FontSize="15" Foreground="#655B6D" />
+                <TextBlock Text="{Binding ActiveRoute.Title}" FontSize="{DynamicResource Gv5FontSizeHeading}" FontWeight="Bold" Foreground="{DynamicResource Gv5BrushTextPrimary}" />
+                <TextBlock Text="{Binding ActiveRoute.Description}" FontSize="{DynamicResource Gv5FontSizeBody}" Foreground="{DynamicResource Gv5BrushTextSecondary}" />
             </StackPanel>
             <ContentControl Grid.Row="1" Content="{Binding CurrentPage}" />
         </Grid>
