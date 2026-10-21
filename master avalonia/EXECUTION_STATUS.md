@@ -13,12 +13,12 @@
 | Branch obrigatória | `Master-AValonia` |
 | Pasta exclusiva do novo aplicativo | `master avalonia/` |
 | Commit-base inspecionado antes deste arquivo | `53b7f7a97321e85063a8dd4f9635e48d36548323` |
-| HEAD de execução do Codex | `30cf82b` (F01.01 verificada; checkpoint a registrar) |
+| HEAD de execução do Codex | `efd0cd3` (F01.02 verificada; checkpoint a registrar) |
 | Fase ativa | **F01 — Solution .NET, contratos, módulo e CI** |
-| Última tarefa VALIDADA | **F01.01** — SDK 10.0.402 e versões Avalonia compatíveis |
-| Próxima tarefa PENDENTE | **F01.02** |
+| Última tarefa VALIDADA | **F01.02** — preparação portátil e instalador verificados |
+| Próxima tarefa PENDENTE | **F01.03** |
 | Gate atual | **GATE F00: PASSOU** |
-| Progresso validado neste controle | **14 / 247 tarefas (5,7%)** |
+| Progresso validado neste controle | **15 / 247 tarefas (6,1%)** |
 | Tarefas em execução | **Nenhuma registrada** |
 | Bloqueios conhecidos | **Nenhum confirmado** |
 | Aceite Windows/GPU | **Não executado / não registrado** |
@@ -41,7 +41,7 @@ Se o Codex encontrar algo já implementado, **validar e registrar evidências**,
 | Fase | Objetivo | Tarefas totais | Validadas | Estado | Gate |
 | --- | --- | ---: | ---: | --- | --- |
 | F00 | Auditoria do legado, baseline e sincronização | 13 | 13 | VALIDADA | PASSOU |
-| F01 | Solution .NET, contratos, módulo e CI | 13 | 1 | EM_EXECUCAO | — |
+| F01 | Solution .NET, contratos, módulo e CI | 13 | 2 | EM_EXECUCAO | — |
 | F02 | SQLite, revisões, transações e recuperação básica | 15 | 0 | PENDENTE | — |
 | F03 | AssetStore, thumbnails e cache limitado | 11 | 0 | PENDENTE | — |
 | F04 | Geometry Engine canônica | 11 | 0 | PENDENTE | — |
@@ -81,6 +81,7 @@ Adicionar uma linha ao concluir ou bloquear cada tarefa. A linha inicial abaixo 
 | **F00.12** | **VALIDADA** | `fe2e850` | Fixture sintética JSON foi parseada e suas invariantes de referência validadas: 6 partes, 5 juntas, 2 poses, IDs de modelo/roupa/personagem/cena consistentes. `git diff --check` passou. | `tests/Fixtures/vertical-flow/fixture.json`; `tests/Fixtures/vertical-flow/README.md` | É especificação sintética, não builder/PNG/golden; fluxo vertical real fica pendente para F01–F05 e ainda não foi executado |
 | **F00.13** | **VALIDADA** | `82362a2` | Restore terminou com exit 0; build Release passou com 0 avisos/erros; `GV5.App` iniciou, exibiu título `G-V5 Avalonia` e permaneceu `Responding=True` por ~10 s. `git diff --check` passou. | `docs/gates/GATE-F00.md`; solução e outputs Release locais | Inspeção visual não executada; não há projeto C# de testes; gate fecha apenas baseline e shell, não funcionalidades de produto |
 | **F01.01** | **VALIDADA** | `30cf82b` (evidência e decisão; sem mudança de código) | `global.json` fixa SDK `10.0.402` sem roll-forward; projetos usam `net10.0`; `Directory.Packages.props` centraliza Avalonia `12.1.4` e dependências. Restore real terminou com exit 0 e build Release real passou com 0 avisos/erros no Windows x64. Nenhum desvio de versão encontrado. | `global.json`; `Directory.Build.props`; `Directory.Packages.props`; `src/GV5.App/GV5.App.csproj`; outputs/comandos em `docs/gates/GATE-F00.md` e histórico deste checkpoint | Nenhuma versão alterada; a compatibilidade comprovada cobre o shell/projetos atuais, não os módulos futuros |
+| **F01.02** | **VALIDADA** | `efd0cd3` (código do instalador; sem mudança de código) | `Preparar.bat` executado duas vezes no workspace com espaços: exit 0 nas duas. Cópia isolada do `Preparar.ps1` baixou SDK oficial 10.0.402 em caminho com espaços; SHA-512 independente do manifesto oficial conferiu (`AE4FD528CB7E9F6AF6AAF7DE36715A69F761F183744F1BB3025D19F5A92447090EC561410E46266C1D10A63781ED6F3DE771760BC76C876D87DAABC367B898CD`). Segunda execução preservou tamanho/hash/timestamp do archive e não reinstalou template. Manifesto sintético sem SDK produziu erro explícito esperado. | `Preparar.bat`, `tools/Preparar.ps1`; teste isolado em `.tools/validation/F01.02 SDK sandbox with spaces` e `.tools/validation/F01.02 failure sandbox with spaces` (ignorados pelo Git) | Código não precisou de alteração. Pedido de remoção recursiva dos dois sandboxes foi bloqueado pela ferramenta; ficam preservados no caminho local indicado. SDK principal não foi tocado |
 
 **Estados aceitos:** `PENDENTE`, `EM_EXECUCAO`, `BLOQUEADA`, `VALIDADA`.
 
@@ -96,7 +97,7 @@ Adicionar uma linha ao concluir ou bloquear cada tarefa. A linha inicial abaixo 
 | --- | --- | --- |
 | `git branch --show-current` | VALIDADO | `Master-AValonia` |
 | `git status --short` | VALIDADO | árvore limpa após commit de entrega do GATE F00 (`82362a2`); checkpoint de status pendente |
-| `git rev-parse HEAD` / remoto | VALIDADO | HEAD `30cf82b`; após `git fetch origin`, branch local 19 commits à frente de `origin/Master-AValonia`, remoto sem commits novos |
+| `git rev-parse HEAD` / remoto | VALIDADO | HEAD `efd0cd3`; após `git fetch origin`, branch local 20 commits à frente de `origin/Master-AValonia`, remoto sem commits novos |
 | SDK portátil `.tools/dotnet` | VALIDADO | SDK `10.0.402`, Windows x64, arquitetura x64 |
 | `Preparar.bat` | VALIDADO | exit 0, SDK `10.0.402`, ambiente local pronto |
 | `Desenvolver.bat` | NÃO VERIFICADO NESTE CONTROLE | shell abriu ou erro reproduzível |
@@ -133,7 +134,7 @@ Ainda não há entradas registradas neste controle. Toda mudança material do ro
 
 | Data | HEAD/commit | Último ID validado | Gate | Resumo |
 | --- | --- | --- | --- | --- |
-| 2026-10-20 | `30cf82b` | F01.01 | GATE F00 passou | 13 tarefas F00 e F01.01 validadas; SDK/Avalonia fixos e build/restauração comprovados |
+| 2026-10-20 | `efd0cd3` | F01.02 | GATE F00 passou | 13 tarefas F00 e F01.02 validadas; SDK/Avalonia e instalador verificados em workspace e sandbox isolado |
 
 Após concluir um lote ou fase, adicionar uma linha. Não inflar contador só porque o commit contém múltiplos arquivos; contar apenas tarefas comprovadas.
 
@@ -142,7 +143,7 @@ Após concluir um lote ou fase, adicionar uma linha. Não inflar contador só po
 1. Atualizar branch/remoto com segurança, sem force push e sem sobrescrever trabalho local de outra sessão.
 2. Ler `AGENTS.md`, `PLANO_DO_NOVO_APP.md`, `PLANO_MESTRE_EXECUCAO_CODEX.md` e este arquivo.
 3. Inspecionar evidências reais da última tarefa validada; caso não existam, corrigir seu estado.
-4. **Começar pela primeira tarefa PENDENTE indicada acima (F01.02)**; não repetir tarefas validadas sem evidência em contrário.
+4. **Começar pela primeira tarefa PENDENTE indicada acima (F01.03)**; não repetir tarefas validadas sem evidência em contrário.
 5. Continuar automaticamente pelas tarefas seguintes **uma de cada vez**, em lotes flexíveis de aproximadamente 3–8 tarefas relacionadas, enquanto todos os gates pertinentes passam.
 6. Atualizar o registro e commitar entregas reais na branch `Master-AValonia`; não desenvolver Video Studio antecipadamente.
 7. Ao encerrar, informar: **branch, HEAD, último ID VALIDADO, próximo ID PENDENTE, commits, comandos verdes, evidências, bloqueios e condição de desbloqueio**.
