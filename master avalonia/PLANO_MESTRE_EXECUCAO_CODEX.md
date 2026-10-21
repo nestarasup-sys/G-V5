@@ -11,12 +11,14 @@
 
 ## 0. COMO O CODEX DEVE TRABALHAR — INSTRUÇÃO PERMANENTE
 
+**Meta vigente:** paridade funcional completa, interface familiar e melhorada — não pixel-perfect. F06 liberada tecnicamente; F07.02 está parcial. Não deixar controle do legado ausente nem marcar F07.02 concluída sem UI, persistência e testes.
+
 1. Antes de qualquer edição: confirmar `git branch --show-current` = `Master-AValonia`, ler `git status --short` e conferir HEAD local. Consultar o remoto somente após autorização explícita do usuário; reconciliar mudanças concorrentes sem sobrescrever trabalho. **Nunca dar force push nem apagar trabalho em andamento.**
 2. Ler este arquivo, `PLANO_DO_NOVO_APP.md`, `README.md`, `global.json` e `EXECUTION_STATUS.md`. Se não houver status, criá-lo na tarefa F00.05.
 3. Encontrar a **primeira tarefa PENDENTE** cuja predecessora foi VALIDADA. Executar exclusivamente ela. Pode subdividir a tarefa sem mudar seu objetivo. Não antecipar outras fases.
 4. Antes de criar projeto/arquivo, verificar se já existe e funciona; a pasta já possui `GV5.sln`, projetos iniciais e `Preparar.bat`/`Desenvolver.bat`. Não destruir esse trabalho.
 5. Para cada tarefa: identificar arquivos e contratos afetados → implementar comportamento real → testar positivo e negativo → compilar → registrar evidência → atualizar o status → commit coeso na branch → próxima tarefa.
-6. Quando uma tarefa precisar de Windows real, GPU ou projetos privados, executar testes sintéticos primeiro e fornecer uma verificação local reprodutível. Registrar `BLOQUEADA: VALIDAÇÃO LOCAL` até prova real; **não falsificar gate**.
+6. Quando faltar Windows real, GPU ou dados privados, executar testes sintéticos primeiro e registrar a revisão local reproduzível. **Bloquear apenas se faltar comprovação funcional essencial**; aparência/captura ou folha pessoal pendentes podem ficar para G2/F12/aceite final (ADR-0006). Não falsificar gate.
 7. Se falhar build, teste, schema, visual, salvamento ou arquitetura: consertar antes de avançar. Se houver impasse técnico, registrar comando, erro, causa provável, tentativa e condição de desbloqueio.
 8. Se descobrir que a tarefa contradiz o contrato real, registrar `docs/decisions/ADR-XXXX.md` com motivo e alteração controlada do plano. Não improvisar mudanças silenciosas.
 9. Todo fim de sessão: informar `último ID validado, próximo ID, commit, testes, limitações, bloqueios e evidências`. Não estimar porcentagens sem denominador verificável.
@@ -93,19 +95,19 @@ Ambiente/SDK/CI: `TestarLocal.bat gate` passou em 2026-10-21; ver `docs/gates/GA
 
 **Gate:** Build inicial conferido; inventário integral, matriz de paridade, primeira fixture e status. Não escrever no legado.
 
-- [ ] **F00.01** — Confirmar branch, HEAD remoto, working tree e existência da pasta nova; registrar o SHA e mudanças concorrentes.
-- [ ] **F00.02** — Inventariar GV5.sln, projetos, .bat, global.json, NuGet.Config, props e todos os arquivos C# existentes; não criar duplicações.
-- [ ] **F00.03** — Rodar preparação portátil/restore/build atuais, registrar exatamente resultados e erros; não declarar sucesso sem execução.
-- [ ] **F00.04** — Comparar PLANO_DO_NOVO_APP.md com estrutura real; documentar discrepâncias e o que o Codex já implementou.
-- [ ] **F00.05** — Criar EXECUTION_STATUS.md com tabela de IDs/estados, ambiente, último SHA e primeira pendência.
-- [ ] **F00.06** — Ler somente os contratos legados: src/shared/fabricator.ts, customizer.ts, studio.ts, roteiros.ts e assetFlow.ts.
-- [ ] **F00.07** — Inventariar Fabricador **completo**: modelos, rig, poses, animador, roupas, cabelos, rosto, componentes, expressões, chroma, persistência.
-- [ ] **F00.08** — Inventariar Customizador, Studio, Base de Vídeos, Roteiros, Opções e Video Studio com responsabilidades, entradas, saídas e dados.
-- [ ] **F00.09** — Criar docs/legacy-contracts/MATRIZ_PARIDADE.md com uma linha por funcionalidade e coluna prova, estado e lacuna.
-- [ ] **F00.10** — Documentar formatos versionados do Electron e mapeamento ID/atributos; apontar campos opcionais e comportamento legado desconhecido.
-- [ ] **F00.11** — Registrar ADR de coordenadas, eixos, rotação, pivô, composição de matriz, alpha, crop, zoom e espaço de cores.
-- [ ] **F00.12** — Definir fixture sintética mínima e cenário vertical Fabricador→Customizador→Studio, sem acesso a dados pessoais.
-- [ ] **F00.13** — Validar o shell existente e fechar relatório baseline em docs/gates/GATE-F00.md.
+- [x] **F00.01** — Confirmar branch, HEAD remoto, working tree e existência da pasta nova; registrar o SHA e mudanças concorrentes.
+- [x] **F00.02** — Inventariar GV5.sln, projetos, .bat, global.json, NuGet.Config, props e todos os arquivos C# existentes; não criar duplicações.
+- [x] **F00.03** — Rodar preparação portátil/restore/build atuais, registrar exatamente resultados e erros; não declarar sucesso sem execução.
+- [x] **F00.04** — Comparar PLANO_DO_NOVO_APP.md com estrutura real; documentar discrepâncias e o que o Codex já implementou.
+- [x] **F00.05** — Criar EXECUTION_STATUS.md com tabela de IDs/estados, ambiente, último SHA e primeira pendência.
+- [x] **F00.06** — Ler somente os contratos legados: src/shared/fabricator.ts, customizer.ts, studio.ts, roteiros.ts e assetFlow.ts.
+- [x] **F00.07** — Inventariar Fabricador **completo**: modelos, rig, poses, animador, roupas, cabelos, rosto, componentes, expressões, chroma, persistência.
+- [x] **F00.08** — Inventariar Customizador, Studio, Base de Vídeos, Roteiros, Opções e Video Studio com responsabilidades, entradas, saídas e dados.
+- [x] **F00.09** — Criar docs/legacy-contracts/MATRIZ_PARIDADE.md com uma linha por funcionalidade e coluna prova, estado e lacuna.
+- [x] **F00.10** — Documentar formatos versionados do Electron e mapeamento ID/atributos; apontar campos opcionais e comportamento legado desconhecido.
+- [x] **F00.11** — Registrar ADR de coordenadas, eixos, rotação, pivô, composição de matriz, alpha, crop, zoom e espaço de cores.
+- [x] **F00.12** — Definir fixture sintética mínima e cenário vertical Fabricador→Customizador→Studio, sem acesso a dados pessoais.
+- [x] **F00.13** — Validar o shell existente e fechar relatório baseline em docs/gates/GATE-F00.md.
 
 **Encerramento F00:** registrar `docs/gates/GATE-F00.md` e marcar a fase validada somente se o gate acima foi comprovado. Se estiver bloqueado, documentar a evidência que falta e não iniciar F01.
 
@@ -115,17 +117,17 @@ Ambiente/SDK/CI: `TestarLocal.bat gate` passou em 2026-10-21; ver `docs/gates/GA
 
 **Gate:** G0. Shell abre, restore/build/test reproduzíveis, sem dependência do legado ou inversão de projetos.
 
-- [ ] **F01.01** — Fixar o SDK 10.0.402 do plano-fonte e confirmar Avalonia compatível com pacotes já instalados; documentar desvio se necessário.
-- [ ] **F01.02** — Testar Preparar.bat e script de instalação: download oficial com hash, idempotência, paths com espaços, falha explícita.
-- [ ] **F01.03** — Testar Desenvolver.bat com SDK local e saída de erro correta; garantir que launcher não faz parte do runtime final.
-- [ ] **F01.04** — Auditar centralização de pacotes NuGet, .gitignore e soluções; ignorar .tools/.packages/bin/obj sem ignorar código real.
-- [ ] **F01.05** — Definir ID tipado e Revision para Model/Pose/Wardrobe/Face/Hair/Character/Scene/Video/Roteiro, com testes.
-- [ ] **F01.06** — Definir Result/erros tipados, cancelamento e contratos pequenos de comandos/queries; teste de fluxo de erro.
-- [ ] **F01.07** — Implementar DI no composition root do App; proibir repositório construído diretamente em View.
-- [ ] **F01.08** — Implementar registro estático mínimo de Fabricador e Customizador no shell, incluindo rotas/Views/ViewModels reais.
-- [ ] **F01.09** — Definir theme/tokens visuais mínimos e padrão MVVM; não criar biblioteca de controles sem consumidor.
-- [ ] **F01.10** — Criar primeiro projeto de testes xUnit com versões fixadas, pelo menos um teste de Core e um cenário negativo.
-- [ ] **F01.11** — Criar teste de arquitetura que verifica referências de csproj: Core sem UI, módulos sem UI alheia, legado fora da solução.
+- [x] **F01.01** — Fixar o SDK 10.0.402 do plano-fonte e confirmar Avalonia compatível com pacotes já instalados; documentar desvio se necessário.
+- [x] **F01.02** — Testar Preparar.bat e script de instalação: download oficial com hash, idempotência, paths com espaços, falha explícita.
+- [x] **F01.03** — Testar Desenvolver.bat com SDK local e saída de erro correta; garantir que launcher não faz parte do runtime final.
+- [x] **F01.04** — Auditar centralização de pacotes NuGet, .gitignore e soluções; ignorar .tools/.packages/bin/obj sem ignorar código real.
+- [x] **F01.05** — Definir ID tipado e Revision para Model/Pose/Wardrobe/Face/Hair/Character/Scene/Video/Roteiro, com testes.
+- [x] **F01.06** — Definir Result/erros tipados, cancelamento e contratos pequenos de comandos/queries; teste de fluxo de erro.
+- [x] **F01.07** — Implementar DI no composition root do App; proibir repositório construído diretamente em View.
+- [x] **F01.08** — Implementar registro estático mínimo de Fabricador e Customizador no shell, incluindo rotas/Views/ViewModels reais.
+- [x] **F01.09** — Definir theme/tokens visuais mínimos e padrão MVVM; não criar biblioteca de controles sem consumidor.
+- [x] **F01.10** — Criar primeiro projeto de testes xUnit com versões fixadas, pelo menos um teste de Core e um cenário negativo.
+- [x] **F01.11** — Criar teste de arquitetura que verifica referências de csproj: Core sem UI, módulos sem UI alheia, legado fora da solução.
 - [x] **F01.12** — Criar GitHub Actions para build/test Windows, mais Linux se compatível, sem depender de arquivos fora da pasta.
 - [x] **F01.13** — Validar clone limpo usando somente master avalonia e dependências declaradas; registrar GATE-F01.
 
