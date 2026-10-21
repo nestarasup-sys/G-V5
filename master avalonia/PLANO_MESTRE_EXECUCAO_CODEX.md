@@ -291,7 +291,7 @@ Ambiente/SDK/CI: `TestarLocal.bat gate` passou em 2026-10-21; ver `docs/gates/GA
 - [x] **F09.01** — Inventariar cabelos: front/back/rear/ponytail/ahoge, paletas, masks e alterações.
 - [x] **F09.02** — Implementar import/crop/chroma de cabelo com original preservado e worker.
 - [x] **F09.03** — Implementar painel de camadas, ordenação, recoloração por roles e publicação.
-- [ ] **F09.04** — Inventariar face: sheets, peças, olhos/pupilas/brows/nose/mouth, detalhes, head extras.
+- [x] **F09.04** — Inventariar face: sheets, peças, olhos/pupilas/brows/nose/mouth, detalhes, head extras.
 - [ ] **F09.05** — Implementar processador de folhas faciais e splitting/masks com goldens.
 - [ ] **F09.06** — Implementar catálogo de componentes faciais por modelo com transform independente.
 - [ ] **F09.07** — Implementar montagem de rosto com esquerda/direita, linkedSides, nariz, boca aberta/fechada.
