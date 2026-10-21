@@ -228,7 +228,7 @@ Ambiente/SDK/CI: `TestarLocal.bat gate` passou em 2026-10-21; ver `docs/gates/GA
 - [x] **F06.05** — Separar peças em assets e metadados com round-trip verificável.
 - [x] **F06.06** — Mostrar modelo pelo FabricatorCanvas reutilizando RenderScene/SkiaRenderer.
 - [x] **F06.07** — Implementar selecionar/hit test, zoom/pan, overlays e estado da ferramenta.
-- [ ] **F06.08** — Implementar mover, escalar e rotacionar peças por commands; sem alterar cada mousemove no banco.
+- [x] **F06.08** — Implementar mover, escalar e rotacionar peças por commands; sem alterar cada mousemove no banco.
 - [ ] **F06.09** — Implementar layer order, ocultar/exibir e operações de seleção.
 - [ ] **F06.10** — Implementar Undo/Redo coalescido: drag contínuo vira uma única ação.
 - [ ] **F06.11** — Implementar autosave e estado de save com conflitos de revisão.
