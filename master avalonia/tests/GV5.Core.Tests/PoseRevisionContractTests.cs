@@ -56,9 +56,65 @@ public sealed class PoseRevisionContractTests
             draft.Name, 10, new string('f', 64), []));
     }
 
+    [Fact]
+    public void PoseCreatedFromPublishedModelBuildsNonDestructivePreviewAndRejectsAnotherRevision()
+    {
+        var model = PublishedModel();
+        var draft = PoseDraft.CreateFromModelRevision(model, "Pose inicial");
+        var originalPart = model.Content.Parts[0];
+        var changedTransform = Transform(12);
+        var edited = draft.WithTransforms(draft.PartTransforms.Select(item => item.PartId == originalPart.Id
+            ? PosePartTransform.Create(item.PartId, changedTransform)
+            : item));
+
+        var preview = edited.ApplyToModelRevision(model);
+        Assert.Equal(changedTransform, preview.Parts.Single(part => part.Id == originalPart.Id).Transform);
+        Assert.Equal(originalPart.SourceTransform, preview.Parts.Single(part => part.Id == originalPart.Id).SourceTransform);
+        Assert.Equal(originalPart.Transform, model.Content.Parts.Single(part => part.Id == originalPart.Id).Transform);
+
+        var differentPublication = PublishedModel(model.ModelId, Revision.From(2), new string('9', 64));
+        Assert.Throws<ArgumentException>(() => edited.ApplyToModelRevision(differentPublication));
+    }
+
     private static ModelRevisionReference ModelReference(string hashPrefix) => ModelRevisionReference.Restore(
         ModelId.New(), ModelRevisionId.New(), Revision.Initial, hashPrefix.PadRight(64, '0'));
 
     private static Transform2D Transform(double x) =>
         new(new Point2D(x, 0), new Point2D(1, 1), 0, Point2D.Zero);
+
+    private static PublishedModelRevision PublishedModel(ModelId? id = null, Revision? revision = null, string? hash = null)
+    {
+        var modelId = id ?? ModelId.New();
+        var parts = new[]
+        {
+            CreatePart("Tronco", Transform(0)),
+            CreatePart("Braço", Transform(20))
+        };
+        var content = ModelDraftContent.Restore(
+            ModelDraftContent.CurrentSchemaVersion,
+            modelId,
+            Revision.Initial,
+            ModelSlot.From(1),
+            AssetId.New(),
+            100,
+            100,
+            parts,
+            parts.Select(part => part.Id));
+        return PublishedModelRevision.Restore(
+            ModelRevisionId.New(),
+            modelId,
+            revision ?? Revision.Initial,
+            Revision.Initial,
+            "Modelo teste",
+            100,
+            hash ?? new string('a', 64),
+            content);
+    }
+
+    private static ModelPart CreatePart(string name, Transform2D transform)
+    {
+        var crop = new Rect2D(0, 0, 10, 10);
+        return new ModelPart(ModelPartId.New(), name, AssetId.New(), crop, transform,
+            new ModelPartSourceTransform(crop, transform));
+    }
 }

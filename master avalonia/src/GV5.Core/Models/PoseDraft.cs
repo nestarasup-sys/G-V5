@@ -27,6 +27,13 @@ public sealed record PoseDraft
     public static PoseDraft Create(ModelRevisionReference model, string name, IEnumerable<PosePartTransform> partTransforms) =>
         Restore(PoseId.New(), model, Revision.Initial, name, partTransforms);
 
+    public static PoseDraft CreateFromModelRevision(PublishedModelRevision modelRevision, string name)
+    {
+        ArgumentNullException.ThrowIfNull(modelRevision);
+        return Create(ModelRevisionReference.From(modelRevision), name,
+            modelRevision.Content.Parts.Select(part => PosePartTransform.Create(part.Id, part.Transform)));
+    }
+
     public static PoseDraft Restore(PoseId id, ModelRevisionReference model, Revision revision, string name, IEnumerable<PosePartTransform> partTransforms)
     {
         if (!id.IsValid || !revision.IsValid)
@@ -56,4 +63,34 @@ public sealed record PoseDraft
 
     public PoseDraft WithTransforms(IEnumerable<PosePartTransform> partTransforms) =>
         Restore(Id, Model, Revision.Next(), Name, partTransforms);
+
+    /// <summary>Builds a preview snapshot after verifying that it is applying to the exact pinned model publication.</summary>
+    public ModelDraftContent ApplyToModelRevision(PublishedModelRevision modelRevision)
+    {
+        ArgumentNullException.ThrowIfNull(modelRevision);
+        if (Model != ModelRevisionReference.From(modelRevision))
+        {
+            throw new ArgumentException("The pose is pinned to a different model publication.", nameof(modelRevision));
+        }
+
+        var transforms = PartTransforms.ToDictionary(item => item.PartId, item => item.Transform);
+        if (transforms.Count != modelRevision.Content.Parts.Length
+            || modelRevision.Content.Parts.Any(part => !transforms.ContainsKey(part.Id)))
+        {
+            throw new ArgumentException("A pose must provide exactly one transform for every part in its model revision.", nameof(modelRevision));
+        }
+
+        var content = modelRevision.Content;
+        return ModelDraftContent.Restore(
+            content.SchemaVersion,
+            content.ModelId,
+            content.Revision,
+            content.Slot,
+            content.SourceAssetId,
+            content.SourceWidth,
+            content.SourceHeight,
+            content.Parts.Select(part => part.WithTransform(transforms[part.Id])),
+            content.LayerOrder,
+            content.RigJoints);
+    }
 }
