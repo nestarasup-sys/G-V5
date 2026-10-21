@@ -1,5 +1,7 @@
 # Matriz de paridade visual
 
+**ADR-0006:** aparência reconhecível, não pixel a pixel. **Funções ausentes são débitos técnicos**, não meras diferenças estéticas; devem ser implementadas antes do aceite G2/área. Ver `docs/legacy-contracts/PENDENCIAS_FUNCIONAIS_FABRICADOR.md`.
+
 Estados: `INVENTARIADO`, `REFERENCIA_PENDENTE`, `IMPLEMENTACAO_PENDENTE`, `EM_IMPLEMENTACAO`, `VALIDACAO_VISUAL_PENDENTE`, `VALIDADO`, `DIVERGENTE`.
 
 Os itens abaixo têm fontes/estrutura identificadas por inspeção estática, mas a captura Electron real ainda não foi feita. Os estados por linha refletem implementações e divergências já registradas. Conforme **ADR-0006**, paridade visual pixel a pixel não é pré-condição de avanço técnico, mas **falta de botões/funções é pendência funcional obrigatória**; ver docs/legacy-contracts/PENDENCIAS_FUNCIONAIS_FABRICADOR.md. Atualizar por componente/subárea e nunca afirmar validação visual Windows não realizada.
