@@ -13,12 +13,12 @@
 | Branch obrigatória | `Master-AValonia` |
 | Pasta exclusiva do novo aplicativo | `master avalonia/` |
 | Commit-base inspecionado antes deste arquivo | `53b7f7a97321e85063a8dd4f9635e48d36548323` |
-| HEAD de execução do Codex | `4509a9f` (entrega F00.10; checkpoint a registrar) |
+| HEAD de execução do Codex | `0477fb5` (entrega F00.11; checkpoint a registrar) |
 | Fase ativa | **F00 — Auditoria do legado, baseline e sincronização** |
-| Última tarefa VALIDADA | **F00.10** — formatos versionados e mapeamento de IDs do Electron |
-| Próxima tarefa PENDENTE | **F00.11** |
+| Última tarefa VALIDADA | **F00.11** — contrato canônico de geometria e renderização |
+| Próxima tarefa PENDENTE | **F00.12** |
 | Gate atual | **GATE F00: PENDENTE** |
-| Progresso validado neste controle | **10 / 247 tarefas (4,0%)** |
+| Progresso validado neste controle | **11 / 247 tarefas (4,5%)** |
 | Tarefas em execução | **Nenhuma registrada** |
 | Bloqueios conhecidos | **Nenhum confirmado** |
 | Aceite Windows/GPU | **Não executado / não registrado** |
@@ -40,7 +40,7 @@ Se o Codex encontrar algo já implementado, **validar e registrar evidências**,
 
 | Fase | Objetivo | Tarefas totais | Validadas | Estado | Gate |
 | --- | --- | ---: | ---: | --- | --- |
-| F00 | Auditoria do legado, baseline e sincronização | 13 | 10 | EM_EXECUCAO | — |
+| F00 | Auditoria do legado, baseline e sincronização | 13 | 11 | EM_EXECUCAO | — |
 | F01 | Solution .NET, contratos, módulo e CI | 13 | 0 | PENDENTE | — |
 | F02 | SQLite, revisões, transações e recuperação básica | 15 | 0 | PENDENTE | — |
 | F03 | AssetStore, thumbnails e cache limitado | 11 | 0 | PENDENTE | — |
@@ -77,6 +77,7 @@ Adicionar uma linha ao concluir ou bloquear cada tarefa. A linha inicial abaixo 
 | **F00.08** | **VALIDADA** | `44ed8c0` | Inspeção estática documentou entradas, saídas, responsabilidades, persistência e limites para Customizador, Studio, Base de Vídeos, Roteiros, Video Studio e Opções. `git diff --check` passou. | `docs/legacy-contracts/OUTRAS_AREAS_INVENTARIO.md`; contratos `src/shared/*`; páginas React e handlers/serviços Electron consultados somente para leitura | Não houve execução de UI, migração ou restauração nesta tarefa; nenhum dado pessoal foi aberto |
 | **F00.09** | **VALIDADA** | `85e39d6` | Matriz com 47 linhas funcionais; cada linha tem evidência do legado, estado do novo app e lacuna/critério de evidência. Todas permanecem `PENDENTE` até implementação comprovada. `git diff --check` passou; link relativo da baseline conferido. | `docs/legacy-contracts/MATRIZ_PARIDADE.md`; inventários do Fabricador e das demais áreas; `docs/architecture/BASELINE_IMPLEMENTATION.md` | Contagem refere-se a funcionalidades documentadas, não a funcionalidades implementadas; nenhuma tela/teste de produto foi alegada |
 | **F00.10** | **VALIDADA** | `4509a9f` | Documentados schemas e campos opcionais dos principais documentos JSON/catálogos, tabelas e migrations SQLite (até user_version 16), relações/identidades de IDs, compatibilidade conhecida e fatos impossíveis de concluir sem dados reais. `git diff --check` passou. | `docs/legacy-contracts/FORMATOS_E_IDS_ELECTRON.md`; tipos `src/shared/*`; validadores/armazenamento legado citados no documento | Detectado registro duplicado de migration version 10; dados reais não foram inspecionados e o formato de documentos desconhecidos continua explicitamente sem confirmação |
+| **F00.11** | **VALIDADA** | `0477fb5` | ADR define unidade, origem/eixos, graus/sentido, pivô, ordem de matriz, crop, zoom/pan e cor/alpha, com compatibilidade do legado e verificações futuras explícitas. `git diff --check` passou. | `docs/decisions/ADR-0001-coordinate-and-rendering-contract.md`; plano e fontes legadas citadas na ADR | Decisão contratual aprovada para a engine; sem implementação, golden ou prova visual nesta tarefa |
 
 **Estados aceitos:** `PENDENTE`, `EM_EXECUCAO`, `BLOQUEADA`, `VALIDADA`.
 
@@ -92,7 +93,7 @@ Adicionar uma linha ao concluir ou bloquear cada tarefa. A linha inicial abaixo 
 | --- | --- | --- |
 | `git branch --show-current` | VALIDADO | `Master-AValonia` |
 | `git status --short` | VALIDADO | árvore limpa após commit F00.04 (`bf36210`) |
-| `git rev-parse HEAD` / remoto | VALIDADO | HEAD `4509a9f`; após `git fetch origin`, branch local 12 commits à frente de `origin/Master-AValonia`, remoto sem commits novos |
+| `git rev-parse HEAD` / remoto | VALIDADO | HEAD `0477fb5`; após `git fetch origin`, branch local 14 commits à frente de `origin/Master-AValonia`, remoto sem commits novos |
 | SDK portátil `.tools/dotnet` | VALIDADO | SDK `10.0.402`, Windows x64, arquitetura x64 |
 | `Preparar.bat` | VALIDADO | exit 0, SDK `10.0.402`, ambiente local pronto |
 | `Desenvolver.bat` | NÃO VERIFICADO NESTE CONTROLE | shell abriu ou erro reproduzível |
@@ -129,7 +130,7 @@ Ainda não há entradas registradas neste controle. Toda mudança material do ro
 
 | Data | HEAD/commit | Último ID validado | Gate | Resumo |
 | --- | --- | --- | --- | --- |
-| 2026-10-20 | `4509a9f` | F00.10 | F00 em execução | Inventários, matriz e formatos versionados/IDs registrados; dados pessoais permaneceram intocados |
+| 2026-10-20 | `0477fb5` | F00.11 | F00 em execução | Inventários, matriz, formatos/IDs e contrato canônico de geometria registrados; dados pessoais permaneceram intocados |
 
 Após concluir um lote ou fase, adicionar uma linha. Não inflar contador só porque o commit contém múltiplos arquivos; contar apenas tarefas comprovadas.
 
@@ -138,7 +139,7 @@ Após concluir um lote ou fase, adicionar uma linha. Não inflar contador só po
 1. Atualizar branch/remoto com segurança, sem force push e sem sobrescrever trabalho local de outra sessão.
 2. Ler `AGENTS.md`, `PLANO_DO_NOVO_APP.md`, `PLANO_MESTRE_EXECUCAO_CODEX.md` e este arquivo.
 3. Inspecionar evidências reais da última tarefa validada; caso não existam, corrigir seu estado.
-4. **Começar pela primeira tarefa PENDENTE indicada acima (F00.11)**; não repetir tarefas validadas sem evidência em contrário.
+4. **Começar pela primeira tarefa PENDENTE indicada acima (F00.12)**; não repetir tarefas validadas sem evidência em contrário.
 5. Continuar automaticamente pelas tarefas seguintes **uma de cada vez**, em lotes flexíveis de aproximadamente 3–8 tarefas relacionadas, enquanto todos os gates pertinentes passam.
 6. Atualizar o registro e commitar entregas reais na branch `Master-AValonia`; não desenvolver Video Studio antecipadamente.
 7. Ao encerrar, informar: **branch, HEAD, último ID VALIDADO, próximo ID PENDENTE, commits, comandos verdes, evidências, bloqueios e condição de desbloqueio**.
