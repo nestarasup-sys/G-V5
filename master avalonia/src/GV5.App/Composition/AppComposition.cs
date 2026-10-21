@@ -34,7 +34,8 @@ internal static class AppComposition
         services.AddSingleton<IOperationCorrelationContext, OperationCorrelationContext>();
         services.AddSingleton<IFilePicker, AvaloniaFilePicker>();
         services.AddSingleton<IStructuredDiagnosticLogger, StructuredFileLogger>();
-        services.AddSingleton<IGv5Database, SqliteDatabase>();
+        services.AddSingleton<SqliteDatabase>();
+        services.AddSingleton<IGv5Database>(provider => provider.GetRequiredService<SqliteDatabase>());
         services.AddSingleton<ISqliteMigration, InitialAssetSchemaMigration>();
         services.AddSingleton<ISqliteMigration, ModelDraftSchemaMigration>();
         services.AddSingleton<ISqliteMigration, ModelDraftCheckpointSchemaMigration>();
