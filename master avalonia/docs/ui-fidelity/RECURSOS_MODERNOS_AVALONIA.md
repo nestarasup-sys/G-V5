@@ -28,3 +28,10 @@ Avalonia permanece na camada `GV5.App` e nos módulos de UI. `GV5.Core`, `GV5.Ge
 - O adaptador respeita `Bgra8888/Premul` ou `Rgba8888/Premul`, pois o formato retornado deve ser lido do bitmap real. O renderer CPU observado neste ambiente produziu `Bgra8888/Premul`; o teste Headless confirma que os canais aparecem corretamente numa `Image` Avalonia.
 - `Avalonia.Headless` renderizou uma janela em memória e a captura confirmou pixels de quatro cores. A contagem de aquisições do provider ficou igual antes/depois do desenho da `Image`; chamada do adaptador fora do UI dispatcher é rejeitada.
 - Essa validação comprova o caminho técnico de apresentação em Headless. Não comprova aparência final de módulo, DPI de Windows, janela nativa, GPU nem paridade visual com uma captura do Electron; esses aceites continuam pendentes na matriz visual.
+
+## Adoção comprovada até F05.07 — 2026-10-21
+
+- `GV5.App.Presentation.EditorOverlayState` é um snapshot imutável e transitório de grade, bounds de seleção e pivôs em coordenadas de pixels da prévia. Ele não pertence a `RenderScene`, às entidades do domínio, nem a contratos de persistência.
+- `RenderedFrameOverlayControl` apresenta os adorners por cima da imagem, aplica ajuste uniforme e recorte da área da prévia, e não intercepta input do canvas. As cores e medidas vêm de `EditorOverlayStyle` fornecido pelo consumidor, pois as referências completas de seleção/pivôs ainda não foram capturadas; nenhum estilo final de produto é declarado.
+- Headless capturou a imagem do renderer com cada tipo de overlay ativado separadamente, verificou diferenças visíveis nos pixels, e confirmou que o hash PNG do `RenderedFrame` original não mudou. O teste também verificou coleção de pivôs copiada, grade inválida rejeitada, nenhuma aquisição/decode extra de asset e liberação da lease.
+- Essa validação prova composição transitória em Avalonia Headless; não prova interação de edição, apresentação Windows/GPU/DPI, estilo final do Fabricador ou paridade visual com Electron. Essas validações continuam pendentes na matriz visual.
