@@ -205,16 +205,22 @@
                                      BorderThickness="0">
                                 <ListBox.ItemTemplate>
                                     <DataTemplate x:DataType="vm:ModelPartLayerItem">
-                                        <Border Background="#FFFFFF" BorderBrush="#EEE9ED" BorderThickness="1" CornerRadius="7" Padding="5" Margin="0,0,0,3">
-                                            <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto,Auto" ColumnSpacing="4">
+                                        <Border Background="#FFFFFF" BorderBrush="#EEE9ED" BorderThickness="1" CornerRadius="7" Padding="5" Margin="0,0,0,3"
+                                                DragDrop.AllowDrop="True"
+                                                DragDrop.DragOver="OnLayerReorderDragOver"
+                                                DragDrop.Drop="OnLayerReorderDrop">
+                                            <Grid ColumnDefinitions="Auto,Auto,Auto,*,Auto,Auto,Auto" ColumnSpacing="4">
                                                 <TextBlock Text="●" IsVisible="{Binding IsSelected}" VerticalAlignment="Center" Foreground="#C74677" />
-                                                <Border Grid.Column="1" Width="38" Height="38" CornerRadius="5" Background="#F8F4F7" VerticalAlignment="Center">
+                                                <TextBlock Grid.Column="1" Text="≡" FontSize="16" VerticalAlignment="Center" Foreground="#A198A2"
+                                                           Cursor="SizeAll" ToolTip.Tip="Arraste para mudar a ordem da camada"
+                                                           PointerPressed="OnLayerReorderPointerPressed" />
+                                                <Border Grid.Column="2" Width="38" Height="38" CornerRadius="5" Background="#F8F4F7" VerticalAlignment="Center">
                                                     <Grid>
                                                         <TextBlock Text="◇" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="#C7B8C2" />
                                                         <Image Source="{Binding Thumbnail}" Stretch="Uniform" />
                                                     </Grid>
                                                 </Border>
-                                                <Button Grid.Column="2"
+                                                <Button Grid.Column="3"
                                                         HorizontalContentAlignment="Left"
                                                         Command="{Binding $parent[views:FabricadorView].DataContext.SelectPartLayerCommand}"
                                                         CommandParameter="{Binding Id}"
@@ -224,9 +230,9 @@
                                                         <TextBlock Text="{Binding LayerStatus}" FontSize="11" Foreground="#AAA1AA" />
                                                     </StackPanel>
                                                 </Button>
-                                                <Button Grid.Column="3" Content="↑" ToolTip.Tip="Mover para frente" IsEnabled="{Binding CanMoveForward}" Command="{Binding $parent[views:FabricadorView].DataContext.BringPartForwardCommand}" CommandParameter="{Binding Id}" Padding="7,5" />
-                                                <Button Grid.Column="4" Content="↓" ToolTip.Tip="Mover para trás" IsEnabled="{Binding CanMoveBackward}" Command="{Binding $parent[views:FabricadorView].DataContext.SendPartBackwardCommand}" CommandParameter="{Binding Id}" Padding="7,5" />
-                                                <Button Grid.Column="5" Content="{Binding VisibilityLabel}" Command="{Binding $parent[views:FabricadorView].DataContext.TogglePartVisibilityCommand}" CommandParameter="{Binding Id}" IsEnabled="{Binding CanEdit}" ToolTip.Tip="Mostrar ou ocultar esta peça" Padding="7,5" />
+                                                <Button Grid.Column="4" Content="↑" ToolTip.Tip="Mover para frente" IsEnabled="{Binding CanMoveForward}" Command="{Binding $parent[views:FabricadorView].DataContext.BringPartForwardCommand}" CommandParameter="{Binding Id}" Padding="7,5" />
+                                                <Button Grid.Column="5" Content="↓" ToolTip.Tip="Mover para trás" IsEnabled="{Binding CanMoveBackward}" Command="{Binding $parent[views:FabricadorView].DataContext.SendPartBackwardCommand}" CommandParameter="{Binding Id}" Padding="7,5" />
+                                                <Button Grid.Column="6" Content="{Binding VisibilityLabel}" Command="{Binding $parent[views:FabricadorView].DataContext.TogglePartVisibilityCommand}" CommandParameter="{Binding Id}" IsEnabled="{Binding CanEdit}" ToolTip.Tip="Mostrar ou ocultar esta peça" Padding="7,5" />
                                             </Grid>
                                         </Border>
                                     </DataTemplate>

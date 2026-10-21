@@ -2534,6 +2534,34 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
     [RelayCommand]
     private void SendPartBackward(ModelPartId partId) => MovePartLayer(partId, -1);
 
+    /// <summary>Moves a dropped layer before its target in the visible top-to-bottom list as one undoable edit.</summary>
+    public bool ReorderPartLayer(ModelPartId partId, ModelPartId targetPartId)
+    {
+        if (!CanEdit || !IsModelWorkspace || _modelContent is null || partId == targetPartId)
+        {
+            return false;
+        }
+
+        var visibleOrder = _modelContent.LayerOrder.Reverse().ToList();
+        var sourceIndex = visibleOrder.IndexOf(partId);
+        var targetIndex = visibleOrder.IndexOf(targetPartId);
+        if (sourceIndex < 0 || targetIndex < 0)
+        {
+            return false;
+        }
+
+        visibleOrder.RemoveAt(sourceIndex);
+        visibleOrder.Insert(targetIndex, partId);
+        var nextOrder = visibleOrder.AsEnumerable().Reverse().ToImmutableArray();
+        if (nextOrder.SequenceEqual(_modelContent.LayerOrder))
+        {
+            return false;
+        }
+
+        ExecuteModelCommand(new ModelPartLayerOrderCommand(_modelContent.LayerOrder, nextOrder));
+        return true;
+    }
+
     [RelayCommand(CanExecute = nameof(CanUndo))]
     private void Undo()
     {

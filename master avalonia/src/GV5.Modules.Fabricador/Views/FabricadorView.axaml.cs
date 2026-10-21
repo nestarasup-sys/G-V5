@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform;
@@ -8,6 +9,7 @@ using Avalonia.Threading;
 using Avalonia.VisualTree;
 using GV5.Modules.Fabricador.ViewModels;
 using GV5.Modules.Fabricador.Interaction;
+using GV5.Core.Identity;
 using GV5.Geometry;
 using System.Runtime.InteropServices;
 
@@ -148,6 +150,44 @@ public partial class FabricadorView : UserControl
         _lastThumbnailWindowStart = firstIndex;
         _lastThumbnailWindowCount = visibleCount;
         _ = _viewModel.LoadVisiblePartLayerThumbnailsAsync(firstIndex, visibleCount);
+    }
+
+    private async void OnLayerReorderPointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (_viewModel?.CanEdit != true || sender is not Control { DataContext: ModelPartLayerItem item })
+        {
+            return;
+        }
+
+        var transfer = new DataTransfer();
+        transfer.Add(DataTransferItem.CreateText(item.Id.ToString()));
+        var dragOperation = DragDrop.DoDragDropAsync(e, transfer, DragDropEffects.Move);
+        e.Handled = true;
+        await dragOperation;
+    }
+
+    private static bool TryGetDraggedLayer(DragEventArgs e, out ModelPartId partId) =>
+        ModelPartId.TryParse(e.DataTransfer.TryGetText(), out partId);
+
+    private void OnLayerReorderDragOver(object? sender, DragEventArgs e)
+    {
+        e.DragEffects = sender is Control { DataContext: ModelPartLayerItem target }
+            && TryGetDraggedLayer(e, out var dragged)
+            && dragged != target.Id
+            && _viewModel?.CanEdit == true
+                ? DragDropEffects.Move
+                : DragDropEffects.None;
+    }
+
+    private void OnLayerReorderDrop(object? sender, DragEventArgs e)
+    {
+        if (sender is Control { DataContext: ModelPartLayerItem target }
+            && TryGetDraggedLayer(e, out var dragged)
+            && _viewModel?.ReorderPartLayer(dragged, target.Id) == true)
+        {
+            e.DragEffects = DragDropEffects.Move;
+            e.Handled = true;
+        }
     }
 
     private void UpdatePreviewImage()

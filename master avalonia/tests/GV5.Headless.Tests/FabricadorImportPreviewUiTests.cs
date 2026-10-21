@@ -583,6 +583,16 @@ public sealed class FabricadorImportPreviewUiTests
             Assert.False(viewModel.PartLayers.Single(item => item.Id == parts[1].Id).CanMoveForward);
             Assert.False(viewModel.PartLayers.Single(item => item.Id == parts[0].Id).CanMoveBackward);
 
+            var layerOrderBeforeDrag = viewModel.PartLayers.Select(item => item.Id).ToArray();
+            var rigJointsBeforeDrag = viewModel.RigJointItems.Select(item => item.Joint).ToArray();
+            Assert.True(viewModel.ReorderPartLayer(layerOrderBeforeDrag[0], layerOrderBeforeDrag[1]));
+            Assert.Equal([layerOrderBeforeDrag[1], layerOrderBeforeDrag[0]], viewModel.PartLayers.Select(item => item.Id));
+            Assert.Equal(rigJointsBeforeDrag, viewModel.RigJointItems.Select(item => item.Joint));
+            Assert.Equal(1, viewModel.UndoCount);
+            viewModel.UndoCommand.Execute(null);
+            Assert.Equal(layerOrderBeforeDrag, viewModel.PartLayers.Select(item => item.Id));
+            Assert.Equal(0, viewModel.UndoCount);
+
             var layerList = Assert.Single(window.GetVisualDescendants().OfType<ListBox>(), control => control.Name == "ModelPartLayerList");
             Assert.Equal(2, layerList.Items.Count);
             viewModel.SelectPartLayerCommand.Execute(parts[0].Id);

@@ -16,7 +16,7 @@
 | Misturador/edição de pixels | Ferramenta do legado mapeada; sem UI/serviço correspondente validado | F09.15/G2 | Ferramenta funcional com undo/redo, assets sem perda e round-trip |
 | Edição de pivôs/âncoras e estado fixed | CRUD, edição de âncoras, handles/snap e persistência implementados em F07.02/F07.04 | F09.15/G2 para revisão de conjunto e mouse/DPI no Windows | Criar/editar/excluir juntas; arrastar pivôs; fixar/soltar; snap opcional por proximidade; salvar/reabrir |
 | Dividir/mesclar peças e restaurar fonte | Legado possui; não há prova completa de controles Avalonia | F09.15/G2 | Ações reversíveis, assets/crop preservados, reabertura |
-| Reordenação por arrasto na lista | Alteração por botões existe, drag de linhas ausente | F09.15/G2 | Drag de camada atualiza ordem e undo sem mudar joints |
+| Reordenação por arrasto na lista | Alça de arrasto e drop por linha chamam uma alteração atômica da ordem visível; cada gesto gera um único comando undoable e não substitui joints | F09.15/G2 | Núcleo validado em `FabricadorImportPreviewUiTests.FilePickerFlowShowsReviewedBitmapAndPublishesOnlyAfterConfirmation`; revisão interativa do arrasto em Windows ainda pendente. Evidência: `docs/testing/F09.15_LAYER_DRAG.md` |
 | Heurística de conexões automáticas | Legacy rig.ts auditado F07.01; integração UI nativa ainda não | F07.02–F07.04 / fechamento G2 | Sugestões sem ciclos/pais duplicados, usuário pode corrigir manualmente |
 
 ## Regras de condução
