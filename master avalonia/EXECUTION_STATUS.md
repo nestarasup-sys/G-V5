@@ -13,12 +13,12 @@
 | Branch obrigatória | `Master-AValonia` |
 | Pasta exclusiva do novo aplicativo | `master avalonia/` |
 | Commit-base inspecionado antes deste arquivo | `53b7f7a97321e85063a8dd4f9635e48d36548323` |
-| Último commit de implementação validado | `43a0dd8` (F03.06; cache LRU de bitmaps com leases) |
+| Último commit de implementação validado | `513b9af` (F03.07; miniaturas versionadas com verificação de conteúdo) |
 | Fase ativa | **F03 — AssetStore, thumbnails e cache limitado** |
-| Última tarefa VALIDADA | **F03.06** — cache LRU de bitmaps com orçamento e leases |
-| Próxima tarefa PENDENTE | **F03.07** — geração assíncrona de miniaturas versionadas |
+| Última tarefa VALIDADA | **F03.07** — geração assíncrona de miniaturas versionadas |
+| Próxima tarefa PENDENTE | **F03.08** — query paginada e carregamento apenas do visível |
 | Gate atual | **GATE F00: PASSOU; G0: PASSOU; F02: PASSOU; G1 global em execução até F03–F05** |
-| Progresso validado neste controle | **47 / 247 tarefas (19,0%)** |
+| Progresso validado neste controle | **48 / 247 tarefas (19,4%)** |
 | Tarefas em execução | Nenhuma |
 | Bloqueios conhecidos | Primeiro download do SDK em clone vazio não progrediu; evidência e limite de F01 estão registrados em `docs/gates/GATE-F01.md` |
 | Aceite Windows/GPU | **Não executado / não registrado** |
@@ -118,6 +118,7 @@ Adicionar uma linha ao concluir ou bloquear cada tarefa. A linha inicial abaixo 
 | **F03.04** | **VALIDADA** | `fb9bef0` | Migration 5 cria relações duráveis por `(owner_type, owner_id, slot)` com FK restritiva e índice por asset. `SqliteAssetStore` implementa `IAssetStore` e é registrado no composition root; conteúdo com mesmo SHA-256 compartilha o mesmo ID/binário. Testes cobrem reimportação deduplicada, referências idempotentes após reabrir SQLite, conflito para slot ocupado, vários slots, not found, entrada inválida e liberação que mantém arquivo/metadado. `TestarLocal.bat rapido` passou: build Debug 0 warnings/0 errors, Core 11/11, Arquitetura 6/6, Assets 5/5, Data 33/33, Headless 15/15; `git diff --check` passou. | `src/GV5.Data/Assets/SqliteAssetStore.cs`; `src/GV5.Data/Migrations/AssetReferenceSchemaMigration.cs`; `src/GV5.App/Composition/AppComposition.cs`; `tests/GV5.Data.Tests/SqliteAssetImportPipelineTests.cs`; `docs/data/SCHEMA_DESIGN.md` | Backup ainda não inclui os binários; não usar assets como dados de usuário nem fechar GATE-F03 antes de completar backup/restore. |
 | **F03.05** | **VALIDADA** | `5373d30` | `AssetImageDecoder` executa decode Skia em worker com limite de dimensão/pixels/memória e erros tipados. Testes decodificam PNG com alpha, JPEG e WebP (incluindo alpha), validam pixels para todas as oito orientações EXIF, formato malformado, limite excedido, entrada não seekable, ownership do stream e cancelamento. `TestarLocal.bat rapido` passou: build Debug 0 warnings/0 errors, Core 11/11, Arquitetura 6/6, Assets 19/19, Data 33/33, Headless 15/15; `git diff --check` passou. | `src/GV5.Assets/Decoding/*`; `tests/GV5.Assets.Tests/AssetImageDecoderTests.cs`; `src/GV5.App/Composition/AppComposition.cs`; `Directory.Packages.props`; `docs/data/SCHEMA_DESIGN.md` | WebP animado usa o primeiro frame; teste headless de imagem em Windows local, sem validação visual/GPU nativa. |
 | **F03.06** | **VALIDADA** | `43a0dd8` | Implementado `AssetBitmapCache` LRU com chave SHA-256 + versão do decoder, orçamento por bytes, snapshot de hit/miss/eviction/bypass/leases e gate por chave que evita decode duplicado concorrente. Leases pinam imagem em uso; entradas livres são descartadas em LRU; se entradas ativas impedirem o orçamento, a nova imagem é entregue fora do cache; Dispose adia a liberação até o último lease. Testes cobrem reutilização, ordem LRU, bypass por lease, concorrência, erro tipado, versão e descarte. `TestarLocal.bat rapido` passou: build Debug 0 warnings/0 errors, Core 11/11, Arquitetura 6/6, Assets 26/26, Data 33/33, Headless 15/15; `git diff --check` passou. | `src/GV5.Assets/Decoding/AssetBitmapCache.cs`; `tests/GV5.Assets.Tests/AssetBitmapCacheTests.cs`; `src/GV5.App/Composition/AppComposition.cs`; `docs/assets/ASSET_PIPELINE.md` | O limite padrão de 512 MiB é inicial; benchmark do orçamento em hardware real continua pendente e não foi alegado. |
+| **F03.07** | **VALIDADA** | `513b9af` | `ThumbnailService` gera PNG em worker a partir do asset original, com receita imutável (dimensões e fit mode), chave derivada do SHA-256 do conteúdo + versão do gerador/receita e cache na pasta `thumbnails/`. Arquivo e manifesto tamanho/hash são publicados por rename atômico; arquivo corrompido é detectado e regenerado; requisições concorrentes da mesma chave não duplicam o decode. Testes cobrem persistência/reuso, recipe identity, corrupção, concorrência, source indisponível e cancelamento. `TestarLocal.bat rapido` passou: build Debug 0 warnings/0 errors, Core 11/11, Arquitetura 6/6, Assets 26/26, Data 38/38, Headless 15/15; `git diff --check` passou. | `src/GV5.Application/Contracts/IThumbnailService.cs`; `src/GV5.Data/Thumbnails/ThumbnailService.cs`; `tests/GV5.Data.Tests/ThumbnailServiceTests.cs`; `src/GV5.App/Composition/AppComposition.cs`; `docs/assets/ASSET_PIPELINE.md` | A geração usa SkiaSharp CPU; não foi medida GPU nem benchmark de lote em hardware real. Arquivos temporários abandonados por crash serão tratados por limpeza segura futura. |
 
 **Estados aceitos:** `PENDENTE`, `EM_EXECUCAO`, `BLOQUEADA`, `VALIDADA`.
 
@@ -203,6 +204,7 @@ Ainda não há entradas registradas neste controle. Toda mudança material do ro
 | 2026-10-21 | `fb9bef0` | F03.04 validada; próxima F03.05 | G1 em execução | AssetStore completo com dedupe por hash e referências persistentes; suíte rápida local: Core 11/11, Architecture 6/6, Assets 5/5, Data 33/33, Headless 15/15, build sem warnings/erros. |
 | 2026-10-21 | `5373d30` | F03.05 validada; próxima F03.06 | G1 em execução | Decode de PNG/JPEG/WebP com alpha, todas as orientações EXIF, erros tipados e limites; suíte rápida: Core 11/11, Architecture 6/6, Assets 19/19, Data 33/33, Headless 15/15, build sem warnings/erros. |
 | 2026-10-21 | `43a0dd8` | F03.06 validada; próxima F03.07 | G1 em execução | Cache LRU com leases, proteção de imagem em uso, orçamento em bytes e métricas; suíte rápida: Core 11/11, Architecture 6/6, Assets 26/26, Data 33/33, Headless 15/15, build sem warnings/erros. |
+| 2026-10-21 | `513b9af` | F03.07 validada; próxima F03.08 | G1 em execução | ThumbnailService com chave por conteúdo/receita/versão, geração concorrente única, checksum e recuperação de cache corrompido; suíte rápida: Core 11/11, Architecture 6/6, Assets 26/26, Data 38/38, Headless 15/15, build sem warnings/erros. |
 
 Após concluir um lote ou fase, adicionar uma linha. Não inflar contador só porque o commit contém múltiplos arquivos; contar apenas tarefas comprovadas.
 
@@ -211,7 +213,7 @@ Após concluir um lote ou fase, adicionar uma linha. Não inflar contador só po
 1. Confirmar branch, HEAD e árvore de trabalho localmente; não consultar nem sincronizar o remoto até autorização explícita.
 2. Ler `AGENTS.md`, `PLANO_DO_NOVO_APP.md`, `PLANO_MESTRE_EXECUCAO_CODEX.md` e este arquivo.
 3. Inspecionar evidências reais da última tarefa validada; caso não existam, corrigir seu estado.
-4. **Retomar F03.07**: implementar ThumbnailService com recipe/hash/versão, cache em disco e geração assíncrona cancelável.
+4. **Retomar F03.08**: implementar query paginada e política de fetch só do visível, com prefetch limitado.
 5. Continuar automaticamente pelas tarefas seguintes **uma de cada vez**, em lotes flexíveis de aproximadamente 3–8 tarefas relacionadas, enquanto todos os gates pertinentes passam.
 6. Atualizar o registro e commitar entregas reais localmente na branch `Master-AValonia`; não desenvolver Video Studio antecipadamente.
 7. Ao encerrar, informar: **branch, HEAD, último ID VALIDADO, próximo ID PENDENTE, commits, comandos verdes, evidências, bloqueios e condição de desbloqueio**.
