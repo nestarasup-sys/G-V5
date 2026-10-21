@@ -253,7 +253,7 @@ Ambiente/SDK/CI: `TestarLocal.bat gate` passou em 2026-10-21; ver `docs/gates/GA
 - [x] **F07.05** — Definir PoseDraft e poses publicadas referenciando revisão exata do modelo. Evidência de contrato e rejeição de dados inválidos: `EXECUTION_STATUS.md`.
 - [x] **F07.06** — Implementar editor de pose (mover/rotacionar bone) e visualização pela engine. Sessão ligada ao ViewModel e canvas, testes SQLite/headless em `EXECUTION_STATUS.md`.
 - [x] **F07.07** — Implementar salvar/carregar/duplicar/publicar pose e thumbnails lazily.
-- [ ] **F07.08** — Implementar Undo/Redo de rig/pose e persistência com revisão.
+- [x] **F07.08** — Implementar Undo/Redo de rig/pose e persistência com revisão.
 - [ ] **F07.09** — Definir contrato mínimo de animação do Fabricador (frames, keys, easing e rig).
 - [ ] **F07.10** — Implementar animações básicas do Fabricador com editor e prévia sem Video Studio.
 - [ ] **F07.11** — Testar pose→animação→reopen e personagens sintéticos com braços/pivôs extremos.
