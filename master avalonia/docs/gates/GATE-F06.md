@@ -39,7 +39,7 @@ O teste integrado usa pastas temporárias, fonte PNG sintética, SQLite, `Sqlite
 
 Em `2026-10-21`, no HEAD `eaac213` (`native: align Fabricator model shell with legacy layout`), `TestarLocal.bat rapido` foi executado novamente após a alteração da view e do canvas. O build Debug passou com 0 erros e 2 avisos CS0618 preexistentes em `ThumbnailService.cs`; Core 18/18, Geometry 35/35, Architecture 8/8, Assets 31/31, Data 51/51, Rendering 22/22 e Headless 33/33: **198 testes aprovados**.
 
-Essa revalidação confirma que a alteração de layout não quebrou a suíte rápida. Não fornece captura Windows, fixture real, saída independente do worker Electron nem comparação visual; os itens pendentes e o estado bloqueado acima permanecem inalterados.
+Essa revalidação histórica confirma que a alteração de layout não quebrou a suíte rápida. Não fornece captura Windows, fixture real ou saída independente do worker Electron. **O bloqueio visual citado nesse relatório era o estado anterior à ADR-0006; a F07 foi liberada tecnicamente sem fingir tais aceites.**
 
 ## Pendências de produto — não bloqueiam F07 após ADR-0006
 
@@ -53,3 +53,9 @@ Não há captura ou folha real de usuário registrada. O gate **técnico** liber
 ## Verificação de continuidade F07 (2026-10-21)
 
 Depois da liberação técnica deste gate foram adicionados RigJointGraph, ModelRigEditor e testes de juntas na F07.02. A Action `39645535873` passou Build Release, testes e Headless em Windows e Ubuntu após o primeiro componente de grafo; esta evidência não cobre os testes de ModelRigEditor acrescentados no commit posterior `9dd52f2`. Este gate continua **com revisão visual/Windows real pendente**; essa nota não comprova F07.02 nem altera o aceite funcional limitado da F06. A execução de CI acionada pela presente atualização servirá apenas para verificar as alterações de código novas, sem alegar que o Fabricador está completo.
+
+## Revisão global de CI — F07.02, 2026-10-21
+
+**Resultado da Action anterior:** [39646435562](https://github.com/nestarasup-sys/G-V5/actions/runs/39646435562) **FALHOU em ambos os runners**: Build Release, Core, Architecture, Assets, Data, Geometry e Rendering passaram; Headless registrou 35/36 e falhou em `ModelRigEditorTests.InvalidConnectionAndCycleAreRejectedWithoutChangingAcceptedGraph` (linha 46) porque exigia rejeitar uma reconexão **válida** 2→0. A asserção foi corrigida no commit `32beda0` para 2→1, formando ciclo real 1→2→1. Esta atualização de gate aciona a verificação do checkout corrigido; **não declarar F07.02 concluída antes da suíte passar e antes de integrar View/ViewModel e persistência/undo/reopen de joints**.
+
+Os checkboxes F00/F01 do Plano Mestre foram reconciliados com evidências já presentes em `EXECUTION_STATUS.md`, sem contar nova tarefa. A regra visual da ADR-0006 foi propagada ao plano-fonte: aparência familiar e cobertura funcional, não identidade pixel a pixel. Revisão de interface real e folha pessoal ficam pendentes para o aceite final do Fabricador/G2.
