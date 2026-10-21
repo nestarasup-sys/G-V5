@@ -47,6 +47,7 @@ internal static class AppComposition
         services.AddSingleton<ISqliteMigration, ModelRigJointSchemaMigration>();
         services.AddSingleton<ISqliteMigration, PoseRepositorySchemaMigration>();
         services.AddSingleton<ISqliteMigration, AnimationRepositorySchemaMigration>();
+        services.AddSingleton<ISqliteMigration, WardrobeRepositorySchemaMigration>();
         services.AddSingleton<SqliteMigrationRunner>();
         services.AddSingleton<IDataPlatformInitializer>(provider => provider.GetRequiredService<SqliteMigrationRunner>());
         services.AddSingleton<IAssetCatalog, SqliteAssetCatalog>();
@@ -56,6 +57,9 @@ internal static class AppComposition
         services.AddSingleton<IModelRevisionRepository, SqliteModelRevisionRepository>();
         services.AddSingleton<IPoseRepository, SqlitePoseRepository>();
         services.AddSingleton<IAnimationRepository, SqliteAnimationRepository>();
+        services.AddSingleton<IWardrobeRepository, SqliteWardrobeRepository>();
+        services.AddSingleton<IWardrobeCatalog>(provider => new WardrobeCatalog(
+            provider.GetRequiredService<IWardrobeRepository>(), provider.GetRequiredService<IThumbnailService>()));
         services.AddSingleton<PublishModelRevisionService>();
         services.AddSingleton<DuplicatePoseService>();
         services.AddSingleton<IModelDraftCheckpointStore, SqliteModelDraftCheckpointStore>();

@@ -13,6 +13,8 @@ Escopo F08.02: contrato puro de domínio, sem UI, persistência ou publicação 
 - Composição tem duas fases explícitas: `AttachedToBodyLayer` posiciona a peça logo após desenhar seu osso no índice da ordem de camadas publicada; `AboveHair` reserva a fase final para óculos/acessórios de cabeça que optaram por isso. Componentes comuns não podem ativar a fase sobre cabelo. A ordenação é determinística: índice do osso, sequência autoral dos componentes e, por último, sequência autoral dos head extras.
 - `PublishedWardrobeRevision` é um snapshot imutável com ID próprio, sequência de publicação, revisão editável de origem, referência do modelo, data UTC, SHA-256 e cópia da coleção de componentes. Alterar o rascunho depois da publicação não modifica o snapshot.
 - `IWardrobeCatalog` filtra componentes de publicações pela referência exata da revisão do modelo e categoria opcional. Pages limitadas ordenam por data de publicação, ID da revisão e ID do componente, com cursor composto estável. A janela de thumbnails usa o serviço central com prefetch limitado e streams de propriedade do chamador; não carrega imagens fora do page enviado pelo catálogo.
+- `IWardrobeRepository` mantém rascunhos com revisão otimista e publica revisões append-only. O codec grava todos os IDs, transforms, bindings e flags em JSON canônico com SHA-256; leitura revalida checksum e redundâncias da linha SQLite. Publicação exige draft atual não vazio, modelo pinado disponível, ossos compatíveis e assets disponíveis. Repetir publicação sem mudar conteúdo retorna a revisão publicada atual.
+- Assets são referenciados tanto pelo rascunho quanto por cada publicação imutável por slots estáveis de componente. Trocar referências e gravar revisão ocorre na mesma transação SQLite; assets removidos do draft tornam-se candidatos a coleta só quando não houver outra referência. A FK `ON DELETE RESTRICT` mantém bytes usados por uma revisão. A referência ao modelo via `model_revision_id` restringe exclusão e permite listar dependências reversas sem alterar o modelo.
 
 ## Categorias
 
@@ -34,4 +36,4 @@ Escopo F08.02: contrato puro de domínio, sem UI, persistência ou publicação 
 - `src/GV5.Geometry/WardrobeBindingMath.cs`
 - `tests/GV5.Core.Tests/WardrobeContractTests.cs`
 
-O serviço atual consulta snapshots imutáveis fornecidos pelo limite de dados; o repositório SQLite e o fluxo de publicação ficam em F08.09. UI de seleção/edição e integração visual dos serviços com a tela ainda estão pendentes. A matriz mantém paridade de roupas pendente até completar persistência, composição de camadas e interação visual.
+O catálogo recebe snapshots em memória nos testes e usa `IWardrobeRepository` em produção. UI de seleção/edição e integração visual dos serviços com a tela ainda estão pendentes. A matriz mantém paridade de roupas pendente até completar integração visual, rendering e auditoria.
