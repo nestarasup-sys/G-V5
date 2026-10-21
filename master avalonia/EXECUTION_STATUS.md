@@ -13,15 +13,15 @@
 | Branch obrigatória | `Master-AValonia` |
 | Pasta exclusiva do novo aplicativo | `master avalonia/` |
 | Commit-base inspecionado antes deste arquivo | `53b7f7a97321e85063a8dd4f9635e48d36548323` |
-| Último commit de implementação validado | `e615c2c` (F09.01: inventário dos contratos legados de cabelo) |
-| Checkout local revalidado | `TestarLocal.bat gate` passou em 2026-10-21: build Release, 255 testes, 0 falhas; 2 avisos CS0618 preexistentes; a tarefa F09.01 foi documental e validada com `git diff --check` |
-| Fase ativa | **F09 — Fabricador IV — cabelos, face, expressões e completação (em F09.02)** |
-| Última tarefa VALIDADA | **F09.01** — inventariar cabelos, paletas, máscaras e alterações |
-| Próxima tarefa PENDENTE | **F09.02** — implementar import/crop/chroma de cabelo com original preservado e worker |
+| Último commit de implementação validado | `6c5f966` (F09.02: importação, processamento e staging de folhas de cabelo) |
+| Checkout local revalidado | `TestarLocal.bat rapido` passou em 2026-10-21: build Debug e 261 testes, 0 falhas; 2 avisos CS0618 preexistentes em `ThumbnailService.cs` |
+| Fase ativa | **F09 — Fabricador IV — cabelos, face, expressões e completação (em F09.03)** |
+| Última tarefa VALIDADA | **F09.02** — importar/processar folhas de cabelo, preservar original e executar processamento em worker |
+| Próxima tarefa PENDENTE | **F09.03** — implementar painel de camadas, ordenação, recoloração por roles e publicação |
 | Requisito transversal atualizado | ADR-0006: aparência reconhecível, não pixel-perfect; todos os botões e funcionalidades; revisão final visual pendente |
 | Gate atual | **GATE-F08 PASSOU tecnicamente; UI/visual Windows/GPU e paridade completa continuam pendentes** |
-| Progresso validado neste controle | **113 / 247 tarefas (45,7%)** |
-| Tarefas em execução | **F09.02** — importação, recorte, chroma e preservação da folha original |
+| Progresso validado neste controle | **114 / 247 tarefas (46,2%)** |
+| Tarefas em execução | **F09.03** — painel de cabelo, ordenação, roles e publicação |
 | Pendências conhecidas | F06: folha real/capturas/worker não testados; ferramentas de Modelos ausentes catalogadas em `docs/legacy-contracts/PENDENCIAS_FUNCIONAIS_FABRICADOR.md` e obrigatórias antes do G2. Isso não impede a programação F07, mas impede declarar Fabricador completo. Limite download F01 documentado |
 | Aceite Windows/GPU | **F06 Windows/visual não executado; GPU continua fora do escopo comprovado** |
 
@@ -57,7 +57,7 @@ Se o Codex encontrar algo já implementado, **validar e registrar evidências**,
 | F06 | Fabricador I — modelos e peças | 14 | 14 | LIBERADA TECNICAMENTE | 198 testes previamente registrados; aceites Windows/visual pendentes para G2/F12/entrega |
 | F07 | Fabricador II — rig, poses e animador | 12 | 12 | VALIDADA | F07.01–F07.12 validadas tecnicamente; `docs/gates/GATE-F07.md` registra provas e lacunas remanescentes de paridade para F09.13/G2 |
 | F08 | Fabricador III — roupas, binding e revisões | 12 | 12 | VALIDADA | GATE-F08 PASSOU tecnicamente; integração UI e paridade visual ficam pendentes nos gates de produto |
-| F09 | Fabricador IV — cabelos, face, expressões e completação | 15 | 1 | EM_EXECUCAO | F09.01 inventariada; contratos e implementação em andamento |
+| F09 | Fabricador IV — cabelos, face, expressões e completação | 15 | 2 | EM_EXECUCAO | F09.01 inventariada; F09.02 processamento de folha validado; F09.03 em execução |
 | F10 | Customizador completo e CharacterResolver | 19 | 0 | PENDENTE | — |
 | F11 | Studio e Scene Engine | 15 | 0 | PENDENTE | — |
 | F12 | Gate vertical obrigatório e confiabilidade | 12 | 0 | PENDENTE | — |
@@ -190,6 +190,7 @@ Adicionar uma linha ao concluir ou bloquear cada tarefa. A linha inicial abaixo 
 | **F08.11** | **VALIDADA** | `b09e96b` | `TestarLocal.bat rapido` em 2026-10-21: build Debug com 2 avisos CS0618 preexistentes; Core 38, Architecture 8, Geometry 43, Data 56, Assets 33, Rendering 27, Headless 49; **254 testes, 0 falhas**. Cinco snapshots PNG de 64×64 com fixtures sintéticas cobrem manga, calça, saia, acessório de cabeça na camada superior e roupa ligada a braço rotacionado 28°. Os bindings são resolvidos por `WardrobeBindingMath` antes da renderização; a comparação é pixel a pixel e grava painéis expected/actual/diff. | `tests/GV5.Rendering.Tests/WardrobeGoldenTests.cs`; `tests/Fixtures/rendering/wardrobe-*.golden.png`; `tests/Fixtures/rendering/README.md` | Goldens são fixtures determinísticas, não capturas nem referência visual do Electron. Assets sintéticos e CPU; nenhuma validação visual com projetos pessoais ou GPU. Próxima F08.12. |
 | **F08.12** | **VALIDADA** | `e3bed48` | Auditoria encontrou e fechou a lacuna entre placement e render: `WardrobeRenderSceneBuilder` agora posiciona roupas após a camada-alvo e acessórios permitidos acima do cabelo, preservando a ordem estável. Os cinco goldens passam por binding → placement → builder → Skia; uma prova dedicada confirma a ordem z e rejeita categoria indevida acima do cabelo. `TestarLocal.bat gate` em 2026-10-21: build Release, 2 avisos CS0618 preexistentes, 0 erros; Core 38, Architecture 8, Geometry 43, Data 56, Assets 33, Rendering 28, Headless 49; **255 testes, 0 falhas**. `docs/gates/GATE-F08.md` registra critérios, evidências, resultado e divergências. | `src/GV5.Rendering/WardrobeRenderSceneBuilder.cs`; `tests/GV5.Rendering.Tests/WardrobeGoldenTests.cs`; `docs/gates/GATE-F08.md`; `docs/architecture/CONTRATO_ROUPAS.md`; `docs/legacy-contracts/MATRIZ_PARIDADE.md` | Gate técnico passou. UI do Fabricador ainda não consome o fluxo; deleção de modelos/poses não existe; Windows/GPU/DPI/legado visual não testados. Próxima F09.01. |
 | **F09.01** | **VALIDADA** | `e615c2c` | Auditoria estática somente leitura de categorias/slots, tipos, UI, worker, borracha, palettes/roles e persistência. Documenta cinco `HairPartId` distribuídos por três slots, limites e fallback de estilos antigos, divisão top/bottom, segmentação por borda, chroma green/checker, role masks derivadas e alterações raster/transform. `git diff --check` passou; tarefa documental, sem teste de runtime. | `docs/legacy-contracts/F09_CABELOS_LEGADO.md`; atualização de `FABRICADOR_INVENTARIO.md` e `MATRIZ_PARIDADE.md`; fontes citadas no contrato | Nenhum arquivo pessoal ou pasta `app-data` foi aberto. Inventário de código não prova execução do legado. Próxima F09.02. |
+| **F09.02** | **VALIDADA** | `6c5f966` | `TestarLocal.bat rapido` em 2026-10-21: build Debug, **261 testes aprovados, 0 falhas**, 2 avisos CS0618 preexistentes. Processor em worker separa as metades (altura ímpar preserva o pixel extra embaixo), remove somente máscaras green/checker conectadas à borda, recorta alfa visível e mantém a origem intacta. Testes cobrem checker de dois tons, regiões internas não conectadas, tolerância/opções, folha vazia, cancelamento e pixels/origem. Serviço mantém os bytes originais no staging, prepara duas saídas PNG e previews limitadas, valida ausência de uma metade e remove os três stages ao cancelar/descartar. | `src/GV5.Assets/Processing/HairSheetProcessor.cs`; `src/GV5.Modules.Fabricador/Import/HairSheetImportService.cs`; `tests/GV5.Assets.Tests/HairSheetProcessorTests.cs`; `tests/GV5.Headless.Tests/HairSheetImportTests.cs`; registro em `AppComposition.cs` | O fluxo de preparação está pronto; painel visual e publicação vinculada ao modelo/cabelo seguem para F09.03/F09.11. Sem validação interativa Windows/GPU nem assets pessoais. Próxima F09.03. |
 
 **Estados aceitos:** `PENDENTE`, `EM_EXECUCAO`, `BLOQUEADA`, `VALIDADA`.
 
@@ -360,7 +361,7 @@ Após concluir um lote ou fase, adicionar uma linha. Não inflar contador só po
 
 **Atualização local 2026-10-21 — F08.05 validada:** `WardrobePoseResolver` calcula o placement para pose sem alterar fonte, exige a publicação de modelo idêntica em roupa/pose e confere que binding não ficou obsoleto. Cobertura inclui pose girada, escala desigual e flipX. `TestarLocal.bat rapido`: 242 testes, 0 falhas. Próxima tarefa F08.06.
 
-**Atualização local 2026-10-21 — F08 concluída tecnicamente e F09.01 inventariada:** GATE-F08 (`e3bed48`) passou tecnicamente em Release com **255 testes, 0 falhas**; detalhes e limitações em `docs/gates/GATE-F08.md`. F09.01 (`e615c2c`) documentou cabelos, slots, chroma, recoloração e persistência com consulta estática somente leitura. Próxima F09.02.
+**Atualização local 2026-10-21 — F08 concluída tecnicamente; F09.01–F09.02 validadas:** GATE-F08 (`e3bed48`) passou tecnicamente em Release com **255 testes, 0 falhas**; detalhes e limitações em `docs/gates/GATE-F08.md`. F09.01 (`e615c2c`) registrou contratos legados. F09.02 (`6c5f966`) implementou processamento cancelável em worker e staging revisável que preserva os bytes originais; `TestarLocal.bat rapido` passou com **261 testes, 0 falhas**. Próxima F09.03.
 
 ## 9. Retomada obrigatória para a próxima sessão Codex
 
@@ -369,7 +370,7 @@ Após concluir um lote ou fase, adicionar uma linha. Não inflar contador só po
 3. Inspecionar evidências reais da última tarefa validada; caso não existam, corrigir seu estado.
 4. **F07 liberada tecnicamente conforme ADR-0006.** A F06 tem 14 tarefas registradas e 198 testes anteriores; revisão de folha real/Windows/worker/capturas segue pendente até G2/F12/aceite final. Não afirmar que foi realizada.
 5. Continuar automaticamente pelas tarefas seguintes **uma de cada vez**, em lotes flexíveis de aproximadamente 3–8 tarefas relacionadas, enquanto todos os gates pertinentes passam.
-6. F07 está tecnicamente encerrada em `docs/gates/GATE-F07.md`. F08.01–F08.06 estão validadas; continuar em **F08.07** conforme o Plano Mestre; retomar as diferenças de paridade do Animador em F09.13. Não implementar Video Studio antes da fase apropriada.
+6. F07 está tecnicamente encerrada em `docs/gates/GATE-F07.md`. F08 passou tecnicamente em `docs/gates/GATE-F08.md`. F09.01 e F09.02 estão validadas; continuar em **F09.03** conforme o Plano Mestre e retomar as diferenças de paridade do Animador em F09.13. Não implementar Video Studio antes da fase apropriada.
 7. Ao encerrar, informar: **branch, HEAD, último ID VALIDADO, próximo ID PENDENTE, commits, comandos verdes, evidências, bloqueios e condição de desbloqueio**.
 
 ### Prompt de retomada

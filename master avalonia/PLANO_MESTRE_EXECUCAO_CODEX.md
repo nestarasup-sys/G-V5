@@ -289,7 +289,7 @@ Ambiente/SDK/CI: `TestarLocal.bat gate` passou em 2026-10-21; ver `docs/gates/GA
 **Gate:** G2. Todos os fluxos reais do Fabricador revisados, persistentes e sem tela fake. **Obrigatório conferir e solucionar pendências funcionais de Modelos/Fabricador em docs/legacy-contracts/PENDENCIAS_FUNCIONAIS_FABRICADOR.md**; pequenas diferenças estéticas são permitidas conforme ADR-0006, funções/botões ausentes não.
 
 - [x] **F09.01** — Inventariar cabelos: front/back/rear/ponytail/ahoge, paletas, masks e alterações.
-- [ ] **F09.02** — Implementar import/crop/chroma de cabelo com original preservado e worker.
+- [x] **F09.02** — Implementar import/crop/chroma de cabelo com original preservado e worker.
 - [ ] **F09.03** — Implementar painel de camadas, ordenação, recoloração por roles e publicação.
 - [ ] **F09.04** — Inventariar face: sheets, peças, olhos/pupilas/brows/nose/mouth, detalhes, head extras.
 - [ ] **F09.05** — Implementar processador de folhas faciais e splitting/masks com goldens.
