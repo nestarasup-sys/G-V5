@@ -232,11 +232,11 @@ Ambiente/SDK/CI: `TestarLocal.bat gate` passou em 2026-10-21; ver `docs/gates/GA
 - [x] **F06.09** — Implementar layer order, ocultar/exibir e operações de seleção.
 - [x] **F06.10** — Implementar Undo/Redo coalescido: drag contínuo vira uma única ação.
 - [x] **F06.11** — Implementar autosave e estado de save com conflitos de revisão.
-- [ ] **F06.12** — Implementar publicação imutável de modelo + testes de manutenção da revisão antiga.
-- [ ] **F06.13** — Testar import inválido, falta de asset, reopen, PNG e comparar com legado.
-- [ ] **F06.14** — Registrar GATE-F06 e matriz de paridade de modelos.
+- [x] **F06.12** — Implementar publicação imutável de modelo + testes de manutenção da revisão antiga.
+- [x] **F06.13** — Testar import inválido, falta de asset, reopen, PNG e comparar com legado.
+- [x] **F06.14** — Registrar GATE-F06 e matriz de paridade de modelos.
 
-**Encerramento F06:** registrar `docs/gates/GATE-F06.md` e marcar a fase validada somente se o gate acima foi comprovado. Se estiver bloqueado, documentar a evidência que falta e não iniciar F07.
+**Encerramento F06:** tarefas registradas, mas o gate permanece bloqueado até validação visual do mesmo modelo em capturas reais do Electron e Avalonia Windows. Não iniciar F07 antes de atualizar `docs/gates/GATE-F06.md` com essa evidência.
 
 ---
 

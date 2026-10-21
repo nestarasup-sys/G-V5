@@ -13,16 +13,16 @@
 | Branch obrigatória | `Master-AValonia` |
 | Pasta exclusiva do novo aplicativo | `master avalonia/` |
 | Commit-base inspecionado antes deste arquivo | `53b7f7a97321e85063a8dd4f9635e48d36548323` |
-| Último commit de implementação validado | `5b8f0b6` (F06.11) |
+| Último commit de implementação validado | `e37901a` (integração da separação de peças no fluxo F06.05) |
 | Fase ativa | **F06 — Fabricador I: modelos e peças** |
-| Última tarefa VALIDADA | **F06.11** — autosave do conteúdo e estado de persistência com conflito de revisão |
-| Próxima tarefa PENDENTE | **F06.12** — publicação imutável de modelo e preservação de revisão antiga |
+| Última tarefa VALIDADA | **F06.14** — registrar GATE-F06 e matriz de paridade de modelos |
+| Próxima tarefa PENDENTE | **F07.01** — somente após desbloquear o GATE-F06 |
 | Requisito transversal adicionado | Fidelidade visual ao Gacha 5 Electron, registrada em ADR-0004; documentos em `docs/ui-fidelity/`; sem paridade visual aprovada ainda |
-| Gate atual | **GATE F00: PASSOU; G0: PASSOU; F02: PASSOU; F03: PASSOU; F04: PASSOU; F05: PASSOU; G1 CPU/headless: PASSOU** |
-| Progresso validado neste controle | **85 / 247 tarefas (34,4%)** |
+| Gate atual | **GATE F00: PASSOU; G0: PASSOU; F02: PASSOU; F03: PASSOU; F04: PASSOU; F05: PASSOU; G1 CPU/headless: PASSOU; F06: BLOQUEADO — validação local/visual pendente** |
+| Progresso validado neste controle | **88 / 247 tarefas (35,6%)** |
 | Tarefas em execução | Nenhuma |
-| Bloqueios conhecidos | Primeiro download do SDK em clone vazio não progrediu; evidência e limite de F01 estão registrados em `docs/gates/GATE-F01.md` |
-| Aceite Windows/GPU | **Não executado / não registrado** |
+| Bloqueios conhecidos | F06 requer validar uma folha representativa no Windows e comparar capturas reais Electron/Avalonia; pixels dos PNGs de componentes também precisam de comparação independente. F01: limite de download em clone vazio está em `docs/gates/GATE-F01.md` |
+| Aceite Windows/GPU | **F06 Windows/visual não executado; GPU continua fora do escopo comprovado** |
 
 **Importante:** a contagem acima representa **tarefas com evidência de validação registrada neste documento**, não a porcentagem de código já implementado. O shell, a solution, os projetos-base e os scripts de preparação podem estar presentes. O Codex deve auditar o que existe antes de implementar.
 
@@ -51,7 +51,7 @@ Se o Codex encontrar algo já implementado, **validar e registrar evidências**,
 | F03 | AssetStore, thumbnails e cache limitado | 11 | 11 | VALIDADA | GATE-F03 PASSOU; G1 global em execução |
 | F04 | Geometry Engine canônica | 11 | 11 | VALIDADA | GATE-F04 PASSOU; G1 global em execução |
 | F05 | RenderScene e SkiaRenderer independentes | 11 | 11 | VALIDADA | GATE-F05 e G1 CPU/headless PASSOU |
-| F06 | Fabricador I — modelos e peças | 14 | 9 | EM_EXECUCAO | — |
+| F06 | Fabricador I — modelos e peças | 14 | 14 | BLOQUEADA | GATE-F06 pendente de validação local/visual |
 | F07 | Fabricador II — rig, poses e animador | 12 | 0 | PENDENTE | — |
 | F08 | Fabricador III — roupas, binding e revisões | 12 | 0 | PENDENTE | — |
 | F09 | Fabricador IV — cabelos, face, expressões e completação | 15 | 0 | PENDENTE | — |
@@ -159,6 +159,9 @@ Adicionar uma linha ao concluir ou bloquear cada tarefa. A linha inicial abaixo 
 | **F06.10** | **VALIDADA** | `2b654f7` | Histórico limitado a 50 ações com Undo/Redo para transformação, ordem e visibilidade. Cada gesto contínuo de arrasto produz uma única ação ao terminar; previews não escrevem no banco; nova ação limpa o redo. `TestarLocal.bat rapido`: build com 2 avisos CS0618 preexistentes em `ThumbnailService`; Core 18, Architecture 8, Geometry 35, Assets 31, Data 49, Rendering 21, Headless 29; 0 falhas. Headless verifica coalescência do gesto, aplicação/reversão, edição nova após undo e ausência de gravação durante operações. Captura Windows e comparação visual com Electron seguem pendentes. | `src/GV5.Modules.Fabricador/Interaction/IModelDraftCommand.cs`; `ModelPartTransformCommand.cs`; `ModelPartLayerOrderCommand.cs`; `ModelPartVisibilityCommand.cs`; `ViewModels/FabricadorViewModel.cs`; `Views/FabricatorView.axaml`; `tests/GV5.Headless.Tests/FabricadorImportPreviewUiTests.cs` | Controles de Undo/Redo existem e estão funcionais no estado Avalonia; paridade de posição, tamanho, estilo, estados e ícones ainda exige captura real equivalente. |
 
 | **F06.11** | **VALIDADA** | `5b8f0b6` | Autosave com debounce salva nome e snapshot completo do conteúdo; estado só vira `Salvo` após confirmação do repositório, com revisão incrementada uma vez. Conflito otimista mostra erro sem sobrescrever a revisão concorrente e preserva a edição local. `TestarLocal.bat rapido`: Core 18, Architecture 8, Geometry 35, Assets 31, Data 49, Rendering 21, Headless 30; 0 falhas; build com 2 avisos CS0618 preexistentes em `ThumbnailService`. Headless cobriu debounce, persistência de transformação/camada/visibilidade e conflito. | `src/GV5.Modules.Fabricador/ViewModels/FabricadorViewModel.cs`; `tests/GV5.Headless.Tests/FabricadorImportPreviewUiTests.cs` | Fixture de repositório e estado Avalonia Headless; captura Windows/visual continua pendente. |
+| **F06.12** | **VALIDADA** | `c988b54` | Publicação append-only com revisão/hash canônicos, idempotência, conflito de revisão concorrente e pins de assets; duas revisões preservam o snapshot anterior e triggers impedem UPDATE/DELETE. Testes SQLite cobrem persistência/reabertura e Headless habilita o comando após edição. `TestarLocal.bat rapido`: Data 51/51, Headless 31/31 naquele checkpoint; 0 falhas. | `src/GV5.Core/Models/PublishedModelRevision.cs`; `src/GV5.Data/Repositories/SqliteModelRevisionRepository.cs`; `tests/GV5.Data.Tests/SqliteModelRevisionRepositoryTests.cs`; `tests/GV5.Headless.Tests/FabricadorImportPreviewUiTests.cs` | Validação de persistência imutável; captura visual do botão e do estado publicado pendente. |
+| **F06.13** | **VALIDADA** | `c3dbb33` | Asset referenciado ausente não cria revisão nem pins parciais; import inválido mantém erro e remove staging; limites, cancelamento, reopen e PNG do canvas na origem são cobertos. O teste PNG confere pixels/origem contra a regra estática do canvas legado; os PNGs extraídos ainda não têm comparação pixel a pixel contra execução independente do worker legado. `TestarLocal.bat rapido`: Data 51/51, Rendering 22/22, Headless 31/31 naquele checkpoint; 0 falhas. | `tests/GV5.Data.Tests/SqliteModelRevisionRepositoryTests.cs`; `tests/GV5.Headless.Tests/FabricadorModelSourceImportTests.cs`; `tests/GV5.Rendering.Tests/SkiaRendererTests.cs` | F06.13 valida os casos registrados, sem alegar equivalência completa dos PNGs segmentados ou paridade visual da página. |
+| **F06.14** | **VALIDADA** | documentação local | Registrados critérios, evidências e condição de desbloqueio do gate; matriz visual e inventário do Fabricador atualizados. `git diff --check` passou; `TestarLocal.bat gate`: Release com 2 avisos CS0618 preexistentes/0 erros; Core 18, Architecture 8, Geometry 35, Assets 31, Data 51, Rendering 22, Headless 32; 197 testes, 0 falhas. | `docs/gates/GATE-F06.md`; `docs/ui-fidelity/MATRIZ_PARIDADE_VISUAL.md`; `docs/ui-fidelity/INVENTARIO_VISUAL_COMPLETO.md` | Tarefa documental concluída. O gate da fase não passou; F07 permanece bloqueada até evidência Windows/visual. O hash deste registro será preenchido no checkpoint seguinte. |
 
 **Estados aceitos:** `PENDENTE`, `EM_EXECUCAO`, `BLOQUEADA`, `VALIDADA`.
 
@@ -285,6 +288,9 @@ Toda mudança material do roteiro ou arquitetura deve apontar para um ADR em `do
 | 2026-10-21 | `66de704` | F06.09 validada; próxima F06.10 | Fabricador I | Painel lateral de camadas, seleção, mover para frente/trás e visibilidade; reordenação e visibilidade não gravam durante a operação. `TestarLocal.bat rapido`: build 0 warnings/errors; Core 18, Architecture 8, Geometry 35, Assets 31, Data 49, Rendering 21, Headless 29; 0 erros/falhas. Arrastar linhas, miniaturas e comparação visual continuam pendentes. |
 | 2026-10-21 | `2b654f7` | F06.10 validada; próxima F06.11 | Fabricador I | Undo/Redo coalescido para transformações, layer order e visibilidade; gesto de ponteiro vira uma ação e nenhuma operação de histórico grava diretamente no banco. Suíte rápida local: Core 18, Architecture 8, Geometry 35, Assets 31, Data 49, Rendering 21, Headless 29; build com 2 avisos Skia preexistentes e 0 erros/falhas. |
 | 2026-10-21 | `5b8f0b6` | F06.11 validada; próxima F06.12 | Fabricador I | Autosave de snapshot de conteúdo com debounce, revisão otimista, estados visíveis, flush e preservação de edição local em conflito; suíte rápida: Core 18, Architecture 8, Geometry 35, Assets 31, Data 49, Rendering 21, Headless 30; 0 falhas, 2 avisos CS0618 preexistentes. |
+| 2026-10-21 | `c988b54` | F06.12 validada; próxima F06.13 | Fabricador I | Publicação imutável, hash e pin de assets; idempotência, conflitos, duas revisões e triggers de imutabilidade cobertos por testes SQLite/Headless. |
+| 2026-10-21 | `c3dbb33` | F06.13 validada; próxima F06.14 | Fabricador I | Falhas de import/publicação, assets ausentes, reopen e PNG do canvas cobertos; sem comparação completa dos PNGs segmentados nem paridade visual do produto. |
+| 2026-10-21 | `e37901a` | F06.05 integração corrigida e exercitada; próxima F06.14 | Fabricador I | Segmentação conectada foi integrada ao import real, gerando assets PNG e metadados de peças. Teste Headless passou por SQLite/AssetStore, edição, undo, save, reopen e publish com fixture sintética. TestarLocal.bat rapido: Core 18, Architecture 8, Geometry 35, Assets 31, Data 51, Rendering 22, Headless 32; 197 testes, build 0 warnings/0 errors. |
 
 Após concluir um lote ou fase, adicionar uma linha. Não inflar contador só porque o commit contém múltiplos arquivos; contar apenas tarefas comprovadas.
 
@@ -293,9 +299,9 @@ Após concluir um lote ou fase, adicionar uma linha. Não inflar contador só po
 1. Confirmar branch, HEAD e árvore de trabalho localmente; não consultar nem sincronizar o remoto até autorização explícita.
 2. Ler `AGENTS.md`, `PLANO_DO_NOVO_APP.md`, `PLANO_MESTRE_EXECUCAO_CODEX.md` e este arquivo.
 3. Inspecionar evidências reais da última tarefa validada; caso não existam, corrigir seu estado.
-4. **Retomar F06.11**: autosalvar conteúdo do modelo, exibir estados de persistência e preservar edições locais quando houver conflito de revisão.
+4. **Não iniciar F07 ainda.** F06.01–F06.14 estão registrados, mas o `GATE-F06` está BLOQUEADO. Desbloquear com a validação Windows e as capturas reais Electron/Avalonia descritas em `docs/gates/GATE-F06.md`; comparar também os pixels segmentados do worker legado.
 5. Continuar automaticamente pelas tarefas seguintes **uma de cada vez**, em lotes flexíveis de aproximadamente 3–8 tarefas relacionadas, enquanto todos os gates pertinentes passam.
-6. Atualizar o registro e commitar entregas reais localmente na branch `Master-AValonia`; não desenvolver Video Studio antecipadamente.
+6. Depois de desbloquear F06, retomar a sequência em **F07.01**. Atualizar o registro e commitar entregas reais localmente na branch `Master-AValonia`; não desenvolver Video Studio antecipadamente.
 7. Ao encerrar, informar: **branch, HEAD, último ID VALIDADO, próximo ID PENDENTE, commits, comandos verdes, evidências, bloqueios e condição de desbloqueio**.
 
 ### Prompt de retomada
