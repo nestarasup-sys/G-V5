@@ -30,6 +30,7 @@ public sealed record ModelPartLayerOrderCommand(
             content.SourceWidth,
             content.SourceHeight,
             content.Parts,
-            order);
+            order,
+            content.RigJoints);
     }
 }

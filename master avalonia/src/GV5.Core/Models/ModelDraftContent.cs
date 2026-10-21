@@ -22,6 +22,8 @@ public sealed record ModelDraftContent
     public ImmutableArray<ModelPart> Parts { get; }
     /// <summary>Back-to-front order. Every part appears exactly once.</summary>
     public ImmutableArray<ModelPartId> LayerOrder { get; }
+    /// <summary>Validated parent-child rig connections owned by this model draft.</summary>
+    public ImmutableArray<RigJoint> RigJoints { get; }
 
     private ModelDraftContent(
         int schemaVersion,
@@ -32,7 +34,8 @@ public sealed record ModelDraftContent
         int? sourceWidth,
         int? sourceHeight,
         ImmutableArray<ModelPart> parts,
-        ImmutableArray<ModelPartId> layerOrder)
+        ImmutableArray<ModelPartId> layerOrder,
+        ImmutableArray<RigJoint> rigJoints)
     {
         SchemaVersion = schemaVersion;
         ModelId = modelId;
@@ -43,10 +46,11 @@ public sealed record ModelDraftContent
         SourceHeight = sourceHeight;
         Parts = parts;
         LayerOrder = layerOrder;
+        RigJoints = rigJoints;
     }
 
     public static ModelDraftContent CreateEmpty(ModelId modelId, Revision revision, ModelSlot? slot = null) =>
-        Create(CurrentSchemaVersion, modelId, revision, slot, null, null, null, [], []);
+        Create(CurrentSchemaVersion, modelId, revision, slot, null, null, null, [], [], []);
 
     public static ModelDraftContent Restore(
         int schemaVersion,
@@ -57,14 +61,24 @@ public sealed record ModelDraftContent
         int? sourceWidth,
         int? sourceHeight,
         IEnumerable<ModelPart> parts,
-        IEnumerable<ModelPartId> layerOrder) =>
-        Create(schemaVersion, modelId, revision, slot, sourceAssetId, sourceWidth, sourceHeight, parts, layerOrder);
+        IEnumerable<ModelPartId> layerOrder,
+        IEnumerable<RigJoint>? rigJoints = null) =>
+        Create(schemaVersion, modelId, revision, slot, sourceAssetId, sourceWidth, sourceHeight, parts, layerOrder, rigJoints ?? []);
 
-    public ModelDraftContent WithParts(IEnumerable<ModelPart> parts, IEnumerable<ModelPartId> layerOrder) =>
-        Create(SchemaVersion, ModelId, Revision.Next(), Slot, SourceAssetId, SourceWidth, SourceHeight, parts, layerOrder);
+    public ModelDraftContent WithParts(IEnumerable<ModelPart> parts, IEnumerable<ModelPartId> layerOrder)
+    {
+        ArgumentNullException.ThrowIfNull(parts);
+        var partArray = parts.ToArray();
+        var partIds = partArray.Select(part => TransformNodeId.From(part.Id.Value)).ToHashSet();
+        var joints = RigJoints.Where(joint => partIds.Contains(joint.ParentPartId) && partIds.Contains(joint.ChildPartId));
+        return Create(SchemaVersion, ModelId, Revision.Next(), Slot, SourceAssetId, SourceWidth, SourceHeight, partArray, layerOrder, joints);
+    }
+
+    public ModelDraftContent WithRigJoints(IEnumerable<RigJoint> rigJoints) =>
+        Create(SchemaVersion, ModelId, Revision.Next(), Slot, SourceAssetId, SourceWidth, SourceHeight, Parts, LayerOrder, rigJoints);
 
     public ModelDraftContent WithSource(AssetId sourceAssetId, int width, int height) =>
-        Create(SchemaVersion, ModelId, Revision.Next(), Slot, sourceAssetId, width, height, Parts, LayerOrder);
+        Create(SchemaVersion, ModelId, Revision.Next(), Slot, sourceAssetId, width, height, Parts, LayerOrder, RigJoints);
 
     private static ModelDraftContent Create(
         int schemaVersion,
@@ -75,7 +89,8 @@ public sealed record ModelDraftContent
         int? sourceWidth,
         int? sourceHeight,
         IEnumerable<ModelPart> parts,
-        IEnumerable<ModelPartId> layerOrder)
+        IEnumerable<ModelPartId> layerOrder,
+        IEnumerable<RigJoint> rigJoints)
     {
         if (schemaVersion != CurrentSchemaVersion)
         {
@@ -107,9 +122,11 @@ public sealed record ModelDraftContent
         }
         ArgumentNullException.ThrowIfNull(parts);
         ArgumentNullException.ThrowIfNull(layerOrder);
+        ArgumentNullException.ThrowIfNull(rigJoints);
 
         var partArray = parts.ToImmutableArray();
         var orderArray = layerOrder.ToImmutableArray();
+        var rigArray = rigJoints.ToImmutableArray();
         if (partArray.Any(static part => part is null))
         {
             throw new ArgumentException("A draft cannot contain a null model part.", nameof(parts));
@@ -138,6 +155,10 @@ public sealed record ModelDraftContent
             throw new ArgumentException("Part crops and source transforms must fit within the imported source image.", nameof(parts));
         }
 
-        return new ModelDraftContent(schemaVersion, modelId, revision, slot, sourceAssetId, sourceWidth, sourceHeight, partArray, orderArray);
+        _ = RigSkeleton.Create(
+            partArray.Select(part => TransformNodeId.From(part.Id.Value)),
+            rigArray);
+
+        return new ModelDraftContent(schemaVersion, modelId, revision, slot, sourceAssetId, sourceWidth, sourceHeight, partArray, orderArray, rigArray);
     }
 }

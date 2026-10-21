@@ -11,6 +11,7 @@ using GV5.Rendering;
 using Avalonia.Threading;
 using GV5.Geometry;
 using GV5.Modules.Fabricador.Interaction;
+using System.Globalization;
 
 namespace GV5.Modules.Fabricador.ViewModels;
 
@@ -45,6 +46,14 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
     private CancellationTokenSource? _autosaveCancellation;
     private Task? _autosaveTask;
     private Task? _activeSaveTask;
+    private RigPartOption? _selectedRigParent;
+    private RigPartOption? _selectedRigChild;
+    private RigJointItem? _selectedRigJoint;
+    private string _rigParentAnchorX = "0";
+    private string _rigParentAnchorY = "0";
+    private string _rigChildAnchorX = "0";
+    private string _rigChildAnchorY = "0";
+    private string? _rigError;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasImportPreview))]
@@ -101,6 +110,7 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanSave))]
     [NotifyPropertyChangedFor(nameof(CanEdit))]
+    [NotifyPropertyChangedFor(nameof(CanEditRig))]
     [NotifyPropertyChangedFor(nameof(PartLayers))]
     [NotifyCanExecuteChangedFor(nameof(SaveCommand))]
     [NotifyCanExecuteChangedFor(nameof(RestoreCheckpointCommand))]
@@ -117,6 +127,7 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
     [NotifyPropertyChangedFor(nameof(HasPendingRecovery))]
     [NotifyPropertyChangedFor(nameof(CanSave))]
     [NotifyPropertyChangedFor(nameof(CanEdit))]
+    [NotifyPropertyChangedFor(nameof(CanEditRig))]
     [NotifyPropertyChangedFor(nameof(PartLayers))]
     [NotifyCanExecuteChangedFor(nameof(SaveCommand))]
     [NotifyCanExecuteChangedFor(nameof(RestoreCheckpointCommand))]
@@ -136,6 +147,7 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanSave))]
     [NotifyPropertyChangedFor(nameof(CanEdit))]
+    [NotifyPropertyChangedFor(nameof(CanEditRig))]
     [NotifyPropertyChangedFor(nameof(PartLayers))]
     [NotifyCanExecuteChangedFor(nameof(SaveCommand))]
     [NotifyPropertyChangedFor(nameof(CanUndo))]
@@ -166,6 +178,7 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
     [NotifyPropertyChangedFor(nameof(CanPublishRevision))]
     [NotifyPropertyChangedFor(nameof(CanSave))]
     [NotifyPropertyChangedFor(nameof(CanEdit))]
+    [NotifyPropertyChangedFor(nameof(CanEditRig))]
     [NotifyPropertyChangedFor(nameof(PublishRevisionButtonLabel))]
     [NotifyCanExecuteChangedFor(nameof(PublishModelRevisionCommand))]
     [NotifyCanExecuteChangedFor(nameof(SaveCommand))]
@@ -239,6 +252,57 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
         }
     }
     public bool HasModelParts => _modelContent is { Parts.IsDefaultOrEmpty: false };
+    public bool CanEditRig => CanEdit && _modelContent is { Parts.Length: >= 2 };
+    public bool HasRigEditingParts => _modelContent is { Parts.Length: >= 2 };
+    public bool NeedsRigParts => !HasRigEditingParts;
+    public IReadOnlyList<RigPartOption> RigPartOptions => _modelContent?.Parts
+        .Select(part => new RigPartOption(part.Id, part.Name)).ToArray() ?? [];
+    public IReadOnlyList<RigJointItem> RigJointItems
+    {
+        get
+        {
+            if (_modelContent is null) return [];
+            var names = _modelContent.Parts.ToDictionary(part => TransformNodeId.From(part.Id.Value), part => part.Name);
+            return _modelContent.RigJoints.Select(joint => new RigJointItem(
+                joint,
+                $"{names[joint.ParentPartId]} → {names[joint.ChildPartId]}",
+                joint.Mode == RigJointMode.Fixed ? "Fixa" : "Livre")).ToArray();
+        }
+    }
+    public RigPartOption? SelectedRigParent { get => _selectedRigParent; set => SetProperty(ref _selectedRigParent, value); }
+    public RigPartOption? SelectedRigChild { get => _selectedRigChild; set => SetProperty(ref _selectedRigChild, value); }
+    public RigJointItem? SelectedRigJoint
+    {
+        get => _selectedRigJoint;
+        set
+        {
+            if (!SetProperty(ref _selectedRigJoint, value)) return;
+            OnPropertyChanged(nameof(CanEditSelectedRigJoint));
+            if (value is not null)
+            {
+                RigParentAnchorX = Format(value.Joint.ParentAnchor.X);
+                RigParentAnchorY = Format(value.Joint.ParentAnchor.Y);
+                RigChildAnchorX = Format(value.Joint.ChildAnchor.X);
+                RigChildAnchorY = Format(value.Joint.ChildAnchor.Y);
+            }
+            OnPropertyChanged(nameof(SelectedRigJointModeLabel));
+        }
+    }
+    public string RigParentAnchorX { get => _rigParentAnchorX; set => SetProperty(ref _rigParentAnchorX, value); }
+    public string RigParentAnchorY { get => _rigParentAnchorY; set => SetProperty(ref _rigParentAnchorY, value); }
+    public string RigChildAnchorX { get => _rigChildAnchorX; set => SetProperty(ref _rigChildAnchorX, value); }
+    public string RigChildAnchorY { get => _rigChildAnchorY; set => SetProperty(ref _rigChildAnchorY, value); }
+    public string? RigError
+    {
+        get => _rigError;
+        private set
+        {
+            if (SetProperty(ref _rigError, value)) OnPropertyChanged(nameof(HasRigError));
+        }
+    }
+    public bool HasRigError => !string.IsNullOrWhiteSpace(RigError);
+    public bool CanEditSelectedRigJoint => CanEditRig && SelectedRigJoint is not null;
+    public string SelectedRigJointModeLabel => SelectedRigJoint?.Joint.Mode == RigJointMode.Fixed ? "Tornar livre" : "Fixar junta";
     public int UndoCount => _undoStack.Count;
     public int RedoCount => _redoStack.Count;
     public bool CanUndo => CanEdit && _activeTransformGesture is null && _undoStack.Count > 0;
@@ -514,6 +578,7 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
             _modelContent = content;
             _savedModelContent = content;
             SetModelContentDirty(false);
+            RefreshRigPanel();
             ClearHistory();
             SelectedModelPartId = null;
             OnPropertyChanged(nameof(PartLayers));
@@ -600,6 +665,77 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
 
     [RelayCommand]
     private void ClearSelection() => SelectModelPart(null);
+
+    [RelayCommand]
+    private void ConnectRigParts()
+    {
+        if (!CanEditRig || _modelContent is null || SelectedRigParent is null || SelectedRigChild is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var editor = new ModelRigEditor(_modelContent, _modelContent.RigJoints);
+            var parentAnchor = ModelDraftHitTester.GetPartPivot(_modelContent, SelectedRigParent.Id) ?? Point2D.Zero;
+            var childAnchor = ModelDraftHitTester.GetPartPivot(_modelContent, SelectedRigChild.Id) ?? Point2D.Zero;
+            var joint = editor.Connect(SelectedRigParent.Id, SelectedRigChild.Id, parentAnchor, childAnchor);
+            ExecuteModelCommand(new RigJointCollectionCommand(_modelContent.RigJoints, editor.Graph.Joints.ToImmutableArray()));
+            RigError = null;
+            RefreshRigPanel(joint.Id);
+        }
+        catch (ArgumentException exception)
+        {
+            RigError = exception.Message;
+        }
+    }
+
+    [RelayCommand]
+    private void ApplyRigJointAnchors()
+    {
+        if (!CanEditRig || _modelContent is null || SelectedRigJoint is null) return;
+        if (!TryReadAnchor(out var parent, out var child))
+        {
+            RigError = "Informe coordenadas numéricas válidas para as duas âncoras.";
+            return;
+        }
+
+        try
+        {
+            var editor = new ModelRigEditor(_modelContent, _modelContent.RigJoints);
+            editor.ChangeAnchors(SelectedRigJoint.Joint.Id, parent, child);
+            ExecuteModelCommand(new RigJointCollectionCommand(_modelContent.RigJoints, editor.Graph.Joints.ToImmutableArray()));
+            RigError = null;
+            RefreshRigPanel(SelectedRigJoint.Joint.Id);
+        }
+        catch (Exception exception) when (exception is ArgumentException or KeyNotFoundException)
+        {
+            RigError = exception.Message;
+        }
+    }
+
+    [RelayCommand]
+    private void ToggleSelectedRigJointMode()
+    {
+        if (!CanEditRig || _modelContent is null || SelectedRigJoint is null) return;
+        var id = SelectedRigJoint.Joint.Id;
+        var editor = new ModelRigEditor(_modelContent, _modelContent.RigJoints);
+        editor.SetFixed(id, SelectedRigJoint.Joint.Mode != RigJointMode.Fixed);
+        ExecuteModelCommand(new RigJointCollectionCommand(_modelContent.RigJoints, editor.Graph.Joints.ToImmutableArray()));
+        RigError = null;
+        RefreshRigPanel(id);
+    }
+
+    [RelayCommand]
+    private void RemoveSelectedRigJoint()
+    {
+        if (!CanEditRig || _modelContent is null || SelectedRigJoint is null) return;
+        var editor = new ModelRigEditor(_modelContent, _modelContent.RigJoints);
+        editor.Disconnect(SelectedRigJoint.Joint.Id);
+        ExecuteModelCommand(new RigJointCollectionCommand(_modelContent.RigJoints, editor.Graph.Joints.ToImmutableArray()));
+        RigError = null;
+        RefreshRigPanel();
+    }
 
     [RelayCommand]
     private void TogglePartVisibility(ModelPartId partId)
@@ -750,9 +886,58 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
         OnPropertyChanged(nameof(HasModelParts));
         OnPropertyChanged(nameof(SelectedPartBounds));
         OnPropertyChanged(nameof(SelectedPartPivot));
+        RefreshRigPanel();
         SetModelContentDirty(true);
         _ = RenderModelPreviewAsync(content);
     }
+
+    private void RefreshRigPanel(RigJointId? selectedJointId = null)
+    {
+        var currentJointId = selectedJointId ?? SelectedRigJoint?.Joint.Id;
+        var options = RigPartOptions;
+        if (SelectedRigParent is null || options.All(option => option.Id != SelectedRigParent.Id))
+        {
+            SelectedRigParent = options.FirstOrDefault();
+        }
+        if (SelectedRigChild is null || options.All(option => option.Id != SelectedRigChild.Id)
+            || SelectedRigChild.Id == SelectedRigParent?.Id)
+        {
+            SelectedRigChild = options.FirstOrDefault(option => option.Id != SelectedRigParent?.Id);
+        }
+
+        OnPropertyChanged(nameof(RigPartOptions));
+        OnPropertyChanged(nameof(RigJointItems));
+        OnPropertyChanged(nameof(CanEditRig));
+        OnPropertyChanged(nameof(CanEditSelectedRigJoint));
+        OnPropertyChanged(nameof(HasRigEditingParts));
+        OnPropertyChanged(nameof(NeedsRigParts));
+        SelectedRigJoint = currentJointId is { } id
+            ? RigJointItems.FirstOrDefault(item => item.Joint.Id == id)
+            : null;
+    }
+
+    private bool TryReadAnchor(out Point2D parent, out Point2D child)
+    {
+        parent = default;
+        child = default;
+        if (!TryParseCoordinate(RigParentAnchorX, out var parentX)
+            || !TryParseCoordinate(RigParentAnchorY, out var parentY)
+            || !TryParseCoordinate(RigChildAnchorX, out var childX)
+            || !TryParseCoordinate(RigChildAnchorY, out var childY))
+        {
+            return false;
+        }
+
+        parent = new Point2D(parentX, parentY);
+        child = new Point2D(childX, childY);
+        return true;
+    }
+
+    private static bool TryParseCoordinate(string value, out double coordinate) =>
+        double.TryParse(value, NumberStyles.Float, CultureInfo.CurrentCulture, out coordinate)
+        || double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out coordinate);
+
+    private static string Format(double value) => value.ToString("0.##", CultureInfo.CurrentCulture);
 
     public void BeginModelPartTransform(TransformGestureStart gesture)
     {
@@ -1143,7 +1328,8 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
                     currentContent.SourceWidth,
                     currentContent.SourceHeight,
                     currentContent.Parts,
-                    currentContent.LayerOrder);
+                    currentContent.LayerOrder,
+                    currentContent.RigJoints);
                 var contentResult = await _contentRepository.SaveAsync(contentToSave, expectedContentRevision);
                 if (contentResult.IsFailure)
                 {

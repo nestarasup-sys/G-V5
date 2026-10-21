@@ -26,7 +26,8 @@
                             <TextBlock Text="Modelos" FontSize="12" FontWeight="Bold" Foreground="#342E36" />
                             <TextBlock Text="Fabricador" FontSize="12" Foreground="#AAA1AA" />
                         </StackPanel>
-                        <TextBox Text="{Binding ModelName}"
+                        <TextBox x:Name="ModelNameInput"
+                                 Text="{Binding ModelName}"
                                  IsEnabled="{Binding CanEdit}"
                                  PlaceholderText="Nome do modelo"
                                  MinWidth="180"
@@ -170,6 +171,74 @@
                                     </DataTemplate>
                                 </ListBox.ItemTemplate>
                             </ListBox>
+
+                            <Border Background="#FBFAFB" BorderBrush="#EEE9ED" BorderThickness="1" CornerRadius="9" Padding="9">
+                                <StackPanel Spacing="8">
+                                    <StackPanel Spacing="2">
+                                        <TextBlock Text="Juntas do rig" FontSize="14" FontWeight="Bold" Foreground="#342E36" />
+                                        <TextBlock Text="Conecte peças, ajuste âncoras e escolha juntas fixas ou livres." FontSize="11" Foreground="#AAA1AA" TextWrapping="Wrap" />
+                                    </StackPanel>
+                                    <Grid ColumnDefinitions="*,*" ColumnSpacing="6">
+                                        <ComboBox ItemsSource="{Binding RigPartOptions}"
+                                                  SelectedItem="{Binding SelectedRigParent}"
+                                                  DisplayMemberBinding="{Binding Name}"
+                                                  IsEnabled="{Binding CanEditRig}"
+                                                  PlaceholderText="Peça pai" />
+                                        <ComboBox Grid.Column="1"
+                                                  ItemsSource="{Binding RigPartOptions}"
+                                                  SelectedItem="{Binding SelectedRigChild}"
+                                                  DisplayMemberBinding="{Binding Name}"
+                                                  IsEnabled="{Binding CanEditRig}"
+                                                  PlaceholderText="Peça filha" />
+                                    </Grid>
+                                    <Button Content="＋  Conectar peças"
+                                            Command="{Binding ConnectRigPartsCommand}"
+                                            IsEnabled="{Binding CanEditRig}"
+                                            Background="#FFF1F6" BorderBrush="#EFCBD8" Foreground="#A84368" Padding="9,6" />
+                                    <ListBox ItemsSource="{Binding RigJointItems}"
+                                             SelectedItem="{Binding SelectedRigJoint}"
+                                             IsEnabled="{Binding CanEditRig}"
+                                             MinHeight="48" MaxHeight="130"
+                                             Background="Transparent" BorderThickness="0">
+                                        <ListBox.ItemTemplate>
+                                            <DataTemplate x:DataType="vm:RigJointItem">
+                                                <Border Background="#FFFFFF" BorderBrush="#EEE9ED" BorderThickness="1" CornerRadius="6" Padding="7" Margin="0,0,0,3">
+                                                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
+                                                        <TextBlock Text="{Binding Label}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                                                        <TextBlock Grid.Column="1" Text="{Binding ModeLabel}" Foreground="#A84368" VerticalAlignment="Center" />
+                                                    </Grid>
+                                                </Border>
+                                            </DataTemplate>
+                                        </ListBox.ItemTemplate>
+                                    </ListBox>
+                                    <TextBlock Text="Âncoras da peça pai · X / Y" FontSize="11" Foreground="#706872" />
+                                    <Grid ColumnDefinitions="*,*" ColumnSpacing="6">
+                                        <TextBox Text="{Binding RigParentAnchorX}" PlaceholderText="X" IsEnabled="{Binding CanEditRig}" />
+                                        <TextBox Grid.Column="1" Text="{Binding RigParentAnchorY}" PlaceholderText="Y" IsEnabled="{Binding CanEditRig}" />
+                                    </Grid>
+                                    <TextBlock Text="Âncoras da peça filha · X / Y" FontSize="11" Foreground="#706872" />
+                                    <Grid ColumnDefinitions="*,*" ColumnSpacing="6">
+                                        <TextBox Text="{Binding RigChildAnchorX}" PlaceholderText="X" IsEnabled="{Binding CanEditRig}" />
+                                        <TextBox Grid.Column="1" Text="{Binding RigChildAnchorY}" PlaceholderText="Y" IsEnabled="{Binding CanEditRig}" />
+                                    </Grid>
+                                    <Grid ColumnDefinitions="*,*" ColumnSpacing="6">
+                                        <Button Content="Aplicar âncoras"
+                                                Command="{Binding ApplyRigJointAnchorsCommand}"
+                                                IsEnabled="{Binding CanEditSelectedRigJoint}"
+                                                Padding="8,6" />
+                                        <Button Grid.Column="1" Content="{Binding SelectedRigJointModeLabel}"
+                                                Command="{Binding ToggleSelectedRigJointModeCommand}"
+                                                IsEnabled="{Binding CanEditSelectedRigJoint}"
+                                                Padding="8,6" />
+                                    </Grid>
+                                    <Button Content="Remover junta selecionada"
+                                            Command="{Binding RemoveSelectedRigJointCommand}"
+                                            IsEnabled="{Binding CanEditSelectedRigJoint}"
+                                            Padding="8,6" Foreground="#B4233C" />
+                                    <TextBlock Text="Importe uma folha com pelo menos duas peças para editar o rig." IsVisible="{Binding NeedsRigParts}" FontSize="11" Foreground="#AAA1AA" TextWrapping="Wrap" />
+                                    <TextBlock Text="{Binding RigError}" IsVisible="{Binding HasRigError}" TextWrapping="Wrap" Foreground="#B4233C" FontSize="11" />
+                                </StackPanel>
+                            </Border>
 
                             <Border IsVisible="{Binding HasPendingRecovery}" Background="#FBFAFB" BorderBrush="#C74677" BorderThickness="1" CornerRadius="9" Padding="10">
                                 <StackPanel Spacing="8">

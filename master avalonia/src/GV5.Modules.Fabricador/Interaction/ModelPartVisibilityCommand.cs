@@ -38,6 +38,7 @@ public sealed record ModelPartVisibilityCommand(ModelPartId PartId, bool Before,
             content.SourceWidth,
             content.SourceHeight,
             parts,
-            content.LayerOrder);
+            content.LayerOrder,
+            content.RigJoints);
     }
 }

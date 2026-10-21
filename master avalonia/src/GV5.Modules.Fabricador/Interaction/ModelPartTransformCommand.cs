@@ -40,6 +40,7 @@ public sealed record ModelPartTransformCommand(ModelPartId PartId, Transform2D B
             content.SourceWidth,
             content.SourceHeight,
             parts,
-            content.LayerOrder);
+            content.LayerOrder,
+            content.RigJoints);
     }
 }

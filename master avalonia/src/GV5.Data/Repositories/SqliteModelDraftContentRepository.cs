@@ -49,6 +49,7 @@ public sealed class SqliteModelDraftContentRepository(IGv5Database database) : I
 
             var parts = await ReadPartsAsync(connection, modelId, cancellationToken).ConfigureAwait(false);
             var layerOrder = await ReadLayerOrderAsync(connection, modelId, cancellationToken).ConfigureAwait(false);
+            var rigJoints = await ReadRigJointsAsync(connection, modelId, cancellationToken).ConfigureAwait(false);
             var content = ModelDraftContent.Restore(
                 schemaVersion,
                 modelId,
@@ -58,7 +59,8 @@ public sealed class SqliteModelDraftContentRepository(IGv5Database database) : I
                 sourceWidth,
                 sourceHeight,
                 parts,
-                layerOrder);
+                layerOrder,
+                rigJoints);
             if (content.ModelId != modelId)
             {
                 return Failure(ApplicationErrorCode.Persistence, "Stored model content identity is inconsistent.", modelId.ToString());
@@ -158,6 +160,7 @@ public sealed class SqliteModelDraftContentRepository(IGv5Database database) : I
                 }
 
                 await ReplacePartsAsync(connection, transaction, content, token).ConfigureAwait(false);
+                await ReplaceRigJointsAsync(connection, transaction, content, token).ConfigureAwait(false);
                 var oldReferences = await ReadReferencesAsync(connection, transaction, content.ModelId, token).ConfigureAwait(false);
                 await SynchronizeReferencesAsync(connection, transaction, content.ModelId, oldReferences, desiredReferences, token).ConfigureAwait(false);
                 return SaveOutcome.Saved;
@@ -492,6 +495,55 @@ public sealed class SqliteModelDraftContentRepository(IGv5Database database) : I
         }
 
         return order;
+    }
+
+    private static async Task<IReadOnlyList<RigJoint>> ReadRigJointsAsync(SqliteConnection connection, ModelId modelId, CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT joint_id, parent_part_id, child_part_id, parent_anchor_x, parent_anchor_y, child_anchor_x, child_anchor_y, mode, is_suggested FROM model_draft_rig_joints WHERE model_id = $model ORDER BY joint_index;";
+        command.Parameters.AddWithValue("$model", modelId.ToString());
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        var joints = new List<RigJoint>();
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            joints.Add(new RigJoint(
+                RigJointId.From(Guid.Parse(reader.GetString(0))),
+                TransformNodeId.From(ModelPartId.Parse(reader.GetString(1)).Value),
+                TransformNodeId.From(ModelPartId.Parse(reader.GetString(2)).Value),
+                new Point2D(reader.GetDouble(3), reader.GetDouble(4)),
+                new Point2D(reader.GetDouble(5), reader.GetDouble(6)),
+                (RigJointMode)reader.GetInt32(7),
+                reader.GetInt32(8) != 0));
+        }
+
+        return joints;
+    }
+
+    private static async Task ReplaceRigJointsAsync(SqliteConnection connection, SqliteTransaction transaction, ModelDraftContent content, CancellationToken cancellationToken)
+    {
+        for (var index = 0; index < content.RigJoints.Length; index++)
+        {
+            var joint = content.RigJoints[index];
+            await using var insert = connection.CreateCommand();
+            insert.Transaction = transaction;
+            insert.CommandText = """
+                INSERT INTO model_draft_rig_joints(model_id, joint_id, joint_index, parent_part_id, child_part_id,
+                    parent_anchor_x, parent_anchor_y, child_anchor_x, child_anchor_y, mode, is_suggested)
+                VALUES ($model, $joint, $index, $parent, $child, $parentX, $parentY, $childX, $childY, $mode, $suggested);
+                """;
+            insert.Parameters.AddWithValue("$model", content.ModelId.ToString());
+            insert.Parameters.AddWithValue("$joint", joint.Id.Value.ToString("D"));
+            insert.Parameters.AddWithValue("$index", index);
+            insert.Parameters.AddWithValue("$parent", joint.ParentPartId.Value.ToString("D"));
+            insert.Parameters.AddWithValue("$child", joint.ChildPartId.Value.ToString("D"));
+            insert.Parameters.AddWithValue("$parentX", joint.ParentAnchor.X);
+            insert.Parameters.AddWithValue("$parentY", joint.ParentAnchor.Y);
+            insert.Parameters.AddWithValue("$childX", joint.ChildAnchor.X);
+            insert.Parameters.AddWithValue("$childY", joint.ChildAnchor.Y);
+            insert.Parameters.AddWithValue("$mode", (int)joint.Mode);
+            insert.Parameters.AddWithValue("$suggested", joint.IsSuggested ? 1 : 0);
+            await insert.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
     }
 
     private static bool IsStoredContentError(Exception exception) => exception is

@@ -25,7 +25,7 @@ public sealed class FabricadorPersistenceStateTests
 
         try
         {
-            var nameInput = window.GetVisualDescendants().OfType<TextBox>().Single();
+            var nameInput = window.GetVisualDescendants().OfType<TextBox>().Single(text => text.Name == "ModelNameInput");
             var stateLabel = window.GetVisualDescendants().OfType<TextBlock>().Single(text => text.Name == "SaveStateText");
             var errorLabel = window.GetVisualDescendants().OfType<TextBlock>().Single(text => text.Name == "SaveErrorText");
 

@@ -80,6 +80,21 @@ public sealed class FabricadorImportPreviewUiTests
                     Assert.True(viewModel.HasModelParts);
                     Assert.Equal(2, viewModel.PartLayers.Count);
 
+                    viewModel.ConnectRigPartsCommand.Execute(null);
+                    var createdJoint = Assert.Single(viewModel.RigJointItems).Joint;
+                    viewModel.SelectedRigJoint = viewModel.RigJointItems.Single();
+                    viewModel.RigParentAnchorX = "31.5";
+                    viewModel.RigParentAnchorY = "18";
+                    viewModel.RigChildAnchorX = "7";
+                    viewModel.RigChildAnchorY = "12.25";
+                    viewModel.ApplyRigJointAnchorsCommand.Execute(null);
+                    viewModel.ToggleSelectedRigJointModeCommand.Execute(null);
+                    Assert.Equal(RigJointMode.Fixed, Assert.Single(viewModel.RigJointItems).Joint.Mode);
+                    viewModel.UndoCommand.Execute(null);
+                    Assert.Equal(RigJointMode.Loose, Assert.Single(viewModel.RigJointItems).Joint.Mode);
+                    viewModel.RedoCommand.Execute(null);
+                    Assert.Equal(createdJoint.Id, Assert.Single(viewModel.RigJointItems).Joint.Id);
+
                     var originalOrder = viewModel.PartLayers.Select(item => item.Id).ToArray();
                     var editedId = viewModel.PartLayers[0].Id;
                     viewModel.TogglePartVisibilityCommand.Execute(editedId);
@@ -129,6 +144,10 @@ public sealed class FabricadorImportPreviewUiTests
                 savedContent = content.Value;
                 Assert.Equal(2, savedContent.Parts.Length);
                 Assert.Equal(Revision.From(2), savedContent.Revision);
+                var savedJoint = Assert.Single(savedContent.RigJoints);
+                Assert.Equal(RigJointMode.Fixed, savedJoint.Mode);
+                Assert.Equal(new Point2D(31.5, 18), savedJoint.ParentAnchor);
+                Assert.Equal(new Point2D(7, 12.25), savedJoint.ChildAnchor);
                 Assert.Single(savedContent.Parts.Where(part => part.SourceTransform.Transform != part.Transform));
                 foreach (var assetId in savedContent.Parts.Select(part => part.AssetId).Append(savedContent.SourceAssetId!.Value))
                 {
@@ -146,6 +165,7 @@ public sealed class FabricadorImportPreviewUiTests
                 var persistedPublication = await revisions.GetAsync(modelId, Revision.Initial, cancellationToken);
                 Assert.True(persistedPublication.IsSuccess, persistedPublication.Error?.Message);
                 Assert.Equal(savedContent.Parts.Select(part => part.Transform), persistedPublication.Value.Content.Parts.Select(part => part.Transform));
+                Assert.Equal(savedContent.RigJoints, persistedPublication.Value.Content.RigJoints);
             }
         }
         finally
@@ -441,7 +461,8 @@ public sealed class FabricadorImportPreviewUiTests
         new AssetReferenceSchemaMigration(),
         new AssetGarbageCollectionSchemaMigration(),
         new ModelDraftContentSchemaMigration(),
-        new ModelRevisionSchemaMigration()
+        new ModelRevisionSchemaMigration(),
+        new ModelRigJointSchemaMigration()
     ]);
 
     private static byte[] CreateModelSheetPng()

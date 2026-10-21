@@ -39,7 +39,17 @@ internal static class ModelRevisionSnapshotCodec
                 OriginalTransform = TransformDocument.From(part.SourceTransform.Transform),
                 IsVisible = part.IsVisible
             }).ToList(),
-            LayerOrder = content.LayerOrder.Select(id => id.ToString()).ToList()
+            LayerOrder = content.LayerOrder.Select(id => id.ToString()).ToList(),
+            RigJoints = content.RigJoints.Select(joint => new JointDocument
+            {
+                Id = joint.Id.Value.ToString("D"),
+                ParentPartId = joint.ParentPartId.Value.ToString("D"),
+                ChildPartId = joint.ChildPartId.Value.ToString("D"),
+                ParentAnchor = PointDocument.From(joint.ParentAnchor),
+                ChildAnchor = PointDocument.From(joint.ChildAnchor),
+                Mode = (int)joint.Mode,
+                IsSuggested = joint.IsSuggested
+            }).ToList()
         };
         var json = JsonSerializer.Serialize(document, JsonOptions);
         return (json, Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(json))).ToLowerInvariant());
@@ -71,7 +81,15 @@ internal static class ModelRevisionSnapshotCodec
             document.SourceWidth,
             document.SourceHeight,
             parts,
-            document.LayerOrder.Select(ModelPartId.Parse));
+            document.LayerOrder.Select(ModelPartId.Parse),
+            (document.RigJoints ?? []).Select(joint => new RigJoint(
+                RigJointId.From(Guid.Parse(joint.Id)),
+                TransformNodeId.From(ModelPartId.Parse(joint.ParentPartId).Value),
+                TransformNodeId.From(ModelPartId.Parse(joint.ChildPartId).Value),
+                joint.ParentAnchor.ToDomain(),
+                joint.ChildAnchor.ToDomain(),
+                (RigJointMode)joint.Mode,
+                joint.IsSuggested)));
         return new DecodedSnapshot(
             document.Name,
             Revision.From(document.DraftRevision),
@@ -93,6 +111,26 @@ internal static class ModelRevisionSnapshotCodec
         public int? SourceHeight { get; set; }
         public List<PartDocument> Parts { get; set; } = [];
         public List<string> LayerOrder { get; set; } = [];
+        public List<JointDocument>? RigJoints { get; set; }
+    }
+
+    private sealed class JointDocument
+    {
+        public string Id { get; set; } = string.Empty;
+        public string ParentPartId { get; set; } = string.Empty;
+        public string ChildPartId { get; set; } = string.Empty;
+        public PointDocument ParentAnchor { get; set; } = new();
+        public PointDocument ChildAnchor { get; set; } = new();
+        public int Mode { get; set; }
+        public bool IsSuggested { get; set; }
+    }
+
+    private sealed class PointDocument
+    {
+        public double X { get; set; }
+        public double Y { get; set; }
+        public static PointDocument From(Point2D value) => new() { X = value.X, Y = value.Y };
+        public Point2D ToDomain() => new(X, Y);
     }
 
     private sealed class PartDocument

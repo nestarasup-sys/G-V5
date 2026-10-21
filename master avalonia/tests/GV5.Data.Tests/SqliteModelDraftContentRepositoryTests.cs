@@ -76,12 +76,14 @@ public sealed class SqliteModelDraftContentRepositoryTests
                     48,
                     32,
                     parts,
-                    [secondPartId, firstPartId]);
+                    [secondPartId, firstPartId],
+                    [new RigJoint(RigJointId.New(), TransformNodeId.From(firstPartId.Value), TransformNodeId.From(secondPartId.Value), new Point2D(21, 8), new Point2D(4, 7), RigJointMode.Fixed, true)]);
 
                 var repository = new SqliteModelDraftContentRepository(database);
                 var saved = await repository.SaveAsync(content, expectedRevision: null, cancellationToken);
                 Assert.True(saved.IsSuccess, saved.Error?.Message);
                 Assert.Equal(content, saved.Value);
+                Assert.Equal(1L, await ScalarAsync(database, "SELECT COUNT(*) FROM model_draft_rig_joints WHERE model_id = $id;", cancellationToken, ("$id", modelId.ToString())));
                 Assert.Equal(3L, await ScalarAsync(database, "SELECT COUNT(*) FROM asset_references WHERE owner_type = 'fabricator.model-draft' AND owner_id = $id;", cancellationToken, ("$id", modelId.ToString())));
 
                 Assert.Equal(2L, await ScalarAsync(database, "SELECT COUNT(*) FROM model_draft_parts WHERE model_id = $id;", cancellationToken, ("$id", modelId.ToString())));
@@ -96,6 +98,13 @@ public sealed class SqliteModelDraftContentRepositoryTests
 
                 Assert.True(reopened.IsSuccess, reopened.Error?.Message);
                 AssertContentEqual(content, reopened.Value);
+                Assert.Equal(content.RigJoints, reopened.Value.RigJoints);
+
+                var sourceDuplicate = await new SqliteModelDraftRepository(reopenedDatabase).DuplicateAsync(modelId, "Cópia com rig", 1500, cancellationToken);
+                Assert.True(sourceDuplicate.IsSuccess, sourceDuplicate.Error?.Message);
+                var copiedRig = await repository.GetAsync(sourceDuplicate.Value.Id, cancellationToken);
+                Assert.True(copiedRig.IsSuccess, copiedRig.Error?.Message);
+                Assert.Equal(content.RigJoints, copiedRig.Value.RigJoints);
 
                 var reopenedAssets = CreateAssetStore(paths, reopenedDatabase, initializer);
                 await AssertAssetBytesAsync(reopenedAssets, sourceAsset.Id, sourceBytes, cancellationToken);
@@ -106,8 +115,9 @@ public sealed class SqliteModelDraftContentRepositoryTests
                 var savedUpdate = await repository.SaveAsync(updated, Revision.Initial, cancellationToken);
                 Assert.True(savedUpdate.IsSuccess, savedUpdate.Error?.Message);
                 Assert.Equal(Revision.From(2), savedUpdate.Value.Revision);
+                Assert.Empty(savedUpdate.Value.RigJoints);
                 Assert.Equal(2L, await ScalarAsync(reopenedDatabase, "SELECT COUNT(*) FROM asset_references WHERE owner_type = 'fabricator.model-draft' AND owner_id = $id;", cancellationToken, ("$id", modelId.ToString())));
-                Assert.Equal(1L, await ScalarAsync(reopenedDatabase, "SELECT COUNT(*) FROM asset_gc_candidates WHERE asset_id = $id;", cancellationToken, ("$id", secondPieceAsset.Id.ToString())));
+                Assert.Equal(0L, await ScalarAsync(reopenedDatabase, "SELECT COUNT(*) FROM asset_gc_candidates WHERE asset_id = $id;", cancellationToken, ("$id", secondPieceAsset.Id.ToString())));
 
                 var stale = await repository.SaveAsync(updated, Revision.Initial, cancellationToken);
                 Assert.True(stale.IsFailure);
@@ -126,7 +136,7 @@ public sealed class SqliteModelDraftContentRepositoryTests
                 Assert.Equal(2L, await ScalarAsync(reopenedDatabase, "SELECT COUNT(*) FROM asset_references WHERE owner_type = 'fabricator.model-draft' AND owner_id = $id;", cancellationToken, ("$id", duplicateResult.Value.Id.ToString())));
                 Assert.Equal(0L, await ScalarAsync(reopenedDatabase, "SELECT COUNT(*) FROM asset_gc_candidates WHERE asset_id = $id;", cancellationToken, ("$id", sourceAsset.Id.ToString())));
                 Assert.Equal(0L, await ScalarAsync(reopenedDatabase, "SELECT COUNT(*) FROM asset_gc_candidates WHERE asset_id = $id;", cancellationToken, ("$id", firstPieceAsset.Id.ToString())));
-                Assert.Equal(1L, await ScalarAsync(reopenedDatabase, "SELECT COUNT(*) FROM asset_gc_candidates WHERE asset_id = $id;", cancellationToken, ("$id", secondPieceAsset.Id.ToString())));
+                Assert.Equal(0L, await ScalarAsync(reopenedDatabase, "SELECT COUNT(*) FROM asset_gc_candidates WHERE asset_id = $id;", cancellationToken, ("$id", secondPieceAsset.Id.ToString())));
             }
         }
         finally
@@ -202,6 +212,7 @@ public sealed class SqliteModelDraftContentRepositoryTests
         Assert.Equal(expected.SourceWidth, actual.SourceWidth);
         Assert.Equal(expected.SourceHeight, actual.SourceHeight);
         Assert.Equal(expected.LayerOrder.ToArray(), actual.LayerOrder.ToArray());
+        Assert.Equal(expected.RigJoints.ToArray(), actual.RigJoints.ToArray());
         Assert.Equal(expected.Parts.ToArray(), actual.Parts.ToArray());
     }
 
@@ -213,7 +224,9 @@ public sealed class SqliteModelDraftContentRepositoryTests
         new AssetImportJournalSchemaMigration(),
         new AssetReferenceSchemaMigration(),
         new AssetGarbageCollectionSchemaMigration(),
-        new ModelDraftContentSchemaMigration()
+        new ModelDraftContentSchemaMigration(),
+        new ModelRevisionSchemaMigration(),
+        new ModelRigJointSchemaMigration()
     ]);
 
     private static SqliteAssetStore CreateAssetStore(AppDataPaths paths, SqliteDatabase database, SqliteMigrationRunner initializer)

@@ -225,7 +225,8 @@ public sealed class SqliteModelRevisionRepositoryTests
         new AssetReferenceSchemaMigration(),
         new AssetGarbageCollectionSchemaMigration(),
         new ModelDraftContentSchemaMigration(),
-        new ModelRevisionSchemaMigration()
+        new ModelRevisionSchemaMigration(),
+        new ModelRigJointSchemaMigration()
     ]);
 
     private static async Task<AssetId> InsertAvailableAssetAsync(SqliteDatabase database, string seed, CancellationToken cancellationToken)

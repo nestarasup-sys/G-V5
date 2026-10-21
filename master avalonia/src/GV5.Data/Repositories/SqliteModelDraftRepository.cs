@@ -353,6 +353,15 @@ public sealed class SqliteModelDraftRepository(IGv5Database database) : IModelDr
             await copyLayers.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
 
+        await using (var copyJoints = connection.CreateCommand())
+        {
+            copyJoints.Transaction = transaction;
+            copyJoints.CommandText = "INSERT INTO model_draft_rig_joints(model_id, joint_id, joint_index, parent_part_id, child_part_id, parent_anchor_x, parent_anchor_y, child_anchor_x, child_anchor_y, mode, is_suggested) SELECT $target, joint_id, joint_index, parent_part_id, child_part_id, parent_anchor_x, parent_anchor_y, child_anchor_x, child_anchor_y, mode, is_suggested FROM model_draft_rig_joints WHERE model_id = $source;";
+            copyJoints.Parameters.AddWithValue("$target", duplicate.Id.ToString());
+            copyJoints.Parameters.AddWithValue("$source", sourceId.ToString());
+            await copyJoints.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+
         await using (var copyReferences = connection.CreateCommand())
         {
             copyReferences.Transaction = transaction;

@@ -281,7 +281,9 @@ public sealed class SqliteModelDraftRepositoryTests
             new AssetImportJournalSchemaMigration(),
             new AssetReferenceSchemaMigration(),
             new AssetGarbageCollectionSchemaMigration(),
-            new ModelDraftContentSchemaMigration()
+            new ModelDraftContentSchemaMigration(),
+            new ModelRevisionSchemaMigration(),
+            new ModelRigJointSchemaMigration()
         ])
             .MigrateAsync(cancellationToken);
 
