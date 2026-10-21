@@ -38,6 +38,7 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
     private ModelDraftContent? _savedModelContent;
     private bool _isModelContentDirty;
     private ActiveModelTransformGesture? _activeTransformGesture;
+    private ActiveRigAnchorGesture? _activeRigAnchorGesture;
     private readonly List<IModelDraftCommand> _undoStack = [];
     private readonly List<IModelDraftCommand> _redoStack = [];
     private ModelDraft? _savedDraft;
@@ -305,8 +306,8 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
     public string SelectedRigJointModeLabel => SelectedRigJoint?.Joint.Mode == RigJointMode.Fixed ? "Tornar livre" : "Fixar junta";
     public int UndoCount => _undoStack.Count;
     public int RedoCount => _redoStack.Count;
-    public bool CanUndo => CanEdit && _activeTransformGesture is null && _undoStack.Count > 0;
-    public bool CanRedo => CanEdit && _activeTransformGesture is null && _redoStack.Count > 0;
+    public bool CanUndo => CanEdit && _activeTransformGesture is null && _activeRigAnchorGesture is null && _undoStack.Count > 0;
+    public bool CanRedo => CanEdit && _activeTransformGesture is null && _activeRigAnchorGesture is null && _redoStack.Count > 0;
     public int PendingTransformCommandCount => _undoStack.OfType<ModelPartTransformCommand>().Count();
     public bool HasPendingTransformCommands => PendingTransformCommandCount > 0;
     public bool HasPendingRecovery => PendingRecoveryCheckpoint is not null;
@@ -735,6 +736,57 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
         ExecuteModelCommand(new RigJointCollectionCommand(_modelContent.RigJoints, editor.Graph.Joints.ToImmutableArray()));
         RigError = null;
         RefreshRigPanel();
+    }
+
+    public void BeginRigAnchorDrag(RigJointId jointId, bool isParentAnchor)
+    {
+        if (!CanEdit || _modelContent is null) return;
+        var joint = _modelContent.RigJoints.FirstOrDefault(item => item.Id == jointId);
+        if (joint.Id != jointId) return;
+        var before = _modelContent.RigJoints;
+        _activeRigAnchorGesture = new ActiveRigAnchorGesture(jointId, isParentAnchor, before, null);
+        SelectedRigJoint = RigJointItems.FirstOrDefault(item => item.Joint.Id == jointId);
+        NotifyHistoryChanged();
+    }
+
+    public SnapResult UpdateRigAnchorDrag(Point2D pointer, double snapThreshold)
+    {
+        if (!CanEdit || _modelContent is null || _activeRigAnchorGesture is not { } active) return new SnapResult(Point2D.Zero, null, null);
+        var original = active.Before.FirstOrDefault(joint => joint.Id == active.JointId);
+        if (original.Id != active.JointId) return new SnapResult(Point2D.Zero, null, null);
+        var guides = active.Before.SelectMany(joint => new[]
+        {
+            (joint.Id == active.JointId && active.IsParentAnchor) ? (Point2D?)null : joint.ParentAnchor,
+            (joint.Id == active.JointId && !active.IsParentAnchor) ? (Point2D?)null : joint.ChildAnchor
+        }).Where(point => point is not null).Select(point => point!.Value);
+        var threshold = double.IsFinite(snapThreshold) ? Math.Max(0, snapThreshold) : 0;
+        var snap = RigAnchorSnapper.Snap(pointer, guides, threshold);
+        var anchor = pointer + snap.Translation;
+        var updated = active.Before.Select(joint => joint.Id != active.JointId
+            ? joint
+            : active.IsParentAnchor ? joint with { ParentAnchor = anchor } : joint with { ChildAnchor = anchor }).ToImmutableArray();
+        var command = new RigJointCollectionCommand(active.Before, updated);
+        _modelContent = command.Apply(_modelContent);
+        _activeRigAnchorGesture = active with { Command = command };
+        OnPropertyChanged(nameof(RigJointItems));
+        RefreshRigPanel(active.JointId);
+        return snap;
+    }
+
+    public void CompleteRigAnchorDrag()
+    {
+        if (_activeRigAnchorGesture is not { } active) return;
+        _activeRigAnchorGesture = null;
+        if (active.Command is { } command && !command.Before.SequenceEqual(command.After))
+        {
+            PushUndoCommand(command);
+            SetModelContentDirty(true);
+        }
+        else
+        {
+            NotifyHistoryChanged();
+        }
+        RefreshRigPanel(active.JointId);
     }
 
     [RelayCommand]
@@ -1644,4 +1696,10 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
         Matrix2D SceneMatrix,
         double SceneScale,
         Point2D PivotScenePoint);
+
+    private sealed record ActiveRigAnchorGesture(
+        RigJointId JointId,
+        bool IsParentAnchor,
+        ImmutableArray<RigJoint> Before,
+        RigJointCollectionCommand? Command);
 }

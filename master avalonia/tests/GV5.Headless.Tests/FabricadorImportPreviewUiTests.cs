@@ -82,6 +82,8 @@ public sealed class FabricadorImportPreviewUiTests
 
                     viewModel.ConnectRigPartsCommand.Execute(null);
                     var createdJoint = Assert.Single(viewModel.RigJointItems).Joint;
+                    var rigGuides = window.GetVisualDescendants().OfType<Canvas>().Single(canvas => canvas.Name == "RigGuideLayer");
+                    Assert.Equal(3, rigGuides.Children.Count); // connection line plus both draggable anchors
                     viewModel.SelectedRigJoint = viewModel.RigJointItems.Single();
                     viewModel.RigParentAnchorX = "31.5";
                     viewModel.RigParentAnchorY = "18";
@@ -110,6 +112,20 @@ public sealed class FabricadorImportPreviewUiTests
                     viewModel.BeginModelPartTransform(new TransformGestureStart(ModelPartTransformKind.Move, start));
                     viewModel.UpdateModelPartTransform(new Point2D(start.X + 3, start.Y + 2));
                     viewModel.CompleteModelPartTransform();
+
+                    var jointBeforeAnchorDrag = Assert.Single(viewModel.RigJointItems).Joint;
+                    viewModel.BeginRigAnchorDrag(jointBeforeAnchorDrag.Id, isParentAnchor: false);
+                    var snapTarget = jointBeforeAnchorDrag.ParentAnchor;
+                    var snap = viewModel.UpdateRigAnchorDrag(snapTarget + new Point2D(1, 1), snapThreshold: 2);
+                    Assert.Equal(snapTarget, Assert.Single(viewModel.RigJointItems).Joint.ChildAnchor);
+                    Assert.NotNull(snap.XMatch);
+                    Assert.NotNull(snap.YMatch);
+                    viewModel.CompleteRigAnchorDrag();
+                    viewModel.UndoCommand.Execute(null);
+                    Assert.Equal(jointBeforeAnchorDrag.ChildAnchor, Assert.Single(viewModel.RigJointItems).Joint.ChildAnchor);
+                    viewModel.RedoCommand.Execute(null);
+                    Assert.Equal(snapTarget, Assert.Single(viewModel.RigJointItems).Joint.ChildAnchor);
+
                     Assert.True(await viewModel.FlushPendingChangesAsync(cancellationToken));
                     Assert.Equal(PersistenceState.Saved, viewModel.SaveState);
                 }
@@ -147,7 +163,7 @@ public sealed class FabricadorImportPreviewUiTests
                 var savedJoint = Assert.Single(savedContent.RigJoints);
                 Assert.Equal(RigJointMode.Fixed, savedJoint.Mode);
                 Assert.Equal(new Point2D(31.5, 18), savedJoint.ParentAnchor);
-                Assert.Equal(new Point2D(10, 14.25), savedJoint.ChildAnchor);
+                Assert.Equal(savedJoint.ParentAnchor, savedJoint.ChildAnchor);
                 Assert.Single(savedContent.Parts.Where(part => part.SourceTransform.Transform != part.Transform));
                 foreach (var assetId in savedContent.Parts.Select(part => part.AssetId).Append(savedContent.SourceAssetId!.Value))
                 {

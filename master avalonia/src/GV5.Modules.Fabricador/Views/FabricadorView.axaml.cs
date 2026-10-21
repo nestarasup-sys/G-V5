@@ -36,6 +36,9 @@ public partial class FabricadorView : UserControl
         ModelCanvas.TransformGestureStarted = OnCanvasTransformStarted;
         ModelCanvas.TransformGestureMoved = OnCanvasTransformMoved;
         ModelCanvas.TransformGestureCompleted = OnCanvasTransformCompleted;
+        ModelCanvas.RigAnchorDragStarted = OnRigAnchorDragStarted;
+        ModelCanvas.RigAnchorDragMoved = OnRigAnchorDragMoved;
+        ModelCanvas.RigAnchorDragCompleted = OnRigAnchorDragCompleted;
         UpdateCanvasInteractionState();
         UpdatePreviewImage();
         UpdateRenderedModel();
@@ -61,7 +64,10 @@ public partial class FabricadorView : UserControl
 
         if (e.PropertyName is nameof(FabricadorViewModel.SelectedPartBounds)
             or nameof(FabricadorViewModel.SelectedPartPivot)
-            or nameof(FabricadorViewModel.ActiveTool))
+            or nameof(FabricadorViewModel.ActiveTool)
+            or nameof(FabricadorViewModel.CanEditRig)
+            or nameof(FabricadorViewModel.RigJointItems)
+            or nameof(FabricadorViewModel.SelectedRigJoint))
         {
             if (Dispatcher.UIThread.CheckAccess())
             {
@@ -193,10 +199,18 @@ public partial class FabricadorView : UserControl
 
         ModelCanvas.SetSelection(_viewModel.SelectedPartBounds, _viewModel.SelectedPartPivot);
         ModelCanvas.SetTool(_viewModel.ActiveTool);
+        ModelCanvas.SetRigJoints(
+            _viewModel.RigJointItems.Select(item => item.Joint),
+            _viewModel.SelectedRigJoint?.Joint.Id,
+            _viewModel.CanEditRig);
     }
 
     private void OnCanvasSceneClicked(Point2D scenePoint) => _viewModel?.SelectModelPartAt(scenePoint);
     private void OnCanvasTransformStarted(TransformGestureStart gesture) => _viewModel?.BeginModelPartTransform(gesture);
     private void OnCanvasTransformMoved(Point2D scenePoint) => _viewModel?.UpdateModelPartTransform(scenePoint);
     private void OnCanvasTransformCompleted() => _viewModel?.CompleteModelPartTransform();
+    private void OnRigAnchorDragStarted(RigJointId jointId, bool isParentAnchor) => _viewModel?.BeginRigAnchorDrag(jointId, isParentAnchor);
+    private SnapResult OnRigAnchorDragMoved(Point2D pointer, double snapThreshold) =>
+        _viewModel?.UpdateRigAnchorDrag(pointer, snapThreshold) ?? new SnapResult(Point2D.Zero, null, null);
+    private void OnRigAnchorDragCompleted() => _viewModel?.CompleteRigAnchorDrag();
 }

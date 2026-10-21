@@ -39,6 +39,7 @@
                            Fill="#FFFFD166"
                            Stroke="#FFFFFFFF"
                            StrokeThickness="2" />
+                <Canvas x:Name="RigGuideLayer" IsHitTestVisible="False" />
             </Canvas>
             <TextBlock x:Name="EmptyMessage"
                        Text="Publique uma folha de imagem para visualizar o modelo"

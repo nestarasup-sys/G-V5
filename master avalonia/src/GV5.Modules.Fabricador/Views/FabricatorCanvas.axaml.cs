@@ -1,6 +1,7 @@
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
+using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Controls.Shapes;
 using GV5.Geometry;
@@ -29,6 +30,14 @@ public partial class FabricatorCanvas : UserControl
     public Action<TransformGestureStart>? TransformGestureStarted { get; set; }
     public Action<Point2D>? TransformGestureMoved { get; set; }
     public Action? TransformGestureCompleted { get; set; }
+    public Action<RigJointId, bool>? RigAnchorDragStarted { get; set; }
+    public Func<Point2D, double, SnapResult>? RigAnchorDragMoved { get; set; }
+    public Action? RigAnchorDragCompleted { get; set; }
+    private RigJoint[] _rigJoints = [];
+    private RigJointId? _selectedRigJointId;
+    private bool _canEditRig;
+    private (RigJointId JointId, bool IsParent)? _activeRigAnchor;
+    private SnapResult _activeRigSnap;
     private bool _isPanning;
     private ModelPartTransformKind? _activeTransformKind;
     private Point _pointerStart;
@@ -59,6 +68,15 @@ public partial class FabricatorCanvas : UserControl
         UpdateViewport();
     }
 
+    public void SetRigJoints(IEnumerable<RigJoint> joints, RigJointId? selectedJointId, bool canEdit)
+    {
+        ArgumentNullException.ThrowIfNull(joints);
+        _rigJoints = joints.ToArray();
+        _selectedRigJointId = selectedJointId;
+        _canEditRig = canEdit;
+        UpdateViewport();
+    }
+
     private void OnPointerPressed(object? sender, PointerPressedEventArgs e)
     {
         if (Frame is null)
@@ -81,6 +99,15 @@ public partial class FabricatorCanvas : UserControl
         if (properties.IsLeftButtonPressed && CurrentTool == FabricatorTool.Select)
         {
             var scenePoint = ScreenToScene(point);
+            if (TryGetRigAnchorHandle(point, out var anchorJoint, out var isParent))
+            {
+                _activeRigAnchor = (anchorJoint, isParent);
+                e.Pointer.Capture(Viewport);
+                RigAnchorDragStarted?.Invoke(anchorJoint, isParent);
+                e.Handled = true;
+                return;
+            }
+
             if (TryGetHandleGesture(point, out var handleGesture))
             {
                 BeginTransform(handleGesture, scenePoint, e);
@@ -100,6 +127,16 @@ public partial class FabricatorCanvas : UserControl
 
     private void OnPointerMoved(object? sender, PointerEventArgs e)
     {
+        if (_activeRigAnchor is not null)
+        {
+            var scale = GetBaseScale() * ZoomFactor;
+            _activeRigSnap = RigAnchorDragMoved?.Invoke(ScreenToScene(e.GetPosition(Viewport)), scale <= 0 ? 0 : 8 / scale)
+                ?? new SnapResult(Point2D.Zero, null, null);
+            UpdateSnapGuides();
+            e.Handled = true;
+            return;
+        }
+
         if (_activeTransformKind is not null)
         {
             TransformGestureMoved?.Invoke(ScreenToScene(e.GetPosition(Viewport)));
@@ -120,6 +157,17 @@ public partial class FabricatorCanvas : UserControl
 
     private void OnPointerReleased(object? sender, PointerReleasedEventArgs e)
     {
+        if (_activeRigAnchor is not null)
+        {
+            _activeRigAnchor = null;
+            _activeRigSnap = new SnapResult(Point2D.Zero, null, null);
+            UpdateSnapGuides();
+            e.Pointer.Capture(null);
+            RigAnchorDragCompleted?.Invoke();
+            e.Handled = true;
+            return;
+        }
+
         if (_activeTransformKind is not null)
         {
             _activeTransformKind = null;
@@ -211,6 +259,46 @@ public partial class FabricatorCanvas : UserControl
         return false;
     }
 
+    private bool TryGetRigAnchorHandle(Point pointer, out RigJointId jointId, out bool isParent)
+    {
+        jointId = default;
+        isParent = false;
+        if (!_canEditRig || _selectedRigJointId is not { } selected || Frame is null) return false;
+        var joint = _rigJoints.FirstOrDefault(candidate => candidate.Id == selected);
+        if (joint.Id != selected) return false;
+        var parent = AnchorToScreen(joint.ParentAnchor);
+        var child = AnchorToScreen(joint.ChildAnchor);
+        if (DistanceSquared(pointer, parent) <= 100)
+        {
+            jointId = selected;
+            isParent = true;
+            return true;
+        }
+        if (DistanceSquared(pointer, child) <= 100)
+        {
+            jointId = selected;
+            isParent = false;
+            return true;
+        }
+        return false;
+    }
+
+    private Point AnchorToScreen(Point2D anchor)
+    {
+        var frame = Frame ?? throw new InvalidOperationException("The model canvas has no rendered frame.");
+        var scale = GetBaseScale() * ZoomFactor;
+        var left = (Viewport.Bounds.Width - frame.PixelSize.Width * scale) / 2 + PanOffset.X;
+        var top = (Viewport.Bounds.Height - frame.PixelSize.Height * scale) / 2 + PanOffset.Y;
+        return new Point(left + anchor.X * scale, top + anchor.Y * scale);
+    }
+
+    private static double DistanceSquared(Point left, Point right)
+    {
+        var dx = left.X - right.X;
+        var dy = left.Y - right.Y;
+        return dx * dx + dy * dy;
+    }
+
     private void BeginTransform(ModelPartTransformKind kind, Point2D scenePoint, PointerPressedEventArgs e)
     {
         _activeTransformKind = kind;
@@ -244,6 +332,7 @@ public partial class FabricatorCanvas : UserControl
             RotationStem.IsVisible = false;
             RotationHandle.IsVisible = false;
             ScaleHandle.IsVisible = false;
+            RigGuideLayer.Children.Clear();
             return;
         }
 
@@ -254,6 +343,8 @@ public partial class FabricatorCanvas : UserControl
         var top = (Viewport.Bounds.Height - height) / 2 + PanOffset.Y;
         ImageLayer.Width = Viewport.Bounds.Width;
         ImageLayer.Height = Viewport.Bounds.Height;
+        RigGuideLayer.Width = Viewport.Bounds.Width;
+        RigGuideLayer.Height = Viewport.Bounds.Height;
         ModelImage.Source = Frame;
         ModelImage.Width = width;
         ModelImage.Height = height;
@@ -290,7 +381,83 @@ public partial class FabricatorCanvas : UserControl
             RotationStem.IsVisible = false;
         }
 
+        UpdateRigGuides();
         EmptyMessage.IsVisible = false;
+    }
+
+    private void UpdateRigGuides()
+    {
+        RigGuideLayer.Children.Clear();
+        if (Frame is null) return;
+        UpdateSnapGuides();
+        foreach (var joint in _rigJoints)
+        {
+            var selected = _selectedRigJointId == joint.Id;
+            var start = AnchorToScreen(joint.ParentAnchor);
+            var end = AnchorToScreen(joint.ChildAnchor);
+            var guide = new Line
+            {
+                StartPoint = start,
+                EndPoint = end,
+                Stroke = new SolidColorBrush(Color.Parse(joint.Mode == RigJointMode.Fixed ? "#C74677" : "#8B7FB1")),
+                StrokeThickness = selected ? 2 : 1.25
+            };
+            RigGuideLayer.Children.Add(guide);
+            AddAnchorHandle(start, selected, joint.Mode);
+            AddAnchorHandle(end, selected, joint.Mode);
+        }
+    }
+
+    private void UpdateSnapGuides()
+    {
+        if (RigGuideLayer is null || Frame is null) return;
+        foreach (var child in RigGuideLayer.Children.OfType<Line>().Where(line => line.Tag as string == "snap").ToArray())
+        {
+            RigGuideLayer.Children.Remove(child);
+        }
+
+        var brush = new SolidColorBrush(Color.Parse("#3D8BBA"));
+        if (_activeRigSnap.XMatch is { } xMatch)
+        {
+            var guide = new Line
+            {
+                StartPoint = new Point(xMatch.GuideCoordinate, 0),
+                EndPoint = new Point(xMatch.GuideCoordinate, Viewport.Bounds.Height),
+                Stroke = brush,
+                StrokeThickness = 1,
+                Tag = "snap"
+            };
+            RigGuideLayer.Children.Insert(0, guide);
+        }
+
+        if (_activeRigSnap.YMatch is { } yMatch)
+        {
+            var guide = new Line
+            {
+                StartPoint = new Point(0, yMatch.GuideCoordinate),
+                EndPoint = new Point(Viewport.Bounds.Width, yMatch.GuideCoordinate),
+                Stroke = brush,
+                StrokeThickness = 1,
+                Tag = "snap"
+            };
+            RigGuideLayer.Children.Insert(0, guide);
+        }
+    }
+
+    private void AddAnchorHandle(Point point, bool selected, RigJointMode mode)
+    {
+        var size = selected ? 12 : 8;
+        var handle = new Ellipse
+        {
+            Width = size,
+            Height = size,
+            Fill = new SolidColorBrush(Color.Parse(mode == RigJointMode.Fixed ? "#C74677" : "#8B7FB1")),
+            Stroke = Brushes.White,
+            StrokeThickness = selected ? 2 : 1
+        };
+        Canvas.SetLeft(handle, point.X - size / 2d);
+        Canvas.SetTop(handle, point.Y - size / 2d);
+        RigGuideLayer.Children.Add(handle);
     }
 
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
