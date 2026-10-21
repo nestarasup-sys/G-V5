@@ -38,6 +38,24 @@ public readonly record struct Matrix2D
         M11 * point.X + M21 * point.Y + OffsetX,
         M12 * point.X + M22 * point.Y + OffsetY);
 
+    public Matrix2D Invert()
+    {
+        var determinant = M11 * M22 - M21 * M12;
+        GeometryValue.RequireFinite(determinant, nameof(determinant));
+        if (determinant == 0)
+        {
+            throw new InvalidOperationException("A singular matrix cannot be inverted.");
+        }
+
+        return new Matrix2D(
+            M22 / determinant,
+            -M12 / determinant,
+            -M21 / determinant,
+            M11 / determinant,
+            (M21 * OffsetY - M22 * OffsetX) / determinant,
+            (M12 * OffsetX - M11 * OffsetY) / determinant);
+    }
+
     public static Matrix2D operator *(Matrix2D left, Matrix2D right) => new(
         left.M11 * right.M11 + left.M21 * right.M12,
         left.M12 * right.M11 + left.M22 * right.M12,
