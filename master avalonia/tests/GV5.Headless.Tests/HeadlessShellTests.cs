@@ -20,8 +20,9 @@ public sealed class HeadlessShellTests
     public void Shell_Navigates_Between_Real_Module_ViewModels_Without_Desktop()
     {
         var vm = MakeMainViewModel();
-        using var window = OpenHeadlessShell(vm);
-
+        var window = OpenHeadlessShell(vm);
+        try
+        {
         Assert.Equal("fabricador", vm.ActiveRoute.Id);
         Assert.IsType<FabricadorViewModel>(vm.CurrentPage);
 
@@ -38,13 +39,19 @@ public sealed class HeadlessShellTests
         Assert.Null(vm.NavigationError);
         Assert.Equal("customizador", vm.ActiveRoute.Id);
         Assert.IsType<CustomizadorViewModel>(vm.CurrentPage);
+        }
+        finally
+        {
+            window.Close();
+        }
     }
 
     [AvaloniaFact]
     public void Headless_Skia_Captures_A_Real_Png_Without_Desktop_Window()
     {
-        using var window = OpenHeadlessShell(MakeMainViewModel());
-
+        var window = OpenHeadlessShell(MakeMainViewModel());
+        try
+        {
         using var bitmap = window.CaptureRenderedFrame();
         Assert.NotNull(bitmap);
         Assert.True(bitmap.PixelSize.Width > 0);
@@ -62,6 +69,11 @@ public sealed class HeadlessShellTests
         var outputFolder = Path.Combine(AppContext.BaseDirectory, "TestResults", "headless");
         Directory.CreateDirectory(outputFolder);
         File.WriteAllBytes(Path.Combine(outputFolder, "shell.png"), png.ToArray());
+        }
+        finally
+        {
+            window.Close();
+        }
     }
 
     [AvaloniaFact]
