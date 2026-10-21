@@ -126,6 +126,11 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
     private bool isImporting;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanvasGridEnabled))]
+    [NotifyPropertyChangedFor(nameof(CanvasGridButtonLabel))]
+    private bool isCanvasGridVisible;
+
+    [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasImportError))]
     private string? importError;
 
@@ -298,6 +303,7 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
             OnPropertyChanged(nameof(CanMoveSelectedPosePart));
             OnPropertyChanged(nameof(CanRotateSelectedPosePart));
             OnPropertyChanged(nameof(PoseEditorStatus));
+            OnPropertyChanged(nameof(CanvasGridEnabled));
             NotifyHistoryChanged();
             TogglePoseWorkspaceCommand.NotifyCanExecuteChanged();
             ToggleAnimationWorkspaceCommand.NotifyCanExecuteChanged();
@@ -324,6 +330,7 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
             OnPropertyChanged(nameof(AnimationWorkspaceButtonLabel));
             OnPropertyChanged(nameof(HairWorkspaceButtonLabel));
             OnPropertyChanged(nameof(AnimationPlaybackButtonLabel));
+            OnPropertyChanged(nameof(CanvasGridEnabled));
             TogglePoseWorkspaceCommand.NotifyCanExecuteChanged();
             ToggleAnimationWorkspaceCommand.NotifyCanExecuteChanged();
             ToggleHairWorkspaceCommand.NotifyCanExecuteChanged();
@@ -345,6 +352,7 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
             OnPropertyChanged(nameof(HairWorkspaceButtonLabel));
             OnPropertyChanged(nameof(CanTogglePoseWorkspace));
             OnPropertyChanged(nameof(CanToggleAnimationWorkspace));
+            OnPropertyChanged(nameof(CanvasGridEnabled));
             ToggleHairWorkspaceCommand.NotifyCanExecuteChanged();
             TogglePoseWorkspaceCommand.NotifyCanExecuteChanged();
             ToggleAnimationWorkspaceCommand.NotifyCanExecuteChanged();
@@ -352,6 +360,8 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
         }
     }
     public bool IsModelWorkspace => !IsPoseWorkspace && !IsAnimationWorkspace && !IsHairWorkspace;
+    public bool CanvasGridEnabled => IsModelWorkspace && IsCanvasGridVisible;
+    public string CanvasGridButtonLabel => IsCanvasGridVisible ? "Ocultar grade" : "Mostrar grade";
     public bool IsEditorWorkspace => !IsPoseWorkspace && !IsHairWorkspace;
     public bool IsNotAnimationWorkspace => !IsAnimationWorkspace;
     public bool CanToggleHairWorkspace => IsHairWorkspace || (!IsPoseWorkspace && !IsAnimationWorkspace);
@@ -870,6 +880,9 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
             AnimationEditorError = "Não foi possível abrir o Animador para esta versão do modelo.";
         }
     }
+
+    [RelayCommand]
+    private void ToggleCanvasGrid() => IsCanvasGridVisible = !IsCanvasGridVisible;
 
     [RelayCommand(CanExecute = nameof(CanToggleHairWorkspace))]
     private async Task ToggleHairWorkspaceAsync()

@@ -14,6 +14,38 @@ namespace GV5.Headless.Tests;
 public sealed class FabricadorPersistenceStateTests
 {
     [AvaloniaFact]
+    public async Task ModelCanvasGridToggleUpdatesTheBoundCanvasAndLabel()
+    {
+        var root = NewTempRoot();
+        using var database = new SqliteDatabase(new AppDataPaths(root));
+        var viewModel = new FabricadorViewModel(new SqliteModelDraftRepository(database),
+            new BlockingInitializer(CreateMigrationRunner(database)));
+        var window = OpenEditor(viewModel);
+
+        try
+        {
+            var canvas = Assert.Single(window.GetVisualDescendants().OfType<FabricatorCanvas>());
+            var toggle = window.GetVisualDescendants().OfType<Button>().Single(button => button.Name == "CanvasGridToggle");
+            Assert.False(canvas.ShowGrid);
+            Assert.True(toggle.IsVisible);
+            Assert.Equal("Mostrar grade", toggle.Content?.ToString());
+
+            viewModel.ToggleCanvasGridCommand.Execute(null);
+
+            Assert.True(viewModel.IsCanvasGridVisible);
+            Assert.True(viewModel.CanvasGridEnabled);
+            Assert.True(canvas.ShowGrid);
+            Assert.Equal("Ocultar grade", toggle.Content?.ToString());
+        }
+        finally
+        {
+            window.Close();
+            viewModel.Dispose();
+            DeleteTempRoot(root);
+        }
+    }
+
+    [AvaloniaFact]
     public async Task FabricadorView_TogglesHairWorkspacePanelWithoutLosingModelWorkspace()
     {
         var root = NewTempRoot();

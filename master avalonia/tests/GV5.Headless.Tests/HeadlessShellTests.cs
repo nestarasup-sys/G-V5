@@ -4,6 +4,7 @@ using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
+using Avalonia.Platform;
 using Avalonia.VisualTree;
 using GV5.App.Presentation;
 using GV5.App.Navigation;
@@ -20,8 +21,10 @@ using GV5.Modules.Customizador;
 using GV5.Modules.Customizador.ViewModels;
 using GV5.Modules.Fabricador;
 using GV5.Modules.Fabricador.ViewModels;
+using GV5.Modules.Fabricador.Views;
 using GV5.Rendering;
 using SkiaSharp;
+using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using Xunit;
 
@@ -29,6 +32,37 @@ namespace GV5.Headless.Tests;
 
 public sealed class HeadlessShellTests
 {
+    [AvaloniaFact]
+    public void FabricatorCanvasGrid_RendersOnlyAsAnOverlayOnTransparentModelPreview()
+    {
+        var source = new WriteableBitmap(new PixelSize(128, 128), new Vector(96, 96), PixelFormats.Rgba8888, AlphaFormat.Unpremul);
+        using (var framebuffer = source.Lock())
+        {
+            var whiteRow = Enumerable.Repeat((byte)255, 128 * 4).ToArray();
+            for (var y = 0; y < 128; y++)
+                Marshal.Copy(whiteRow, 0, IntPtr.Add(framebuffer.Address, y * framebuffer.RowBytes), whiteRow.Length);
+        }
+        var canvas = new FabricatorCanvas { Width = 180, Height = 180, Frame = source };
+        var window = new Window { Width = 196, Height = 196, Content = canvas };
+        try
+        {
+            window.Show();
+            using var withoutGrid = CapturePixels(window);
+            canvas.ShowGrid = true;
+            using var withGrid = CapturePixels(window);
+            Assert.True(CountChangedPixels(withoutGrid, withGrid) > 0, "Turning on the model grid must draw guide lines above an opaque preview.");
+
+            canvas.ShowGrid = false;
+            using var gridDisabled = CapturePixels(window);
+            Assert.Equal(0, CountChangedPixels(withoutGrid, gridDisabled));
+        }
+        finally
+        {
+            window.Close();
+            canvas.Frame = null;
+        }
+    }
+
     [AvaloniaFact]
     public async Task Shell_Navigates_Between_Real_Module_ViewModels_Without_Desktop()
     {

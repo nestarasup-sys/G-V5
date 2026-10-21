@@ -147,15 +147,25 @@
                         ClipToBounds="True">
                     <Grid RowDefinitions="32,*,29">
                         <Border Grid.Row="0" Background="#FBFAFB" BorderBrush="#F0EBEF" BorderThickness="0,0,0,1" Padding="11,0">
-                            <Grid ColumnDefinitions="*,Auto">
+                            <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
                                 <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
                                     <Ellipse Width="6" Height="6" Fill="#E786A6" />
                                     <TextBlock Text="{Binding CanvasHeader}" FontSize="12" FontWeight="Bold" LetterSpacing="0.8" Foreground="#A198A2" />
                                 </StackPanel>
                                 <TextBlock Grid.Column="1" Text="{Binding CanvasSubtitle}" FontSize="12" Foreground="#A198A2" VerticalAlignment="Center" />
+                                <Button x:Name="CanvasGridToggle"
+                                        Grid.Column="2"
+                                        Content="{Binding CanvasGridButtonLabel}"
+                                        Command="{Binding ToggleCanvasGridCommand}"
+                                        IsVisible="{Binding IsModelWorkspace}"
+                                        Padding="8,3"
+                                        FontSize="11"
+                                        Background="#F6F0F4"
+                                        BorderBrush="#E6D8E1"
+                                        Foreground="#795168" />
                             </Grid>
                         </Border>
-                        <views:FabricatorCanvas x:Name="ModelCanvas" Grid.Row="1" MinHeight="360" />
+                        <views:FabricatorCanvas x:Name="ModelCanvas" Grid.Row="1" MinHeight="360" ShowGrid="{Binding CanvasGridEnabled}" />
                         <Border Grid.Row="2" BorderBrush="#EEE9ED" BorderThickness="0,1,0,0" Padding="9,0">
                             <TextBlock Text="{Binding CanvasHelpText}"
                                        VerticalAlignment="Center"

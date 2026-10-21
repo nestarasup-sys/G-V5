@@ -15,10 +15,19 @@ public partial class FabricatorCanvas : UserControl
     public static readonly StyledProperty<Bitmap?> FrameProperty =
         AvaloniaProperty.Register<FabricatorCanvas, Bitmap?>(nameof(Frame));
 
+    public static readonly StyledProperty<bool> ShowGridProperty =
+        AvaloniaProperty.Register<FabricatorCanvas, bool>(nameof(ShowGrid));
+
     public Bitmap? Frame
     {
         get => GetValue(FrameProperty);
         set => SetValue(FrameProperty, value);
+    }
+
+    public bool ShowGrid
+    {
+        get => GetValue(ShowGridProperty);
+        set => SetValue(ShowGridProperty, value);
     }
 
     public double ZoomFactor { get; private set; } = 1;
@@ -335,6 +344,7 @@ public partial class FabricatorCanvas : UserControl
             RotationHandle.IsVisible = false;
             ScaleHandle.IsVisible = false;
             RigGuideLayer.Children.Clear();
+            GridOverlay.ClearGrid();
             return;
         }
 
@@ -343,6 +353,18 @@ public partial class FabricatorCanvas : UserControl
         var height = Frame.PixelSize.Height * scale;
         var left = (Viewport.Bounds.Width - width) / 2 + PanOffset.X;
         var top = (Viewport.Bounds.Height - height) / 2 + PanOffset.Y;
+        GridOverlay.Width = width;
+        GridOverlay.Height = height;
+        Canvas.SetLeft(GridOverlay, left);
+        Canvas.SetTop(GridOverlay, top);
+        if (ShowGrid)
+        {
+            GridOverlay.SetGrid(scale, Frame.PixelSize.Width, Frame.PixelSize.Height);
+        }
+        else
+        {
+            GridOverlay.ClearGrid();
+        }
         ImageLayer.Width = Viewport.Bounds.Width;
         ImageLayer.Height = Viewport.Bounds.Height;
         RigGuideLayer.Width = Viewport.Bounds.Width;
@@ -465,9 +487,9 @@ public partial class FabricatorCanvas : UserControl
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {
         base.OnPropertyChanged(change);
-        if (change.Property == FrameProperty)
+        if (change.Property == FrameProperty || change.Property == ShowGridProperty)
         {
-            if (change.OldValue is Bitmap oldFrame && !ReferenceEquals(oldFrame, Frame))
+            if (change.Property == FrameProperty && change.OldValue is Bitmap oldFrame && !ReferenceEquals(oldFrame, Frame))
             {
                 oldFrame.Dispose();
             }

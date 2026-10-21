@@ -1,6 +1,6 @@
 # Pendências funcionais do Fabricador — cobertura do legado Gacha 5
 
-**Data da revisão:** 2026-10-21.  
+**Data da revisão:** 2026-10-21; atualização após implementação da grade do canvas.
 **Fonte:** comparação estática do Gacha 5 Electron com matriz/inventário do Avalonia; a ausência foi registrada nos documentos de auditoria do próprio projeto. Nenhuma captura, build ou teste Windows novo foi executado nesta revisão.  
 **Motivo:** após ADR-0006, pequenas diferenças visuais são aceitáveis; **controles e ferramentas reais AUSENTES não são diferenças estéticas** e continuam obrigações de implementação antes do aceite G2/Fabricador completo.
 
@@ -11,7 +11,7 @@
 | Dez slots de modelos, selecionar/limpar/excluir | Layout aproximado existe, mas os 10 slots com navegação/exclusão não | F09.15/G2, após dependências F07/F08 | Criar/selecionar/substituir/remover por slot, persistir e reabrir, respeitando proteção de referências |
 | Abas Peças, Camadas e Juntas | Painel de camadas e editor de juntas existem; abas dedicadas ainda ausentes | F09.15/G2 | Abas acessíveis, seleção preservada, cada controle executa ação correspondente |
 | Miniaturas de peças | Listagem de layers existe, miniaturas ainda ausentes | F09.15/G2 | Gerar/carregar sob cache limitado, atualizar ao alterar assets, não bloquear UI |
-| Quadrícula do canvas | Prévia clara e seleção presentes; grid ausente no estado atual | F09.15/G2 | Exibir/ocultar, escala e pan corretos, não alterar render/export base |
+| Quadrícula do canvas | Implementada como overlay opcional no canvas de modelos; alternância e desenho acima da imagem opaca, abaixo dos handles, validados em headless | F09.15/G2 | Feito: botão exibir/ocultar, escala adaptativa ao zoom e pan, sem alterar pixels da fonte. Falta validação Windows com mouse/DPI e revisão visual/GPU. Evidência: `FabricadorPersistenceStateTests.ModelCanvasGridToggleUpdatesTheBoundCanvasAndLabel` e `HeadlessShellTests.FabricatorCanvasGrid_RendersOnlyAsAnOverlayOnTransparentModelPreview`.
 | Controles de tolerância de chroma | ChromaCropProcessor existe, controles no editor não | F09.15/G2 | Ajustar tolerância e prévia, confirmar/cancelar, não destruir fonte |
 | Misturador/edição de pixels | Ferramenta do legado mapeada; sem UI/serviço correspondente validado | F09.15/G2 | Ferramenta funcional com undo/redo, assets sem perda e round-trip |
 | Edição de pivôs/âncoras e estado fixed | CRUD, edição de âncoras, handles/snap e persistência implementados em F07.02/F07.04 | F09.15/G2 para revisão de conjunto e mouse/DPI no Windows | Criar/editar/excluir juntas; arrastar pivôs; fixar/soltar; snap opcional por proximidade; salvar/reabrir |
