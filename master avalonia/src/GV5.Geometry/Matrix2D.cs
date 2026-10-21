@@ -47,6 +47,19 @@ public readonly record struct Matrix2D
         M11 * point.X + M21 * point.Y + OffsetX,
         M12 * point.X + M22 * point.Y + OffsetY);
 
+    public Rect2D TransformBounds(Rect2D rectangle)
+    {
+        var topLeft = Transform(new Point2D(rectangle.Left, rectangle.Top));
+        var topRight = Transform(new Point2D(rectangle.Right, rectangle.Top));
+        var bottomLeft = Transform(new Point2D(rectangle.Left, rectangle.Bottom));
+        var bottomRight = Transform(new Point2D(rectangle.Right, rectangle.Bottom));
+        var left = Math.Min(Math.Min(topLeft.X, topRight.X), Math.Min(bottomLeft.X, bottomRight.X));
+        var top = Math.Min(Math.Min(topLeft.Y, topRight.Y), Math.Min(bottomLeft.Y, bottomRight.Y));
+        var right = Math.Max(Math.Max(topLeft.X, topRight.X), Math.Max(bottomLeft.X, bottomRight.X));
+        var bottom = Math.Max(Math.Max(topLeft.Y, topRight.Y), Math.Max(bottomLeft.Y, bottomRight.Y));
+        return new Rect2D(left, top, right - left, bottom - top);
+    }
+
     public Matrix2D Invert()
     {
         var determinant = M11 * M22 - M21 * M12;

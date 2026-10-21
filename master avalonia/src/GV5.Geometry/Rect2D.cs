@@ -38,4 +38,13 @@ public readonly record struct Rect2D
     }
 
     public bool Contains(Point2D point) => point.X >= Left && point.X <= Right && point.Y >= Top && point.Y <= Bottom;
+
+    public Rect2D? Intersect(Rect2D other)
+    {
+        var left = Math.Max(Left, other.Left);
+        var top = Math.Max(Top, other.Top);
+        var right = Math.Min(Right, other.Right);
+        var bottom = Math.Min(Bottom, other.Bottom);
+        return right < left || bottom < top ? null : new Rect2D(left, top, right - left, bottom - top);
+    }
 }
