@@ -13,17 +13,17 @@
 | Branch obrigatória | `Master-AValonia` |
 | Pasta exclusiva do novo aplicativo | `master avalonia/` |
 | Commit-base inspecionado antes deste arquivo | `53b7f7a97321e85063a8dd4f9635e48d36548323` |
-| Último commit de implementação validado | `5671338` (F01.13; GATE-F01 aprovado) |
+| Último commit de implementação validado | `6429d8f` (F02.01; caminhos de dados validados) |
 | Fase ativa | **F02 — SQLite, revisões, transações e recuperação básica** |
 | Última tarefa VALIDADA | **F01.13** — clone limpo e GATE-F01 |
-| Próxima tarefa PENDENTE | **F02.02** — schema SQLite e ownership por domínio |
+| Próxima tarefa PENDENTE | **F02.02 (EM_EXECUCAO)** — schema SQLite e ownership por domínio |
 | Gate atual | **GATE F00: PASSOU; G0: PASSOU em clone limpo** |
 | Progresso validado neste controle | **27 / 247 tarefas (10,9%)** |
-| Tarefas em execução | **Nenhuma** |
+| Tarefas em execução | **F02.02** |
 | Bloqueios conhecidos | Primeiro download do SDK em clone vazio não progrediu; evidência e limite de F01 estão registrados em `docs/gates/GATE-F01.md` |
 | Aceite Windows/GPU | **Não executado / não registrado** |
 
-**Importante:** 24/247 representa **tarefas com evidência de validação registrada neste documento**, não a porcentagem de código já implementado. O shell, a solution, os projetos-base e os scripts de preparação podem estar presentes. O Codex deve auditar o que existe antes de implementar.
+**Importante:** 27/247 representa **tarefas com evidência de validação registrada neste documento**, não a porcentagem de código já implementado. O shell, a solution, os projetos-base e os scripts de preparação podem estar presentes. O Codex deve auditar o que existe antes de implementar.
 
 ## 2. Fontes e regras de leitura
 
@@ -93,7 +93,8 @@ Adicionar uma linha ao concluir ou bloquear cada tarefa. A linha inicial abaixo 
 | **F01.11** | **VALIDADA** | `7517c2f` | Adicionado `GV5.Architecture.Tests` à `GV5.sln`: 4 testes verificam ausência de dependências UI no Core, ausência de referências App/entre módulos nos módulos de produto, localização/existência de todos os projetos da solution e rejeição de caminhos de legado/traversal/absolutos. `dotnet test GV5.sln -c Release --verbosity minimal` passou (4 arquitetura + 3 Core); build Release passou com 0 warnings/0 errors; `TestarHeadless.bat` passou (3/3); `git diff --check` passou. | `tests/GV5.Architecture.Tests/ProjectBoundaryTests.cs`; `GV5.sln`; logs em `tests/*/bin/Release/net10.0/TestResults/` (ignorados pelo Git) | O primeiro ciclo revelou falso positivo de substring (`GV5.App` dentro de `GV5.Application`); comparação foi corrigida para nome exato de projeto e a suíte completa passou. Testes cobrem referências declaradas em `.csproj` e projetos listados em `.sln`, não análise de IL/runtime. F01.12 liberada |
 | **F01.12** | **VALIDADA** | `9a9b361`, `8d48b7a`, `bbb9579` | Criado `.github/workflows/native-avalonia.yml` para push/PR da branch `Master-AValonia` e execução manual, permissões read-only e matriz `windows-latest`/`ubuntu-latest`. CI usa SDK `global.json`, restaura, compila Release, executa xUnit e Avalonia Headless. Execução GitHub Actions `39528951140` passou nos dois jobs: Windows 1m14s e Ubuntu 45s. Em iterações anteriores foram corrigidos o uso indevido de `TestarHeadless.bat` (exige SDK portátil) e o restore separado do projeto Headless (não listado na solution). | `.github/workflows/native-avalonia.yml`; [Action 39528951140](https://github.com/nestarasup-sys/G-V5/actions/runs/39528951140); `docs/decisions/ADR-0003-github-actions-repository-root-scope.md` | O usuário autorizou somente `.github/workflows/native-avalonia.yml` fora da pasta nova; todo o restante permanece no escopo. O PC local não tem SDK global 10.0.402; validação CI executa SDK fixado em runner limpo. F01.13 liberada |
 | **F01.13** | **VALIDADA** | `5671338` | Clone sparse no commit `715bee5`, estritamente `/master avalonia/`; SDK 10.0.402; restore limpo passou; build Release 0 warnings/0 errors; xUnit 7/7; Headless 3/3; árvore de trabalho do clone limpa. Gate completo em `docs/gates/GATE-F01.md`. | `docs/gates/GATE-F01.md`; checkout temporário ignorado em `master avalonia/.tools/f01-13-clean-clone/`; [Action Windows/Ubuntu 39528951140](https://github.com/nestarasup-sys/G-V5/actions/runs/39528951140) | Download do SDK no bootstrap permaneceu em 0 bytes; teste usou a cópia local na versão exata declarada. Sem janela de desktop/GPU nesta etapa headless. F02 liberada |
-| **F02.01** | **VALIDADA** | `c07271d` | Contrato `IAppDataPaths` em Application e implementação `AppDataPaths` em Data; raiz por perfil do usuário em `Gacha Nymi/G-V5`, nomes distintos para database/assets/thumbnails/projects/backups/cache/logs/temp; criação explícita de diretórios e registro em DI. Testes cobrem normalização, separação, criação temporária, resolução padrão e raiz inválida. Restore/build Release (0 warnings/0 errors), solution tests 11/11 e Headless 3/3 passaram localmente. Action `39530618699` passou em Windows e Ubuntu; Windows executou as 11 provas da solution e 3 Headless. | `Contracts/IAppDataPaths.cs`; `Storage/AppDataPaths.cs`; `tests/GV5.Data.Tests/AppDataPathsTests.cs`; `PLANO_DO_NOVO_APP.md`; [Action 39530618699](https://github.com/nestarasup-sys/G-V5/actions/runs/39530618699) | A resolução e os testes não criam pastas no perfil real. O primeiro download do SDK no clone F01 sem progresso está registrado separadamente no GATE-F01. |
+| **F02.01** | **VALIDADA** | `c07271d`, `6429d8f` | Contrato `IAppDataPaths` em Application e implementação `AppDataPaths` em Data; raiz por perfil do usuário em `Gacha Nymi/G-V5`, nomes distintos para database/assets/thumbnails/projects/backups/cache/logs/temp; criação explícita de diretórios e registro em DI. Testes cobrem normalização, separação, criação temporária, resolução padrão e raiz inválida. Restore/build Release (0 warnings/0 errors), solution tests 11/11 e Headless 3/3 passaram localmente. Action `39530618699` passou em Windows e Ubuntu; Windows executou as 11 provas da solution e 3 Headless. | `Contracts/IAppDataPaths.cs`; `Storage/AppDataPaths.cs`; `tests/GV5.Data.Tests/AppDataPathsTests.cs`; `PLANO_DO_NOVO_APP.md`; [Action 39530618699](https://github.com/nestarasup-sys/G-V5/actions/runs/39530618699) | A resolução e os testes não criam pastas no perfil real. O primeiro download do SDK no clone F01 sem progresso está registrado separadamente no GATE-F01. |
+| **F02.02** | **EM_EXECUCAO** | Checkpoint inicial a registrar | Criado desenho relacional proposto com ownership por domínio, convenções de IDs/revisões/UTC, referências de assets compartilhados, tabelas para Fabricador/Customizador/Studio/Base de Vídeos/Roteiros, limites para JSON, índices e política de exclusão. Ainda precisa revisar consistência das relações e fechar a proposta antes de marcar a tarefa validada. | `docs/data/SCHEMA_DESIGN.md`; `PLANO_DO_NOVO_APP.md` | Não há DDL, provider SQLite, migrações ou testes de banco nesta tarefa; ficam para F02.03–F02.04. |
 
 **Estados aceitos:** `PENDENTE`, `EM_EXECUCAO`, `BLOQUEADA`, `VALIDADA`.
 
@@ -159,6 +160,7 @@ Ainda não há entradas registradas neste controle. Toda mudança material do ro
 | 2026-10-20 | `b861f34` | F01.11 | G0 aberto | Investigado conflito entre localização do workflow e limite de escopo; o usuário autorizou somente `.github/workflows/` na raiz |
 | 2026-10-21 | `5671338` | F01.13 validada; F02.01 em execução | G0 PASSOU | Action Windows/Ubuntu verde; clone sparse só com `master avalonia/` restaurou, compilou e passou 7 testes + 3 Headless; `GATE-F01.md` registrado |
 | 2026-10-21 | `c07271d` | F02.01 | G0 PASSOU | `IAppDataPaths` e resolvedor de perfil implementados; clone local passou restore/build, 11 testes da solution, 3 Headless; Action Windows/Ubuntu verde |
+| 2026-10-21 | `6429d8f` | F02.01 validada; F02.02 em execução | G0 PASSOU | Status de F02.01 confirmado com Action `39530618699`; começou o desenho de schema relacional sem DDL |
 
 Após concluir um lote ou fase, adicionar uma linha. Não inflar contador só porque o commit contém múltiplos arquivos; contar apenas tarefas comprovadas.
 
@@ -167,7 +169,7 @@ Após concluir um lote ou fase, adicionar uma linha. Não inflar contador só po
 1. Atualizar branch/remoto com segurança, sem force push e sem sobrescrever trabalho local de outra sessão.
 2. Ler `AGENTS.md`, `PLANO_DO_NOVO_APP.md`, `PLANO_MESTRE_EXECUCAO_CODEX.md` e este arquivo.
 3. Inspecionar evidências reais da última tarefa validada; caso não existam, corrigir seu estado.
-4. **Iniciar F02.02**: desenhar schema SQLite relacional inicial e ownership por domínio; manter JSON apenas para atributos extensíveis, sem implementar conexão ou migrations nesta tarefa.
+4. **Retomar F02.02**: revisar `docs/data/SCHEMA_DESIGN.md`, fechar o desenho e então marcar a tarefa validada; não iniciar DDL, conexão ou migrations antes da tarefa seguinte.
 5. Continuar automaticamente pelas tarefas seguintes **uma de cada vez**, em lotes flexíveis de aproximadamente 3–8 tarefas relacionadas, enquanto todos os gates pertinentes passam.
 6. Atualizar o registro e commitar entregas reais na branch `Master-AValonia`; não desenvolver Video Studio antecipadamente.
 7. Ao encerrar, informar: **branch, HEAD, último ID VALIDADO, próximo ID PENDENTE, commits, comandos verdes, evidências, bloqueios e condição de desbloqueio**.

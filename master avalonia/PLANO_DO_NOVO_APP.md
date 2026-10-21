@@ -345,6 +345,8 @@ Estrutura conceitual da pasta de dados:
 
 `IAppDataPaths` é o contrato único dos caminhos. `GV5.Data` fornece o resolvedor padrão sob o perfil local do usuário; testes podem injetar uma raiz temporária. Resolver caminhos não cria pastas. `EnsureDirectoriesExist` é explícito e cria somente as pastas controladas pelo G-V5. Não depender da pasta atual do terminal, do executável ou do repositório, nem reutilizar a pasta de dados do Electron.
 
+O ownership relacional inicial, as convenções de IDs/revisões/JSON e as relações entre módulos estão especificados em `docs/data/SCHEMA_DESIGN.md`. Esse desenho antecede o DDL e as migrations, que serão implementados nas tarefas F02.03–F02.04.
+
 Depois do primeiro fluxo vertical persistente, definir o formato portátil `.gv5project`: manifesto com versão, objetos/revisões usados, dependências e hashes; assets podem ser incluídos para arquivamento/transferência e verificados na importação. O pacote deve abrir sem depender de caminhos locais da máquina de origem. Não implementar o contêiner completo antes de validar os modelos de dados e dependências.
 
 Entidades iniciais previstas: modelos, peças, articulações, poses, personagens, roupas, conjuntos de rosto, recursos e referências entre eles. Cada domínio deve detalhar seu esquema antes de implementar suas gravações. Evitar tanto uma tabela gigante de JSON quanto fragmentar cada pequeno valor em tabelas desnecessárias. JSON versionado pode servir para configurações flexíveis que não precisem de consultas relacionais.
