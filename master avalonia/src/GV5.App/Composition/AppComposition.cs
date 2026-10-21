@@ -2,6 +2,7 @@ using GV5.App.ViewModels;
 using GV5.App.Views;
 using GV5.App.Navigation;
 using GV5.Application.Contracts;
+using GV5.Assets.Decoding;
 using GV5.Data.Migrations;
 using GV5.Data.Diagnostics;
 using GV5.Data.Assets;
@@ -35,6 +36,7 @@ internal static class AppComposition
         services.AddSingleton<IModelDraftRepository, SqliteModelDraftRepository>();
         services.AddSingleton<IModelDraftCheckpointStore, SqliteModelDraftCheckpointStore>();
         services.AddSingleton<IDataPlatformBackupService, DatabaseBackupService>();
+        services.AddSingleton<AssetImageDecoder>();
         services.AddSingleton<SqliteAssetImportPipeline>();
         services.AddSingleton<IAssetStore, SqliteAssetStore>();
         services.AddSingleton(new ModuleRouteCatalog(routes));
