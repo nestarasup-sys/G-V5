@@ -13,14 +13,14 @@
 | Branch obrigatória | `Master-AValonia` |
 | Pasta exclusiva do novo aplicativo | `master avalonia/` |
 | Commit-base inspecionado antes deste arquivo | `53b7f7a97321e85063a8dd4f9635e48d36548323` |
-| Último commit de implementação validado | `bbb9579` (F01.12; CI Windows/Linux verde) |
-| Fase ativa | **F01 — Solution .NET, contratos, módulo e CI** |
-| Última tarefa VALIDADA | **F01.12** — GitHub Actions de build/teste Windows/Linux |
-| Próxima tarefa PENDENTE | **F02.01** — inventário da persistência inicial e contratos SQLite |
+| Último commit de implementação validado | `5671338` (F01.13; GATE-F01 aprovado) |
+| Fase ativa | **F02 — SQLite, revisões, transações e recuperação básica** |
+| Última tarefa VALIDADA | **F01.13** — clone limpo e GATE-F01 |
+| Próxima tarefa PENDENTE | **F02.01 (EM_EXECUCAO)** — contrato de caminhos da pasta de dados |
 | Gate atual | **GATE F00: PASSOU; G0: PASSOU em clone limpo** |
 | Progresso validado neste controle | **26 / 247 tarefas (10,5%)** |
-| Tarefas em execução | **Nenhuma** |
-| Bloqueios conhecidos | Bootstrap SDK em clone vazio baixou 0 bytes nesta rodada; G0 foi validado com o SDK local 10.0.402 já instalado, conforme limitação em `docs/gates/GATE-F01.md` |
+| Tarefas em execução | **F02.01** |
+| Bloqueios conhecidos | Primeiro download do SDK em clone vazio não progrediu; evidência e limite de F01 estão registrados em `docs/gates/GATE-F01.md` |
 | Aceite Windows/GPU | **Não executado / não registrado** |
 
 **Importante:** 24/247 representa **tarefas com evidência de validação registrada neste documento**, não a porcentagem de código já implementado. O shell, a solution, os projetos-base e os scripts de preparação podem estar presentes. O Codex deve auditar o que existe antes de implementar.
@@ -42,7 +42,7 @@ Se o Codex encontrar algo já implementado, **validar e registrar evidências**,
 | --- | --- | ---: | ---: | --- | --- |
 | F00 | Auditoria do legado, baseline e sincronização | 13 | 13 | VALIDADA | PASSOU |
 | F01 | Solution .NET, contratos, módulo e CI | 13 | 13 | VALIDADA | G0 PASSOU |
-| F02 | SQLite, revisões, transações e recuperação básica | 15 | 0 | PENDENTE | — |
+| F02 | SQLite, revisões, transações e recuperação básica | 15 | 0 | EM_EXECUCAO | G0 passou |
 | F03 | AssetStore, thumbnails e cache limitado | 11 | 0 | PENDENTE | — |
 | F04 | Geometry Engine canônica | 11 | 0 | PENDENTE | — |
 | F05 | RenderScene e SkiaRenderer independentes | 11 | 0 | PENDENTE | — |
@@ -92,7 +92,8 @@ Adicionar uma linha ao concluir ou bloquear cada tarefa. A linha inicial abaixo 
 | **F01.10** | **VALIDADA** | `dfc038a` | Criado `GV5.Core.Tests`, separado de Avalonia e integrado à `GV5.sln`, usando `xunit.v3` 3.2.2 fixado em `tests/Directory.Packages.props` e runner com concorrência limitada. 3 testes passaram: geração/round-trip de `ModelId`, rejeição de `Guid.Empty` e rejeição de revisões não positivas. `dotnet test GV5.sln -c Release --verbosity minimal` restaurou o projeto e passou (3/3); build Release da solução passou com 0 warnings/0 errors; `TestarHeadless.bat` passou novamente (3/3); `git diff --check` passou. | `tests/GV5.Core.Tests/`; `GV5.sln`; `tests/Directory.Packages.props`; saída dos comandos nesta execução | Projeto puro referencia somente `GV5.Core`; os testes não usam dados reais, banco ou UI. Runner Headless continua isolado e validado separadamente. F01.11 liberada |
 | **F01.11** | **VALIDADA** | `7517c2f` | Adicionado `GV5.Architecture.Tests` à `GV5.sln`: 4 testes verificam ausência de dependências UI no Core, ausência de referências App/entre módulos nos módulos de produto, localização/existência de todos os projetos da solution e rejeição de caminhos de legado/traversal/absolutos. `dotnet test GV5.sln -c Release --verbosity minimal` passou (4 arquitetura + 3 Core); build Release passou com 0 warnings/0 errors; `TestarHeadless.bat` passou (3/3); `git diff --check` passou. | `tests/GV5.Architecture.Tests/ProjectBoundaryTests.cs`; `GV5.sln`; logs em `tests/*/bin/Release/net10.0/TestResults/` (ignorados pelo Git) | O primeiro ciclo revelou falso positivo de substring (`GV5.App` dentro de `GV5.Application`); comparação foi corrigida para nome exato de projeto e a suíte completa passou. Testes cobrem referências declaradas em `.csproj` e projetos listados em `.sln`, não análise de IL/runtime. F01.12 liberada |
 | **F01.12** | **VALIDADA** | `9a9b361`, `8d48b7a`, `bbb9579` | Criado `.github/workflows/native-avalonia.yml` para push/PR da branch `Master-AValonia` e execução manual, permissões read-only e matriz `windows-latest`/`ubuntu-latest`. CI usa SDK `global.json`, restaura, compila Release, executa xUnit e Avalonia Headless. Execução GitHub Actions `39528951140` passou nos dois jobs: Windows 1m14s e Ubuntu 45s. Em iterações anteriores foram corrigidos o uso indevido de `TestarHeadless.bat` (exige SDK portátil) e o restore separado do projeto Headless (não listado na solution). | `.github/workflows/native-avalonia.yml`; [Action 39528951140](https://github.com/nestarasup-sys/G-V5/actions/runs/39528951140); `docs/decisions/ADR-0003-github-actions-repository-root-scope.md` | O usuário autorizou somente `.github/workflows/native-avalonia.yml` fora da pasta nova; todo o restante permanece no escopo. O PC local não tem SDK global 10.0.402; validação CI executa SDK fixado em runner limpo. F01.13 liberada |
-| **F01.13** | **VALIDADA** | A registrar no commit deste gate | Clone sparse no commit `715bee5`, estritamente `/master avalonia/`; SDK 10.0.402; restore limpo passou; build Release 0 warnings/0 errors; xUnit 7/7; Headless 3/3; árvore de trabalho do clone limpa. Gate completo em `docs/gates/GATE-F01.md`. | `docs/gates/GATE-F01.md`; checkout temporário ignorado em `master avalonia/.tools/f01-13-clean-clone/`; [Action Windows/Ubuntu 39528951140](https://github.com/nestarasup-sys/G-V5/actions/runs/39528951140) | Download do SDK no bootstrap permaneceu em 0 bytes; teste usou a cópia local na versão exata declarada. Sem janela de desktop/GPU nesta etapa headless. F02 liberada |
+| **F01.13** | **VALIDADA** | `5671338` | Clone sparse no commit `715bee5`, estritamente `/master avalonia/`; SDK 10.0.402; restore limpo passou; build Release 0 warnings/0 errors; xUnit 7/7; Headless 3/3; árvore de trabalho do clone limpa. Gate completo em `docs/gates/GATE-F01.md`. | `docs/gates/GATE-F01.md`; checkout temporário ignorado em `master avalonia/.tools/f01-13-clean-clone/`; [Action Windows/Ubuntu 39528951140](https://github.com/nestarasup-sys/G-V5/actions/runs/39528951140) | Download do SDK no bootstrap permaneceu em 0 bytes; teste usou a cópia local na versão exata declarada. Sem janela de desktop/GPU nesta etapa headless. F02 liberada |
+| **F02.01** | **EM_EXECUCAO** | — | Contrato `IAppDataPaths` em Application e implementação `AppDataPaths` em Data; raiz por perfil do usuário em `Gacha Nymi/G-V5`, nomes distintos para database/assets/thumbnails/projects/backups/cache/logs/temp; criação explícita de diretórios e registro em DI. Testes cobrem normalização, separação, criação temporária, resolução padrão e raiz inválida. Restore/build Release (0 warnings/0 errors), solution tests 11/11 e Headless 3/3 passaram localmente. | `Contracts/IAppDataPaths.cs`; `Storage/AppDataPaths.cs`; `tests/GV5.Data.Tests/AppDataPathsTests.cs`; `PLANO_DO_NOVO_APP.md` | CI Windows/Ubuntu do commit ainda pendente; sem criação de diretório de dados do usuário durante resolução ou testes. |
 
 **Estados aceitos:** `PENDENTE`, `EM_EXECUCAO`, `BLOQUEADA`, `VALIDADA`.
 
@@ -156,7 +157,7 @@ Ainda não há entradas registradas neste controle. Toda mudança material do ro
 | 2026-10-20 | `dfc038a` | F01.10 | GATE F00 passou | Primeiro projeto xUnit v3 de domínio integrado à solution; 3 casos Core passaram e suíte Headless de regressão ficou verde |
 | 2026-10-20 | `7517c2f` | F01.11 | GATE F00 passou | Testes automatizados das fronteiras Core/módulos/solution, incluindo paths de legado proibidos; 4/4 arquitetura e 3/3 Core passaram |
 | 2026-10-20 | `b861f34` | F01.11 | G0 aberto | Investigado conflito entre localização do workflow e limite de escopo; o usuário autorizou somente `.github/workflows/` na raiz |
-| 2026-10-21 | `715bee5` | F01.12 validada; F01.13 validada | G0 PASSOU | Action Windows/Ubuntu verde; clone sparse só com `master avalonia/` restaurou, compilou e passou 7 testes + 3 Headless; `GATE-F01.md` registrado |
+| 2026-10-21 | `5671338` | F01.13 validada; F02.01 em execução | G0 PASSOU | Action Windows/Ubuntu verde; clone sparse só com `master avalonia/` restaurou, compilou e passou 7 testes + 3 Headless; `GATE-F01.md` registrado |
 
 Após concluir um lote ou fase, adicionar uma linha. Não inflar contador só porque o commit contém múltiplos arquivos; contar apenas tarefas comprovadas.
 

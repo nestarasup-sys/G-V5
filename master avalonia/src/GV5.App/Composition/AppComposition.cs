@@ -1,6 +1,8 @@
 using GV5.App.ViewModels;
 using GV5.App.Views;
 using GV5.App.Navigation;
+using GV5.Application.Contracts;
+using GV5.Data.Storage;
 using GV5.Modules.Customizador;
 using GV5.Modules.Fabricador;
 using Microsoft.Extensions.DependencyInjection;
@@ -15,6 +17,7 @@ internal static class AppComposition
         var services = new ServiceCollection();
         var routes = new[] { FabricadorModule.Route, CustomizadorModule.Route };
 
+        services.AddSingleton<IAppDataPaths>(_ => AppDataPaths.ForCurrentUser());
         services.AddSingleton(new ModuleRouteCatalog(routes));
         services.AddTransient<IModulePageFactory, ServiceProviderModulePageFactory>();
         foreach (var route in routes)

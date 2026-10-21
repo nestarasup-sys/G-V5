@@ -332,8 +332,8 @@ Usar SQLite para metadados estruturados e relacionamentos. Guardar imagens e out
 Estrutura conceitual da pasta de dados:
 
 ```text
-GV5Data/
-  database/app.db
+%LOCALAPPDATA%/Gacha Nymi/G-V5/
+  database/gv5.sqlite3
   assets/<hash-do-conteudo>.<extensao>
   thumbnails/
   projects/
@@ -343,7 +343,7 @@ GV5Data/
   temp/
 ```
 
-A localização real será resolvida por um serviço de armazenamento sob a pasta de dados do usuário no Windows. Não depender da pasta atual do terminal, do executável ou do repositório.
+`IAppDataPaths` é o contrato único dos caminhos. `GV5.Data` fornece o resolvedor padrão sob o perfil local do usuário; testes podem injetar uma raiz temporária. Resolver caminhos não cria pastas. `EnsureDirectoriesExist` é explícito e cria somente as pastas controladas pelo G-V5. Não depender da pasta atual do terminal, do executável ou do repositório, nem reutilizar a pasta de dados do Electron.
 
 Depois do primeiro fluxo vertical persistente, definir o formato portátil `.gv5project`: manifesto com versão, objetos/revisões usados, dependências e hashes; assets podem ser incluídos para arquivamento/transferência e verificados na importação. O pacote deve abrir sem depender de caminhos locais da máquina de origem. Não implementar o contêiner completo antes de validar os modelos de dados e dependências.
 
