@@ -49,3 +49,7 @@ Essa revalidação confirma que a alteração de layout não quebrou a suíte r�
 4. Atualizar esta página e a matriz quando as capturas Windows/Electron e os casos ampliados forem coletados. **F07 pode começar por aceitação técnica documentada na ADR-0006.** Não declarar realizados os testes de produto ausentes.
 
 Não há captura ou folha real de usuário registrada. O gate **técnico** libera F07 sem alegar equivalência com folha real, pixels do worker, GPU/DPI ou validação Windows. Os 198 testes foram realizados previamente no PC pelo Codex, **não reexecutados por esta edição documental**. A revisão final do produto segue aberta.
+
+## Verificação de continuidade F07 (2026-10-21)
+
+Depois da liberação técnica deste gate foram adicionados RigJointGraph, ModelRigEditor e testes de juntas na F07.02. A Action `39645535873` passou Build Release, testes e Headless em Windows e Ubuntu após o primeiro componente de grafo; esta evidência não cobre os testes de ModelRigEditor acrescentados no commit posterior `9dd52f2`. Este gate continua **com revisão visual/Windows real pendente**; essa nota não comprova F07.02 nem altera o aceite funcional limitado da F06. A execução de CI acionada pela presente atualização servirá apenas para verificar as alterações de código novas, sem alegar que o Fabricador está completo.
