@@ -56,8 +56,7 @@ jobs:
 
       - name: Run Avalonia Headless tests on Windows
         if: runner.os == 'Windows'
-        shell: pwsh
-        run: .\TestarHeadless.bat
+        run: dotnet run --project tests/GV5.Headless.Tests/GV5.Headless.Tests.csproj --configuration Release --no-restore
 
       - name: Run Avalonia Headless tests on Linux
         if: runner.os == 'Linux'
