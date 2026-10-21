@@ -205,7 +205,7 @@ Ambiente/SDK/CI: `TestarLocal.bat gate` passou em 2026-10-21; ver `docs/gates/GA
 - [x] **F05.02** — Implementar builder de cena de partes corporais seguindo layer order explícita.
 - [x] **F05.03** — Adicionar SkiaSharp e SkiaRenderer raster CPU headless com descarte correto de superfícies.
 - [x] **F05.04** — Renderizar uma peça PNG transparente em tamanho de fixture com golden aprovado.
-- [ ] **F05.05** — Renderizar múltiplas partes, crop/rotation/opacity/flip e gerar comparador visual de PNG.
+- [x] **F05.05** — Renderizar múltiplas partes, crop/rotation/opacity/flip e gerar comparador visual de PNG.
 - [ ] **F05.06** — Criar adaptador de apresentação Avalonia sem resolver personagens ou decodificar assets em Render().
 - [ ] **F05.07** — Implementar overlays visuais de seleção/pivôs/grids separados do conteúdo persistido.
 - [ ] **F05.08** — Implementar versão de entrada e cancelamento para descartar resultado atrasado de preview.
