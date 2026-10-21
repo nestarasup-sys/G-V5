@@ -124,7 +124,7 @@ Ambiente/SDK/CI: <comandos e resultados reais>
 - [ ] **F01.10** — Criar primeiro projeto de testes xUnit com versões fixadas, pelo menos um teste de Core e um cenário negativo.
 - [ ] **F01.11** — Criar teste de arquitetura que verifica referências de csproj: Core sem UI, módulos sem UI alheia, legado fora da solução.
 - [x] **F01.12** — Criar GitHub Actions para build/test Windows, mais Linux se compatível, sem depender de arquivos fora da pasta.
-- [ ] **F01.13** — Validar clone limpo usando somente master avalonia e dependências declaradas; registrar GATE-F01.
+- [x] **F01.13** — Validar clone limpo usando somente master avalonia e dependências declaradas; registrar GATE-F01.
 
 **Encerramento F01:** registrar `docs/gates/GATE-F01.md` e marcar a fase validada somente se o gate acima foi comprovado. Se estiver bloqueado, documentar a evidência que falta e não iniciar F02.
 
