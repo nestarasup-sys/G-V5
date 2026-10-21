@@ -53,6 +53,35 @@ public sealed class GeometryPrimitiveTests
     }
 
     [Fact]
+    public void Matrix_InverseRestoresPointsAcrossDeterministicScaleAndRotationCases()
+    {
+        var matrices = new[]
+        {
+            Matrix2D.CreateTranslation(125.25, -84.5) * Matrix2D.CreateRotation(0.37) * Matrix2D.CreateScale(0.001, 12.5),
+            Matrix2D.CreateTranslation(-7, 91) * Matrix2D.CreateRotation(-Math.PI * 1.75) * Matrix2D.CreateScale(400, 0.25),
+            Matrix2D.CreateTranslation(0.00001, -0.00002) * Matrix2D.CreateRotation(Math.PI / 3) * Matrix2D.CreateScale(1, 1)
+        };
+        var points = new[]
+        {
+            new Point2D(0, 0),
+            new Point2D(1, -1),
+            new Point2D(-320.75, 8.125),
+            new Point2D(1e-6, -5e-6)
+        };
+
+        foreach (var matrix in matrices)
+        {
+            var inverse = matrix.Invert();
+            foreach (var point in points)
+            {
+                var restored = inverse.Transform(matrix.Transform(point));
+                Assert.Equal(point.X, restored.X, 7);
+                Assert.Equal(point.Y, restored.Y, 7);
+            }
+        }
+    }
+
+    [Fact]
     public void Transform_ThenAppliesTheNextTransformAfterThisOne()
     {
         var move = new Transform2D(new Point2D(5, 0), new Point2D(1, 1), 0, Point2D.Zero);

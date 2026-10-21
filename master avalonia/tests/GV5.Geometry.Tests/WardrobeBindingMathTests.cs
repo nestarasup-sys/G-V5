@@ -39,6 +39,11 @@ public sealed class WardrobeBindingMathTests
         Assert.Equal(-5, resolved.RotationDegrees, 9);
         Assert.Equal(1.5, resolved.ScaleX, 10);
         Assert.Equal(1.2, resolved.ScaleY, 10);
+        Assert.Equal(0.1, binding.LocalCenterX, 9);
+        Assert.Equal(0.2, binding.LocalCenterY, 9);
+        Assert.Equal(0.4, binding.WidthRatio, 10);
+        Assert.Equal(0.25, binding.HeightRatio, 10);
+        Assert.Equal(15, binding.RelativeRotationDegrees, 9);
     }
 
     [Fact]
