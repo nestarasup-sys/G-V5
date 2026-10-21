@@ -209,7 +209,7 @@ Ambiente/SDK/CI: `TestarLocal.bat gate` passou em 2026-10-21; ver `docs/gates/GA
 - [x] **F05.06** — Criar adaptador de apresentação Avalonia sem resolver personagens ou decodificar assets em Render().
 - [x] **F05.07** — Implementar overlays visuais de seleção/pivôs/grids separados do conteúdo persistido.
 - [x] **F05.08** — Implementar versão de entrada e cancelamento para descartar resultado atrasado de preview.
-- [ ] **F05.09** — Implementar invalidação incremental por assinatura, somente depois de teste de equivalência com render completo.
+- [x] **F05.09** — Implementar invalidação incremental por assinatura, somente depois de teste de equivalência com render completo.
 - [ ] **F05.10** — Medir primeira prévia, render quente/frio, bytes retidos e diferenças de alpha/cor.
 - [ ] **F05.11** — Registrar limites CPU/GPU e evitar GRContext independente prematuro; fechar GATE-F05.
 
