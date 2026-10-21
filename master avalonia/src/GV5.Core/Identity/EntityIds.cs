@@ -120,6 +120,20 @@ public readonly record struct FaceId : IEntityId
     public override string ToString() => Value.ToString("D");
 }
 
+public readonly record struct FaceComponentId : IEntityId
+{
+    public Guid Value { get; }
+    public bool IsValid => Value != Guid.Empty;
+
+    private FaceComponentId(Guid value) => Value = value;
+
+    public static FaceComponentId New() => new(Guid.NewGuid());
+    public static FaceComponentId From(Guid value) => new(IdValue.RequireValid(value, nameof(FaceComponentId)));
+    public static FaceComponentId Parse(string value) => new(IdValue.Parse(value, nameof(FaceComponentId)));
+    public static bool TryParse(string? value, out FaceComponentId id) => IdValue.TryParse(value, static parsed => new FaceComponentId(parsed), out id);
+    public override string ToString() => Value.ToString("D");
+}
+
 public readonly record struct HairId : IEntityId
 {
     public Guid Value { get; }
