@@ -267,7 +267,7 @@ Ambiente/SDK/CI: `TestarLocal.bat gate` passou em 2026-10-21; ver `docs/gates/GA
 
 **Gate:** Roupas ajustadas permanecem conectadas ao corpo em todas as poses; publicação não muda consumidores silenciosamente.
 
-- [ ] **F08.01** — Inventariar categorias/edições de roupas, WardrobeBinding e ajustes do legado V1/V2.
+- [x] **F08.01** — Inventariar categorias/edições de roupas, WardrobeBinding e ajustes do legado V1/V2.
 - [ ] **F08.02** — Definir WardrobeSet e WardrobeComponent com binding local ao osso e revisão.
 - [ ] **F08.03** — Implementar importação de recortes de roupa via AssetStore com transparência e preview.
 - [ ] **F08.04** — Implementar associação da peça ao bone e editor de offset/escala/rotação.
