@@ -13,12 +13,12 @@
 | Branch obrigatória | `Master-AValonia` |
 | Pasta exclusiva do novo aplicativo | `master avalonia/` |
 | Commit-base inspecionado antes deste arquivo | `53b7f7a97321e85063a8dd4f9635e48d36548323` |
-| Último commit de implementação validado | `df80c10` (F02.11; journal e recuperação de rascunhos interrompidos) |
+| Último commit de implementação validado | `6af5364` (F02.12; backup SQLite consistente com WAL e restore verificado) |
 | Fase ativa | **F02 — SQLite, revisões, transações e recuperação básica** |
-| Última tarefa VALIDADA | **F02.11** — checkpoint/journal e recuperação de operações interrompidas |
-| Próxima tarefa PENDENTE | **F02.12** — backup consistente com WAL, manifesto/hashes e restore |
+| Última tarefa VALIDADA | **F02.12** — backup consistente com WAL, manifesto/hashes e restore |
+| Próxima tarefa PENDENTE | **F02.13** — log estruturado/correlation ID com rotação e sem dados pessoais |
 | Gate atual | **GATE F00: PASSOU; G0: PASSOU em clone limpo; G1 em execução** |
-| Progresso validado neste controle | **37 / 247 tarefas (15,0%)** |
+| Progresso validado neste controle | **38 / 247 tarefas (15,4%)** |
 | Tarefas em execução | Nenhuma |
 | Bloqueios conhecidos | Primeiro download do SDK em clone vazio não progrediu; evidência e limite de F01 estão registrados em `docs/gates/GATE-F01.md` |
 | Aceite Windows/GPU | **Não executado / não registrado** |
@@ -46,7 +46,7 @@ Se o Codex encontrar algo já implementado, **validar e registrar evidências**,
 | --- | --- | ---: | ---: | --- | --- |
 | F00 | Auditoria do legado, baseline e sincronização | 13 | 13 | VALIDADA | PASSOU |
 | F01 | Solution .NET, contratos, módulo e CI | 13 | 13 | VALIDADA | G0 PASSOU |
-| F02 | SQLite, revisões, transações e recuperação básica | 15 | 11 | EM_EXECUCAO | G0 passou |
+| F02 | SQLite, revisões, transações e recuperação básica | 15 | 12 | EM_EXECUCAO | G0 passou |
 | F03 | AssetStore, thumbnails e cache limitado | 11 | 0 | PENDENTE | — |
 | F04 | Geometry Engine canônica | 11 | 0 | PENDENTE | — |
 | F05 | RenderScene e SkiaRenderer independentes | 11 | 0 | PENDENTE | — |
@@ -108,6 +108,7 @@ Adicionar uma linha ao concluir ou bloquear cada tarefa. A linha inicial abaixo 
 | **F02.09** | **VALIDADA** | `ea835c5` | O Fabricador apresenta `Dirty`, `Saving`, `Saved` e `Error` tipados e traduzidos. Teste Headless altera o nome pela caixa real, pausa o initializer durante a gravação para conferir `Saving`, libera e confirma `Saved` após o SQLite; outra execução bloqueia o diretório de dados com um arquivo sintético e confirma estado/mensagem `Error`. `TestarLocal.bat rapido` passou: build Debug 0 warnings/0 errors, Core 6/6, Architecture 4/4, Data 15/15, Headless 5/5. | `src/GV5.Application/Contracts/PersistenceState.cs`; `src/GV5.Modules.Fabricador/ViewModels/FabricadorViewModel.cs`; `Views/FabricadorView.axaml`; `tests/GV5.Headless.Tests/FabricadorPersistenceStateTests.cs` | Headless não abriu janela nativa; falha de gravação foi testada só em pasta temporária. O initializer é chamado sob demanda ao salvar; o shell continua sem abrir perfil/dados no startup. |
 | **F02.10** | **VALIDADA** | `44a674a`, `e00f85e` | Debounce de 600 ms agrupa edições rápidas; navegação e fechamento aguardam flush SQLite. Headless comprova gravação após debounce, flush antes de trocar página/fechar, janela e página mantidas diante de falha, e conflito de revisão que preserva a revisão externa mais nova. `TestarLocal.bat rapido` passou: build Debug 0 warnings/0 errors, Core 6/6, Architecture 4/4, Data 15/15, Headless 9/9; `git diff --check` passou. | `src/GV5.Modules.Fabricador/ViewModels/FabricadorViewModel.cs`; `src/GV5.Application/Contracts/IFlushablePageViewModel.cs`; `src/GV5.App/ViewModels/MainViewModel.cs`; `src/GV5.App/Views/MainWindow.axaml(.cs)`; `tests/GV5.Headless.Tests/AutosaveFlushTests.cs`; `tests/GV5.Headless.Tests/HeadlessShellTests.cs` | Sem teste de janela nativa/GPU; os casos de falha usam diretórios temporários sintéticos. F02.07 também valida concorrência esperada no repositório. |
 | **F02.11** | **VALIDADA** | `df80c10` | Implementado journal SQLite v3 para snapshots imutáveis antes do `Create`/`Update`, com identidade/revisão esperada e captura de nome. O Fabricador verifica pendências ao abrir, oferece recuperar ou descartar e reaplica somente se a revisão esperada confere; reconhece commit já concluído, preserva conflito e não apaga o modelo. Repetição de tentativa reusa o checkpoint pendente. Testes comprovam persistência do journal após reabrir, interrupção simulada depois do write-ahead, recuperação efetiva do rascunho, conflito preservando a versão mais recente e descarte isolado. `TestarLocal.bat rapido` passou: build Debug 0 warnings/0 errors, Core 8/8, Architecture 4/4, Data 17/17, Headless 14/14; `git diff --check` passou. | `src/GV5.Core/Models/ModelDraftCheckpoint.cs`; `src/GV5.Application/Contracts/IModelDraftCheckpointStore.cs`; migration `ModelDraftCheckpointSchemaMigration`; `src/GV5.Data/Repositories/SqliteModelDraftCheckpointStore.cs`; ViewModel/View do Fabricador; `tests/GV5.Data.Tests/SqliteModelDraftCheckpointStoreTests.cs`; `tests/GV5.Headless.Tests/CheckpointRecoveryTests.cs`; `docs/data/SCHEMA_DESIGN.md` | Interrupção representada por falha injetada após persistir checkpoint, seguida por novo ViewModel e banco temporário; não foi encerrado à força um processo Windows. Janela/GPU nativas não foram testadas. |
+| **F02.12** | **VALIDADA** | `6af5364` | Criado serviço de backup que usa SQLite Online Backup API sob gate de escrita, capturando o estado committed incluindo WAL. Cada backup tem pasta/versionamento e manifesto com schema, tamanho e SHA-256. Verificação confirma formato, caminho controlado, tamanho/hash, `integrity_check`, `foreign_key_check` e schema; restore recalcula hash, valida o SQLite e recusa sobrescrever banco existente. Teste mantém leitor WAL antigo aberto durante update, comprova WAL não vazio, cria backup, restaura em raiz temporária e confirma revisão e checkpoint; outro teste detecta adulteração e preserva arquivo preexistente. `TestarLocal.bat rapido` passou: build Debug 0 warnings/0 errors, Core 8/8, Architecture 4/4, Data 19/19, Headless 14/14; `git diff --check` passou. | `src/GV5.Application/Contracts/IDataPlatformBackupService.cs`; `src/GV5.Data/Storage/DatabaseBackupService.cs`; `SqliteDatabase.BackupDatabaseToAsync`; `tests/GV5.Data.Tests/DatabaseBackupServiceTests.cs`; `docs/data/SCHEMA_DESIGN.md` | Formato v1 faz backup do SQLite; ainda não há binários AssetStore para empacotar. Pasta de assets futuras precisa entrar no manifesto antes do gate completo de assets. Teste de restore isolado usou diretório temporário, sem dados reais. |
 
 **Estados aceitos:** `PENDENTE`, `EM_EXECUCAO`, `BLOQUEADA`, `VALIDADA`.
 
@@ -183,6 +184,7 @@ Ainda não há entradas registradas neste controle. Toda mudança material do ro
 | 2026-10-20 | `ea835c5` | F02.09 validada; próxima F02.10 | G1 em execução | Estado de salvamento visível validado em Avalonia Headless, incluindo sucesso após commit SQLite e falha real de acesso à pasta temporária |
 | 2026-10-20 | `e00f85e` | F02.10 validada; próxima F02.11 | G1 em execução | Debounce e flush antes de navegação/fechamento; testes Headless de SQLite, erro e conflito de revisão passaram. TestarLocal.bat rapido: Core 6/6, Architecture 4/4, Data 15/15, Headless 9/9, build sem warnings/erros. |
 | 2026-10-20 | `df80c10` | F02.11 validada; próxima F02.12 | G1 em execução | Journal SQLite v3 e recuperação explícita no Fabricador; restore após falha injetada, conflito e limpeza isolada validados. TestarLocal.bat rapido: Core 8/8, Architecture 4/4, Data 17/17, Headless 14/14, build sem warnings/erros. |
+| 2026-10-20 | `6af5364` | F02.12 validada; próxima F02.13 | G1 em execução | Online backup com WAL, manifesto/hash e restore isolado verificados; adulteração rejeitada e destino existente preservado. TestarLocal.bat rapido: Core 8/8, Architecture 4/4, Data 19/19, Headless 14/14, build sem warnings/erros. |
 
 Após concluir um lote ou fase, adicionar uma linha. Não inflar contador só porque o commit contém múltiplos arquivos; contar apenas tarefas comprovadas.
 
@@ -191,7 +193,7 @@ Após concluir um lote ou fase, adicionar uma linha. Não inflar contador só po
 1. Confirmar branch, HEAD e árvore de trabalho localmente; não consultar nem sincronizar o remoto até autorização explícita.
 2. Ler `AGENTS.md`, `PLANO_DO_NOVO_APP.md`, `PLANO_MESTRE_EXECUCAO_CODEX.md` e este arquivo.
 3. Inspecionar evidências reais da última tarefa validada; caso não existam, corrigir seu estado.
-4. **Retomar F02.12**: implementar backup consistente com WAL, manifesto/hashes e restore testado em cópia isolada.
+4. **Retomar F02.13**: implementar log estruturado mínimo com correlation ID/rotação e sem conteúdo pessoal.
 5. Continuar automaticamente pelas tarefas seguintes **uma de cada vez**, em lotes flexíveis de aproximadamente 3–8 tarefas relacionadas, enquanto todos os gates pertinentes passam.
 6. Atualizar o registro e commitar entregas reais localmente na branch `Master-AValonia`; não desenvolver Video Studio antecipadamente.
 7. Ao encerrar, informar: **branch, HEAD, último ID VALIDADO, próximo ID PENDENTE, commits, comandos verdes, evidências, bloqueios e condição de desbloqueio**.
