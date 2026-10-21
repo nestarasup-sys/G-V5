@@ -13,8 +13,8 @@
 | Branch obrigatória | `Master-AValonia` |
 | Pasta exclusiva do novo aplicativo | `master avalonia/` |
 | Commit-base inspecionado antes deste arquivo | `53b7f7a97321e85063a8dd4f9635e48d36548323` |
-| Último commit de implementação validado | `9751212` (F09.13: slots persistentes e miniaturas do Animador) |
-| Checkout local revalidado | `TestarLocal.bat rapido` passou em 2026-10-21: build Debug; **303 testes, 0 falhas**; 2 avisos CS0618 preexistentes no `ThumbnailService` e 1 xUnit1051 preexistente em `HairRoleTintProcessorTests` |
+| Último commit de implementação validado | `db8100e` (F09.14 em andamento: testes negativos e cancelamento do Fabricador) |
+| Checkout local revalidado | `TestarLocal.bat rapido` passou em 2026-10-21: build Debug; **305 testes, 0 falhas**; avisos existentes: 2 CS0618 no `ThumbnailService` e 1 xUnit1051 em `HairRoleTintProcessorTests` |
 | Fase ativa | **F09 — Fabricador IV — cabelos, face, expressões e completação (F09.14 em execução)** |
 | Última tarefa VALIDADA | **F09.13** — slots de animação por modelo, miniaturas derivadas e decisão do contexto `CharacterId` |
 | Tarefa em execução | **F09.14** — testar salvar/reabrir/import inválido/cancelamento de cada subárea e fechar gaps de paridade |
