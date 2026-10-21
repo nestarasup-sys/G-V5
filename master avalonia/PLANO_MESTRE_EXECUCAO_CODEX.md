@@ -278,7 +278,7 @@ Ambiente/SDK/CI: `TestarLocal.bat gate` passou em 2026-10-21; ver `docs/gates/GA
 - [x] **F08.09** — Implementar publicar revisão imutável e vincular dependências reversas.
 - [x] **F08.10** — Implementar consulta quem usa roupa/modelo/pose e bloqueio de exclusão destrutiva.
 - [x] **F08.11** — Criar goldens para manga, calça, saia, cabeça e pose rotacionada.
-- [ ] **F08.12** — Executar auditorias de wardrobe/pose e evidenciar divergências em GATE-F08.
+- [x] **F08.12** — Executar auditorias de wardrobe/pose e evidenciar divergências em GATE-F08.
 
 **Encerramento F08:** registrar `docs/gates/GATE-F08.md` e marcar a fase validada somente se o gate acima foi comprovado. Se estiver bloqueado, documentar a evidência que falta e não iniciar F09.
 

@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using GV5.Assets.Decoding;
 using GV5.Core.Identity;
+using GV5.Core.Models;
 using GV5.Geometry;
 using GV5.Rendering;
 using SkiaSharp;
@@ -12,6 +13,36 @@ namespace GV5.Rendering.Tests;
 public sealed class WardrobeGoldenTests
 {
     private const int CanvasSize = 64;
+
+    [Fact]
+    public void SceneBuilder_InsertsGarmentsAfterTheirBoneAndKeepsHeadExtrasOnTop()
+    {
+        var bodyAsset = AssetId.New();
+        var garmentAsset = AssetId.New();
+        var torsoId = ModelPartId.New();
+        var headId = ModelPartId.New();
+        var body = new RenderLayer(RenderLayerId.New(), bodyAsset, new Rect2D(0, 0, 8, 8),
+            Transform2D.Identity, 1, RenderBlendMode.Normal, 0);
+        var hair = new RenderLayer(RenderLayerId.New(), bodyAsset, new Rect2D(8, 0, 8, 8),
+            Transform2D.Identity, 1, RenderBlendMode.Normal, 1);
+        var sleeve = new WardrobeComponentPosePlacement(WardrobeComponentId.New(), garmentAsset,
+            WardrobeCategory.UpperSleeve, torsoId, WardrobeRenderPhase.AttachedToBodyLayer, 0, 0,
+            new WardrobePlacement(new Rect2D(1, 2, 4, 6), 0, false, false, 1, 1));
+        var accessory = new WardrobeComponentPosePlacement(WardrobeComponentId.New(), garmentAsset,
+            WardrobeCategory.HeadAccessory, headId, WardrobeRenderPhase.AboveHair, int.MaxValue, 1,
+            new WardrobePlacement(new Rect2D(2, 7, 5, 2), 0, false, false, 1, 1));
+
+        var scene = WardrobeRenderSceneBuilder.Build(SceneId.New(), 16, 16, [body, hair],
+            new Dictionary<ModelPartId, int> { [torsoId] = 0, [headId] = 1 },
+            [accessory, sleeve], new Dictionary<AssetId, Rect2D> { [garmentAsset] = new Rect2D(0, 0, 8, 8) });
+
+        Assert.Equal(new[] { bodyAsset, garmentAsset, bodyAsset, garmentAsset }, scene.Layers.Select(layer => layer.AssetId));
+        Assert.Equal(new[] { 0, 1, 101, 203 }, scene.Layers.Select(layer => layer.ZOrder));
+        Assert.Throws<ArgumentException>(() => WardrobeRenderSceneBuilder.Build(SceneId.New(), 16, 16,
+            [body], new Dictionary<ModelPartId, int> { [torsoId] = 0 },
+            [sleeve with { Category = WardrobeCategory.Shirt, RenderPhase = WardrobeRenderPhase.AboveHair }],
+            new Dictionary<AssetId, Rect2D> { [garmentAsset] = new Rect2D(0, 0, 8, 8) }));
+    }
 
     [Theory]
     [InlineData("sleeve")]
@@ -61,55 +92,57 @@ public sealed class WardrobeGoldenTests
     private static RenderScene BuildScene(string scenario)
     {
         var asset = FixtureAssetId;
-        var layers = new List<RenderLayer>
-        {
-            Layer(asset, new Rect2D(0, 0, 24, 32), At(20, 16), z: 0)
-        };
-
-        var (crop, sourceBone, posedBone, garment, z) = scenario switch
+        var boneId = ModelPartId.New();
+        var (crop, sourceBone, posedBone, garment, category, phase) = scenario switch
         {
             "sleeve" => (new Rect2D(24, 0, 8, 12),
-                new WardrobeBoneFrame("arm", new Rect2D(29, 30, 4, 12), 0),
-                new WardrobeBoneFrame("arm", new Rect2D(29, 30, 4, 12), 0),
-                new Rect2D(28, 30, 6, 10), 1),
+                new WardrobeBoneFrame(boneId.ToString(), new Rect2D(29, 30, 4, 12), 0),
+                new WardrobeBoneFrame(boneId.ToString(), new Rect2D(29, 30, 4, 12), 0),
+                new Rect2D(28, 30, 6, 10), WardrobeCategory.UpperSleeve, WardrobeRenderPhase.AttachedToBodyLayer),
             "pants" => (new Rect2D(32, 0, 8, 12),
-                new WardrobeBoneFrame("leg", new Rect2D(26, 15, 12, 14), 0),
-                new WardrobeBoneFrame("leg", new Rect2D(26, 15, 12, 14), 0),
-                new Rect2D(25, 15, 14, 14), 1),
+                new WardrobeBoneFrame(boneId.ToString(), new Rect2D(26, 15, 12, 14), 0),
+                new WardrobeBoneFrame(boneId.ToString(), new Rect2D(26, 15, 12, 14), 0),
+                new Rect2D(25, 15, 14, 14), WardrobeCategory.ThighPants, WardrobeRenderPhase.AttachedToBodyLayer),
             "skirt" => (new Rect2D(24, 12, 12, 8),
-                new WardrobeBoneFrame("torso", new Rect2D(27, 27, 10, 12), 0),
-                new WardrobeBoneFrame("torso", new Rect2D(27, 27, 10, 12), 0),
-                new Rect2D(24, 25, 16, 8), 1),
+                new WardrobeBoneFrame(boneId.ToString(), new Rect2D(27, 27, 10, 12), 0),
+                new WardrobeBoneFrame(boneId.ToString(), new Rect2D(27, 27, 10, 12), 0),
+                new Rect2D(24, 25, 16, 8), WardrobeCategory.Skirt, WardrobeRenderPhase.AttachedToBodyLayer),
             "head" => (new Rect2D(40, 0, 8, 8),
-                new WardrobeBoneFrame("head", new Rect2D(27, 43, 10, 11), 0),
-                new WardrobeBoneFrame("head", new Rect2D(27, 43, 10, 11), 0),
-                new Rect2D(28, 50, 8, 4), int.MaxValue),
+                new WardrobeBoneFrame(boneId.ToString(), new Rect2D(27, 43, 10, 11), 0),
+                new WardrobeBoneFrame(boneId.ToString(), new Rect2D(27, 43, 10, 11), 0),
+                new Rect2D(26, 49, 12, 6), WardrobeCategory.HeadAccessory, WardrobeRenderPhase.AboveHair),
             "rotated-pose" => (new Rect2D(24, 0, 8, 12),
-                new WardrobeBoneFrame("arm", new Rect2D(29, 30, 4, 12), 0),
-                new WardrobeBoneFrame("arm", new Rect2D(29, 30, 4, 12), 28),
-                new Rect2D(29, 30, 4, 10), 1),
+                new WardrobeBoneFrame(boneId.ToString(), new Rect2D(29, 30, 4, 12), 0),
+                new WardrobeBoneFrame(boneId.ToString(), new Rect2D(29, 30, 4, 12), 28),
+                new Rect2D(28, 30, 6, 10), WardrobeCategory.UpperSleeve, WardrobeRenderPhase.AttachedToBodyLayer),
             _ => throw new ArgumentOutOfRangeException(nameof(scenario), scenario, "Unknown wardrobe golden scenario.")
         };
 
         var binding = WardrobeBinding.Bind(sourceBone, garment, garmentRotationDegrees: 0);
         var resolved = WardrobeBindingMath.Resolve(binding, posedBone);
-        var centerPivot = new Point2D(crop.Width / 2, crop.Height / 2);
-        var transform = new Transform2D(
-            new Point2D(resolved.Bounds.X, resolved.Bounds.Y),
-            new Point2D(resolved.Bounds.Width / crop.Width, resolved.Bounds.Height / crop.Height),
-            resolved.RotationDegrees * Math.PI / 180,
-            centerPivot,
-            resolved.FlipX,
-            resolved.FlipY);
-        layers.Add(Layer(asset, crop, transform, z));
+        var bodyLayers = new List<RenderLayer> { Layer(asset, new Rect2D(0, 0, 24, 32), At(20, 16), z: 0) };
+        var bodyLayerIndex = 0;
         if (scenario == "rotated-pose")
         {
-            var arm = new Transform2D(new Point2D(29, 30), new Point2D(1, 1),
-                28 * Math.PI / 180, new Point2D(2, 6));
-            layers.Add(Layer(asset, new Rect2D(20, 0, 4, 12), arm, z: 1));
-            layers[^2] = ReZ(layers[^2], 2);
+            bodyLayerIndex = 1;
+            bodyLayers.Add(Layer(asset, new Rect2D(16, 11, 4, 11),
+                new Transform2D(new Point2D(29, 30), new Point2D(1, 1), 28 * Math.PI / 180,
+                    new Point2D(2, 5.5)), z: 1));
         }
-        return new RenderScene(SceneId.New(), CanvasSize, CanvasSize, layers);
+
+        var componentPlacement = new WardrobeComponentPosePlacement(
+            WardrobeComponentId.New(), asset, category, boneId, phase, bodyLayerIndex, 0, resolved);
+        var partToLayer = new Dictionary<ModelPartId, int> { [boneId] = bodyLayerIndex };
+        var crops = new Dictionary<AssetId, Rect2D> { [asset] = crop };
+        if (scenario == "rotated-pose")
+        {
+            // The renderer uses stable model-part IDs, so the synthetic arm is the placement's target layer.
+            var armLayer = bodyLayers[^1];
+            bodyLayers[^1] = new RenderLayer(RenderLayerId.New(), armLayer.AssetId, armLayer.Crop,
+                armLayer.Transform, armLayer.Alpha, armLayer.BlendMode, armLayer.ZOrder);
+        }
+        return WardrobeRenderSceneBuilder.Build(SceneId.New(), CanvasSize, CanvasSize, bodyLayers,
+            partToLayer, [componentPlacement], crops);
     }
 
     private static RenderLayer Layer(AssetId asset, Rect2D crop, Transform2D transform, int z) =>
@@ -117,9 +150,6 @@ public sealed class WardrobeGoldenTests
 
     private static Transform2D At(double x, double y) =>
         new(new Point2D(x, y), new Point2D(1, 1), 0, Point2D.Zero);
-
-    private static RenderLayer ReZ(RenderLayer layer, int z) =>
-        new(layer.Id, layer.AssetId, layer.Crop, layer.Transform, layer.Alpha, layer.BlendMode, z);
 
     private static AssetId FixtureAssetId => AssetId.From(Guid.Parse("a2c26730-4955-45b8-a211-86b6fd581140"));
 
