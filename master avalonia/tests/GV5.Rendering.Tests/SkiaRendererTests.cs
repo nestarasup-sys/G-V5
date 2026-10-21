@@ -117,6 +117,90 @@ public sealed class SkiaRendererTests
     }
 
     [Fact]
+    public async Task IncrementalRenderer_Matches_Full_Render_And_Invalidates_Only_Changed_Layer_Signature()
+    {
+        using var assets = new TestRenderAssetProvider(CreateFourColorPng());
+        using var incremental = new IncrementalSkiaRenderer(assets, maximumCachedLayerBytes: 1024 * 1024);
+        var fullRenderer = new SkiaRenderer(assets);
+        var center = new Point2D(1, 1);
+        var first = Layer(
+            new Rect2D(0, 0, 2, 2),
+            new Transform2D(new Point2D(4, 4), new Point2D(1, 1), 0, Point2D.Zero),
+            alpha: 1,
+            zOrder: 0);
+        var second = Layer(
+            new Rect2D(0, 0, 2, 2),
+            new Transform2D(new Point2D(4, 4), new Point2D(1, 1), 0, center, flipX: true),
+            alpha: 0.5,
+            zOrder: 1,
+            blendMode: RenderBlendMode.Multiply);
+        var third = Layer(
+            new Rect2D(0, 0, 1, 2),
+            new Transform2D(new Point2D(9.5, 4.5), new Point2D(1, 1), Math.PI / 2, new Point2D(0.5, 1), flipY: true),
+            alpha: 0.75,
+            zOrder: 2,
+            blendMode: RenderBlendMode.Screen);
+        var fourth = Layer(
+            new Rect2D(0, 0, 2, 2),
+            new Transform2D(new Point2D(6, 4), new Point2D(1, 1), 0, Point2D.Zero),
+            alpha: 0.25,
+            zOrder: 3,
+            blendMode: RenderBlendMode.Add);
+        var firstScene = Scene([first, second, third, fourth], width: 32, height: 32);
+
+        using var expectedFirst = await fullRenderer.RenderAsync(firstScene, TestContext.Current.CancellationToken);
+        using var actualFirst = await incremental.RenderAsync(firstScene, TestContext.Current.CancellationToken);
+        AssertPixelsEqual(expectedFirst.Bitmap, actualFirst.Bitmap);
+        Assert.Equal(new RenderedLayerCacheMetrics(0, 4, 0, 4 * 32 * 32 * 4, 4), incremental.CacheMetrics);
+
+        using var expectedRepeated = await fullRenderer.RenderAsync(firstScene, TestContext.Current.CancellationToken);
+        using var actualRepeated = await incremental.RenderAsync(firstScene, TestContext.Current.CancellationToken);
+        AssertPixelsEqual(expectedRepeated.Bitmap, actualRepeated.Bitmap);
+        Assert.Equal(new RenderedLayerCacheMetrics(4, 4, 0, 4 * 32 * 32 * 4, 4), incremental.CacheMetrics);
+
+        var changedSecond = new RenderLayer(
+            second.Id,
+            second.AssetId,
+            second.Crop,
+            new Transform2D(new Point2D(5, 4), second.Transform.Scale, second.Transform.RotationRadians, second.Transform.Pivot, second.Transform.FlipX, second.Transform.FlipY),
+            0.35,
+            second.BlendMode,
+            second.ZOrder);
+        var changedScene = Scene([first, changedSecond, third], width: 32, height: 32);
+        using var expectedChanged = await fullRenderer.RenderAsync(changedScene, TestContext.Current.CancellationToken);
+        using var actualChanged = await incremental.RenderAsync(changedScene, TestContext.Current.CancellationToken);
+        AssertPixelsEqual(expectedChanged.Bitmap, actualChanged.Bitmap);
+        Assert.Equal(new RenderedLayerCacheMetrics(6, 5, 0, 5 * 32 * 32 * 4, 5), incremental.CacheMetrics);
+        Assert.Equal(0, assets.Cache.Metrics.ActiveLeaseCount);
+    }
+
+    [Fact]
+    public async Task IncrementalRenderer_Respects_Byte_Budget_And_Evicts_Only_Unleased_Layers()
+    {
+        using var assets = new TestRenderAssetProvider(CreateFourColorPng());
+        const int frameBytes = 32 * 32 * 4;
+        using var incremental = new IncrementalSkiaRenderer(assets, maximumCachedLayerBytes: frameBytes * 2L);
+        var first = Layer(new Rect2D(0, 0, 2, 2), new Transform2D(new Point2D(1, 1), new Point2D(1, 1), 0, Point2D.Zero), zOrder: 0);
+        var second = Layer(new Rect2D(0, 0, 2, 2), new Transform2D(new Point2D(4, 4), new Point2D(1, 1), 0, Point2D.Zero), zOrder: 1);
+        var third = Layer(new Rect2D(0, 0, 2, 2), new Transform2D(new Point2D(7, 7), new Point2D(1, 1), 0, Point2D.Zero), zOrder: 2);
+        var fullScene = Scene([first, second, third], width: 32, height: 32);
+
+        using var expectedFull = await new SkiaRenderer(assets).RenderAsync(fullScene, TestContext.Current.CancellationToken);
+        using var actualFull = await incremental.RenderAsync(fullScene, TestContext.Current.CancellationToken);
+        AssertPixelsEqual(expectedFull.Bitmap, actualFull.Bitmap);
+        Assert.Equal(frameBytes * 2L, incremental.CacheMetrics.ResidentBytes);
+        Assert.Equal(2, incremental.CacheMetrics.EntryCount);
+        Assert.Equal(1, incremental.CacheMetrics.EvictionCount);
+        Assert.True(incremental.CacheMetrics.ResidentBytes <= incremental.MaximumCachedLayerBytes);
+
+        var recentLayersScene = Scene([second, third], width: 32, height: 32);
+        using var expectedRecent = await new SkiaRenderer(assets).RenderAsync(recentLayersScene, TestContext.Current.CancellationToken);
+        using var actualRecent = await incremental.RenderAsync(recentLayersScene, TestContext.Current.CancellationToken);
+        AssertPixelsEqual(expectedRecent.Bitmap, actualRecent.Bitmap);
+        Assert.Equal(new RenderedLayerCacheMetrics(2, 3, 1, frameBytes * 2L, 2), incremental.CacheMetrics);
+    }
+
+    [Fact]
     public void PngGoldenComparerReportsAndHighlightsAnActualPixelDifference()
     {
         using var expected = new SKBitmap(new SKImageInfo(2, 2, SKColorType.Rgba8888, SKAlphaType.Premul));
@@ -152,14 +236,26 @@ public sealed class SkiaRendererTests
 
     private static RenderScene Scene(IEnumerable<RenderLayer> layers, int width = 8, int height = 8) => new(SceneId.New(), width, height, layers);
 
-    private static RenderLayer Layer(Rect2D crop, Transform2D? transform = null, double alpha = 1, int zOrder = 0) => new(
+    private static RenderLayer Layer(Rect2D crop, Transform2D? transform = null, double alpha = 1, int zOrder = 0, RenderBlendMode blendMode = RenderBlendMode.Normal) => new(
         RenderLayerId.New(),
         AssetId.New(),
         crop,
         transform ?? Transform2D.Identity,
         alpha,
-        RenderBlendMode.Normal,
+        blendMode,
         zOrder);
+
+    private static void AssertPixelsEqual(SKBitmap expected, SKBitmap actual)
+    {
+        Assert.Equal(expected.Width, actual.Width);
+        Assert.Equal(expected.Height, actual.Height);
+        for (var y = 0; y < expected.Height; y++)
+        for (var x = 0; x < expected.Width; x++)
+        {
+            Assert.True(expected.GetPixel(x, y) == actual.GetPixel(x, y),
+                $"Incremental render differs at ({x},{y}): expected {expected.GetPixel(x, y)}, actual {actual.GetPixel(x, y)}.");
+        }
+    }
 
     private static byte[] CreateFourColorPng()
     {

@@ -117,7 +117,7 @@ public sealed class SkiaRenderer(IRenderAssetProvider assets, SkiaRendererLimits
         }
     }
 
-    private static SKBlendMode ToSkiaBlendMode(RenderBlendMode blendMode) => blendMode switch
+    internal static SKBlendMode ToSkiaBlendMode(RenderBlendMode blendMode) => blendMode switch
     {
         RenderBlendMode.Normal => SKBlendMode.SrcOver,
         RenderBlendMode.Multiply => SKBlendMode.Multiply,
