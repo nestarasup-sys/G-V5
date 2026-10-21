@@ -13,12 +13,12 @@
 | Branch obrigatória | `Master-AValonia` |
 | Pasta exclusiva do novo aplicativo | `master avalonia/` |
 | Commit-base inspecionado antes deste arquivo | `53b7f7a97321e85063a8dd4f9635e48d36548323` |
-| Último commit de implementação validado | `fb9bef0` (F03.04; dedupe e referências persistentes de assets) |
+| Último commit de implementação validado | `5373d30` (F03.05; decode Skia de imagens com orientação) |
 | Fase ativa | **F03 — AssetStore, thumbnails e cache limitado** |
-| Última tarefa VALIDADA | **F03.04** — deduplicação e referências persistentes |
-| Próxima tarefa PENDENTE | **F03.05** — decodificação PNG/JPEG/WebP fora da UI |
+| Última tarefa VALIDADA | **F03.05** — decodificação PNG/JPEG/WebP fora da UI |
+| Próxima tarefa PENDENTE | **F03.06** — cache de bitmap LRU limitado por bytes e leases |
 | Gate atual | **GATE F00: PASSOU; G0: PASSOU; F02: PASSOU; G1 global em execução até F03–F05** |
-| Progresso validado neste controle | **45 / 247 tarefas (18,2%)** |
+| Progresso validado neste controle | **46 / 247 tarefas (18,6%)** |
 | Tarefas em execução | Nenhuma |
 | Bloqueios conhecidos | Primeiro download do SDK em clone vazio não progrediu; evidência e limite de F01 estão registrados em `docs/gates/GATE-F01.md` |
 | Aceite Windows/GPU | **Não executado / não registrado** |
@@ -116,6 +116,7 @@ Adicionar uma linha ao concluir ou bloquear cada tarefa. A linha inicial abaixo 
 | **F03.02** | **VALIDADA** | `95a754e` | Implementado `AssetImportStager` por stream não seekable: staging com nome aleatório, SHA-256 incremental, detecção real de MIME PNG/JPEG/WebP, dimensões de cabeçalho e limites configuráveis (padrão 256 MiB, 16.384 por eixo, 100 Mpx). Cancelamento/erro apaga o arquivo parcial; o stream de entrada permanece sob ownership do chamador e a stage validada é removida ao descartar. Testes cobrem os três cabeçalhos, hash/bytes, incompatibilidade de MIME, imagem malformada, excesso de tamanho/dimensão/pixels, limpeza/cancelamento e descarte. `TestarLocal.bat rapido` passou: build 0 warnings/0 errors, Core 11/11, Arquitetura 6/6, Assets 5/5, Data 27/27, Headless 15/15; `git diff --check` passou. | `src/GV5.Assets/Import/AssetImportStager.cs`; `tests/GV5.Assets.Tests/AssetImportStagerTests.cs`; `GV5.sln`; `docs/data/SCHEMA_DESIGN.md` | O parser valida assinatura e estrutura mínima dos cabeçalhos; decodificação completa/CRC/pixels fica em F03.05. Nada é promovido para armazenamento final ainda; publicação e recovery são F03.03. |
 | **F03.03** | **VALIDADA** | `4020ed4` | `SqliteAssetImportPipeline` publica por SHA-256 com journal SQLite v4, staging de operação, move sem sobrescrita e validação de hash/tamanho. Recupera stage-only, destino-only e stage+destino; divergências preservam journal/bytes e falhas não apagam arquivos. Metadados e remoção do journal são confirmados juntos. Testes verificam publicação, reopen, bytes, recuperação após interrupção em pontos distintos, hash inválido e asset ausente/restaurado. `TestarLocal.bat rapido` passou: build Debug 0 warnings/0 errors, Core 11/11, Arquitetura 6/6, Assets 5/5, Data 32/32, Headless 15/15; `git diff --check` passou. | `src/GV5.Data/Assets/SqliteAssetImportPipeline.cs`; `src/GV5.Data/Migrations/AssetImportJournalSchemaMigration.cs`; `tests/GV5.Data.Tests/SqliteAssetImportPipelineTests.cs`; `src/GV5.App/Composition/AppComposition.cs`; `docs/data/SCHEMA_DESIGN.md` | Backup formato 1 ainda inclui somente SQLite e não os binários `assets/sha256`; documentado explicitamente. Completar backup/restore de assets antes do gate F03 e do uso de binários como dados de usuário. Referências persistentes/deduplicação de chamada pública ficam em F03.04. |
 | **F03.04** | **VALIDADA** | `fb9bef0` | Migration 5 cria relações duráveis por `(owner_type, owner_id, slot)` com FK restritiva e índice por asset. `SqliteAssetStore` implementa `IAssetStore` e é registrado no composition root; conteúdo com mesmo SHA-256 compartilha o mesmo ID/binário. Testes cobrem reimportação deduplicada, referências idempotentes após reabrir SQLite, conflito para slot ocupado, vários slots, not found, entrada inválida e liberação que mantém arquivo/metadado. `TestarLocal.bat rapido` passou: build Debug 0 warnings/0 errors, Core 11/11, Arquitetura 6/6, Assets 5/5, Data 33/33, Headless 15/15; `git diff --check` passou. | `src/GV5.Data/Assets/SqliteAssetStore.cs`; `src/GV5.Data/Migrations/AssetReferenceSchemaMigration.cs`; `src/GV5.App/Composition/AppComposition.cs`; `tests/GV5.Data.Tests/SqliteAssetImportPipelineTests.cs`; `docs/data/SCHEMA_DESIGN.md` | Backup ainda não inclui os binários; não usar assets como dados de usuário nem fechar GATE-F03 antes de completar backup/restore. |
+| **F03.05** | **VALIDADA** | `5373d30` | `AssetImageDecoder` executa decode Skia em worker com limite de dimensão/pixels/memória e erros tipados. Testes decodificam PNG com alpha, JPEG e WebP (incluindo alpha), validam pixels para todas as oito orientações EXIF, formato malformado, limite excedido, entrada não seekable, ownership do stream e cancelamento. `TestarLocal.bat rapido` passou: build Debug 0 warnings/0 errors, Core 11/11, Arquitetura 6/6, Assets 19/19, Data 33/33, Headless 15/15; `git diff --check` passou. | `src/GV5.Assets/Decoding/*`; `tests/GV5.Assets.Tests/AssetImageDecoderTests.cs`; `src/GV5.App/Composition/AppComposition.cs`; `Directory.Packages.props`; `docs/data/SCHEMA_DESIGN.md` | WebP animado usa o primeiro frame; teste headless de imagem em Windows local, sem validação visual/GPU nativa. |
 
 **Estados aceitos:** `PENDENTE`, `EM_EXECUCAO`, `BLOQUEADA`, `VALIDADA`.
 
@@ -199,6 +200,7 @@ Ainda não há entradas registradas neste controle. Toda mudança material do ro
 | 2026-10-21 | `95a754e` | F03.02 validada; próxima F03.03 | G1 em execução | Importação stream para stage e inspeção PNG/JPEG/WebP com hash/limites; falhas deixam pasta temporária limpa. TestarLocal.bat rapido: Core 11/11, Architecture 6/6, Assets 5/5, Data 27/27, Headless 15/15; build sem warnings/erros. |
 | 2026-10-21 | `4020ed4` | F03.03 validada; próxima F03.04 | G1 em execução | Publicação por hash com journal v4 e recuperação testada em diretórios temporários. TestarLocal.bat rapido: Core 11/11, Architecture 6/6, Assets 5/5, Data 32/32, Headless 15/15; build sem warnings/erros. |
 | 2026-10-21 | `fb9bef0` | F03.04 validada; próxima F03.05 | G1 em execução | AssetStore completo com dedupe por hash e referências persistentes; suíte rápida local: Core 11/11, Architecture 6/6, Assets 5/5, Data 33/33, Headless 15/15, build sem warnings/erros. |
+| 2026-10-21 | `5373d30` | F03.05 validada; próxima F03.06 | G1 em execução | Decode de PNG/JPEG/WebP com alpha, todas as orientações EXIF, erros tipados e limites; suíte rápida: Core 11/11, Architecture 6/6, Assets 19/19, Data 33/33, Headless 15/15, build sem warnings/erros. |
 
 Após concluir um lote ou fase, adicionar uma linha. Não inflar contador só porque o commit contém múltiplos arquivos; contar apenas tarefas comprovadas.
 
@@ -207,7 +209,7 @@ Após concluir um lote ou fase, adicionar uma linha. Não inflar contador só po
 1. Confirmar branch, HEAD e árvore de trabalho localmente; não consultar nem sincronizar o remoto até autorização explícita.
 2. Ler `AGENTS.md`, `PLANO_DO_NOVO_APP.md`, `PLANO_MESTRE_EXECUCAO_CODEX.md` e este arquivo.
 3. Inspecionar evidências reais da última tarefa validada; caso não existam, corrigir seu estado.
-4. **Retomar F03.05**: implementar decode de PNG/JPEG/WebP fora da UI, preservando alpha/orientação e produzindo erro tipado.
+4. **Retomar F03.06**: implementar cache LRU de bitmaps com orçamento em bytes, leases e métricas.
 5. Continuar automaticamente pelas tarefas seguintes **uma de cada vez**, em lotes flexíveis de aproximadamente 3–8 tarefas relacionadas, enquanto todos os gates pertinentes passam.
 6. Atualizar o registro e commitar entregas reais localmente na branch `Master-AValonia`; não desenvolver Video Studio antecipadamente.
 7. Ao encerrar, informar: **branch, HEAD, último ID VALIDADO, próximo ID PENDENTE, commits, comandos verdes, evidências, bloqueios e condição de desbloqueio**.
