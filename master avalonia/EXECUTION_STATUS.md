@@ -13,12 +13,12 @@
 | Branch obrigatória | `Master-AValonia` |
 | Pasta exclusiva do novo aplicativo | `master avalonia/` |
 | Commit-base inspecionado antes deste arquivo | `53b7f7a97321e85063a8dd4f9635e48d36548323` |
-| Último commit de implementação validado | `8ab4ae8` (F02.07; conflito otimista sob concorrência) |
+| Último commit de implementação validado | `4b9c4be` (F02.08; gravação incremental por entidade) |
 | Fase ativa | **F02 — SQLite, revisões, transações e recuperação básica** |
-| Última tarefa VALIDADA | **F02.07** — expectedRevision e conflito entre dois escritores |
-| Próxima tarefa PENDENTE | **F02.08** — persistir somente entidades alteradas |
+| Última tarefa VALIDADA | **F02.08** — persistir somente a entidade alterada e evitar escrita sem mudança |
+| Próxima tarefa PENDENTE | **F02.09** — estado Saved/Dirty/Saving/Error na interface |
 | Gate atual | **GATE F00: PASSOU; G0: PASSOU em clone limpo; G1 em execução** |
-| Progresso validado neste controle | **33 / 247 tarefas (13,4%)** |
+| Progresso validado neste controle | **34 / 247 tarefas (13,8%)** |
 | Tarefas em execução | Nenhuma |
 | Bloqueios conhecidos | Primeiro download do SDK em clone vazio não progrediu; evidência e limite de F01 estão registrados em `docs/gates/GATE-F01.md` |
 | Aceite Windows/GPU | **Não executado / não registrado** |
@@ -46,7 +46,7 @@ Se o Codex encontrar algo já implementado, **validar e registrar evidências**,
 | --- | --- | ---: | ---: | --- | --- |
 | F00 | Auditoria do legado, baseline e sincronização | 13 | 13 | VALIDADA | PASSOU |
 | F01 | Solution .NET, contratos, módulo e CI | 13 | 13 | VALIDADA | G0 PASSOU |
-| F02 | SQLite, revisões, transações e recuperação básica | 15 | 7 | EM_EXECUCAO | G0 passou |
+| F02 | SQLite, revisões, transações e recuperação básica | 15 | 8 | EM_EXECUCAO | G0 passou |
 | F03 | AssetStore, thumbnails e cache limitado | 11 | 0 | PENDENTE | — |
 | F04 | Geometry Engine canônica | 11 | 0 | PENDENTE | — |
 | F05 | RenderScene e SkiaRenderer independentes | 11 | 0 | PENDENTE | — |
@@ -104,6 +104,7 @@ Adicionar uma linha ao concluir ou bloquear cada tarefa. A linha inicial abaixo 
 | **F02.05** | **VALIDADA** | `7d5930d` | Definidos `ModelDraft` com `ModelId`, `Revision`, nome e timestamps validados; contrato `IModelDraftRepository` em Application; migration v2 para a tabela `models`; implementação SQLite registrada no composition root. Testes Core cobrem normalização, revisionamento, timestamps e entradas inválidas. | `src/GV5.Core/Models/ModelDraft.cs`; `src/GV5.Application/Contracts/IModelDraftRepository.cs`; `src/GV5.Data/Repositories/SqliteModelDraftRepository.cs`; migration v2; `tests/GV5.Core.Tests/ModelDraftTests.cs` | Sem novo acesso à pasta real de dados; banco de teste foi temporário. |
 | **F02.06** | **VALIDADA** | `7d5930d` | CRUD create/get/update usa SQLite real temporário e transações. Testes confirmam fechar/reabrir mantendo nome/ID/revisão/datas, duplicata como Conflict, ID ausente como NotFound, ID inválido como Validation e rejeição de timestamps adulterados. `TestarLocal.bat rapido` passou: build Debug 0 warnings/0 errors, Core 6/6, Architecture 4/4, Data 14/14, Headless 3/3. A primeira rodada detectou e corrigiu a possibilidade de retroceder `updated_utc_ms`; rodada final verde. | `src/GV5.Data/Repositories/SqliteModelDraftRepository.cs`; `tests/GV5.Data.Tests/SqliteModelDraftRepositoryTests.cs`; saída local desta sessão | Testes usam somente diretórios temporários. O cenário concorrente dedicado de expectedRevision pertence à F02.07. |
 | **F02.07** | **VALIDADA** | `8ab4ae8` | Dois repositórios, partindo da mesma revisão 1, tentam atualizar concorrentemente com `expectedRevision=1`; exatamente um grava a revisão 2 e o outro recebe `Conflict`, sem substituir o valor vencedor. `TestarLocal.bat rapido` passou: build Debug 0 warnings/0 errors, Core 6/6, Architecture 4/4, Data 15/15, Headless 3/3. | `tests/GV5.Data.Tests/SqliteModelDraftRepositoryTests.cs`; saída local desta sessão | Cenário sintético em arquivo SQLite temporário e serviço compartilhado, sem acesso ao perfil real. |
+| **F02.08** | **VALIDADA** | `4b9c4be` | Persistência é limitada à linha do agregado pelo ID e revisão; retry idêntico verifica igualdade e não executa `UPDATE`. Teste usa trigger de auditoria temporário: uma atualização altera somente o modelo-alvo, preserva outro modelo e a repetição idêntica não gera segundo evento. `TestarLocal.bat rapido` passou: build Debug 0 warnings/0 errors, Core 6/6, Architecture 4/4, Data 15/15, Headless 3/3. | `src/GV5.Data/Repositories/SqliteModelDraftRepository.cs`; `tests/GV5.Data.Tests/SqliteModelDraftRepositoryTests.cs`; `docs/data/SCHEMA_DESIGN.md` | Evidência por linha/agregado no SQLite; não é benchmark de tamanho físico do WAL nem de múltiplas tabelas/filhos, que serão testados quando esses agregados existirem. |
 
 **Estados aceitos:** `PENDENTE`, `EM_EXECUCAO`, `BLOQUEADA`, `VALIDADA`.
 
@@ -175,6 +176,7 @@ Ainda não há entradas registradas neste controle. Toda mudança material do ro
 | 2026-10-20 | `532101b` | F02.04 validada; próxima F02.05 | G1 em execução | Migrations sequenciais com checksum e rollback transacional; banco sintético vazio→v1→reabertura íntegra, suíte rápida verde (22 testes combinados incluindo Headless) |
 | 2026-10-20 | `7d5930d` | F02.06 validada; próxima F02.07 | G1 em execução | ModelDraft com CRUD SQLite e optimistic concurrency; `TestarLocal.bat rapido` passou (Core 6/6, Architecture 4/4, Data 14/14, Headless 3/3) |
 | 2026-10-20 | `8ab4ae8` | F02.07 validada; próxima F02.08 | G1 em execução | Duas tentativas concorrentes com a mesma revisão resultam em um sucesso e um Conflict; suíte rápida local verde |
+| 2026-10-20 | `4b9c4be` | F02.08 validada; próxima F02.09 | G1 em execução | Update só altera a linha do agregado; no-op validado com trigger/auditoria; suíte rápida local verde |
 
 Após concluir um lote ou fase, adicionar uma linha. Não inflar contador só porque o commit contém múltiplos arquivos; contar apenas tarefas comprovadas.
 
@@ -183,7 +185,7 @@ Após concluir um lote ou fase, adicionar uma linha. Não inflar contador só po
 1. Confirmar branch, HEAD e árvore de trabalho localmente; não consultar nem sincronizar o remoto até autorização explícita.
 2. Ler `AGENTS.md`, `PLANO_DO_NOVO_APP.md`, `PLANO_MESTRE_EXECUCAO_CODEX.md` e este arquivo.
 3. Inspecionar evidências reais da última tarefa validada; caso não existam, corrigir seu estado.
-4. **Retomar F02.08**: definir e provar gravação incremental por entidades alteradas, sem regravar o arquivo completo por gesto.
+4. **Retomar F02.09**: expor estado Saved/Dirty/Saving/Error em UI e testar erro de persistência; não integrar dados reais nem saltar para autosave.
 5. Continuar automaticamente pelas tarefas seguintes **uma de cada vez**, em lotes flexíveis de aproximadamente 3–8 tarefas relacionadas, enquanto todos os gates pertinentes passam.
 6. Atualizar o registro e commitar entregas reais localmente na branch `Master-AValonia`; não desenvolver Video Studio antecipadamente.
 7. Ao encerrar, informar: **branch, HEAD, último ID VALIDADO, próximo ID PENDENTE, commits, comandos verdes, evidências, bloqueios e condição de desbloqueio**.
