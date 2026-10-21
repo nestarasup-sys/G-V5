@@ -108,6 +108,27 @@ public sealed class FaceSheetProcessorTests
         Assert.Throws<ArgumentOutOfRangeException>(() => new FaceSheetOptions(NoseMode: (FaceNoseSheetMode)99).Validate());
     }
 
+    [Fact]
+    public async Task EyeInteriorMask_ConvertsLuminanceToSoftWhiteAlphaAndPreservesSource()
+    {
+        using var source = await DecodeAsync(4, 1, bitmap =>
+        {
+            bitmap.SetPixel(0, 0, new SKColor(20, 20, 20, 255));
+            bitmap.SetPixel(1, 0, new SKColor(145, 145, 145, 255));
+            bitmap.SetPixel(2, 0, new SKColor(173, 173, 173, 128));
+            bitmap.SetPixel(3, 0, new SKColor(220, 220, 220, 255));
+        });
+
+        using var mask = await new EyeInteriorMaskProcessor().ProcessAsync(source,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(new SKColor(255, 255, 255, 0), mask.Bitmap.GetPixel(0, 0));
+        Assert.Equal(new SKColor(255, 255, 255, 0), mask.Bitmap.GetPixel(1, 0));
+        Assert.Equal((byte)65, mask.Bitmap.GetPixel(2, 0).Alpha);
+        Assert.Equal(new SKColor(255, 255, 255, 255), mask.Bitmap.GetPixel(3, 0));
+        Assert.Equal(new SKColor(20, 20, 20, 255), source.Bitmap.GetPixel(0, 0));
+    }
+
     private static void AssertPiece(FaceSheetPieceResult piece, FaceSheetPartKind kind, int index,
         FaceSheetSide side, SKColor expectedColor)
     {
