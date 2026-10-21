@@ -141,6 +141,7 @@ public sealed class SqliteModelDraftRepository(IGv5Database database) : IModelDr
                 insert.CommandText = "INSERT INTO models(model_id, revision, display_name, created_utc_ms, updated_utc_ms) VALUES ($id, $revision, $name, $created, $updated);";
                 AddDraftParameters(insert, duplicate);
                 await insert.ExecuteNonQueryAsync(token).ConfigureAwait(false);
+                await CopyContentSnapshotAsync(connection, transaction, sourceId, duplicate, token).ConfigureAwait(false);
                 return true;
             }, cancellationToken).ConfigureAwait(false);
 
@@ -293,6 +294,84 @@ public sealed class SqliteModelDraftRepository(IGv5Database database) : IModelDr
         command.Parameters.AddWithValue("$name", draft.Name);
         command.Parameters.AddWithValue("$created", draft.CreatedUtcMs);
         command.Parameters.AddWithValue("$updated", draft.UpdatedUtcMs);
+    }
+
+    private static async Task CopyContentSnapshotAsync(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        ModelId sourceId,
+        ModelDraft duplicate,
+        CancellationToken cancellationToken)
+    {
+        await using (var copyContent = connection.CreateCommand())
+        {
+            copyContent.Transaction = transaction;
+            copyContent.CommandText = """
+                INSERT INTO model_draft_contents(model_id, content_revision, schema_version, slot, source_asset_id, source_width, source_height, updated_utc_ms)
+                SELECT $target, 1, schema_version, slot, source_asset_id, source_width, source_height, $updated
+                FROM model_draft_contents WHERE model_id = $source;
+                """;
+            copyContent.Parameters.AddWithValue("$target", duplicate.Id.ToString());
+            copyContent.Parameters.AddWithValue("$source", sourceId.ToString());
+            copyContent.Parameters.AddWithValue("$updated", duplicate.UpdatedUtcMs);
+            if (await copyContent.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false) == 0)
+            {
+                return;
+            }
+        }
+
+        await using (var copyParts = connection.CreateCommand())
+        {
+            copyParts.Transaction = transaction;
+            copyParts.CommandText = """
+                INSERT INTO model_draft_parts(
+                    model_id, part_id, part_index, display_name, asset_id,
+                    crop_x, crop_y, crop_width, crop_height,
+                    transform_x, transform_y, scale_x, scale_y, rotation_radians, pivot_x, pivot_y, flip_x, flip_y,
+                    source_crop_x, source_crop_y, source_crop_width, source_crop_height,
+                    source_transform_x, source_transform_y, source_scale_x, source_scale_y, source_rotation_radians,
+                    source_pivot_x, source_pivot_y, source_flip_x, source_flip_y, is_visible)
+                SELECT $target, part_id, part_index, display_name, asset_id,
+                    crop_x, crop_y, crop_width, crop_height,
+                    transform_x, transform_y, scale_x, scale_y, rotation_radians, pivot_x, pivot_y, flip_x, flip_y,
+                    source_crop_x, source_crop_y, source_crop_width, source_crop_height,
+                    source_transform_x, source_transform_y, source_scale_x, source_scale_y, source_rotation_radians,
+                    source_pivot_x, source_pivot_y, source_flip_x, source_flip_y, is_visible
+                FROM model_draft_parts WHERE model_id = $source;
+                """;
+            copyParts.Parameters.AddWithValue("$target", duplicate.Id.ToString());
+            copyParts.Parameters.AddWithValue("$source", sourceId.ToString());
+            await copyParts.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        await using (var copyLayers = connection.CreateCommand())
+        {
+            copyLayers.Transaction = transaction;
+            copyLayers.CommandText = "INSERT INTO model_draft_layer_order(model_id, layer_index, part_id) SELECT $target, layer_index, part_id FROM model_draft_layer_order WHERE model_id = $source;";
+            copyLayers.Parameters.AddWithValue("$target", duplicate.Id.ToString());
+            copyLayers.Parameters.AddWithValue("$source", sourceId.ToString());
+            await copyLayers.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        await using (var copyReferences = connection.CreateCommand())
+        {
+            copyReferences.Transaction = transaction;
+            copyReferences.CommandText = """
+                INSERT INTO asset_references(owner_type, owner_id, slot, asset_id, created_utc_ms)
+                SELECT owner_type, $target, slot, asset_id, $created
+                FROM asset_references WHERE owner_type = 'fabricator.model-draft' AND owner_id = $source;
+                """;
+            copyReferences.Parameters.AddWithValue("$target", duplicate.Id.ToString());
+            copyReferences.Parameters.AddWithValue("$source", sourceId.ToString());
+            copyReferences.Parameters.AddWithValue("$created", duplicate.UpdatedUtcMs);
+            await copyReferences.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        await using var clearCandidates = connection.CreateCommand();
+        clearCandidates.Transaction = transaction;
+        clearCandidates.CommandText = "DELETE FROM asset_gc_candidates WHERE asset_id IN (SELECT asset_id FROM asset_references WHERE owner_type = 'fabricator.model-draft' AND owner_id = $target);";
+        clearCandidates.Parameters.AddWithValue("$target", duplicate.Id.ToString());
+        await clearCandidates.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private static async Task<ModelDraft?> ReadDraftAsync(

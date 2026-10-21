@@ -273,7 +273,16 @@ public sealed class SqliteModelDraftRepositoryTests
     }
 
     private static Task<MigrationRunResult> MigrateAsync(SqliteDatabase database, CancellationToken cancellationToken) =>
-        new SqliteMigrationRunner(database, [new InitialAssetSchemaMigration(), new ModelDraftSchemaMigration()])
+        new SqliteMigrationRunner(database,
+        [
+            new InitialAssetSchemaMigration(),
+            new ModelDraftSchemaMigration(),
+            new ModelDraftCheckpointSchemaMigration(),
+            new AssetImportJournalSchemaMigration(),
+            new AssetReferenceSchemaMigration(),
+            new AssetGarbageCollectionSchemaMigration(),
+            new ModelDraftContentSchemaMigration()
+        ])
             .MigrateAsync(cancellationToken);
 
     private static async Task<Result<ModelDraft>> UpdateAfterStartAsync(

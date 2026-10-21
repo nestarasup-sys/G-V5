@@ -1,8 +1,8 @@
 # ADR-0005 — Contrato de modelo e conteúdo versionado do Fabricador
 
-- **Estado:** aceito para F06.01
+- **Estado:** aceito; contrato em uso nas tarefas F06.01 e F06.05
 - **Data:** 2026-10-21
-- **Escopo:** `GV5.Core` e `GV5.Geometry`; não implementa UI nem persistência do conteúdo
+- **Escopo:** contrato em `GV5.Core`/`GV5.Geometry`; persistência em `GV5.Data`; não implementa UI
 
 ## Contexto
 
@@ -26,7 +26,15 @@ Slots 1–10 preservam compatibilidade sem tornar a posição da lista uma chave
 
 `ModelDraftContentTests` cobre limites de slot, IDs, versão e revisão, origem/asset, transform imutável, ordem, crops fora da folha e valores inconsistentes. `TestarLocal.bat rapido` cobre também build da solution, testes arquiteturais, suites de módulos e Avalonia Headless. A aprovação desta tarefa não afirma persistência de peças, importação, UI ou paridade visual; esses pontos permanecem para as tarefas/gates correspondentes.
 
-F06.02 acrescenta listagem e duplicação transacional dos metadados de `ModelDraft`; como a persistência do snapshot de peças ainda pertence a F06.05, duplicar nesta etapa cria um novo draft vazio com nome e timestamps próprios. A duplicação deverá passar a copiar o snapshot validado quando o armazenamento de conteúdo for integrado.
+F06.02 acrescentou listagem e duplicação transacional dos metadados de `ModelDraft`. F06.05 integrou a cópia transacional do snapshot de conteúdo na duplicação: IDs dos assets permanecem compartilhados, as referências são recriadas para o novo `ModelId` e a revisão do conteúdo copiado reinicia em 1.
+
+## Persistência relacional F06.05
+
+- A migration 7 mantém um cabeçalho versionado em `model_draft_contents`, uma linha por peça em `model_draft_parts` e a ordem back-to-front em `model_draft_layer_order`. Campos de crop, transforms, pivôs, flips, visibilidade, slot, dimensões e IDs permanecem tipados em colunas; não são serializados como Base64 nem como um documento opaco.
+- Os bytes da folha original e das peças ficam no AssetStore endereçado por hash. O conteúdo armazena somente `AssetId`; chaves em `asset_references` ligam source/peças ao draft.
+- `SqliteModelDraftContentRepository.SaveAsync` grava cabeçalho, peças, ordem e sincronização de referências na mesma transação SQLite. Revisão otimista rejeita gravação concorrente; remoção de uma referência agenda coleta de lixo somente quando o asset fica sem outros donos.
+- `SqliteModelDraftRepository.DuplicateAsync` copia conteúdo, ordem e referências na mesma transação que cria o novo draft, sem duplicar os bytes.
+- `SqliteModelDraftContentRepositoryTests` importa três PNGs sintéticos pelo AssetStore, salva duas peças, fecha/reabre o banco, verifica os campos geométricos e relê os bytes originais. Também cobre referência ausente sem escrita parcial, remoção e coleta elegível, conflito de revisão e duplicação completa.
 
 ## Referências de produto
 

@@ -39,11 +39,13 @@ internal static class AppComposition
         services.AddSingleton<ISqliteMigration, AssetImportJournalSchemaMigration>();
         services.AddSingleton<ISqliteMigration, AssetReferenceSchemaMigration>();
         services.AddSingleton<ISqliteMigration, AssetGarbageCollectionSchemaMigration>();
+        services.AddSingleton<ISqliteMigration, ModelDraftContentSchemaMigration>();
         services.AddSingleton<SqliteMigrationRunner>();
         services.AddSingleton<IDataPlatformInitializer>(provider => provider.GetRequiredService<SqliteMigrationRunner>());
         services.AddSingleton<IAssetCatalog, SqliteAssetCatalog>();
         services.AddSingleton<IAssetGarbageCollector, SqliteAssetGarbageCollector>();
         services.AddSingleton<IModelDraftRepository, SqliteModelDraftRepository>();
+        services.AddSingleton<IModelDraftContentRepository, SqliteModelDraftContentRepository>();
         services.AddSingleton<IModelDraftCheckpointStore, SqliteModelDraftCheckpointStore>();
         services.AddSingleton<IDataPlatformBackupService, DatabaseBackupService>();
         services.AddSingleton<AssetImageDecoder>();
