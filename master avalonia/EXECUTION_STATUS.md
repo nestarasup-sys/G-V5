@@ -15,17 +15,19 @@
 | Commit-base inspecionado antes deste arquivo | `53b7f7a97321e85063a8dd4f9635e48d36548323` |
 | Último commit de implementação validado | `8782510` (teste de cor/alfa em borda chroma-feathered) |
 | Checkout local revalidado | `eaac213`; `TestarLocal.bat rapido` passou em 2026-10-21 (198 testes; ver revalidação em `docs/gates/GATE-F06.md`) |
-| Fase ativa | **F06 — Fabricador I: modelos e peças** |
+| Fase ativa | **F07 — Fabricador II: rig, poses e animador (liberada para iniciar)** |
 | Última tarefa VALIDADA | **F06.14** — registrar GATE-F06 e matriz de paridade de modelos |
-| Próxima tarefa PENDENTE | **F07.01** — somente após desbloquear o GATE-F06 |
-| Requisito transversal adicionado | Fidelidade visual ao Gacha 5 Electron, registrada em ADR-0004; documentos em `docs/ui-fidelity/`; sem paridade visual aprovada ainda |
-| Gate atual | **GATE F00: PASSOU; G0: PASSOU; F02: PASSOU; F03: PASSOU; F04: PASSOU; F05: PASSOU; G1 CPU/headless: PASSOU; F06: BLOQUEADO — validação local/visual pendente** |
+| Próxima tarefa PENDENTE | **F07.01** — inventário detalhado do rig legado |
+| Requisito transversal atualizado | ADR-0006: aparência reconhecível, não pixel-perfect; todos os botões e funcionalidades; revisão final visual pendente |
+| Gate atual | **F00/G0/F02/F03/F04/F05/G1: PASSARAM conforme registros; F06: LIBERADA TECNICAMENTE PARA F07 por ADR-0006; aceite Windows/visual pendente** |
 | Progresso validado neste controle | **88 / 247 tarefas (35,6%)** |
 | Tarefas em execução | Nenhuma |
-| Bloqueios conhecidos | F06 requer validar uma folha representativa no Windows e comparar capturas reais Electron/Avalonia; pixels dos PNGs de componentes também precisam de comparação independente. F01: limite de download em clone vazio está em `docs/gates/GATE-F01.md` |
+| Pendências conhecidas | Folha representativa Windows, capturas Electron/Avalonia e comparador independente do worker F06 aguardam revisão de produto G2/F12/final, sem bloquear F07. Limite de download F01 permanece documentado |
 | Aceite Windows/GPU | **F06 Windows/visual não executado; GPU continua fora do escopo comprovado** |
 
 **Importante:** a contagem acima representa **tarefas com evidência de validação registrada neste documento**, não a porcentagem de código já implementado. O shell, a solution, os projetos-base e os scripts de preparação podem estar presentes. O Codex deve auditar o que existe antes de implementar.
+
+**Atualização 2026-10-21 (ADR-0006):** prioridade do usuário alterada de pixel-perfect para semelhança geral com cobertura completa de botões/funções. Política e F06 atualizadas sem executar testes novos ou validar aparência. Menções históricas a bloqueio estrito permanecem como registros do critério anterior.
 
 ## 2. Fontes e regras de leitura
 
@@ -52,7 +54,7 @@ Se o Codex encontrar algo já implementado, **validar e registrar evidências**,
 | F03 | AssetStore, thumbnails e cache limitado | 11 | 11 | VALIDADA | GATE-F03 PASSOU; G1 global em execução |
 | F04 | Geometry Engine canônica | 11 | 11 | VALIDADA | GATE-F04 PASSOU; G1 global em execução |
 | F05 | RenderScene e SkiaRenderer independentes | 11 | 11 | VALIDADA | GATE-F05 e G1 CPU/headless PASSOU |
-| F06 | Fabricador I — modelos e peças | 14 | 14 | BLOQUEADA | GATE-F06 pendente de validação local/visual |
+| F06 | Fabricador I — modelos e peças | 14 | 14 | LIBERADA TECNICAMENTE | 198 testes previamente registrados; aceites Windows/visual pendentes para G2/F12/entrega |
 | F07 | Fabricador II — rig, poses e animador | 12 | 0 | PENDENTE | — |
 | F08 | Fabricador III — roupas, binding e revisões | 12 | 0 | PENDENTE | — |
 | F09 | Fabricador IV — cabelos, face, expressões e completação | 15 | 0 | PENDENTE | — |
@@ -302,9 +304,9 @@ Após concluir um lote ou fase, adicionar uma linha. Não inflar contador só po
 1. Confirmar branch, HEAD e árvore de trabalho localmente; não consultar nem sincronizar o remoto até autorização explícita.
 2. Ler `AGENTS.md`, `PLANO_DO_NOVO_APP.md`, `PLANO_MESTRE_EXECUCAO_CODEX.md` e este arquivo.
 3. Inspecionar evidências reais da última tarefa validada; caso não existam, corrigir seu estado.
-4. **Não iniciar F07 ainda.** F06.01–F06.14 estão registrados, mas o `GATE-F06` está BLOQUEADO. Desbloquear com a validação Windows e as capturas reais Electron/Avalonia descritas em `docs/gates/GATE-F06.md`; comparar também os pixels segmentados do worker legado.
+4. **F07 liberada tecnicamente conforme ADR-0006.** A F06 tem 14 tarefas registradas e 198 testes anteriores; revisão de folha real/Windows/worker/capturas segue pendente até G2/F12/aceite final. Não afirmar que foi realizada.
 5. Continuar automaticamente pelas tarefas seguintes **uma de cada vez**, em lotes flexíveis de aproximadamente 3–8 tarefas relacionadas, enquanto todos os gates pertinentes passam.
-6. Depois de desbloquear F06, retomar a sequência em **F07.01**. Atualizar o registro e commitar entregas reais localmente na branch `Master-AValonia`; não desenvolver Video Studio antecipadamente.
+6. Iniciar **F07.01**, depois as seguintes em ordem conforme gates técnicos. Não implementar Video Studio antes da fase apropriada.
 7. Ao encerrar, informar: **branch, HEAD, último ID VALIDADO, próximo ID PENDENTE, commits, comandos verdes, evidências, bloqueios e condição de desbloqueio**.
 
 ### Prompt de retomada

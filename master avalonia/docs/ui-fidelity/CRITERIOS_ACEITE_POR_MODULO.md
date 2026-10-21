@@ -1,14 +1,13 @@
 # Critérios de aceite visual e técnico por módulo
 
-Este documento complementa os gates funcionais existentes. Não altera a contagem de tarefas. Nenhum módulo recebe aceite visual só por abrir, compilar ou ter controles com nomes semelhantes.
+Este documento complementa os gates funcionais (ADR-0006). Priorizar funções reais e aparência familiar do Gacha 5, sem exigência pixel a pixel. Pequenas divergências são aceitáveis e refináveis depois; capturas pendentes não barram automaticamente fase técnica verde.
 
-## Evidência mínima comum
+## Dois níveis de aceite
 
-1. Captura real do Gacha 5 Electron e captura Avalonia com mesmo estado, fixture, conteúdo, resolução, DPI e tamanho de janela.
-2. Checklist de geometria/ordem, cor, tipografia, ícones, espaçamento, estados, scroll, foco e diálogos aplicáveis.
-3. Comparação documentada (golden/diff ou inspeção lado a lado com exceções identificadas); registrar commit, ambiente, tamanhos, caminho de artefatos e divergências.
-4. Testes funcionais/persistência e erro conforme gate existente. Teste Headless, teste Windows e validação manual são evidências distintas.
-5. Revisão da matriz visual e aprovação do usuário nos casos em que não há oráculo automatizável ou uma divergência visível deliberada.
+1. **Durante cada fase:** controles e funcionalidades completos, testes reais positivos/negativos, persistência, erros, arquitetura; verificar identidade visual geral por código ou headless.
+2. **Revisão posterior:** quando disponível, comparar capturas Electron/Avalonia, conferir cores, grupos de botões e posições aproximadas, sem exigir pixels iguais.
+3. **Aceite final:** testar no Windows com dados representativos, conferir funções omitidas e aparência familiar; nenhuma evidência não executada pode ser considerada aprovada.
+4. **Mudança visível:** pequenas diferenças são permitidas; perda de ferramenta, navegação radical ou descaracterização exigem correção/autorização.
 
 ## Critérios por módulo
 
@@ -25,8 +24,8 @@ Este documento complementa os gates funcionais existentes. Não altera a contage
 
 ## Regras para diferenças e limitações
 
-- Diferença acidental: corrigir antes de aceitar.
+- Diferença estética discreta: aceitável agora, ajustável posteriormente por preferência do usuário.
 - Limite comprovado da plataforma: documentar impacto e alternativa Avalonia que preserve o resultado; não aprovar mudança de experiência automaticamente.
-- Requisito de Windows/GPU/diálogo real: manter `VALIDACAO_VISUAL_PENDENTE` até executar no alvo; headless não substitui.
+- Windows/GPU/diálogo real: manter `VALIDACAO_VISUAL_PENDENTE` até executar no alvo; headless não substitui, mas a pendência visual não barra tarefa técnica independente.
 - Divergência visual intencional: obter aprovação explícita do usuário, registrar o que mudou e manter rastreio da exceção.
 - Estado/viewport não capturado: manter pendente, não generalizar aceite de outra tela.

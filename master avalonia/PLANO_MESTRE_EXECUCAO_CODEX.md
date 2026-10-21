@@ -34,7 +34,7 @@
 - Não criar bibliotecas vazias para "cumprir estrutura"; cada projeto/contrato deve nascer com consumidor e teste reais.
 - Não dizer "pronto" por screenshot estática, classe vazia, interface fake, método mockado ou smoke que não testa comportamento.
 - Não trocar versões fixadas do SDK/NuGet sem ADR, compatibilidade verificada, build e testes.
-- **Fidelidade visual é requisito transversal:** seguir `docs/ui-fidelity/CONTRATO_VISUAL_GACHA5.md`; não redesenhar. Atualizar evidência por área e validar contra captura real/golden sempre que houver interface. A referência é Gacha 5 Electron, nunca Editor V4. A exigência não cria, remove ou renumera tarefas F00–F17.
+- **Fidelidade visual pragmática (ADR-0006):** conservar aparência familiar do Gacha 5, **todos os botões e funcionalidades**, permitindo pequenas mudanças visuais. Captura/golden de UI é referência para acabamento, não bloqueio automático de gate técnico. Referência: somente Gacha 5 Electron, nunca Editor V4. Preservar 247 IDs.
 - Não iniciar timeline/playback/export do Video Studio antes dos gates do Fabricador, Customizador, Studio, Base e Roteiros.
 
 ### Artefatos de acompanhamento (criar quando a tarefa pedir)
@@ -70,13 +70,13 @@ Ambiente/SDK/CI: `TestarLocal.bat gate` passou em 2026-10-21; ver `docs/gates/GA
 - Código **funciona** no cenário prometido, aceita erro e não perde dados.
 - Tem teste com caso positivo e negativo relevante; regressões existentes continuam verdes.
 - Se persistente: reabrir/restart e revisão íntegros; se visual: comparação com golden/oráculo.
-- Para UI: comprovar fidelidade em estados e resolução de referência; distinguir inspeção de código, captura Electron real e screenshot Avalonia. Se captura/aceite local não estiver disponível, registrar pendência e não declarar paridade visual.
+- Para UI: garantir funções reais e aparência geral reconhecível, permitindo pequenas diferenças estéticas. Capturas e aceite Windows inexistentes ficam marcados como revisão visual pendente; isso não barra engenharia independente com gate técnico verde, nem autoriza declarar paridade exata.
 - Sem bloqueio da UI, recursos sem descarte ou dependência proibida.
 - Compilação e testes executados com resultado registrado; CI quando disponível.
 - Matriz de paridade, decisão e status atualizados.
 - Commit coeso na branch **sem sobrescrever trabalho paralelo**.
 
-### Gates globais (a execução só progride após gate da fase)
+### Gates globais (gate técnico é requisito para avanço; revisão visual complementa G2/F12/G7 conforme ADR-0006)
 - **G0:** solução reproduzível sem legado e build + teste sintético.
 - **G1:** banco versionado, asset por ID, geometria e primeiro render determinístico.
 - **G2:** Fabricador inteiro conforme inventário, revisões publicadas imutáveis, round-trip visual e dados.
@@ -219,7 +219,7 @@ Ambiente/SDK/CI: `TestarLocal.bat gate` passou em 2026-10-21; ver `docs/gates/GA
 
 ## F06 — Fabricador I — modelos e peças
 
-**Gate:** Import→editar→undo→salvar→reabrir→publicar um modelo REAL.
+**Gate técnico:** Import→editar→undo→salvar→reabrir→publicar no pipeline real SQLite/AssetStore/render, com folha sintética representativa e testes negativos. **Aceite de produto complementar:** usar folha real do usuário no Windows e revisar aparência/saída; registrar pendências para G2/F12/entrega final.
 
 - [x] **F06.01** — Definir modelo, slots/IDs, partes, ordem, sourceTransform e drafts versionados.
 - [x] **F06.02** — Criar/renomear/duplicar/listar drafts com persistência real.
@@ -236,7 +236,7 @@ Ambiente/SDK/CI: `TestarLocal.bat gate` passou em 2026-10-21; ver `docs/gates/GA
 - [x] **F06.13** — Testar import inválido, falta de asset, reopen, PNG e comparar com legado.
 - [x] **F06.14** — Registrar GATE-F06 e matriz de paridade de modelos.
 
-**Encerramento F06:** tarefas registradas, mas o gate permanece bloqueado até validação visual do mesmo modelo em capturas reais do Electron e Avalonia Windows. Não iniciar F07 antes de atualizar `docs/gates/GATE-F06.md` com essa evidência.
+**Encerramento F06 — ADR-0006:** F06.01–F06.14 têm evidências registradas, e o último gate local anterior passou 198 testes com pipeline real e fixture sintética. **F07 LIBERADA TECNICAMENTE**; folha pessoal, comparação independente do worker, screenshots e validação Windows continuam pendentes para G2/F12/aceite final. Não confundir essas pendências com teste realizado; falhas funcionais essenciais seguem bloqueantes.
 
 ---
 

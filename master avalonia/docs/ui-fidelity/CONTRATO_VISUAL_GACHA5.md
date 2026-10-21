@@ -1,49 +1,32 @@
-# Contrato visual do Gacha 5 — Avalonia
+# Contrato visual — Gacha 5 reconhecível no Avalonia
 
-**Estado:** requisito permanente; critérios ainda não validados em uma tela reconstruída.  
-**Referência autorizada:** Gacha 5 Electron neste repositório.  
-**Referência excluída:** Editor V4, que pertence a outro projeto.
+Referência exclusiva: Gacha 5 Electron neste repositório, não Editor V4.
+Decisão vigente: ADR-0006, que substitui as restrições visuais excessivamente rígidas da ADR-0004.
 
-## Princípio
+## Objetivo
 
-**Mesma aparência. Tecnologia nova. Implementação melhor.** A identidade visual criada pelo usuário no Gacha 5 original é um requisito do produto. A reconstrução deve ser imediatamente familiar e preservar aparência, organização e experiência observável. Isto não autoriza copiar a implementação Electron/React: a nova UI deve usar Avalonia, AXAML/XAML, estilos, templates, bindings e controles apropriados à versão fixada.
+Ao abrir o G-V5 Avalonia, o usuário deve reconhecer imediatamente o Gacha 5: identidade visual, cores principais, estrutura, ferramentas e navegação familiares. **Não exige réplica pixel a pixel.** O usuário aceita pequenos ajustes de posição, dimensões, margens, estilos e organização; poderá pedir refinamentos depois.
+
+**Nenhum botão, função, submenu, atalho ou comportamento real do legado pode desaparecer sem autorização.** Não vale reproduzir visualmente controles que não funcionem. A implementação deve ser 100% nativa C#/Avalonia e pode melhorar desempenho, virtualização, acessibilidade, DPI, bindings, layout e qualidade de uso.
 
 ## O que preservar
 
-- Paleta, fundos, painéis, textos, gradientes, opacidades, bordas, raios, sombras, separadores, imagens, ícones e indicadores.
-- Tipografia, tamanhos, pesos, alinhamento, alturas de linha e espaçamentos identificados na referência real.
-- Geometria e hierarquia: ordem, posição, proporções, barras, painéis laterais, listas, cards, campos, previews, canvas, timeline e rolagem.
-- Estados normal, hover, foco, selecionado, desabilitado, vazio, preenchido, expandido, recolhido, erro, confirmação e progresso.
-- Fluxos visuais e comportamentos observáveis: navegação, menus, diálogos, pop-ups, tooltips, atalhos e drag-and-drop quando existirem.
-- Variações intencionais entre páginas. Compartilhar um controle ou token não deve apagar diferenças do legado.
+- Identidade e paleta reconhecíveis, organização geral das páginas, localização aproximada das ferramentas, terminologia e fluxos conhecidos.
+- Todas as ações existentes, estados relevantes, menus, diálogos, seleção, importação, edição, exportação e persistência.
+- Controles com implementação funcional, e não placeholders decorativos.
 
-## Modernização permitida
+Pequenas diferenças visuais são aceitáveis. Mudanças radicais na navegação, remoção/ocultação de botões ou descaracterização do Gacha 5 exigem aprovação.
 
-Virtualização, carregamento incremental, atualizações menores, processamento fora da thread de UI, cancelamento, foco consistente, suporte a DPI, acessibilidade por teclado e diagnóstico podem modernizar a implementação sem mudar o resultado visual. Animações novas, reorganização responsiva, mudança de texto ou simplificação de controles que alterem a experiência exigem autorização explícita. Quando o legado já tiver uma transição, reproduzir sua duração/comportamento após medição; não adicionar movimento decorativo.
+## Política de evidência
 
-## Evidência e estados
+- Inspeção de código Electron, CSS e inventários orienta a implementação.
+- Capturas Electron/Avalonia na mesma resolução, DPI e estado são **recomendadas para revisão visual**, não pré-condição da programação de F07.
+- Testes unitários, de integração, headless e gates técnicos comprovam comportamento dentro de seus limites; não declaram captura Windows/GPU realizada.
+- Uma tela pode ter **aceite técnico verde e revisão visual pendente**; registrar ambas separadamente na matriz visual e no gate.
+- Falta de folha pessoal ou screenshot comparativo não bloqueia, por si só, a próxima fase. Falha crítica de função, dados ou testes obrigatórios continua bloqueante.
 
-Cada item da matriz visual deve distinguir:
+## Reavaliação final
 
-1. **Código legado inspecionado:** estrutura/estilo encontrado nos arquivos; não prova resultado visual em execução.
-2. **Referência Electron capturada:** screenshot real do Gacha 5, com resolução, DPI, estado e fixture registrados; não criar captura fictícia.
-3. **Avalonia comparado:** captura real da implementação nas mesmas condições, acompanhada por comparação visual/golden e inspeção de divergências.
+Antes de declarar o G-V5 pronto, conferir fluxos no Windows com conteúdo representativo, cobertura de botões/funções e aparência familiar. Registrar divergências importantes; o usuário pode solicitar ajustes estéticos depois.
 
-Build, teste headless, nomes de controles e screenshot ilustrativa não equivalem a paridade. Se faltarem capturas ou estados, registrar `REFERENCIA_PENDENTE` ou `VALIDACAO_VISUAL_PENDENTE`; não declarar `VALIDADO`. Headless pode provar layout/render em casos suportados, mas não substitui validação Windows quando o comportamento depender de janela, DPI, GPU, diálogo do sistema ou input real.
-
-## Resolução e mudanças
-
-Definir uma resolução, escala DPI e tamanho de janela de referência por módulo antes do aceite. Em outros tamanhos, preservar a hierarquia e o comportamento equivalente encontrado no Electron; falta de espaço não autoriza mover painéis ou trocar barras sem referência ou aprovação. Registrar qualquer exceção como divergência, com evidência e autorização do usuário.
-
-## Critérios para aprovar uma tela
-
-- Página, subpágina e estado comparados contra referência real do Electron.
-- Ordem, geometria, textos, ícones, tipografia, cores, bordas, margens, espaçamentos e rolagem conferidos.
-- Estados interativos relevantes capturados e comparados, não somente o estado vazio.
-- Nenhuma mudança visual intencional sem aprovação; diferenças acidentais têm causa resolvida ou ficam `DIVERGENTE`.
-- Implementação Avalonia continua respeitando MVVM, fronteiras de módulo, performance e persistência do plano.
-- Evidência, versão/commit, ambiente, resolução/DPI e limitações anotados em `MATRIZ_PARIDADE_VISUAL.md` e no gate da fase.
-
-## Escopo
-
-Este contrato complementa `PLANO_DO_NOVO_APP.md` e as tarefas F00–F17. Não altera nem renumera suas 247 tarefas ou a ordem das áreas. Os gates funcionais existentes também exigem o aceite visual aplicável antes de declarar um módulo completo.
+Preservar os 247 IDs, a ordem de módulos e o legado Electron somente leitura.

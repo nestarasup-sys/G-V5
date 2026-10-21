@@ -3,7 +3,7 @@
 **Data da verificação local:** 2026-10-21
 **Branch:** `Master-AValonia`
 **Tarefas:** F06.01–F06.14
-**Resultado:** **BLOQUEADO — validação de produto/visual pendente.**
+**Resultado técnico (ADR-0006): LIBERADO PARA INICIAR F07.** Os 198 testes locais já registrados cobrem importação, edição, undo, persistência, reabertura e publicação pelo pipeline real com fixture sintética. **Aceite final de produto: PENDENTE** (folha representativa, worker Electron independente, screenshots e Windows).
 **Código e persistência:** fluxo integrado comprovado com fixture sintética e SQLite/AssetStore reais.
 
 ## Critério do gate
@@ -41,11 +41,11 @@ Em `2026-10-21`, no HEAD `eaac213` (`native: align Fabricator model shell with l
 
 Essa revalidação confirma que a alteração de layout não quebrou a suíte rápida. Não fornece captura Windows, fixture real, saída independente do worker Electron nem comparação visual; os itens pendentes e o estado bloqueado acima permanecem inalterados.
 
-## Pendências para desbloquear
+## Pendências de produto — não bloqueiam F07 após ADR-0006
 
 1. Conferir a folha de modelo real usada pelo fluxo pretendido em Avalonia no Windows, cobrindo seleção, separação, edição, undo/redo, salvamento/reabertura e publicação.
 2. Capturar Electron e Avalonia com o mesmo estado, conteúdo, resolução e DPI; comparar estrutura, cores, medidas, estados e PNGs conforme `docs/ui-fidelity/CONTRATO_VISUAL_GACHA5.md`.
 3. Comparar a saída do caso antialias/chroma com um PNG capturado de uma execução independente do worker legado; os valores atuais foram derivados da fórmula portada e não substituem essa comparação independente.
-4. Atualizar esta página e a matriz novamente quando as capturas Windows/Electron e os casos ampliados de pixels forem coletados. Até lá, não iniciar F07 conforme a regra de gates do Plano Mestre.
+4. Atualizar esta página e a matriz quando as capturas Windows/Electron e os casos ampliados forem coletados. **F07 pode começar por aceitação técnica documentada na ADR-0006.** Não declarar realizados os testes de produto ausentes.
 
-Não há captura ou arquivo de fixture de usuário registrado. O status **BLOQUEADO** refere-se ao gate completo; as tarefas F06.12–F06.14 estão documentadas como concluídas, e o trabalho já validado não é desfeito por essa pendência.
+Não há captura ou folha real de usuário registrada. O gate **técnico** libera F07 sem alegar equivalência com folha real, pixels do worker, GPU/DPI ou validação Windows. Os 198 testes foram realizados previamente no PC pelo Codex, **não reexecutados por esta edição documental**. A revisão final do produto segue aberta.

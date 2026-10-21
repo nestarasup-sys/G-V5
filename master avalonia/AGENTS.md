@@ -9,11 +9,11 @@ Reconstruir o G-V5/Gacha Nymi como uma aplicação desktop **C# + .NET 10 + Aval
 
 ### Identidade visual obrigatória
 
-- A aparência, organização e experiência observável do Gacha 5 original são requisitos de produto. **Não fazer redesign, reorganização ou simplificação visual** sem autorização explícita.
+- A identidade visual reconhecível do Gacha 5 é obrigatória, mas **não exige igualdade pixel a pixel**. ADR-0006 permite pequenos ajustes de posição, dimensões e estilo; a prioridade é preservar e melhorar **todos os botões e funcionalidades reais**, sem controle decorativo.
 - Consultar `docs/ui-fidelity/CONTRATO_VISUAL_GACHA5.md` antes de alterar UI e manter inventários, tokens, matriz visual e critérios de aceite em `docs/ui-fidelity/` atualizados.
 - Usar somente o Gacha 5 original deste repositório como referência. **Editor V4 é outro projeto e não é referência visual**.
 - Distinguir evidência de código, captura Electron real e validação visual no Avalonia. Não afirmar paridade por semelhança de nomes, build verde ou screenshot fictícia.
-- Modernizar implementação, fluidez, virtualização, acessibilidade e uso de Avalonia sem descaracterizar o design. Melhorias invisíveis podem ser adotadas dentro da arquitetura; mudanças visíveis relevantes exigem aprovação.
+- Modernizar com Avalonia, virtualização, acessibilidade e melhor performance. Pequenas diferenças visuais são aceitas e revisáveis; apenas redesign radical, perda de função ou descaracterização exigem aprovação.
 
 Leia, nesta ordem, **no início de cada sessão**:
 
@@ -43,8 +43,8 @@ Em caso de divergência, não decidir silenciosamente: preservar os requisitos d
 2. Trabalhar em **uma tarefa por vez**. Não implementar tarefas futuras antecipadamente; pode dividir a tarefa atual em subpassos registrados.
 3. Quando a tarefa passar em todos os seus testes/validações, atualizar status e criar commit coeso.
 4. **Continuar automaticamente com as próximas tarefas na mesma sessão** enquanto houver condições; não parar depois de cada checkbox. Preferir ciclos flexíveis de aproximadamente **3–8 tarefas relacionadas**, sem quota artificial.
-5. Na conclusão de uma fase, **executar e comprovar seu GATE** antes de iniciar a seguinte. Um build verde não substitui teste de persistência, fidelidade visual ou uso real.
-6. Se houver falha, corrigir antes de avançar. Se o bloqueio depender de Windows/GPU/assets locais indisponíveis, registrar `BLOQUEADA — VALIDAÇÃO LOCAL`, procedimento reprodutível e não inventar aceite.
+5. Na conclusão de uma fase, comprovar o **gate técnico** antes de avançar: ações reais, testes, dados e arquitetura. Ausência de screenshot Electron/Avalonia ou teste manual com asset pessoal deixa revisão de produto pendente, **não bloqueia automaticamente a próxima fase** quando a engenharia está demonstrada (ADR-0006).
+6. Se houver falha funcional crítica, corrigir antes de avançar. Falta de captura ou validação de aparência em Windows/GPU/assets privados deve ser registrada como revisão pendente, sem inventar aceite nem impedir tarefas tecnicamente independentes. Se a própria funcionalidade não puder ser comprovada sem isso, manter bloqueio técnico justificado.
 7. Ao retomar, verificar o código e o HEAD novamente: uma tarefa marcada VALIDADA sem prova deve ser corrigida no status, não simplesmente ignorada.
 
 **Ordem imutável das áreas:** plataforma/engines → **Fabricador** → **Customizador** → **Studio** → **Base de Vídeos** → **Roteiros** → **Video Studio por último**. Não antecipar implementação de timeline, playback ou export do Video Studio; Base de Vídeos pode usar probing/miniaturas conforme seu próprio escopo.

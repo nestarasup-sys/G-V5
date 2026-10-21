@@ -391,6 +391,8 @@ Exclusões comuns podem ir para uma lixeira com restauração. Exclusão permane
 
 ## 14. Interface e novas áreas
 
+**Direção visual vigente (ADR-0006):** conservar a aparência geral e a navegação familiar do Gacha 5 Electron, mas não exigir cópia pixel a pixel. Pequenas diferenças visuais são permitidas e refináveis depois. Priorizar **todos os botões e funcionalidades reais**, modernizados em Avalonia, sem omitir recursos. A falta de captura comparativa não bloqueia fase técnica verde; a revisão de produto permanece pendente para G2/F12/aceite final. Editor V4 é independente.
+
 Usar MVVM com ViewModels pequenos por tela ou painel e bindings compilados onde forem adequados. A composição da aplicação registra os serviços e as áreas disponíveis. Evitar um ViewModel global que conheça todos os detalhes do produto.
 
 Cada nova área declara rota, título, permissões de edição quando necessárias, ViewModel e casos de uso. A navegação precisa liberar inscrições de eventos, cancelar tarefas e descartar recursos ao encerrar a sessão.
