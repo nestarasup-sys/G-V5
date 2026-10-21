@@ -23,10 +23,13 @@ public sealed class PoseRevisionContractTests
         Assert.Equal(draft.Id, published.PoseId);
         Assert.Equal(draft.Revision, published.DraftRevision);
         Assert.Equal(draft.PartTransforms, published.PartTransforms);
+        Assert.Equal(draft.RigJoints, published.RigJoints);
+        Assert.Equal(draft.LayerOrder, published.LayerOrder);
+        Assert.Equal(draft.Category, published.Category);
         Assert.Equal(new string('b', 64), published.SnapshotSha256);
 
         var laterModelRevision = ModelReference("c");
-        var edited = draft.WithTransforms([firstPart]);
+        var edited = draft.WithTransforms([PosePartTransform.Create(firstPart.PartId, Transform(3)), secondPart]);
         Assert.Equal(Revision.From(2), edited.Revision);
         Assert.Equal(modelReference, edited.Model);
         Assert.NotEqual(laterModelRevision, edited.Model);
@@ -62,13 +65,24 @@ public sealed class PoseRevisionContractTests
         var model = PublishedModel();
         var draft = PoseDraft.CreateFromModelRevision(model, "Pose inicial");
         var originalPart = model.Content.Parts[0];
+        var secondPart = model.Content.Parts[1];
         var changedTransform = Transform(12);
-        var edited = draft.WithTransforms(draft.PartTransforms.Select(item => item.PartId == originalPart.Id
-            ? PosePartTransform.Create(item.PartId, changedTransform)
-            : item));
+        var joint = Assert.Single(draft.RigJoints);
+        var changedJoint = joint with { ParentAnchor = new Point2D(30, 40) };
+        var edited = draft.WithContent(
+            draft.PartTransforms.Select(item => item.PartId == originalPart.Id
+                ? PosePartTransform.Create(item.PartId, changedTransform)
+                : item.PartId == secondPart.Id ? PosePartTransform.Create(item.PartId, item.Transform, isVisible: false) : item),
+            [changedJoint],
+            [secondPart.Id, originalPart.Id],
+            "Ação");
 
         var preview = edited.ApplyToModelRevision(model);
         Assert.Equal(changedTransform, preview.Parts.Single(part => part.Id == originalPart.Id).Transform);
+        Assert.False(preview.Parts.Single(part => part.Id == secondPart.Id).IsVisible);
+        Assert.Equal(new[] { secondPart.Id, originalPart.Id }, preview.LayerOrder);
+        Assert.Equal(new Point2D(30, 40), Assert.Single(preview.RigJoints).ParentAnchor);
+        Assert.Equal("Ação", edited.Category);
         Assert.Equal(originalPart.SourceTransform, preview.Parts.Single(part => part.Id == originalPart.Id).SourceTransform);
         Assert.Equal(originalPart.Transform, model.Content.Parts.Single(part => part.Id == originalPart.Id).Transform);
 
@@ -90,6 +104,8 @@ public sealed class PoseRevisionContractTests
             CreatePart("Tronco", Transform(0)),
             CreatePart("Braço", Transform(20))
         };
+        var joint = new RigJoint(RigJointId.New(), TransformNodeId.From(parts[0].Id.Value),
+            TransformNodeId.From(parts[1].Id.Value), new Point2D(10, 10), new Point2D(20, 10), RigJointMode.Fixed);
         var content = ModelDraftContent.Restore(
             ModelDraftContent.CurrentSchemaVersion,
             modelId,
@@ -99,7 +115,8 @@ public sealed class PoseRevisionContractTests
             100,
             100,
             parts,
-            parts.Select(part => part.Id));
+            parts.Select(part => part.Id),
+            [joint]);
         return PublishedModelRevision.Restore(
             ModelRevisionId.New(),
             modelId,
