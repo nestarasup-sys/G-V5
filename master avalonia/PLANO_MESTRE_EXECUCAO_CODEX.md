@@ -190,7 +190,7 @@ Ambiente/SDK/CI: `TestarLocal.bat gate` passou em 2026-10-21; ver `docs/gates/GA
 - [x] **F04.07** — Implementar hit testing em coordenadas transformadas, bounds/crop e z-order.
 - [x] **F04.08** — Implementar snap/guides como lógica independente de UI/documento.
 - [x] **F04.09** — Implementar matemática de WardrobeBinding e fixtures neutro/rotacionado/espelhado.
-- [ ] **F04.10** — Testar precisão, determinismo e reversão de transforms; comparar casos do legado.
+- [x] **F04.10** — Testar precisão, determinismo e reversão de transforms; comparar casos do legado.
 - [ ] **F04.11** — Benchmarkar sinteticamente 10/100/1000 peças e registrar GATE-F04.
 
 **Encerramento F04:** registrar `docs/gates/GATE-F04.md` e marcar a fase validada somente se o gate acima foi comprovado. Se estiver bloqueado, documentar a evidência que falta e não iniciar F05.
