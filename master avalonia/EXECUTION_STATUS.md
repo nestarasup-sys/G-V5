@@ -13,12 +13,12 @@
 | Branch obrigatória | `Master-AValonia` |
 | Pasta exclusiva do novo aplicativo | `master avalonia/` |
 | Commit-base inspecionado antes deste arquivo | `53b7f7a97321e85063a8dd4f9635e48d36548323` |
-| HEAD de execução do Codex | `b7c70d1` (checkpoint após F00.05; F00.06 registrada neste checkpoint) |
+| HEAD de execução do Codex | `2f80e29` (checkpoint após F00.06; F00.07 registrada neste checkpoint) |
 | Fase ativa | **F00 — Auditoria do legado, baseline e sincronização** |
-| Última tarefa VALIDADA | **F00.06** — contratos legados TypeScript lidos em modo somente leitura |
-| Próxima tarefa PENDENTE | **F00.07** |
+| Última tarefa VALIDADA | **F00.07** — inventário funcional completo do Fabricador legado |
+| Próxima tarefa PENDENTE | **F00.08** |
 | Gate atual | **GATE F00: PENDENTE** |
-| Progresso validado neste controle | **6 / 247 tarefas (2,4%)** |
+| Progresso validado neste controle | **7 / 247 tarefas (2,8%)** |
 | Tarefas em execução | **Nenhuma registrada** |
 | Bloqueios conhecidos | **Nenhum confirmado** |
 | Aceite Windows/GPU | **Não executado / não registrado** |
@@ -40,7 +40,7 @@ Se o Codex encontrar algo já implementado, **validar e registrar evidências**,
 
 | Fase | Objetivo | Tarefas totais | Validadas | Estado | Gate |
 | --- | --- | ---: | ---: | --- | --- |
-| F00 | Auditoria do legado, baseline e sincronização | 13 | 6 | EM_EXECUCAO | — |
+| F00 | Auditoria do legado, baseline e sincronização | 13 | 7 | EM_EXECUCAO | — |
 | F01 | Solution .NET, contratos, módulo e CI | 13 | 0 | PENDENTE | — |
 | F02 | SQLite, revisões, transações e recuperação básica | 15 | 0 | PENDENTE | — |
 | F03 | AssetStore, thumbnails e cache limitado | 11 | 0 | PENDENTE | — |
@@ -72,7 +72,8 @@ Adicionar uma linha ao concluir ou bloquear cada tarefa. A linha inicial abaixo 
 | **F00.03** | **VALIDADA** | `068ea6f` | `cmd /c Preparar.bat` exit 0; reportou SDK `10.0.402` e ambiente pronto. `.tools/dotnet/dotnet.exe --info` confirmou Windows x64, SDK 10.0.402. `dotnet restore GV5.sln` teve todos os projetos atualizados. `dotnet build GV5.sln -c Release --no-restore --verbosity minimal` passou com 0 warnings/0 errors. Nenhum projeto de testes está na solução; portanto não foi executado `dotnet test`. | saída dos comandos nesta sessão; assemblies Release em `src/*/bin/Release/net10.0` (ignorados pelo Git) | Shell foi compilado, não iniciado nem verificado visualmente nesta tarefa |
 | **F00.04** | **VALIDADA** | `bf36210` | Plano arquitetural comparado à estrutura rastreada. Confirmados: shell Avalonia/MVVM com navegação conceitual; oito arquivos de código/interface em `GV5.App`; 11 projetos library sem fontes; ausência de engine, SQLite, renderer, jobs, testes e módulos futuros. Discrepâncias e trabalho inicial existente registrados. | `docs/architecture/BASELINE_IMPLEMENTATION.md`; `GV5.sln`; `src/*`; `README.md`; `global.json`; `Directory.Packages.props` | Build do shell não prova runtime visual nem função de produto; não executar nem alterar legado |
 | **F00.05** | **VALIDADA** | `b7c70d1` | O `EXECUTION_STATUS.md` preexistente foi conferido e atualizado: branch, HEAD do checkpoint, última tarefa validada, primeira pendência, contadores de fase, commits F00.01–F00.04, ambiente/SDK, comandos de preparação/restore/build e limites de validação. | Este arquivo; comparado com `PLANO_MESTRE_EXECUCAO_CODEX.md` e saída atual de `git status`, `git branch` e `git rev-parse` | Controle já existia na branch; correções registradas sem recriar nem apagar histórico |
-| **F00.06** | **VALIDADA** | a registrar no checkpoint de F00.07 | Leitura somente dos cinco contratos legados indicados no Plano Mestre: tipos e fronteiras para Fabricador; Customizer e overrides por personagem; Studio e Video Studio; Roteiros e Base de Vídeos; validação de fluxo de assets/roupas. | Legado `src/shared/fabricator.ts`, `customizer.ts`, `studio.ts`, `roteiros.ts`, `assetFlow.ts` (somente leitura) | Contratos TypeScript não provam que cada operação IPC é implementada corretamente; implementação será inventariada nas tarefas seguintes |
+| **F00.06** | **VALIDADA** | `2f80e29` | Leitura somente dos cinco contratos legados indicados no Plano Mestre: tipos e fronteiras para Fabricador; Customizer e overrides por personagem; Studio e Video Studio; Roteiros e Base de Vídeos; validação de fluxo de assets/roupas. | Legado `src/shared/fabricator.ts`, `customizer.ts`, `studio.ts`, `roteiros.ts`, `assetFlow.ts` (somente leitura) | Contratos TypeScript não provam que cada operação IPC é implementada corretamente; implementação será inventariada nas tarefas seguintes |
+| **F00.07** | **VALIDADA** | a registrar no checkpoint de F00.08 | Inventário cobre modelos/peças e rig; chroma e histórico; poses e seleção para export; animadores corporal/facial; roupas e binding; rosto/olhos/expressões; cabelos e extras; além da persistência JSON+assets e fronteiras IPC. | `docs/legacy-contracts/FABRICADOR_INVENTARIO.md`; fontes legadas citadas no próprio inventário, todas consultadas somente para leitura | Nenhum arquivo de `app-data/` ou mídia pessoal foi aberto; capacidades descritas a partir do código, não de smoke visual/runtime |
 
 **Estados aceitos:** `PENDENTE`, `EM_EXECUCAO`, `BLOQUEADA`, `VALIDADA`.
 
@@ -125,7 +126,7 @@ Ainda não há entradas registradas neste controle. Toda mudança material do ro
 
 | Data | HEAD/commit | Último ID validado | Gate | Resumo |
 | --- | --- | --- | --- | --- |
-| 2026-10-20 | `b7c70d1` | F00.06 | F00 em execução | Contratos TypeScript do legado lidos em modo somente leitura; seis primeiras tarefas da F00 com evidências e commits registrados |
+| 2026-10-20 | `2f80e29` | F00.07 | F00 em execução | Contratos legados e inventário funcional do Fabricador registrados; dados pessoais permaneceram intocados |
 
 Após concluir um lote ou fase, adicionar uma linha. Não inflar contador só porque o commit contém múltiplos arquivos; contar apenas tarefas comprovadas.
 
@@ -134,7 +135,7 @@ Após concluir um lote ou fase, adicionar uma linha. Não inflar contador só po
 1. Atualizar branch/remoto com segurança, sem force push e sem sobrescrever trabalho local de outra sessão.
 2. Ler `AGENTS.md`, `PLANO_DO_NOVO_APP.md`, `PLANO_MESTRE_EXECUCAO_CODEX.md` e este arquivo.
 3. Inspecionar evidências reais da última tarefa validada; caso não existam, corrigir seu estado.
-4. **Começar pela primeira tarefa PENDENTE indicada acima (F00.07)**; não repetir tarefas validadas sem evidência em contrário.
+4. **Começar pela primeira tarefa PENDENTE indicada acima (F00.08)**; não repetir tarefas validadas sem evidência em contrário.
 5. Continuar automaticamente pelas tarefas seguintes **uma de cada vez**, em lotes flexíveis de aproximadamente 3–8 tarefas relacionadas, enquanto todos os gates pertinentes passam.
 6. Atualizar o registro e commitar entregas reais na branch `Master-AValonia`; não desenvolver Video Studio antecipadamente.
 7. Ao encerrar, informar: **branch, HEAD, último ID VALIDADO, próximo ID PENDENTE, commits, comandos verdes, evidências, bloqueios e condição de desbloqueio**.
