@@ -1,0 +1,91 @@
+using GV5.Core.Identity;
+using GV5.Core.Models;
+using GV5.Geometry;
+using GV5.Modules.Fabricador.Interaction;
+using Xunit;
+
+namespace GV5.Headless.Tests;
+
+public sealed class ModelRigEditorTests
+{
+    [Fact]
+    public void ConnectAnchorEditFixReconnectAndDisconnectKeepModelSourceUntouched()
+    {
+        var (model, parts) = Model();
+        var source = model.Parts.Select(p => p.SourceTransform).ToArray();
+        var editor = new ModelRigEditor(model);
+        var first = editor.Connect(parts[0], parts[1], new Point2D(14, 21), new Point2D(3, 5));
+        var second = editor.Connect(parts[1], parts[2], new Point2D(8, 9), Point2D.Zero);
+        editor.ChangeAnchors(first.Id, new Point2D(19, 22), new Point2D(6, 7));
+        editor.SetFixed(first.Id, true);
+        editor.Reconnect(second.Id, parts[0], parts[2]);
+
+        Assert.Equal(2, editor.Graph.Joints.Count);
+        Assert.Equal(RigJointMode.Fixed, editor.Graph.Get(first.Id).Mode);
+        Assert.Equal(new Point2D(19, 22), editor.Graph.Get(first.Id).ParentAnchor);
+        Assert.Equal(new Point2D(6, 7), editor.Graph.Get(first.Id).ChildAnchor);
+        Assert.Equal(TransformNodeId.From(parts[0].Value), editor.Graph.Get(second.Id).ParentPartId);
+        Assert.Equal(source, model.Parts.Select(p => p.SourceTransform).ToArray());
+
+        editor.Disconnect(first.Id);
+        Assert.Single(editor.Graph.Joints);
+        Assert.Equal(second.Id, editor.Graph.Joints[0].Id);
+    }
+
+    [Fact]
+    public void InvalidConnectionAndCycleAreRejectedWithoutChangingAcceptedGraph()
+    {
+        var (model, parts) = Model();
+        var editor = new ModelRigEditor(model);
+        var first = editor.Connect(parts[0], parts[1], Point2D.Zero, Point2D.Zero);
+        var second = editor.Connect(parts[1], parts[2], Point2D.Zero, Point2D.Zero);
+
+        Assert.Throws<ArgumentException>(() => editor.Connect(parts[2], parts[0], Point2D.Zero, Point2D.Zero));
+        Assert.Throws<ArgumentException>(() => editor.Connect(parts[0], parts[1], Point2D.Zero, Point2D.Zero));
+        Assert.Throws<ArgumentException>(() => editor.Connect(parts[0], ModelPartId.New(), Point2D.Zero, Point2D.Zero));
+        Assert.Throws<ArgumentException>(() => editor.Reconnect(second.Id, parts[2], parts[0]));
+        Assert.Throws<KeyNotFoundException>(() => editor.Disconnect(RigJointId.New()));
+        Assert.Equal(2, editor.Graph.Joints.Count);
+        Assert.Equal(first.Id, editor.Graph.Joints[0].Id);
+        Assert.Equal(second.Id, editor.Graph.Joints[1].Id);
+    }
+
+    [Fact]
+    public void ExistingRigMustReferencePartsInTheCurrentModel()
+    {
+        var (model, parts) = Model();
+        var orphan = new RigJoint(RigJointId.New(),
+            TransformNodeId.From(parts[0].Value), TransformNodeId.New(),
+            Point2D.Zero, Point2D.Zero);
+        Assert.Throws<ArgumentException>(() => new ModelRigEditor(model, [orphan]));
+    }
+
+    private static (ModelDraftContent Model, ModelPartId[] Parts) Model()
+    {
+        var parts = new[]
+        {
+            Part("Tronco", 0),
+            Part("Braço", 20),
+            Part("Mão", 40)
+        };
+        var model = ModelDraftContent.Restore(
+            ModelDraftContent.CurrentSchemaVersion,
+            ModelId.New(),
+            Revision.Initial,
+            ModelSlot.From(1),
+            AssetId.New(),
+            100,
+            100,
+            parts,
+            parts.Select(p => p.Id));
+        return (model, parts.Select(p => p.Id).ToArray());
+    }
+
+    private static ModelPart Part(string name, int x)
+    {
+        var crop = new Rect2D(x, 0, 10, 10);
+        var transform = new Transform2D(new Point2D(x, 0), new Point2D(1, 1), 0, Point2D.Zero);
+        return new ModelPart(ModelPartId.New(), name, AssetId.New(), crop, transform,
+            new ModelPartSourceTransform(crop, transform));
+    }
+}
