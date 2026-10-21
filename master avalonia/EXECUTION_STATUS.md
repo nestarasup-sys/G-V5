@@ -13,7 +13,7 @@
 | Branch obrigatória | `Master-AValonia` |
 | Pasta exclusiva do novo aplicativo | `master avalonia/` |
 | Commit-base inspecionado antes deste arquivo | `53b7f7a97321e85063a8dd4f9635e48d36548323` |
-| Último commit de implementação validado | pendente (reordenação de camadas F09.15 em validação final) |
+| Último commit de implementação validado | `7388d23` (F09.15: reordenação undoable das camadas por arrastar) |
 | Checkout local revalidado | `TestarLocal.bat rapido` passou em 2026-10-21: build Debug; **308 testes, 0 falhas**; avisos existentes: 2 CS0618 no `ThumbnailService` e 1 xUnit1051 em `HairRoleTintProcessorTests` |
 | Fase ativa | **F09 — Fabricador IV — cabelos, face, expressões e completação (F09.15 em execução)** |
 | Última tarefa VALIDADA | **F09.14** — validação cruzada de persistência, importação inválida e cancelamento nas subáreas do Fabricador |
@@ -405,3 +405,5 @@ Após concluir um lote ou fase, adicionar uma linha. Não inflar contador só po
 
 
 **F09.15 em execução — reordenação das camadas:** alça de arrasto na lista e drop sobre outra camada reposicionam a origem antes do alvo visível por um único comando reversível. O teste headless confirma mudança de ordem, undo e preservação das juntas; TestarLocal.bat rapido passou em 2026-10-21 com build sem avisos/erros e 308/308 testes, incluindo 62 headless. Evidência em docs/testing/F09.15_LAYER_DRAG.md; gesto nativo, scroll e DPI ainda precisam de validação interativa no Windows. Código pronto para commit local.
+
+**F09.15 em execução — abas do inspetor de modelos:** o painel separa importação/recuperação (Peças), ordem/visibilidade (Camadas) e conexões/âncoras (Juntas), sem duplicar ViewModels nem comandos. O índice selecionado é bidirecional entre TabControl e ViewModel. `TestarLocal.bat rapido` passou em 2026-10-21: build Debug, solution tests e headless **308/308**, sem falhas; teste de abas identifica os três rótulos e confirma o conteúdo selecionado. Revisão visual Windows ainda pendente. Evidência em `docs/testing/F09.15_MODEL_TABS.md`.

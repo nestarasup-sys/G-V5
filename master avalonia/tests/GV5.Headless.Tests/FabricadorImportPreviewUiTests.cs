@@ -516,6 +516,15 @@ public sealed class FabricadorImportPreviewUiTests
 
         try
         {
+            var inspectorTabs = Assert.Single(window.GetVisualDescendants().OfType<TabControl>(), control => control.Name == "ModelInspectorTabs");
+            Assert.Equal(["Peças", "Camadas", "Juntas"], inspectorTabs.Items.Cast<TabItem>().Select(item => item.Header?.ToString()));
+            Assert.Equal(0, inspectorTabs.SelectedIndex);
+            viewModel.SelectedModelInspectorTab = 2;
+            Assert.Equal(2, inspectorTabs.SelectedIndex);
+            inspectorTabs.SelectedIndex = 1;
+            Assert.Equal(1, viewModel.SelectedModelInspectorTab);
+            inspectorTabs.SelectedIndex = 0;
+
             await viewModel.SelectModelSourceCommand.ExecuteAsync(null);
 
             var previewImage = Assert.IsType<Image>(window.GetVisualDescendants().Single(control => control.Name == "ModelSourcePreviewImage"));
@@ -593,7 +602,12 @@ public sealed class FabricadorImportPreviewUiTests
             Assert.Equal(layerOrderBeforeDrag, viewModel.PartLayers.Select(item => item.Id));
             Assert.Equal(0, viewModel.UndoCount);
 
-            var layerList = Assert.Single(window.GetVisualDescendants().OfType<ListBox>(), control => control.Name == "ModelPartLayerList");
+            inspectorTabs.SelectedIndex = 1;
+            var layersTab = Assert.IsType<TabItem>(inspectorTabs.Items[1]);
+            Assert.Same(layersTab.Content, inspectorTabs.SelectedContent);
+            var layersScroll = Assert.IsType<ScrollViewer>(layersTab.Content);
+            var layersContent = Assert.IsType<StackPanel>(layersScroll.Content);
+            var layerList = Assert.Single(layersContent.Children.OfType<ListBox>(), control => control.Name == "ModelPartLayerList");
             Assert.Equal(2, layerList.Items.Count);
             viewModel.SelectPartLayerCommand.Execute(parts[0].Id);
             Assert.Equal(parts[0].Id, viewModel.SelectedModelPartId);

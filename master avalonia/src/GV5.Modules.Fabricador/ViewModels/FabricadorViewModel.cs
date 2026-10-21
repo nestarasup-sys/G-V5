@@ -108,6 +108,7 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
     private RigPartOption? _selectedRigParent;
     private RigPartOption? _selectedRigChild;
     private RigJointItem? _selectedRigJoint;
+    private int _selectedModelInspectorTab;
     private string _rigParentAnchorX = "0";
     private string _rigParentAnchorY = "0";
     private string _rigChildAnchorX = "0";
@@ -626,6 +627,12 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
             }
             OnPropertyChanged(nameof(SelectedRigJointModeLabel));
         }
+    }
+
+    public int SelectedModelInspectorTab
+    {
+        get => _selectedModelInspectorTab;
+        set => SetProperty(ref _selectedModelInspectorTab, Math.Clamp(value, 0, 2));
     }
     public string RigParentAnchorX { get => _rigParentAnchorX; set => SetProperty(ref _rigParentAnchorX, value); }
     public string RigParentAnchorY { get => _rigParentAnchorY; set => SetProperty(ref _rigParentAnchorY, value); }

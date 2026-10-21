@@ -183,195 +183,149 @@
                         CornerRadius="11"
                         ClipToBounds="True">
                     <Grid>
-                    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" IsVisible="{Binding IsModelWorkspace}">
-                        <StackPanel Spacing="10" Margin="10">
-                            <StackPanel Spacing="3">
-                                <TextBlock Text="Camadas" FontSize="15" FontWeight="Bold" Foreground="#342E36" />
-                                <TextBlock Text="O topo da lista fica na frente." FontSize="12" Foreground="#AAA1AA" />
-                            </StackPanel>
-                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
-                                <StackPanel Spacing="3">
-                                    <TextBlock Text="Peça selecionada" FontSize="11" Foreground="#AAA1AA" />
-                                    <TextBlock Text="{Binding SelectedPartName}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" Foreground="#342E36" />
+                    <TabControl x:Name="ModelInspectorTabs" SelectedIndex="{Binding SelectedModelInspectorTab, Mode=TwoWay}" IsVisible="{Binding IsModelWorkspace}">
+                        <TabItem Header="Peças">
+                            <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                                <StackPanel Spacing="10" Margin="10">
+                                    <Border IsVisible="{Binding HasPendingRecovery}" Background="#FBFAFB" BorderBrush="#C74677" BorderThickness="1" CornerRadius="9" Padding="10">
+                                        <StackPanel Spacing="8">
+                                            <TextBlock Text="Rascunho recuperável encontrado" FontWeight="SemiBold" Foreground="#342E36" />
+                                            <TextBlock Text="{Binding PendingRecoveryCheckpoint.Name}" FontSize="12" Foreground="#706872" />
+                                            <StackPanel Orientation="Horizontal" Spacing="7">
+                                                <Button Content="Recuperar" Command="{Binding RestoreCheckpointCommand}" Padding="10,6" Background="#C74677" Foreground="#FFFFFF" />
+                                                <Button Content="Descartar checkpoint" Command="{Binding DiscardCheckpointCommand}" Padding="10,6" />
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </Border>
+                                    <TextBlock Text="Verificando alterações interrompidas…" IsVisible="{Binding IsCheckingRecovery}" FontSize="12" Foreground="#706872" />
+                                    <TextBlock Text="{Binding RecoveryMessage}" IsVisible="{Binding HasRecoveryMessage}" TextWrapping="Wrap" Foreground="#B4233C" />
+                                    <Button Content="Selecionar folha de imagem" Command="{Binding SelectModelSourceCommand}" IsEnabled="{Binding CanSelectModelSource}" HorizontalAlignment="Stretch" Padding="11,8" Background="#FFF5F8" BorderBrush="#EFCBD8" Foreground="#A84368" />
+                                    <TextBlock Text="Abrindo seletor ou preparando prévia…" IsVisible="{Binding IsImporting}" FontSize="12" Foreground="#706872" />
+                                    <TextBlock Text="{Binding ImportError}" IsVisible="{Binding HasImportError}" TextWrapping="Wrap" Foreground="#B4233C" />
+                                    <TextBlock Text="{Binding ImportStatus}" IsVisible="{Binding HasImportStatus}" TextWrapping="Wrap" Foreground="#706872" />
+                                    <Border IsVisible="{Binding HasImportPreview}" Background="#FFFFFF" BorderBrush="#EEE9ED" BorderThickness="1" CornerRadius="8" Padding="9">
+                                        <StackPanel Spacing="8">
+                                            <Border Background="#FBFAFB" CornerRadius="6" MinHeight="120" MaxHeight="220">
+                                                <Image x:Name="ModelSourcePreviewImage" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center" MaxHeight="210" />
+                                            </Border>
+                                            <TextBlock Text="{Binding ImportPreviewDimensions}" FontSize="12" Foreground="#342E36" />
+                                            <TextBlock Text="{Binding ImportPreview.MediaType}" FontSize="12" Foreground="#706872" />
+                                            <Border Background="#F8F4F7" BorderBrush="#EEE5EB" BorderThickness="1" CornerRadius="7" Padding="8">
+                                                <StackPanel Spacing="6">
+                                                    <TextBlock Text="{Binding ChromaToleranceLabel}" FontSize="12" FontWeight="SemiBold" Foreground="#58424F" />
+                                                    <Slider x:Name="ModelChromaToleranceSlider" Minimum="0" Maximum="280" TickFrequency="1" IsSnapToTickEnabled="True" Value="{Binding ChromaTolerance}" IsEnabled="{Binding CanApplyChromaPreview}" />
+                                                    <TextBlock Text="Ajuste e gere uma prévia. A imagem-fonte original será publicada sem alterações." FontSize="11" Foreground="#827783" TextWrapping="Wrap" />
+                                                    <TextBlock Text="A tolerância mudou; atualize a prévia antes de publicar." IsVisible="{Binding IsChromaPreviewStale}" FontSize="11" Foreground="#B4233C" TextWrapping="Wrap" />
+                                                    <Button Content="Atualizar prévia do chroma" Command="{Binding ApplyChromaPreviewCommand}" IsEnabled="{Binding CanApplyChromaPreview}" HorizontalAlignment="Stretch" Padding="9,6" />
+                                                </StackPanel>
+                                            </Border>
+                                            <StackPanel Orientation="Horizontal" Spacing="7">
+                                                <Button Content="Publicar folha" Command="{Binding PublishModelSourceCommand}" IsEnabled="{Binding CanPublishModelSource}" Padding="10,6" Background="#C74677" Foreground="#FFFFFF" />
+                                                <Button Content="Cancelar" Command="{Binding CancelModelSourceImportCommand}" IsEnabled="{Binding CanCancelImport}" Padding="10,6" />
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </Border>
+                                    <TextBlock x:Name="SaveErrorText" Text="{Binding SaveError}" IsVisible="{Binding HasSaveError}" TextWrapping="Wrap" Foreground="#B4233C" />
+                                    <TextBlock Text="{Binding PublishStatus}" IsVisible="{Binding HasPublishStatus}" TextWrapping="Wrap" Foreground="#342E36" />
+                                    <TextBlock Text="{Binding PublishError}" IsVisible="{Binding HasPublishError}" TextWrapping="Wrap" Foreground="#B4233C" />
+                                    <TextBlock Text="{Binding PoseEditorError}" IsVisible="{Binding HasPoseEditorError}" TextWrapping="Wrap" Foreground="#B4233C" />
+                                    <TextBlock Text="{Binding ModelRenderError}" IsVisible="{Binding HasModelRenderError}" TextWrapping="Wrap" Foreground="#B4233C" />
                                 </StackPanel>
-                                <Button Grid.Column="1" Content="Limpar seleção" Command="{Binding ClearSelectionCommand}" Padding="8,5" />
-                            </Grid>
-                            <ListBox x:Name="ModelPartLayerList"
-                                     ItemsSource="{Binding PartLayers}"
-                                     Loaded="OnModelPartLayerListLoaded"
-                                     MinHeight="100"
-                                     MaxHeight="360"
-                                     Background="Transparent"
-                                     BorderThickness="0">
-                                <ListBox.ItemTemplate>
-                                    <DataTemplate x:DataType="vm:ModelPartLayerItem">
-                                        <Border Background="#FFFFFF" BorderBrush="#EEE9ED" BorderThickness="1" CornerRadius="7" Padding="5" Margin="0,0,0,3"
-                                                DragDrop.AllowDrop="True"
-                                                DragDrop.DragOver="OnLayerReorderDragOver"
-                                                DragDrop.Drop="OnLayerReorderDrop">
-                                            <Grid ColumnDefinitions="Auto,Auto,Auto,*,Auto,Auto,Auto" ColumnSpacing="4">
-                                                <TextBlock Text="●" IsVisible="{Binding IsSelected}" VerticalAlignment="Center" Foreground="#C74677" />
-                                                <TextBlock Grid.Column="1" Text="≡" FontSize="16" VerticalAlignment="Center" Foreground="#A198A2"
-                                                           Cursor="SizeAll" ToolTip.Tip="Arraste para mudar a ordem da camada"
-                                                           PointerPressed="OnLayerReorderPointerPressed" />
-                                                <Border Grid.Column="2" Width="38" Height="38" CornerRadius="5" Background="#F8F4F7" VerticalAlignment="Center">
-                                                    <Grid>
-                                                        <TextBlock Text="◇" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="#C7B8C2" />
-                                                        <Image Source="{Binding Thumbnail}" Stretch="Uniform" />
-                                                    </Grid>
-                                                </Border>
-                                                <Button Grid.Column="3"
-                                                        HorizontalContentAlignment="Left"
-                                                        Command="{Binding $parent[views:FabricadorView].DataContext.SelectPartLayerCommand}"
-                                                        CommandParameter="{Binding Id}"
-                                                        Padding="7,5">
-                                                    <StackPanel Spacing="2">
-                                                        <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
-                                                        <TextBlock Text="{Binding LayerStatus}" FontSize="11" Foreground="#AAA1AA" />
-                                                    </StackPanel>
-                                                </Button>
-                                                <Button Grid.Column="4" Content="↑" ToolTip.Tip="Mover para frente" IsEnabled="{Binding CanMoveForward}" Command="{Binding $parent[views:FabricadorView].DataContext.BringPartForwardCommand}" CommandParameter="{Binding Id}" Padding="7,5" />
-                                                <Button Grid.Column="5" Content="↓" ToolTip.Tip="Mover para trás" IsEnabled="{Binding CanMoveBackward}" Command="{Binding $parent[views:FabricadorView].DataContext.SendPartBackwardCommand}" CommandParameter="{Binding Id}" Padding="7,5" />
-                                                <Button Grid.Column="6" Content="{Binding VisibilityLabel}" Command="{Binding $parent[views:FabricadorView].DataContext.TogglePartVisibilityCommand}" CommandParameter="{Binding Id}" IsEnabled="{Binding CanEdit}" ToolTip.Tip="Mostrar ou ocultar esta peça" Padding="7,5" />
-                                            </Grid>
-                                        </Border>
-                                    </DataTemplate>
-                                </ListBox.ItemTemplate>
-                            </ListBox>
-
-                            <Border Background="#FBFAFB" BorderBrush="#EEE9ED" BorderThickness="1" CornerRadius="9" Padding="9">
-                                <StackPanel Spacing="8">
-                                    <StackPanel Spacing="2">
-                                        <TextBlock Text="Juntas do rig" FontSize="14" FontWeight="Bold" Foreground="#342E36" />
-                                        <TextBlock Text="Conecte peças, ajuste âncoras e escolha juntas fixas ou livres." FontSize="11" Foreground="#AAA1AA" TextWrapping="Wrap" />
+                            </ScrollViewer>
+                        </TabItem>
+                        <TabItem Header="Camadas">
+                            <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                                <StackPanel Spacing="10" Margin="10">
+                                    <StackPanel Spacing="3">
+                                        <TextBlock Text="Camadas" FontSize="15" FontWeight="Bold" Foreground="#342E36" />
+                                        <TextBlock Text="O topo da lista fica na frente." FontSize="12" Foreground="#AAA1AA" />
                                     </StackPanel>
-                                    <Grid ColumnDefinitions="*,*" ColumnSpacing="6">
-                                        <ComboBox ItemsSource="{Binding RigPartOptions}"
-                                                  SelectedItem="{Binding SelectedRigParent}"
-                                                  DisplayMemberBinding="{Binding Name}"
-                                                  IsEnabled="{Binding CanEditRig}"
-                                                  PlaceholderText="Peça pai" />
-                                        <ComboBox Grid.Column="1"
-                                                  ItemsSource="{Binding RigPartOptions}"
-                                                  SelectedItem="{Binding SelectedRigChild}"
-                                                  DisplayMemberBinding="{Binding Name}"
-                                                  IsEnabled="{Binding CanEditRig}"
-                                                  PlaceholderText="Peça filha" />
+                                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
+                                        <StackPanel Spacing="3">
+                                            <TextBlock Text="Peça selecionada" FontSize="11" Foreground="#AAA1AA" />
+                                            <TextBlock Text="{Binding SelectedPartName}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" Foreground="#342E36" />
+                                        </StackPanel>
+                                        <Button Grid.Column="1" Content="Limpar seleção" Command="{Binding ClearSelectionCommand}" Padding="8,5" />
                                     </Grid>
-                                    <Button Content="＋  Conectar peças"
-                                            Command="{Binding ConnectRigPartsCommand}"
-                                            IsEnabled="{Binding CanEditRig}"
-                                            Background="#FFF1F6" BorderBrush="#EFCBD8" Foreground="#A84368" Padding="9,6" />
-                                    <ListBox ItemsSource="{Binding RigJointItems}"
-                                             SelectedItem="{Binding SelectedRigJoint}"
-                                             IsEnabled="{Binding CanEditRig}"
-                                             MinHeight="48" MaxHeight="130"
-                                             Background="Transparent" BorderThickness="0">
+                                    <ListBox x:Name="ModelPartLayerList" ItemsSource="{Binding PartLayers}" Loaded="OnModelPartLayerListLoaded" MinHeight="100" MaxHeight="360" Background="Transparent" BorderThickness="0">
                                         <ListBox.ItemTemplate>
-                                            <DataTemplate x:DataType="vm:RigJointItem">
-                                                <Border Background="#FFFFFF" BorderBrush="#EEE9ED" BorderThickness="1" CornerRadius="6" Padding="7" Margin="0,0,0,3">
-                                                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
-                                                        <TextBlock Text="{Binding Label}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
-                                                        <TextBlock Grid.Column="1" Text="{Binding ModeLabel}" Foreground="#A84368" VerticalAlignment="Center" />
+                                            <DataTemplate x:DataType="vm:ModelPartLayerItem">
+                                                <Border Background="#FFFFFF" BorderBrush="#EEE9ED" BorderThickness="1" CornerRadius="7" Padding="5" Margin="0,0,0,3" DragDrop.AllowDrop="True" DragDrop.DragOver="OnLayerReorderDragOver" DragDrop.Drop="OnLayerReorderDrop">
+                                                    <Grid ColumnDefinitions="Auto,Auto,Auto,*,Auto,Auto,Auto" ColumnSpacing="4">
+                                                        <TextBlock Text="●" IsVisible="{Binding IsSelected}" VerticalAlignment="Center" Foreground="#C74677" />
+                                                        <TextBlock Grid.Column="1" Text="≡" FontSize="16" VerticalAlignment="Center" Foreground="#A198A2" Cursor="SizeAll" ToolTip.Tip="Arraste para mudar a ordem da camada" PointerPressed="OnLayerReorderPointerPressed" />
+                                                        <Border Grid.Column="2" Width="38" Height="38" CornerRadius="5" Background="#F8F4F7" VerticalAlignment="Center">
+                                                            <Grid>
+                                                                <TextBlock Text="◇" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="#C7B8C2" />
+                                                                <Image Source="{Binding Thumbnail}" Stretch="Uniform" />
+                                                            </Grid>
+                                                        </Border>
+                                                        <Button Grid.Column="3" HorizontalContentAlignment="Left" Command="{Binding $parent[views:FabricadorView].DataContext.SelectPartLayerCommand}" CommandParameter="{Binding Id}" Padding="7,5">
+                                                            <StackPanel Spacing="2">
+                                                                <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                                                <TextBlock Text="{Binding LayerStatus}" FontSize="11" Foreground="#AAA1AA" />
+                                                            </StackPanel>
+                                                        </Button>
+                                                        <Button Grid.Column="4" Content="↑" ToolTip.Tip="Mover para frente" IsEnabled="{Binding CanMoveForward}" Command="{Binding $parent[views:FabricadorView].DataContext.BringPartForwardCommand}" CommandParameter="{Binding Id}" Padding="7,5" />
+                                                        <Button Grid.Column="5" Content="↓" ToolTip.Tip="Mover para trás" IsEnabled="{Binding CanMoveBackward}" Command="{Binding $parent[views:FabricadorView].DataContext.SendPartBackwardCommand}" CommandParameter="{Binding Id}" Padding="7,5" />
+                                                        <Button Grid.Column="6" Content="{Binding VisibilityLabel}" Command="{Binding $parent[views:FabricadorView].DataContext.TogglePartVisibilityCommand}" CommandParameter="{Binding Id}" IsEnabled="{Binding CanEdit}" ToolTip.Tip="Mostrar ou ocultar esta peça" Padding="7,5" />
                                                     </Grid>
                                                 </Border>
                                             </DataTemplate>
                                         </ListBox.ItemTemplate>
                                     </ListBox>
-                                    <TextBlock Text="Âncoras da peça pai · X / Y" FontSize="11" Foreground="#706872" />
-                                    <Grid ColumnDefinitions="*,*" ColumnSpacing="6">
-                                        <TextBox Text="{Binding RigParentAnchorX}" PlaceholderText="X" IsEnabled="{Binding CanEditRig}" />
-                                        <TextBox Grid.Column="1" Text="{Binding RigParentAnchorY}" PlaceholderText="Y" IsEnabled="{Binding CanEditRig}" />
-                                    </Grid>
-                                    <TextBlock Text="Âncoras da peça filha · X / Y" FontSize="11" Foreground="#706872" />
-                                    <Grid ColumnDefinitions="*,*" ColumnSpacing="6">
-                                        <TextBox Text="{Binding RigChildAnchorX}" PlaceholderText="X" IsEnabled="{Binding CanEditRig}" />
-                                        <TextBox Grid.Column="1" Text="{Binding RigChildAnchorY}" PlaceholderText="Y" IsEnabled="{Binding CanEditRig}" />
-                                    </Grid>
-                                    <Grid ColumnDefinitions="*,*" ColumnSpacing="6">
-                                        <Button Content="Aplicar âncoras"
-                                                Command="{Binding ApplyRigJointAnchorsCommand}"
-                                                IsEnabled="{Binding CanEditSelectedRigJoint}"
-                                                Padding="8,6" />
-                                        <Button Grid.Column="1" Content="{Binding SelectedRigJointModeLabel}"
-                                                Command="{Binding ToggleSelectedRigJointModeCommand}"
-                                                IsEnabled="{Binding CanEditSelectedRigJoint}"
-                                                Padding="8,6" />
-                                    </Grid>
-                                    <Button Content="Remover junta selecionada"
-                                            Command="{Binding RemoveSelectedRigJointCommand}"
-                                            IsEnabled="{Binding CanEditSelectedRigJoint}"
-                                            Padding="8,6" Foreground="#B4233C" />
-                                    <TextBlock Text="Importe uma folha com pelo menos duas peças para editar o rig." IsVisible="{Binding NeedsRigParts}" FontSize="11" Foreground="#AAA1AA" TextWrapping="Wrap" />
-                                    <TextBlock Text="{Binding RigError}" IsVisible="{Binding HasRigError}" TextWrapping="Wrap" Foreground="#B4233C" FontSize="11" />
                                 </StackPanel>
-                            </Border>
-
-                            <Border IsVisible="{Binding HasPendingRecovery}" Background="#FBFAFB" BorderBrush="#C74677" BorderThickness="1" CornerRadius="9" Padding="10">
-                                <StackPanel Spacing="8">
-                                    <TextBlock Text="Rascunho recuperável encontrado" FontWeight="SemiBold" Foreground="#342E36" />
-                                    <TextBlock Text="{Binding PendingRecoveryCheckpoint.Name}" FontSize="12" Foreground="#706872" />
-                                    <StackPanel Orientation="Horizontal" Spacing="7">
-                                        <Button Content="Recuperar" Command="{Binding RestoreCheckpointCommand}" Padding="10,6" Background="#C74677" Foreground="#FFFFFF" />
-                                        <Button Content="Descartar checkpoint" Command="{Binding DiscardCheckpointCommand}" Padding="10,6" />
-                                    </StackPanel>
-                                </StackPanel>
-                            </Border>
-                            <TextBlock Text="Verificando alterações interrompidas…" IsVisible="{Binding IsCheckingRecovery}" FontSize="12" Foreground="#706872" />
-                            <TextBlock Text="{Binding RecoveryMessage}" IsVisible="{Binding HasRecoveryMessage}" TextWrapping="Wrap" Foreground="#B4233C" />
-                            <Button Content="Selecionar folha de imagem"
-                                    Command="{Binding SelectModelSourceCommand}"
-                                    IsEnabled="{Binding CanSelectModelSource}"
-                                    HorizontalAlignment="Stretch"
-                                    Padding="11,8"
-                                    Background="#FFF5F8"
-                                    BorderBrush="#EFCBD8"
-                                    Foreground="#A84368" />
-                            <TextBlock Text="Abrindo seletor ou preparando prévia…" IsVisible="{Binding IsImporting}" FontSize="12" Foreground="#706872" />
-                            <TextBlock Text="{Binding ImportError}" IsVisible="{Binding HasImportError}" TextWrapping="Wrap" Foreground="#B4233C" />
-                            <TextBlock Text="{Binding ImportStatus}" IsVisible="{Binding HasImportStatus}" TextWrapping="Wrap" Foreground="#706872" />
-                            <Border IsVisible="{Binding HasImportPreview}" Background="#FFFFFF" BorderBrush="#EEE9ED" BorderThickness="1" CornerRadius="8" Padding="9">
-                                <StackPanel Spacing="8">
-                                    <Border Background="#FBFAFB" CornerRadius="6" MinHeight="120" MaxHeight="220">
-                                        <Image x:Name="ModelSourcePreviewImage" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center" MaxHeight="210" />
-                                    </Border>
-                                    <TextBlock Text="{Binding ImportPreviewDimensions}" FontSize="12" Foreground="#342E36" />
-                                    <TextBlock Text="{Binding ImportPreview.MediaType}" FontSize="12" Foreground="#706872" />
-                                    <Border Background="#F8F4F7" BorderBrush="#EEE5EB" BorderThickness="1" CornerRadius="7" Padding="8">
-                                        <StackPanel Spacing="6">
-                                            <TextBlock Text="{Binding ChromaToleranceLabel}" FontSize="12" FontWeight="SemiBold" Foreground="#58424F" />
-                                            <Slider x:Name="ModelChromaToleranceSlider"
-                                                    Minimum="0"
-                                                    Maximum="280"
-                                                    TickFrequency="1"
-                                                    IsSnapToTickEnabled="True"
-                                                    Value="{Binding ChromaTolerance}"
-                                                    IsEnabled="{Binding CanApplyChromaPreview}" />
-                                            <TextBlock Text="Ajuste e gere uma prévia. A imagem-fonte original será publicada sem alterações."
-                                                       FontSize="11" Foreground="#827783" TextWrapping="Wrap" />
-                                            <TextBlock Text="A tolerância mudou; atualize a prévia antes de publicar."
-                                                       IsVisible="{Binding IsChromaPreviewStale}"
-                                                       FontSize="11" Foreground="#B4233C" TextWrapping="Wrap" />
-                                            <Button Content="Atualizar prévia do chroma"
-                                                    Command="{Binding ApplyChromaPreviewCommand}"
-                                                    IsEnabled="{Binding CanApplyChromaPreview}"
-                                                    HorizontalAlignment="Stretch"
-                                                    Padding="9,6" />
+                            </ScrollViewer>
+                        </TabItem>
+                        <TabItem Header="Juntas">
+                            <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                                <StackPanel Spacing="10" Margin="10">
+                                    <Border Background="#FBFAFB" BorderBrush="#EEE9ED" BorderThickness="1" CornerRadius="9" Padding="9">
+                                        <StackPanel Spacing="8">
+                                            <StackPanel Spacing="2">
+                                                <TextBlock Text="Juntas do rig" FontSize="14" FontWeight="Bold" Foreground="#342E36" />
+                                                <TextBlock Text="Conecte peças, ajuste âncoras e escolha juntas fixas ou livres." FontSize="11" Foreground="#AAA1AA" TextWrapping="Wrap" />
+                                            </StackPanel>
+                                            <Grid ColumnDefinitions="*,*" ColumnSpacing="6">
+                                                <ComboBox ItemsSource="{Binding RigPartOptions}" SelectedItem="{Binding SelectedRigParent}" DisplayMemberBinding="{Binding Name}" IsEnabled="{Binding CanEditRig}" PlaceholderText="Peça pai" />
+                                                <ComboBox Grid.Column="1" ItemsSource="{Binding RigPartOptions}" SelectedItem="{Binding SelectedRigChild}" DisplayMemberBinding="{Binding Name}" IsEnabled="{Binding CanEditRig}" PlaceholderText="Peça filha" />
+                                            </Grid>
+                                            <Button Content="＋  Conectar peças" Command="{Binding ConnectRigPartsCommand}" IsEnabled="{Binding CanEditRig}" Background="#FFF1F6" BorderBrush="#EFCBD8" Foreground="#A84368" Padding="9,6" />
+                                            <ListBox ItemsSource="{Binding RigJointItems}" SelectedItem="{Binding SelectedRigJoint}" IsEnabled="{Binding CanEditRig}" MinHeight="48" MaxHeight="130" Background="Transparent" BorderThickness="0">
+                                                <ListBox.ItemTemplate>
+                                                    <DataTemplate x:DataType="vm:RigJointItem">
+                                                        <Border Background="#FFFFFF" BorderBrush="#EEE9ED" BorderThickness="1" CornerRadius="6" Padding="7" Margin="0,0,0,3">
+                                                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
+                                                                <TextBlock Text="{Binding Label}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                                                                <TextBlock Grid.Column="1" Text="{Binding ModeLabel}" Foreground="#A84368" VerticalAlignment="Center" />
+                                                            </Grid>
+                                                        </Border>
+                                                    </DataTemplate>
+                                                </ListBox.ItemTemplate>
+                                            </ListBox>
+                                            <TextBlock Text="Âncoras da peça pai · X / Y" FontSize="11" Foreground="#706872" />
+                                            <Grid ColumnDefinitions="*,*" ColumnSpacing="6">
+                                                <TextBox Text="{Binding RigParentAnchorX}" PlaceholderText="X" IsEnabled="{Binding CanEditRig}" />
+                                                <TextBox Grid.Column="1" Text="{Binding RigParentAnchorY}" PlaceholderText="Y" IsEnabled="{Binding CanEditRig}" />
+                                            </Grid>
+                                            <TextBlock Text="Âncoras da peça filha · X / Y" FontSize="11" Foreground="#706872" />
+                                            <Grid ColumnDefinitions="*,*" ColumnSpacing="6">
+                                                <TextBox Text="{Binding RigChildAnchorX}" PlaceholderText="X" IsEnabled="{Binding CanEditRig}" />
+                                                <TextBox Grid.Column="1" Text="{Binding RigChildAnchorY}" PlaceholderText="Y" IsEnabled="{Binding CanEditRig}" />
+                                            </Grid>
+                                            <Grid ColumnDefinitions="*,*" ColumnSpacing="6">
+                                                <Button Content="Aplicar âncoras" Command="{Binding ApplyRigJointAnchorsCommand}" IsEnabled="{Binding CanEditSelectedRigJoint}" Padding="8,6" />
+                                                <Button Grid.Column="1" Content="{Binding SelectedRigJointModeLabel}" Command="{Binding ToggleSelectedRigJointModeCommand}" IsEnabled="{Binding CanEditSelectedRigJoint}" Padding="8,6" />
+                                            </Grid>
+                                            <Button Content="Remover junta selecionada" Command="{Binding RemoveSelectedRigJointCommand}" IsEnabled="{Binding CanEditSelectedRigJoint}" Padding="8,6" Foreground="#B4233C" />
+                                            <TextBlock Text="Importe uma folha com pelo menos duas peças para editar o rig." IsVisible="{Binding NeedsRigParts}" FontSize="11" Foreground="#AAA1AA" TextWrapping="Wrap" />
+                                            <TextBlock Text="{Binding RigError}" IsVisible="{Binding HasRigError}" TextWrapping="Wrap" Foreground="#B4233C" FontSize="11" />
                                         </StackPanel>
                                     </Border>
-                                    <StackPanel Orientation="Horizontal" Spacing="7">
-                                        <Button Content="Publicar folha" Command="{Binding PublishModelSourceCommand}" IsEnabled="{Binding CanPublishModelSource}" Padding="10,6" Background="#C74677" Foreground="#FFFFFF" />
-                                        <Button Content="Cancelar" Command="{Binding CancelModelSourceImportCommand}" IsEnabled="{Binding CanCancelImport}" Padding="10,6" />
-                                    </StackPanel>
                                 </StackPanel>
-                            </Border>
-                            <TextBlock x:Name="SaveErrorText" Text="{Binding SaveError}" IsVisible="{Binding HasSaveError}" TextWrapping="Wrap" Foreground="#B4233C" />
-                            <TextBlock Text="{Binding PublishStatus}" IsVisible="{Binding HasPublishStatus}" TextWrapping="Wrap" Foreground="#342E36" />
-                            <TextBlock Text="{Binding PublishError}" IsVisible="{Binding HasPublishError}" TextWrapping="Wrap" Foreground="#B4233C" />
-                            <TextBlock Text="{Binding PoseEditorError}" IsVisible="{Binding HasPoseEditorError}" TextWrapping="Wrap" Foreground="#B4233C" />
-                            <TextBlock Text="{Binding ModelRenderError}" IsVisible="{Binding HasModelRenderError}" TextWrapping="Wrap" Foreground="#B4233C" />
-                        </StackPanel>
-                    </ScrollViewer>
+                            </ScrollViewer>
+                        </TabItem>
+                    </TabControl>
                     <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" IsVisible="{Binding IsPoseWorkspace}">
                         <StackPanel Spacing="10" Margin="10">
                             <StackPanel Spacing="3">
