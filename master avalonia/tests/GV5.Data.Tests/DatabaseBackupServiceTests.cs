@@ -2,6 +2,7 @@ using GV5.Application.Contracts;
 using GV5.Core.Identity;
 using GV5.Core.Models;
 using GV5.Data.Migrations;
+using GV5.Data.Diagnostics;
 using GV5.Data.Repositories;
 using GV5.Data.Storage;
 using Xunit;
@@ -44,7 +45,7 @@ public sealed class DatabaseBackupServiceTests
             Assert.True(File.Exists(walPath));
             Assert.True(new FileInfo(walPath).Length > 0);
 
-            var service = new DatabaseBackupService(paths, database, initializer);
+            var service = CreateService(paths, database, initializer);
             var backup = await service.CreateAsync(cancellationToken);
             Assert.True(File.Exists(backup.DatabasePath));
             Assert.True(File.Exists(backup.ManifestPath));
@@ -88,7 +89,7 @@ public sealed class DatabaseBackupServiceTests
         {
             var initializer = CreateInitializer(database);
             await initializer.InitializeAsync(cancellationToken);
-            var service = new DatabaseBackupService(paths, database, initializer);
+            var service = CreateService(paths, database, initializer);
             var backup = await service.CreateAsync(cancellationToken);
 
             Directory.CreateDirectory(Path.Combine(restoreRoot, "database"));
@@ -124,6 +125,12 @@ public sealed class DatabaseBackupServiceTests
     private static SqliteMigrationRunner CreateInitializer(SqliteDatabase database) => new(
         database,
         [new InitialAssetSchemaMigration(), new ModelDraftSchemaMigration(), new ModelDraftCheckpointSchemaMigration()]);
+
+    private static DatabaseBackupService CreateService(AppDataPaths paths, SqliteDatabase database, SqliteMigrationRunner initializer)
+    {
+        var correlation = new OperationCorrelationContext();
+        return new DatabaseBackupService(paths, database, initializer, new StructuredFileLogger(paths, correlation), correlation);
+    }
 
     private static string NewTempRoot(string suffix) => Path.Combine(Path.GetTempPath(), $"gv5-backup-{suffix}-{Guid.NewGuid():N}");
 

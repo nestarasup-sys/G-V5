@@ -1,5 +1,6 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using System.Diagnostics;
 using GV5.Application.Contracts;
 using GV5.Core.Identity;
 using GV5.Core.Models;
@@ -12,6 +13,8 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
     private readonly IModelDraftRepository _repository;
     private readonly IDataPlatformInitializer _dataInitializer;
     private readonly IModelDraftCheckpointStore? _checkpointStore;
+    private readonly IStructuredDiagnosticLogger? _logger;
+    private readonly IOperationCorrelationContext? _correlationContext;
     private ModelDraft? _savedDraft;
     private ModelId? _pendingModelId;
     private Guid? _pendingCheckpointId;
@@ -80,11 +83,15 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
     public FabricadorViewModel(
         IModelDraftRepository repository,
         IDataPlatformInitializer dataInitializer,
-        IModelDraftCheckpointStore? checkpointStore = null)
+        IModelDraftCheckpointStore? checkpointStore = null,
+        IStructuredDiagnosticLogger? logger = null,
+        IOperationCorrelationContext? correlationContext = null)
     {
         _repository = repository ?? throw new ArgumentNullException(nameof(repository));
         _dataInitializer = dataInitializer ?? throw new ArgumentNullException(nameof(dataInitializer));
         _checkpointStore = checkpointStore;
+        _logger = logger;
+        _correlationContext = correlationContext;
         RecoveryTask = _checkpointStore is null ? Task.CompletedTask : DiscoverPendingRecoveryAsync();
     }
 
@@ -166,6 +173,9 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
 
     private async Task SaveDraftCoreAsync()
     {
+        using var correlationScope = _correlationContext?.BeginScope();
+        var stopwatch = Stopwatch.StartNew();
+        DiagnosticErrorCode? diagnosticErrorCode = null;
         IsSaving = true;
         SaveState = PersistenceState.Saving;
         SaveError = null;
@@ -198,6 +208,9 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
             if (result.IsFailure)
             {
                 SaveError = result.Error!.Message;
+                diagnosticErrorCode = result.Error.Code == ApplicationErrorCode.Conflict
+                    ? DiagnosticErrorCode.RevisionConflict
+                    : DiagnosticErrorCode.StorageFailure;
                 SaveState = PersistenceState.Error;
                 return;
             }
@@ -216,12 +229,22 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
         catch (Exception)
         {
             SaveError = "Não foi possível gravar o rascunho. Verifique o acesso à pasta de dados e tente novamente.";
+            diagnosticErrorCode = DiagnosticErrorCode.StorageFailure;
             SaveState = PersistenceState.Error;
         }
         finally
         {
             IsSaving = false;
             _activeSaveTask = null;
+            if (_logger is not null)
+            {
+                await _logger.WriteAsync(
+                    SaveState == PersistenceState.Saved ? DiagnosticEventCode.ModelDraftSaveCompleted : DiagnosticEventCode.ModelDraftSaveFailed,
+                    SaveState == PersistenceState.Saved ? DiagnosticOutcome.Success : DiagnosticOutcome.Failure,
+                    diagnosticErrorCode,
+                    stopwatch.ElapsedMilliseconds,
+                    CancellationToken.None);
+            }
         }
     }
 
@@ -268,6 +291,8 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
     [RelayCommand(CanExecute = nameof(CanRecoverCheckpoint))]
     private async Task RestoreCheckpointAsync()
     {
+        using var correlationScope = _correlationContext?.BeginScope();
+        var stopwatch = Stopwatch.StartNew();
         var checkpoint = PendingRecoveryCheckpoint;
         if (checkpoint is null || _checkpointStore is null)
         {
@@ -288,6 +313,7 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
                 {
                     RecoveryMessage = "O modelo associado ao checkpoint não existe mais. O checkpoint foi preservado para você decidir.";
                     SaveState = PersistenceState.Error;
+                    await LogDiagnosticAsync(DiagnosticEventCode.DraftRecoveryConflict, DiagnosticOutcome.Warning, DiagnosticErrorCode.RevisionConflict, stopwatch.ElapsedMilliseconds);
                     return;
                 }
 
@@ -317,6 +343,7 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
                     {
                         RecoveryMessage = "Já existe uma versão diferente com o mesmo ID. O checkpoint foi preservado sem sobrescrever os dados.";
                         SaveState = PersistenceState.Error;
+                        await LogDiagnosticAsync(DiagnosticEventCode.DraftRecoveryConflict, DiagnosticOutcome.Warning, DiagnosticErrorCode.RevisionConflict, stopwatch.ElapsedMilliseconds);
                         return;
                     }
 
@@ -347,6 +374,7 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
                 {
                     RecoveryMessage = "O modelo recebeu uma revisão mais nova. O checkpoint antigo foi preservado e não sobrescreveu a versão atual.";
                     SaveState = PersistenceState.Error;
+                    await LogDiagnosticAsync(DiagnosticEventCode.DraftRecoveryConflict, DiagnosticOutcome.Warning, DiagnosticErrorCode.RevisionConflict, stopwatch.ElapsedMilliseconds);
                     return;
                 }
             }
@@ -358,12 +386,14 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
             ModelName = restoredDraft.Name;
             SaveState = PersistenceState.Saved;
             SaveError = null;
+            await LogDiagnosticAsync(DiagnosticEventCode.DraftRecoveryCompleted, DiagnosticOutcome.Success, durationMilliseconds: stopwatch.ElapsedMilliseconds);
             await LoadNextCheckpointAsync();
         }
         catch (Exception)
         {
             RecoveryMessage = "Não foi possível validar ou recuperar este checkpoint. Ele foi mantido para uma nova tentativa.";
             SaveState = PersistenceState.Error;
+            await LogDiagnosticAsync(DiagnosticEventCode.DraftRecoveryConflict, DiagnosticOutcome.Failure, DiagnosticErrorCode.StorageFailure, stopwatch.ElapsedMilliseconds);
         }
         finally
         {
@@ -384,6 +414,7 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
         {
             await _checkpointStore.CompleteAsync(checkpoint.CheckpointId);
             RecoveryMessage = "Checkpoint descartado. O rascunho confirmado permaneceu intacto.";
+            await LogDiagnosticAsync(DiagnosticEventCode.DraftCheckpointDiscarded, DiagnosticOutcome.Success);
             await LoadNextCheckpointAsync();
         }
         catch (Exception)
@@ -401,6 +432,10 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
         {
             await _dataInitializer.InitializeAsync();
             await LoadNextCheckpointAsync();
+            if (HasPendingRecovery)
+            {
+                await LogDiagnosticAsync(DiagnosticEventCode.DraftRecoveryAvailable, DiagnosticOutcome.Warning);
+            }
         }
         catch (Exception)
         {
@@ -423,4 +458,11 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
         var pending = await _checkpointStore.GetPendingAsync();
         PendingRecoveryCheckpoint = pending.FirstOrDefault();
     }
+
+    private Task LogDiagnosticAsync(
+        DiagnosticEventCode eventCode,
+        DiagnosticOutcome outcome,
+        DiagnosticErrorCode? errorCode = null,
+        long? durationMilliseconds = null) =>
+        _logger?.WriteAsync(eventCode, outcome, errorCode, durationMilliseconds, CancellationToken.None) ?? Task.CompletedTask;
 }

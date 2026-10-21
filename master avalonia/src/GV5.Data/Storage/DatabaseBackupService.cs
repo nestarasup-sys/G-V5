@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using System.Diagnostics;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using GV5.Application.Contracts;
@@ -24,27 +25,39 @@ public sealed class DatabaseBackupService : IDataPlatformBackupService
     private readonly IAppDataPaths _paths;
     private readonly SqliteDatabase _database;
     private readonly IDataPlatformInitializer _initializer;
+    private readonly IStructuredDiagnosticLogger _logger;
+    private readonly IOperationCorrelationContext _correlationContext;
 
-    public DatabaseBackupService(IAppDataPaths paths, SqliteDatabase database, IDataPlatformInitializer initializer)
+    public DatabaseBackupService(
+        IAppDataPaths paths,
+        SqliteDatabase database,
+        IDataPlatformInitializer initializer,
+        IStructuredDiagnosticLogger logger,
+        IOperationCorrelationContext correlationContext)
     {
         _paths = paths ?? throw new ArgumentNullException(nameof(paths));
         _database = database ?? throw new ArgumentNullException(nameof(database));
         _initializer = initializer ?? throw new ArgumentNullException(nameof(initializer));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _correlationContext = correlationContext ?? throw new ArgumentNullException(nameof(correlationContext));
     }
 
     public async Task<DataBackupArtifact> CreateAsync(CancellationToken cancellationToken = default)
     {
-        await _initializer.InitializeAsync(cancellationToken).ConfigureAwait(false);
-        Directory.CreateDirectory(_paths.BackupsDirectory);
-        var createdUtc = DateTimeOffset.UtcNow;
-        var directoryName = $"gv5-backup-{createdUtc:yyyyMMdd'T'HHmmssfff'Z'}-{Guid.NewGuid():N}";
-        var backupDirectory = Path.Combine(_paths.BackupsDirectory, directoryName);
-        Directory.CreateDirectory(backupDirectory);
-        var databasePath = ResolveContainedPath(backupDirectory, DatabaseRelativePath);
-        Directory.CreateDirectory(Path.GetDirectoryName(databasePath)!);
-
+        using var scope = _correlationContext.BeginScope();
+        var stopwatch = Stopwatch.StartNew();
+        var backupDirectory = string.Empty;
         try
         {
+            await _initializer.InitializeAsync(cancellationToken).ConfigureAwait(false);
+            Directory.CreateDirectory(_paths.BackupsDirectory);
+            var createdUtc = DateTimeOffset.UtcNow;
+            var directoryName = $"gv5-backup-{createdUtc:yyyyMMdd'T'HHmmssfff'Z'}-{Guid.NewGuid():N}";
+            backupDirectory = Path.Combine(_paths.BackupsDirectory, directoryName);
+            Directory.CreateDirectory(backupDirectory);
+            var databasePath = ResolveContainedPath(backupDirectory, DatabaseRelativePath);
+            Directory.CreateDirectory(Path.GetDirectoryName(databasePath)!);
+
             await _database.BackupDatabaseToAsync(databasePath, cancellationToken).ConfigureAwait(false);
             var schemaVersion = await ReadSchemaVersionAsync(databasePath, cancellationToken).ConfigureAwait(false);
             await EnsureSqliteIntegrityAsync(databasePath, cancellationToken).ConfigureAwait(false);
@@ -67,14 +80,33 @@ public sealed class DatabaseBackupService : IDataPlatformBackupService
             }
 
             File.Move(temporaryManifestPath, manifestPath);
+            await _logger.WriteAsync(
+                DiagnosticEventCode.BackupCreated,
+                DiagnosticOutcome.Success,
+                durationMilliseconds: stopwatch.ElapsedMilliseconds,
+                cancellationToken: CancellationToken.None).ConfigureAwait(false);
             return new DataBackupArtifact(backupDirectory, databasePath, manifestPath, sha256, sizeBytes, createdUtc, schemaVersion);
         }
-        catch
+        catch (Exception exception)
         {
-            if (Directory.Exists(backupDirectory))
+            try
             {
-                Directory.Delete(backupDirectory, recursive: true);
+                if (!string.IsNullOrEmpty(backupDirectory) && Directory.Exists(backupDirectory))
+                {
+                    Directory.Delete(backupDirectory, recursive: true);
+                }
             }
+            catch (Exception cleanupException) when (cleanupException is IOException or UnauthorizedAccessException)
+            {
+                // Keep the original backup failure; the partial artifact has no manifest and cannot verify.
+            }
+
+            await _logger.WriteAsync(
+                DiagnosticEventCode.BackupOperationFailed,
+                exception is OperationCanceledException ? DiagnosticOutcome.Warning : DiagnosticOutcome.Failure,
+                ClassifyFailure(exception),
+                stopwatch.ElapsedMilliseconds,
+                CancellationToken.None).ConfigureAwait(false);
 
             throw;
         }
@@ -82,6 +114,8 @@ public sealed class DatabaseBackupService : IDataPlatformBackupService
 
     public async Task<DataBackupVerification> VerifyAsync(string backupDirectory, CancellationToken cancellationToken = default)
     {
+        using var scope = _correlationContext.BeginScope();
+        var stopwatch = Stopwatch.StartNew();
         try
         {
             ArgumentException.ThrowIfNullOrWhiteSpace(backupDirectory);
@@ -144,6 +178,12 @@ public sealed class DatabaseBackupService : IDataPlatformBackupService
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or JsonException or InvalidDataException or ArgumentException or SqliteException)
         {
+            await _logger.WriteAsync(
+                DiagnosticEventCode.BackupVerificationFailed,
+                DiagnosticOutcome.Failure,
+                ClassifyFailure(exception),
+                stopwatch.ElapsedMilliseconds,
+                CancellationToken.None).ConfigureAwait(false);
             return new DataBackupVerification(false, exception.Message, null);
         }
     }
@@ -153,23 +193,26 @@ public sealed class DatabaseBackupService : IDataPlatformBackupService
         string destinationRoot,
         CancellationToken cancellationToken = default)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(destinationRoot);
-        var verification = await VerifyAsync(backupDirectory, cancellationToken).ConfigureAwait(false);
-        if (!verification.IsValid || verification.Artifact is null)
-        {
-            throw new InvalidDataException($"Backup verification failed: {verification.Error}");
-        }
-
-        var destination = new AppDataPaths(destinationRoot);
-        if (File.Exists(destination.DatabaseFile))
-        {
-            throw new IOException("Restore destination already contains a database; existing data was not overwritten.");
-        }
-
-        Directory.CreateDirectory(destination.DatabaseDirectory);
-        var temporaryPath = destination.DatabaseFile + $".{Guid.NewGuid():N}.restore-tmp";
+        using var scope = _correlationContext.BeginScope();
+        var stopwatch = Stopwatch.StartNew();
+        var temporaryPath = string.Empty;
         try
         {
+            ArgumentException.ThrowIfNullOrWhiteSpace(destinationRoot);
+            var verification = await VerifyAsync(backupDirectory, cancellationToken).ConfigureAwait(false);
+            if (!verification.IsValid || verification.Artifact is null)
+            {
+                throw new InvalidDataException($"Backup verification failed: {verification.Error}");
+            }
+
+            var destination = new AppDataPaths(destinationRoot);
+            if (File.Exists(destination.DatabaseFile))
+            {
+                throw new IOException("Restore destination already contains a database; existing data was not overwritten.");
+            }
+
+            Directory.CreateDirectory(destination.DatabaseDirectory);
+            temporaryPath = destination.DatabaseFile + $".{Guid.NewGuid():N}.restore-tmp";
             File.Copy(verification.Artifact.DatabasePath, temporaryPath, overwrite: false);
             var restoredHash = await ComputeSha256Async(temporaryPath, cancellationToken).ConfigureAwait(false);
             if (!CryptographicOperations.FixedTimeEquals(
@@ -181,14 +224,33 @@ public sealed class DatabaseBackupService : IDataPlatformBackupService
 
             await EnsureSqliteIntegrityAsync(temporaryPath, cancellationToken).ConfigureAwait(false);
             File.Move(temporaryPath, destination.DatabaseFile, overwrite: false);
+            await _logger.WriteAsync(
+                DiagnosticEventCode.BackupRestored,
+                DiagnosticOutcome.Success,
+                durationMilliseconds: stopwatch.ElapsedMilliseconds,
+                cancellationToken: CancellationToken.None).ConfigureAwait(false);
             return new DataBackupRestoreResult(destination.DatabaseFile, destination.Root, verification.Artifact.SchemaVersion);
         }
-        catch
+        catch (Exception exception)
         {
-            if (File.Exists(temporaryPath))
+            try
             {
-                File.Delete(temporaryPath);
+                if (!string.IsNullOrEmpty(temporaryPath) && File.Exists(temporaryPath))
+                {
+                    File.Delete(temporaryPath);
+                }
             }
+            catch (Exception cleanupException) when (cleanupException is IOException or UnauthorizedAccessException)
+            {
+                // Keep the original restore failure; no partial database is installed at the destination.
+            }
+
+            await _logger.WriteAsync(
+                DiagnosticEventCode.BackupOperationFailed,
+                exception is OperationCanceledException ? DiagnosticOutcome.Warning : DiagnosticOutcome.Failure,
+                ClassifyFailure(exception),
+                stopwatch.ElapsedMilliseconds,
+                CancellationToken.None).ConfigureAwait(false);
 
             throw;
         }
@@ -237,6 +299,16 @@ public sealed class DatabaseBackupService : IDataPlatformBackupService
 
     private static bool IsSha256(string? value) =>
         value is { Length: 64 } && value.All(character => character is >= '0' and <= '9' or >= 'a' and <= 'f');
+
+    private static DiagnosticErrorCode ClassifyFailure(Exception exception) => exception switch
+    {
+        OperationCanceledException => DiagnosticErrorCode.Cancelled,
+        UnauthorizedAccessException => DiagnosticErrorCode.AccessDenied,
+        InvalidDataException => DiagnosticErrorCode.InvalidBackup,
+        IOException => DiagnosticErrorCode.StorageFailure,
+        SqliteException => DiagnosticErrorCode.StorageFailure,
+        _ => DiagnosticErrorCode.Unknown
+    };
 
     private static string ResolveContainedPath(string root, string relativePath)
     {
