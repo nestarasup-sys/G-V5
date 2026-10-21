@@ -13,13 +13,13 @@
 | Branch obrigatória | `Master-AValonia` |
 | Pasta exclusiva do novo aplicativo | `master avalonia/` |
 | Commit-base inspecionado antes deste arquivo | `53b7f7a97321e85063a8dd4f9635e48d36548323` |
-| Último commit de implementação validado | `ba41071` (F05.01; contrato imutável de RenderScene/RenderLayer) |
+| Último commit de implementação validado | `bf4710d` (F05.02; builder de partes corporais por layerOrder) |
 | Fase ativa | **F05 — RenderScene e SkiaRenderer independentes** |
-| Última tarefa VALIDADA | **F05.01** — RenderScene/RenderLayer imutáveis |
-| Próxima tarefa PENDENTE | **F05.02** — builder de cena com ordem explícita de camadas corporais |
+| Última tarefa VALIDADA | **F05.02** — builder de cena com ordem explícita de camadas corporais |
+| Próxima tarefa PENDENTE | **F05.03** — SkiaRenderer CPU headless e descarte de superfícies |
 | Requisito transversal adicionado | Fidelidade visual ao Gacha 5 Electron, registrada em ADR-0004; documentos em `docs/ui-fidelity/`; sem paridade visual aprovada ainda |
 | Gate atual | **GATE F00: PASSOU; G0: PASSOU; F02: PASSOU; F03: PASSOU; F04: PASSOU; G1 global em execução até F05** |
-| Progresso validado neste controle | **64 / 247 tarefas (25,9%)** |
+| Progresso validado neste controle | **65 / 247 tarefas (26,3%)** |
 | Tarefas em execução | Nenhuma |
 | Bloqueios conhecidos | Primeiro download do SDK em clone vazio não progrediu; evidência e limite de F01 estão registrados em `docs/gates/GATE-F01.md` |
 | Aceite Windows/GPU | **Não executado / não registrado** |
@@ -50,7 +50,7 @@ Se o Codex encontrar algo já implementado, **validar e registrar evidências**,
 | F02 | SQLite, revisões, transações e recuperação básica | 15 | 15 | VALIDADA | GATE-F02 PASSOU |
 | F03 | AssetStore, thumbnails e cache limitado | 11 | 11 | VALIDADA | GATE-F03 PASSOU; G1 global em execução |
 | F04 | Geometry Engine canônica | 11 | 11 | VALIDADA | GATE-F04 PASSOU; G1 global em execução |
-| F05 | RenderScene e SkiaRenderer independentes | 11 | 1 | EM_EXECUCAO | G1 global em execução |
+| F05 | RenderScene e SkiaRenderer independentes | 11 | 2 | EM_EXECUCAO | G1 global em execução |
 | F06 | Fabricador I — modelos e peças | 14 | 0 | PENDENTE | — |
 | F07 | Fabricador II — rig, poses e animador | 12 | 0 | PENDENTE | — |
 | F08 | Fabricador III — roupas, binding e revisões | 12 | 0 | PENDENTE | — |
@@ -136,6 +136,7 @@ Adicionar uma linha ao concluir ou bloquear cada tarefa. A linha inicial abaixo 
 | **F04.10** | **VALIDADA** | `505e319` | Testes de inversa e round-trip cobrem translações, rotação positiva/negativa e escalas não uniformes entre 0.001 e 400 em quatro pontos fixos, com precisão decimal explícita. Wardrobe golden documenta a comparação estática com `bindWardrobeComponent` e `mapBoundWardrobeComponentToPose` do Electron e os valores esperados neutro/rotacionado/espelhado. A suíte local passou: build 0 erros; Core 11/11, Architecture 6/6, Geometry 35/35, Assets 27/27, Data 44/44, Headless 15/15. | `tests/GV5.Geometry.Tests/GeometryPrimitiveTests.cs`; `tests/GV5.Geometry.Tests/WardrobeBindingMathTests.cs`; `docs/geometry/LEGACY_GEOMETRY_GOLDENS.md` | Comparação matemática do código estático; nenhuma captura/runtime visual do legado foi executada. 2 avisos CS0618 em `ThumbnailService.cs`. |
 | **F04.11** | **VALIDADA** | `6598c36` + gate local | Benchmark de rigs sintéticos com 10/100/1000 peças executado em Release; medianas 0,0088/0,0858/0,1483 ms por avaliação e alocações gerenciadas 1.120/8.416/84.049 B, em Ryzen 5 4600G, Windows 11 Pro build 26300, .NET 10.0.13 x64. `TestarLocal.bat gate`: build Release 0 erros, Core 11/11, Architecture 6/6, Geometry 35/35, Assets 27/27, Data 44/44, Headless 15/15. `docs/gates/GATE-F04.md` inclui método, ambiente e limites. | `tools/BenchmarkGeometry.bat`; `tools/GV5.Geometry.Benchmarks/Program.cs`; `docs/gates/GATE-F04.md` | Dois avisos CS0618 preexistentes em `ThumbnailService.cs`; benchmark não mede UI/GPU/render nem estabelece budget de produto. G1 ainda depende de F05. |
 | **F05.01** | **VALIDADA** | `ba41071` | `RenderScene` guarda ID e dimensões válidas, e snapshot imutável de `RenderLayer`; cada camada valida AssetId, crop positivo, alpha em [0,1], blend enum e contém transform com flips. A cena ordena back-to-front por z-order, preserva ordem de entrada em empates, rejeita IDs duplicados e não acompanha alterações na coleção fonte. `TestarLocal.bat rapido`: build 0 erros; Core 11/11, Architecture 6/6, Geometry 35/35, Rendering 4/4, Assets 27/27, Data 44/44, Headless 15/15. | `src/GV5.Rendering/RenderScene.cs`; `tests/GV5.Rendering.Tests/RenderSceneTests.cs`; `GV5.sln` | Contrato ainda não rasteriza nem acessa bytes de assets; SkiaRenderer começa em F05.03. Dois avisos CS0618 existentes em `ThumbnailService.cs`. |
+| **F05.02** | **VALIDADA** | `bf4710d` | `BodyRenderSceneBuilder` segue a ordem back-to-front explícita do modelo; normaliza IDs desconhecidos/duplicados e acrescenta peças ausentes na ordem de entrada, reproduzindo `normalizeLayerOrder` do legado. Filtra partes ocultas preservando seus índices de ordem; rejeita PartId duplicado. Testes cobrem ordem, fallback/append, hidden e duplicidade. `TestarLocal.bat rapido`: build 0 erros; Core 11/11, Architecture 6/6, Geometry 35/35, Rendering 7/7, Assets 27/27, Data 44/44, Headless 15/15. | `src/GV5.Rendering/BodyRenderSceneBuilder.cs`; `tests/GV5.Rendering.Tests/RenderSceneTests.cs`; legado consultado em `src/renderer/src/features/fabricator/models/rig.ts` (somente leitura) | O builder recebe assets já tipados por AssetId e não lê binários; renderização/pixel output começam em F05.03. Dois avisos CS0618 em `ThumbnailService.cs`. |
 
 **Estados aceitos:** `PENDENTE`, `EM_EXECUCAO`, `BLOQUEADA`, `VALIDADA`.
 
@@ -241,6 +242,7 @@ Toda mudança material do roteiro ou arquitetura deve apontar para um ADR em `do
 | 2026-10-21 | `505e319` | F04.10 validada; próxima F04.11 | G1 em execução | Round-trip determinístico de matrizes e casos sintéticos comparados com fórmulas do legado; suíte rápida: Core 11, Architecture 6, Geometry 35, Assets 27, Data 44, Headless 15; build 0 erros, 2 avisos Skia. |
 | 2026-10-21 | `6598c36` | F04.11 validada; próxima F05.01 | F04 PASSOU; G1 em execução | Benchmark Release 10/100/1000 partes e gate completo passaram. Core 11, Architecture 6, Geometry 35, Assets 27, Data 44, Headless 15; 2 avisos Skia sem erros. Medições e escopo em `docs/gates/GATE-F04.md`. |
 | 2026-10-21 | `ba41071` | F05.01 validada; próxima F05.02 | G1 em execução | RenderScene/RenderLayer imutáveis com AssetId, crop, alpha, blend, transform/flip e ordem z validada por 4 testes. `TestarLocal.bat rapido`: Core 11, Architecture 6, Geometry 35, Rendering 4, Assets 27, Data 44, Headless 15; build 0 erros, 2 avisos Skia. |
+| 2026-10-21 | `bf4710d` | F05.02 validada; próxima F05.03 | G1 em execução | Builder corporal aplica layerOrder normalizado, completa partes ausentes e filtra hidden parts; Rendering 7/7 e suíte rápida completa: Core 11, Architecture 6, Geometry 35, Assets 27, Data 44, Headless 15; build 0 erros, 2 avisos Skia. |
 
 Após concluir um lote ou fase, adicionar uma linha. Não inflar contador só porque o commit contém múltiplos arquivos; contar apenas tarefas comprovadas.
 
@@ -249,7 +251,7 @@ Após concluir um lote ou fase, adicionar uma linha. Não inflar contador só po
 1. Confirmar branch, HEAD e árvore de trabalho localmente; não consultar nem sincronizar o remoto até autorização explícita.
 2. Ler `AGENTS.md`, `PLANO_DO_NOVO_APP.md`, `PLANO_MESTRE_EXECUCAO_CODEX.md` e este arquivo.
 3. Inspecionar evidências reais da última tarefa validada; caso não existam, corrigir seu estado.
-4. **Retomar F05.02**: implementar builder de cena das partes corporais seguindo ordem de camadas explícita, mantendo composição fora de Views.
+4. **Retomar F05.03**: adicionar SkiaSharp e implementar SkiaRenderer CPU headless com ownership e descarte correto das superfícies.
 5. Continuar automaticamente pelas tarefas seguintes **uma de cada vez**, em lotes flexíveis de aproximadamente 3–8 tarefas relacionadas, enquanto todos os gates pertinentes passam.
 6. Atualizar o registro e commitar entregas reais localmente na branch `Master-AValonia`; não desenvolver Video Studio antecipadamente.
 7. Ao encerrar, informar: **branch, HEAD, último ID VALIDADO, próximo ID PENDENTE, commits, comandos verdes, evidências, bloqueios e condição de desbloqueio**.
