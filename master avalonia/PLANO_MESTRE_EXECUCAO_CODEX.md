@@ -11,7 +11,7 @@
 
 ## 0. COMO O CODEX DEVE TRABALHAR — INSTRUÇÃO PERMANENTE
 
-1. Antes de qualquer edição: confirmar `git branch --show-current` = `Master-AValonia`, ler `git status --short`, conferir HEAD remoto e mudanças de outros agentes. **Nunca dar force push nem apagar trabalho em andamento.**
+1. Antes de qualquer edição: confirmar `git branch --show-current` = `Master-AValonia`, ler `git status --short` e conferir HEAD local. Consultar o remoto somente após autorização explícita do usuário; reconciliar mudanças concorrentes sem sobrescrever trabalho. **Nunca dar force push nem apagar trabalho em andamento.**
 2. Ler este arquivo, `PLANO_DO_NOVO_APP.md`, `README.md`, `global.json` e `EXECUTION_STATUS.md`. Se não houver status, criá-lo na tarefa F00.05.
 3. Encontrar a **primeira tarefa PENDENTE** cuja predecessora foi VALIDADA. Executar exclusivamente ela. Pode subdividir a tarefa sem mudar seu objetivo. Não antecipar outras fases.
 4. Antes de criar projeto/arquivo, verificar se já existe e funciona; a pasta já possui `GV5.sln`, projetos iniciais e `Preparar.bat`/`Desenvolver.bat`. Não destruir esse trabalho.
@@ -51,12 +51,12 @@
 ```markdown
 # EXECUTION STATUS
 Branch: Master-AValonia
-HEAD: <SHA>
-Fase: F00
-Última tarefa validada: nenhuma
-Próxima tarefa: F00.01
-Gate: PENDENTE
-Ambiente/SDK/CI: <comandos e resultados reais>
+HEAD: atualizar via `EXECUTION_STATUS.md` antes da retomada
+Fase: F04
+Última tarefa validada: F03.11
+Próxima tarefa: F04.01
+Gate: F03 PASSOU; G1 global em execução
+Ambiente/SDK/CI: `TestarLocal.bat gate` passou em 2026-10-21; ver `docs/gates/GATE-F03.md`
 | Tarefa | Estado | Commit | Evidência | Pendência |
 | F00.01 | PENDENTE | — | — | — |
 ## Bloqueios reais
@@ -170,8 +170,8 @@ Ambiente/SDK/CI: <comandos e resultados reais>
 - [x] **F03.07** — Implementar ThumbnailService com recipe/hash/versão e cache em disco, geração assíncrona cancelável.
 - [x] **F03.08** — Implementar query paginada e política de fetch só do visível, com prefetch limitado.
 - [x] **F03.09** — Implementar lixeira/GC seguro para assets sem referências, com grace period e backup verificado.
-- [ ] **F03.10** — Testar cache pequeno, duplicados, arquivo corrompido, interrupção entre staging/commit, reabertura.
-- [ ] **F03.11** — Registrar métricas hit/miss/eviction e GATE-F03.
+- [x] **F03.10** — Testar cache pequeno, duplicados, arquivo corrompido, interrupção entre staging/commit, reabertura.
+- [x] **F03.11** — Registrar métricas hit/miss/eviction e GATE-F03.
 
 **Encerramento F03:** registrar `docs/gates/GATE-F03.md` e marcar a fase validada somente se o gate acima foi comprovado. Se estiver bloqueado, documentar a evidência que falta e não iniciar F04.
 
