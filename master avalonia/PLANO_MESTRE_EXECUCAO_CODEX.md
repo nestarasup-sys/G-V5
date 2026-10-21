@@ -251,7 +251,7 @@ Ambiente/SDK/CI: `TestarLocal.bat gate` passou em 2026-10-21; ver `docs/gates/GA
 - [x] **F07.03** — Implementar mover hierarquia a partir do pivô e recalcular descendentes corretamente. Evidência de transforms, anchors, juntas fixas/livres e undo: `EXECUTION_STATUS.md`.
 - [x] **F07.04** — Exibir guias/handles de junta e snap sem acoplar geometria ao controle. Evidência local e fluxo headless de snap/undo/persistência: `EXECUTION_STATUS.md`.
 - [x] **F07.05** — Definir PoseDraft e poses publicadas referenciando revisão exata do modelo. Evidência de contrato e rejeição de dados inválidos: `EXECUTION_STATUS.md`.
-- [ ] **F07.06** — Implementar editor de pose (mover/rotacionar bone) e visualização pela engine.
+- [x] **F07.06** — Implementar editor de pose (mover/rotacionar bone) e visualização pela engine. Sessão ligada ao ViewModel e canvas, testes SQLite/headless em `EXECUTION_STATUS.md`.
 - [ ] **F07.07** — Implementar salvar/carregar/duplicar/publicar pose e thumbnails lazily.
 - [ ] **F07.08** — Implementar Undo/Redo de rig/pose e persistência com revisão.
 - [ ] **F07.09** — Definir contrato mínimo de animação do Fabricador (frames, keys, easing e rig).
