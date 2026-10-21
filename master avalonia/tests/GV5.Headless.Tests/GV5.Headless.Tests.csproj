@@ -10,5 +10,7 @@
     <PackageReference Include="Avalonia.Headless.XUnit" />
     <Content Include="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
     <ProjectReference Include="../../src/GV5.App/GV5.App.csproj" />
+    <ProjectReference Include="../../src/GV5.Assets/GV5.Assets.csproj" />
+    <ProjectReference Include="../../src/GV5.Rendering/GV5.Rendering.csproj" />
   </ItemGroup>
 </Project>

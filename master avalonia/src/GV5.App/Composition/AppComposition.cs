@@ -1,6 +1,7 @@
 using GV5.App.ViewModels;
 using GV5.App.Views;
 using GV5.App.Navigation;
+using GV5.App.Presentation;
 using GV5.Application.Contracts;
 using GV5.Assets.Decoding;
 using GV5.Data.Migrations;
@@ -42,6 +43,7 @@ internal static class AppComposition
         services.AddSingleton<IDataPlatformBackupService, DatabaseBackupService>();
         services.AddSingleton<AssetImageDecoder>();
         services.AddSingleton<AssetBitmapCache>();
+        services.AddSingleton<AvaloniaRenderedFrameAdapter>();
         services.AddSingleton<IThumbnailService, ThumbnailService>();
         services.AddSingleton<SqliteAssetImportPipeline>();
         services.AddSingleton<IAssetStore, SqliteAssetStore>();
