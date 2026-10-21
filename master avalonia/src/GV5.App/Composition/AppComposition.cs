@@ -29,12 +29,14 @@ internal static class AppComposition
         services.AddSingleton<ISqliteMigration, ModelDraftSchemaMigration>();
         services.AddSingleton<ISqliteMigration, ModelDraftCheckpointSchemaMigration>();
         services.AddSingleton<ISqliteMigration, AssetImportJournalSchemaMigration>();
+        services.AddSingleton<ISqliteMigration, AssetReferenceSchemaMigration>();
         services.AddSingleton<SqliteMigrationRunner>();
         services.AddSingleton<IDataPlatformInitializer>(provider => provider.GetRequiredService<SqliteMigrationRunner>());
         services.AddSingleton<IModelDraftRepository, SqliteModelDraftRepository>();
         services.AddSingleton<IModelDraftCheckpointStore, SqliteModelDraftCheckpointStore>();
         services.AddSingleton<IDataPlatformBackupService, DatabaseBackupService>();
         services.AddSingleton<SqliteAssetImportPipeline>();
+        services.AddSingleton<IAssetStore, SqliteAssetStore>();
         services.AddSingleton(new ModuleRouteCatalog(routes));
         services.AddTransient<IModulePageFactory, ServiceProviderModulePageFactory>();
         foreach (var route in routes)

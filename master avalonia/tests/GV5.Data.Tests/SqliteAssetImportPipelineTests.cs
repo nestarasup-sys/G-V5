@@ -211,14 +211,87 @@ public sealed class SqliteAssetImportPipelineTests
         }
     }
 
+    [Fact]
+    public async Task AssetStore_DeduplicatesBytesAndPersistsIdempotentReferencesAcrossReopen()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var root = NewTempRoot("asset-references");
+        var paths = new AppDataPaths(root);
+        var firstBytes = CreatePng(28, 18);
+        var differentBytes = CreatePng(29, 18);
+        var ownerId = Guid.NewGuid();
+        var background = AssetReferenceKey.Create("studio.scene", ownerId, "background");
+        var character = AssetReferenceKey.Create("studio.scene", ownerId, "character");
+
+        try
+        {
+            AssetId firstId;
+            AssetId secondId;
+            using (var database = new SqliteDatabase(paths))
+            {
+                var store = CreateAssetStore(paths, database);
+                var first = await store.ImportAsync(new MemoryStream(firstBytes), "image/png", cancellationToken);
+                var duplicate = await store.ImportAsync(new MemoryStream(firstBytes), "image/png", cancellationToken);
+                var second = await store.ImportAsync(new MemoryStream(differentBytes), "image/png", cancellationToken);
+
+                Assert.True(first.IsSuccess, first.Error?.Message);
+                Assert.True(duplicate.IsSuccess, duplicate.Error?.Message);
+                Assert.True(second.IsSuccess, second.Error?.Message);
+                firstId = first.Value.Id;
+                secondId = second.Value.Id;
+                Assert.Equal(firstId, duplicate.Value.Id);
+                Assert.Equal(2L, await ScalarAsync(database, "SELECT COUNT(*) FROM assets;", cancellationToken));
+                Assert.Equal(firstBytes.Length, new FileInfo(GetPublishedPath(paths, first.Value.Sha256)).Length);
+
+                Assert.True((await store.AddReferenceAsync(firstId, background, cancellationToken)).IsSuccess);
+                Assert.True((await store.AddReferenceAsync(firstId, background, cancellationToken)).IsSuccess);
+                Assert.Equal(1L, await ScalarAsync(database, "SELECT COUNT(*) FROM asset_references WHERE owner_id = $owner;", cancellationToken, ("$owner", ownerId.ToString("D"))));
+
+                var unknownAsset = await store.AddReferenceAsync(AssetId.New(), character, cancellationToken);
+                Assert.True(unknownAsset.IsFailure);
+                Assert.Equal(ApplicationErrorCode.NotFound, unknownAsset.Error!.Code);
+                var invalidReference = await store.ReleaseReferenceAsync(default, cancellationToken);
+                Assert.True(invalidReference.IsFailure);
+                Assert.Equal(ApplicationErrorCode.Validation, invalidReference.Error!.Code);
+
+                var conflict = await store.AddReferenceAsync(secondId, background, cancellationToken);
+                Assert.True(conflict.IsFailure);
+                Assert.Equal(ApplicationErrorCode.Conflict, conflict.Error!.Code);
+                Assert.True((await store.AddReferenceAsync(firstId, character, cancellationToken)).IsSuccess);
+            }
+
+            using var reopenedDatabase = new SqliteDatabase(paths);
+            var reopenedStore = CreateAssetStore(paths, reopenedDatabase);
+            Assert.True((await reopenedStore.AddReferenceAsync(firstId, background, cancellationToken)).IsSuccess);
+            Assert.Equal(2L, await ScalarAsync(reopenedDatabase, "SELECT COUNT(*) FROM asset_references WHERE owner_id = $owner;", cancellationToken, ("$owner", ownerId.ToString("D"))));
+
+            Assert.True((await reopenedStore.ReleaseReferenceAsync(background, cancellationToken)).IsSuccess);
+            Assert.True((await reopenedStore.ReleaseReferenceAsync(background, cancellationToken)).IsSuccess);
+            Assert.Equal(1L, await ScalarAsync(reopenedDatabase, "SELECT COUNT(*) FROM asset_references WHERE owner_id = $owner;", cancellationToken, ("$owner", ownerId.ToString("D"))));
+            Assert.True((await reopenedStore.GetMetadataAsync(firstId, cancellationToken)).IsSuccess);
+            Assert.True(File.Exists(GetPublishedPath(paths, Hash(firstBytes))));
+            Assert.True((await reopenedStore.GetMetadataAsync(secondId, cancellationToken)).IsSuccess);
+        }
+        finally
+        {
+            DeleteTempRoot(root);
+        }
+    }
+
     private static SqliteMigrationRunner CreateInitializer(SqliteDatabase database) => new(
         database,
-        [new InitialAssetSchemaMigration(), new ModelDraftSchemaMigration(), new ModelDraftCheckpointSchemaMigration(), new AssetImportJournalSchemaMigration()]);
+        [new InitialAssetSchemaMigration(), new ModelDraftSchemaMigration(), new ModelDraftCheckpointSchemaMigration(), new AssetImportJournalSchemaMigration(), new AssetReferenceSchemaMigration()]);
 
     private static SqliteAssetImportPipeline CreatePipeline(AppDataPaths paths, SqliteDatabase database, SqliteMigrationRunner initializer)
     {
         var correlation = new OperationCorrelationContext();
         return new SqliteAssetImportPipeline(paths, database, initializer, new StructuredFileLogger(paths, correlation), correlation);
+    }
+
+    private static SqliteAssetStore CreateAssetStore(AppDataPaths paths, SqliteDatabase database)
+    {
+        var initializer = CreateInitializer(database);
+        return new SqliteAssetStore(CreatePipeline(paths, database, initializer), database, initializer);
     }
 
     private static PendingImport NewPending(byte[] bytes)
