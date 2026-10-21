@@ -65,6 +65,6 @@ Os caminhos externos a master avalonia foram examinados **somente para leitura**
 - Captura visual real e interação Windows do legado/novo.
 - Comparação de pixels com folha real.
 - Escolha da API de edição de joints e da View Avalonia (F07.02–F07.04).
-- Persistência de pose/animação com revisões (F07.05–F07.11).
+- Contratos de pose pinados ao modelo (F07.05); persistência de pose/animação e revisões (F07.07–F07.11).
 
 **Conclusão F07.01:** contratos e diferenças de comportamento entre Modelo, Pose e Animador inventariados por leitura direta; F07.02 pode implementar criação/edição/remoção com testes sem redesign e sem gate estético pixel-perfect.
