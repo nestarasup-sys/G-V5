@@ -120,7 +120,7 @@ public sealed class SkiaRendererTests
     public async Task IncrementalRenderer_Matches_Full_Render_And_Invalidates_Only_Changed_Layer_Signature()
     {
         using var assets = new TestRenderAssetProvider(CreateFourColorPng());
-        using var incremental = new IncrementalSkiaRenderer(assets, maximumCachedLayerBytes: 1024 * 1024);
+        using var incremental = new IncrementalSkiaRenderer(assets, maximumCachedFrameBytes: 1024 * 1024);
         var fullRenderer = new SkiaRenderer(assets);
         var center = new Point2D(1, 1);
         var first = Layer(
@@ -151,12 +151,20 @@ public sealed class SkiaRendererTests
         using var expectedFirst = await fullRenderer.RenderAsync(firstScene, TestContext.Current.CancellationToken);
         using var actualFirst = await incremental.RenderAsync(firstScene, TestContext.Current.CancellationToken);
         AssertPixelsEqual(expectedFirst.Bitmap, actualFirst.Bitmap);
-        Assert.Equal(new RenderedLayerCacheMetrics(0, 4, 0, 4 * 32 * 32 * 4, 4), incremental.CacheMetrics);
+        var firstMetrics = incremental.CacheMetrics;
+        Assert.Equal(0, firstMetrics.HitCount);
+        Assert.Equal(1, firstMetrics.MissCount);
+        Assert.Equal(1, firstMetrics.EntryCount);
+        Assert.Equal(32 * 32 * 4, firstMetrics.ResidentBytes);
 
         using var expectedRepeated = await fullRenderer.RenderAsync(firstScene, TestContext.Current.CancellationToken);
         using var actualRepeated = await incremental.RenderAsync(firstScene, TestContext.Current.CancellationToken);
         AssertPixelsEqual(expectedRepeated.Bitmap, actualRepeated.Bitmap);
-        Assert.Equal(new RenderedLayerCacheMetrics(4, 4, 0, 4 * 32 * 32 * 4, 4), incremental.CacheMetrics);
+        var repeatedMetrics = incremental.CacheMetrics;
+        Assert.Equal(1, repeatedMetrics.HitCount);
+        Assert.Equal(1, repeatedMetrics.MissCount);
+        Assert.Equal(firstMetrics.ResidentBytes, repeatedMetrics.ResidentBytes);
+        Assert.Equal(1, repeatedMetrics.EntryCount);
 
         var changedSecond = new RenderLayer(
             second.Id,
@@ -170,34 +178,76 @@ public sealed class SkiaRendererTests
         using var expectedChanged = await fullRenderer.RenderAsync(changedScene, TestContext.Current.CancellationToken);
         using var actualChanged = await incremental.RenderAsync(changedScene, TestContext.Current.CancellationToken);
         AssertPixelsEqual(expectedChanged.Bitmap, actualChanged.Bitmap);
-        Assert.Equal(new RenderedLayerCacheMetrics(6, 5, 0, 5 * 32 * 32 * 4, 5), incremental.CacheMetrics);
+        var changedMetrics = incremental.CacheMetrics;
+        Assert.Equal(1, changedMetrics.HitCount);
+        Assert.Equal(2, changedMetrics.MissCount);
+        Assert.Equal(0, changedMetrics.EvictionCount);
+        Assert.Equal(1, changedMetrics.EntryCount);
+        Assert.Equal(repeatedMetrics.ResidentBytes, changedMetrics.ResidentBytes);
         Assert.Equal(0, assets.Cache.Metrics.ActiveLeaseCount);
     }
 
     [Fact]
-    public async Task IncrementalRenderer_Respects_Byte_Budget_And_Evicts_Only_Unleased_Layers()
+    public async Task IncrementalRenderer_Respects_Byte_Budget_And_Evicts_Previous_Frame()
     {
         using var assets = new TestRenderAssetProvider(CreateFourColorPng());
-        const int frameBytes = 32 * 32 * 4;
-        using var incremental = new IncrementalSkiaRenderer(assets, maximumCachedLayerBytes: frameBytes * 2L);
-        var first = Layer(new Rect2D(0, 0, 2, 2), new Transform2D(new Point2D(1, 1), new Point2D(1, 1), 0, Point2D.Zero), zOrder: 0);
-        var second = Layer(new Rect2D(0, 0, 2, 2), new Transform2D(new Point2D(4, 4), new Point2D(1, 1), 0, Point2D.Zero), zOrder: 1);
-        var third = Layer(new Rect2D(0, 0, 2, 2), new Transform2D(new Point2D(7, 7), new Point2D(1, 1), 0, Point2D.Zero), zOrder: 2);
+        const int cacheBudgetBytes = 32 * 32 * 4;
+        using var incremental = new IncrementalSkiaRenderer(assets, maximumCachedFrameBytes: cacheBudgetBytes);
+        var fillFrame = new Transform2D(Point2D.Zero, new Point2D(16, 16), 0, Point2D.Zero);
+        var first = Layer(new Rect2D(0, 0, 2, 2), fillFrame, zOrder: 0);
+        var second = Layer(new Rect2D(0, 0, 2, 2), fillFrame, zOrder: 1);
+        var third = Layer(new Rect2D(0, 0, 2, 2), fillFrame, zOrder: 2);
         var fullScene = Scene([first, second, third], width: 32, height: 32);
 
         using var expectedFull = await new SkiaRenderer(assets).RenderAsync(fullScene, TestContext.Current.CancellationToken);
         using var actualFull = await incremental.RenderAsync(fullScene, TestContext.Current.CancellationToken);
         AssertPixelsEqual(expectedFull.Bitmap, actualFull.Bitmap);
-        Assert.Equal(frameBytes * 2L, incremental.CacheMetrics.ResidentBytes);
-        Assert.Equal(2, incremental.CacheMetrics.EntryCount);
-        Assert.Equal(1, incremental.CacheMetrics.EvictionCount);
-        Assert.True(incremental.CacheMetrics.ResidentBytes <= incremental.MaximumCachedLayerBytes);
+        Assert.Equal(cacheBudgetBytes, incremental.CacheMetrics.ResidentBytes);
+        Assert.Equal(1, incremental.CacheMetrics.EntryCount);
+        Assert.Equal(0, incremental.CacheMetrics.EvictionCount);
+        Assert.True(incremental.CacheMetrics.ResidentBytes <= incremental.MaximumCachedFrameBytes);
 
-        var recentLayersScene = Scene([second, third], width: 32, height: 32);
-        using var expectedRecent = await new SkiaRenderer(assets).RenderAsync(recentLayersScene, TestContext.Current.CancellationToken);
-        using var actualRecent = await incremental.RenderAsync(recentLayersScene, TestContext.Current.CancellationToken);
-        AssertPixelsEqual(expectedRecent.Bitmap, actualRecent.Bitmap);
-        Assert.Equal(new RenderedLayerCacheMetrics(2, 3, 1, frameBytes * 2L, 2), incremental.CacheMetrics);
+        var changedScene = Scene([second, third], width: 32, height: 32);
+        using var expectedChanged = await new SkiaRenderer(assets).RenderAsync(changedScene, TestContext.Current.CancellationToken);
+        using var actualChanged = await incremental.RenderAsync(changedScene, TestContext.Current.CancellationToken);
+        AssertPixelsEqual(expectedChanged.Bitmap, actualChanged.Bitmap);
+        Assert.Equal(new RenderedSceneCacheMetrics(0, 2, 1, cacheBudgetBytes, 1), incremental.CacheMetrics);
+
+        using var noCache = new IncrementalSkiaRenderer(assets, maximumCachedFrameBytes: cacheBudgetBytes - 1);
+        using var uncachedFirst = await noCache.RenderAsync(fullScene, TestContext.Current.CancellationToken);
+        using var uncachedRepeated = await noCache.RenderAsync(fullScene, TestContext.Current.CancellationToken);
+        AssertPixelsEqual(expectedFull.Bitmap, uncachedRepeated.Bitmap);
+        Assert.Equal(new RenderedSceneCacheMetrics(0, 2, 0, 0, 0), noCache.CacheMetrics);
+    }
+
+    [Fact]
+    public async Task IncrementalRenderer_Invalidates_Partially_Drawn_Cache_When_Asset_Acquisition_Fails()
+    {
+        using var assets = new TestRenderAssetProvider(CreateFourColorPng());
+        using var incremental = new IncrementalSkiaRenderer(assets, maximumCachedFrameBytes: 1024 * 1024);
+        var first = Layer(new Rect2D(0, 0, 2, 2), new Transform2D(new Point2D(3, 3), new Point2D(1, 1), 0, Point2D.Zero));
+        var initialScene = Scene([first], width: 32, height: 32);
+        using var initial = await incremental.RenderAsync(initialScene, TestContext.Current.CancellationToken);
+
+        var moved = new RenderLayer(
+            first.Id,
+            first.AssetId,
+            first.Crop,
+            new Transform2D(new Point2D(10, 10), first.Transform.Scale, first.Transform.RotationRadians, first.Transform.Pivot),
+            first.Alpha,
+            first.BlendMode,
+            first.ZOrder);
+        var changedScene = Scene([moved], width: 32, height: 32);
+        assets.FailNextAcquire = true;
+
+        await Assert.ThrowsAsync<IOException>(() => incremental.RenderAsync(changedScene, TestContext.Current.CancellationToken));
+        Assert.Equal(0, incremental.CacheMetrics.EntryCount);
+
+        using var expected = await new SkiaRenderer(assets).RenderAsync(changedScene, TestContext.Current.CancellationToken);
+        using var recovered = await incremental.RenderAsync(changedScene, TestContext.Current.CancellationToken);
+        AssertPixelsEqual(expected.Bitmap, recovered.Bitmap);
+        Assert.Equal(1, incremental.CacheMetrics.EntryCount);
+        Assert.Equal(0, assets.Cache.Metrics.ActiveLeaseCount);
     }
 
     [Fact]
@@ -276,6 +326,7 @@ public sealed class SkiaRendererTests
         private readonly AssetImageCacheKey _key;
 
         public AssetBitmapCache Cache { get; } = new(1024 * 1024);
+        public bool FailNextAcquire { get; set; }
 
         public TestRenderAssetProvider(byte[] png)
         {
@@ -286,6 +337,12 @@ public sealed class SkiaRendererTests
         public async Task<AssetImageLease> AcquireAsync(AssetId assetId, CancellationToken cancellationToken = default)
         {
             Assert.True(assetId.IsValid);
+            if (FailNextAcquire)
+            {
+                FailNextAcquire = false;
+                throw new IOException("Synthetic failure while acquiring a layer asset.");
+            }
+
             var result = await Cache.AcquireAsync(_key, DecodeAsync, cancellationToken);
             Assert.True(result.IsSuccess, result.Error?.Message);
             return result.Lease!;

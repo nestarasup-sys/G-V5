@@ -1,38 +1,41 @@
 using SkiaSharp;
-using GV5.Core.Identity;
 
 namespace GV5.Rendering;
 
-/// <summary>Reuses unchanged isolated layer rasters, then composes a complete frame in the canonical layer order.</summary>
+/// <summary>Reuses the previous composed frame and redraws only regions touched by changed layer signatures.</summary>
 public sealed class IncrementalSkiaRenderer : IRenderSceneRenderer, IDisposable
 {
-    public const long DefaultLayerCacheBytes = 128L * 1024 * 1024;
+    public const long DefaultSceneFrameCacheBytes = 128L * 1024 * 1024;
+    private const double FullRenderAreaThreshold = 0.6;
 
-    private readonly SkiaRenderer _layerRenderer;
+    private readonly IRenderAssetProvider _assets;
+    private readonly SkiaRenderer _fullRenderer;
     private readonly SkiaRendererLimits _limits;
-    private readonly RenderedLayerCache _cache;
-    private readonly long _maximumCachedLayerBytes;
+    private readonly RenderedSceneFrameCache _cache;
+    private readonly SemaphoreSlim _renderGate = new(1, 1);
+    private readonly long _maximumCachedFrameBytes;
     private int _disposed;
 
     public IncrementalSkiaRenderer(
         IRenderAssetProvider assets,
         SkiaRendererLimits? limits = null,
-        long maximumCachedLayerBytes = DefaultLayerCacheBytes)
+        long maximumCachedFrameBytes = DefaultSceneFrameCacheBytes)
     {
         ArgumentNullException.ThrowIfNull(assets);
+        _assets = assets;
         _limits = limits ?? new SkiaRendererLimits();
-        if (maximumCachedLayerBytes < 0)
+        if (maximumCachedFrameBytes < 0)
         {
-            throw new ArgumentOutOfRangeException(nameof(maximumCachedLayerBytes));
+            throw new ArgumentOutOfRangeException(nameof(maximumCachedFrameBytes));
         }
 
-        _maximumCachedLayerBytes = maximumCachedLayerBytes;
-        _layerRenderer = new SkiaRenderer(assets, _limits);
-        _cache = new RenderedLayerCache(maximumCachedLayerBytes);
+        _maximumCachedFrameBytes = maximumCachedFrameBytes;
+        _fullRenderer = new SkiaRenderer(assets, _limits);
+        _cache = new RenderedSceneFrameCache(maximumCachedFrameBytes);
     }
 
-    public RenderedLayerCacheMetrics CacheMetrics => _cache.Metrics;
-    public long MaximumCachedLayerBytes => _maximumCachedLayerBytes;
+    public RenderedSceneCacheMetrics CacheMetrics => _cache.Metrics;
+    public long MaximumCachedFrameBytes => _maximumCachedFrameBytes;
 
     public Task<RenderedFrame> RenderAsync(RenderScene scene, CancellationToken cancellationToken = default)
     {
@@ -45,64 +48,117 @@ public sealed class IncrementalSkiaRenderer : IRenderSceneRenderer, IDisposable
 
     public void Dispose()
     {
-        if (Interlocked.Exchange(ref _disposed, 1) == 0)
+        if (Interlocked.Exchange(ref _disposed, 1) != 0)
+        {
+            return;
+        }
+
+        _renderGate.Wait();
+        try
         {
             _cache.Dispose();
+        }
+        finally
+        {
+            _renderGate.Release();
         }
     }
 
     private async Task<RenderedFrame> RenderCoreAsync(RenderScene scene, CancellationToken cancellationToken)
     {
-        cancellationToken.ThrowIfCancellationRequested();
-        var info = new SKImageInfo(scene.Width, scene.Height, SKColorType.Rgba8888, SKAlphaType.Premul);
-        using var surface = SKSurface.Create(info) ?? throw new InvalidOperationException("Skia could not create an incremental raster surface.");
-        var canvas = surface.Canvas;
-        canvas.Clear(SKColors.Transparent);
-
-        foreach (var layer in scene.Layers)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            var signature = LayerRasterSignature.Create(scene, layer);
-            var cached = _cache.TryAcquire(signature);
-            if (cached is null)
-            {
-                var rasterLayer = new RenderLayer(
-                    layer.Id,
-                    layer.AssetId,
-                    layer.Crop,
-                    layer.Transform,
-                    layer.Alpha,
-                    RenderBlendMode.Normal,
-                    zOrder: 0);
-                var isolatedScene = new RenderScene(SceneId.New(), scene.Width, scene.Height, [rasterLayer]);
-                var isolatedFrame = await _layerRenderer.RenderAsync(isolatedScene, cancellationToken).ConfigureAwait(false);
-                cached = _cache.StoreOrLease(signature, isolatedFrame);
-            }
-
-            using (cached)
-            using (var paint = new SKPaint
-            {
-                Color = SKColors.White,
-                BlendMode = SkiaRenderer.ToSkiaBlendMode(layer.BlendMode),
-                IsAntialias = false
-            })
-            {
-                canvas.DrawBitmap(cached.Frame.Bitmap, 0, 0, paint);
-            }
-        }
-
-        cancellationToken.ThrowIfCancellationRequested();
-        using var snapshot = surface.Snapshot();
-        var bitmap = SKBitmap.FromImage(snapshot) ?? throw new InvalidOperationException("Skia could not copy the incremental raster surface.");
+        await _renderGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            return new RenderedFrame(bitmap);
+            ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+            cancellationToken.ThrowIfCancellationRequested();
+            var cached = _cache.Current;
+            if (cached is not null)
+            {
+                var dirtyRegions = LayerDirtyRegionCalculator.Calculate(cached.Scene, scene, _fullRenderer);
+                if (dirtyRegions.Count == 0)
+                {
+                    _cache.RecordHit();
+                    return CloneFrame(cached.Frame);
+                }
+
+                _cache.RecordMiss();
+                var dirtyArea = dirtyRegions.Sum(region => (double)region.Width * region.Height);
+                var totalArea = (double)scene.Width * scene.Height;
+                if (dirtyArea <= totalArea * FullRenderAreaThreshold)
+                {
+                    try
+                    {
+                        await RenderDirtyRegionsAsync(scene, cached.Frame, dirtyRegions, cancellationToken).ConfigureAwait(false);
+                        cancellationToken.ThrowIfCancellationRequested();
+                        _cache.UpdateScene(scene);
+                        return CloneFrame(cached.Frame);
+                    }
+                    catch
+                    {
+                        // A canceled/failed in-place redraw cannot be used as the baseline for another update.
+                        _cache.Invalidate();
+                        throw;
+                    }
+                }
+
+                var fullFrame = await _fullRenderer.RenderAsync(scene, cancellationToken).ConfigureAwait(false);
+                _cache.Replace(scene, CloneFrame(fullFrame));
+                return fullFrame;
+            }
+
+            _cache.RecordMiss();
+            var firstFrame = await _fullRenderer.RenderAsync(scene, cancellationToken).ConfigureAwait(false);
+            _cache.Replace(scene, CloneFrame(firstFrame));
+            return firstFrame;
         }
-        catch
+        finally
         {
-            bitmap.Dispose();
-            throw;
+            _renderGate.Release();
         }
+    }
+
+    private async Task RenderDirtyRegionsAsync(
+        RenderScene scene,
+        RenderedFrame previousFrame,
+        IReadOnlyList<SKRect> dirtyRegions,
+        CancellationToken cancellationToken)
+    {
+        using var canvas = new SKCanvas(previousFrame.Bitmap);
+
+        foreach (var dirtyRegion in dirtyRegions)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var saveCount = canvas.Save();
+            try
+            {
+                canvas.ClipRect(dirtyRegion, SKClipOperation.Intersect, antialias: false);
+                canvas.Clear(SKColors.Transparent);
+                foreach (var layer in scene.Layers)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    if (layer.Alpha == 0)
+                    {
+                        continue;
+                    }
+
+                    var bounds = _fullRenderer.GetLayerCullRect(layer, scene.Width, scene.Height);
+                    if (bounds is null || !Intersects(bounds.Value, dirtyRegion))
+                    {
+                        continue;
+                    }
+
+                    using var lease = await _assets.AcquireAsync(layer.AssetId, cancellationToken).ConfigureAwait(false);
+                    SkiaRenderer.DrawLayer(canvas, layer, lease.Bitmap, scene.Height);
+                }
+            }
+            finally
+            {
+                canvas.RestoreToCount(saveCount);
+            }
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        canvas.Flush();
     }
 
     private void ValidateDimensions(int width, int height)
@@ -112,4 +168,13 @@ public sealed class IncrementalSkiaRenderer : IRenderSceneRenderer, IDisposable
             throw new ArgumentOutOfRangeException(nameof(width), "Render target exceeds the configured dimension or pixel budget.");
         }
     }
+
+    private static RenderedFrame CloneFrame(RenderedFrame source)
+    {
+        var copy = source.Bitmap.Copy() ?? throw new InvalidOperationException("Skia could not clone the cached scene frame.");
+        return new RenderedFrame(copy);
+    }
+
+    private static bool Intersects(SKRect left, SKRect right) =>
+        left.Left < right.Right && left.Right > right.Left && left.Top < right.Bottom && left.Bottom > right.Top;
 }
