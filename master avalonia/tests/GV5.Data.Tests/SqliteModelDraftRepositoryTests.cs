@@ -11,6 +11,41 @@ namespace GV5.Data.Tests;
 public sealed class SqliteModelDraftRepositoryTests
 {
     [Fact]
+    public async Task ConcurrentWriters_FromSameExpectedRevision_OnlyOneUpdateWins()
+    {
+        var root = NewTempRoot();
+        var cancellationToken = TestContext.Current.CancellationToken;
+        using var database = new SqliteDatabase(new AppDataPaths(root));
+
+        try
+        {
+            await MigrateAsync(database, cancellationToken);
+            var writerA = new SqliteModelDraftRepository(database);
+            var writerB = new SqliteModelDraftRepository(database);
+            var original = ModelDraft.Create("Versão inicial", 100);
+            Assert.True((await writerA.CreateAsync(original, cancellationToken)).IsSuccess);
+
+            var ready = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var updateA = UpdateAfterStartAsync(writerA, original.Rename("Vencedor A", 200), original.Revision, ready.Task, cancellationToken);
+            var updateB = UpdateAfterStartAsync(writerB, original.Rename("Vencedor B", 201), original.Revision, ready.Task, cancellationToken);
+            ready.SetResult();
+
+            var results = await Task.WhenAll(updateA, updateB);
+            Assert.Single(results, result => result.IsSuccess);
+            Assert.Single(results, result => result.IsFailure && result.Error?.Code == ApplicationErrorCode.Conflict);
+
+            var latest = await writerA.GetAsync(original.Id, cancellationToken);
+            Assert.True(latest.IsSuccess);
+            Assert.Equal(Revision.From(2), latest.Value.Revision);
+            Assert.Contains(latest.Value.Name, new[] { "Vencedor A", "Vencedor B" });
+        }
+        finally
+        {
+            DeleteTempRoot(root);
+        }
+    }
+
+    [Fact]
     public async Task CreateGetUpdate_ReopenPreservesDraftAndDetectsStaleRevision()
     {
         var root = NewTempRoot();
@@ -102,6 +137,17 @@ public sealed class SqliteModelDraftRepositoryTests
     private static Task<MigrationRunResult> MigrateAsync(SqliteDatabase database, CancellationToken cancellationToken) =>
         new SqliteMigrationRunner(database, [new InitialAssetSchemaMigration(), new ModelDraftSchemaMigration()])
             .MigrateAsync(cancellationToken);
+
+    private static async Task<Result<ModelDraft>> UpdateAfterStartAsync(
+        IModelDraftRepository repository,
+        ModelDraft draft,
+        Revision expectedRevision,
+        Task start,
+        CancellationToken cancellationToken)
+    {
+        await start.WaitAsync(cancellationToken);
+        return await repository.UpdateAsync(draft, expectedRevision, cancellationToken);
+    }
 
     private static void AssertFailure<T>(Result<T> result, ApplicationErrorCode expectedCode)
     {

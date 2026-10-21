@@ -140,7 +140,7 @@ Ambiente/SDK/CI: <comandos e resultados reais>
 - [x] **F02.04** — Implementar migrations numeradas/versionadas e teste de base vazia→versão atual→reabertura.
 - [x] **F02.05** — Definir ModelDraft com ID/revision e repositório interface + implementação Data.
 - [x] **F02.06** — Implementar create/update/get de draft e teste real de arquivo SQLite temporário.
-- [ ] **F02.07** — Implementar expectedRevision e teste de dois escritores com revisão divergente (Conflict).
+- [x] **F02.07** — Implementar expectedRevision e teste de dois escritores com revisão divergente (Conflict).
 - [ ] **F02.08** — Implementar gravação de apenas deltas/entidades dirty, sem regravar arquivo completo por gesto.
 - [ ] **F02.09** — Expor estado Saved/Dirty/Saving/Error confirmado em UI e teste de falha de save.
 - [ ] **F02.10** — Implementar debounce de autosave e flush de fechamento sem sobrescrever versões recentes.
