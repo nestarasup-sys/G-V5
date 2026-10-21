@@ -16,6 +16,14 @@ Escopo F08.02: contrato puro de domínio, sem UI, persistência ou publicação 
 - `IWardrobeRepository` mantém rascunhos com revisão otimista e publica revisões append-only. O codec grava todos os IDs, transforms, bindings e flags em JSON canônico com SHA-256; leitura revalida checksum e redundâncias da linha SQLite. Publicação exige draft atual não vazio, modelo pinado disponível, ossos compatíveis e assets disponíveis. Repetir publicação sem mudar conteúdo retorna a revisão publicada atual.
 - Assets são referenciados tanto pelo rascunho quanto por cada publicação imutável por slots estáveis de componente. Trocar referências e gravar revisão ocorre na mesma transação SQLite; assets removidos do draft tornam-se candidatos a coleta só quando não houver outra referência. A FK `ON DELETE RESTRICT` mantém bytes usados por uma revisão. A referência ao modelo via `model_revision_id` restringe exclusão e permite listar dependências reversas sem alterar o modelo.
 
+## Dependências e exclusão segura (F08.10)
+
+- `IFabricatorDependencyCatalog` consulta usos persistidos de modelos, poses e roupas por IDs tipados. A avaliação identifica drafts e publicações de pose/roupa, animações ligadas a uma pose-base e revisões de modelo pinadas por esses recursos.
+- Uma resposta com dependentes bloqueia a remoção destrutiva. Se o JSON de animação estiver inválido, a consulta registra uma dependência `animation-unverified` em vez de presumir que a pose está livre. Recurso inexistente e falha de leitura não são tratados como autorização para apagar.
+- `SqliteWardrobeRepository.DeleteAsync` confere a revisão esperada e o histórico publicado dentro da mesma transação que remove o draft. Histórico imutável bloqueia a operação. Só drafts sem publicação podem ser removidos; suas referências de assets são liberadas e assets sem referências podem ser coletados.
+- Modelo e pose ainda não expõem operações de exclusão nos repositórios atuais. A consulta de dependências fornece a barreira de aplicação para esses fluxos futuros; nesta etapa nenhum caminho de remoção destrutiva desses recursos é oferecido.
+- Testes SQLite cobrem dependências por modelo/pose/roupa, histórico de duas publicações, bloqueio de exclusão publicada, exclusão de draft não publicado e atualização de referências/GC.
+
 ## Categorias
 
 `WardrobeCategory` enum define as quinze categorias vigentes do Fabricador: shirt, jacket, upper/lower sleeve, gloves, cape, belt, glasses, head accessory, skirt, thigh/calf pants, shorts, socks e shoes. Rótulos/localização pertencem à UI. Categorias e conversões V1/V2 do Electron ficam no importador legado e no contrato [F08_ROUPAS_LEGADO.md](../legacy-contracts/F08_ROUPAS_LEGADO.md); não se converte dados antigos por enum ordinal.
@@ -24,7 +32,7 @@ Escopo F08.02: contrato puro de domínio, sem UI, persistência ou publicação 
 
 - Revisão de roupa e revisão de modelo são independentes; cada conjunto fica preso à revisão exata do modelo que fornece seus ossos.
 - `AssetId` referencia bytes geridos pelo AssetStore. F08.03 prepara um crop PNG alpha-preserving em staging, oferece uma prévia reduzida e só publica depois da confirmação; cancelamento limpa o stage. Limites de bytes/dimensões, hash e validação do decoder ficam antes da publicação.
-- Publicar exige ao menos um componente, horário não negativo e hash SHA-256 hexadecimal de 64 caracteres. Sequenciamento concorrente, dependências reversas e pinning de consumidores serão responsabilidade dos serviços/repositórios nas tarefas seguintes.
+- Publicar exige ao menos um componente, horário não negativo e hash SHA-256 hexadecimal de 64 caracteres. Sequenciamento concorrente, dependências reversas e pinning de consumidores são responsabilidade dos serviços/repositórios.
 - O domínio valida estrutura e vínculo ID/osso; confirmar que o osso existe na publicação exata requer carregar essa publicação no serviço. Não aceitar gravação órfã no repositório.
 - Renderização em pose usa `GV5.Geometry.WardrobeBindingMath`; o Core não depende de Avalonia, Skia nem Electron.
 

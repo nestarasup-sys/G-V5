@@ -139,6 +139,56 @@ public sealed class SqliteWardrobeRepository(IGv5Database database) : IWardrobeR
         { return Failure<WardrobeSet>(ApplicationErrorCode.Persistence, "The wardrobe draft could not be saved.", draft.Id.ToString()); }
     }
 
+    public async Task<Result<bool>> DeleteAsync(WardrobeId wardrobeId, Revision expectedRevision, CancellationToken cancellationToken = default)
+    {
+        if (!wardrobeId.IsValid || !expectedRevision.IsValid)
+            return Failure<bool>(ApplicationErrorCode.Validation, "A valid wardrobe ID and expected revision are required.");
+        try
+        {
+            var deletion = await _database.ExecuteWriteAsync(async (connection, transaction, token) =>
+            {
+                var storedRow = await ReadDraftRowAsync(connection, transaction, wardrobeId, token).ConfigureAwait(false);
+                if (storedRow is null) return new DeleteOutcome(DeleteStatus.NotFound, null);
+                var stored = DecodeDraft(storedRow);
+                if (stored.IsFailure) return new DeleteOutcome(DeleteStatus.Corrupt, stored.Error);
+                if (stored.Value.Revision != expectedRevision) return new DeleteOutcome(DeleteStatus.Conflict, null);
+                await using (var published = connection.CreateCommand())
+                {
+                    published.Transaction = transaction;
+                    published.CommandText = "SELECT 1 FROM wardrobe_revisions WHERE wardrobe_id = $id LIMIT 1;";
+                    published.Parameters.AddWithValue("$id", wardrobeId.ToString());
+                    if (await published.ExecuteScalarAsync(token).ConfigureAwait(false) is not null)
+                        return new DeleteOutcome(DeleteStatus.HasPublishedHistory, null);
+                }
+
+                await using var delete = connection.CreateCommand();
+                delete.Transaction = transaction;
+                delete.CommandText = "DELETE FROM wardrobe_drafts WHERE wardrobe_id = $id AND revision = $revision;";
+                delete.Parameters.AddWithValue("$id", wardrobeId.ToString());
+                delete.Parameters.AddWithValue("$revision", expectedRevision.Value);
+                if (await delete.ExecuteNonQueryAsync(token).ConfigureAwait(false) != 1)
+                    return new DeleteOutcome(DeleteStatus.Conflict, null);
+                await ReplaceAssetReferencesAsync(connection, transaction, DraftAssetOwner, wardrobeId.Value,
+                    stored.Value.Components, [], token).ConfigureAwait(false);
+                return new DeleteOutcome(DeleteStatus.Deleted, null);
+            }, cancellationToken).ConfigureAwait(false);
+
+            return deletion.Status switch
+            {
+                DeleteStatus.Deleted => Result<bool>.Success(true),
+                DeleteStatus.NotFound => Failure<bool>(ApplicationErrorCode.NotFound, "The wardrobe draft does not exist.", wardrobeId.ToString()),
+                DeleteStatus.Conflict => Failure<bool>(ApplicationErrorCode.Conflict, "The wardrobe changed before deletion; reload it before retrying.", wardrobeId.ToString()),
+                DeleteStatus.HasPublishedHistory => Failure<bool>(ApplicationErrorCode.Conflict, "This wardrobe has immutable published revisions and cannot be deleted.", wardrobeId.ToString()),
+                DeleteStatus.Corrupt => Result<bool>.Failure(deletion.Error!),
+                _ => Failure<bool>(ApplicationErrorCode.Persistence, "The wardrobe draft could not be deleted.", wardrobeId.ToString())
+            };
+        }
+        catch (SqliteException)
+        { return Failure<bool>(ApplicationErrorCode.Persistence, "The wardrobe draft could not be deleted.", wardrobeId.ToString()); }
+        catch (Exception exception) when (exception is InvalidDataException or JsonException or ArgumentException)
+        { return Failure<bool>(ApplicationErrorCode.Persistence, "The wardrobe draft could not be verified before deletion.", wardrobeId.ToString()); }
+    }
+
     public async Task<Result<PublishedWardrobeRevision>> PublishAsync(WardrobeId wardrobeId, Revision expectedDraftRevision,
         long publishedUtcMs, CancellationToken cancellationToken = default)
     {
@@ -458,6 +508,9 @@ public sealed class SqliteWardrobeRepository(IGv5Database database) : IWardrobeR
     private sealed record PublishedRow(WardrobeRevisionId RevisionId, WardrobeId WardrobeId,
         ModelRevisionId ModelRevisionId, ModelId ModelId, Revision Revision, Revision DraftRevision,
         string Name, long PublishedUtcMs, string Json, string Sha256);
+
+    private sealed record DeleteOutcome(DeleteStatus Status, ApplicationError? Error);
+    private enum DeleteStatus { Deleted, NotFound, Conflict, HasPublishedHistory, Corrupt }
 
     private static Result<T> Failure<T>(ApplicationErrorCode code, string message, string? target = null) =>
         Result<T>.Failure(new ApplicationError(code, message, target));

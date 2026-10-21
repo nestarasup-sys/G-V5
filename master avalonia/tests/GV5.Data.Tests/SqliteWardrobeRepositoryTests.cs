@@ -5,6 +5,7 @@ using GV5.Application.Services;
 using GV5.Core.Identity;
 using GV5.Core.Models;
 using GV5.Data.Migrations;
+using GV5.Data.Dependencies;
 using GV5.Data.Repositories;
 using GV5.Data.Storage;
 using GV5.Geometry;
@@ -51,6 +52,14 @@ public sealed class SqliteWardrobeRepositoryTests
                 Assert.True(model.IsSuccess, model.Error?.Message);
                 modelRevisionId = model.Value.Id;
 
+                var poseRepository = new SqlitePoseRepository(database);
+                var basePose = await poseRepository.CreateAsync(
+                    PoseDraft.CreateFromModelRevision(model.Value, "Pose base"), cancellationToken);
+                Assert.True(basePose.IsSuccess, basePose.Error?.Message);
+                var animation = AnimationDraft.CreateFromPose(basePose.Value, "Animação vinculada");
+                var animationResult = await new SqliteAnimationRepository(database).CreateAsync(animation, cancellationToken);
+                Assert.True(animationResult.IsSuccess, animationResult.Error?.Message);
+
                 var repository = new SqliteWardrobeRepository(database);
                 var initial = WardrobeSet.Create(model.Value, "Uniforme");
                 var created = await repository.CreateAsync(initial, cancellationToken);
@@ -86,6 +95,26 @@ public sealed class SqliteWardrobeRepositoryTests
                 secondRevision = secondPublished.Value.Revision;
                 Assert.Equal(new Rect2D(4, 8, 18, 20), firstPublished.Value.Components.Single().Placement);
                 Assert.Equal(new Rect2D(10, 12, 22, 24), secondPublished.Value.Components.Single().Placement);
+
+                var dependencies = new SqliteFabricatorDependencyCatalog(database);
+                var wardrobeAssessment = await dependencies.AssessDeletionAsync(
+                    FabricatorResourceReference.For(wardrobeId), cancellationToken);
+                Assert.True(wardrobeAssessment.IsSuccess, wardrobeAssessment.Error?.Message);
+                Assert.True(wardrobeAssessment.Value.IsBlocked);
+                Assert.Equal(2, wardrobeAssessment.Value.Usages.Count);
+                var poseAssessment = await dependencies.AssessDeletionAsync(
+                    FabricatorResourceReference.For(basePose.Value.Id), cancellationToken);
+                Assert.True(poseAssessment.IsSuccess, poseAssessment.Error?.Message);
+                Assert.True(poseAssessment.Value.IsBlocked);
+                Assert.Contains(poseAssessment.Value.Usages, usage => usage.UsageType == "animation-draft");
+                var modelAssessment = await dependencies.AssessDeletionAsync(
+                    FabricatorResourceReference.For(model.Value.ModelId), cancellationToken);
+                Assert.True(modelAssessment.IsSuccess, modelAssessment.Error?.Message);
+                Assert.True(modelAssessment.Value.IsBlocked);
+                Assert.Equal(5, modelAssessment.Value.Usages.Count);
+                var blockedDelete = await repository.DeleteAsync(wardrobeId, secondSave.Value.Revision, cancellationToken);
+                Assert.True(blockedDelete.IsFailure);
+                Assert.Equal(ApplicationErrorCode.Conflict, blockedDelete.Error!.Code);
 
                 var referenceCount = await ScalarInt64Async(database,
                     "SELECT COUNT(*) FROM asset_references WHERE asset_id = $asset AND owner_type IN ('fabricator.wardrobe-draft','fabricator.wardrobe-revision');",
@@ -174,6 +203,21 @@ public sealed class SqliteWardrobeRepositoryTests
             Assert.True(missingAsset.IsFailure);
             Assert.Equal(ApplicationErrorCode.NotFound, missingAsset.Error!.Code);
             Assert.True((await repository.GetPublishedAsync(initial.Id, Revision.Initial, cancellationToken)).IsFailure);
+            var garmentAsset = await InsertAssetAsync(database, "deletable-garment", cancellationToken);
+            var deletionFrame = WardrobeBoneFrame.FromTransform(partId.ToString(), crop, Transform2D.Identity);
+            var garment = WardrobeComponent.Create("Camisa temporária", WardrobeCategory.Shirt, partId,
+                garmentAsset, new Rect2D(1, 2, 6, 8), 0, deletionFrame);
+            var saved = await repository.SaveAsync(initial.WithContent("Rascunho", [garment]), initial.Revision, cancellationToken);
+            Assert.True(saved.IsSuccess, saved.Error?.Message);
+            var deleted = await repository.DeleteAsync(initial.Id, saved.Value.Revision, cancellationToken);
+            Assert.True(deleted.IsSuccess, deleted.Error?.Message);
+            Assert.True(deleted.Value);
+            Assert.Equal(0, await ScalarInt64Async(database,
+                "SELECT COUNT(*) FROM asset_references WHERE asset_id = $asset AND owner_type = 'fabricator.wardrobe-draft';",
+                cancellationToken, ("$asset", garmentAsset.ToString())));
+            Assert.Equal(1, await ScalarInt64Async(database,
+                "SELECT COUNT(*) FROM asset_gc_candidates WHERE asset_id = $asset;",
+                cancellationToken, ("$asset", garmentAsset.ToString())));
         }
         finally
         {

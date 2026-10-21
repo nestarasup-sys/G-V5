@@ -10,6 +10,7 @@ public interface IWardrobeRepository
     Task<Result<WardrobeSet>> GetAsync(WardrobeId wardrobeId, CancellationToken cancellationToken = default);
     Task<Result<IReadOnlyList<WardrobeSet>>> ListAsync(ModelRevisionId modelRevisionId, CancellationToken cancellationToken = default);
     Task<Result<WardrobeSet>> SaveAsync(WardrobeSet draft, Revision expectedRevision, CancellationToken cancellationToken = default);
+    Task<Result<bool>> DeleteAsync(WardrobeId wardrobeId, Revision expectedRevision, CancellationToken cancellationToken = default);
     Task<Result<PublishedWardrobeRevision>> PublishAsync(WardrobeId wardrobeId, Revision expectedDraftRevision,
         long publishedUtcMs, CancellationToken cancellationToken = default);
     Task<Result<PublishedWardrobeRevision>> GetPublishedAsync(WardrobeId wardrobeId, Revision revision,

@@ -10,6 +10,7 @@ using GV5.Assets.Import;
 using GV5.Assets.Processing;
 using GV5.Data.Migrations;
 using GV5.Data.Diagnostics;
+using GV5.Data.Dependencies;
 using GV5.Data.Assets;
 using GV5.Data.Repositories;
 using GV5.Data.Storage;
@@ -58,6 +59,7 @@ internal static class AppComposition
         services.AddSingleton<IPoseRepository, SqlitePoseRepository>();
         services.AddSingleton<IAnimationRepository, SqliteAnimationRepository>();
         services.AddSingleton<IWardrobeRepository, SqliteWardrobeRepository>();
+        services.AddSingleton<IFabricatorDependencyCatalog, SqliteFabricatorDependencyCatalog>();
         services.AddSingleton<IWardrobeCatalog>(provider => new WardrobeCatalog(
             provider.GetRequiredService<IWardrobeRepository>(), provider.GetRequiredService<IThumbnailService>()));
         services.AddSingleton<PublishModelRevisionService>();
