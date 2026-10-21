@@ -159,7 +159,7 @@ Ambiente/SDK/CI: <comandos e resultados reais>
 **Gate:** Nenhum Base64 como identidade persistente; import/duplicação/recuperação e descarte de bitmap testados.
 
 - [x] **F03.01** — Definir AssetId e contratos Import/OpenRead/GetMetadata/AddReference/ReleaseReference.
-- [ ] **F03.02** — Implementar importação por stream em staging, SHA-256, validação tipo/tamanho/dimensões.
+- [x] **F03.02** — Implementar importação por stream em staging, SHA-256, validação tipo/tamanho/dimensões.
 - [ ] **F03.03** — Publicar bytes em storage por hash com atomicidade possível e recovery quando DB/arquivo divergirem.
 - [ ] **F03.04** — Implementar deduplicação, referências persistentes e teste de asset único compartilhado.
 - [ ] **F03.05** — Implementar decode PNG/JPEG/WebP fora da UI com alpha/orientação válidos e erro tipado.
