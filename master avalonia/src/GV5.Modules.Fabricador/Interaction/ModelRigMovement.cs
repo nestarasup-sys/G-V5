@@ -23,8 +23,10 @@ internal static class ModelRigMovement
         var delta = targetTransform.Translation - root.Transform.Translation;
         var partIds = content.Parts.Select(part => TransformNodeId.From(part.Id.Value)).ToArray();
         var transforms = content.Parts.ToDictionary(part => TransformNodeId.From(part.Id.Value), part => part.Transform);
+        // Model transforms use Y-up; rig anchors are points on the rendered bitmap (Y-down).
+        var anchorDelta = new Point2D(delta.X, -delta.Y);
         var result = RigMovement.Translate(partIds, transforms, content.RigJoints,
-            TransformNodeId.From(rootPartId.Value), delta);
+            TransformNodeId.From(rootPartId.Value), delta, anchorDelta);
         var parts = content.Parts.Select(part => part.WithTransform(result.Transforms[TransformNodeId.From(part.Id.Value)])).ToArray();
         return ModelDraftContent.Restore(
             content.SchemaVersion,

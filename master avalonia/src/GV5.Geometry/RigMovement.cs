@@ -16,7 +16,8 @@ public static class RigMovement
         IReadOnlyDictionary<TransformNodeId, Transform2D> transforms,
         IEnumerable<RigJoint> joints,
         TransformNodeId root,
-        Point2D delta)
+        Point2D delta,
+        Point2D? anchorDelta = null)
     {
         ArgumentNullException.ThrowIfNull(parts);
         ArgumentNullException.ThrowIfNull(transforms);
@@ -47,13 +48,14 @@ public static class RigMovement
         }
 
         var movedSet = moved.ToImmutable();
+        var effectiveAnchorDelta = anchorDelta ?? delta;
         var updatedTransforms = transforms.ToImmutableDictionary(pair => pair.Key, pair => movedSet.Contains(pair.Key)
             ? TranslateTransform(pair.Value, delta)
             : pair.Value);
         var updatedJoints = jointArray.Select(joint => joint with
         {
-            ParentAnchor = movedSet.Contains(joint.ParentPartId) ? joint.ParentAnchor + delta : joint.ParentAnchor,
-            ChildAnchor = movedSet.Contains(joint.ChildPartId) ? joint.ChildAnchor + delta : joint.ChildAnchor
+            ParentAnchor = movedSet.Contains(joint.ParentPartId) ? joint.ParentAnchor + effectiveAnchorDelta : joint.ParentAnchor,
+            ChildAnchor = movedSet.Contains(joint.ChildPartId) ? joint.ChildAnchor + effectiveAnchorDelta : joint.ChildAnchor
         }).ToImmutableArray();
         return new RigMovementResult(updatedTransforms, updatedJoints, movedSet);
     }

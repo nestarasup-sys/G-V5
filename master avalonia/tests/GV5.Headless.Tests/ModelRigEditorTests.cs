@@ -24,8 +24,8 @@ public sealed class ModelRigEditorTests
         Assert.Equal(new Point2D(7, 9), moved.Parts[0].Transform.Translation);
         Assert.Equal(before[1].Translation + new Point2D(7, 9), moved.Parts[1].Transform.Translation);
         Assert.Equal(before[2].Translation + new Point2D(7, 9), moved.Parts[2].Transform.Translation);
-        Assert.Equal(new Point2D(17, 20), moved.RigJoints[0].ParentAnchor);
-        Assert.Equal(new Point2D(29, 32), moved.RigJoints[1].ChildAnchor);
+        Assert.Equal(new Point2D(17, 2), moved.RigJoints[0].ParentAnchor);
+        Assert.Equal(new Point2D(29, 14), moved.RigJoints[1].ChildAnchor);
 
         var reverted = command.Revert(moved);
         Assert.Equal(before, reverted.Parts.Select(part => part.Transform).ToArray());

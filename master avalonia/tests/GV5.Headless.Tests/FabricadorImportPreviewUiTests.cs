@@ -147,7 +147,7 @@ public sealed class FabricadorImportPreviewUiTests
                 var savedJoint = Assert.Single(savedContent.RigJoints);
                 Assert.Equal(RigJointMode.Fixed, savedJoint.Mode);
                 Assert.Equal(new Point2D(31.5, 18), savedJoint.ParentAnchor);
-                Assert.Equal(new Point2D(10, 10.25), savedJoint.ChildAnchor);
+                Assert.Equal(new Point2D(10, 14.25), savedJoint.ChildAnchor);
                 Assert.Single(savedContent.Parts.Where(part => part.SourceTransform.Transform != part.Transform));
                 foreach (var assetId in savedContent.Parts.Select(part => part.AssetId).Append(savedContent.SourceAssetId!.Value))
                 {
