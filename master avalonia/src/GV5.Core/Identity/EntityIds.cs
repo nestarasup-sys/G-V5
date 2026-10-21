@@ -36,6 +36,34 @@ public readonly record struct PoseId : IEntityId
     public override string ToString() => Value.ToString("D");
 }
 
+public readonly record struct AnimationId : IEntityId
+{
+    public Guid Value { get; }
+    public bool IsValid => Value != Guid.Empty;
+
+    private AnimationId(Guid value) => Value = value;
+
+    public static AnimationId New() => new(Guid.NewGuid());
+    public static AnimationId From(Guid value) => new(IdValue.RequireValid(value, nameof(value)));
+    public static AnimationId Parse(string value) => new(IdValue.Parse(value, nameof(AnimationId)));
+    public static bool TryParse(string? value, out AnimationId id) => IdValue.TryParse(value, static parsed => new AnimationId(parsed), out id);
+    public override string ToString() => Value.ToString("D");
+}
+
+public readonly record struct AnimationFrameId : IEntityId
+{
+    public Guid Value { get; }
+    public bool IsValid => Value != Guid.Empty;
+
+    private AnimationFrameId(Guid value) => Value = value;
+
+    public static AnimationFrameId New() => new(Guid.NewGuid());
+    public static AnimationFrameId From(Guid value) => new(IdValue.RequireValid(value, nameof(value)));
+    public static AnimationFrameId Parse(string value) => new(IdValue.Parse(value, nameof(AnimationFrameId)));
+    public static bool TryParse(string? value, out AnimationFrameId id) => IdValue.TryParse(value, static parsed => new AnimationFrameId(parsed), out id);
+    public override string ToString() => Value.ToString("D");
+}
+
 public readonly record struct WardrobeId : IEntityId
 {
     public Guid Value { get; }
