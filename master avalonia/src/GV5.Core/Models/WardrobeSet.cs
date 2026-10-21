@@ -69,6 +69,14 @@ public sealed record WardrobeComponent
             throw new ArgumentException("The wardrobe binding must target the component's stable bone ID.", nameof(binding));
         return new WardrobeComponent(id, normalizedName, category, boneId, assetId, placement, rotationDegrees, binding);
     }
+
+    public WardrobeComponent WithPlacement(Rect2D placement, double rotationDegrees, WardrobeBoneFrame sourceBone) =>
+        Restore(Id, Name, Category, BoneId, AssetId, placement, rotationDegrees,
+            WardrobeBinding.Bind(sourceBone, placement, rotationDegrees));
+
+    public WardrobeComponent WithBone(ModelPartId boneId, WardrobeBoneFrame sourceBone) =>
+        Restore(Id, Name, Category, boneId, AssetId, Placement, RotationDegrees,
+            WardrobeBinding.Bind(sourceBone, Placement, RotationDegrees));
 }
 
 /// <summary>Editable wardrobe data pinned to one exact published model; its revision is independent of model revisions.</summary>

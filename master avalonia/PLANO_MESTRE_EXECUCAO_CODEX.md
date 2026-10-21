@@ -270,7 +270,7 @@ Ambiente/SDK/CI: `TestarLocal.bat gate` passou em 2026-10-21; ver `docs/gates/GA
 - [x] **F08.01** — Inventariar categorias/edições de roupas, WardrobeBinding e ajustes do legado V1/V2.
 - [x] **F08.02** — Definir WardrobeSet e WardrobeComponent com binding local ao osso e revisão.
 - [x] **F08.03** — Implementar importação de recortes de roupa via AssetStore com transparência e preview.
-- [ ] **F08.04** — Implementar associação da peça ao bone e editor de offset/escala/rotação.
+- [x] **F08.04** — Implementar associação da peça ao bone e editor de offset/escala/rotação.
 - [ ] **F08.05** — Implementar propagação de transform de roupa para poses diferentes e espelhamento.
 - [ ] **F08.06** — Implementar camadas de roupa/itens sobre cabelo conforme regras explícitas.
 - [ ] **F08.07** — Implementar ajustes não destrutivos e undo/redo por componente.

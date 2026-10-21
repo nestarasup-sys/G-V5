@@ -7,6 +7,7 @@ Escopo F08.02: contrato puro de domínio, sem UI, persistência ou publicação 
 - `WardrobeSet` é o rascunho mutável por comandos: `WardrobeId` estável, referência exata da publicação do modelo, `Revision` própria e uma coleção imutável de componentes. `WithContent` cria outra instância e incrementa apenas a revisão do conjunto. O limite do domínio é 100 componentes; rascunho vazio é aceito.
 - `WardrobeComponent` tem `WardrobeComponentId`, nome, `WardrobeCategory`, `ModelPartId` do osso, `AssetId`, retângulo de colocação na folha-fonte, rotação em graus e `WardrobeBinding` versionado. O asset contém os pixels; `Placement` representa a geometria autoral no espaço do modelo.
 - `WardrobeBinding` registra a relação normalizada entre peça e osso na geometria de origem. Reidratação valida a versão, valores finitos, dimensões positivas e proporções positivas. O ID do osso precisa coincidir com o ID estável da peça que o componente declara.
+- `WardrobeComponentEditorSession` exige a mesma publicação de modelo pinada pelo conjunto, constrói frames a partir do crop/transform imutável de cada peça e rejeita componentes/ossos inexistentes. Reassociar mantém a geometria da roupa na folha e recalcula o binding para o osso escolhido. Move, escala independente X/Y ao redor do centro e rotação absoluta geram revisão de rascunho nova e binding recalculado; os snapshots anteriores permanecem intactos.
 - `PublishedWardrobeRevision` é um snapshot imutável com ID próprio, sequência de publicação, revisão editável de origem, referência do modelo, data UTC, SHA-256 e cópia da coleção de componentes. Alterar o rascunho depois da publicação não modifica o snapshot.
 
 ## Categorias
@@ -29,4 +30,4 @@ Escopo F08.02: contrato puro de domínio, sem UI, persistência ou publicação 
 - `src/GV5.Geometry/WardrobeBindingMath.cs`
 - `tests/GV5.Core.Tests/WardrobeContractTests.cs`
 
-Persistência SQLite, UI de seleção/edição, resolução de binding contra uma publicação carregada e ligação do serviço de importação aos comandos de tela seguem fora de F08.02/F08.03.
+Persistência SQLite, UI de seleção/edição e integração visual dos serviços com a tela ainda estão pendentes. O serviço F08.04 valida os IDs dos ossos contra o modelo carregado, mas a matriz mantém paridade de roupas pendente até completar persistência, renderização e interação visual.

@@ -13,14 +13,14 @@
 | Branch obrigatória | `Master-AValonia` |
 | Pasta exclusiva do novo aplicativo | `master avalonia/` |
 | Commit-base inspecionado antes deste arquivo | `53b7f7a97321e85063a8dd4f9635e48d36548323` |
-| Último commit de implementação validado | `d4ea528` (F08.03: importação de recortes transparentes para roupas) |
-| Checkout local revalidado | `TestarLocal.bat rapido` passou em 2026-10-21: build Debug e 237 testes, 0 falhas; 2 avisos CS0618 preexistentes |
-| Fase ativa | **F08 — Fabricador III — roupas, binding e revisões (próxima: F08.04)** |
-| Última tarefa VALIDADA | **F08.03** — recorte transparente, prévia reduzida e publicação sob confirmação |
-| Próxima tarefa PENDENTE | **F08.04** — associar componente ao osso e editar offset, escala e rotação |
+| Último commit de implementação validado | `d4ea528` (F08.03: importação de recortes transparentes para roupas); F08.04 aguardando commit local |
+| Checkout local revalidado | `TestarLocal.bat rapido` passou em 2026-10-21: build Debug e 240 testes, 0 falhas; 2 avisos CS0618 preexistentes |
+| Fase ativa | **F08 — Fabricador III — roupas, binding e revisões (próxima: F08.05)** |
+| Última tarefa VALIDADA | **F08.04** — sessão de associação a osso, offset, escala X/Y e rotação |
+| Próxima tarefa PENDENTE | **F08.05** — propagar transforms da roupa entre poses e implementar espelhamento |
 | Requisito transversal atualizado | ADR-0006: aparência reconhecível, não pixel-perfect; todos os botões e funcionalidades; revisão final visual pendente |
 | Gate atual | **F00/G0/F02/F03/F04/F05/G1 e GATE-F07: PASSARAM tecnicamente; captura Windows/GPU/visual e paridade completa seguem pendentes** |
-| Progresso validado neste controle | **103 / 247 tarefas (41,7%)** |
+| Progresso validado neste controle | **104 / 247 tarefas (42,1%)** |
 | Tarefas em execução | Nenhuma tarefa em execução registrada |
 | Pendências conhecidas | F06: folha real/capturas/worker não testados; ferramentas de Modelos ausentes catalogadas em `docs/legacy-contracts/PENDENCIAS_FUNCIONAIS_FABRICADOR.md` e obrigatórias antes do G2. Isso não impede a programação F07, mas impede declarar Fabricador completo. Limite download F01 documentado |
 | Aceite Windows/GPU | **F06 Windows/visual não executado; GPU continua fora do escopo comprovado** |
@@ -180,6 +180,7 @@ Adicionar uma linha ao concluir ou bloquear cada tarefa. A linha inicial abaixo 
 | **F08.01** | **VALIDADA** | `5d77b4e` | Auditoria estática confirmou 15 categorias atuais do Fabricador, compatibilidade V1/V2, binding local congelado, transferência para pose, rebase de edição 2, normalização distinta entre conjunto/personagem e migração de ajustes privados antigos. `git diff --check` passou; tarefa documental, sem alteração de código ou teste de runtime. | `docs/legacy-contracts/F08_ROUPAS_LEGADO.md`; fontes listadas no próprio contrato; atualização da matriz e do plano | Não foram abertos dados pessoais em `app-data` nem executado Electron. A auditoria não prova paridade da nova implementação. |
 | **F08.02** | **VALIDADA** | `18a4534` | `TestarLocal.bat rapido`: build Debug e **233 testes aprovados, 0 falhas**, com 2 avisos CS0618 preexistentes em `ThumbnailService`. Core valida pinning da revisão de modelo, IDs tipados, categorias, limites/duplicatas, binding local por osso, revisões independentes, snapshot publicado imutável e hash; Geometry valida dados reidratados do binding. | `src/GV5.Core/Models/WardrobeSet.cs`; `PublishedWardrobeRevision.cs`; `src/GV5.Geometry/WardrobeBindingMath.cs`; `tests/GV5.Core.Tests/WardrobeContractTests.cs`; `docs/architecture/CONTRATO_ROUPAS.md` | Domínio não acessa Avalonia nem assets diretamente. Validação da existência do osso na publicação, SQLite, AssetStore, UI e rendering ficam nas tarefas seguintes; roupas continuam `PENDENTE` na matriz de paridade. |
 | **F08.03** | **VALIDADA** | `d4ea528` | `TestarLocal.bat rapido`: build Debug e **237 testes aprovados, 0 falhas**, com os 2 avisos CS0618 preexistentes em `ThumbnailService`. Processamento usa recorte alpha sem chroma, preserva pixel RGBA, margem ajustável, cancelamento e rejeita imagem vazia. Serviço limita entrada, gera PNG em stage, cria preview de até 768 px e publica no `IAssetStore` somente após confirmação; confirma hash/media type/tamanho, impede publicar duas vezes e limpa arquivos ao cancelar/falhar. | `src/GV5.Assets/Processing/TransparentImageCropProcessor.cs`; `src/GV5.Modules.Fabricador/Import/WardrobeComponentImportService.cs`; `tests/GV5.Assets.Tests/TransparentImageCropProcessorTests.cs`; `tests/GV5.Headless.Tests/FabricatorWardrobeImportTests.cs` | Teste integrado usa AssetStore sintético e imagens PNG sintéticas; UI não está ligada ainda. A matriz mantém paridade geral de roupas pendente até persistência, editor e renderização. |
+| **F08.04** | **VALIDADA** | Commit local deste registro | `TestarLocal.bat rapido`: build Debug e **240 testes aprovados, 0 falhas**, com os 2 avisos CS0618 preexistentes em `ThumbnailService`. Sessão usa recortes/transformações originais do modelo para criar frame de cada osso, exige publicação exata, oferece seleção, reassociação, deslocamento, escala independente pelo centro e rotação. Cada ajuste regrava o binding, avança a revisão do rascunho e preserva a instância/snapshot anterior; IDs inválidos, osso ausente, outra publicação, escala não positiva e ângulo não finito são rejeitados. | `src/GV5.Modules.Fabricador/Interaction/WardrobeComponentEditorSession.cs`; `src/GV5.Core/Models/WardrobeSet.cs`; `tests/GV5.Headless.Tests/FabricatorWardrobeEditorTests.cs`; `docs/architecture/CONTRATO_ROUPAS.md` | Cobertura headless da sessão; painel Avalonia ainda não está integrado. Persistência e paridade visual continuam pendentes. |
 
 **Estados aceitos:** `PENDENTE`, `EM_EXECUCAO`, `BLOQUEADA`, `VALIDADA`.
 
@@ -346,6 +347,8 @@ Após concluir um lote ou fase, adicionar uma linha. Não inflar contador só po
 
 **Atualização local 2026-10-21 — F08.03 validada:** serviço de importação recorta alpha, produz preview reduzido e só publica PNG aprovado no AssetStore; inclui cancelamento/limpeza e hash verificado. `TestarLocal.bat rapido` passou com 237 testes e 0 falhas. Próxima tarefa F08.04.
 
+**Atualização local 2026-10-21 — F08.04 validada:** `WardrobeComponentEditorSession` liga o recorte a uma peça da revisão exata do modelo. Move, escala X/Y e rotação atualizam binding e revisão do rascunho; reassociar preserva o posicionamento visível. `TestarLocal.bat rapido`: 240 testes, 0 falhas. A interface visual segue pendente. Próxima tarefa F08.05.
+
 ## 9. Retomada obrigatória para a próxima sessão Codex
 
 1. Confirmar branch, HEAD e árvore de trabalho localmente; não consultar nem sincronizar o remoto até autorização explícita.
@@ -353,7 +356,7 @@ Após concluir um lote ou fase, adicionar uma linha. Não inflar contador só po
 3. Inspecionar evidências reais da última tarefa validada; caso não existam, corrigir seu estado.
 4. **F07 liberada tecnicamente conforme ADR-0006.** A F06 tem 14 tarefas registradas e 198 testes anteriores; revisão de folha real/Windows/worker/capturas segue pendente até G2/F12/aceite final. Não afirmar que foi realizada.
 5. Continuar automaticamente pelas tarefas seguintes **uma de cada vez**, em lotes flexíveis de aproximadamente 3–8 tarefas relacionadas, enquanto todos os gates pertinentes passam.
-6. F07 está tecnicamente encerrada em `docs/gates/GATE-F07.md`. F08.01–F08.03 estão validadas; continuar em **F08.04** conforme o Plano Mestre; retomar as diferenças de paridade do Animador em F09.13. Não implementar Video Studio antes da fase apropriada.
+6. F07 está tecnicamente encerrada em `docs/gates/GATE-F07.md`. F08.01–F08.04 estão validadas; continuar em **F08.05** conforme o Plano Mestre; retomar as diferenças de paridade do Animador em F09.13. Não implementar Video Studio antes da fase apropriada.
 7. Ao encerrar, informar: **branch, HEAD, último ID VALIDADO, próximo ID PENDENTE, commits, comandos verdes, evidências, bloqueios e condição de desbloqueio**.
 
 ### Prompt de retomada
