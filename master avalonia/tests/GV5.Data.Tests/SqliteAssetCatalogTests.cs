@@ -110,5 +110,5 @@ public sealed class SqliteAssetCatalogTests
 
     private static SqliteMigrationRunner CreateInitializer(SqliteDatabase database) => new(
         database,
-        [new InitialAssetSchemaMigration(), new ModelDraftSchemaMigration(), new ModelDraftCheckpointSchemaMigration(), new AssetImportJournalSchemaMigration(), new AssetReferenceSchemaMigration()]);
+        [new InitialAssetSchemaMigration(), new ModelDraftSchemaMigration(), new ModelDraftCheckpointSchemaMigration(), new AssetImportJournalSchemaMigration(), new AssetReferenceSchemaMigration(), new AssetGarbageCollectionSchemaMigration()]);
 }

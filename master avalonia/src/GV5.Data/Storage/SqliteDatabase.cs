@@ -67,9 +67,17 @@ public sealed class SqliteDatabase : IGv5Database, IDisposable
     }
 
     /// <summary>Uses SQLite's online backup API so committed WAL pages are copied as one consistent snapshot.</summary>
-    public async Task BackupDatabaseToAsync(string destinationFile, CancellationToken cancellationToken = default)
+    public Task BackupDatabaseToAsync(string destinationFile, CancellationToken cancellationToken = default) =>
+        BackupDatabaseAndFilesToAsync(destinationFile, static _ => Task.CompletedTask, cancellationToken);
+
+    /// <summary>Holds the SQLite writer gate through the database snapshot and its matching file snapshot.</summary>
+    public async Task BackupDatabaseAndFilesToAsync(
+        string destinationFile,
+        Func<CancellationToken, Task> snapshotFilesAsync,
+        CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(destinationFile);
+        ArgumentNullException.ThrowIfNull(snapshotFilesAsync);
         ThrowIfDisposed();
         var fullDestination = Path.GetFullPath(destinationFile);
         if (string.Equals(fullDestination, Path.GetFullPath(_paths.DatabaseFile), StringComparison.OrdinalIgnoreCase))
@@ -97,6 +105,7 @@ public sealed class SqliteDatabase : IGv5Database, IDisposable
             await using var destination = new SqliteConnection(builder.ToString());
             await destination.OpenAsync(cancellationToken).ConfigureAwait(false);
             await Task.Run(() => source.BackupDatabase(destination), cancellationToken).ConfigureAwait(false);
+            await snapshotFilesAsync(cancellationToken).ConfigureAwait(false);
         }
         finally
         {

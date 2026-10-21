@@ -7,13 +7,13 @@ using Microsoft.Data.Sqlite;
 
 namespace GV5.Data.Storage;
 
-/// <summary>Versioned SQLite online backup, integrity verification and non-overwriting restore.</summary>
+/// <summary>Versioned complete data-platform backup, integrity verification and non-overwriting restore.</summary>
 public sealed class DatabaseBackupService : IDataPlatformBackupService
 {
     private const string ManifestFileName = "manifest.json";
     private const string DatabaseRelativePath = "database/gv5.sqlite3";
     private const string BackupFormat = "G-V5-SQLite-Backup";
-    private const int CurrentFormatVersion = 1;
+    private const int CurrentFormatVersion = 2;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -58,17 +58,48 @@ public sealed class DatabaseBackupService : IDataPlatformBackupService
             var databasePath = ResolveContainedPath(backupDirectory, DatabaseRelativePath);
             Directory.CreateDirectory(Path.GetDirectoryName(databasePath)!);
 
-            await _database.BackupDatabaseToAsync(databasePath, cancellationToken).ConfigureAwait(false);
+            var files = new List<BackupFile>();
+            await _database.BackupDatabaseAndFilesToAsync(databasePath, async token =>
+            {
+                var assetEntries = await ReadAssetEntriesAsync(databasePath, token).ConfigureAwait(false);
+                foreach (var asset in assetEntries)
+                {
+                    var sourcePath = ResolveContainedPath(_paths.AssetsDirectory, asset.RelativePath);
+                    var relativeBackupPath = $"assets/{asset.RelativePath}";
+                    var destinationPath = ResolveContainedPath(backupDirectory, relativeBackupPath);
+                    Directory.CreateDirectory(Path.GetDirectoryName(destinationPath)!);
+                    if (!File.Exists(sourcePath) || new FileInfo(sourcePath).Length != asset.ByteLength)
+                    {
+                        throw new InvalidDataException($"Asset {asset.AssetId} is missing or has an unexpected size; a complete backup cannot be created.");
+                    }
+
+                    var sourceHash = await ComputeSha256Async(sourcePath, token).ConfigureAwait(false);
+                    if (!string.Equals(sourceHash, asset.Sha256, StringComparison.Ordinal))
+                    {
+                        throw new InvalidDataException($"Asset {asset.AssetId} failed SHA-256 verification; a complete backup cannot be created.");
+                    }
+
+                    File.Copy(sourcePath, destinationPath, overwrite: false);
+                    var copiedHash = await ComputeSha256Async(destinationPath, token).ConfigureAwait(false);
+                    if (!string.Equals(copiedHash, asset.Sha256, StringComparison.Ordinal))
+                    {
+                        throw new InvalidDataException($"Asset {asset.AssetId} changed while the backup was being created.");
+                    }
+
+                    files.Add(new BackupFile(relativeBackupPath, asset.ByteLength, asset.Sha256));
+                }
+            }, cancellationToken).ConfigureAwait(false);
             var schemaVersion = await ReadSchemaVersionAsync(databasePath, cancellationToken).ConfigureAwait(false);
             await EnsureSqliteIntegrityAsync(databasePath, cancellationToken).ConfigureAwait(false);
             var sizeBytes = new FileInfo(databasePath).Length;
             var sha256 = await ComputeSha256Async(databasePath, cancellationToken).ConfigureAwait(false);
+            files.Insert(0, new BackupFile(DatabaseRelativePath, sizeBytes, sha256));
             var manifest = new BackupManifest(
                 BackupFormat,
                 CurrentFormatVersion,
                 createdUtc,
                 schemaVersion,
-                [new BackupFile(DatabaseRelativePath, sizeBytes, sha256)]);
+                files.ToArray());
 
             var manifestPath = Path.Combine(backupDirectory, ManifestFileName);
             var temporaryManifestPath = manifestPath + ".tmp";
@@ -121,42 +152,49 @@ public sealed class DatabaseBackupService : IDataPlatformBackupService
             ArgumentException.ThrowIfNullOrWhiteSpace(backupDirectory);
             var normalizedDirectory = Path.GetFullPath(backupDirectory);
             var manifestPath = Path.Combine(normalizedDirectory, ManifestFileName);
-            await using var stream = new FileStream(manifestPath, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, FileOptions.Asynchronous | FileOptions.SequentialScan);
-            var manifest = await JsonSerializer.DeserializeAsync<BackupManifest>(stream, JsonOptions, cancellationToken).ConfigureAwait(false)
-                ?? throw new InvalidDataException("The backup manifest is empty.");
+            var manifest = await ReadManifestAsync(manifestPath, cancellationToken).ConfigureAwait(false);
 
-            if (!string.Equals(manifest.Format, BackupFormat, StringComparison.Ordinal) || manifest.FormatVersion != CurrentFormatVersion)
+            if (!string.Equals(manifest.Format, BackupFormat, StringComparison.Ordinal) || manifest.FormatVersion is < 1 or > CurrentFormatVersion)
             {
                 throw new InvalidDataException("The backup format or version is not supported.");
             }
 
-            if (manifest.SchemaVersion < 0 || manifest.Files is not { Length: 1 })
+            if (manifest.SchemaVersion < 0 || manifest.Files is not { Length: >= 1 })
             {
-                throw new InvalidDataException("The manifest must describe exactly one SQLite database file.");
+                throw new InvalidDataException("The manifest must describe a SQLite database file.");
             }
 
-            var file = manifest.Files[0];
-            if (!string.Equals(file.Path, DatabaseRelativePath, StringComparison.Ordinal) || file.SizeBytes < 0 || !IsSha256(file.Sha256))
+            var databaseFile = manifest.Files[0];
+            if (!string.Equals(databaseFile.Path, DatabaseRelativePath, StringComparison.Ordinal) || databaseFile.SizeBytes < 0 || !IsSha256(databaseFile.Sha256))
             {
                 throw new InvalidDataException("The manifest contains an invalid database entry.");
             }
 
-            var databasePath = ResolveContainedPath(normalizedDirectory, file.Path);
-            if (!File.Exists(databasePath))
+            var databasePath = ResolveContainedPath(normalizedDirectory, databaseFile.Path);
+            var manifestPaths = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var file in manifest.Files)
             {
-                throw new InvalidDataException("The database file listed in the manifest is missing.");
-            }
+                if (file.SizeBytes < 0 || !IsSha256(file.Sha256) || !manifestPaths.Add(file.Path))
+                {
+                    throw new InvalidDataException("The manifest contains a duplicate or invalid file entry.");
+                }
 
-            var actualSize = new FileInfo(databasePath).Length;
-            if (actualSize != file.SizeBytes)
-            {
-                throw new InvalidDataException("The database size does not match the manifest.");
-            }
+                var filePath = ResolveContainedPath(normalizedDirectory, file.Path);
+                if (!File.Exists(filePath))
+                {
+                    throw new InvalidDataException($"The file listed in the manifest is missing: {file.Path}.");
+                }
 
-            var actualHash = await ComputeSha256Async(databasePath, cancellationToken).ConfigureAwait(false);
-            if (!CryptographicOperations.FixedTimeEquals(Convert.FromHexString(actualHash), Convert.FromHexString(file.Sha256)))
-            {
-                throw new InvalidDataException("The database SHA-256 does not match the manifest.");
+                if (new FileInfo(filePath).Length != file.SizeBytes)
+                {
+                    throw new InvalidDataException($"The file size does not match the manifest: {file.Path}.");
+                }
+
+                var fileHash = await ComputeSha256Async(filePath, cancellationToken).ConfigureAwait(false);
+                if (!CryptographicOperations.FixedTimeEquals(Convert.FromHexString(fileHash), Convert.FromHexString(file.Sha256)))
+                {
+                    throw new InvalidDataException($"The SHA-256 does not match the manifest: {file.Path}.");
+                }
             }
 
             await EnsureSqliteIntegrityAsync(databasePath, cancellationToken).ConfigureAwait(false);
@@ -166,12 +204,38 @@ public sealed class DatabaseBackupService : IDataPlatformBackupService
                 throw new InvalidDataException("The SQLite schema version does not match the manifest.");
             }
 
+            var assets = await ReadAssetEntriesAsync(databasePath, cancellationToken).ConfigureAwait(false);
+            if (manifest.FormatVersion == 1)
+            {
+                if (manifest.Files.Length != 1 || assets.Count != 0)
+                {
+                    throw new InvalidDataException("This legacy backup omits binary assets referenced by its database.");
+                }
+            }
+            else
+            {
+                if (manifest.Files.Length != assets.Count + 1)
+                {
+                    throw new InvalidDataException("The backup manifest does not contain every binary asset recorded by SQLite.");
+                }
+
+                var filesByPath = manifest.Files.Skip(1).ToDictionary(file => file.Path, StringComparer.Ordinal);
+                foreach (var asset in assets)
+                {
+                    var expectedPath = $"assets/{asset.RelativePath}";
+                    if (!filesByPath.TryGetValue(expectedPath, out var assetFile) || assetFile.SizeBytes != asset.ByteLength || !string.Equals(assetFile.Sha256, asset.Sha256, StringComparison.Ordinal))
+                    {
+                        throw new InvalidDataException($"The backup is missing or mismatches asset {asset.AssetId}.");
+                    }
+                }
+            }
+
             var artifact = new DataBackupArtifact(
                 normalizedDirectory,
                 databasePath,
                 manifestPath,
-                actualHash,
-                actualSize,
+                databaseFile.Sha256,
+                databaseFile.SizeBytes,
                 manifest.CreatedUtc,
                 manifest.SchemaVersion);
             return new DataBackupVerification(true, null, artifact);
@@ -195,7 +259,7 @@ public sealed class DatabaseBackupService : IDataPlatformBackupService
     {
         using var scope = _correlationContext.BeginScope();
         var stopwatch = Stopwatch.StartNew();
-        var temporaryPath = string.Empty;
+        var stagingRoot = string.Empty;
         try
         {
             ArgumentException.ThrowIfNullOrWhiteSpace(destinationRoot);
@@ -206,15 +270,17 @@ public sealed class DatabaseBackupService : IDataPlatformBackupService
             }
 
             var destination = new AppDataPaths(destinationRoot);
-            if (File.Exists(destination.DatabaseFile))
+            if (Directory.Exists(destination.Root) || File.Exists(destination.Root))
             {
-                throw new IOException("Restore destination already contains a database; existing data was not overwritten.");
+                throw new IOException("Restore destination must not exist; existing data was not overwritten.");
             }
 
-            Directory.CreateDirectory(destination.DatabaseDirectory);
-            temporaryPath = destination.DatabaseFile + $".{Guid.NewGuid():N}.restore-tmp";
-            File.Copy(verification.Artifact.DatabasePath, temporaryPath, overwrite: false);
-            var restoredHash = await ComputeSha256Async(temporaryPath, cancellationToken).ConfigureAwait(false);
+            stagingRoot = destination.Root + $".{Guid.NewGuid():N}.restore-tmp";
+            var staging = new AppDataPaths(stagingRoot);
+            Directory.CreateDirectory(staging.DatabaseDirectory);
+            var temporaryDatabasePath = staging.DatabaseFile;
+            File.Copy(verification.Artifact.DatabasePath, temporaryDatabasePath, overwrite: false);
+            var restoredHash = await ComputeSha256Async(temporaryDatabasePath, cancellationToken).ConfigureAwait(false);
             if (!CryptographicOperations.FixedTimeEquals(
                     Convert.FromHexString(restoredHash),
                     Convert.FromHexString(verification.Artifact.Sha256)))
@@ -222,8 +288,23 @@ public sealed class DatabaseBackupService : IDataPlatformBackupService
                 throw new InvalidDataException("The restored database hash differs from the verified backup.");
             }
 
-            await EnsureSqliteIntegrityAsync(temporaryPath, cancellationToken).ConfigureAwait(false);
-            File.Move(temporaryPath, destination.DatabaseFile, overwrite: false);
+            await EnsureSqliteIntegrityAsync(temporaryDatabasePath, cancellationToken).ConfigureAwait(false);
+            var manifest = await ReadManifestAsync(verification.Artifact.ManifestPath, cancellationToken).ConfigureAwait(false);
+            foreach (var file in manifest.Files.Skip(1))
+            {
+                var sourcePath = ResolveContainedPath(verification.Artifact.DirectoryPath, file.Path);
+                var relativeAssetPath = file.Path["assets/".Length..];
+                var outputPath = ResolveContainedPath(staging.AssetsDirectory, relativeAssetPath);
+                Directory.CreateDirectory(Path.GetDirectoryName(outputPath)!);
+                File.Copy(sourcePath, outputPath, overwrite: false);
+                var copiedHash = await ComputeSha256Async(outputPath, cancellationToken).ConfigureAwait(false);
+                if (!string.Equals(copiedHash, file.Sha256, StringComparison.Ordinal) || new FileInfo(outputPath).Length != file.SizeBytes)
+                {
+                    throw new InvalidDataException($"The restored asset failed verification: {relativeAssetPath}.");
+                }
+            }
+
+            Directory.Move(staging.Root, destination.Root);
             await _logger.WriteAsync(
                 DiagnosticEventCode.BackupRestored,
                 DiagnosticOutcome.Success,
@@ -235,9 +316,9 @@ public sealed class DatabaseBackupService : IDataPlatformBackupService
         {
             try
             {
-                if (!string.IsNullOrEmpty(temporaryPath) && File.Exists(temporaryPath))
+                if (!string.IsNullOrEmpty(stagingRoot) && Directory.Exists(stagingRoot))
                 {
-                    File.Delete(temporaryPath);
+                    Directory.Delete(stagingRoot, recursive: true);
                 }
             }
             catch (Exception cleanupException) when (cleanupException is IOException or UnauthorizedAccessException)
@@ -254,6 +335,46 @@ public sealed class DatabaseBackupService : IDataPlatformBackupService
 
             throw;
         }
+    }
+
+    private static async Task<List<AssetBackupEntry>> ReadAssetEntriesAsync(string databasePath, CancellationToken cancellationToken)
+    {
+        var builder = new SqliteConnectionStringBuilder { DataSource = databasePath, Mode = SqliteOpenMode.ReadOnly, Pooling = false };
+        await using var connection = new SqliteConnection(builder.ToString());
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT asset_id, sha256, relative_path, byte_length, verification_state FROM assets ORDER BY asset_id;";
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        var entries = new List<AssetBackupEntry>();
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            var id = reader.GetString(0);
+            var sha256 = reader.GetString(1);
+            var relativePath = reader.GetString(2);
+            var byteLength = reader.GetInt64(3);
+            var state = reader.GetString(4);
+            var expectedPath = $"sha256/{sha256[..Math.Min(2, sha256.Length)]}/{sha256}";
+            if (!IsSha256(sha256) || !string.Equals(relativePath, expectedPath, StringComparison.Ordinal) || byteLength < 0 || !string.Equals(state, "available", StringComparison.Ordinal))
+            {
+                throw new InvalidDataException($"Asset {id} has invalid metadata or is not available for a complete backup.");
+            }
+
+            entries.Add(new AssetBackupEntry(id, sha256, relativePath, byteLength));
+        }
+
+        return entries;
+    }
+
+    private static async Task<BackupManifest> ReadManifestAsync(string manifestPath, CancellationToken cancellationToken)
+    {
+        if (new FileInfo(manifestPath).Length > 64 * 1024 * 1024)
+        {
+            throw new InvalidDataException("The backup manifest is larger than the supported limit.");
+        }
+
+        await using var stream = new FileStream(manifestPath, FileMode.Open, FileAccess.Read, FileShare.Read, 64 * 1024, FileOptions.Asynchronous | FileOptions.SequentialScan);
+        return await JsonSerializer.DeserializeAsync<BackupManifest>(stream, JsonOptions, cancellationToken).ConfigureAwait(false)
+            ?? throw new InvalidDataException("The backup manifest is empty.");
     }
 
     private static async Task<int> ReadSchemaVersionAsync(string databasePath, CancellationToken cancellationToken)
@@ -335,4 +456,5 @@ public sealed class DatabaseBackupService : IDataPlatformBackupService
         BackupFile[] Files);
 
     private sealed record BackupFile(string Path, long SizeBytes, string Sha256);
+    private sealed record AssetBackupEntry(string AssetId, string Sha256, string RelativePath, long ByteLength);
 }

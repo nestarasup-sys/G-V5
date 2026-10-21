@@ -56,9 +56,13 @@ public sealed class SqliteAssetStore : IAssetStore
                 var existingAssetId = await existing.ExecuteScalarAsync(operationToken).ConfigureAwait(false) as string;
                 if (existingAssetId is not null)
                 {
-                    return string.Equals(existingAssetId, assetId.ToString(), StringComparison.Ordinal)
-                        ? Result<Unit>.Success(Unit.Value)
-                        : Failure(ApplicationErrorCode.Conflict, "The owner slot already references a different asset.");
+                    if (!string.Equals(existingAssetId, assetId.ToString(), StringComparison.Ordinal))
+                    {
+                        return Failure(ApplicationErrorCode.Conflict, "The owner slot already references a different asset.");
+                    }
+
+                    await DeleteGcCandidateAsync(connection, transaction, assetId, operationToken).ConfigureAwait(false);
+                    return Result<Unit>.Success(Unit.Value);
                 }
             }
 
@@ -80,6 +84,7 @@ public sealed class SqliteAssetStore : IAssetStore
             insert.Parameters.AddWithValue("$assetId", assetId.ToString());
             insert.Parameters.AddWithValue("$created", DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
             await insert.ExecuteNonQueryAsync(operationToken).ConfigureAwait(false);
+            await DeleteGcCandidateAsync(connection, transaction, assetId, operationToken).ConfigureAwait(false);
             return Result<Unit>.Success(Unit.Value);
         }, cancellationToken).ConfigureAwait(false);
     }
@@ -96,11 +101,38 @@ public sealed class SqliteAssetStore : IAssetStore
         await _initializer.InitializeAsync(cancellationToken).ConfigureAwait(false);
         return await _database.ExecuteWriteAsync(async (connection, transaction, operationToken) =>
         {
+            string? assetId;
+            await using (var existing = connection.CreateCommand())
+            {
+                existing.Transaction = transaction;
+                existing.CommandText = "SELECT asset_id FROM asset_references WHERE owner_type = $owner AND owner_id = $ownerId AND slot = $slot;";
+                AddReferenceParameters(existing, reference);
+                assetId = await existing.ExecuteScalarAsync(operationToken).ConfigureAwait(false) as string;
+            }
+
             await using var delete = connection.CreateCommand();
             delete.Transaction = transaction;
             delete.CommandText = "DELETE FROM asset_references WHERE owner_type = $owner AND owner_id = $ownerId AND slot = $slot;";
             AddReferenceParameters(delete, reference);
             await delete.ExecuteNonQueryAsync(operationToken).ConfigureAwait(false);
+
+            if (assetId is not null)
+            {
+                await using var remaining = connection.CreateCommand();
+                remaining.Transaction = transaction;
+                remaining.CommandText = "SELECT 1 FROM asset_references WHERE asset_id = $assetId LIMIT 1;";
+                remaining.Parameters.AddWithValue("$assetId", assetId);
+                if (await remaining.ExecuteScalarAsync(operationToken).ConfigureAwait(false) is null)
+                {
+                    await using var candidate = connection.CreateCommand();
+                    candidate.Transaction = transaction;
+                    candidate.CommandText = "INSERT OR IGNORE INTO asset_gc_candidates(asset_id, unreferenced_since_utc_ms) VALUES ($assetId, $created);";
+                    candidate.Parameters.AddWithValue("$assetId", assetId);
+                    candidate.Parameters.AddWithValue("$created", DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+                    await candidate.ExecuteNonQueryAsync(operationToken).ConfigureAwait(false);
+                }
+            }
+
             return Result<Unit>.Success(Unit.Value);
         }, cancellationToken).ConfigureAwait(false);
     }
@@ -115,6 +147,19 @@ public sealed class SqliteAssetStore : IAssetStore
         command.Parameters.AddWithValue("$owner", reference.OwnerType);
         command.Parameters.AddWithValue("$ownerId", reference.OwnerId.ToString("D"));
         command.Parameters.AddWithValue("$slot", reference.Slot);
+    }
+
+    private static async Task DeleteGcCandidateAsync(
+        Microsoft.Data.Sqlite.SqliteConnection connection,
+        Microsoft.Data.Sqlite.SqliteTransaction transaction,
+        AssetId assetId,
+        CancellationToken cancellationToken)
+    {
+        await using var delete = connection.CreateCommand();
+        delete.Transaction = transaction;
+        delete.CommandText = "DELETE FROM asset_gc_candidates WHERE asset_id = $assetId;";
+        delete.Parameters.AddWithValue("$assetId", assetId.ToString());
+        await delete.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private static Result<Unit> Failure(ApplicationErrorCode code, string message) =>

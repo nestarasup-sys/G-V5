@@ -268,6 +268,13 @@ public sealed class SqliteAssetImportPipelineTests
             Assert.True((await reopenedStore.ReleaseReferenceAsync(background, cancellationToken)).IsSuccess);
             Assert.True((await reopenedStore.ReleaseReferenceAsync(background, cancellationToken)).IsSuccess);
             Assert.Equal(1L, await ScalarAsync(reopenedDatabase, "SELECT COUNT(*) FROM asset_references WHERE owner_id = $owner;", cancellationToken, ("$owner", ownerId.ToString("D"))));
+            Assert.Equal(0L, await ScalarAsync(reopenedDatabase, "SELECT COUNT(*) FROM asset_gc_candidates WHERE asset_id = $asset;", cancellationToken, ("$asset", firstId.ToString())));
+            Assert.True((await reopenedStore.ReleaseReferenceAsync(character, cancellationToken)).IsSuccess);
+            Assert.Equal(1L, await ScalarAsync(reopenedDatabase, "SELECT COUNT(*) FROM asset_gc_candidates WHERE asset_id = $asset;", cancellationToken, ("$asset", firstId.ToString())));
+            Assert.True((await reopenedStore.AddReferenceAsync(firstId, character, cancellationToken)).IsSuccess);
+            Assert.Equal(0L, await ScalarAsync(reopenedDatabase, "SELECT COUNT(*) FROM asset_gc_candidates WHERE asset_id = $asset;", cancellationToken, ("$asset", firstId.ToString())));
+            Assert.True((await reopenedStore.ReleaseReferenceAsync(character, cancellationToken)).IsSuccess);
+            Assert.Equal(1L, await ScalarAsync(reopenedDatabase, "SELECT COUNT(*) FROM asset_gc_candidates WHERE asset_id = $asset;", cancellationToken, ("$asset", firstId.ToString())));
             Assert.True((await reopenedStore.GetMetadataAsync(firstId, cancellationToken)).IsSuccess);
             Assert.True(File.Exists(GetPublishedPath(paths, Hash(firstBytes))));
             Assert.True((await reopenedStore.GetMetadataAsync(secondId, cancellationToken)).IsSuccess);
@@ -280,7 +287,7 @@ public sealed class SqliteAssetImportPipelineTests
 
     private static SqliteMigrationRunner CreateInitializer(SqliteDatabase database) => new(
         database,
-        [new InitialAssetSchemaMigration(), new ModelDraftSchemaMigration(), new ModelDraftCheckpointSchemaMigration(), new AssetImportJournalSchemaMigration(), new AssetReferenceSchemaMigration()]);
+        [new InitialAssetSchemaMigration(), new ModelDraftSchemaMigration(), new ModelDraftCheckpointSchemaMigration(), new AssetImportJournalSchemaMigration(), new AssetReferenceSchemaMigration(), new AssetGarbageCollectionSchemaMigration()]);
 
     private static SqliteAssetImportPipeline CreatePipeline(AppDataPaths paths, SqliteDatabase database, SqliteMigrationRunner initializer)
     {

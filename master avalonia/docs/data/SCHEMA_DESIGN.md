@@ -103,11 +103,11 @@ Repositórios atualizam apenas as linhas do agregado alterado, filtrando pelo ID
 
 O Fabricador grava o checkpoint antes do `CreateAsync`/`UpdateAsync`. Repetir um salvamento pendente atualiza o mesmo checkpoint pelo ID, sem acumular snapshots duplicados. Depois do commit do agregado, remove apenas o checkpoint daquele ID. Na abertura do Fabricador, checkpoints são apresentados ao usuário: recuperar tenta aplicar usando a revisão esperada; se a revisão já avançou e o conteúdo confere, reconhece o commit como concluído e só limpa o journal; se divergiu, mantém o checkpoint e nunca substitui silenciosamente a versão atual. Descartar remove somente o checkpoint, sem apagar o modelo confirmado. O teste de interrupção injeta falha depois do write-ahead, cria um novo ViewModel e verifica a recuperação em SQLite de arquivo temporário.
 
-## Backup executável SQLite (formato 1)
+## Backup executável da plataforma de dados (formato 2)
 
-`DatabaseBackupService` cria cada backup em uma pasta nova, usando a API online backup do SQLite enquanto o gate de escrita local está fechado. Isso copia uma visão transacional consistente que inclui páginas committed ainda residentes em WAL; não copia o arquivo principal isoladamente. A pasta contém `database/gv5.sqlite3` e `manifest.json`. O manifesto guarda versão do formato/schema, timestamp UTC e tamanho/SHA-256 do banco. O serviço verifica caminho relativo permitido, formato, tamanho, hash, `integrity_check`, `foreign_key_check` e versão real do schema antes de aceitar o backup.
+`DatabaseBackupService` cria cada backup em uma pasta nova, usando a API online backup do SQLite enquanto o gate de escrita local está fechado. O mesmo gate permanece fechado durante a cópia dos binários referenciados, para que a remoção/alteração coordenada de dados não gere um snapshot dividido. A pasta contém `database/gv5.sqlite3`, cada arquivo registrado em `assets/sha256/` e `manifest.json`. O manifesto guarda versão do formato/schema, timestamp UTC e tamanho/SHA-256 de cada arquivo. O serviço exige correspondência completa entre linhas `assets` e binários, verifica todos os hashes, `integrity_check`, `foreign_key_check` e versão real do schema antes de aceitar o backup.
 
-Restore exige uma raiz de dados nova sem banco existente, copia para um arquivo temporário, recalcula o hash e executa as verificações SQLite antes de mover o arquivo para o destino. Não sobrescreve banco existente. A versão 1 inclui somente o SQLite porque ainda não existe AssetStore binário; quando o AssetStore entrar, seus arquivos deverão ser incorporados ao manifesto/hash antes do backup ser considerado completo para dados de assets.
+Restore exige uma raiz de dados que ainda não exista. Banco e binários são preparados em uma raiz temporária, cada cópia é verificada e a árvore completa é instalada por rename sem sobrescrever arquivos existentes. O formato 1 continua verificável somente quando o banco não contém assets; backups v1 que omitem binários registrados são rejeitados para impedir restauração incompleta.
 
 ## Contrato público do AssetStore (F03.01)
 
@@ -133,7 +133,13 @@ Migration 4 cria apenas o journal de publicação. A migration 1 continua dona d
 
 `asset_references` persiste a relação entre uma chave estável `(owner_type, owner_id, slot)` e um `asset_id`. A chave primária impede dois assets no mesmo slot; a FK `ON DELETE RESTRICT` preserva a integridade e o índice reverso permite localizar owners de um asset. `SqliteAssetStore` combina a pipeline por hash com esse repositório: bytes idênticos retornam o mesmo `AssetId`, referências repetidas não duplicam linhas, atribuir outro asset ao slot ocupado devolve conflito e liberar a referência nunca apaga metadados ou bytes. A gravação de relações usa o gate transacional central do SQLite.
 
-**Limite de backup atual:** o formato 1 do `DatabaseBackupService` ainda copia somente SQLite e não inclui os arquivos em `assets/sha256`. Portanto, ele não é um backup completo dos binários criados nesta fase. A cobertura de backup/restore dos arquivos deve ser concluída antes do gate final de F03 e do uso de assets como dados de usuário.
+O formato 2 do `DatabaseBackupService` contém e verifica todos os assets ativos do banco. Assets ausentes, corrompidos ou com metadados/path inconsistentes fazem o backup falhar sem produzir um artefato aceito; por isso a coleta segura preserva arquivos se o backup não puder ser verificado.
+
+## Coleta de assets sem referência (migration 6)
+
+`asset_gc_candidates` registra o instante em que a última referência foi removida. Uma nova referência cancela o candidato na mesma transação; assets legados sem referências recebem o início do período de carência quando detectados. `SqliteAssetGarbageCollector` só considera candidatos ainda sem referência e com estado `available` após o prazo.
+
+Antes da remoção, o coletor cria e verifica um backup completo formato 2 e confirma que o backup contém o hash exato do candidato. Dentro do gate transacional SQLite, ele repete as verificações de referência/idade, registra `asset_gc_operations`, move o binário por rename para `assets/trash/` e remove o metadado. Se o commit falhar, tenta restaurar o arquivo; um destino de lixeira determinístico permite recuperar a movimentação após crash entre rename e commit. Arquivos na lixeira só são apagados após a retenção configurada e se o backup referenciado ainda existir, verificar e conter o mesmo hash. Divergências preservam os bytes para investigação.
 
 ## Decisões ainda adiadas
 
