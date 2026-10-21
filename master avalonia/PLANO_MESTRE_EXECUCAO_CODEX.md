@@ -134,8 +134,8 @@ Ambiente/SDK/CI: <comandos e resultados reais>
 
 **Gate:** Primeiro modelo persistido, reaberto, migration aplicada, conflitos detectados, falha sem perda de estado confirmado.
 
-- [ ] **F02.01** — Definir IAppDataPaths no perfil do usuário e separar database/assets/thumbnails/projects/backups/cache/logs/temp.
-- [ ] **F02.02** — Desenhar schema SQLite e ownership por domínio; usar tabelas relacionais principais e JSON só para atributos extensíveis.
+- [x] **F02.01** — Definir IAppDataPaths no perfil do usuário e separar database/assets/thumbnails/projects/backups/cache/logs/temp.
+- [x] **F02.02** — Desenhar schema SQLite e ownership por domínio; usar tabelas relacionais principais e JSON só para atributos extensíveis.
 - [ ] **F02.03** — Implementar banco e conexão central com foreign keys, índices, WAL e política de escrita, sem SQL na UI.
 - [ ] **F02.04** — Implementar migrations numeradas/versionadas e teste de base vazia→versão atual→reabertura.
 - [ ] **F02.05** — Definir ModelDraft com ID/revision e repositório interface + implementação Data.
