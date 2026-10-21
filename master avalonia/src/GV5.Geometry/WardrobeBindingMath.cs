@@ -24,6 +24,19 @@ public readonly record struct WardrobeBoneFrame
         FlipX = flipX;
         FlipY = flipY;
     }
+
+    public static WardrobeBoneFrame FromTransform(string boneId, Rect2D localBounds, Transform2D transform)
+    {
+        if (localBounds.Width <= 0 || localBounds.Height <= 0 || transform.Scale.X == 0 || transform.Scale.Y == 0)
+            throw new ArgumentOutOfRangeException(nameof(localBounds), "A wardrobe bone requires nonzero source bounds and scale.");
+        var center = transform.Apply(new Point2D(localBounds.X + localBounds.Width / 2,
+            localBounds.Y + localBounds.Height / 2));
+        var width = localBounds.Width * Math.Abs(transform.Scale.X);
+        var height = localBounds.Height * Math.Abs(transform.Scale.Y);
+        return new WardrobeBoneFrame(boneId,
+            new Rect2D(center.X - width / 2, center.Y - height / 2, width, height),
+            transform.RotationRadians * 180 / Math.PI, transform.FlipX, transform.FlipY);
+    }
 }
 
 /// <summary>Frozen garment-to-bone relation, normalized in the original bone's local frame.</summary>

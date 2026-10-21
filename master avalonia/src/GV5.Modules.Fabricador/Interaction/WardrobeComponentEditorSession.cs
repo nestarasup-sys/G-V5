@@ -95,13 +95,6 @@ public sealed class WardrobeComponentEditorSession
     {
         var transform = part.SourceTransform.Transform;
         var crop = part.SourceTransform.Crop;
-        var center = transform.Apply(new Point2D(crop.X + crop.Width / 2, crop.Y + crop.Height / 2));
-        var width = crop.Width * transform.Scale.X;
-        var height = crop.Height * transform.Scale.Y;
-        if (width <= 0 || height <= 0)
-            throw new ArgumentException("A wardrobe attachment requires a source bone with positive dimensions.", nameof(part));
-        var bounds = new Rect2D(center.X - width / 2, center.Y - height / 2, width, height);
-        return new WardrobeBoneFrame(part.Id.ToString(), bounds, transform.RotationRadians * 180 / Math.PI,
-            transform.FlipX, transform.FlipY);
+        return WardrobeBoneFrame.FromTransform(part.Id.ToString(), crop, transform);
     }
 }
