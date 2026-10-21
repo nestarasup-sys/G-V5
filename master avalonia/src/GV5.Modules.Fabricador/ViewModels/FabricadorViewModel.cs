@@ -60,6 +60,8 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
     private ActiveRigAnchorGesture? _activeRigAnchorGesture;
     private readonly List<IModelDraftCommand> _undoStack = [];
     private readonly List<IModelDraftCommand> _redoStack = [];
+    private readonly List<PoseDraft> _poseUndoStack = [];
+    private readonly List<PoseDraft> _poseRedoStack = [];
     private ModelDraft? _savedDraft;
     private ModelId? _pendingModelId;
     private Guid? _pendingCheckpointId;
@@ -260,6 +262,7 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
             OnPropertyChanged(nameof(CanMoveSelectedPosePart));
             OnPropertyChanged(nameof(CanRotateSelectedPosePart));
             OnPropertyChanged(nameof(PoseEditorStatus));
+            NotifyHistoryChanged();
             TogglePoseWorkspaceCommand.NotifyCanExecuteChanged();
             NudgePosePartCommand.NotifyCanExecuteChanged();
             RotatePosePartCommand.NotifyCanExecuteChanged();
@@ -408,10 +411,12 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
     public bool HasRigError => !string.IsNullOrWhiteSpace(RigError);
     public bool CanEditSelectedRigJoint => CanEditRig && SelectedRigJoint is not null;
     public string SelectedRigJointModeLabel => SelectedRigJoint?.Joint.Mode == RigJointMode.Fixed ? "Tornar livre" : "Fixar junta";
-    public int UndoCount => _undoStack.Count;
-    public int RedoCount => _redoStack.Count;
-    public bool CanUndo => CanEdit && _activeTransformGesture is null && _activeRigAnchorGesture is null && _undoStack.Count > 0;
-    public bool CanRedo => CanEdit && _activeTransformGesture is null && _activeRigAnchorGesture is null && _redoStack.Count > 0;
+    public int UndoCount => IsPoseWorkspace ? _poseUndoStack.Count : _undoStack.Count;
+    public int RedoCount => IsPoseWorkspace ? _poseRedoStack.Count : _redoStack.Count;
+    public bool CanUndo => CanEdit && _activeTransformGesture is null && _activeRigAnchorGesture is null
+        && (IsPoseWorkspace ? _activePoseTransformGesture is null && _poseUndoStack.Count > 0 : _undoStack.Count > 0);
+    public bool CanRedo => CanEdit && _activeTransformGesture is null && _activeRigAnchorGesture is null
+        && (IsPoseWorkspace ? _activePoseTransformGesture is null && _poseRedoStack.Count > 0 : _redoStack.Count > 0);
     public int PendingTransformCommandCount => _undoStack.OfType<ModelPartTransformCommand>().Count();
     public bool HasPendingTransformCommands => PendingTransformCommandCount > 0;
     public bool HasPendingRecovery => PendingRecoveryCheckpoint is not null;
@@ -657,6 +662,7 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
     {
         if (_poseModelRevision is null || !CanCreateNewPose) return;
         _poseSession = new PoseEditorSession(_poseModelRevision);
+        ClearPoseHistory();
         _savedPoseRevision = null;
         PoseName = _poseSession.Draft.Name;
         PoseCategory = null;
@@ -777,6 +783,7 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
     {
         _poseModelRevision = revision;
         _poseSession = new PoseEditorSession(revision, draft);
+        ClearPoseHistory();
         _savedPoseRevision = saved ? draft.Revision : null;
         PoseName = draft.Name;
         PoseCategory = draft.Category;
@@ -968,8 +975,16 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
     {
         try
         {
+            var before = _poseSession?.Draft;
             operation();
             PoseEditorError = null;
+            if (before is not null && _poseSession is not null && !HasSamePoseContent(before, _poseSession.Draft))
+            {
+                _poseUndoStack.Add(before);
+                TrimPoseHistory(_poseUndoStack);
+                _poseRedoStack.Clear();
+                NotifyHistoryChanged();
+            }
             PoseEditorStatus = $"{successMessage} · edição temporária";
             NotifyPosePreviewChanged();
         }
@@ -993,6 +1008,15 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
         _ = RenderModelPreviewAsync(_poseSession.PreviewContent);
         NudgePosePartCommand.NotifyCanExecuteChanged();
         RotatePosePartCommand.NotifyCanExecuteChanged();
+    }
+
+    private void RestoreSelectedPosePart()
+    {
+        if (_poseSession is null) return;
+        if (SelectedModelPartId is { } selected && _poseSession.Draft.PartTransforms.Any(part => part.PartId == selected))
+            _poseSession.SelectPart(selected);
+        else
+            SelectFirstPosePart();
     }
 
     [RelayCommand(CanExecute = nameof(CanSelectModelSource))]
@@ -1386,6 +1410,20 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
     [RelayCommand(CanExecute = nameof(CanUndo))]
     private void Undo()
     {
+        if (IsPoseWorkspace && _poseSession is not null && _poseModelRevision is not null && CanUndo)
+        {
+            var current = _poseSession.Draft;
+            var previous = _poseUndoStack[^1];
+            _poseUndoStack.RemoveAt(_poseUndoStack.Count - 1);
+            _poseRedoStack.Add(current);
+            TrimPoseHistory(_poseRedoStack);
+            _poseSession = new PoseEditorSession(_poseModelRevision, current.WithSnapshotContent(previous));
+            RestoreSelectedPosePart();
+            PoseEditorStatus = "Alteração da pose desfeita · salve para persistir a nova revisão.";
+            NotifyPosePreviewChanged();
+            NotifyHistoryChanged();
+            return;
+        }
         if (!CanUndo || _modelContent is null)
         {
             return;
@@ -1403,6 +1441,20 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
     [RelayCommand(CanExecute = nameof(CanRedo))]
     private void Redo()
     {
+        if (IsPoseWorkspace && _poseSession is not null && _poseModelRevision is not null && CanRedo)
+        {
+            var current = _poseSession.Draft;
+            var next = _poseRedoStack[^1];
+            _poseRedoStack.RemoveAt(_poseRedoStack.Count - 1);
+            _poseUndoStack.Add(current);
+            TrimPoseHistory(_poseUndoStack);
+            _poseSession = new PoseEditorSession(_poseModelRevision, current.WithSnapshotContent(next));
+            RestoreSelectedPosePart();
+            PoseEditorStatus = "Alteração da pose refeita · salve para persistir a nova revisão.";
+            NotifyPosePreviewChanged();
+            NotifyHistoryChanged();
+            return;
+        }
         if (!CanRedo || _modelContent is null)
         {
             return;
@@ -1489,6 +1541,25 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
         {
             history.RemoveRange(0, history.Count - HistoryLimit);
         }
+    }
+
+    private static void TrimPoseHistory(List<PoseDraft> history)
+    {
+        if (history.Count > HistoryLimit)
+            history.RemoveRange(0, history.Count - HistoryLimit);
+    }
+
+    private static bool HasSamePoseContent(PoseDraft left, PoseDraft right) =>
+        left.Name == right.Name && left.Category == right.Category
+        && left.PartTransforms.SequenceEqual(right.PartTransforms)
+        && left.RigJoints.SequenceEqual(right.RigJoints)
+        && left.LayerOrder.SequenceEqual(right.LayerOrder);
+
+    private void ClearPoseHistory()
+    {
+        _poseUndoStack.Clear();
+        _poseRedoStack.Clear();
+        NotifyHistoryChanged();
     }
 
     private void NotifyHistoryChanged()
@@ -1580,6 +1651,7 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
 
             var scale = ModelDraftRenderSceneBuilder.GetPreviewSize(_poseSession.PreviewContent).Scale;
             _activePoseTransformGesture = new ActivePoseTransformGesture(posePartId, gesture.ScenePoint, _poseSession.Draft, scale);
+            NotifyHistoryChanged();
             return;
         }
 
@@ -1716,8 +1788,16 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
     {
         if (_activePoseTransformGesture is not null)
         {
+            var before = _activePoseTransformGesture.Before;
             _activePoseTransformGesture = null;
+            if (_poseSession is not null && !HasSamePoseContent(before, _poseSession.Draft))
+            {
+                _poseUndoStack.Add(before);
+                TrimPoseHistory(_poseUndoStack);
+                _poseRedoStack.Clear();
+            }
             PoseEditorStatus = "Movimento aplicado à pose temporária.";
+            NotifyHistoryChanged();
             return;
         }
 

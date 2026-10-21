@@ -103,6 +103,16 @@ public sealed record PoseDraft
         IEnumerable<ModelPartId> layerOrder, string? category) =>
         Restore(Id, Model, Revision.Next(), Name, partTransforms, rigJoints, layerOrder, category);
 
+    /// <summary>Restores an earlier content snapshot as a new monotonic edit revision.</summary>
+    public PoseDraft WithSnapshotContent(PoseDraft snapshot)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+        if (Id != snapshot.Id || Model != snapshot.Model)
+            throw new ArgumentException("Pose history snapshots must belong to the same pose and model revision.", nameof(snapshot));
+        return Restore(Id, Model, Revision.Next(), snapshot.Name, snapshot.PartTransforms,
+            snapshot.RigJoints, snapshot.LayerOrder, snapshot.Category);
+    }
+
     /// <summary>Builds a preview snapshot after verifying that it is applying to the exact pinned model publication.</summary>
     public ModelDraftContent ApplyToModelRevision(PublishedModelRevision modelRevision)
     {

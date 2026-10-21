@@ -144,6 +144,8 @@ public sealed class FabricadorImportPreviewUiTests
                     Assert.True(viewModel.IsPoseWorkspace);
                     Assert.NotNull(viewModel.RenderedModelFrame);
                     Assert.Contains("versão 01", viewModel.PoseModelRevisionLabel, StringComparison.OrdinalIgnoreCase);
+                    Assert.Equal(0, viewModel.UndoCount);
+                    Assert.Equal(0, viewModel.RedoCount);
 
                     var movable = viewModel.PosePartItems.First(item =>
                         !item.Name.Contains("tronco", StringComparison.OrdinalIgnoreCase)
@@ -155,7 +157,17 @@ public sealed class FabricadorImportPreviewUiTests
                     var initialPosePart = viewModel.PosePreviewContent!.Parts.Single(part => part.Id == movable.Id);
                     var frameBeforeNudge = viewModel.RenderedModelFrame;
                     viewModel.NudgePosePartCommand.Execute("right");
-                    Assert.NotEqual(initialPosePart.Transform, viewModel.PosePreviewContent!.Parts.Single(part => part.Id == movable.Id).Transform);
+                    var afterNudge = viewModel.PosePreviewContent!.Parts.Single(part => part.Id == movable.Id).Transform;
+                    Assert.NotEqual(initialPosePart.Transform, afterNudge);
+                    Assert.Equal(1, viewModel.UndoCount);
+                    viewModel.UndoCommand.Execute(null);
+                    Assert.Equal(initialPosePart.Transform, viewModel.PosePreviewContent!.Parts.Single(part => part.Id == movable.Id).Transform);
+                    Assert.Equal(0, viewModel.UndoCount);
+                    Assert.Equal(1, viewModel.RedoCount);
+                    viewModel.RedoCommand.Execute(null);
+                    Assert.Equal(afterNudge, viewModel.PosePreviewContent!.Parts.Single(part => part.Id == movable.Id).Transform);
+                    Assert.Equal(1, viewModel.UndoCount);
+                    Assert.Equal(0, viewModel.RedoCount);
                     await WaitUntilAsync(() => !ReferenceEquals(frameBeforeNudge, viewModel.RenderedModelFrame), cancellationToken);
 
                     var beforeRotation = viewModel.PosePreviewContent!.Parts.Single(part => part.Id == movable.Id).Transform;
@@ -177,6 +189,13 @@ public sealed class FabricadorImportPreviewUiTests
                     canvas.TransformGestureCompleted!();
                     var afterDrag = viewModel.PosePreviewContent!.Parts.Single(part => part.Id == movable.Id).Transform;
                     Assert.NotEqual(beforeDrag.Translation, afterDrag.Translation);
+                    Assert.Equal(3, viewModel.UndoCount);
+                    viewModel.UndoCommand.Execute(null);
+                    Assert.Equal(beforeDrag, viewModel.PosePreviewContent!.Parts.Single(part => part.Id == movable.Id).Transform);
+                    viewModel.RedoCommand.Execute(null);
+                    Assert.Equal(afterDrag, viewModel.PosePreviewContent!.Parts.Single(part => part.Id == movable.Id).Transform);
+                    Assert.Equal(3, viewModel.UndoCount);
+                    Assert.Equal(0, viewModel.RedoCount);
 
                     viewModel.PoseName = "Pose de teste";
                     viewModel.PoseCategory = "Braços";
@@ -201,6 +220,11 @@ public sealed class FabricadorImportPreviewUiTests
                     viewModel.PoseName = "Pose de teste atualizada";
                     viewModel.SelectPosePartCommand.Execute(movable.Id);
                     viewModel.NudgePosePartCommand.Execute("left");
+                    var editedPoseTransform = viewModel.PosePreviewContent!.Parts.Single(part => part.Id == movable.Id).Transform;
+                    viewModel.UndoCommand.Execute(null);
+                    Assert.NotEqual(editedPoseTransform, viewModel.PosePreviewContent!.Parts.Single(part => part.Id == movable.Id).Transform);
+                    viewModel.RedoCommand.Execute(null);
+                    Assert.Equal(editedPoseTransform, viewModel.PosePreviewContent!.Parts.Single(part => part.Id == movable.Id).Transform);
 
                     var afterPoseResult = await contentRepository.GetAsync(loadedContent.Value.ModelId, cancellationToken);
                     Assert.True(afterPoseResult.IsSuccess, afterPoseResult.Error?.Message);
@@ -268,7 +292,7 @@ public sealed class FabricadorImportPreviewUiTests
                 var publications = await reopenedPoses.ListPublishedAsync(savedPoseId, cancellationToken);
                 Assert.True(pose.IsSuccess, pose.Error?.Message);
                 Assert.Equal("Pose de teste atualizada", pose.Value.Name);
-                Assert.Equal(Revision.From(3), pose.Value.Revision);
+                Assert.Equal(Revision.From(5), pose.Value.Revision);
                 Assert.Equal("Braços", pose.Value.Category);
                 Assert.Single(publications.Value);
                 Assert.Equal("Pose de teste", publications.Value[0].Name);
