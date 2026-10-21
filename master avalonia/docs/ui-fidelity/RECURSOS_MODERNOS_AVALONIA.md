@@ -35,3 +35,9 @@ Avalonia permanece na camada `GV5.App` e nos módulos de UI. `GV5.Core`, `GV5.Ge
 - `RenderedFrameOverlayControl` apresenta os adorners por cima da imagem, aplica ajuste uniforme e recorte da área da prévia, e não intercepta input do canvas. As cores e medidas vêm de `EditorOverlayStyle` fornecido pelo consumidor, pois as referências completas de seleção/pivôs ainda não foram capturadas; nenhum estilo final de produto é declarado.
 - Headless capturou a imagem do renderer com cada tipo de overlay ativado separadamente, verificou diferenças visíveis nos pixels, e confirmou que o hash PNG do `RenderedFrame` original não mudou. O teste também verificou coleção de pivôs copiada, grade inválida rejeitada, nenhuma aquisição/decode extra de asset e liberação da lease.
 - Essa validação prova composição transitória em Avalonia Headless; não prova interação de edição, apresentação Windows/GPU/DPI, estilo final do Fabricador ou paridade visual com Electron. Essas validações continuam pendentes na matriz visual.
+
+## Adoção comprovada até F05.08 — 2026-10-21
+
+- `GV5.Rendering.IRenderSceneRenderer` define a entrada de render de uma `RenderScene` imutável; `SkiaRenderer` implementa o contrato. `GV5.App.Presentation.LatestPreviewRenderer` atribui versões monotônicas e cancela a solicitação anterior.
+- Antes de publicar, o coordenador volta ao UI dispatcher e confere, de forma atômica com o callback, que o pedido ainda é atual e não foi cancelado. Frames obsoletos e frames consumidos pelo callback são descartados; o callback deve copiar os pixels para a apresentação durante sua execução.
+- Teste Headless usa um renderer controlado que deliberadamente ignora o cancelamento e termina depois de uma nova solicitação. A versão antiga não é publicada e seu `RenderedFrame` está descartado; a nova versão é publicada. Há também teste de cancelamento explícito. Isso cobre ordenação e ownership, não latência ou GPU.
