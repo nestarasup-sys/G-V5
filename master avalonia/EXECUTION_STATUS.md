@@ -13,7 +13,7 @@
 | Branch obrigatória | `Master-AValonia` |
 | Pasta exclusiva do novo aplicativo | `master avalonia/` |
 | Commit-base inspecionado antes deste arquivo | `53b7f7a97321e85063a8dd4f9635e48d36548323` |
-| Último commit de implementação validado | `7388d23` (F09.15: reordenação undoable das camadas por arrastar) |
+| Último commit de implementação validado | `d03e065` (F09.15: inspetor de modelos com abas Peças/Camadas/Juntas) |
 | Checkout local revalidado | `TestarLocal.bat rapido` passou em 2026-10-21: build Debug; **308 testes, 0 falhas**; avisos existentes: 2 CS0618 no `ThumbnailService` e 1 xUnit1051 em `HairRoleTintProcessorTests` |
 | Fase ativa | **F09 — Fabricador IV — cabelos, face, expressões e completação (F09.15 em execução)** |
 | Última tarefa VALIDADA | **F09.14** — validação cruzada de persistência, importação inválida e cancelamento nas subáreas do Fabricador |
