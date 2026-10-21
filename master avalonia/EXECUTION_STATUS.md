@@ -14,6 +14,7 @@
 | Pasta exclusiva do novo aplicativo | `master avalonia/` |
 | Commit-base inspecionado antes deste arquivo | `53b7f7a97321e85063a8dd4f9635e48d36548323` |
 | Último commit de implementação validado | `8782510` (teste de cor/alfa em borda chroma-feathered) |
+| Checkout local revalidado | `eaac213`; `TestarLocal.bat rapido` passou em 2026-10-21 (198 testes; ver revalidação em `docs/gates/GATE-F06.md`) |
 | Fase ativa | **F06 — Fabricador I: modelos e peças** |
 | Última tarefa VALIDADA | **F06.14** — registrar GATE-F06 e matriz de paridade de modelos |
 | Próxima tarefa PENDENTE | **F07.01** — somente após desbloquear o GATE-F06 |

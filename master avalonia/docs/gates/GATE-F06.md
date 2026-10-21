@@ -35,6 +35,12 @@ Resultado rápido: exit code 0; build Debug com 0 avisos e 0 erros antes do últ
 
 O teste integrado usa pastas temporárias, fonte PNG sintética, SQLite, `SqliteAssetStore`, pipeline de importação e revisão. Ele não lê nem altera os dados Electron do usuário.
 
+## Revalidação do checkout atual
+
+Em `2026-10-21`, no HEAD `eaac213` (`native: align Fabricator model shell with legacy layout`), `TestarLocal.bat rapido` foi executado novamente após a alteração da view e do canvas. O build Debug passou com 0 erros e 2 avisos CS0618 preexistentes em `ThumbnailService.cs`; Core 18/18, Geometry 35/35, Architecture 8/8, Assets 31/31, Data 51/51, Rendering 22/22 e Headless 33/33: **198 testes aprovados**.
+
+Essa revalidação confirma que a alteração de layout não quebrou a suíte rápida. Não fornece captura Windows, fixture real, saída independente do worker Electron nem comparação visual; os itens pendentes e o estado bloqueado acima permanecem inalterados.
+
 ## Pendências para desbloquear
 
 1. Conferir a folha de modelo real usada pelo fluxo pretendido em Avalonia no Windows, cobrindo seleção, separação, edição, undo/redo, salvamento/reabertura e publicação.
