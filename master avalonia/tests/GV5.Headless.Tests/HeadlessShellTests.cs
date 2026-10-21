@@ -1,6 +1,8 @@
 using Avalonia.Controls;
 using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
+using Avalonia.Media;
+using Avalonia.Media.Imaging;
 using Avalonia.VisualTree;
 using GV5.App.Navigation;
 using GV5.App.ViewModels;
@@ -57,8 +59,15 @@ public sealed class HeadlessShellTests
         Assert.True(bitmap.PixelSize.Width > 0);
         Assert.True(bitmap.PixelSize.Height > 0);
 
+        // Confirm the real shell resolves its DynamicResource-backed navigation style.
+        var fabricator = window.GetVisualDescendants()
+            .OfType<Button>()
+            .Single(button => string.Equals(button.Content as string, "Fabricador", StringComparison.Ordinal));
+        var background = Assert.IsType<SolidColorBrush>(fabricator.Background);
+        Assert.Equal(Color.Parse("#211B2B"), background.Color);
+
         using var png = new MemoryStream();
-        bitmap.Save(png);
+        bitmap.Save(png, PngBitmapEncoderOptions.Default);
         Assert.True(png.Length > 8);
 
         // Verify PNG signature, not just that we received a byte array.
