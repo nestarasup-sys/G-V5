@@ -13,3 +13,9 @@ Limites iniciais por imagem: 16.384 pixels por eixo, 100 milhões de pixels e 51
 Cada `AssetImageLease` controla a vida do bitmap compartilhado. Dispose do cache aposenta imediatamente entradas livres e deixa as em uso vivas até o último lease ser liberado. A snapshot `Metrics` informa hits, misses, evictions, bypasses, bytes residentes, entradas e leases ativos. As métricas são locais ao processo e não carregam dados de usuário.
 
 O orçamento de 512 MiB ainda precisa de benchmark em hardware real e ciclos de abertura/fechamento; o cache não define a fonte de verdade e pode ser reconstruído a qualquer momento.
+
+## Miniaturas em disco
+
+`ThumbnailService` calcula a identidade por SHA-256 do asset, versão do gerador e receita imutável (largura, altura e `Contain`/`Cover`/`Stretch`). Gera PNG RGBA em background e salva em `thumbnails/<prefixo>/<chave>.png`; não altera o asset original nem grava caminhos no banco. Os manifestos vizinhos registram tamanho e SHA-256 dos bytes derivados. Um cache ausente, truncado ou adulterado é removido e reconstruído a partir do asset original.
+
+Publicação usa arquivos temporários na mesma pasta e rename atômico, com o manifesto publicado por último. Uma queda entre os dois renames deixa um par inválido que será detectado na próxima leitura. Requisições concorrentes para a mesma chave compartilham a geração; cada chamada recebe seu próprio stream, que deve ser descartado pelo consumidor. Cancelamento é propagado e remove os temporários criados durante a tentativa.

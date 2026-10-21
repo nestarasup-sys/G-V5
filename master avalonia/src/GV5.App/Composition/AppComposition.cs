@@ -8,6 +8,7 @@ using GV5.Data.Diagnostics;
 using GV5.Data.Assets;
 using GV5.Data.Repositories;
 using GV5.Data.Storage;
+using GV5.Data.Thumbnails;
 using GV5.Modules.Customizador;
 using GV5.Modules.Fabricador;
 using Microsoft.Extensions.DependencyInjection;
@@ -38,6 +39,7 @@ internal static class AppComposition
         services.AddSingleton<IDataPlatformBackupService, DatabaseBackupService>();
         services.AddSingleton<AssetImageDecoder>();
         services.AddSingleton<AssetBitmapCache>();
+        services.AddSingleton<IThumbnailService, ThumbnailService>();
         services.AddSingleton<SqliteAssetImportPipeline>();
         services.AddSingleton<IAssetStore, SqliteAssetStore>();
         services.AddSingleton(new ModuleRouteCatalog(routes));
