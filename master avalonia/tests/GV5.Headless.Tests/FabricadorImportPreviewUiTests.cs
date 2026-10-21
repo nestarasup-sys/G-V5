@@ -42,6 +42,8 @@ public sealed class FabricadorImportPreviewUiTests
         AnimationId savedAnimationId;
         AnimationId poseBasedAnimationId;
         AnimationId replacementAnimationId = default;
+        ModelPartId persistedHiddenPartId = default;
+        ModelPartId[] persistedLayerOrder = [];
         ModelDraftContent savedContent;
 
         try
@@ -335,6 +337,16 @@ public sealed class FabricadorImportPreviewUiTests
                     Assert.NotSame(oldSlotThumbnail, replacementThumbnail);
                     Assert.Contains(viewModel.SavedAnimations, item => item.Id == poseBasedAnimationId);
                     await viewModel.ToggleAnimationWorkspaceCommand.ExecuteAsync(null);
+
+                    persistedLayerOrder = viewModel.PartLayers.Select(item => item.Id).ToArray();
+                    Assert.Equal(2, persistedLayerOrder.Length);
+                    Assert.True(viewModel.ReorderPartLayer(persistedLayerOrder[0], persistedLayerOrder[1]));
+                    persistedLayerOrder = viewModel.PartLayers.Select(item => item.Id).ToArray();
+                    persistedHiddenPartId = persistedLayerOrder[0];
+                    viewModel.TogglePartVisibilityCommand.Execute(persistedHiddenPartId);
+                    Assert.False(viewModel.PartLayers.Single(item => item.Id == persistedHiddenPartId).IsVisible);
+                    Assert.True(await viewModel.FlushPendingChangesAsync(cancellationToken));
+                    Assert.Equal(PersistenceState.Saved, viewModel.SaveState);
                 }
                 finally
                 {
@@ -366,7 +378,9 @@ public sealed class FabricadorImportPreviewUiTests
                 Assert.True(content.IsSuccess, content.Error?.Message);
                 savedContent = content.Value;
                 Assert.Equal(2, savedContent.Parts.Length);
-                Assert.Equal(Revision.From(2), savedContent.Revision);
+                Assert.Equal(Revision.From(3), savedContent.Revision);
+                Assert.Equal(persistedLayerOrder.Reverse(), savedContent.LayerOrder);
+                Assert.False(savedContent.Parts.Single(part => part.Id == persistedHiddenPartId).IsVisible);
                 var savedJoint = Assert.Single(savedContent.RigJoints);
                 Assert.Equal(RigJointMode.Fixed, savedJoint.Mode);
                 Assert.Equal(new Point2D(31.5, 18), savedJoint.ParentAnchor);
@@ -383,8 +397,10 @@ public sealed class FabricadorImportPreviewUiTests
                 var published = await new PublishModelRevisionService(reopenedDrafts, reopenedContents, revisions)
                     .PublishAsync(modelId, 1234, cancellationToken);
                 Assert.True(published.IsSuccess, published.Error?.Message);
-                Assert.Equal(Revision.Initial, published.Value.Revision);
+                Assert.Equal(Revision.From(2), published.Value.Revision);
                 Assert.Equal(savedContent.Parts.Select(part => part.AssetId), published.Value.Content.Parts.Select(part => part.AssetId));
+                Assert.Equal(persistedLayerOrder.Reverse(), published.Value.Content.LayerOrder);
+                Assert.False(published.Value.Content.Parts.Single(part => part.Id == persistedHiddenPartId).IsVisible);
                 var persistedPublication = await revisions.GetAsync(modelId, Revision.Initial, cancellationToken);
                 Assert.True(persistedPublication.IsSuccess, persistedPublication.Error?.Message);
                 Assert.Equal(savedContent.Parts.Select(part => part.Transform), persistedPublication.Value.Content.Parts.Select(part => part.Transform));
