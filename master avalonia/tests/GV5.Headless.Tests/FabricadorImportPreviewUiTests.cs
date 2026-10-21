@@ -269,6 +269,13 @@ public sealed class FabricadorImportPreviewUiTests
                     viewModel.SelectedAnimationLoopModeOption = viewModel.AnimationLoopModeOptions.Single(option => option.Value == AnimationLoopMode.PingPong);
                     viewModel.ApplyAnimationSettingsCommand.Execute(null);
                     Assert.Contains("Parâmetros aplicados", viewModel.AnimationEditorStatus, StringComparison.OrdinalIgnoreCase);
+                    viewModel.ToggleAnimationPlaybackCommand.Execute(null);
+                    Assert.True(viewModel.IsAnimationPlaying);
+                    Assert.Equal("Pausar prévia", viewModel.AnimationPlaybackButtonLabel);
+                    await Task.Delay(80, cancellationToken);
+                    viewModel.ToggleAnimationPlaybackCommand.Execute(null);
+                    Assert.False(viewModel.IsAnimationPlaying);
+                    Assert.Equal("Reproduzir prévia", viewModel.AnimationPlaybackButtonLabel);
                     await viewModel.SaveAnimationCommand.ExecuteAsync(null);
                     Assert.Null(viewModel.AnimationEditorError);
                     Assert.Contains("Salva", viewModel.AnimationEditorStatus, StringComparison.OrdinalIgnoreCase);
