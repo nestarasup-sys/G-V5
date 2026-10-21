@@ -13,17 +13,17 @@
 | Branch obrigatória | `Master-AValonia` |
 | Pasta exclusiva do novo aplicativo | `master avalonia/` |
 | Commit-base inspecionado antes deste arquivo | `53b7f7a97321e85063a8dd4f9635e48d36548323` |
-| Último commit de implementação validado | `686c98d` (F03.08; catálogo paginado e miniaturas da janela visível) |
+| Último commit de implementação validado | `6ba689f` (F03.09; lixeira segura e backup completo de assets) |
 | Fase ativa | **F03 — AssetStore, thumbnails e cache limitado** |
-| Última tarefa VALIDADA | **F03.08** — catálogo paginado e carregamento apenas do visível |
-| Próxima tarefa PENDENTE | **F03.09** — lixeira/GC seguro para assets sem referências |
+| Última tarefa VALIDADA | **F03.09** — lixeira/GC seguro com carência e backup verificado |
+| Próxima tarefa PENDENTE | **F03.10** — testar cache pequeno, duplicados, corrupção, interrupção e reabertura |
 | Gate atual | **GATE F00: PASSOU; G0: PASSOU; F02: PASSOU; G1 global em execução até F03–F05** |
-| Progresso validado neste controle | **49 / 247 tarefas (19,8%)** |
+| Progresso validado neste controle | **50 / 247 tarefas (20,2%)** |
 | Tarefas em execução | Nenhuma |
 | Bloqueios conhecidos | Primeiro download do SDK em clone vazio não progrediu; evidência e limite de F01 estão registrados em `docs/gates/GATE-F01.md` |
 | Aceite Windows/GPU | **Não executado / não registrado** |
 
-**Importante:** 49/247 representa **tarefas com evidência de validação registrada neste documento**, não a porcentagem de código já implementado. O shell, a solution, os projetos-base e os scripts de preparação podem estar presentes. O Codex deve auditar o que existe antes de implementar.
+**Importante:** 50/247 representa **tarefas com evidência de validação registrada neste documento**, não a porcentagem de código já implementado. O shell, a solution, os projetos-base e os scripts de preparação podem estar presentes. O Codex deve auditar o que existe antes de implementar.
 
 ## 2. Fontes e regras de leitura
 
@@ -47,7 +47,7 @@ Se o Codex encontrar algo já implementado, **validar e registrar evidências**,
 | F00 | Auditoria do legado, baseline e sincronização | 13 | 13 | VALIDADA | PASSOU |
 | F01 | Solution .NET, contratos, módulo e CI | 13 | 13 | VALIDADA | G0 PASSOU |
 | F02 | SQLite, revisões, transações e recuperação básica | 15 | 15 | VALIDADA | GATE-F02 PASSOU |
-| F03 | AssetStore, thumbnails e cache limitado | 11 | 8 | EM_EXECUCAO | G1 global em execução |
+| F03 | AssetStore, thumbnails e cache limitado | 11 | 9 | EM_EXECUCAO | G1 global em execução |
 | F04 | Geometry Engine canônica | 11 | 0 | PENDENTE | — |
 | F05 | RenderScene e SkiaRenderer independentes | 11 | 0 | PENDENTE | — |
 | F06 | Fabricador I — modelos e peças | 14 | 0 | PENDENTE | — |
@@ -120,6 +120,7 @@ Adicionar uma linha ao concluir ou bloquear cada tarefa. A linha inicial abaixo 
 | **F03.06** | **VALIDADA** | `43a0dd8` | Implementado `AssetBitmapCache` LRU com chave SHA-256 + versão do decoder, orçamento por bytes, snapshot de hit/miss/eviction/bypass/leases e gate por chave que evita decode duplicado concorrente. Leases pinam imagem em uso; entradas livres são descartadas em LRU; se entradas ativas impedirem o orçamento, a nova imagem é entregue fora do cache; Dispose adia a liberação até o último lease. Testes cobrem reutilização, ordem LRU, bypass por lease, concorrência, erro tipado, versão e descarte. `TestarLocal.bat rapido` passou: build Debug 0 warnings/0 errors, Core 11/11, Arquitetura 6/6, Assets 26/26, Data 33/33, Headless 15/15; `git diff --check` passou. | `src/GV5.Assets/Decoding/AssetBitmapCache.cs`; `tests/GV5.Assets.Tests/AssetBitmapCacheTests.cs`; `src/GV5.App/Composition/AppComposition.cs`; `docs/assets/ASSET_PIPELINE.md` | O limite padrão de 512 MiB é inicial; benchmark do orçamento em hardware real continua pendente e não foi alegado. |
 | **F03.07** | **VALIDADA** | `513b9af` | `ThumbnailService` gera PNG em worker a partir do asset original, com receita imutável (dimensões e fit mode), chave derivada do SHA-256 do conteúdo + versão do gerador/receita e cache na pasta `thumbnails/`. Arquivo e manifesto tamanho/hash são publicados por rename atômico; arquivo corrompido é detectado e regenerado; requisições concorrentes da mesma chave não duplicam o decode. Testes cobrem persistência/reuso, recipe identity, corrupção, concorrência, source indisponível e cancelamento. `TestarLocal.bat rapido` passou: build Debug 0 warnings/0 errors, Core 11/11, Arquitetura 6/6, Assets 26/26, Data 38/38, Headless 15/15; `git diff --check` passou. | `src/GV5.Application/Contracts/IThumbnailService.cs`; `src/GV5.Data/Thumbnails/ThumbnailService.cs`; `tests/GV5.Data.Tests/ThumbnailServiceTests.cs`; `src/GV5.App/Composition/AppComposition.cs`; `docs/assets/ASSET_PIPELINE.md` | A geração usa SkiaSharp CPU; não foi medida GPU nem benchmark de lote em hardware real. Arquivos temporários abandonados por crash serão tratados por limpeza segura futura. |
 | **F03.08** | **VALIDADA** | `686c98d` | `SqliteAssetCatalog` lê páginas limitadas por keyset `(created_utc_ms, asset_id)` sem abrir os binários; cursor estável verificado com timestamps iguais atravessando fechamento/reabertura SQLite sem repetição ou salto. `GetVisibleWindowAsync` limita a lista a 100 itens, prefetch a 16 e geração concorrente a 2, preserva a ordem da tela e descarta streams abertos em caso de falha/cancelamento. Testes cobrem páginas consecutivas, catálogo vazio, limites do planner e somente os IDs visíveis + prefetch abertos. `TestarLocal.bat rapido` passou: build Debug sem warnings/erros, Core 11/11, Arquitetura 6/6, Assets 26/26, Data 42/42, Headless 15/15; `git diff --check` passou. | `src/GV5.Application/Contracts/IAssetCatalog.cs`; `src/GV5.Data/Assets/SqliteAssetCatalog.cs`; `src/GV5.Data/Thumbnails/ThumbnailService.cs`; `tests/GV5.Data.Tests/SqliteAssetCatalogTests.cs`; `tests/GV5.Data.Tests/ThumbnailServiceTests.cs`; `docs/assets/ASSET_PIPELINE.md` | A lista da janela de thumbnails é limitada a uma página de catálogo; a UI futura deverá paginar enquanto navega. Não foi feita validação visual/GPU. |
+| **F03.09** | **VALIDADA** | `6ba689f` | GC só remove assets sem referências depois do grace period, mantém uma lixeira com retenção e exige backup completo verificável antes de mover ou purgar binários; falhas/cancelamento não deixam o registro ativo sem arquivo, recuperação de movimento interrompido foi exercitada, restore copia banco e assets para uma raiz nova sem sobrescrever. Testes cobrem a remoção da candidatura ao recriar referência, rejeição de origem corrompida e backup completo/restore verificado. `TestarLocal.bat rapido`: build Debug 0 warnings/0 errors; Core 11/11, Arquitetura 6/6, Assets 26/26, Data 44/44, Headless 15/15; `git diff --check` passou. | `src/GV5.Application/Contracts/IAssetGarbageCollector.cs`; `src/GV5.Data/Assets/SqliteAssetGarbageCollector.cs`; `src/GV5.Data/Migrations/AssetGarbageCollectionSchemaMigration.cs`; `src/GV5.Data/Storage/DatabaseBackupService.cs`; `tests/GV5.Data.Tests/DatabaseBackupServiceTests.cs`; `tests/GV5.Data.Tests/SqliteAssetImportPipelineTests.cs`; `docs/data/SCHEMA_DESIGN.md` | Backup v2 passa a incluir binários de assets. Restauração só aceita raiz de destino inexistente para preservar dados; gate completo de F03 permanece pendente até F03.10 e F03.11. |
 
 **Estados aceitos:** `PENDENTE`, `EM_EXECUCAO`, `BLOQUEADA`, `VALIDADA`.
 
@@ -135,7 +136,7 @@ Adicionar uma linha ao concluir ou bloquear cada tarefa. A linha inicial abaixo 
 | --- | --- | --- |
 | `git branch --show-current` | VALIDADO | `Master-AValonia` |
 | `git status --short` | VALIDADO | árvore limpa depois do commit de status desta tarefa |
-| `git rev-parse HEAD` / remoto | VALIDADO | No início desta execução, HEAD e `origin/Master-AValonia` estavam ambos em `81c798e`. Branch local contém depois `58a3c18` (F01.09 Headless), `8de940e` (registro F01.09), `dfc038a` (F01.10), `3f183db` (registro F01.10), `7517c2f` (F01.11) e o commit deste status; sem atualização remota nesta execução |
+| `git rev-parse HEAD` / remoto | PENDENTE ATÉ COMMIT/PUSH | Validação local final em F03.09; após commits e push, registrar HEAD e resultado reportado pelo Git |
 | SDK portátil `.tools/dotnet` | VALIDADO | SDK `10.0.402`, Windows x64, arquitetura x64 |
 | `Preparar.bat` | VALIDADO | exit 0, SDK `10.0.402`, ambiente local pronto |
 | `Desenvolver.bat` | NÃO VERIFICADO NESTE CONTROLE | shell abriu ou erro reproduzível |
@@ -207,6 +208,7 @@ Ainda não há entradas registradas neste controle. Toda mudança material do ro
 | 2026-10-21 | `43a0dd8` | F03.06 validada; próxima F03.07 | G1 em execução | Cache LRU com leases, proteção de imagem em uso, orçamento em bytes e métricas; suíte rápida: Core 11/11, Architecture 6/6, Assets 26/26, Data 33/33, Headless 15/15, build sem warnings/erros. |
 | 2026-10-21 | `513b9af` | F03.07 validada; próxima F03.08 | G1 em execução | ThumbnailService com chave por conteúdo/receita/versão, geração concorrente única, checksum e recuperação de cache corrompido; suíte rápida: Core 11/11, Architecture 6/6, Assets 26/26, Data 38/38, Headless 15/15, build sem warnings/erros. |
 | 2026-10-21 | `686c98d` | F03.08 validada; próxima F03.09 | G1 em execução | Catálogo keyset e fetch de thumbnails pela janela visível testados em SQLite temporário; streams liberados em falha/cancelamento. `TestarLocal.bat rapido`: Core 11/11, Architecture 6/6, Assets 26/26, Data 42/42, Headless 15/15; build sem warnings/erros e `git diff --check` limpo. |
+| 2026-10-21 | `6ba689f` | F03.09 validada; próxima F03.10 | G1 em execução | Coleta segura com grace period, lixeira/retention e backup v2 completo; restore staging verificado. Suíte rápida: Core 11/11, Architecture 6/6, Assets 26/26, Data 44/44, Headless 15/15; build 0 warnings/0 errors e `git diff --check` limpo. |
 
 Após concluir um lote ou fase, adicionar uma linha. Não inflar contador só porque o commit contém múltiplos arquivos; contar apenas tarefas comprovadas.
 
@@ -215,7 +217,7 @@ Após concluir um lote ou fase, adicionar uma linha. Não inflar contador só po
 1. Confirmar branch, HEAD e árvore de trabalho localmente; não consultar nem sincronizar o remoto até autorização explícita.
 2. Ler `AGENTS.md`, `PLANO_DO_NOVO_APP.md`, `PLANO_MESTRE_EXECUCAO_CODEX.md` e este arquivo.
 3. Inspecionar evidências reais da última tarefa validada; caso não existam, corrigir seu estado.
-4. **Retomar F03.09**: implementar lixeira/GC seguro para assets sem referências, com grace period e backup verificado.
+4. **Retomar F03.10**: testar cache pequeno, duplicados, arquivo corrompido, interrupção entre staging/commit e reabertura.
 5. Continuar automaticamente pelas tarefas seguintes **uma de cada vez**, em lotes flexíveis de aproximadamente 3–8 tarefas relacionadas, enquanto todos os gates pertinentes passam.
 6. Atualizar o registro e commitar entregas reais localmente na branch `Master-AValonia`; não desenvolver Video Studio antecipadamente.
 7. Ao encerrar, informar: **branch, HEAD, último ID VALIDADO, próximo ID PENDENTE, commits, comandos verdes, evidências, bloqueios e condição de desbloqueio**.
