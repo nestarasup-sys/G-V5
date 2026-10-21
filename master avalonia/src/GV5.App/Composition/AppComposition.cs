@@ -6,6 +6,7 @@ using GV5.App.Services;
 using GV5.Application.Contracts;
 using GV5.Assets.Decoding;
 using GV5.Assets.Import;
+using GV5.Assets.Processing;
 using GV5.Data.Migrations;
 using GV5.Data.Diagnostics;
 using GV5.Data.Assets;
@@ -46,6 +47,7 @@ internal static class AppComposition
         services.AddSingleton<IModelDraftCheckpointStore, SqliteModelDraftCheckpointStore>();
         services.AddSingleton<IDataPlatformBackupService, DatabaseBackupService>();
         services.AddSingleton<AssetImageDecoder>();
+        services.AddSingleton<ChromaCropProcessor>();
         services.AddSingleton(provider => new AssetImportStager(
             Path.Combine(provider.GetRequiredService<IAppDataPaths>().TempDirectory, "fabricator-source-imports"),
             new AssetImportLimits(
