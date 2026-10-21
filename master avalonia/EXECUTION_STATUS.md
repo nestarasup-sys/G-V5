@@ -13,15 +13,15 @@
 | Branch obrigatória | `Master-AValonia` |
 | Pasta exclusiva do novo aplicativo | `master avalonia/` |
 | Commit-base inspecionado antes deste arquivo | `53b7f7a97321e85063a8dd4f9635e48d36548323` |
-| Último commit de implementação validado | `9f8d0f4` (F08.09: persistir revisões de roupa e referências) |
-| Checkout local revalidado | `TestarLocal.bat rapido` passou em 2026-10-21: build Debug e 243 testes, 0 falhas; 2 avisos CS0618 preexistentes |
-| Fase ativa | **F08 — Fabricador III — roupas, binding e revisões (próxima: F08.10)** |
-| Última tarefa VALIDADA | **F08.09** — publicar revisão imutável e vincular dependências reversas |
-| Próxima tarefa PENDENTE | **F08.10** — consultar quem usa roupa/modelo/pose e bloquear exclusão destrutiva |
+| Último commit de implementação validado | `3583cca` (F08.10: proteger dependências do Fabricador) |
+| Checkout local revalidado | `TestarLocal.bat rapido` passou em 2026-10-21: build Debug e 200 testes, 0 falhas/avisos |
+| Fase ativa | **F08 — Fabricador III — roupas, binding e revisões (em F08.11)** |
+| Última tarefa VALIDADA | **F08.10** — consultar quem usa roupa/modelo/pose e bloquear exclusão destrutiva |
+| Próxima tarefa PENDENTE | **F08.11** — criar goldens para manga, calça, saia, cabeça e pose rotacionada |
 | Requisito transversal atualizado | ADR-0006: aparência reconhecível, não pixel-perfect; todos os botões e funcionalidades; revisão final visual pendente |
 | Gate atual | **F00/G0/F02/F03/F04/F05/G1 e GATE-F07: PASSARAM tecnicamente; captura Windows/GPU/visual e paridade completa seguem pendentes** |
-| Progresso validado neste controle | **109 / 247 tarefas (44,1%)** |
-| Tarefas em execução | Nenhuma tarefa em execução registrada |
+| Progresso validado neste controle | **110 / 247 tarefas (44,5%)** |
+| Tarefas em execução | **F08.11** — fixtures douradas sintéticas para roupas e pose rotacionada |
 | Pendências conhecidas | F06: folha real/capturas/worker não testados; ferramentas de Modelos ausentes catalogadas em `docs/legacy-contracts/PENDENCIAS_FUNCIONAIS_FABRICADOR.md` e obrigatórias antes do G2. Isso não impede a programação F07, mas impede declarar Fabricador completo. Limite download F01 documentado |
 | Aceite Windows/GPU | **F06 Windows/visual não executado; GPU continua fora do escopo comprovado** |
 
@@ -56,7 +56,7 @@ Se o Codex encontrar algo já implementado, **validar e registrar evidências**,
 | F05 | RenderScene e SkiaRenderer independentes | 11 | 11 | VALIDADA | GATE-F05 e G1 CPU/headless PASSOU |
 | F06 | Fabricador I — modelos e peças | 14 | 14 | LIBERADA TECNICAMENTE | 198 testes previamente registrados; aceites Windows/visual pendentes para G2/F12/entrega |
 | F07 | Fabricador II — rig, poses e animador | 12 | 12 | VALIDADA | F07.01–F07.12 validadas tecnicamente; `docs/gates/GATE-F07.md` registra provas e lacunas remanescentes de paridade para F09.13/G2 |
-| F08 | Fabricador III — roupas, binding e revisões | 12 | 1 | EM_EXECUCAO | F08.01 validada; implementação e gate ainda pendentes |
+| F08 | Fabricador III — roupas, binding e revisões | 12 | 10 | EM_EXECUCAO | F08.01–F08.10 validadas tecnicamente; goldens e auditoria/gate pendentes |
 | F09 | Fabricador IV — cabelos, face, expressões e completação | 15 | 0 | PENDENTE | — |
 | F10 | Customizador completo e CharacterResolver | 19 | 0 | PENDENTE | — |
 | F11 | Studio e Scene Engine | 15 | 0 | PENDENTE | — |
@@ -186,6 +186,7 @@ Adicionar uma linha ao concluir ou bloquear cada tarefa. A linha inicial abaixo 
 | **F08.07** | **VALIDADA** | `7161f9a` | `TestarLocal.bat rapido`: build Debug e **245 testes aprovados, 0 falhas**. Undo/Redo usa snapshots imutáveis limitados por componente; não altera peças vizinhas; cada restauração cria revisão nova monotônica; uma edição nova limpa redo; histórico vazio retorna `false`. | `src/GV5.Modules.Fabricador/Interaction/WardrobeComponentEditorSession.cs`; `tests/GV5.Headless.Tests/FabricatorWardrobeEditorTests.cs`; `docs/architecture/CONTRATO_ROUPAS.md` | Histórico mantido na sessão de edição do draft; nenhum dado publicado é mutado. Limite máximo (50) é explícito; persistência e integração de UI seguem pendentes. |
 | **F08.08** | **VALIDADA** | `494f734` | `TestarLocal.bat rapido`: build Debug sem erros e **247 testes aprovados, 0 falhas**. Catálogo filtra por referência exata do modelo e categoria, ordena por chave determinística e pagina com cursor composto sem repetir componentes em timestamps iguais. Thumbnails são abertas só para a janela visível com prefetch limitado; streams ficam sob posse do chamador. | `src/GV5.Application/Contracts/IWardrobeCatalog.cs`; `src/GV5.Application/Services/WardrobeCatalog.cs`; `tests/GV5.Headless.Tests/FabricatorWardrobeCatalogTests.cs`; `docs/architecture/CONTRATO_ROUPAS.md` | O serviço usa snapshots em memória para testes e a consulta ao repositório SQLite em produção. Interface visual ainda pendente. |
 | **F08.09** | **VALIDADA** | `9f8d0f4` | `TestarLocal.bat rapido`: build Debug, 2 avisos CS0618 preexistentes no thumbnail e **249 testes aprovados, 0 falhas**. Testes cobrem draft/revisão otimista, publicar idempotente e append-only, checksum, fechar/reabrir, catálogo conectado ao SQLite, asset references protegendo draft/publicações e bloqueando deleção, dependência reversa por modelo, assets ausentes e publicação stale. | `src/GV5.Data/Migrations/WardrobeRepositorySchemaMigration.cs`; `src/GV5.Data/Repositories/SqliteWardrobeRepository.cs`; `src/GV5.Data/Repositories/WardrobeSnapshotCodec.cs`; `src/GV5.Application/Contracts/IWardrobeRepository.cs`; `tests/GV5.Data.Tests/SqliteWardrobeRepositoryTests.cs` | UI de roupa ainda não consome os serviços. A referência reversa por modelo é consultável; consultas gerais de uso e bloqueio de remoção ficam em F08.10. |
+| **F08.10** | **VALIDADA** | `3583cca` | `TestarLocal.bat rapido` em 2026-10-21: build Debug sem avisos/erros; Core 38, Architecture 8, Geometry 43, Data 56, Assets 33, Rendering 22; **200 testes, 0 falhas**. Catálogo SQLite lista dependentes de modelo (pose drafts/publicações, animações e roupas drafts/publicações), pose (animação com `basePoseId`) e roupa (histórico imutável); JSON de animação inválido bloqueia conservadoramente. Exclusão de roupa valida revisão e histórico publicado sob transação; draft não publicado pode ser removido, refs são liberadas e órfãos ficam elegíveis ao GC. | `src/GV5.Application/Contracts/IFabricatorDependencyCatalog.cs`; `src/GV5.Data/Dependencies/SqliteFabricatorDependencyCatalog.cs`; `src/GV5.Data/Repositories/SqliteWardrobeRepository.cs`; `tests/GV5.Data.Tests/SqliteWardrobeRepositoryTests.cs`; `docs/architecture/CONTRATO_ROUPAS.md` | Modelos e poses ainda não oferecem APIs de exclusão; por isso não há caminho destrutivo para aplicar o bloqueio nessa etapa. Interface visual consumindo o catálogo não existe ainda. Windows/GPU/inspeção visual não executadas. Próxima F08.11. |
 
 **Estados aceitos:** `PENDENTE`, `EM_EXECUCAO`, `BLOQUEADA`, `VALIDADA`.
 
@@ -356,7 +357,7 @@ Após concluir um lote ou fase, adicionar uma linha. Não inflar contador só po
 
 **Atualização local 2026-10-21 — F08.05 validada:** `WardrobePoseResolver` calcula o placement para pose sem alterar fonte, exige a publicação de modelo idêntica em roupa/pose e confere que binding não ficou obsoleto. Cobertura inclui pose girada, escala desigual e flipX. `TestarLocal.bat rapido`: 242 testes, 0 falhas. Próxima tarefa F08.06.
 
-**Atualização local 2026-10-21 — F08.09 validada:** F08.06 (`85848ac`) definiu as fases de composição; F08.07 (`7161f9a`) adicionou Undo/Redo por peça; F08.08 (`494f734`) criou catálogo paginado e thumbnails da janela visível; F08.09 adicionou persistência de drafts/publicações, checksums e referências reversas. `TestarLocal.bat rapido`: 249 testes, 0 falhas. Próxima F08.10.
+**Atualização local 2026-10-21 — F08.10 validada:** F08.06 (`85848ac`) definiu as fases de composição; F08.07 (`7161f9a`) adicionou Undo/Redo por peça; F08.08 (`494f734`) criou catálogo paginado e thumbnails da janela visível; F08.09 (`9f8d0f4`) adicionou persistência de drafts/publicações, checksums e referências reversas; F08.10 (`3583cca`) adicionou consulta de dependências e exclusão protegida. `TestarLocal.bat rapido`: 200 testes, 0 falhas. Próxima F08.11.
 
 ## 9. Retomada obrigatória para a próxima sessão Codex
 
