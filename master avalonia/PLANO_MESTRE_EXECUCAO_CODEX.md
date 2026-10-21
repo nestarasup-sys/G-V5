@@ -182,7 +182,7 @@ Ambiente/SDK/CI: `TestarLocal.bat gate` passou em 2026-10-21; ver `docs/gates/GA
 **Gate:** Geometria pura comprovada para rig, pivô, flip, transform inversa e roupa em pose.
 
 - [x] **F04.01** — Implementar tipos puros Point/Rect/Matrix/Transform2D e validação NaN/Infinity.
-- [ ] **F04.02** — Formalizar espaços model/scene/view e conversões ida/volta em código + testes.
+- [x] **F04.02** — Formalizar espaços model/scene/view e conversões ida/volta em código + testes.
 - [ ] **F04.03** — Implementar ordem de transformações, rotação com pivô e escalas não uniformes.
 - [ ] **F04.04** — Implementar flip X/Y e rotação negativa/extrema preservando geometria.
 - [ ] **F04.05** — Implementar hierarquia pai/filho e matriz local/global com âncoras.
