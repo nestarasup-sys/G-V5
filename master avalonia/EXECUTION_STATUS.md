@@ -13,15 +13,15 @@
 | Branch obrigatória | `Master-AValonia` |
 | Pasta exclusiva do novo aplicativo | `master avalonia/` |
 | Commit-base inspecionado antes deste arquivo | `53b7f7a97321e85063a8dd4f9635e48d36548323` |
-| Último commit de implementação validado | `e3bed48` (F08.12: auditoria e composição das camadas de roupa) |
-| Checkout local revalidado | `TestarLocal.bat gate` passou em 2026-10-21: build Release, 255 testes, 0 falhas; 2 avisos CS0618 preexistentes |
-| Fase ativa | **F09 — Fabricador IV — cabelos, face, expressões e completação (próxima F09.01)** |
-| Última tarefa VALIDADA | **F08.12** — auditar wardrobe/pose e registrar divergências em GATE-F08 |
-| Próxima tarefa PENDENTE | **F09.01** — inventariar cabelos: front/back/rear/ponytail/ahoge, paletas, masks e alterações |
+| Último commit de implementação validado | `e615c2c` (F09.01: inventário dos contratos legados de cabelo) |
+| Checkout local revalidado | `TestarLocal.bat gate` passou em 2026-10-21: build Release, 255 testes, 0 falhas; 2 avisos CS0618 preexistentes; a tarefa F09.01 foi documental e validada com `git diff --check` |
+| Fase ativa | **F09 — Fabricador IV — cabelos, face, expressões e completação (em F09.02)** |
+| Última tarefa VALIDADA | **F09.01** — inventariar cabelos, paletas, máscaras e alterações |
+| Próxima tarefa PENDENTE | **F09.02** — implementar import/crop/chroma de cabelo com original preservado e worker |
 | Requisito transversal atualizado | ADR-0006: aparência reconhecível, não pixel-perfect; todos os botões e funcionalidades; revisão final visual pendente |
 | Gate atual | **GATE-F08 PASSOU tecnicamente; UI/visual Windows/GPU e paridade completa continuam pendentes** |
-| Progresso validado neste controle | **112 / 247 tarefas (45,3%)** |
-| Tarefas em execução | **F09.01** — inventário dos contratos de cabelo no legado |
+| Progresso validado neste controle | **113 / 247 tarefas (45,7%)** |
+| Tarefas em execução | **F09.02** — importação, recorte, chroma e preservação da folha original |
 | Pendências conhecidas | F06: folha real/capturas/worker não testados; ferramentas de Modelos ausentes catalogadas em `docs/legacy-contracts/PENDENCIAS_FUNCIONAIS_FABRICADOR.md` e obrigatórias antes do G2. Isso não impede a programação F07, mas impede declarar Fabricador completo. Limite download F01 documentado |
 | Aceite Windows/GPU | **F06 Windows/visual não executado; GPU continua fora do escopo comprovado** |
 
@@ -57,7 +57,7 @@ Se o Codex encontrar algo já implementado, **validar e registrar evidências**,
 | F06 | Fabricador I — modelos e peças | 14 | 14 | LIBERADA TECNICAMENTE | 198 testes previamente registrados; aceites Windows/visual pendentes para G2/F12/entrega |
 | F07 | Fabricador II — rig, poses e animador | 12 | 12 | VALIDADA | F07.01–F07.12 validadas tecnicamente; `docs/gates/GATE-F07.md` registra provas e lacunas remanescentes de paridade para F09.13/G2 |
 | F08 | Fabricador III — roupas, binding e revisões | 12 | 12 | VALIDADA | GATE-F08 PASSOU tecnicamente; integração UI e paridade visual ficam pendentes nos gates de produto |
-| F09 | Fabricador IV — cabelos, face, expressões e completação | 15 | 0 | PENDENTE | — |
+| F09 | Fabricador IV — cabelos, face, expressões e completação | 15 | 1 | EM_EXECUCAO | F09.01 inventariada; contratos e implementação em andamento |
 | F10 | Customizador completo e CharacterResolver | 19 | 0 | PENDENTE | — |
 | F11 | Studio e Scene Engine | 15 | 0 | PENDENTE | — |
 | F12 | Gate vertical obrigatório e confiabilidade | 12 | 0 | PENDENTE | — |
@@ -189,6 +189,7 @@ Adicionar uma linha ao concluir ou bloquear cada tarefa. A linha inicial abaixo 
 | **F08.10** | **VALIDADA** | `3583cca` | `TestarLocal.bat rapido` em 2026-10-21: build Debug com 2 avisos CS0618 preexistentes; Core 38, Architecture 8, Geometry 43, Data 56, Assets 33, Rendering 22, Headless 49; **249 testes, 0 falhas**. Catálogo SQLite lista dependentes de modelo (pose drafts/publicações, animações e roupas drafts/publicações), pose (animação com `basePoseId`) e roupa (histórico imutável); JSON de animação inválido bloqueia conservadoramente. Exclusão de roupa valida revisão e histórico publicado sob transação; draft não publicado pode ser removido, refs são liberadas e órfãos ficam elegíveis ao GC. | `src/GV5.Application/Contracts/IFabricatorDependencyCatalog.cs`; `src/GV5.Data/Dependencies/SqliteFabricatorDependencyCatalog.cs`; `src/GV5.Data/Repositories/SqliteWardrobeRepository.cs`; `tests/GV5.Data.Tests/SqliteWardrobeRepositoryTests.cs`; `docs/architecture/CONTRATO_ROUPAS.md` | Modelos e poses ainda não oferecem APIs de exclusão; por isso não há caminho destrutivo para aplicar o bloqueio nessa etapa. Interface visual consumindo o catálogo não existe ainda. Windows/GPU/inspeção visual não executadas. Próxima F08.11. |
 | **F08.11** | **VALIDADA** | `b09e96b` | `TestarLocal.bat rapido` em 2026-10-21: build Debug com 2 avisos CS0618 preexistentes; Core 38, Architecture 8, Geometry 43, Data 56, Assets 33, Rendering 27, Headless 49; **254 testes, 0 falhas**. Cinco snapshots PNG de 64×64 com fixtures sintéticas cobrem manga, calça, saia, acessório de cabeça na camada superior e roupa ligada a braço rotacionado 28°. Os bindings são resolvidos por `WardrobeBindingMath` antes da renderização; a comparação é pixel a pixel e grava painéis expected/actual/diff. | `tests/GV5.Rendering.Tests/WardrobeGoldenTests.cs`; `tests/Fixtures/rendering/wardrobe-*.golden.png`; `tests/Fixtures/rendering/README.md` | Goldens são fixtures determinísticas, não capturas nem referência visual do Electron. Assets sintéticos e CPU; nenhuma validação visual com projetos pessoais ou GPU. Próxima F08.12. |
 | **F08.12** | **VALIDADA** | `e3bed48` | Auditoria encontrou e fechou a lacuna entre placement e render: `WardrobeRenderSceneBuilder` agora posiciona roupas após a camada-alvo e acessórios permitidos acima do cabelo, preservando a ordem estável. Os cinco goldens passam por binding → placement → builder → Skia; uma prova dedicada confirma a ordem z e rejeita categoria indevida acima do cabelo. `TestarLocal.bat gate` em 2026-10-21: build Release, 2 avisos CS0618 preexistentes, 0 erros; Core 38, Architecture 8, Geometry 43, Data 56, Assets 33, Rendering 28, Headless 49; **255 testes, 0 falhas**. `docs/gates/GATE-F08.md` registra critérios, evidências, resultado e divergências. | `src/GV5.Rendering/WardrobeRenderSceneBuilder.cs`; `tests/GV5.Rendering.Tests/WardrobeGoldenTests.cs`; `docs/gates/GATE-F08.md`; `docs/architecture/CONTRATO_ROUPAS.md`; `docs/legacy-contracts/MATRIZ_PARIDADE.md` | Gate técnico passou. UI do Fabricador ainda não consome o fluxo; deleção de modelos/poses não existe; Windows/GPU/DPI/legado visual não testados. Próxima F09.01. |
+| **F09.01** | **VALIDADA** | `e615c2c` | Auditoria estática somente leitura de categorias/slots, tipos, UI, worker, borracha, palettes/roles e persistência. Documenta cinco `HairPartId` distribuídos por três slots, limites e fallback de estilos antigos, divisão top/bottom, segmentação por borda, chroma green/checker, role masks derivadas e alterações raster/transform. `git diff --check` passou; tarefa documental, sem teste de runtime. | `docs/legacy-contracts/F09_CABELOS_LEGADO.md`; atualização de `FABRICADOR_INVENTARIO.md` e `MATRIZ_PARIDADE.md`; fontes citadas no contrato | Nenhum arquivo pessoal ou pasta `app-data` foi aberto. Inventário de código não prova execução do legado. Próxima F09.02. |
 
 **Estados aceitos:** `PENDENTE`, `EM_EXECUCAO`, `BLOQUEADA`, `VALIDADA`.
 
@@ -359,7 +360,7 @@ Após concluir um lote ou fase, adicionar uma linha. Não inflar contador só po
 
 **Atualização local 2026-10-21 — F08.05 validada:** `WardrobePoseResolver` calcula o placement para pose sem alterar fonte, exige a publicação de modelo idêntica em roupa/pose e confere que binding não ficou obsoleto. Cobertura inclui pose girada, escala desigual e flipX. `TestarLocal.bat rapido`: 242 testes, 0 falhas. Próxima tarefa F08.06.
 
-**Atualização local 2026-10-21 — F08 concluída tecnicamente:** F08.10 (`3583cca`) adicionou consulta de dependências e exclusão protegida; F08.11 (`b09e96b`) criou cinco goldens sintéticos; F08.12 (`e3bed48`) conectou o placement ao compositor Skia e registrou GATE-F08. A correção de contagem histórica está no registro F08.10: foram 249 testes (49 Headless), não 200. O gate Release passou com **255 testes e 0 falhas**. UI/visualização Windows/GPU permanece pendente. Próxima F09.01.
+**Atualização local 2026-10-21 — F08 concluída tecnicamente e F09.01 inventariada:** GATE-F08 (`e3bed48`) passou tecnicamente em Release com **255 testes, 0 falhas**; detalhes e limitações em `docs/gates/GATE-F08.md`. F09.01 (`e615c2c`) documentou cabelos, slots, chroma, recoloração e persistência com consulta estática somente leitura. Próxima F09.02.
 
 ## 9. Retomada obrigatória para a próxima sessão Codex
 
