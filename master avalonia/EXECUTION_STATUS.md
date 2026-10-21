@@ -15,13 +15,13 @@
 | Commit-base inspecionado antes deste arquivo | `53b7f7a97321e85063a8dd4f9635e48d36548323` |
 | Último commit de implementação validado | `8782510` (teste de cor/alfa em borda chroma-feathered) |
 | Checkout local revalidado | `eaac213`; `TestarLocal.bat rapido` passou em 2026-10-21 (198 testes; ver revalidação em `docs/gates/GATE-F06.md`) |
-| Fase ativa | **F07 — Fabricador II: rig, poses e animador (próxima: F07.03)** |
-| Última tarefa VALIDADA | **F07.02** — editor nativo de juntas, commit `8f11586` |
-| Próxima tarefa PENDENTE | **F07.03** — mover hierarquia a partir do pivô e recalcular descendentes corretamente |
+| Fase ativa | **F07 — Fabricador II: rig, poses e animador (próxima: F07.04)** |
+| Última tarefa VALIDADA | **F07.03** — movimentação de hierarquia fixa, commit `40e4161` |
+| Próxima tarefa PENDENTE | **F07.04** — exibir guias/handles de junta e snap sem acoplar geometria ao controle |
 | Requisito transversal atualizado | ADR-0006: aparência reconhecível, não pixel-perfect; todos os botões e funcionalidades; revisão final visual pendente |
 | Gate atual | **F00/G0/F02/F03/F04/F05/G1: PASSARAM conforme registros; F06: LIBERADA TECNICAMENTE PARA F07 por ADR-0006; aceite Windows/visual pendente** |
-| Progresso validado neste controle | **90 / 247 tarefas (36,4%)** |
-| Tarefas em execução | **Nenhuma** — F07.02 validada localmente; F07.03 é a próxima tarefa |
+| Progresso validado neste controle | **91 / 247 tarefas (36,8%)** |
+| Tarefas em execução | **Nenhuma** — F07.03 validada localmente; F07.04 é a próxima tarefa |
 | Pendências conhecidas | F06: folha real/capturas/worker não testados; ferramentas de Modelos ausentes catalogadas em `docs/legacy-contracts/PENDENCIAS_FUNCIONAIS_FABRICADOR.md` e obrigatórias antes do G2. Isso não impede a programação F07, mas impede declarar Fabricador completo. Limite download F01 documentado |
 | Aceite Windows/GPU | **F06 Windows/visual não executado; GPU continua fora do escopo comprovado** |
 
@@ -55,7 +55,7 @@ Se o Codex encontrar algo já implementado, **validar e registrar evidências**,
 | F04 | Geometry Engine canônica | 11 | 11 | VALIDADA | GATE-F04 PASSOU; G1 global em execução |
 | F05 | RenderScene e SkiaRenderer independentes | 11 | 11 | VALIDADA | GATE-F05 e G1 CPU/headless PASSOU |
 | F06 | Fabricador I — modelos e peças | 14 | 14 | LIBERADA TECNICAMENTE | 198 testes previamente registrados; aceites Windows/visual pendentes para G2/F12/entrega |
-| F07 | Fabricador II — rig, poses e animador | 12 | 2 | EM_EXECUCAO | F07.01 inventariada; F07.02 CRUD de juntas/UI/persistência validada localmente; próxima F07.03 |
+| F07 | Fabricador II — rig, poses e animador | 12 | 3 | EM_EXECUCAO | F07.01 inventariada; F07.02 CRUD/persistência e F07.03 movimentação de hierarquia validadas localmente; próxima F07.04 |
 | F08 | Fabricador III — roupas, binding e revisões | 12 | 0 | PENDENTE | — |
 | F09 | Fabricador IV — cabelos, face, expressões e completação | 15 | 0 | PENDENTE | — |
 | F10 | Customizador completo e CharacterResolver | 19 | 0 | PENDENTE | — |
@@ -167,6 +167,7 @@ Adicionar uma linha ao concluir ou bloquear cada tarefa. A linha inicial abaixo 
 | **F06.14** | **VALIDADA** | `6cdcec2` | Registrados critérios, evidências e condição de desbloqueio do gate; matriz visual e inventário do Fabricador atualizados. `git diff --check` passou; `TestarLocal.bat gate`: Release incremental com 0 avisos/erros; Core 18, Architecture 8, Geometry 35, Assets 31, Data 51, Rendering 22, Headless 33; 198 testes, 0 falhas. Compilação anterior com recompilação de ThumbnailService registrou dois avisos CS0618 preexistentes. | `docs/gates/GATE-F06.md`; `docs/ui-fidelity/MATRIZ_PARIDADE_VISUAL.md`; `docs/ui-fidelity/INVENTARIO_VISUAL_COMPLETO.md` | Tarefa documental concluída. O gate da fase não passou; F07 permanece bloqueada até evidência Windows/visual. |
 | **F07.01** | **VALIDADA (inventário documental)** | `b49684d` | Inspeção estática direta do rig.ts, FabricatorPage, PoseWorkspace, AnimatorWorkspace, shared/fabricator.ts e RigSkeleton.cs. Documentados joints, pivôs, sourceTransform, fixed, heurística, semântica distinta de rotação e casos negativos. | `docs/legacy-contracts/F07_RIG_DETALHADO.md`; código legado somente leitura | Nenhum build/teste/Windows novo executado nesta tarefa de inventário. Próximo ID F07.02 requer implementação C# e testes reais. |
 | **F07.02** | **VALIDADA** | `9b9e4d6`, `9dd52f2`, `32beda0`, `8f11586` | Editor ligado ao Fabricador: criar junta entre peças, editar âncoras, alternar `Loose/Fixed`, remover, desfazer/refazer. Grafo persiste na revisão do `ModelDraftContent` em migration 9; testes SQLite cobrem round-trip após reopen, cópia do modelo e descarte de juntas cujas peças foram removidas. Publicação preserva as juntas. `TestarLocal.bat rapido` passou em 2026-10-21: build Debug 0 avisos/0 erros; Core 18, Architecture 8, Assets 31, Geometry 39, Data 51, Rendering 22, Headless 36; **205 testes, 0 falhas**. | `ModelRigJointSchemaMigration.cs`; `ModelDraftContent.cs`; `SqliteModelDraftContentRepository.cs`; `ModelRevisionSnapshotCodec.cs`; `FabricadorViewModel.cs`; `FabricadorView.axaml`; testes Data e Headless | Validação visual interativa no Windows/GPU continua pendente para revisão posterior. Guias e handles de arrasto de pivô são F07.04; F07 não está completa. |
+| **F07.03** | **VALIDADA** | `40e4161` | O gesto Move agora desloca a raiz e percorre transitivamente apenas arestas `Fixed`; atualiza transforms e anchors sem tocar em `sourceTransform`. Filhos `Loose` e sua subárvore ficam parados. Testes Geometry cobrem cadeia fixa de três níveis, ramo livre, anchors nos dois lados das juntas e entradas inválidas; teste Headless de comando prova undo restaurando transforms/anchors e fluxo real segue salvando/reabrindo o rig. `TestarLocal.bat rapido` passou em 2026-10-21: build 0 erros, 2 avisos CS0618 preexistentes de `ThumbnailService`; Core 18, Architecture 8, Assets 31, Geometry 41, Data 51, Rendering 22, Headless 37; **208 testes, 0 falhas**. | `src/GV5.Geometry/RigMovement.cs`; `src/GV5.Modules.Fabricador/Interaction/ModelRigMovement.cs`; `ModelPartTransformCommand.cs`; `tests/GV5.Geometry.Tests/RigMovementTests.cs`; `tests/GV5.Headless.Tests/ModelRigEditorTests.cs` | A validação de movimento usou dados geométricos sintéticos e UI Headless; revisão interativa Windows/GPU segue pendente. F07.04 implementará guias/handles de pivô. |
 
 **Estados aceitos:** `PENDENTE`, `EM_EXECUCAO`, `BLOQUEADA`, `VALIDADA`.
 
@@ -307,6 +308,8 @@ Após concluir um lote ou fase, adicionar uma linha. Não inflar contador só po
 
 **Atualização local 2026-10-21 — F07.02:** commit `8f11586` integrou o editor visual de juntas, âncoras editáveis, modos fixo/livre e remoção ao painel do Fabricador. Migration 9, content snapshot e codec de publicação persistem as juntas; cópias de modelo preservam o grafo. O fluxo headless com SQLite criou, editou, fixou, desfez/refez, salvou, fechou e reabriu as juntas. `TestarLocal.bat rapido` passou com build 0/0 e 205 testes aprovados. F07.02 VALIDADA; próxima F07.03.
 
+**Atualização local 2026-10-21 — F07.03:** commit `40e4161` conectou o gesto de mover à propagação da subárvore fixa, movendo anchors com a transformação e mantendo ramos livres/source transforms intactos. A suíte local rápida passou com 208 testes; warnings CS0618 existentes em `ThumbnailService` foram reportados após rebuild. F07.03 VALIDADA; próxima F07.04.
+
 ## 9. Retomada obrigatória para a próxima sessão Codex
 
 1. Confirmar branch, HEAD e árvore de trabalho localmente; não consultar nem sincronizar o remoto até autorização explícita.
@@ -314,7 +317,7 @@ Após concluir um lote ou fase, adicionar uma linha. Não inflar contador só po
 3. Inspecionar evidências reais da última tarefa validada; caso não existam, corrigir seu estado.
 4. **F07 liberada tecnicamente conforme ADR-0006.** A F06 tem 14 tarefas registradas e 198 testes anteriores; revisão de folha real/Windows/worker/capturas segue pendente até G2/F12/aceite final. Não afirmar que foi realizada.
 5. Continuar automaticamente pelas tarefas seguintes **uma de cada vez**, em lotes flexíveis de aproximadamente 3–8 tarefas relacionadas, enquanto todos os gates pertinentes passam.
-6. Executar **F07.03** (mover hierarquia a partir do pivô e recalcular descendentes corretamente), depois seguintes em ordem conforme gates técnicos. Não implementar Video Studio antes da fase apropriada.
+6. Executar **F07.04** (guias/handles de junta e snap desacoplados do controle), depois seguintes em ordem conforme gates técnicos. Não implementar Video Studio antes da fase apropriada.
 7. Ao encerrar, informar: **branch, HEAD, último ID VALIDADO, próximo ID PENDENTE, commits, comandos verdes, evidências, bloqueios e condição de desbloqueio**.
 
 ### Prompt de retomada
