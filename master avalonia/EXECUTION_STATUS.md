@@ -21,7 +21,7 @@
 | Requisito transversal atualizado | ADR-0006: aparência reconhecível, não pixel-perfect; todos os botões e funcionalidades; revisão final visual pendente |
 | Gate atual | **F00/G0/F02/F03/F04/F05/G1: PASSARAM conforme registros; F06: LIBERADA TECNICAMENTE PARA F07 por ADR-0006; aceite Windows/visual pendente** |
 | Progresso validado neste controle | **93 / 247 tarefas (37,7%)** |
-| Tarefas em execução | **F07.06** — subpasso inicial: aplicar transforms de pose sobre a revisão pinada para preview sem alterar fonte; editor Avalonia e gestos ainda pendentes |
+| Tarefas em execução | **F07.06** — contratos e sessão de mover/rotacionar prontos; falta conectar ViewModel, controles Avalonia e preview visível pelo renderer |
 | Pendências conhecidas | F06: folha real/capturas/worker não testados; ferramentas de Modelos ausentes catalogadas em `docs/legacy-contracts/PENDENCIAS_FUNCIONAIS_FABRICADOR.md` e obrigatórias antes do G2. Isso não impede a programação F07, mas impede declarar Fabricador completo. Limite download F01 documentado |
 | Aceite Windows/GPU | **F06 Windows/visual não executado; GPU continua fora do escopo comprovado** |
 
