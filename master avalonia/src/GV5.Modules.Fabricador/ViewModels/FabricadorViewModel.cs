@@ -43,6 +43,9 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
     private readonly IAnimationRepository? _animationRepository;
     private readonly List<AnimationDraft> _animationUndoStack = [];
     private readonly List<AnimationDraft> _animationRedoStack = [];
+    private readonly Dictionary<AnimationId, (long Revision, WriteableBitmap Bitmap)> _animationThumbnailCache = [];
+    private readonly Queue<(AnimationId Id, WriteableBitmap Bitmap)> _animationThumbnailOrder = [];
+    private CancellationTokenSource? _animationThumbnailCancellation;
     private PoseEditorSession? _poseSession;
     private PublishedModelRevision? _poseModelRevision;
     private AnimationEditorSession? _animationSession;
@@ -66,6 +69,8 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
     private double _animationPlaybackSpeed = 1;
     private string _animationEditorStatus = string.Empty;
     private string? _animationEditorError;
+    private int _selectedAnimationSlot = 1;
+    private readonly Dictionary<int, AnimationId> _animationSlotAssignments = [];
     private Revision? _savedPoseRevision;
     private string _poseName = "Nova pose";
     private string? _poseCategory;
@@ -375,6 +380,18 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
     public ModelDraftContent? PosePreviewContent => IsPoseWorkspace ? _poseSession?.PreviewContent : null;
     public ObservableCollection<PoseListItem> SavedPoses { get; } = [];
     public ObservableCollection<AnimationListItem> SavedAnimations { get; } = [];
+    public ObservableCollection<AnimationSlotListItem> AnimationSlots { get; } = [];
+    public int SelectedAnimationSlot
+    {
+        get => _selectedAnimationSlot;
+        private set
+        {
+            if (!SetProperty(ref _selectedAnimationSlot, value)) return;
+            RefreshAnimationSlotSelection();
+            OnPropertyChanged(nameof(CanCreateAnimation));
+            CreateAnimationCommand.NotifyCanExecuteChanged();
+        }
+    }
     public ObservableCollection<AnimationBasePoseListItem> AnimationBasePoses { get; } = [];
     public bool HasAnimationBasePoses => AnimationBasePoses.Count > 0;
     public bool HasNoAnimationBasePoses => AnimationBasePoses.Count == 0;
@@ -444,8 +461,13 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
             RedoCommand.NotifyCanExecuteChanged();
         }
     }
-    public bool CanCreateAnimation => IsAnimationWorkspace && _animationModelRevision is not null && _animationRepository is not null;
-    public bool CanCreateAnimationFromPose => CanCreateAnimation && _poseRepository is not null;
+    public bool CanCreateAnimation => IsAnimationWorkspace && _animationModelRevision is not null && _animationRepository is not null
+        && !_animationSlotAssignments.ContainsKey(SelectedAnimationSlot);
+    public bool CanClearAnimationSlot => IsAnimationWorkspace && _animationModelRevision is not null && _animationRepository is not null
+        && _animationSlotAssignments.ContainsKey(SelectedAnimationSlot) && !IsAnimationPlaying && !HasPendingAnimationChanges;
+    public bool CanCreateAnimationFromPose => IsAnimationWorkspace && _animationModelRevision is not null
+        && _animationRepository is not null && _poseRepository is not null
+        && Enumerable.Range(1, 12).Any(slot => !_animationSlotAssignments.ContainsKey(slot));
     public bool CanSaveAnimation => IsAnimationWorkspace && _animationSession is not null && _animationRepository is not null;
     public bool CanEditAnimation => IsAnimationWorkspace && CanEdit && _animationSession is not null && !IsAnimationPlaying;
     public bool CanToggleAnimationPlayback => IsAnimationWorkspace && _animationSession is not null;
@@ -745,6 +767,7 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
                 await SaveAnimationAsync();
                 if (HasAnimationEditorError) return;
             }
+            CancelAnimationThumbnailLoads();
             _animationSession = null;
             _animationModelRevision = null;
             _animationPreviewContent = null;
@@ -784,7 +807,9 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
             }
 
             SavedAnimations.Clear();
-            var saved = await _animationRepository.ListAsync(_animationModelRevision.Id);
+            _animationSlotAssignments.Clear();
+            AnimationSlots.Clear();
+            var saved = await _animationRepository.ListByModelAsync(_animationModelRevision.ModelId);
             if (saved.IsFailure)
             {
                 AnimationEditorError = saved.Error!.Message;
@@ -792,6 +817,23 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
             }
             foreach (var item in saved.Value)
                 SavedAnimations.Add(new AnimationListItem(item.Id, item.Name, item.Revision));
+
+            var assignments = await _animationRepository.ListSlotsAsync(_animationModelRevision.ModelId);
+            if (assignments.IsFailure)
+            {
+                AnimationEditorError = assignments.Error!.Message;
+                return;
+            }
+            foreach (var assignment in assignments.Value)
+                _animationSlotAssignments.Add(assignment.SlotNumber, assignment.AnimationId);
+            for (var slot = 1; slot <= 12; slot++)
+            {
+                var animation = _animationSlotAssignments.TryGetValue(slot, out var animationId)
+                    ? saved.Value.FirstOrDefault(item => item.Id == animationId)
+                    : null;
+                AnimationSlots.Add(new AnimationSlotListItem(slot, animation?.Id, animation?.Name ?? "Vazio", animation?.Revision));
+            }
+            SelectedAnimationSlot = Enumerable.Range(1, 12).FirstOrDefault(slot => !_animationSlotAssignments.ContainsKey(slot), 1);
 
             AnimationBasePoses.Clear();
             if (_poseRepository is not null)
@@ -818,6 +860,7 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
             OnPropertyChanged(nameof(PartLayers));
             OnPropertyChanged(nameof(HasModelParts));
             await RenderModelPreviewAsync(_animationModelRevision.Content);
+            StartAnimationThumbnailLoads();
         }
         catch (Exception exception) when (exception is IOException or InvalidOperationException or ArgumentException)
         {
@@ -894,10 +937,56 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
         }
     }
 
+    [RelayCommand]
+    private async Task SelectAnimationSlotAsync(int slotNumber)
+    {
+        if (slotNumber is < 1 or > 12 || _animationModelRevision is null || IsAnimationPlaying) return;
+        if (HasPendingAnimationChanges)
+        {
+            await SaveAnimationAsync();
+            if (HasAnimationEditorError) return;
+        }
+        SelectedAnimationSlot = slotNumber;
+        if (_animationSlotAssignments.TryGetValue(slotNumber, out var animationId))
+        {
+            CancelAnimationThumbnailLoads();
+            await LoadAnimationAsync(animationId);
+            await EnsureAnimationSlotThumbnailAsync(slotNumber);
+            StartAnimationThumbnailLoads();
+        }
+        else
+        {
+            AnimationEditorError = null;
+            AnimationEditorStatus = $"Slot {slotNumber:00} vazio · crie uma animação para ocupá-lo.";
+        }
+    }
+
+    [RelayCommand(CanExecute = nameof(CanClearAnimationSlot))]
+    private async Task ClearAnimationSlotAsync()
+    {
+        if (_animationRepository is null || _animationModelRevision is null
+            || !_animationSlotAssignments.TryGetValue(SelectedAnimationSlot, out var animationId)
+            || HasPendingAnimationChanges) return;
+        var cleared = await _animationRepository.ClearSlotAsync(_animationModelRevision.ModelId, SelectedAnimationSlot);
+        if (cleared.IsFailure)
+        {
+            AnimationEditorError = cleared.Error!.Message;
+            return;
+        }
+        if (!cleared.Value) return;
+        _animationSlotAssignments.Remove(SelectedAnimationSlot);
+        RefreshAnimationSlot(SelectedAnimationSlot);
+        AnimationEditorError = null;
+        AnimationEditorStatus = $"Slot {SelectedAnimationSlot:00} liberado. A animação foi mantida na biblioteca.";
+        NotifyAnimationCommands();
+    }
+
     [RelayCommand(CanExecute = nameof(CanCreateAnimationFromPose))]
     private async Task CreateAnimationFromPoseAsync(PoseId poseId)
     {
         if (!CanCreateAnimationFromPose || _animationModelRevision is null || _poseRepository is null) return;
+        if (_animationSlotAssignments.ContainsKey(SelectedAnimationSlot))
+            SelectedAnimationSlot = Enumerable.Range(1, 12).First(slot => !_animationSlotAssignments.ContainsKey(slot));
         if (HasPendingAnimationChanges)
         {
             await SaveAnimationAsync();
@@ -995,8 +1084,31 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
             _savedAnimationRevision = result.Value.Revision;
             _savedAnimationSnapshot = result.Value;
             UpsertSavedAnimation(result.Value);
+            CancelAnimationThumbnailLoads();
+            InvalidateAnimationThumbnail(result.Value.Id);
+            if (!_animationSlotAssignments.Values.Contains(result.Value.Id)
+                && !_animationSlotAssignments.ContainsKey(SelectedAnimationSlot))
+            {
+                var assignment = await _animationRepository.AssignToSlotAsync(
+                    result.Value.Model.ModelId, result.Value.Id, SelectedAnimationSlot);
+                if (assignment.IsFailure)
+                {
+                    AnimationEditorError = assignment.Error!.Message;
+                    AnimationEditorStatus = "Animação salva na biblioteca, mas o slot não foi reservado.";
+                    return;
+                }
+                _animationSlotAssignments[SelectedAnimationSlot] = result.Value.Id;
+                RefreshAnimationSlot(SelectedAnimationSlot);
+            }
+            var assignedSlot = _animationSlotAssignments.FirstOrDefault(pair => pair.Value == result.Value.Id);
+            if (assignedSlot.Value.IsValid)
+            {
+                RefreshAnimationSlot(assignedSlot.Key);
+                await EnsureAnimationSlotThumbnailAsync(assignedSlot.Key);
+            }
+            StartAnimationThumbnailLoads();
             AnimationEditorError = null;
-            AnimationEditorStatus = $"Salva · revisão {_savedAnimationRevision.Value.Value:00}.";
+            AnimationEditorStatus = $"Salva no slot {SelectedAnimationSlot:00} · revisão {_savedAnimationRevision.Value.Value:00}.";
             NotifyAnimationCommands();
         }
         catch (Exception exception) when (exception is IOException or InvalidOperationException or ArgumentException)
@@ -1027,6 +1139,24 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
                 || revision.Value.SnapshotSha256 != loaded.Value.Model.SnapshotSha256)
                 throw new InvalidOperationException("A versão original do modelo desta animação não está disponível.");
             _animationModelRevision = revision.Value;
+            var assignedSlot = _animationSlotAssignments.FirstOrDefault(pair => pair.Value == loaded.Value.Id);
+            if (!assignedSlot.Value.IsValid)
+            {
+                var freeSlot = Enumerable.Range(1, 12).FirstOrDefault(slot => !_animationSlotAssignments.ContainsKey(slot));
+                if (freeSlot > 0)
+                {
+                    var assignment = await _animationRepository.AssignToSlotAsync(revision.Value.ModelId, loaded.Value.Id, freeSlot);
+                    if (assignment.IsSuccess)
+                    {
+                        _animationSlotAssignments[freeSlot] = loaded.Value.Id;
+                        assignedSlot = new KeyValuePair<int, AnimationId>(freeSlot, loaded.Value.Id);
+                        RefreshAnimationSlot(freeSlot);
+                    }
+                    else
+                        AnimationEditorStatus = "Animação carregada, mas não foi possível vinculá-la a um slot livre.";
+                }
+            }
+            if (assignedSlot.Value.IsValid) SelectedAnimationSlot = assignedSlot.Key;
             _animationSession = new AnimationEditorSession(revision.Value, loaded.Value);
             _savedAnimationRevision = loaded.Value.Revision;
             _savedAnimationSnapshot = loaded.Value;
@@ -1042,6 +1172,7 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
             AnimationEditorStatus = $"Animação carregada · revisão {loaded.Value.Revision.Value:00}.";
             UpdateAnimationEditorProperties();
             await RenderModelPreviewAsync(_animationSession.PreviewContent);
+            if (assignedSlot.Value.IsValid) await EnsureAnimationSlotThumbnailAsync(assignedSlot.Key);
         }
         catch (Exception exception) when (exception is InvalidOperationException or ArgumentException)
         {
@@ -1291,10 +1422,130 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
         else SavedAnimations[SavedAnimations.IndexOf(existing)] = updated;
     }
 
+    private void RefreshAnimationSlotSelection()
+    {
+        for (var index = 0; index < AnimationSlots.Count; index++)
+            AnimationSlots[index] = AnimationSlots[index] with { IsSelected = AnimationSlots[index].Number == SelectedAnimationSlot };
+        ClearAnimationSlotCommand.NotifyCanExecuteChanged();
+    }
+
+    private void RefreshAnimationSlot(int slotNumber)
+    {
+        var index = AnimationSlots.ToList().FindIndex(item => item.Number == slotNumber);
+        if (index < 0) return;
+        var id = _animationSlotAssignments.GetValueOrDefault(slotNumber);
+        var saved = id.IsValid ? SavedAnimations.FirstOrDefault(item => item.Id == id) : null;
+        var thumbnail = saved is not null && _animationThumbnailCache.TryGetValue(saved.Id, out var cached)
+            && cached.Revision == saved.Revision.Value ? cached.Bitmap : null;
+        AnimationSlots[index] = new AnimationSlotListItem(slotNumber, saved?.Id, saved?.Name ?? "Vazio", saved?.Revision)
+        { IsSelected = slotNumber == SelectedAnimationSlot, Thumbnail = thumbnail };
+    }
+
+    private async Task EnsureAnimationSlotThumbnailAsync(int slotNumber, CancellationToken cancellationToken = default)
+    {
+        if (_sceneRenderer is null || _animationRepository is null || _animationModelRevision is null
+            || !_animationSlotAssignments.TryGetValue(slotNumber, out var animationId)) return;
+        var index = AnimationSlots.ToList().FindIndex(item => item.Number == slotNumber);
+        if (index < 0) return;
+        var slot = AnimationSlots[index];
+        var summary = SavedAnimations.FirstOrDefault(item => item.Id == animationId);
+        if (summary is null || slot.Thumbnail is not null) return;
+        if (_animationThumbnailCache.TryGetValue(animationId, out var cached) && cached.Revision == summary.Revision.Value)
+        {
+            AnimationSlots[index] = slot with { Thumbnail = cached.Bitmap };
+            return;
+        }
+
+        RenderedFrame? frame = null;
+        try
+        {
+            var loaded = await _animationRepository.GetAsync(animationId, cancellationToken);
+            if (loaded.IsFailure) return;
+            var model = ModelRevisionReference.From(_animationModelRevision) == loaded.Value.Model
+                ? _animationModelRevision
+                : (await _modelRevisionRepository!.GetAsync(loaded.Value.Model.ModelId, loaded.Value.Model.Sequence, cancellationToken)).Value;
+            if (model.Id != loaded.Value.Model.RevisionId || model.SnapshotSha256 != loaded.Value.Model.SnapshotSha256) return;
+            var content = loaded.Value.ApplyFrameToModelRevision(model, loaded.Value.Frames[0].Id);
+            frame = await _sceneRenderer.RenderAsync(ModelDraftRenderSceneBuilder.Build(content, 128), cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!Dispatcher.UIThread.CheckAccess())
+                throw new InvalidOperationException("Animation thumbnails must be attached on the UI dispatcher.");
+            var bitmap = CreatePoseThumbnailBitmap(frame);
+            if (_animationThumbnailCache.Remove(animationId, out var old)) old.Bitmap.Dispose();
+            _animationThumbnailCache[animationId] = (loaded.Value.Revision.Value, bitmap);
+            _animationThumbnailOrder.Enqueue((animationId, bitmap));
+            while (_animationThumbnailCache.Count > 12 && _animationThumbnailOrder.TryDequeue(out var oldest))
+            {
+                if (_animationThumbnailCache.TryGetValue(oldest.Id, out var current)
+                    && ReferenceEquals(current.Bitmap, oldest.Bitmap)
+                    && _animationThumbnailCache.Remove(oldest.Id, out var evicted))
+                    evicted.Bitmap.Dispose();
+            }
+            var currentIndex = AnimationSlots.ToList().FindIndex(item => item.Number == slotNumber);
+            if (currentIndex >= 0 && _animationSlotAssignments.TryGetValue(slotNumber, out var currentId) && currentId == animationId)
+                AnimationSlots[currentIndex] = AnimationSlots[currentIndex] with { Thumbnail = bitmap };
+            else
+                InvalidateAnimationThumbnail(animationId);
+        }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException or IOException)
+        {
+            AnimationEditorStatus = $"Slot {slotNumber:00} salvo; a miniatura será refeita quando ele for aberto novamente.";
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // Closing the workspace cancels thumbnail work that is no longer visible.
+        }
+        finally
+        {
+            frame?.Dispose();
+        }
+    }
+
+    private void InvalidateAnimationThumbnail(AnimationId animationId)
+    {
+        if (_animationThumbnailCache.Remove(animationId, out var cached)) cached.Bitmap.Dispose();
+        for (var index = 0; index < AnimationSlots.Count; index++)
+            if (AnimationSlots[index].Id == animationId && AnimationSlots[index].Thumbnail is not null)
+                AnimationSlots[index] = AnimationSlots[index] with { Thumbnail = null };
+    }
+
+    private async Task LoadVisibleAnimationSlotThumbnailsAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            foreach (var slot in AnimationSlots.Where(item => item.IsOccupied).Select(item => item.Number).ToArray())
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                await EnsureAnimationSlotThumbnailAsync(slot, cancellationToken);
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // The slot grid is no longer visible.
+        }
+    }
+
+    private void StartAnimationThumbnailLoads()
+    {
+        CancelAnimationThumbnailLoads();
+        if (!IsAnimationWorkspace || _sceneRenderer is null) return;
+        _animationThumbnailCancellation = new CancellationTokenSource();
+        _ = LoadVisibleAnimationSlotThumbnailsAsync(_animationThumbnailCancellation.Token);
+    }
+
+    private void CancelAnimationThumbnailLoads()
+    {
+        var cancellation = _animationThumbnailCancellation;
+        _animationThumbnailCancellation = null;
+        cancellation?.Cancel();
+        cancellation?.Dispose();
+    }
+
     private void NotifyAnimationCommands()
     {
         OnPropertyChanged(nameof(CanToggleAnimationWorkspace));
         OnPropertyChanged(nameof(CanCreateAnimation));
+        OnPropertyChanged(nameof(CanClearAnimationSlot));
         OnPropertyChanged(nameof(CanCreateAnimationFromPose));
         OnPropertyChanged(nameof(HasAnimationBasePoses));
         OnPropertyChanged(nameof(HasNoAnimationBasePoses));
@@ -1307,6 +1558,7 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
         OnPropertyChanged(nameof(AnimationDurationLabel));
         ToggleAnimationWorkspaceCommand.NotifyCanExecuteChanged();
         CreateAnimationCommand.NotifyCanExecuteChanged();
+        ClearAnimationSlotCommand.NotifyCanExecuteChanged();
         CreateAnimationFromPoseCommand.NotifyCanExecuteChanged();
         SaveAnimationCommand.NotifyCanExecuteChanged();
         AddAnimationFrameCommand.NotifyCanExecuteChanged();
@@ -2739,6 +2991,7 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
         _ = HairWorkspace.DisposeAsync();
         _animationPlaybackTimer.Stop();
         _animationPlaybackTimer.Tick -= OnAnimationPlaybackTick;
+        CancelAnimationThumbnailLoads();
         CancellationTokenSource? active;
         RenderedFrame? frame;
         lock (_previewSync)
@@ -2753,6 +3006,10 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
         CancelPreviewSafely(active);
         frame?.Dispose();
         ClearPoseThumbnails();
+        foreach (var thumbnail in _animationThumbnailCache.Values) thumbnail.Bitmap.Dispose();
+        _animationThumbnailCache.Clear();
+        _animationThumbnailOrder.Clear();
+        AnimationSlots.Clear();
         SavedPoses.Clear();
         CancelPendingAutosave();
         var stagedPreview = ImportPreview;
@@ -3263,6 +3520,16 @@ public sealed record PoseListItem(PoseId Id, string Name, string? Category, Revi
 {
     public WriteableBitmap? Thumbnail { get; init; }
     public string RevisionLabel => $"r{Revision.Value:00}";
+}
+
+public sealed record AnimationSlotListItem(int Number, AnimationId? Id, string Name, Revision? Revision)
+{
+    public bool IsSelected { get; init; }
+    public WriteableBitmap? Thumbnail { get; init; }
+    public bool HasThumbnail => Thumbnail is not null;
+    public bool IsOccupied => Id is { IsValid: true };
+    public string SlotLabel => $"{Number:00}";
+    public string RevisionLabel => Revision is { IsValid: true } revision ? $"r{revision.Value:00}" : "";
 }
 
 public sealed record AnimationListItem(AnimationId Id, string Name, Revision Revision)

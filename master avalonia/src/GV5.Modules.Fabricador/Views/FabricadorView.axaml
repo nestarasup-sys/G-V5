@@ -431,6 +431,40 @@
                             </StackPanel>
                             <Border Background="#F8F6FF" BorderBrush="#DDD6F4" BorderThickness="1" CornerRadius="8" Padding="9">
                                 <StackPanel Spacing="7">
+                                    <Grid ColumnDefinitions="*,Auto">
+                                        <TextBlock Text="Slots de animação" FontWeight="SemiBold" Foreground="#6450A5" />
+                                        <TextBlock Grid.Column="1" Text="12 por modelo" FontSize="11" Foreground="#706872" />
+                                    </Grid>
+                                    <ItemsControl ItemsSource="{Binding AnimationSlots}">
+                                        <ItemsControl.ItemsPanel>
+                                            <ItemsPanelTemplate>
+                                                <WrapPanel Orientation="Horizontal" ItemSpacing="5" LineSpacing="5" />
+                                            </ItemsPanelTemplate>
+                                        </ItemsControl.ItemsPanel>
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate x:DataType="vm:AnimationSlotListItem">
+                                                <Button Width="82" Height="62" Padding="4"
+                                                        Command="{Binding $parent[ItemsControl].DataContext.SelectAnimationSlotCommand}"
+                                                        CommandParameter="{Binding Number}"
+                                                        ToolTip.Tip="{Binding Name}">
+                                                    <StackPanel Spacing="2" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                                        <Grid Width="70" Height="34" ColumnDefinitions="Auto,*" ColumnSpacing="3">
+                                                            <TextBlock Text="{Binding SlotLabel}" FontWeight="Bold" VerticalAlignment="Center" />
+                                                            <Image Grid.Column="1" Source="{Binding Thumbnail}" Stretch="Uniform" IsVisible="{Binding HasThumbnail}" />
+                                                        </Grid>
+                                                        <TextBlock Text="{Binding Name}" FontSize="9" MaxWidth="72" TextTrimming="CharacterEllipsis" HorizontalAlignment="Center" />
+                                                        <TextBlock Text="Selecionado" FontSize="8" Foreground="#6450A5" IsVisible="{Binding IsSelected}" HorizontalAlignment="Center" />
+                                                    </StackPanel>
+                                                </Button>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                    <Button Content="Liberar slot selecionado" Command="{Binding ClearAnimationSlotCommand}"
+                                            IsEnabled="{Binding CanClearAnimationSlot}" HorizontalAlignment="Left" Padding="8,5" />
+                                </StackPanel>
+                            </Border>
+                            <Border Background="#F8F6FF" BorderBrush="#DDD6F4" BorderThickness="1" CornerRadius="8" Padding="9">
+                                <StackPanel Spacing="7">
                                     <TextBlock Text="Animações salvas" FontWeight="SemiBold" Foreground="#6450A5" />
                                     <TextBox PlaceholderText="Nome da animação" Text="{Binding AnimationName}" IsEnabled="{Binding CanEditAnimation}" />
                                     <WrapPanel Orientation="Horizontal" ItemSpacing="6" LineSpacing="6">

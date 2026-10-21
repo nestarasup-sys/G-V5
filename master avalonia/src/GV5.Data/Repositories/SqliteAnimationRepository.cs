@@ -100,6 +100,123 @@ public sealed class SqliteAnimationRepository(IGv5Database database) : IAnimatio
         { return Failure<IReadOnlyList<AnimationDraft>>(ApplicationErrorCode.Persistence, "Animation drafts could not be listed.", modelRevisionId.ToString()); }
     }
 
+    public async Task<Result<IReadOnlyList<AnimationDraft>>> ListByModelAsync(ModelId modelId, CancellationToken cancellationToken = default)
+    {
+        if (!modelId.IsValid)
+            return Failure<IReadOnlyList<AnimationDraft>>(ApplicationErrorCode.Validation, "A valid model ID is required.");
+        try
+        {
+            await using var connection = await _database.OpenReadConnectionAsync(cancellationToken).ConfigureAwait(false);
+            await using var command = connection.CreateCommand();
+            command.CommandText = "SELECT animation_id, model_revision_id, model_revision_sequence, model_snapshot_sha256, model_id, revision, display_name, animation_json, animation_sha256 FROM animation_drafts WHERE model_id = $model ORDER BY model_revision_sequence DESC, display_name COLLATE NOCASE, animation_id;";
+            command.Parameters.AddWithValue("$model", modelId.ToString());
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            var animations = new List<AnimationDraft>();
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                var decoded = DecodeRow(reader);
+                if (decoded.IsFailure) return Result<IReadOnlyList<AnimationDraft>>.Failure(decoded.Error!);
+                animations.Add(decoded.Value);
+            }
+            await reader.DisposeAsync().ConfigureAwait(false);
+            foreach (var animation in animations)
+            {
+                var pinned = await ReadPinnedModelAsync(animation.Model, cancellationToken).ConfigureAwait(false);
+                if (pinned.IsFailure) return Result<IReadOnlyList<AnimationDraft>>.Failure(pinned.Error!);
+                var validation = ValidateFrames(animation, pinned.Value);
+                if (validation is not null) return Result<IReadOnlyList<AnimationDraft>>.Failure(validation);
+            }
+            return Result<IReadOnlyList<AnimationDraft>>.Success(animations.AsReadOnly());
+        }
+        catch (Exception exception) when (exception is SqliteException or InvalidDataException or ArgumentException or JsonException or KeyNotFoundException)
+        { return Failure<IReadOnlyList<AnimationDraft>>(ApplicationErrorCode.Persistence, "Animations for this model could not be listed.", modelId.ToString()); }
+    }
+
+    public async Task<Result<IReadOnlyList<AnimationSlotAssignment>>> ListSlotsAsync(
+        ModelId modelId, CancellationToken cancellationToken = default)
+    {
+        if (!modelId.IsValid)
+            return Failure<IReadOnlyList<AnimationSlotAssignment>>(ApplicationErrorCode.Validation, "A valid model ID is required.");
+        try
+        {
+            await using var connection = await _database.OpenReadConnectionAsync(cancellationToken).ConfigureAwait(false);
+            await using var command = connection.CreateCommand();
+            command.CommandText = "SELECT slot_number, animation_id FROM animation_slots WHERE model_id = $model ORDER BY slot_number;";
+            command.Parameters.AddWithValue("$model", modelId.ToString());
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            var assignments = new List<AnimationSlotAssignment>();
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+                assignments.Add(new AnimationSlotAssignment(reader.GetInt32(0), AnimationId.Parse(reader.GetString(1))));
+            return Result<IReadOnlyList<AnimationSlotAssignment>>.Success(assignments.AsReadOnly());
+        }
+        catch (Exception exception) when (exception is SqliteException or ArgumentException or FormatException)
+        { return Failure<IReadOnlyList<AnimationSlotAssignment>>(ApplicationErrorCode.Persistence, "Animation slots could not be listed.", modelId.ToString()); }
+    }
+
+    public async Task<Result<AnimationSlotAssignment>> AssignToSlotAsync(
+        ModelId modelId, AnimationId animationId, int slotNumber, CancellationToken cancellationToken = default)
+    {
+        if (!modelId.IsValid || !animationId.IsValid || slotNumber is < 1 or > 12)
+            return Failure<AnimationSlotAssignment>(ApplicationErrorCode.Validation, "A valid model, animation and slot from 1 to 12 are required.");
+        try
+        {
+            var assigned = await _database.ExecuteWriteAsync(async (connection, transaction, token) =>
+            {
+                await using var exists = connection.CreateCommand();
+                exists.Transaction = transaction;
+                exists.CommandText = "SELECT 1 FROM animation_drafts WHERE animation_id = $animation AND model_id = $model;";
+                exists.Parameters.AddWithValue("$animation", animationId.ToString());
+                exists.Parameters.AddWithValue("$model", modelId.ToString());
+                if (await exists.ExecuteScalarAsync(token).ConfigureAwait(false) is null) return false;
+
+                await using var remove = connection.CreateCommand();
+                remove.Transaction = transaction;
+                remove.CommandText = "DELETE FROM animation_slots WHERE animation_id = $animation OR (model_id = $model AND slot_number = $slot);";
+                remove.Parameters.AddWithValue("$animation", animationId.ToString());
+                remove.Parameters.AddWithValue("$model", modelId.ToString());
+                remove.Parameters.AddWithValue("$slot", slotNumber);
+                await remove.ExecuteNonQueryAsync(token).ConfigureAwait(false);
+
+                await using var insert = connection.CreateCommand();
+                insert.Transaction = transaction;
+                insert.CommandText = "INSERT INTO animation_slots(model_id, slot_number, animation_id, assigned_utc_ms) VALUES ($model, $slot, $animation, $assigned);";
+                insert.Parameters.AddWithValue("$model", modelId.ToString());
+                insert.Parameters.AddWithValue("$slot", slotNumber);
+                insert.Parameters.AddWithValue("$animation", animationId.ToString());
+                insert.Parameters.AddWithValue("$assigned", DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+                await insert.ExecuteNonQueryAsync(token).ConfigureAwait(false);
+                return true;
+            }, cancellationToken).ConfigureAwait(false);
+            return assigned
+                ? Result<AnimationSlotAssignment>.Success(new AnimationSlotAssignment(slotNumber, animationId))
+                : Failure<AnimationSlotAssignment>(ApplicationErrorCode.NotFound, "The animation does not belong to this model.", animationId.ToString());
+        }
+        catch (SqliteException exception)
+        { return Failure<AnimationSlotAssignment>(ApplicationErrorCode.Persistence, "The animation could not be assigned to its slot.", SqliteCode(exception)); }
+    }
+
+    public async Task<Result<bool>> ClearSlotAsync(
+        ModelId modelId, int slotNumber, CancellationToken cancellationToken = default)
+    {
+        if (!modelId.IsValid || slotNumber is < 1 or > 12)
+            return Failure<bool>(ApplicationErrorCode.Validation, "A valid model and slot from 1 to 12 are required.");
+        try
+        {
+            var cleared = await _database.ExecuteWriteAsync(async (connection, transaction, token) =>
+            {
+                await using var command = connection.CreateCommand();
+                command.Transaction = transaction;
+                command.CommandText = "DELETE FROM animation_slots WHERE model_id = $model AND slot_number = $slot;";
+                command.Parameters.AddWithValue("$model", modelId.ToString());
+                command.Parameters.AddWithValue("$slot", slotNumber);
+                return await command.ExecuteNonQueryAsync(token).ConfigureAwait(false) == 1;
+            }, cancellationToken).ConfigureAwait(false);
+            return Result<bool>.Success(cleared);
+        }
+        catch (SqliteException exception)
+        { return Failure<bool>(ApplicationErrorCode.Persistence, "The animation slot could not be cleared.", SqliteCode(exception)); }
+    }
+
     public async Task<Result<AnimationDraft>> SaveAsync(AnimationDraft animation, Revision expectedRevision, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(animation);

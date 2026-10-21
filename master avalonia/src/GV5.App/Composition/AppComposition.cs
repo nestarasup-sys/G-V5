@@ -53,6 +53,7 @@ internal static class AppComposition
         services.AddSingleton<ISqliteMigration, FaceCatalogRepositorySchemaMigration>();
         services.AddSingleton<ISqliteMigration, FaceExpressionRepositorySchemaMigration>();
         services.AddSingleton<ISqliteMigration, FacePublicationSchemaMigration>();
+        services.AddSingleton<ISqliteMigration, AnimationSlotsSchemaMigration>();
         services.AddSingleton<SqliteMigrationRunner>();
         services.AddSingleton<IDataPlatformInitializer>(provider => provider.GetRequiredService<SqliteMigrationRunner>());
         services.AddSingleton<IAssetCatalog, SqliteAssetCatalog>();

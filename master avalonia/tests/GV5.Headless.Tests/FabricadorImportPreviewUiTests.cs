@@ -41,6 +41,7 @@ public sealed class FabricadorImportPreviewUiTests
         PoseId savedPoseId;
         AnimationId savedAnimationId;
         AnimationId poseBasedAnimationId;
+        AnimationId replacementAnimationId = default;
         ModelDraftContent savedContent;
 
         try
@@ -240,6 +241,8 @@ public sealed class FabricadorImportPreviewUiTests
 
                     await viewModel.ToggleAnimationWorkspaceCommand.ExecuteAsync(null);
                     Assert.True(viewModel.IsAnimationWorkspace);
+                    Assert.Equal(12, viewModel.AnimationSlots.Count);
+                    Assert.Equal(1, viewModel.SelectedAnimationSlot);
                     Assert.Contains("versão 01", viewModel.AnimationModelRevisionLabel, StringComparison.OrdinalIgnoreCase);
                     await viewModel.CreateAnimationCommand.ExecuteAsync(null);
                     Assert.Single(viewModel.AnimationFrames);
@@ -280,6 +283,8 @@ public sealed class FabricadorImportPreviewUiTests
                     Assert.Null(viewModel.AnimationEditorError);
                     Assert.Contains("Salva", viewModel.AnimationEditorStatus, StringComparison.OrdinalIgnoreCase);
                     savedAnimationId = Assert.Single(viewModel.SavedAnimations).Id;
+                    Assert.Equal(savedAnimationId, Assert.Single(viewModel.AnimationSlots, slot => slot.Number == 1).Id);
+                    Assert.NotNull(Assert.Single(viewModel.AnimationSlots, slot => slot.Number == 1).Thumbnail);
                     await viewModel.ToggleAnimationWorkspaceCommand.ExecuteAsync(null);
                     Assert.False(viewModel.IsAnimationWorkspace);
 
@@ -297,6 +302,9 @@ public sealed class FabricadorImportPreviewUiTests
                     await viewModel.SaveAnimationCommand.ExecuteAsync(null);
                     Assert.Null(viewModel.AnimationEditorError);
                     poseBasedAnimationId = Assert.Single(viewModel.SavedAnimations, item => item.Id != savedAnimationId).Id;
+                    Assert.Equal(poseBasedAnimationId, Assert.Single(viewModel.AnimationSlots, slot => slot.Number == 2).Id);
+                    var oldSlotThumbnail = Assert.Single(viewModel.AnimationSlots, slot => slot.Number == 2).Thumbnail;
+                    Assert.NotNull(oldSlotThumbnail);
                     var poseBasedDraft = await animationRepository.GetAsync(poseBasedAnimationId, cancellationToken);
                     Assert.True(poseBasedDraft.IsSuccess, poseBasedDraft.Error?.Message);
                     Assert.Equal(savedPoseId, poseBasedDraft.Value.BasePoseId);
@@ -310,6 +318,22 @@ public sealed class FabricadorImportPreviewUiTests
                     await viewModel.LoadAnimationCommand.ExecuteAsync(poseBasedAnimationId);
                     Assert.Single(viewModel.AnimationFrames);
                     Assert.Contains("Pose de teste atualizada", viewModel.AnimationBasePoseLabel, StringComparison.OrdinalIgnoreCase);
+                    await viewModel.SelectAnimationSlotCommand.ExecuteAsync(2);
+                    Assert.Equal(poseBasedAnimationId, Assert.Single(viewModel.AnimationSlots, slot => slot.Number == 2).Id);
+                    Assert.True(viewModel.CanClearAnimationSlot);
+                    await viewModel.ClearAnimationSlotCommand.ExecuteAsync(null);
+                    Assert.False(Assert.Single(viewModel.AnimationSlots, slot => slot.Number == 2).IsOccupied);
+                    await viewModel.CreateAnimationCommand.ExecuteAsync(null);
+                    viewModel.AnimationName = "Substituta do slot 02";
+                    await viewModel.SaveAnimationCommand.ExecuteAsync(null);
+                    Assert.Null(viewModel.AnimationEditorError);
+                    replacementAnimationId = Assert.Single(viewModel.SavedAnimations, item => item.Name == "Substituta do slot 02").Id;
+                    Assert.NotEqual(poseBasedAnimationId, replacementAnimationId);
+                    Assert.Equal(replacementAnimationId, Assert.Single(viewModel.AnimationSlots, slot => slot.Number == 2).Id);
+                    var replacementThumbnail = Assert.Single(viewModel.AnimationSlots, slot => slot.Number == 2).Thumbnail;
+                    Assert.NotNull(replacementThumbnail);
+                    Assert.NotSame(oldSlotThumbnail, replacementThumbnail);
+                    Assert.Contains(viewModel.SavedAnimations, item => item.Id == poseBasedAnimationId);
                     await viewModel.ToggleAnimationWorkspaceCommand.ExecuteAsync(null);
                 }
                 finally
@@ -385,6 +409,13 @@ public sealed class FabricadorImportPreviewUiTests
                 Assert.True(poseBasedAnimation.IsSuccess, poseBasedAnimation.Error?.Message);
                 Assert.Equal(savedPoseId, poseBasedAnimation.Value.BasePoseId);
                 Assert.Single(poseBasedAnimation.Value.Frames);
+                var persistedSlots = await reopenedAnimations.ListSlotsAsync(modelId, cancellationToken);
+                Assert.True(persistedSlots.IsSuccess, persistedSlots.Error?.Message);
+                Assert.Equal(new AnimationSlotAssignment(1, savedAnimationId), Assert.Single(persistedSlots.Value, slot => slot.SlotNumber == 1));
+                Assert.Equal(new AnimationSlotAssignment(2, replacementAnimationId), Assert.Single(persistedSlots.Value, slot => slot.SlotNumber == 2));
+                var allModelAnimations = await reopenedAnimations.ListByModelAsync(modelId, cancellationToken);
+                Assert.True(allModelAnimations.IsSuccess, allModelAnimations.Error?.Message);
+                Assert.Equal(3, allModelAnimations.Value.Count);
             }
         }
         finally
@@ -683,7 +714,13 @@ public sealed class FabricadorImportPreviewUiTests
         new ModelRevisionSchemaMigration(),
         new ModelRigJointSchemaMigration(),
         new PoseRepositorySchemaMigration(),
-        new AnimationRepositorySchemaMigration()
+        new AnimationRepositorySchemaMigration(),
+        new WardrobeRepositorySchemaMigration(),
+        new HairStyleRepositorySchemaMigration(),
+        new FaceCatalogRepositorySchemaMigration(),
+        new FaceExpressionRepositorySchemaMigration(),
+        new FacePublicationSchemaMigration(),
+        new AnimationSlotsSchemaMigration()
     ]);
 
     private static byte[] CreateModelSheetPng()

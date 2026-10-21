@@ -69,6 +69,20 @@ public sealed class SqliteAnimationRepositoryTests
                 var saved = await repository.SaveAsync(edited, created.Value.Revision, cancellationToken);
                 Assert.True(saved.IsSuccess, saved.Error?.Message);
                 Assert.Equal(Revision.From(2), saved.Value.Revision);
+                var assigned = await repository.AssignToSlotAsync(modelId, saved.Value.Id, 3, cancellationToken);
+                Assert.True(assigned.IsSuccess, assigned.Error?.Message);
+                Assert.Equal(new AnimationSlotAssignment(3, saved.Value.Id), assigned.Value);
+                var invalidSlot = await repository.AssignToSlotAsync(modelId, saved.Value.Id, 13, cancellationToken);
+                Assert.True(invalidSlot.IsFailure);
+                Assert.Equal(ApplicationErrorCode.Validation, invalidSlot.Error!.Code);
+                var wrongModel = await repository.AssignToSlotAsync(ModelId.New(), saved.Value.Id, 4, cancellationToken);
+                Assert.True(wrongModel.IsFailure);
+                Assert.Equal(ApplicationErrorCode.NotFound, wrongModel.Error!.Code);
+                var moved = await repository.AssignToSlotAsync(modelId, saved.Value.Id, 7, cancellationToken);
+                Assert.True(moved.IsSuccess, moved.Error?.Message);
+                var movedSlots = await repository.ListSlotsAsync(modelId, cancellationToken);
+                Assert.True(movedSlots.IsSuccess, movedSlots.Error?.Message);
+                Assert.Equal([new AnimationSlotAssignment(7, saved.Value.Id)], movedSlots.Value);
                 var staleSave = await repository.SaveAsync(edited, created.Value.Revision, cancellationToken);
                 Assert.True(staleSave.IsFailure);
                 Assert.Equal(ApplicationErrorCode.Conflict, staleSave.Error!.Code);
@@ -88,6 +102,9 @@ public sealed class SqliteAnimationRepositoryTests
                 Assert.Equal(savedAnimation.Frames.SelectMany(frame => frame.Keys).Select(key => key.Transform),
                     loaded.Value.Frames.SelectMany(frame => frame.Keys).Select(key => key.Transform));
                 Assert.Equal(Revision.From(2), loaded.Value.Revision);
+                var loadedSlots = await repository.ListSlotsAsync(modelId, cancellationToken);
+                Assert.True(loadedSlots.IsSuccess, loadedSlots.Error?.Message);
+                Assert.Equal([new AnimationSlotAssignment(7, animationId)], loadedSlots.Value);
                 var previewModel = await new SqliteModelRevisionRepository(reopenedDatabase)
                     .GetAsync(modelId, Revision.Initial, cancellationToken);
                 Assert.True(previewModel.IsSuccess, previewModel.Error?.Message);
@@ -105,6 +122,34 @@ public sealed class SqliteAnimationRepositoryTests
                 var corrupted = await repository.GetAsync(animationId, cancellationToken);
                 Assert.True(corrupted.IsFailure);
                 Assert.Equal(ApplicationErrorCode.Persistence, corrupted.Error!.Code);
+                var cleared = await repository.ClearSlotAsync(modelId, 7, cancellationToken);
+                Assert.True(cleared.IsSuccess);
+                Assert.True(cleared.Value);
+                var draftCount = await reopenedDatabase.ExecuteWriteAsync(async (connection, transaction, token) =>
+                {
+                    await using var count = connection.CreateCommand();
+                    count.Transaction = transaction;
+                    count.CommandText = "SELECT COUNT(*) FROM animation_drafts WHERE animation_id = $id;";
+                    count.Parameters.AddWithValue("$id", animationId.ToString());
+                    return Convert.ToInt32(await count.ExecuteScalarAsync(token), System.Globalization.CultureInfo.InvariantCulture);
+                }, cancellationToken);
+                Assert.Equal(1, draftCount);
+                var emptySlots = await repository.ListSlotsAsync(modelId, cancellationToken);
+                Assert.True(emptySlots.IsSuccess);
+                Assert.Empty(emptySlots.Value);
+                Assert.True((await repository.AssignToSlotAsync(modelId, animationId, 7, cancellationToken)).IsSuccess);
+                var deleted = await repository.DeleteAsync(animationId, savedAnimation.Revision, cancellationToken);
+                Assert.True(deleted.IsSuccess);
+                Assert.True(deleted.Value);
+                Assert.Empty((await repository.ListSlotsAsync(modelId, cancellationToken)).Value);
+                Assert.Equal(0, await reopenedDatabase.ExecuteWriteAsync(async (connection, transaction, token) =>
+                {
+                    await using var count = connection.CreateCommand();
+                    count.Transaction = transaction;
+                    count.CommandText = "SELECT COUNT(*) FROM animation_drafts WHERE animation_id = $id;";
+                    count.Parameters.AddWithValue("$id", animationId.ToString());
+                    return Convert.ToInt32(await count.ExecuteScalarAsync(token), System.Globalization.CultureInfo.InvariantCulture);
+                }, cancellationToken));
             }
         }
         finally
@@ -118,7 +163,9 @@ public sealed class SqliteAnimationRepositoryTests
         new InitialAssetSchemaMigration(), new ModelDraftSchemaMigration(), new ModelDraftCheckpointSchemaMigration(),
         new AssetImportJournalSchemaMigration(), new AssetReferenceSchemaMigration(), new AssetGarbageCollectionSchemaMigration(),
         new ModelDraftContentSchemaMigration(), new ModelRevisionSchemaMigration(), new ModelRigJointSchemaMigration(),
-        new PoseRepositorySchemaMigration(), new AnimationRepositorySchemaMigration()
+        new PoseRepositorySchemaMigration(), new AnimationRepositorySchemaMigration(), new WardrobeRepositorySchemaMigration(),
+        new HairStyleRepositorySchemaMigration(), new FaceCatalogRepositorySchemaMigration(),
+        new FaceExpressionRepositorySchemaMigration(), new FacePublicationSchemaMigration(), new AnimationSlotsSchemaMigration()
     ]);
 
     private static async Task<AssetId> InsertAvailableAssetAsync(SqliteDatabase database, string value, CancellationToken cancellationToken)
