@@ -29,6 +29,10 @@ public sealed class SqliteFaceCatalogRepositoryTests
             await CreateInitializer(database).InitializeAsync(token);
             var model = await CreatePublishedModelAsync(database, token);
             Assert.True(model.IsSuccess, model.Error?.Message);
+            var catalogRepository = new SqliteFaceCatalogRepository(database);
+            var catalog = FaceCatalogDraft.Create(ModelRevisionReference.From(model.Value), "Rosto cancelável");
+            var createdCatalog = await catalogRepository.CreateAsync(catalog, token);
+            Assert.True(createdCatalog.IsSuccess, createdCatalog.Error?.Message);
             var repository = new SqliteFaceExpressionRepository(database);
             var collection = FaceExpressionCollection.Create(ModelRevisionReference.From(model.Value), "Cancelamento", 10);
             var created = await repository.CreateCollectionAsync(collection, token);
@@ -36,6 +40,12 @@ public sealed class SqliteFaceCatalogRepositoryTests
 
             using var cancellation = new CancellationTokenSource();
             cancellation.Cancel();
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+                catalogRepository.GetAsync(catalog.Id, cancellation.Token));
+            var invalidUncommittedComponent = FaceComponent.Create(FaceComponentKind.Nose, "Cancelado", AssetId.New(), null,
+                GV5.Geometry.Transform2D.Identity);
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+                catalogRepository.SaveAsync(catalog.WithComponent(invalidUncommittedComponent), catalog.Revision, cancellation.Token));
             await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
                 repository.GetCollectionAsync(collection.Id, cancellation.Token));
             await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
@@ -45,6 +55,10 @@ public sealed class SqliteFaceCatalogRepositoryTests
             Assert.True(unchanged.IsSuccess, unchanged.Error?.Message);
             Assert.Equal("Cancelamento", unchanged.Value.Name);
             Assert.Equal(collection.Revision, unchanged.Value.Revision);
+            var unchangedCatalog = await catalogRepository.GetAsync(catalog.Id, token);
+            Assert.True(unchangedCatalog.IsSuccess, unchangedCatalog.Error?.Message);
+            Assert.Equal(catalog.Revision, unchangedCatalog.Value.Revision);
+            Assert.Empty(unchangedCatalog.Value.Components);
         }
         finally
         {

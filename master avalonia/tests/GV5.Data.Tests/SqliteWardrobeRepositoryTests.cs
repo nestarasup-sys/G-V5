@@ -69,6 +69,17 @@ public sealed class SqliteWardrobeRepositoryTests
                 var shirt = WardrobeComponent.Create("Blusa", WardrobeCategory.Shirt, part.Id, garmentAsset,
                     new Rect2D(4, 8, 18, 20), 3, frame);
                 var firstDraft = created.Value.WithContent("Uniforme", [shirt]);
+                using (var cancellation = new CancellationTokenSource())
+                {
+                    cancellation.Cancel();
+                    await Assert.ThrowsAnyAsync<OperationCanceledException>(() => repository.GetAsync(wardrobeId, cancellation.Token));
+                    await Assert.ThrowsAnyAsync<OperationCanceledException>(() => repository.SaveAsync(firstDraft, created.Value.Revision, cancellation.Token));
+                }
+                var unchangedAfterCancellation = await repository.GetAsync(wardrobeId, cancellationToken);
+                Assert.True(unchangedAfterCancellation.IsSuccess, unchangedAfterCancellation.Error?.Message);
+                Assert.Equal(created.Value.Revision, unchangedAfterCancellation.Value.Revision);
+                Assert.Equal(created.Value.Name, unchangedAfterCancellation.Value.Name);
+                Assert.Empty(unchangedAfterCancellation.Value.Components);
                 var saved = await repository.SaveAsync(firstDraft, created.Value.Revision, cancellationToken);
                 Assert.True(saved.IsSuccess, saved.Error?.Message);
                 var stale = await repository.SaveAsync(firstDraft, created.Value.Revision, cancellationToken);

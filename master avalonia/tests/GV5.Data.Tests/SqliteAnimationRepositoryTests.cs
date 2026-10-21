@@ -66,6 +66,25 @@ public sealed class SqliteAnimationRepositoryTests
                     baseFrame.RigJoints.Select(value => value with { ChildAnchor = new Point2D(29, 10) }));
                 var edited = animation.WithContent("Aceno longo", basePose.Id, [baseFrame, movedFrame],
                     AnimationEasing.Smooth, AnimationLoopMode.PingPong, 1.25);
+                using (var cancellation = new CancellationTokenSource())
+                {
+                    cancellation.Cancel();
+                    await Assert.ThrowsAnyAsync<OperationCanceledException>(() => repository.GetAsync(animationId, cancellation.Token));
+                    await Assert.ThrowsAnyAsync<OperationCanceledException>(() => repository.SaveAsync(edited, created.Value.Revision, cancellation.Token));
+                }
+                var unchangedAfterCancellation = await repository.GetAsync(animationId, cancellationToken);
+                Assert.True(unchangedAfterCancellation.IsSuccess, unchangedAfterCancellation.Error?.Message);
+                Assert.Equal(created.Value.Revision, unchangedAfterCancellation.Value.Revision);
+                Assert.Equal(created.Value.Name, unchangedAfterCancellation.Value.Name);
+                Assert.Equal(created.Value.DurationMs, unchangedAfterCancellation.Value.DurationMs);
+                Assert.Equal(created.Value.Frames.Length, unchangedAfterCancellation.Value.Frames.Length);
+                for (var frameIndex = 0; frameIndex < created.Value.Frames.Length; frameIndex++)
+                {
+                    Assert.Equal(created.Value.Frames[frameIndex].Id, unchangedAfterCancellation.Value.Frames[frameIndex].Id);
+                    Assert.Equal(created.Value.Frames[frameIndex].DurationMs, unchangedAfterCancellation.Value.Frames[frameIndex].DurationMs);
+                    Assert.True(created.Value.Frames[frameIndex].Keys.SequenceEqual(unchangedAfterCancellation.Value.Frames[frameIndex].Keys));
+                    Assert.True(created.Value.Frames[frameIndex].RigJoints.SequenceEqual(unchangedAfterCancellation.Value.Frames[frameIndex].RigJoints));
+                }
                 var saved = await repository.SaveAsync(edited, created.Value.Revision, cancellationToken);
                 Assert.True(saved.IsSuccess, saved.Error?.Message);
                 Assert.Equal(Revision.From(2), saved.Value.Revision);

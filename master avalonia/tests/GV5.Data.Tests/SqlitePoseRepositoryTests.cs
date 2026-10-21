@@ -77,6 +77,17 @@ public sealed class SqlitePoseRepositoryTests
                     [],
                     [partId],
                     "Descanso");
+                using (var cancellation = new CancellationTokenSource())
+                {
+                    cancellation.Cancel();
+                    await Assert.ThrowsAnyAsync<OperationCanceledException>(() => repository.GetAsync(poseId, cancellation.Token));
+                    await Assert.ThrowsAnyAsync<OperationCanceledException>(() => repository.SaveAsync(editedPose, created.Value.Revision, cancellation.Token));
+                }
+                var unchangedAfterCancellation = await repository.GetAsync(poseId, cancellationToken);
+                Assert.True(unchangedAfterCancellation.IsSuccess, unchangedAfterCancellation.Error?.Message);
+                Assert.Equal(created.Value.Revision, unchangedAfterCancellation.Value.Revision);
+                Assert.Equal(created.Value.Name, unchangedAfterCancellation.Value.Name);
+                Assert.True(created.Value.PartTransforms.SequenceEqual(unchangedAfterCancellation.Value.PartTransforms));
                 var saved = await repository.SaveAsync(editedPose, created.Value.Revision, cancellationToken);
                 Assert.True(saved.IsSuccess, saved.Error?.Message);
                 Assert.Equal(Revision.From(2), saved.Value.Revision);

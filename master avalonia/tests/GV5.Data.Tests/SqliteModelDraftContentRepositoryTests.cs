@@ -88,6 +88,17 @@ public sealed class SqliteModelDraftContentRepositoryTests
 
                 Assert.Equal(2L, await ScalarAsync(database, "SELECT COUNT(*) FROM model_draft_parts WHERE model_id = $id;", cancellationToken, ("$id", modelId.ToString())));
                 Assert.Equal(2L, await ScalarAsync(database, "SELECT COUNT(DISTINCT asset_id) FROM model_draft_parts WHERE model_id = $id;", cancellationToken, ("$id", modelId.ToString())));
+
+                using (var cancellation = new CancellationTokenSource())
+                {
+                    cancellation.Cancel();
+                    var cancelledUpdate = content.WithParts([content.Parts[0]], [content.Parts[0].Id]);
+                    await Assert.ThrowsAnyAsync<OperationCanceledException>(() => repository.GetAsync(modelId, cancellation.Token));
+                    await Assert.ThrowsAnyAsync<OperationCanceledException>(() => repository.SaveAsync(cancelledUpdate, Revision.Initial, cancellation.Token));
+                }
+                var unchangedAfterCancellation = await repository.GetAsync(modelId, cancellationToken);
+                Assert.True(unchangedAfterCancellation.IsSuccess, unchangedAfterCancellation.Error?.Message);
+                AssertContentEqual(content, unchangedAfterCancellation.Value);
             }
 
             using (var reopenedDatabase = new SqliteDatabase(paths))

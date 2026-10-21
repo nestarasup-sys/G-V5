@@ -38,6 +38,18 @@ public sealed class SqliteHairStyleRepositoryTests
                 hairId = created.Value.Id;
                 var layer = HairLayer.Create(HairPartId.BackHair, assetId, Transform2D.Identity);
                 var changed = created.Value.WithLayer(layer).WithPalette(HairPaletteOverrides.Empty.WithColor(HairColorRole.Base, 0xAA6633));
+                using (var cancellation = new CancellationTokenSource())
+                {
+                    cancellation.Cancel();
+                    await Assert.ThrowsAnyAsync<OperationCanceledException>(() => repository.GetAsync(hairId, cancellation.Token));
+                    await Assert.ThrowsAnyAsync<OperationCanceledException>(() => repository.SaveAsync(changed, created.Value.Revision, cancellation.Token));
+                }
+                var unchangedAfterCancellation = await repository.GetAsync(hairId, token);
+                Assert.True(unchangedAfterCancellation.IsSuccess, unchangedAfterCancellation.Error?.Message);
+                Assert.Equal(created.Value.Revision, unchangedAfterCancellation.Value.Revision);
+                Assert.Equal(created.Value.Name, unchangedAfterCancellation.Value.Name);
+                Assert.Empty(unchangedAfterCancellation.Value.Layers);
+                Assert.Empty(unchangedAfterCancellation.Value.Palette.Colors);
                 var saved = await repository.SaveAsync(changed, created.Value.Revision, token);
                 Assert.True(saved.IsSuccess, saved.Error?.Message);
                 var stale = await repository.SaveAsync(changed, created.Value.Revision, token);
