@@ -281,6 +281,12 @@ public sealed class AutosaveFlushTests
         public Task<Result<ModelDraft>> GetAsync(ModelId id, CancellationToken cancellationToken = default) =>
             inner.GetAsync(id, cancellationToken);
 
+        public Task<Result<IReadOnlyList<ModelDraft>>> ListAsync(CancellationToken cancellationToken = default) =>
+            inner.ListAsync(cancellationToken);
+
+        public Task<Result<ModelDraft>> DuplicateAsync(ModelId sourceId, string name, long nowUtcMs, CancellationToken cancellationToken = default) =>
+            inner.DuplicateAsync(sourceId, name, nowUtcMs, cancellationToken);
+
         public async Task<Result<ModelDraft>> UpdateAsync(ModelDraft draft, Revision expectedRevision, CancellationToken cancellationToken = default)
         {
             UpdateCount++;

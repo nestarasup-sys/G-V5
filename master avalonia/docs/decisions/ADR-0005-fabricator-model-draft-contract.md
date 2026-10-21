@@ -26,6 +26,8 @@ Slots 1–10 preservam compatibilidade sem tornar a posição da lista uma chave
 
 `ModelDraftContentTests` cobre limites de slot, IDs, versão e revisão, origem/asset, transform imutável, ordem, crops fora da folha e valores inconsistentes. `TestarLocal.bat rapido` cobre também build da solution, testes arquiteturais, suites de módulos e Avalonia Headless. A aprovação desta tarefa não afirma persistência de peças, importação, UI ou paridade visual; esses pontos permanecem para as tarefas/gates correspondentes.
 
+F06.02 acrescenta listagem e duplicação transacional dos metadados de `ModelDraft`; como a persistência do snapshot de peças ainda pertence a F06.05, duplicar nesta etapa cria um novo draft vazio com nome e timestamps próprios. A duplicação deverá passar a copiar o snapshot validado quando o armazenamento de conteúdo for integrado.
+
 ## Referências de produto
 
 - `docs/legacy-contracts/FABRICADOR_INVENTARIO.md`

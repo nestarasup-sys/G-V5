@@ -164,6 +164,114 @@ public sealed class SqliteModelDraftRepositoryTests
         }
     }
 
+    [Fact]
+    public async Task ListAsync_ReturnsDraftsInStableMostRecentlyUpdatedOrder()
+    {
+        var root = NewTempRoot();
+        var cancellationToken = TestContext.Current.CancellationToken;
+        using var database = new SqliteDatabase(new AppDataPaths(root));
+
+        try
+        {
+            await MigrateAsync(database, cancellationToken);
+            var repository = new SqliteModelDraftRepository(database);
+            var tieA = ModelDraft.Create(ModelId.From(Guid.Parse("00000000-0000-0000-0000-000000000001")), "Empate A", 100);
+            var tieB = ModelDraft.Create(ModelId.From(Guid.Parse("00000000-0000-0000-0000-000000000002")), "Empate B", 100);
+            var recent = ModelDraft.Create("Mais recente", 200);
+            Assert.True((await repository.CreateAsync(tieB, cancellationToken)).IsSuccess);
+            Assert.True((await repository.CreateAsync(tieA, cancellationToken)).IsSuccess);
+            Assert.True((await repository.CreateAsync(recent, cancellationToken)).IsSuccess);
+
+            var listed = await repository.ListAsync(cancellationToken);
+
+            Assert.True(listed.IsSuccess);
+            Assert.Equal(new[] { recent.Id, tieA.Id, tieB.Id }, listed.Value.Select(draft => draft.Id));
+        }
+        finally
+        {
+            DeleteTempRoot(root);
+        }
+    }
+
+    [Fact]
+    public async Task DuplicateAsync_CreatesIndependentRevisionOneDraftAndSurvivesReopen()
+    {
+        var root = NewTempRoot();
+        var paths = new AppDataPaths(root);
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var source = ModelDraft.Create("Modelo original", 100);
+
+        try
+        {
+            ModelDraft duplicate;
+            using (var database = new SqliteDatabase(paths))
+            {
+                await MigrateAsync(database, cancellationToken);
+                var repository = new SqliteModelDraftRepository(database);
+                Assert.True((await repository.CreateAsync(source, cancellationToken)).IsSuccess);
+
+                var result = await repository.DuplicateAsync(source.Id, "Cópia do modelo", 250, cancellationToken);
+
+                Assert.True(result.IsSuccess);
+                duplicate = result.Value;
+                Assert.NotEqual(source.Id, duplicate.Id);
+                Assert.Equal(Revision.Initial, duplicate.Revision);
+                Assert.Equal("Cópia do modelo", duplicate.Name);
+                Assert.Equal(250, duplicate.CreatedUtcMs);
+                Assert.Equal(250, duplicate.UpdatedUtcMs);
+
+                var unchangedSource = await repository.GetAsync(source.Id, cancellationToken);
+                Assert.True(unchangedSource.IsSuccess);
+                Assert.Equal(source, unchangedSource.Value);
+            }
+
+            using var reopened = new SqliteDatabase(paths);
+            await MigrateAsync(reopened, cancellationToken);
+            var reopenedRepository = new SqliteModelDraftRepository(reopened);
+            var reopenedDuplicate = await reopenedRepository.GetAsync(duplicate.Id, cancellationToken);
+            var listed = await reopenedRepository.ListAsync(cancellationToken);
+
+            Assert.True(reopenedDuplicate.IsSuccess);
+            Assert.Equal(duplicate, reopenedDuplicate.Value);
+            Assert.True(listed.IsSuccess);
+            Assert.Equal(new[] { duplicate.Id, source.Id }, listed.Value.Select(draft => draft.Id));
+        }
+        finally
+        {
+            DeleteTempRoot(root);
+        }
+    }
+
+    [Fact]
+    public async Task DuplicateAsync_RejectsMissingIdentitySourceAndInvalidMetadataWithoutWriting()
+    {
+        var root = NewTempRoot();
+        var cancellationToken = TestContext.Current.CancellationToken;
+        using var database = new SqliteDatabase(new AppDataPaths(root));
+
+        try
+        {
+            await MigrateAsync(database, cancellationToken);
+            var repository = new SqliteModelDraftRepository(database);
+            var source = ModelDraft.Create("Fonte", 100);
+            Assert.True((await repository.CreateAsync(source, cancellationToken)).IsSuccess);
+
+            AssertFailure(await repository.DuplicateAsync(default, "Cópia", 200, cancellationToken), ApplicationErrorCode.Validation);
+            AssertFailure(await repository.DuplicateAsync(ModelId.New(), "Cópia", 200, cancellationToken), ApplicationErrorCode.NotFound);
+            AssertFailure(await repository.DuplicateAsync(source.Id, " ", 200, cancellationToken), ApplicationErrorCode.Validation);
+            AssertFailure(await repository.DuplicateAsync(source.Id, "Cópia", -1, cancellationToken), ApplicationErrorCode.Validation);
+
+            var listed = await repository.ListAsync(cancellationToken);
+            Assert.True(listed.IsSuccess);
+            Assert.Single(listed.Value);
+            Assert.Equal(source.Id, listed.Value[0].Id);
+        }
+        finally
+        {
+            DeleteTempRoot(root);
+        }
+    }
+
     private static Task<MigrationRunResult> MigrateAsync(SqliteDatabase database, CancellationToken cancellationToken) =>
         new SqliteMigrationRunner(database, [new InitialAssetSchemaMigration(), new ModelDraftSchemaMigration()])
             .MigrateAsync(cancellationToken);

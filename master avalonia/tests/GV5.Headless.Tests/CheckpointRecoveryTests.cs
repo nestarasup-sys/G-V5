@@ -272,6 +272,12 @@ public sealed class CheckpointRecoveryTests
         public Task<Result<ModelDraft>> GetAsync(ModelId id, CancellationToken cancellationToken = default) =>
             Task.FromResult(Result<ModelDraft>.Failure(new ApplicationError(ApplicationErrorCode.NotFound, "Not found.")));
 
+        public Task<Result<IReadOnlyList<ModelDraft>>> ListAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult(Result<IReadOnlyList<ModelDraft>>.Success([]));
+
+        public Task<Result<ModelDraft>> DuplicateAsync(ModelId sourceId, string name, long nowUtcMs, CancellationToken cancellationToken = default) =>
+            Task.FromResult(Result<ModelDraft>.Failure(new ApplicationError(ApplicationErrorCode.Persistence, "Synthetic failure.")));
+
         public Task<Result<ModelDraft>> UpdateAsync(ModelDraft draft, Revision expectedRevision, CancellationToken cancellationToken = default) =>
             Task.FromResult(Result<ModelDraft>.Failure(new ApplicationError(
                 ApplicationErrorCode.Persistence,

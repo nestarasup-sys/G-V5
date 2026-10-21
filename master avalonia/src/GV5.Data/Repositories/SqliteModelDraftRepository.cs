@@ -71,6 +71,99 @@ public sealed class SqliteModelDraftRepository(IGv5Database database) : IModelDr
         return Result<ModelDraft>.Success(draft);
     }
 
+    public async Task<Result<IReadOnlyList<ModelDraft>>> ListAsync(CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            await using var connection = await _database.OpenReadConnectionAsync(cancellationToken).ConfigureAwait(false);
+            await using var command = connection.CreateCommand();
+            command.CommandText = "SELECT model_id, revision, display_name, created_utc_ms, updated_utc_ms FROM models ORDER BY updated_utc_ms DESC, model_id COLLATE BINARY ASC;";
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+
+            var drafts = new List<ModelDraft>();
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                drafts.Add(ModelDraft.Restore(
+                    ModelId.Parse(reader.GetString(0)),
+                    Revision.From(reader.GetInt64(1)),
+                    reader.GetString(2),
+                    reader.GetInt64(3),
+                    reader.GetInt64(4)));
+            }
+
+            return Result<IReadOnlyList<ModelDraft>>.Success(drafts);
+        }
+        catch (SqliteException exception)
+        {
+            return Result<IReadOnlyList<ModelDraft>>.Failure(new ApplicationError(
+                ApplicationErrorCode.Persistence,
+                "Model drafts could not be listed.",
+                exception.SqliteErrorCode.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+        }
+    }
+
+    public async Task<Result<ModelDraft>> DuplicateAsync(
+        ModelId sourceId,
+        string name,
+        long nowUtcMs,
+        CancellationToken cancellationToken = default)
+    {
+        if (!sourceId.IsValid)
+        {
+            return Result<ModelDraft>.Failure(new ApplicationError(ApplicationErrorCode.Validation, "A valid source model ID is required."));
+        }
+
+        ModelDraft duplicate;
+        try
+        {
+            duplicate = ModelDraft.Create(ModelId.New(), name, nowUtcMs);
+        }
+        catch (ArgumentException exception)
+        {
+            return Result<ModelDraft>.Failure(new ApplicationError(ApplicationErrorCode.Validation, exception.Message));
+        }
+
+        try
+        {
+            var sourceExists = await _database.ExecuteWriteAsync(async (connection, transaction, token) =>
+            {
+                await using var source = connection.CreateCommand();
+                source.Transaction = transaction;
+                source.CommandText = "SELECT 1 FROM models WHERE model_id = $id;";
+                source.Parameters.AddWithValue("$id", sourceId.ToString());
+                if (await source.ExecuteScalarAsync(token).ConfigureAwait(false) is null)
+                {
+                    return false;
+                }
+
+                await using var insert = connection.CreateCommand();
+                insert.Transaction = transaction;
+                insert.CommandText = "INSERT INTO models(model_id, revision, display_name, created_utc_ms, updated_utc_ms) VALUES ($id, $revision, $name, $created, $updated);";
+                AddDraftParameters(insert, duplicate);
+                await insert.ExecuteNonQueryAsync(token).ConfigureAwait(false);
+                return true;
+            }, cancellationToken).ConfigureAwait(false);
+
+            return sourceExists
+                ? Result<ModelDraft>.Success(duplicate)
+                : Result<ModelDraft>.Failure(new ApplicationError(ApplicationErrorCode.NotFound, "The source model draft does not exist.", sourceId.ToString()));
+        }
+        catch (SqliteException exception) when (exception.SqliteErrorCode == 19)
+        {
+            return Result<ModelDraft>.Failure(new ApplicationError(
+                ApplicationErrorCode.Conflict,
+                "The duplicate model draft could not be created because its identity conflicts with existing data.",
+                duplicate.Id.ToString()));
+        }
+        catch (SqliteException exception)
+        {
+            return Result<ModelDraft>.Failure(new ApplicationError(
+                ApplicationErrorCode.Persistence,
+                "The model draft could not be duplicated.",
+                exception.SqliteErrorCode.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+        }
+    }
+
     public async Task<Result<ModelDraft>> UpdateAsync(
         ModelDraft draft,
         Revision expectedRevision,
