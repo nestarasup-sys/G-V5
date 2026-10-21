@@ -82,6 +82,24 @@ public sealed class AssetBitmapCacheTests
     }
 
     [Fact]
+    public async Task AcquireAsync_BypassesBitmapLargerThanTinyBudgetAndLeaseOwnsItsLifetime()
+    {
+        using var cache = new AssetBitmapCache(maximumBytes: 32);
+        var result = await cache.AcquireAsync(Key(7), DecodeAsync, TestContext.Current.CancellationToken);
+
+        Assert.True(result.IsSuccess, result.Error?.Message);
+        Assert.Equal(SKColors.CornflowerBlue, result.Lease!.Bitmap.GetPixel(2, 2));
+        Assert.Equal(1, cache.Metrics.MissCount);
+        Assert.Equal(1, cache.Metrics.BypassCount);
+        Assert.Equal(0, cache.Metrics.EntryCount);
+        Assert.Equal(0L, cache.Metrics.ResidentBytes);
+
+        result.Lease.Dispose();
+        Assert.Throws<ObjectDisposedException>(() => _ = result.Lease.Bitmap);
+        Assert.Equal(0L, cache.Metrics.ResidentBytes);
+    }
+
+    [Fact]
     public async Task AcquireAsync_ConcurrentSameKeyDecodesOnlyOnce()
     {
         using var cache = new AssetBitmapCache(maximumBytes: 1024);
