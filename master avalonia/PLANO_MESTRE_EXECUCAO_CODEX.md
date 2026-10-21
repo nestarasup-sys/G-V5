@@ -52,11 +52,11 @@
 # EXECUTION STATUS
 Branch: Master-AValonia
 HEAD: atualizar via `EXECUTION_STATUS.md` antes da retomada
-Fase: F04
-Última tarefa validada: F03.11
-Próxima tarefa: F04.01
-Gate: F03 PASSOU; G1 global em execução
-Ambiente/SDK/CI: `TestarLocal.bat gate` passou em 2026-10-21; ver `docs/gates/GATE-F03.md`
+Fase: F05
+Última tarefa validada: F04.11
+Próxima tarefa: F05.01
+Gate: F04 PASSOU; G1 global em execução até F05
+Ambiente/SDK/CI: `TestarLocal.bat gate` passou em 2026-10-21; ver `docs/gates/GATE-F04.md`
 | Tarefa | Estado | Commit | Evidência | Pendência |
 | F00.01 | PENDENTE | — | — | — |
 ## Bloqueios reais
@@ -191,7 +191,7 @@ Ambiente/SDK/CI: `TestarLocal.bat gate` passou em 2026-10-21; ver `docs/gates/GA
 - [x] **F04.08** — Implementar snap/guides como lógica independente de UI/documento.
 - [x] **F04.09** — Implementar matemática de WardrobeBinding e fixtures neutro/rotacionado/espelhado.
 - [x] **F04.10** — Testar precisão, determinismo e reversão de transforms; comparar casos do legado.
-- [ ] **F04.11** — Benchmarkar sinteticamente 10/100/1000 peças e registrar GATE-F04.
+- [x] **F04.11** — Benchmarkar sinteticamente 10/100/1000 peças e registrar GATE-F04.
 
 **Encerramento F04:** registrar `docs/gates/GATE-F04.md` e marcar a fase validada somente se o gate acima foi comprovado. Se estiver bloqueado, documentar a evidência que falta e não iniciar F05.
 
