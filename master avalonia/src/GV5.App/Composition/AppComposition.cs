@@ -37,6 +37,7 @@ internal static class AppComposition
         services.AddSingleton<IModelDraftCheckpointStore, SqliteModelDraftCheckpointStore>();
         services.AddSingleton<IDataPlatformBackupService, DatabaseBackupService>();
         services.AddSingleton<AssetImageDecoder>();
+        services.AddSingleton<AssetBitmapCache>();
         services.AddSingleton<SqliteAssetImportPipeline>();
         services.AddSingleton<IAssetStore, SqliteAssetStore>();
         services.AddSingleton(new ModuleRouteCatalog(routes));

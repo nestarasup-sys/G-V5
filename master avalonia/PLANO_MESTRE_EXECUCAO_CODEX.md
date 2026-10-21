@@ -163,7 +163,7 @@ Ambiente/SDK/CI: <comandos e resultados reais>
 - [x] **F03.03** — Publicar bytes em storage por hash com atomicidade possível e recovery quando DB/arquivo divergirem.
 - [x] **F03.04** — Implementar deduplicação, referências persistentes e teste de asset único compartilhado.
 - [x] **F03.05** — Implementar decode PNG/JPEG/WebP fora da UI com alpha/orientação válidos e erro tipado.
-- [ ] **F03.06** — Implementar cache de bitmaps LRU por orçamento de bytes com lease/ref e métricas; nunca liberar imagem em uso.
+- [x] **F03.06** — Implementar cache de bitmaps LRU por orçamento de bytes com lease/ref e métricas; nunca liberar imagem em uso.
 - [ ] **F03.07** — Implementar ThumbnailService com recipe/hash/versão e cache em disco, geração assíncrona cancelável.
 - [ ] **F03.08** — Implementar query paginada e política de fetch só do visível, com prefetch limitado.
 - [ ] **F03.09** — Implementar lixeira/GC seguro para assets sem referências, com grace period e backup verificado.
