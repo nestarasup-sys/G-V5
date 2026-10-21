@@ -94,4 +94,34 @@ public sealed class GeometryPrimitiveTests
         Assert.Equal(pivot.Y + 7, transformedPivot.Y, 10);
         Assert.Throws<ArgumentOutOfRangeException>(() => new Transform2D(Point2D.Zero, new Point2D(1, 1), double.NaN, Point2D.Zero));
     }
+
+    [Fact]
+    public void FlipsReflectAcrossTheirLocalAxesAndTwoFlipsRestoreThePoint()
+    {
+        var point = new Point2D(3, -4);
+        var flippedX = Matrix2D.CreateFlipX().Transform(point);
+        var flippedY = Matrix2D.CreateFlipY().Transform(point);
+        var flippedBoth = (Matrix2D.CreateFlipX() * Matrix2D.CreateFlipY()).Transform(point);
+
+        Assert.Equal(new Point2D(-3, -4), flippedX);
+        Assert.Equal(new Point2D(3, 4), flippedY);
+        Assert.Equal(new Point2D(-3, 4), flippedBoth);
+        Assert.Equal(point, (Matrix2D.CreateFlipX() * Matrix2D.CreateFlipX()).Transform(point));
+
+        var explicitFlip = new Transform2D(Point2D.Zero, new Point2D(1, 1), 0, Point2D.Zero, flipX: true, flipY: true);
+        Assert.Equal(new Point2D(-3, 4), explicitFlip.Apply(point));
+    }
+
+    [Theory]
+    [InlineData(-1.5707963267948966)]
+    [InlineData(1.7976931348623157E+308)]
+    [InlineData(-1.7976931348623157E+308)]
+    public void RotationHandlesNegativeAndExtremeFiniteRadians(double radians)
+    {
+        var rotated = Matrix2D.CreateRotation(radians).Transform(new Point2D(1, 0));
+
+        Assert.Equal(Math.Cos(radians), rotated.X, 12);
+        Assert.Equal(Math.Sin(radians), rotated.Y, 12);
+        Assert.Equal(1, Math.Sqrt(rotated.X * rotated.X + rotated.Y * rotated.Y), 12);
+    }
 }

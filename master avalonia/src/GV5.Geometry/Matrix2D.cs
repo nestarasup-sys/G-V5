@@ -33,6 +33,8 @@ public readonly record struct Matrix2D
     public static Matrix2D Identity => new(1, 0, 0, 1, 0, 0);
     public static Matrix2D CreateTranslation(double x, double y) => new(1, 0, 0, 1, x, y);
     public static Matrix2D CreateScale(double x, double y) => new(x, 0, 0, y, 0, 0);
+    public static Matrix2D CreateFlipX() => CreateScale(-1, 1);
+    public static Matrix2D CreateFlipY() => CreateScale(1, -1);
     public static Matrix2D CreateRotation(double radians)
     {
         GeometryValue.RequireFinite(radians, nameof(radians));
