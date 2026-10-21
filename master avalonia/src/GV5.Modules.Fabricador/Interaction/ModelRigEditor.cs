@@ -6,8 +6,8 @@ namespace GV5.Modules.Fabricador.Interaction;
 
 /// <summary>
 /// Model-specific rig editing session with typed part IDs. It is intentionally transient:
-/// F07.02 adds and tests authoring operations; F07.05–F07.08 provide versioned pose/rig
-/// persistence before the commands are exposed as durable published model data.
+/// F07.02 adds and tests joint authoring; F07.05 defines pinned pose contracts, and F07.07–F07.08
+/// provide persistence and undo/redo before rig/pose commands become durable published data.
 /// </summary>
 public sealed class ModelRigEditor
 {
