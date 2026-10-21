@@ -6,13 +6,15 @@ on:
       - Master-AValonia
     paths:
       - '.github/workflows/native-avalonia.yml'
-      - 'master avalonia/**'
+      # Apenas checkpoints de gate acionam CI a cada push.
+      - 'master avalonia/docs/gates/**'
   pull_request:
     branches:
       - Master-AValonia
     paths:
       - '.github/workflows/native-avalonia.yml'
       - 'master avalonia/**'
+  # Execução manual, quando o workflow estiver registrado no GitHub Actions.
   workflow_dispatch:
 
 permissions:
@@ -44,6 +46,14 @@ jobs:
         uses: actions/setup-dotnet@v4
         with:
           global-json-file: master avalonia/global.json
+
+      - name: Cache NuGet packages across gate runs
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-gv5-nuget-${{ hashFiles('master avalonia/**/*.csproj', 'master avalonia/**/Directory.Packages.props') }}
+          restore-keys: |
+            ${{ runner.os }}-gv5-nuget-
 
       - name: Restore
         run: dotnet restore GV5.sln --verbosity minimal

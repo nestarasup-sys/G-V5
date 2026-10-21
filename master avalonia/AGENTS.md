@@ -20,6 +20,7 @@ Em caso de divergência, não decidir silenciosamente: preservar os requisitos d
 
 - Trabalhar **somente na branch `Master-AValonia`**, **somente em `master avalonia/`**. Confirmar `git branch --show-current` e `git status --short` antes de editar.
 - Não modificar, excluir, mover, formatar, executar migração destrutiva nem commitar mudanças nos arquivos **fora desta pasta**. Consultar o legado exclusivamente para leitura, contratos e comparação.
+- **Exceção de infraestrutura:** somente `.github/workflows/native-avalonia.yml` pode ser ajustado fora da pasta nova quando necessário para o CI do G-V5; isso não autoriza alterar qualquer outro arquivo legado/raiz.
 - Nunca abrir em modo escrita os dados do Electron ou dados pessoais do usuário. Testes devem usar **fixtures sintéticas** e pastas temporárias.
 - Nenhuma dependência de build/runtime de caminhos, arquivos ou scripts externos a `master avalonia/`. O novo app deve compilar isoladamente.
 - Não usar Electron, React, Node.js, Chromium, WebView, componentes Avalonia Pro obrigatórios, nem servidor remoto obrigatório.
@@ -52,6 +53,16 @@ Em caso de divergência, não decidir silenciosamente: preservar os requisitos d
 - Não bloquear thread de UI com decode, render pesado, SQL ou I/O. Trabalho em background retorna resultados versionados; previews atrasadas são ignoradas.
 - Undo/redo por comandos e gestos coalescidos; autosave não pode perder revisões nem anunciar sucesso antes da gravação.
 - Não construir bibliotecas genéricas vazias, plugins dinâmicos ou múltiplos backends GPU/mídia sem uma necessidade comprovada.
+
+## Ciclo de desenvolvimento local-first (obrigatório)
+
+- **Testes no PC local são o caminho padrão.** Não aguardar GitHub Actions a cada commit/push e não interromper implementação só para ver CI de pequenas tarefas.
+- Rodar `TestarLocal.bat rapido` após alterações funcionais/tarefas (build Debug incremental + testes da solution + Avalonia Headless). É permitido usar CPU/RAM do PC; não abrir janelas nem manipular mouse/teclado real.
+- Rodar `TestarLocal.bat gate` ao finalizar uma fase, depois de mudanças amplas ou antes de declarar um gate aprovado (restore/build Release + testes + Headless). Corrigir falhas localmente primeiro.
+- Para testar **somente UI headless**, `TestarHeadless.bat` continua disponível; para testes específicos durante implementação, pode executar comandos direcionados do .NET conforme a tarefa.
+- No GitHub, `.github/workflows/native-avalonia.yml` só dispara automaticamente ao modificar `docs/gates/**` na branch, ou na abertura/atualização de PR. Ele também declara gatilho manual. Pushes comuns de implementação/status **não devem acionar CI**.
+- Em gates, confirmar resultado real de CI quando o gate exigir verificação remota; não marcar aprovado se estiver falhando ou não executado. O Ubuntu é validação suplementar no GitHub, não um runtime exigido no PC.
+- `EXECUTION_STATUS.md` preserva o avanço existente. Este ajuste de infraestrutura não valida, remove nem reordena tarefas F00–F17. Documentação e tarefas prosseguem na ordem original.
 
 ## Qualidade, testes e evidências
 
