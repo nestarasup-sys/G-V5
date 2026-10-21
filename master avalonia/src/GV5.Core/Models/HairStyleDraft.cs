@@ -194,6 +194,10 @@ public sealed record HairStyleDraft
     public HairStyleDraft WithPalette(HairPaletteOverrides palette) =>
         Restore(Id, Model, Revision.Next(), Name, Layers, palette ?? throw new ArgumentNullException(nameof(palette)));
 
+    /// <summary>Restores immutable edit content while keeping the workspace revision monotonic.</summary>
+    public HairStyleDraft WithContent(string name, IEnumerable<HairLayer> layers, HairPaletteOverrides palette) =>
+        Restore(Id, Model, Revision.Next(), name, layers, palette);
+
     private int FindLayerIndex(Func<HairLayer, bool> predicate)
     {
         for (var index = 0; index < Layers.Length; index++)
