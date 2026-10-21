@@ -273,7 +273,7 @@ Ambiente/SDK/CI: `TestarLocal.bat gate` passou em 2026-10-21; ver `docs/gates/GA
 - [x] **F08.04** — Implementar associação da peça ao bone e editor de offset/escala/rotação.
 - [x] **F08.05** — Implementar propagação de transform de roupa para poses diferentes e espelhamento.
 - [x] **F08.06** — Implementar camadas de roupa/itens sobre cabelo conforme regras explícitas.
-- [ ] **F08.07** — Implementar ajustes não destrutivos e undo/redo por componente.
+- [x] **F08.07** — Implementar ajustes não destrutivos e undo/redo por componente.
 - [ ] **F08.08** — Implementar catálogo com thumbnails/consulta paginada por modelo/categoria.
 - [ ] **F08.09** — Implementar publicar revisão imutável e vincular dependências reversas.
 - [ ] **F08.10** — Implementar consulta quem usa roupa/modelo/pose e bloqueio de exclusão destrutiva.

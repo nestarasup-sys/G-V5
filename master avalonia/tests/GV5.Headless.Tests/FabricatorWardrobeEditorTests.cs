@@ -64,6 +64,66 @@ public sealed class FabricatorWardrobeEditorTests
     }
 
     [Fact]
+    public void UndoRedoRestoresOnlyEditedComponentAndKeepsDraftRevisionMonotonic()
+    {
+        var model = CreateModel();
+        var bone = model.Content.Parts[0];
+        var first = WardrobeComponent.Create("Camisa", WardrobeCategory.Shirt, bone.Id, AssetId.New(),
+            new Rect2D(12, 15, 40, 50), 0, CreateBoneFrame(bone));
+        var second = WardrobeComponent.Create("Luvas", WardrobeCategory.Gloves, bone.Id, AssetId.New(),
+            new Rect2D(2, 3, 10, 11), 4, CreateBoneFrame(bone));
+        var initial = WardrobeSet.Create(model, "Roupa").WithContent("Roupa", [first, second]);
+        var editor = new WardrobeComponentEditorSession(initial, model);
+
+        editor.MoveBy(first.Id, new Point2D(7, 9));
+        var editedFirst = editor.Draft.Components.Single(component => component.Id == first.Id);
+        Assert.True(editor.CanUndo);
+        Assert.False(editor.CanRedo);
+        Assert.Equal(1, editor.UndoCount);
+
+        Assert.True(editor.Undo());
+        Assert.Equal(Revision.From(4), editor.Draft.Revision);
+        Assert.Equal(first, editor.Draft.Components.Single(component => component.Id == first.Id));
+        Assert.Equal(second, editor.Draft.Components.Single(component => component.Id == second.Id));
+        Assert.False(editor.CanUndo);
+        Assert.True(editor.CanRedo);
+
+        Assert.True(editor.Redo());
+        Assert.Equal(Revision.From(5), editor.Draft.Revision);
+        Assert.Equal(editedFirst, editor.Draft.Components.Single(component => component.Id == first.Id));
+        Assert.Equal(second, editor.Draft.Components.Single(component => component.Id == second.Id));
+        Assert.True(editor.CanUndo);
+        Assert.False(editor.CanRedo);
+        Assert.Equal(Revision.From(2), initial.Revision);
+    }
+
+    [Fact]
+    public void NewComponentEditClearsRedoAndEmptyHistoryIsSafe()
+    {
+        var model = CreateModel();
+        var bone = model.Content.Parts[0];
+        var first = WardrobeComponent.Create("Camisa", WardrobeCategory.Shirt, bone.Id, AssetId.New(),
+            new Rect2D(12, 15, 40, 50), 0, CreateBoneFrame(bone));
+        var second = WardrobeComponent.Create("Luvas", WardrobeCategory.Gloves, bone.Id, AssetId.New(),
+            new Rect2D(2, 3, 10, 11), 4, CreateBoneFrame(bone));
+        var editor = new WardrobeComponentEditorSession(
+            WardrobeSet.Create(model, "Roupa").WithContent("Roupa", [first, second]), model);
+
+        Assert.False(editor.Undo());
+        Assert.False(editor.Redo());
+        editor.MoveBy(first.Id, new Point2D(1, 0));
+        Assert.True(editor.Undo());
+        Assert.True(editor.CanRedo);
+
+        editor.RotateTo(second.Id, 15);
+
+        Assert.False(editor.CanRedo);
+        Assert.False(editor.Redo());
+        Assert.Equal(first, editor.Draft.Components.Single(component => component.Id == first.Id));
+        Assert.Equal(15, editor.Draft.Components.Single(component => component.Id == second.Id).RotationDegrees);
+    }
+
+    [Fact]
     public void EditorRejectsDifferentModelPublicationUnknownBoneAndInvalidScale()
     {
         var model = CreateModel();

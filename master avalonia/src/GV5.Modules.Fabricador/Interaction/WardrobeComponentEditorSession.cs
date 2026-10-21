@@ -7,7 +7,10 @@ namespace GV5.Modules.Fabricador.Interaction;
 /// <summary>Applies source-sheet garment transforms to an editable draft and refreshes its frozen bone binding.</summary>
 public sealed class WardrobeComponentEditorSession
 {
+    private const int HistoryLimit = 50;
     private readonly IReadOnlyDictionary<ModelPartId, WardrobeBoneFrame> _sourceBones;
+    private readonly List<WardrobeComponentEdit> _undo = [];
+    private readonly List<WardrobeComponentEdit> _redo = [];
 
     public WardrobeComponentEditorSession(WardrobeSet draft, PublishedModelRevision model)
     {
@@ -21,6 +24,10 @@ public sealed class WardrobeComponentEditorSession
     }
 
     public WardrobeSet Draft { get; private set; }
+    public bool CanUndo => _undo.Count > 0;
+    public bool CanRedo => _redo.Count > 0;
+    public int UndoCount => _undo.Count;
+    public int RedoCount => _redo.Count;
     public WardrobeComponent? SelectedComponent => SelectedComponentId is { } id
         ? Draft.Components.FirstOrDefault(component => component.Id == id)
         : null;
@@ -69,9 +76,56 @@ public sealed class WardrobeComponentEditorSession
 
     private WardrobeComponentEditorSession Replace(WardrobeComponent updated)
     {
-        Draft = Draft.WithContent(Draft.Name, Draft.Components.Select(component => component.Id == updated.Id ? updated : component));
+        var before = GetComponent(updated.Id);
+        if (before == updated) return this;
+        _undo.Add(new WardrobeComponentEdit(updated.Id, before, updated));
+        Trim(_undo);
+        _redo.Clear();
+        ApplyComponent(updated.Id, updated);
         return this;
     }
+
+    /// <summary>Restores the prior immutable component snapshot while keeping the draft revision monotonic.</summary>
+    public bool Undo()
+    {
+        if (!CanUndo) return false;
+        var edit = _undo[^1];
+        _undo.RemoveAt(_undo.Count - 1);
+        ApplyComponent(edit.ComponentId, edit.Before);
+        _redo.Add(edit);
+        Trim(_redo);
+        return true;
+    }
+
+    /// <summary>Reapplies one component edit without replacing any other component.</summary>
+    public bool Redo()
+    {
+        if (!CanRedo) return false;
+        var edit = _redo[^1];
+        _redo.RemoveAt(_redo.Count - 1);
+        ApplyComponent(edit.ComponentId, edit.After);
+        _undo.Add(edit);
+        Trim(_undo);
+        return true;
+    }
+
+    private void ApplyComponent(WardrobeComponentId componentId, WardrobeComponent component)
+    {
+        if (component.Id != componentId || !Draft.Components.Any(current => current.Id == componentId))
+            throw new InvalidOperationException("A wardrobe history command must target an existing matching component.");
+        Draft = Draft.WithContent(Draft.Name,
+            Draft.Components.Select(current => current.Id == componentId ? component : current));
+    }
+
+    private static void Trim(List<WardrobeComponentEdit> history)
+    {
+        if (history.Count > HistoryLimit) history.RemoveRange(0, history.Count - HistoryLimit);
+    }
+
+    private sealed record WardrobeComponentEdit(
+        WardrobeComponentId ComponentId,
+        WardrobeComponent Before,
+        WardrobeComponent After);
 
     private WardrobeComponent GetComponent(WardrobeComponentId id) =>
         Draft.Components.FirstOrDefault(component => component.Id == id)
