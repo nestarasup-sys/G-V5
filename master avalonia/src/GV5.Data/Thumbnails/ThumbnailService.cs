@@ -143,19 +143,23 @@ public sealed class ThumbnailService : IThumbnailService
                 }
             })).ConfigureAwait(false);
 
+            var failed = Array.FindIndex(results, result => result.IsFailure);
+            if (failed >= 0)
+            {
+                foreach (var result in results)
+                {
+                    if (result.IsSuccess)
+                    {
+                        await result.Value.DisposeAsync().ConfigureAwait(false);
+                    }
+                }
+
+                return Result<IReadOnlyList<AssetThumbnailStream>>.Failure(results[failed].Error!);
+            }
+
             var streams = new List<AssetThumbnailStream>(indexes.Count);
             for (var i = 0; i < indexes.Count; i++)
             {
-                if (results[i].IsFailure)
-                {
-                    foreach (var opened in streams)
-                    {
-                        await opened.DisposeAsync().ConfigureAwait(false);
-                    }
-
-                    return Result<IReadOnlyList<AssetThumbnailStream>>.Failure(results[i].Error!);
-                }
-
                 streams.Add(new AssetThumbnailStream(orderedAssetIds[indexes[i]], results[i].Value));
             }
 

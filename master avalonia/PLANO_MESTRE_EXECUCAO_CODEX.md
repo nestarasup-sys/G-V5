@@ -165,7 +165,7 @@ Ambiente/SDK/CI: <comandos e resultados reais>
 - [x] **F03.05** — Implementar decode PNG/JPEG/WebP fora da UI com alpha/orientação válidos e erro tipado.
 - [x] **F03.06** — Implementar cache de bitmaps LRU por orçamento de bytes com lease/ref e métricas; nunca liberar imagem em uso.
 - [x] **F03.07** — Implementar ThumbnailService com recipe/hash/versão e cache em disco, geração assíncrona cancelável.
-- [ ] **F03.08** — Implementar query paginada e política de fetch só do visível, com prefetch limitado.
+- [x] **F03.08** — Implementar query paginada e política de fetch só do visível, com prefetch limitado.
 - [ ] **F03.09** — Implementar lixeira/GC seguro para assets sem referências, com grace period e backup verificado.
 - [ ] **F03.10** — Testar cache pequeno, duplicados, arquivo corrompido, interrupção entre staging/commit, reabertura.
 - [ ] **F03.11** — Registrar métricas hit/miss/eviction e GATE-F03.

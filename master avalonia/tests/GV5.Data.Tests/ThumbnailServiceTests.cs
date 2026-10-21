@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using GV5.Application.Contracts;
 using GV5.Assets.Decoding;
@@ -154,13 +155,60 @@ public sealed class ThumbnailServiceTests
         DeleteTempRoot(root);
     }
 
-    private static byte[] CreatePng()
+    [Fact]
+    public async Task GetVisibleWindowAsync_LoadsVisibleItemsAndBoundedAdjacentPrefetchOnly()
+    {
+        var root = NewTempRoot();
+        var paths = new AppDataPaths(root);
+        var assets = Enumerable.Range(1, 8)
+            .Select(index => (Id: AssetId.New(), Bytes: CreatePng(new SKColor((byte)(index * 20), 35, 90, 255))))
+            .ToArray();
+        var store = new MultiMemoryAssetStore(assets);
+        var service = new ThumbnailService(store, paths, new AssetImageDecoder());
+
+        try
+        {
+            var window = await service.GetVisibleWindowAsync(
+                assets.Select(asset => asset.Id).ToArray(),
+                firstVisibleIndex: 3,
+                visibleCount: 2,
+                ThumbnailRecipe.Create(12, 8),
+                maximumPrefetch: 2,
+                TestContext.Current.CancellationToken);
+
+            Assert.True(window.IsSuccess, window.Error?.Message);
+            await using var disposal = new AsyncStreams(window.Value);
+            Assert.Equal(4, window.Value.Count);
+            Assert.Equal(assets.Skip(2).Take(4).Select(asset => asset.Id), window.Value.Select(item => item.AssetId));
+            Assert.Equal(4, store.OpenReadCount);
+            Assert.Equal(
+                assets.Skip(2).Take(4).Select(asset => asset.Id).OrderBy(id => id.ToString()),
+                store.OpenedAssetIds.OrderBy(id => id.ToString()));
+        }
+        finally
+        {
+            DeleteTempRoot(root);
+        }
+    }
+
+    [Fact]
+    public void AssetThumbnailWindowPlanner_ClampsPrefetchToCollectionEdges()
+    {
+        Assert.Equal(new[] { 0, 1, 2, 3 }, AssetThumbnailWindowPlanner.SelectIndexes(10, 0, 2, 2));
+        Assert.Equal(new[] { 5, 6, 7, 8, 9 }, AssetThumbnailWindowPlanner.SelectIndexes(10, 9, 1, 4));
+        Assert.Empty(AssetThumbnailWindowPlanner.SelectIndexes(0, 0, 10, 4));
+        Assert.Throws<ArgumentOutOfRangeException>(() => AssetThumbnailWindowPlanner.SelectIndexes(10, 0, 1, 17));
+    }
+
+    private static byte[] CreatePng() => CreatePng(new SKColor(250, 20, 30, 255));
+
+    private static byte[] CreatePng(SKColor color)
     {
         using var bitmap = new SKBitmap(new SKImageInfo(16, 8, SKColorType.Rgba8888, SKAlphaType.Unpremul));
         for (var y = 0; y < bitmap.Height; y++)
         for (var x = 0; x < bitmap.Width; x++)
         {
-            bitmap.SetPixel(x, y, x < 8 ? new SKColor(250, 20, 30, 255) : new SKColor(20, 30, 240, 0));
+            bitmap.SetPixel(x, y, x < 8 ? color : new SKColor(20, 30, 240, 0));
         }
 
         using var data = bitmap.Encode(SKEncodedImageFormat.Png, 100);
@@ -229,5 +277,56 @@ public sealed class ThumbnailServiceTests
 
         public Task<Result<Unit>> ReleaseReferenceAsync(AssetReferenceKey reference, CancellationToken cancellationToken = default) =>
             Task.FromResult(Result<Unit>.Success(Unit.Value));
+    }
+
+    private sealed class MultiMemoryAssetStore(IEnumerable<(AssetId Id, byte[] Bytes)> assets) : IAssetStore
+    {
+        private readonly Dictionary<AssetId, (byte[] Bytes, string Hash)> _assets = assets.ToDictionary(
+            asset => asset.Id,
+            asset => (asset.Bytes, Convert.ToHexStringLower(SHA256.HashData(asset.Bytes))));
+        private readonly ConcurrentQueue<AssetId> _opened = new();
+
+        public int OpenReadCount => _opened.Count;
+        public IReadOnlyList<AssetId> OpenedAssetIds => _opened.ToArray();
+
+        public Task<Result<AssetMetadata>> ImportAsync(Stream content, string mediaType, CancellationToken cancellationToken = default) =>
+            Task.FromResult(Result<AssetMetadata>.Failure(new ApplicationError(ApplicationErrorCode.Unavailable, "The in-memory test store is read-only.")));
+
+        public Task<Result<Stream>> OpenReadAsync(AssetId assetId, CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!_assets.TryGetValue(assetId, out var entry))
+            {
+                return Task.FromResult(Result<Stream>.Failure(new ApplicationError(ApplicationErrorCode.NotFound, "The test asset does not exist.")));
+            }
+
+            _opened.Enqueue(assetId);
+            return Task.FromResult(Result<Stream>.Success(new MemoryStream(entry.Bytes, writable: false)));
+        }
+
+        public Task<Result<AssetMetadata>> GetMetadataAsync(AssetId assetId, CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return _assets.TryGetValue(assetId, out var entry)
+                ? Task.FromResult(Result<AssetMetadata>.Success(new AssetMetadata(assetId, entry.Hash, "image/png", entry.Bytes.LongLength, AssetVerificationState.Available, 0)))
+                : Task.FromResult(Result<AssetMetadata>.Failure(new ApplicationError(ApplicationErrorCode.NotFound, "The test asset does not exist.")));
+        }
+
+        public Task<Result<Unit>> AddReferenceAsync(AssetId assetId, AssetReferenceKey reference, CancellationToken cancellationToken = default) =>
+            Task.FromResult(Result<Unit>.Success(Unit.Value));
+
+        public Task<Result<Unit>> ReleaseReferenceAsync(AssetReferenceKey reference, CancellationToken cancellationToken = default) =>
+            Task.FromResult(Result<Unit>.Success(Unit.Value));
+    }
+
+    private sealed class AsyncStreams(IReadOnlyList<AssetThumbnailStream> streams) : IAsyncDisposable
+    {
+        public async ValueTask DisposeAsync()
+        {
+            foreach (var stream in streams)
+            {
+                await stream.DisposeAsync();
+            }
+        }
     }
 }

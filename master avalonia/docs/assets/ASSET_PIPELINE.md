@@ -19,3 +19,9 @@ O orçamento de 512 MiB ainda precisa de benchmark em hardware real e ciclos de 
 `ThumbnailService` calcula a identidade por SHA-256 do asset, versão do gerador e receita imutável (largura, altura e `Contain`/`Cover`/`Stretch`). Gera PNG RGBA em background e salva em `thumbnails/<prefixo>/<chave>.png`; não altera o asset original nem grava caminhos no banco. Os manifestos vizinhos registram tamanho e SHA-256 dos bytes derivados. Um cache ausente, truncado ou adulterado é removido e reconstruído a partir do asset original.
 
 Publicação usa arquivos temporários na mesma pasta e rename atômico, com o manifesto publicado por último. Uma queda entre os dois renames deixa um par inválido que será detectado na próxima leitura. Requisições concorrentes para a mesma chave compartilham a geração; cada chamada recebe seu próprio stream, que deve ser descartado pelo consumidor. Cancelamento é propagado e remove os temporários criados durante a tentativa.
+
+## Catálogo paginado e janela visível
+
+`IAssetCatalog` lê somente metadados em páginas de 1 a 100 linhas. `SqliteAssetCatalog` usa keyset pagination por `(created_utc_ms DESC, asset_id DESC)`; o cursor guarda os dois valores da última linha recebida, então timestamps iguais não causam repetição ou salto entre páginas. Consultar o catálogo não abre arquivos binários.
+
+`IThumbnailService.GetVisibleWindowAsync` recebe a ordem atual dos IDs e o intervalo visível, e solicita somente esse intervalo mais um prefetch limitado (padrão 4, máximo 16). A coleção recebida é limitada a 100 itens, o trabalho de thumbnails roda com no máximo duas operações em paralelo, e a resposta mantém a ordem visual. Cada stream retornado pertence ao chamador e deve ser descartado; se uma geração falhar ou for cancelada, streams já abertos pela chamada são liberados.
