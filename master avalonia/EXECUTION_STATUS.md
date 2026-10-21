@@ -13,12 +13,12 @@
 | Branch obrigatória | `Master-AValonia` |
 | Pasta exclusiva do novo aplicativo | `master avalonia/` |
 | Commit-base inspecionado antes deste arquivo | `53b7f7a97321e85063a8dd4f9635e48d36548323` |
-| Último commit de implementação validado | `734e008` (F02.14; fixtures de falha/extremo do SQLite) |
-| Fase ativa | **F02 — SQLite, revisões, transações e recuperação básica** |
-| Última tarefa VALIDADA | **F02.14** — fixtures de falta de espaço, acesso negado, schema futuro, interrupção e integridade |
-| Próxima tarefa PENDENTE | **F02.15** — fechar GATE-F02 com comandos, schema e evidências de reopen/restore |
-| Gate atual | **GATE F00: PASSOU; G0: PASSOU em clone limpo; G1 em execução** |
-| Progresso validado neste controle | **40 / 247 tarefas (16,2%)** |
+| Último commit de implementação validado | `2bdd8f9` (F02.15; GATE-F02 fechado localmente) |
+| Fase ativa | **F03 — AssetStore, thumbnails e cache limitado** |
+| Última tarefa VALIDADA | **F02.15** — GATE-F02 com restore/reabertura e schema documentados |
+| Próxima tarefa PENDENTE | **F03.01** — definir AssetId e contratos de importação/referência |
+| Gate atual | **GATE F00: PASSOU; G0: PASSOU; F02: PASSOU; G1 global em execução até F03–F05** |
+| Progresso validado neste controle | **41 / 247 tarefas (16,6%)** |
 | Tarefas em execução | Nenhuma |
 | Bloqueios conhecidos | Primeiro download do SDK em clone vazio não progrediu; evidência e limite de F01 estão registrados em `docs/gates/GATE-F01.md` |
 | Aceite Windows/GPU | **Não executado / não registrado** |
@@ -46,7 +46,7 @@ Se o Codex encontrar algo já implementado, **validar e registrar evidências**,
 | --- | --- | ---: | ---: | --- | --- |
 | F00 | Auditoria do legado, baseline e sincronização | 13 | 13 | VALIDADA | PASSOU |
 | F01 | Solution .NET, contratos, módulo e CI | 13 | 13 | VALIDADA | G0 PASSOU |
-| F02 | SQLite, revisões, transações e recuperação básica | 15 | 14 | EM_EXECUCAO | G0 passou |
+| F02 | SQLite, revisões, transações e recuperação básica | 15 | 15 | VALIDADA | GATE-F02 PASSOU |
 | F03 | AssetStore, thumbnails e cache limitado | 11 | 0 | PENDENTE | — |
 | F04 | Geometry Engine canônica | 11 | 0 | PENDENTE | — |
 | F05 | RenderScene e SkiaRenderer independentes | 11 | 0 | PENDENTE | — |
@@ -111,6 +111,7 @@ Adicionar uma linha ao concluir ou bloquear cada tarefa. A linha inicial abaixo 
 | **F02.12** | **VALIDADA** | `6af5364` | Criado serviço de backup que usa SQLite Online Backup API sob gate de escrita, capturando o estado committed incluindo WAL. Cada backup tem pasta/versionamento e manifesto com schema, tamanho e SHA-256. Verificação confirma formato, caminho controlado, tamanho/hash, `integrity_check`, `foreign_key_check` e schema; restore recalcula hash, valida o SQLite e recusa sobrescrever banco existente. Teste mantém leitor WAL antigo aberto durante update, comprova WAL não vazio, cria backup, restaura em raiz temporária e confirma revisão e checkpoint; outro teste detecta adulteração e preserva arquivo preexistente. `TestarLocal.bat rapido` passou: build Debug 0 warnings/0 errors, Core 8/8, Architecture 4/4, Data 19/19, Headless 14/14; `git diff --check` passou. | `src/GV5.Application/Contracts/IDataPlatformBackupService.cs`; `src/GV5.Data/Storage/DatabaseBackupService.cs`; `SqliteDatabase.BackupDatabaseToAsync`; `tests/GV5.Data.Tests/DatabaseBackupServiceTests.cs`; `docs/data/SCHEMA_DESIGN.md` | Formato v1 faz backup do SQLite; ainda não há binários AssetStore para empacotar. Pasta de assets futuras precisa entrar no manifesto antes do gate completo de assets. Teste de restore isolado usou diretório temporário, sem dados reais. |
 | **F02.13** | **VALIDADA** | `a610f4e` | Implementados códigos de evento/resultado/erro em allowlist, correlation ID por operação, logger JSONL com rotação por tamanho e retenção limitada. Integração registra salvamento/recuperação no Fabricador e operações de backup, sem texto livre, nomes, caminhos ou conteúdo dos rascunhos. Testes confirmam schema permitido, ausência de dados privados, correlação de escopos aninhados, rotação/limite de retenção e integração real de save em SQLite temporário. `TestarLocal.bat rapido` passou: build Debug 0 warnings/0 errors, Core 8/8, Architecture 4/4, Data 22/22, Headless 15/15; `git diff --check` passou. | `src/GV5.Application/Contracts/DiagnosticLogging.cs`; `src/GV5.Data/Diagnostics/*`; integração em `DatabaseBackupService.cs` e `FabricadorViewModel.cs`; `tests/GV5.Data.Tests/StructuredFileLoggerTests.cs`; `tests/GV5.Headless.Tests/PrivacySafePersistenceLoggingTests.cs` | Validação headless e SQLite em diretórios temporários. Nenhuma janela nativa ou diagnóstico de GPU foi exercitado. |
 | **F02.14** | **VALIDADA** | `734e008` | Adicionados testes de limite de páginas SQLite (SQLITE_FULL) com rollback e `integrity_check=ok`, falha `UnauthorizedAccessException` na criação do perfil sem arquivo parcial, cancelamento após mutação com rollback e reabertura íntegra. O runner recebeu teste de schema realmente mais novo (v2 versus app v1), preservando tabela/dados. O verificador de backup rejeita arquivo SQLite corrompido mesmo com tamanho e SHA-256 do manifesto atualizados, exercitando `integrity_check` sem depender da verificação de hash. `TestarLocal.bat rapido` passou: build Debug 0 warnings/0 errors, Core 8/8, Architecture 4/4, Data 27/27, Headless 15/15; `git diff --check` passou. | `tests/GV5.Data.Tests/SqliteDatabaseTests.cs`; `tests/GV5.Data.Tests/SqliteMigrationRunnerTests.cs`; `tests/GV5.Data.Tests/DatabaseBackupServiceTests.cs` | Todos os casos usam arquivos e diretórios sintéticos temporários. Chamada direta de `dotnet test` não foi usada como evidência porque o launcher global não tem runtime .NET 10; o script local com SDK/runtime portátil executou e passou. |
+| **F02.15** | **VALIDADA** | `2bdd8f9` | `TestarLocal.bat gate` passou em Release: restore da solution e Headless, build com 0 warnings/0 errors, Core 8/8, Arquitetura 4/4, Data 27/27 e Headless 15/15. `docs/gates/GATE-F02.md` registra comandos, versões de schema 1–3, testes de reabertura, recovery, backup WAL e restore isolado, falhas e limites. F02 concluída 15/15; G1 ainda depende de F03–F05. | `docs/gates/GATE-F02.md`; `PLANO_MESTRE_EXECUCAO_CODEX.md`; migrations e testes de Data | Nenhuma janela nativa/GPU ou restauração sobre perfil ativo; nenhum dado real utilizado. |
 
 **Estados aceitos:** `PENDENTE`, `EM_EXECUCAO`, `BLOQUEADA`, `VALIDADA`.
 
@@ -189,6 +190,7 @@ Ainda não há entradas registradas neste controle. Toda mudança material do ro
 | 2026-10-20 | `6af5364` | F02.12 validada; próxima F02.13 | G1 em execução | Online backup com WAL, manifesto/hash e restore isolado verificados; adulteração rejeitada e destino existente preservado. TestarLocal.bat rapido: Core 8/8, Architecture 4/4, Data 19/19, Headless 14/14, build sem warnings/erros. |
 | 2026-10-20 | `a610f4e` | F02.13 validada; próxima F02.14 | G1 em execução | Log estruturado JSONL com campos allowlist, correlação e rotação; payloads e caminhos privados não aparecem. TestarLocal.bat rapido: Core 8/8, Architecture 4/4, Data 22/22, Headless 15/15, build sem warnings/erros. |
 | 2026-10-21 | `734e008` | F02.14 validada; próxima F02.15 | G1 em execução | SQLITE_FULL, acesso negado, schema futuro, cancelamento/interrupção e corrupção com hash válido exercitados em fixtures isoladas; suíte rápida local verde: Core 8/8, Architecture 4/4, Data 27/27, Headless 15/15, build sem warnings/erros. |
+| 2026-10-21 | `2bdd8f9` | F02.15 validada; próxima F03.01 | F02 PASSOU; G1 em execução | Gate Release: restore, build sem warnings/erros, Core 8/8, Architecture 4/4, Data 27/27 e Headless 15/15. Reopen/recovery e restore de backup WAL verificados em banco temporário; G1 continua aberto até AssetStore, geometria e render. |
 
 Após concluir um lote ou fase, adicionar uma linha. Não inflar contador só porque o commit contém múltiplos arquivos; contar apenas tarefas comprovadas.
 
@@ -197,7 +199,7 @@ Após concluir um lote ou fase, adicionar uma linha. Não inflar contador só po
 1. Confirmar branch, HEAD e árvore de trabalho localmente; não consultar nem sincronizar o remoto até autorização explícita.
 2. Ler `AGENTS.md`, `PLANO_DO_NOVO_APP.md`, `PLANO_MESTRE_EXECUCAO_CODEX.md` e este arquivo.
 3. Inspecionar evidências reais da última tarefa validada; caso não existam, corrigir seu estado.
-4. **Retomar F02.15**: fechar GATE-F02 com comandos, schema e evidências de reopen/restore.
+4. **Retomar F03.01**: definir AssetId e contratos de importação/leitura/metadados/referências para o AssetStore.
 5. Continuar automaticamente pelas tarefas seguintes **uma de cada vez**, em lotes flexíveis de aproximadamente 3–8 tarefas relacionadas, enquanto todos os gates pertinentes passam.
 6. Atualizar o registro e commitar entregas reais localmente na branch `Master-AValonia`; não desenvolver Video Studio antecipadamente.
 7. Ao encerrar, informar: **branch, HEAD, último ID VALIDADO, próximo ID PENDENTE, commits, comandos verdes, evidências, bloqueios e condição de desbloqueio**.
