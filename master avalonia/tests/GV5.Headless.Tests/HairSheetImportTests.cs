@@ -2,7 +2,10 @@ using GV5.Application.Contracts;
 using GV5.Assets.Decoding;
 using GV5.Assets.Import;
 using GV5.Assets.Processing;
+using GV5.Core.Identity;
+using GV5.Core.Models;
 using GV5.Modules.Fabricador.Import;
+using GV5.Modules.Fabricador.ViewModels;
 using SkiaSharp;
 using Xunit;
 
@@ -10,6 +13,56 @@ namespace GV5.Headless.Tests;
 
 public sealed class HairSheetImportTests
 {
+    [Fact]
+    public async Task HairWorkspaceBindsStagedPartsToReversibleLayersAndClearsThemBeforeStageDeletion()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"gv5-hair-workspace-{Guid.NewGuid():N}");
+        var bytes = CreatePng(bitmap =>
+        {
+            bitmap.Erase(new SKColor(0, 255, 0, 255));
+            for (var y = 1; y <= 3; y++)
+            for (var x = 3; x <= 6; x++) bitmap.SetPixel(x, y, new SKColor(20, 40, 160, 255));
+            for (var y = 7; y <= 9; y++)
+            for (var x = 4; x <= 7; x++) bitmap.SetPixel(x, y, new SKColor(160, 40, 20, 255));
+        }, 12, 12);
+        var modelId = ModelId.New();
+        var content = ModelDraftContent.CreateEmpty(modelId, Revision.Initial);
+        var model = PublishedModelRevision.Restore(ModelRevisionId.New(), modelId, Revision.Initial,
+            Revision.Initial, "Modelo", 1, new string('c', 64), content);
+        var workspace = new HairWorkspaceViewModel(new RecordingFilePicker(bytes), CreateService(root), new HairRoleTintProcessor());
+
+        try
+        {
+            workspace.OpenModelRevision(model);
+            await workspace.SelectSheetCommand.ExecuteAsync(null);
+            Assert.True(workspace.CanAddPosteriorLayer);
+            Assert.True(workspace.CanAddTraseiroLayer);
+
+            workspace.AddPosteriorLayerCommand.Execute(null);
+            workspace.AddTraseiroLayerCommand.Execute(null);
+            Assert.Equal(new[] { HairPartId.RearHair, HairPartId.BackHair }, workspace.Layers.Select(layer => layer.Part));
+            Assert.True(workspace.CanUndoLayer);
+            workspace.UndoLayerCommand.Execute(null);
+            Assert.Single(workspace.Layers);
+            workspace.RedoLayerCommand.Execute(null);
+            Assert.Equal(2, workspace.Layers.Count);
+
+            await workspace.CancelCommand.ExecuteAsync(null);
+            Assert.Empty(workspace.Layers);
+            Assert.False(workspace.HasPreview);
+            if (workspace.CanUndoLayer)
+            {
+                workspace.UndoLayerCommand.Execute(null);
+                Assert.Empty(workspace.Layers);
+            }
+        }
+        finally
+        {
+            await workspace.DisposeAsync();
+            if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+        }
+    }
+
     [Fact]
     public async Task PrepareKeepsExactOriginalAndStagesTwoTransparentOutputsUntilDisposed()
     {
@@ -100,6 +153,15 @@ public sealed class HairSheetImportTests
         new AssetImportStager(Path.Combine(root, "staging"), new AssetImportLimits(8 * 1024 * 1024, 8192, 32_000_000)),
         new AssetImageDecoder(new AssetImageDecodeLimits(8192, 32_000_000, 128L * 1024 * 1024)),
         new HairSheetProcessor());
+
+    private sealed class RecordingFilePicker(byte[] bytes) : IFilePicker
+    {
+        public Task<PickedFile?> PickImageAsync(CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult<PickedFile?>(new PickedFile("folha.png", "image/png", new MemoryStream(bytes, writable: false)));
+        }
+    }
 
     private static byte[] CreatePng(Action<SKBitmap> paint, int width = 20, int height = 12)
     {

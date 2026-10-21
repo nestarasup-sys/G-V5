@@ -842,6 +842,31 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
             SaveError = SaveError ?? "Resolva as alterações pendentes do modelo antes de abrir a oficina de cabelo.";
             return;
         }
+
+        if (_savedDraft is not null && _modelRevisionRepository is not null)
+        {
+            try
+            {
+                await _dataInitializer.InitializeAsync();
+                var revisions = await _modelRevisionRepository.ListAsync(_savedDraft.Id);
+                if (revisions.IsFailure)
+                {
+                    SaveError = revisions.Error!.Message;
+                    return;
+                }
+                var latest = revisions.Value.OrderByDescending(item => item.Revision.Value).FirstOrDefault();
+                if (latest is not null)
+                {
+                    HairWorkspace.OpenModelRevision(latest);
+                    if (HairWorkspace.HasError) return;
+                }
+            }
+            catch (Exception exception) when (exception is IOException or InvalidOperationException or ArgumentException)
+            {
+                SaveError = "Não foi possível abrir a revisão publicada do modelo para editar cabelos.";
+                return;
+            }
+        }
         IsHairWorkspace = true;
     }
 

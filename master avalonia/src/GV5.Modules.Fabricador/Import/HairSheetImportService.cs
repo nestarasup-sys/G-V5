@@ -129,6 +129,10 @@ public sealed class HairSheetImportPreview : IAsyncDisposable
     public string OriginalSha256 => _original.Sha256;
     public int SourceWidth => _original.Width;
     public int SourceHeight => _original.Height;
+    /// <summary>Ephemeral staging handle; never persist it as a library asset reference.</summary>
+    public GV5.Core.Identity.AssetId StagedPosteriorAssetId => _posterior.Id;
+    /// <summary>Ephemeral staging handle; never persist it as a library asset reference.</summary>
+    public GV5.Core.Identity.AssetId StagedTraseiroAssetId => _traseiro.Id;
     public ImageCropBounds PosteriorSourceBounds { get; }
     public ImageCropBounds TraseiroSourceBounds { get; }
     public int PosteriorWidth { get; }

@@ -4,8 +4,11 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using GV5.Application.Contracts;
 using GV5.Assets.Processing;
+using GV5.Core.Identity;
 using GV5.Core.Models;
+using GV5.Geometry;
 using GV5.Modules.Fabricador.Import;
+using GV5.Modules.Fabricador.Interaction;
 using SkiaSharp;
 
 namespace GV5.Modules.Fabricador.ViewModels;
@@ -17,6 +20,8 @@ public partial class HairWorkspaceViewModel : ObservableObject, IAsyncDisposable
     private readonly HairSheetImportService? _importService;
     private readonly HairRoleTintProcessor? _tintProcessor;
     private readonly Dictionary<HairColorRole, SKColor> _overrides = [];
+    private HairStyleEditorSession? _session;
+    private HairPartOption _selectedBackPart = HairPartOption.BackHair;
     private CancellationTokenSource? _activeOperation;
     private TaskCompletionSource? _activeOperationCompletion;
     private int _disposed;
@@ -26,11 +31,23 @@ public partial class HairWorkspaceViewModel : ObservableObject, IAsyncDisposable
     [NotifyPropertyChangedFor(nameof(PreviewDimensions))]
     [NotifyPropertyChangedFor(nameof(CanReprocess))]
     [NotifyPropertyChangedFor(nameof(CanCancel))]
+    [NotifyPropertyChangedFor(nameof(CanAddPosteriorLayer))]
+    [NotifyPropertyChangedFor(nameof(CanAddTraseiroLayer))]
+    [NotifyPropertyChangedFor(nameof(CanUndoLayer))]
+    [NotifyPropertyChangedFor(nameof(CanRedoLayer))]
+    [NotifyPropertyChangedFor(nameof(CanAddPosteriorLayer))]
+    [NotifyPropertyChangedFor(nameof(CanAddTraseiroLayer))]
     [NotifyCanExecuteChangedFor(nameof(ReprocessCommand))]
     [NotifyCanExecuteChangedFor(nameof(CancelCommand))]
     [NotifyCanExecuteChangedFor(nameof(ApplyRoleColorCommand))]
     [NotifyCanExecuteChangedFor(nameof(ResetRoleColorCommand))]
     [NotifyCanExecuteChangedFor(nameof(ResetPaletteCommand))]
+    [NotifyCanExecuteChangedFor(nameof(AddPosteriorLayerCommand))]
+    [NotifyCanExecuteChangedFor(nameof(AddTraseiroLayerCommand))]
+    [NotifyCanExecuteChangedFor(nameof(UndoLayerCommand))]
+    [NotifyCanExecuteChangedFor(nameof(RedoLayerCommand))]
+    [NotifyCanExecuteChangedFor(nameof(AddPosteriorLayerCommand))]
+    [NotifyCanExecuteChangedFor(nameof(AddTraseiroLayerCommand))]
     private HairSheetImportPreview? preview;
 
     [ObservableProperty]
@@ -75,7 +92,101 @@ public partial class HairWorkspaceViewModel : ObservableObject, IAsyncDisposable
         ];
     }
 
+    public void OpenModelRevision(PublishedModelRevision model)
+    {
+        ArgumentNullException.ThrowIfNull(model);
+        if (_session is not null && _session.Draft.Model == ModelRevisionReference.From(model)) return;
+        if (_session is not null)
+        {
+            Error = "Esta sessão está vinculada a outra revisão. Salve ou descarte as alterações antes de trocar o modelo.";
+            return;
+        }
+        Error = null;
+        _session = new HairStyleEditorSession(model);
+        RebuildLayers();
+        OnPropertyChanged(nameof(CanEditLayers));
+        OnPropertyChanged(nameof(ModelRevisionLabel));
+        OnPropertyChanged(nameof(EmptyLayerMessage));
+        OnLayerSessionChanged();
+        Status = "Sessão de camadas presa à revisão publicada; salve e publique para torná-la permanente.";
+    }
+
+    [RelayCommand(CanExecute = nameof(CanAddPosteriorLayer))]
+    private void AddPosteriorLayer()
+    {
+        if (_session is null || Preview is not { } preview) return;
+        _session.AddOrReplace(HairLayer.Create(HairPartId.RearHair, preview.StagedPosteriorAssetId, Transform2D.Identity));
+        RebuildLayers();
+        OnLayerSessionChanged();
+        Status = "Cabelo posterior adicionado à sessão; o PNG continua em staging até publicação.";
+    }
+
+    [RelayCommand(CanExecute = nameof(CanAddTraseiroLayer))]
+    private void AddTraseiroLayer()
+    {
+        if (_session is null || Preview is not { } preview) return;
+        _session.AddOrReplace(HairLayer.Create(SelectedBackPart.Part, preview.StagedTraseiroAssetId, Transform2D.Identity));
+        RebuildLayers();
+        OnLayerSessionChanged();
+        Status = "Cabelo traseiro adicionado à sessão; o PNG continua em staging até publicação.";
+    }
+
+    [RelayCommand(CanExecute = nameof(CanUndoLayer))]
+    private void UndoLayer()
+    {
+        if (_session?.Undo() != true) return;
+        RebuildLayers();
+        OnLayerSessionChanged();
+    }
+
+    [RelayCommand(CanExecute = nameof(CanRedoLayer))]
+    private void RedoLayer()
+    {
+        if (_session?.Redo() != true) return;
+        RebuildLayers();
+        OnLayerSessionChanged();
+    }
+
+    [RelayCommand]
+    private void MoveLayerUp(HairLayerListItem? item)
+    {
+        if (item is null || _session?.Move(item.Part, -1) != true) return;
+        RebuildLayers();
+        OnLayerSessionChanged();
+    }
+
+    [RelayCommand]
+    private void MoveLayerDown(HairLayerListItem? item)
+    {
+        if (item is null || _session?.Move(item.Part, 1) != true) return;
+        RebuildLayers();
+        OnLayerSessionChanged();
+    }
+
+    [RelayCommand]
+    private void RemoveLayer(HairLayerListItem? item)
+    {
+        if (item is null || _session?.Remove(item.Part) != true) return;
+        RebuildLayers();
+        OnLayerSessionChanged();
+    }
+
+    [RelayCommand]
+    private void ToggleLayerVisibility(HairLayerListItem? item)
+    {
+        if (item is null || _session?.SetVisibility(item.Part, !item.IsVisible) != true) return;
+        RebuildLayers();
+        OnLayerSessionChanged();
+    }
+
     public ObservableCollection<HairRoleColorItem> RoleColors { get; }
+    public ObservableCollection<HairLayerListItem> Layers { get; } = [];
+    public IReadOnlyList<HairPartOption> BackPartOptions { get; } = [HairPartOption.BackHair, HairPartOption.Ponytail];
+    public HairPartOption SelectedBackPart
+    {
+        get => _selectedBackPart;
+        set => SetProperty(ref _selectedBackPart, value);
+    }
     public IReadOnlyList<HairBackgroundModeOption> Modes { get; } =
     [HairBackgroundModeOption.Auto, HairBackgroundModeOption.Green, HairBackgroundModeOption.Checker];
     public HairBackgroundModeOption SelectedMode
@@ -95,6 +206,16 @@ public partial class HairWorkspaceViewModel : ObservableObject, IAsyncDisposable
     public bool CanSelectSheet => !IsBusy && _filePicker is not null && _importService is not null;
     public bool CanReprocess => !IsBusy && Preview is not null && _importService is not null;
     public bool CanCancel => IsBusy || Preview is not null;
+    public bool CanEditLayers => _session is not null;
+    public bool CanAddPosteriorLayer => CanEditLayers && Preview is not null && !IsBusy;
+    public bool CanAddTraseiroLayer => CanEditLayers && Preview is not null && !IsBusy;
+    public bool CanUndoLayer => _session?.CanUndo == true && !IsBusy;
+    public bool CanRedoLayer => _session?.CanRedo == true && !IsBusy;
+    public bool HasNoLayers => Layers.Count == 0;
+    public string EmptyLayerMessage => CanEditLayers ? "Nenhuma camada foi adicionada a esta sessão." : ModelRevisionLabel;
+    public string ModelRevisionLabel => _session is { } session
+        ? $"Modelo {session.Draft.Model.ModelId} · revisão {session.Draft.Model.Sequence.Value:00}"
+        : "Salve e publique um modelo para editar camadas de cabelo.";
     public string PreviewDimensions => Preview is { } source
         ? $"Folha original {source.SourceWidth} × {source.SourceHeight} px · Posterior {source.PosteriorWidth} × {source.PosteriorHeight} px · Traseiro {source.TraseiroWidth} × {source.TraseiroHeight} px"
         : string.Empty;
@@ -157,6 +278,7 @@ public partial class HairWorkspaceViewModel : ObservableObject, IAsyncDisposable
             Status = "Cancelando processamento…";
             return;
         }
+        if (Preview is { } stagedPreview) RemoveStagedLayers(stagedPreview);
         await ClearPreviewAsync();
         Error = null;
         Status = "Prévia descartada; o arquivo original não foi alterado.";
@@ -175,7 +297,12 @@ public partial class HairWorkspaceViewModel : ObservableObject, IAsyncDisposable
         _overrides[item.Role] = color;
         item.IsOverridden = true;
         using var operation = BeginOperation();
-        try { await RefreshTintAsync(operation.Token); }
+        try
+        {
+            await RefreshTintAsync(operation.Token);
+            _session?.SetColor(item.Role, PackRgb(color));
+            OnLayerSessionChanged();
+        }
         catch (OperationCanceledException) { Status = "Atualização de cor cancelada."; }
         catch (Exception exception) when (exception is InvalidOperationException or ArgumentException or IOException)
         { Error = "Não foi possível aplicar a paleta à prévia."; }
@@ -189,7 +316,12 @@ public partial class HairWorkspaceViewModel : ObservableObject, IAsyncDisposable
         _overrides.Remove(item.Role);
         item.IsOverridden = false;
         using var operation = BeginOperation();
-        try { await RefreshTintAsync(operation.Token); }
+        try
+        {
+            await RefreshTintAsync(operation.Token);
+            _session?.ClearColor(item.Role);
+            OnLayerSessionChanged();
+        }
         catch (OperationCanceledException) { Status = "Atualização de cor cancelada."; }
         catch (Exception exception) when (exception is InvalidOperationException or ArgumentException or IOException)
         { Error = "Não foi possível restaurar esta cor na prévia."; }
@@ -202,7 +334,13 @@ public partial class HairWorkspaceViewModel : ObservableObject, IAsyncDisposable
         _overrides.Clear();
         foreach (var role in RoleColors) role.IsOverridden = false;
         using var operation = BeginOperation();
-        try { await RefreshTintAsync(operation.Token); }
+        try
+        {
+            await RefreshTintAsync(operation.Token);
+            if (_session is not null)
+                foreach (var role in Enum.GetValues<HairColorRole>()) _session.ClearColor(role);
+            OnLayerSessionChanged();
+        }
         catch (OperationCanceledException) { Status = "Restauração da paleta cancelada."; }
         catch (Exception exception) when (exception is InvalidOperationException or ArgumentException or IOException)
         { Error = "Não foi possível restaurar a paleta na prévia."; }
@@ -210,6 +348,59 @@ public partial class HairWorkspaceViewModel : ObservableObject, IAsyncDisposable
     }
 
     private bool CanChangePalette() => !IsBusy && Preview is not null && _tintProcessor is not null;
+
+    private void RebuildLayers()
+    {
+        Layers.Clear();
+        if (_session is not null)
+            foreach (var layer in _session.Draft.Layers)
+                Layers.Add(new HairLayerListItem(layer.Part, layer.AssetId, layer.IsVisible));
+        OnPropertyChanged(nameof(HasNoLayers));
+        OnPropertyChanged(nameof(EmptyLayerMessage));
+    }
+
+    private void ReconcileStagedLayers(HairSheetImportPreview previous, HairSheetImportPreview next)
+    {
+        if (_session is null) return;
+        var sameSource = string.Equals(previous.OriginalSha256, next.OriginalSha256, StringComparison.Ordinal);
+        var replacements = sameSource
+            ? new Dictionary<AssetId, AssetId>
+            {
+                [previous.StagedPosteriorAssetId] = next.StagedPosteriorAssetId,
+                [previous.StagedTraseiroAssetId] = next.StagedTraseiroAssetId
+            }
+            : new Dictionary<AssetId, AssetId>();
+        var invalid = sameSource
+            ? new HashSet<AssetId>()
+            : new HashSet<AssetId> { previous.StagedPosteriorAssetId, previous.StagedTraseiroAssetId };
+        _session.ReconcileAssetReferences(replacements, invalid);
+        RebuildLayers();
+        OnLayerSessionChanged();
+        if (!sameSource) Status = "A fonte mudou; camadas que apontavam para o staging anterior foram removidas do rascunho.";
+    }
+
+    private void RemoveStagedLayers(HairSheetImportPreview preview)
+    {
+        if (_session is null) return;
+        _session.ReconcileAssetReferences(new Dictionary<AssetId, AssetId>(),
+            new HashSet<AssetId> { preview.StagedPosteriorAssetId, preview.StagedTraseiroAssetId });
+        RebuildLayers();
+        OnLayerSessionChanged();
+    }
+
+    private void OnLayerSessionChanged()
+    {
+        OnPropertyChanged(nameof(CanUndoLayer));
+        OnPropertyChanged(nameof(CanRedoLayer));
+        OnPropertyChanged(nameof(CanAddPosteriorLayer));
+        OnPropertyChanged(nameof(CanAddTraseiroLayer));
+        UndoLayerCommand.NotifyCanExecuteChanged();
+        RedoLayerCommand.NotifyCanExecuteChanged();
+        AddPosteriorLayerCommand.NotifyCanExecuteChanged();
+        AddTraseiroLayerCommand.NotifyCanExecuteChanged();
+    }
+
+    private static uint PackRgb(SKColor color) => (uint)(color.Red << 16 | color.Green << 8 | color.Blue);
 
     private async Task PrepareAsync(Stream source, string mediaType, CancellationToken cancellationToken)
     {
@@ -234,6 +425,7 @@ public partial class HairWorkspaceViewModel : ObservableObject, IAsyncDisposable
         }
 
         var previous = Preview;
+        if (previous is not null) ReconcileStagedLayers(previous, result.Value);
         Preview = result.Value;
         await ClearTintAsync();
         if (previous is not null) await previous.DisposeAsync();
@@ -347,6 +539,28 @@ public partial class HairWorkspaceViewModel : ObservableObject, IAsyncDisposable
         if (completion is not null) await completion.ConfigureAwait(false);
         await ClearPreviewAsync();
     }
+}
+
+public sealed record HairPartOption(HairPartId Part, string Label)
+{
+    public static HairPartOption BackHair { get; } = new(HairPartId.BackHair, "Cabelo traseiro");
+    public static HairPartOption Ponytail { get; } = new(HairPartId.Ponytail, "Rabo de cavalo");
+    public override string ToString() => Label;
+}
+
+public sealed record HairLayerListItem(HairPartId Part, AssetId AssetId, bool IsVisible)
+{
+    public string VisibilityButtonLabel => IsVisible ? "Ocultar" : "Mostrar";
+    public string Label => Part switch
+    {
+        HairPartId.BackHair => "Cabelo traseiro",
+        HairPartId.RearHair => "Cabelo posterior",
+        HairPartId.Ponytail => "Rabo de cavalo",
+        HairPartId.FrontHair => "Franja frontal",
+        HairPartId.Ahoge => "Ahoge",
+        _ => "Parte de cabelo"
+    };
+    public string AssetLabel => $"Asset temporário · {AssetId.Value.ToString("N")[..8]}";
 }
 
 public sealed record HairBackgroundModeOption(HairBackgroundMode Mode, string Label)

@@ -59,6 +59,24 @@ public sealed class HairStyleEditorSession
     public bool ClearColor(HairColorRole role) =>
         Apply(Draft.WithPalette(Draft.Palette.WithoutColor(role)));
 
+    /// <summary>Rewrites or removes temporary asset references in the current draft and history before staging is deleted.</summary>
+    public bool ReconcileAssetReferences(IReadOnlyDictionary<AssetId, AssetId> replacements,
+        IReadOnlySet<AssetId> invalidAssets)
+    {
+        ArgumentNullException.ThrowIfNull(replacements);
+        ArgumentNullException.ThrowIfNull(invalidAssets);
+        if (replacements.Keys.Any(id => !id.IsValid) || replacements.Values.Any(id => !id.IsValid)
+            || invalidAssets.Any(id => !id.IsValid))
+            throw new ArgumentException("Asset reference reconciliation requires valid asset IDs.");
+
+        var changed = false;
+        Draft = Rewrite(Draft, replacements, invalidAssets, ref changed);
+        RewriteHistory(_undo, replacements, invalidAssets, ref changed);
+        RewriteHistory(_redo, replacements, invalidAssets, ref changed);
+        if (SelectedPart is { } selected && Draft.Layers.All(layer => layer.Part != selected)) SelectedPart = null;
+        return changed;
+    }
+
     public bool Undo()
     {
         if (!CanUndo) return false;
@@ -89,6 +107,37 @@ public sealed class HairStyleEditorSession
         _redo.Clear();
         Draft = next;
         return true;
+    }
+
+    private static void RewriteHistory(List<HairStyleDraft> history,
+        IReadOnlyDictionary<AssetId, AssetId> replacements, IReadOnlySet<AssetId> invalidAssets, ref bool changed)
+    {
+        for (var index = 0; index < history.Count; index++)
+            history[index] = Rewrite(history[index], replacements, invalidAssets, ref changed);
+    }
+
+    private static HairStyleDraft Rewrite(HairStyleDraft draft,
+        IReadOnlyDictionary<AssetId, AssetId> replacements, IReadOnlySet<AssetId> invalidAssets, ref bool changed)
+    {
+        var layers = new List<HairLayer>(draft.Layers.Length);
+        var localChanged = false;
+        foreach (var layer in draft.Layers)
+        {
+            if (invalidAssets.Contains(layer.AssetId))
+            {
+                localChanged = true;
+                continue;
+            }
+            if (replacements.TryGetValue(layer.AssetId, out var replacement) && replacement != layer.AssetId)
+            {
+                layers.Add(HairLayer.Create(layer.Part, replacement, layer.Transform, layer.IsVisible));
+                localChanged = true;
+            }
+            else layers.Add(layer);
+        }
+        if (!localChanged) return draft;
+        changed = true;
+        return draft.WithContent(draft.Name, layers, draft.Palette);
     }
 
     private static void Trim(List<HairStyleDraft> history)
