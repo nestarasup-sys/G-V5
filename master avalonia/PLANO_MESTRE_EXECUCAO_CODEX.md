@@ -301,7 +301,7 @@ Ambiente/SDK/CI: `TestarLocal.bat gate` passou em 2026-10-21; ver `docs/gates/GA
 - [x] **F09.11** — Implementar publicação/revisão de hair, face e expression e grafo de dependências.
 - [x] **F09.12** — Integrar cabelo/face/roupa/body ao builder único e comparar goldens completos.
 - [x] **F09.13** — Completar funcionalidades de animações que ficaram apontadas em F07, sem construir timeline de vídeo.
-- [ ] **F09.14** — Testar salvar/reabrir/import inválido/cancelamento de cada subárea e fechar gaps de paridade.
+- [x] **F09.14** — Testar salvar/reabrir/import inválido/cancelamento de cada subárea e fechar gaps de paridade. Evidência: `docs/testing/F09.14_FABRICADOR.md`; diferenças de UI ainda sem implementação seguem explicitamente para F09.15/G2.
 - [ ] **F09.15** — Fechar GATE-F09/G2 com auditoria de **todas** as subáreas do Fabricador.
 
 **Encerramento F09:** registrar `docs/gates/GATE-F09.md` e marcar a fase validada somente se o gate acima foi comprovado. Se estiver bloqueado, documentar a evidência que falta e não iniciar F10.
