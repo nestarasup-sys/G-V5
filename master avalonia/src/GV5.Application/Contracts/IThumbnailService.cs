@@ -48,4 +48,64 @@ public interface IThumbnailService
         AssetId assetId,
         ThumbnailRecipe recipe,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Loads only the visible range plus a bounded number of adjacent thumbnails.
+    /// The caller owns and must dispose every returned stream.
+    /// </summary>
+    Task<Result<IReadOnlyList<AssetThumbnailStream>>> GetVisibleWindowAsync(
+        IReadOnlyList<AssetId> orderedAssetIds,
+        int firstVisibleIndex,
+        int visibleCount,
+        ThumbnailRecipe recipe,
+        int maximumPrefetch = 4,
+        CancellationToken cancellationToken = default);
+}
+
+public sealed class AssetThumbnailStream : IAsyncDisposable
+{
+    public AssetId AssetId { get; }
+    public Stream Content { get; }
+
+    public AssetThumbnailStream(AssetId assetId, Stream content)
+    {
+        if (!assetId.IsValid)
+        {
+            throw new ArgumentException("A thumbnail result requires a valid asset ID.", nameof(assetId));
+        }
+
+        AssetId = assetId;
+        Content = content ?? throw new ArgumentNullException(nameof(content));
+    }
+
+    public ValueTask DisposeAsync() => Content.DisposeAsync();
+}
+
+public static class AssetThumbnailWindowPlanner
+{
+    public const int MaximumPrefetch = 16;
+
+    public static IReadOnlyList<int> SelectIndexes(int itemCount, int firstVisibleIndex, int visibleCount, int maximumPrefetch = 4)
+    {
+        if (itemCount < 0 || firstVisibleIndex < 0 || firstVisibleIndex > itemCount || visibleCount < 0 || maximumPrefetch is < 0 or > MaximumPrefetch)
+        {
+            throw new ArgumentOutOfRangeException(nameof(firstVisibleIndex), "The visible asset range or prefetch limit is invalid.");
+        }
+
+        if (visibleCount == 0 || firstVisibleIndex == itemCount)
+        {
+            return Array.Empty<int>();
+        }
+
+        var visibleEnd = (int)Math.Min(itemCount, (long)firstVisibleIndex + visibleCount);
+        var before = Math.Min(firstVisibleIndex, maximumPrefetch / 2);
+        var remaining = maximumPrefetch - before;
+        var after = Math.Min(itemCount - visibleEnd, remaining);
+        remaining -= after;
+        before += Math.Min(firstVisibleIndex - before, remaining);
+
+        var start = firstVisibleIndex - before;
+        var end = visibleEnd + after;
+        return Enumerable.Range(start, end - start).ToArray();
+    }
 }

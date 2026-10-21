@@ -34,6 +34,7 @@ internal static class AppComposition
         services.AddSingleton<ISqliteMigration, AssetReferenceSchemaMigration>();
         services.AddSingleton<SqliteMigrationRunner>();
         services.AddSingleton<IDataPlatformInitializer>(provider => provider.GetRequiredService<SqliteMigrationRunner>());
+        services.AddSingleton<IAssetCatalog, SqliteAssetCatalog>();
         services.AddSingleton<IModelDraftRepository, SqliteModelDraftRepository>();
         services.AddSingleton<IModelDraftCheckpointStore, SqliteModelDraftCheckpointStore>();
         services.AddSingleton<IDataPlatformBackupService, DatabaseBackupService>();

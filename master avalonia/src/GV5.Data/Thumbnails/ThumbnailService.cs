@@ -94,6 +94,87 @@ public sealed class ThumbnailService : IThumbnailService
         }
     }
 
+    public async Task<Result<IReadOnlyList<AssetThumbnailStream>>> GetVisibleWindowAsync(
+        IReadOnlyList<AssetId> orderedAssetIds,
+        int firstVisibleIndex,
+        int visibleCount,
+        ThumbnailRecipe recipe,
+        int maximumPrefetch = 4,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(orderedAssetIds);
+        ArgumentNullException.ThrowIfNull(recipe);
+        if (orderedAssetIds.Count > 100 || orderedAssetIds.Any(id => !id.IsValid))
+        {
+            return Result<IReadOnlyList<AssetThumbnailStream>>.Failure(
+                new ApplicationError(ApplicationErrorCode.Validation, "The visible asset window is invalid."));
+        }
+
+        IReadOnlyList<int> indexes;
+        try
+        {
+            indexes = AssetThumbnailWindowPlanner.SelectIndexes(orderedAssetIds.Count, firstVisibleIndex, visibleCount, maximumPrefetch);
+        }
+        catch (ArgumentOutOfRangeException)
+        {
+            return Result<IReadOnlyList<AssetThumbnailStream>>.Failure(
+                new ApplicationError(ApplicationErrorCode.Validation, "The visible asset window is invalid."));
+        }
+
+        if (indexes.Count == 0)
+        {
+            return Result<IReadOnlyList<AssetThumbnailStream>>.Success(Array.Empty<AssetThumbnailStream>());
+        }
+
+        using var concurrency = new SemaphoreSlim(2, 2);
+        var results = new Result<Stream>[indexes.Count];
+        try
+        {
+            await Task.WhenAll(indexes.Select(async (index, resultIndex) =>
+            {
+                await concurrency.WaitAsync(cancellationToken).ConfigureAwait(false);
+                try
+                {
+                    results[resultIndex] = await GetOrCreateAsync(orderedAssetIds[index], recipe, cancellationToken).ConfigureAwait(false);
+                }
+                finally
+                {
+                    concurrency.Release();
+                }
+            })).ConfigureAwait(false);
+
+            var streams = new List<AssetThumbnailStream>(indexes.Count);
+            for (var i = 0; i < indexes.Count; i++)
+            {
+                if (results[i].IsFailure)
+                {
+                    foreach (var opened in streams)
+                    {
+                        await opened.DisposeAsync().ConfigureAwait(false);
+                    }
+
+                    return Result<IReadOnlyList<AssetThumbnailStream>>.Failure(results[i].Error!);
+                }
+
+                streams.Add(new AssetThumbnailStream(orderedAssetIds[indexes[i]], results[i].Value));
+            }
+
+            return Result<IReadOnlyList<AssetThumbnailStream>>.Success(streams.AsReadOnly());
+        }
+        catch
+        {
+            foreach (var result in results)
+            {
+                if (result is { IsSuccess: true })
+                {
+                    await result.Value.DisposeAsync().ConfigureAwait(false);
+                }
+            }
+
+            throw;
+        }
+    }
+
     private static string BuildCacheKey(string contentHash, ThumbnailRecipe recipe)
     {
         var canonicalRecipe = $"thumbnail|generator={GeneratorVersion}|{recipe.Width}x{recipe.Height}|fit={(int)recipe.FitMode}|png|rgba-srgb-v1";
