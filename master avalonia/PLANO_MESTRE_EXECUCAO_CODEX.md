@@ -201,7 +201,7 @@ Ambiente/SDK/CI: `TestarLocal.bat gate` passou em 2026-10-21; ver `docs/gates/GA
 
 **Gate:** G1. PNG transparente determinístico, primeiro personagem sintético renderizado, sem lógica de composição na View.
 
-- [ ] **F05.01** — Definir RenderScene/RenderLayer imutáveis (AssetId, transform, crop, alpha, blend, flip e z-order).
+- [x] **F05.01** — Definir RenderScene/RenderLayer imutáveis (AssetId, transform, crop, alpha, blend, flip e z-order).
 - [ ] **F05.02** — Implementar builder de cena de partes corporais seguindo layer order explícita.
 - [ ] **F05.03** — Adicionar SkiaSharp e SkiaRenderer raster CPU headless com descarte correto de superfícies.
 - [ ] **F05.04** — Renderizar uma peça PNG transparente em tamanho de fixture com golden aprovado.
