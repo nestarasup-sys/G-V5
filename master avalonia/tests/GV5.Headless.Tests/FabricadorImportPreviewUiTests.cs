@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Security.Cryptography;
 using Avalonia.Controls;
 using Avalonia.Headless.XUnit;
@@ -22,6 +23,62 @@ namespace GV5.Headless.Tests;
 public sealed class FabricadorImportPreviewUiTests
 {
     [AvaloniaFact]
+    public async Task PieceEdits_AreDebouncedAndOnlyMarkedSavedAfterContentRepositoryConfirms()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var root = Path.Combine(Path.GetTempPath(), $"gv5-fabricator-autosave-{Guid.NewGuid():N}");
+        var store = new RecordingAssetStore();
+        var contentRepository = new RecordingContentRepository(store, includePiece: true);
+        using var renderAssetsCache = new AssetBitmapCache(4 * 1024 * 1024);
+        var renderAssets = new TestRenderAssetProvider(store, new AssetImageDecoder(), renderAssetsCache);
+        var service = new ModelSourceImportService(
+            new AssetImportStager(root, new AssetImportLimits(MaximumBytes: 1024 * 1024, MaximumDimension: 16_384, MaximumPixels: 32_000_000)),
+            new AssetImageDecoder());
+        var viewModel = new FabricadorViewModel(
+            new EmptyDraftRepository(),
+            new NoopInitializer(),
+            filePicker: new RecordingFilePicker(CreatePng(9, 6)),
+            modelSourceImportService: service,
+            assetStore: store,
+            contentRepository: contentRepository,
+            sceneRenderer: new SkiaRenderer(renderAssets));
+        viewModel.ModelName = "Modelo com autosave";
+        var window = new Window { Width = 900, Height = 700, Content = new FabricadorView { DataContext = viewModel } };
+        window.Show();
+
+        try
+        {
+            await viewModel.SelectModelSourceCommand.ExecuteAsync(null);
+            await viewModel.PublishModelSourceCommand.ExecuteAsync(null);
+            Assert.Equal(1, contentRepository.SaveCount);
+
+            var part = contentRepository.LastSaved!.Parts[0];
+            viewModel.TogglePartVisibilityCommand.Execute(part.Id);
+            Assert.Equal(PersistenceState.Dirty, viewModel.SaveState);
+            Assert.True(viewModel.CanSave);
+            Assert.Equal(1, contentRepository.SaveCount);
+
+            await WaitUntilAsync(
+                () => viewModel.SaveState == PersistenceState.Saved && contentRepository.SaveCount == 2,
+                cancellationToken);
+
+            Assert.Equal(Revision.From(2), contentRepository.LastSaved!.Revision);
+            Assert.False(contentRepository.LastSaved.Parts.Single(candidate => candidate.Id == part.Id).IsVisible);
+            Assert.False(viewModel.CanSave);
+            Assert.Contains(window.GetVisualDescendants().OfType<TextBlock>(), text => text.Name == "SaveStateText" && text.Text == "Salvo");
+        }
+        finally
+        {
+            window.Close();
+            viewModel.Dispose();
+            if (Directory.Exists(root))
+            {
+                Directory.Delete(root, recursive: true);
+            }
+        }
+    }
+
+    [AvaloniaFact]
     public async Task FilePickerFlowShowsReviewedBitmapAndPublishesOnlyAfterConfirmation()
     {
         var root = Path.Combine(Path.GetTempPath(), $"gv5-fabricator-preview-{Guid.NewGuid():N}");
@@ -42,7 +99,8 @@ public sealed class FabricadorImportPreviewUiTests
             modelSourceImportService: service,
             assetStore: store,
             contentRepository: contentRepository,
-            sceneRenderer: sceneRenderer);
+            sceneRenderer: sceneRenderer,
+            autosaveDelay: TimeSpan.FromHours(1));
         viewModel.ModelName = "Modelo de teste";
         var view = new FabricadorView { DataContext = viewModel };
         var window = new Window { Width = 900, Height = 700, Content = view };
@@ -175,6 +233,13 @@ public sealed class FabricadorImportPreviewUiTests
             Assert.Equal(afterRotate, viewModel.SelectedPartBounds!.Value);
             Assert.Equal(7, viewModel.UndoCount);
             Assert.Equal(0, viewModel.RedoCount);
+            Assert.Equal(PersistenceState.Dirty, viewModel.SaveState);
+            Assert.True(await viewModel.FlushPendingChangesAsync());
+            Assert.Equal(PersistenceState.Saved, viewModel.SaveState);
+            Assert.Equal(2, contentRepository.SaveCount);
+            Assert.Equal(Revision.From(2), contentRepository.LastSaved!.Revision);
+            Assert.Equal(parts.Select(item => item.Id), contentRepository.LastSaved.LayerOrder);
+            Assert.Equal(viewModel.SelectedPartBounds, ModelDraftHitTester.GetPartBounds(contentRepository.LastSaved, part.Id));
 
             for (var index = 0; index < 7; index++)
             {
@@ -191,7 +256,14 @@ public sealed class FabricadorImportPreviewUiTests
             viewModel.UndoCommand.Execute(null);
             Assert.Equal(0, viewModel.UndoCount);
             Assert.Equal(1, viewModel.RedoCount);
-            Assert.Equal(1, contentRepository.SaveCount);
+            contentRepository.AdvanceExternalRevision();
+            viewModel.TogglePartVisibilityCommand.Execute(parts[0].Id);
+            Assert.False(viewModel.PartLayers.Single(item => item.Id == parts[0].Id).IsVisible);
+            Assert.False(await viewModel.FlushPendingChangesAsync());
+            Assert.Equal(PersistenceState.Error, viewModel.SaveState);
+            Assert.Contains("outra sessão", viewModel.SaveError, StringComparison.OrdinalIgnoreCase);
+            Assert.False(viewModel.PartLayers.Single(item => item.Id == parts[0].Id).IsVisible);
+            Assert.Equal(Revision.From(3), contentRepository.LastSaved!.Revision);
             Assert.Empty(Directory.GetFiles(root));
 
             await viewModel.CancelModelSourceImportCommand.ExecuteAsync(null);
@@ -221,6 +293,21 @@ public sealed class FabricadorImportPreviewUiTests
         using var image = SKImage.FromBitmap(bitmap);
         using var encoded = image.Encode(SKEncodedImageFormat.Png, 100);
         return encoded.ToArray();
+    }
+
+    private static async Task WaitUntilAsync(Func<bool> predicate, CancellationToken cancellationToken)
+    {
+        var timeout = Stopwatch.StartNew();
+        while (!predicate())
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (timeout.Elapsed > TimeSpan.FromSeconds(5))
+            {
+                throw new TimeoutException("The expected autosave state was not reached within five seconds.");
+            }
+
+            await Task.Delay(20, cancellationToken);
+        }
     }
 
     private sealed class RecordingFilePicker(byte[] bytes) : IFilePicker
@@ -311,9 +398,26 @@ public sealed class FabricadorImportPreviewUiTests
 
         public Task<Result<ModelDraftContent>> SaveAsync(ModelDraftContent content, Revision? expectedRevision, CancellationToken cancellationToken = default)
         {
+            if (LastSaved is null ? expectedRevision is not null : expectedRevision != LastSaved.Revision)
+            {
+                return Task.FromResult(Result<ModelDraftContent>.Failure(new ApplicationError(
+                    ApplicationErrorCode.Conflict,
+                    "The model content changed since it was loaded.")));
+            }
+
             LastSaved = content;
             SaveCount++;
             return Task.FromResult(Result<ModelDraftContent>.Success(content));
+        }
+
+        public void AdvanceExternalRevision()
+        {
+            if (LastSaved is null)
+            {
+                throw new InvalidOperationException("The model content must be loaded before simulating an external edit.");
+            }
+
+            LastSaved = LastSaved.WithParts(LastSaved.Parts, LastSaved.LayerOrder);
         }
     }
 

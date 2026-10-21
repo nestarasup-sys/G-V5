@@ -15,7 +15,7 @@ namespace GV5.Modules.Fabricador.ViewModels;
 
 public partial class FabricadorViewModel : ObservableObject, IModulePageViewModel, IFlushablePageViewModel, IDisposable
 {
-    private static readonly TimeSpan AutosaveDelay = TimeSpan.FromMilliseconds(600);
+    private readonly TimeSpan _autosaveDelay;
     private const int HistoryLimit = 50;
     private readonly IModelDraftRepository _repository;
     private readonly IDataPlatformInitializer _dataInitializer;
@@ -31,6 +31,8 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
     private CancellationTokenSource? _previewCancellation;
     private long _previewVersion;
     private ModelDraftContent? _modelContent;
+    private ModelDraftContent? _savedModelContent;
+    private bool _isModelContentDirty;
     private ActiveModelTransformGesture? _activeTransformGesture;
     private readonly List<IModelDraftCommand> _undoStack = [];
     private readonly List<IModelDraftCommand> _redoStack = [];
@@ -139,7 +141,8 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
     [NotifyPropertyChangedFor(nameof(HasSaveError))]
     private string? saveError;
 
-    public bool CanSave => !IsSaving && !IsCheckingRecovery && !HasPendingRecovery && !string.IsNullOrWhiteSpace(ModelName);
+    public bool CanSave => !IsSaving && !IsCheckingRecovery && !HasPendingRecovery
+        && !string.IsNullOrWhiteSpace(ModelName) && HasPendingChanges;
     public bool CanEdit => !IsSaving && !IsCheckingRecovery && !HasPendingRecovery;
     public bool HasSaveError => !string.IsNullOrWhiteSpace(SaveError);
     public bool HasImportPreview => ImportPreview is not null;
@@ -208,6 +211,9 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
     public int PendingTransformCommandCount => _undoStack.OfType<ModelPartTransformCommand>().Count();
     public bool HasPendingTransformCommands => PendingTransformCommandCount > 0;
     public bool HasPendingRecovery => PendingRecoveryCheckpoint is not null;
+    private bool HasPendingChanges => _savedDraft is null
+        ? !string.IsNullOrWhiteSpace(ModelName)
+        : !string.Equals(ModelName.Trim(), _savedDraft.Name, StringComparison.Ordinal) || _isModelContentDirty;
     public bool HasRecoveryMessage => !string.IsNullOrWhiteSpace(RecoveryMessage);
     public Task RecoveryTask { get; }
 
@@ -232,7 +238,8 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
         ModelSourceImportService? modelSourceImportService = null,
         IAssetStore? assetStore = null,
         IModelDraftContentRepository? contentRepository = null,
-        IRenderSceneRenderer? sceneRenderer = null)
+        IRenderSceneRenderer? sceneRenderer = null,
+        TimeSpan? autosaveDelay = null)
     {
         _repository = repository ?? throw new ArgumentNullException(nameof(repository));
         _dataInitializer = dataInitializer ?? throw new ArgumentNullException(nameof(dataInitializer));
@@ -244,6 +251,11 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
         _assetStore = assetStore;
         _contentRepository = contentRepository;
         _sceneRenderer = sceneRenderer;
+        _autosaveDelay = autosaveDelay ?? TimeSpan.FromMilliseconds(600);
+        if (_autosaveDelay < TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(nameof(autosaveDelay));
+        }
         RecoveryTask = _checkpointStore is null ? Task.CompletedTask : DiscoverPendingRecoveryAsync();
     }
 
@@ -258,8 +270,15 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
         SaveError = null;
         if (_savedDraft is not null && string.Equals(value.Trim(), _savedDraft.Name, StringComparison.Ordinal))
         {
-            CancelPendingAutosave();
-            SaveState = PersistenceState.Saved;
+            if (_isModelContentDirty)
+            {
+                ScheduleAutosave();
+            }
+            else
+            {
+                CancelPendingAutosave();
+            }
+            UpdateDirtyState();
             return;
         }
 
@@ -404,6 +423,8 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
             }
 
             _modelContent = content;
+            _savedModelContent = content;
+            SetModelContentDirty(false);
             ClearHistory();
             SelectedModelPartId = null;
             OnPropertyChanged(nameof(PartLayers));
@@ -593,6 +614,7 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
         OnPropertyChanged(nameof(HasModelParts));
         OnPropertyChanged(nameof(SelectedPartBounds));
         OnPropertyChanged(nameof(SelectedPartPivot));
+        SetModelContentDirty(true);
         _ = RenderModelPreviewAsync(content);
     }
 
@@ -718,6 +740,7 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
         if (active.Command.Before != active.Command.After)
         {
             PushUndoCommand(active.Command);
+            SetModelContentDirty(true);
         }
         else
         {
@@ -863,10 +886,7 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
             await _activeSaveTask.WaitAsync(cancellationToken);
         }
 
-        var hasPendingChanges = _savedDraft is null
-            ? !string.IsNullOrWhiteSpace(ModelName)
-            : !string.Equals(ModelName.Trim(), _savedDraft.Name, StringComparison.Ordinal);
-        if (!hasPendingChanges)
+        if (!HasPendingChanges)
         {
             return true;
         }
@@ -879,6 +899,7 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
         await SaveDraftAsync(cancelPendingAutosave: true).WaitAsync(cancellationToken);
         return _savedDraft is not null &&
                string.Equals(ModelName.Trim(), _savedDraft.Name, StringComparison.Ordinal) &&
+               !_isModelContentDirty &&
                SaveState == PersistenceState.Saved;
     }
 
@@ -916,7 +937,9 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
             await _dataInitializer.InitializeAsync();
             var now = Math.Max(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), _savedDraft?.UpdatedUtcMs ?? 0);
             var modelId = _savedDraft?.Id ?? (_pendingModelId ??= ModelId.New());
-            var checkpoint = _checkpointStore is null
+            var draftMetadataDirty = _savedDraft is null
+                || !string.Equals(ModelName.Trim(), _savedDraft.Name, StringComparison.Ordinal);
+            var checkpoint = _checkpointStore is null || !draftMetadataDirty
                 ? null
                 : ModelDraftCheckpoint.Create(
                     _pendingCheckpointId ??= Guid.NewGuid(),
@@ -929,27 +952,71 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
                 await _checkpointStore!.WriteAsync(checkpoint);
             }
 
-            var draft = _savedDraft is null
-                ? ModelDraft.Create(modelId, ModelName, now)
-                : _savedDraft.Rename(ModelName, now);
-
-            var result = _savedDraft is null
-                ? await _repository.CreateAsync(draft)
-                : await _repository.UpdateAsync(draft, _savedDraft.Revision);
-
-            if (result.IsFailure)
+            if (draftMetadataDirty)
             {
-                SaveError = result.Error!.Message;
-                diagnosticErrorCode = result.Error.Code == ApplicationErrorCode.Conflict
-                    ? DiagnosticErrorCode.RevisionConflict
-                    : DiagnosticErrorCode.StorageFailure;
-                SaveState = PersistenceState.Error;
-                return;
+                var draft = _savedDraft is null
+                    ? ModelDraft.Create(modelId, ModelName, now)
+                    : _savedDraft.Rename(ModelName, now);
+
+                var result = _savedDraft is null
+                    ? await _repository.CreateAsync(draft)
+                    : await _repository.UpdateAsync(draft, _savedDraft.Revision);
+
+                if (result.IsFailure)
+                {
+                    SaveError = result.Error!.Message;
+                    diagnosticErrorCode = result.Error.Code == ApplicationErrorCode.Conflict
+                        ? DiagnosticErrorCode.RevisionConflict
+                        : DiagnosticErrorCode.StorageFailure;
+                    SaveState = PersistenceState.Error;
+                    return;
+                }
+
+                _savedDraft = result.Value;
+                _pendingModelId = null;
+                ModelName = _savedDraft.Name;
             }
 
-            _savedDraft = result.Value;
-            _pendingModelId = null;
-            ModelName = _savedDraft.Name;
+            if (_isModelContentDirty && _modelContent is { } currentContent)
+            {
+                if (_contentRepository is null)
+                {
+                    SaveError = "O conteúdo do modelo não está conectado ao serviço de persistência.";
+                    diagnosticErrorCode = DiagnosticErrorCode.StorageFailure;
+                    SaveState = PersistenceState.Error;
+                    return;
+                }
+
+                var expectedContentRevision = _savedModelContent?.Revision;
+                var nextRevision = expectedContentRevision?.Next() ?? Revision.Initial;
+                var contentToSave = ModelDraftContent.Restore(
+                    currentContent.SchemaVersion,
+                    currentContent.ModelId,
+                    nextRevision,
+                    currentContent.Slot,
+                    currentContent.SourceAssetId,
+                    currentContent.SourceWidth,
+                    currentContent.SourceHeight,
+                    currentContent.Parts,
+                    currentContent.LayerOrder);
+                var contentResult = await _contentRepository.SaveAsync(contentToSave, expectedContentRevision);
+                if (contentResult.IsFailure)
+                {
+                    SaveError = contentResult.Error!.Code == ApplicationErrorCode.Conflict
+                        ? "O conteúdo deste modelo foi alterado em outra sessão. Suas alterações locais foram preservadas e a versão salva não foi sobrescrita."
+                        : contentResult.Error.Message;
+                    diagnosticErrorCode = contentResult.Error.Code == ApplicationErrorCode.Conflict
+                        ? DiagnosticErrorCode.RevisionConflict
+                        : DiagnosticErrorCode.StorageFailure;
+                    SaveState = PersistenceState.Error;
+                    return;
+                }
+
+                _modelContent = contentResult.Value;
+                _savedModelContent = contentResult.Value;
+                SetModelContentDirty(false);
+            }
+
             if (checkpoint is not null)
             {
                 await _checkpointStore!.CompleteAsync(checkpoint.CheckpointId);
@@ -993,11 +1060,48 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
         _autosaveTask = RunAutosaveAfterDelayAsync(cancellation.Token);
     }
 
+    private void SetModelContentDirty(bool isDirty)
+    {
+        if (_isModelContentDirty != isDirty)
+        {
+            _isModelContentDirty = isDirty;
+            OnPropertyChanged(nameof(CanSave));
+            SaveCommand.NotifyCanExecuteChanged();
+        }
+
+        if (!isDirty)
+        {
+            return;
+        }
+
+        SaveError = null;
+        SaveState = PersistenceState.Dirty;
+        ScheduleAutosave();
+    }
+
+    private void UpdateDirtyState()
+    {
+        OnPropertyChanged(nameof(CanSave));
+        SaveCommand.NotifyCanExecuteChanged();
+        if (HasPendingChanges)
+        {
+            if (SaveState != PersistenceState.Error)
+            {
+                SaveState = PersistenceState.Dirty;
+            }
+
+            return;
+        }
+
+        SaveError = null;
+        SaveState = PersistenceState.Saved;
+    }
+
     private async Task RunAutosaveAfterDelayAsync(CancellationToken cancellationToken)
     {
         try
         {
-            await Task.Delay(AutosaveDelay, cancellationToken);
+            await Task.Delay(_autosaveDelay, cancellationToken);
             await SaveDraftAsync(cancelPendingAutosave: false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
