@@ -2,7 +2,8 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:GV5.Modules.Fabricador.ViewModels"
              x:Class="GV5.Modules.Fabricador.Views.FabricadorView"
-             x:DataType="vm:FabricadorViewModel">
+             x:DataType="vm:FabricadorViewModel"
+             DataContextChanged="OnDataContextChanged">
     <Border Background="{DynamicResource Gv5BrushSurface}" BorderBrush="{DynamicResource Gv5BrushBorder}" BorderThickness="1" CornerRadius="{DynamicResource Gv5RadiusCard}" Padding="{DynamicResource Gv5SpaceCard}">
         <StackPanel Spacing="20" HorizontalAlignment="Stretch" MaxWidth="760">
             <StackPanel Spacing="6">
@@ -54,6 +55,77 @@
                          FontSize="16"
                          Padding="12,9" />
             </StackPanel>
+
+            <Border Background="{DynamicResource Gv5BrushCanvas}"
+                    BorderBrush="{DynamicResource Gv5BrushBorder}"
+                    BorderThickness="1"
+                    CornerRadius="10"
+                    Padding="16">
+                <StackPanel Spacing="12">
+                    <StackPanel Spacing="5">
+                        <TextBlock Text="Folha de imagem do modelo"
+                                   FontWeight="SemiBold"
+                                   Foreground="{DynamicResource Gv5BrushTextPrimary}" />
+                        <TextBlock Text="Selecione uma imagem para revisar. Ela só será adicionada aos assets após sua confirmação."
+                                   TextWrapping="Wrap"
+                                   Foreground="{DynamicResource Gv5BrushTextSecondary}" />
+                    </StackPanel>
+                    <Button Content="Selecionar folha de imagem"
+                            Command="{Binding SelectModelSourceCommand}"
+                            IsEnabled="{Binding CanSelectModelSource}"
+                            HorizontalAlignment="Left"
+                            Padding="16,10"
+                            Background="{DynamicResource Gv5BrushAccent}"
+                            Foreground="{DynamicResource Gv5BrushOnAccent}" />
+                    <TextBlock Text="Abrindo seletor ou preparando prévia…"
+                               IsVisible="{Binding IsImporting}"
+                               Foreground="{DynamicResource Gv5BrushTextSecondary}" />
+                    <TextBlock Text="{Binding ImportError}"
+                               IsVisible="{Binding HasImportError}"
+                               TextWrapping="Wrap"
+                               Foreground="#B4233C" />
+                    <TextBlock Text="{Binding ImportStatus}"
+                               IsVisible="{Binding HasImportStatus}"
+                               TextWrapping="Wrap"
+                               Foreground="{DynamicResource Gv5BrushTextSecondary}" />
+                    <Border IsVisible="{Binding HasImportPreview}"
+                            Background="{DynamicResource Gv5BrushSurface}"
+                            BorderBrush="{DynamicResource Gv5BrushBorder}"
+                            BorderThickness="1"
+                            CornerRadius="8"
+                            Padding="12">
+                        <StackPanel Spacing="10">
+                            <Border Background="{DynamicResource Gv5BrushCanvas}"
+                                    CornerRadius="6"
+                                    MinHeight="180"
+                                    MaxHeight="360">
+                                <Image x:Name="ModelSourcePreviewImage"
+                                       Stretch="Uniform"
+                                       HorizontalAlignment="Center"
+                                       VerticalAlignment="Center"
+                                       MaxWidth="680"
+                                       MaxHeight="336" />
+                            </Border>
+                            <TextBlock Text="{Binding ImportPreviewDimensions}"
+                                       Foreground="{DynamicResource Gv5BrushTextPrimary}" />
+                            <TextBlock Text="{Binding ImportPreview.MediaType}"
+                                       Foreground="{DynamicResource Gv5BrushTextSecondary}" />
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <Button Content="Publicar asset"
+                                        Command="{Binding PublishModelSourceCommand}"
+                                        IsEnabled="{Binding CanPublishModelSource}"
+                                        Padding="16,10"
+                                        Background="{DynamicResource Gv5BrushAccent}"
+                                        Foreground="{DynamicResource Gv5BrushOnAccent}" />
+                                <Button Content="Cancelar"
+                                        Command="{Binding CancelModelSourceImportCommand}"
+                                        IsEnabled="{Binding CanCancelImport}"
+                                        Padding="16,10" />
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </Border>
 
             <Border Background="{DynamicResource Gv5BrushCanvas}"
                     BorderBrush="{DynamicResource Gv5BrushBorder}"

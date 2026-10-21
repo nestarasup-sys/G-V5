@@ -223,7 +223,7 @@ Ambiente/SDK/CI: `TestarLocal.bat gate` passou em 2026-10-21; ver `docs/gates/GA
 
 - [x] **F06.01** — Definir modelo, slots/IDs, partes, ordem, sourceTransform e drafts versionados.
 - [x] **F06.02** — Criar/renomear/duplicar/listar drafts com persistência real.
-- [ ] **F06.03** — Importar folha de imagem com prévia e validação antes de publicar asset.
+- [x] **F06.03** — Importar folha de imagem com prévia e validação antes de publicar asset.
 - [ ] **F06.04** — Portar chroma/crop mínimo com worker cancelável e testes de borda/transparência.
 - [ ] **F06.05** — Separar peças em assets e metadados com round-trip verificável.
 - [ ] **F06.06** — Mostrar modelo pelo FabricatorCanvas reutilizando RenderScene/SkiaRenderer.

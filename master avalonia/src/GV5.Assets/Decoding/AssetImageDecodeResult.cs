@@ -16,14 +16,56 @@ public sealed record AssetImageDecodeError(AssetImageDecodeErrorCode Code, strin
 /// <summary>An owned decoded bitmap. Dispose it when no consumer or cache lease uses it anymore.</summary>
 public sealed class DecodedAssetImage : IDisposable
 {
-    public SKBitmap Bitmap { get; }
+    private readonly SKBitmap _bitmap;
+    private int _disposed;
+
+    public SKBitmap Bitmap
+    {
+        get
+        {
+            ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+            return _bitmap;
+        }
+    }
     public int Width => Bitmap.Width;
     public int Height => Bitmap.Height;
     public bool HasAlpha => Bitmap.ColorType == SKColorType.Rgba8888;
 
-    internal DecodedAssetImage(SKBitmap bitmap) => Bitmap = bitmap;
+    internal DecodedAssetImage(SKBitmap bitmap) => _bitmap = bitmap;
 
-    public void Dispose() => Bitmap.Dispose();
+    /// <summary>Creates an independently owned, aspect-preserving copy capped for responsive UI previews.</summary>
+    public DecodedAssetImage CreatePreviewCopy(int maximumDimension)
+    {
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+        if (maximumDimension < 1)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maximumDimension));
+        }
+
+        var scale = Math.Min(1d, (double)maximumDimension / Math.Max(Width, Height));
+        var width = Math.Max(1, (int)Math.Round(Width * scale));
+        var height = Math.Max(1, (int)Math.Round(Height * scale));
+        var info = new SKImageInfo(width, height, Bitmap.ColorType, Bitmap.AlphaType, Bitmap.ColorSpace);
+        var copy = width == Width && height == Height
+            ? Bitmap.Copy()
+            : Bitmap.Resize(info, new SKSamplingOptions(SKFilterMode.Linear));
+
+        if (copy is null || copy.GetPixels() == IntPtr.Zero)
+        {
+            copy?.Dispose();
+            throw new InvalidOperationException("The preview image buffer could not be allocated.");
+        }
+
+        return new DecodedAssetImage(copy);
+    }
+
+    public void Dispose()
+    {
+        if (Interlocked.Exchange(ref _disposed, 1) == 0)
+        {
+            _bitmap.Dispose();
+        }
+    }
 }
 
 public sealed class AssetImageDecodeResult

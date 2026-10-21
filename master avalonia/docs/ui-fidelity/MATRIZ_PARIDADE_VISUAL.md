@@ -8,6 +8,7 @@ Os itens abaixo têm fontes/estrutura identificadas; a referência visual real a
 |---|---|---|---|---|---|
 | Shell, top bar e navegação | `src/renderer/src/ui/App.tsx`; `ui/components/TopBar.tsx`; `ui/styles.css` | rotas e estados CSS | pendente | nenhuma | REFERENCIA_PENDENTE |
 | Fabricador — Modelos/peças/canvas | `features/fabricator/FabricatorPage.tsx`; `ui/styles.css` | estrutura, slots, preview, layers | pendente | nenhuma | REFERENCIA_PENDENTE |
+| Fabricador — Importação e revisão da folha | `features/fabricator/FabricatorPage.tsx`; estilos do workspace | seleção, revisão e confirmação mapeadas estaticamente | pendente | cartão Avalonia e prévia funcionais; teste Headless `FabricadorImportPreviewUiTests`; captura Electron/Avalonia pendente | VALIDACAO_VISUAL_PENDENTE |
 | Fabricador — Chroma e histórico | `features/fabricator/FabricatorPage.tsx`; `models/*` | controles e operações | pendente | nenhuma | REFERENCIA_PENDENTE |
 | Fabricador — Poses | `features/fabricator/PoseWorkspace.tsx` | slots, edição e diálogos | pendente | nenhuma | REFERENCIA_PENDENTE |
 | Fabricador — Animador corporal | `features/fabricator/AnimatorWorkspace.tsx` | preview, frames, transporte e layers | pendente | nenhuma | REFERENCIA_PENDENTE |

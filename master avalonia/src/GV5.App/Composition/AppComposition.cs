@@ -2,8 +2,10 @@ using GV5.App.ViewModels;
 using GV5.App.Views;
 using GV5.App.Navigation;
 using GV5.App.Presentation;
+using GV5.App.Services;
 using GV5.Application.Contracts;
 using GV5.Assets.Decoding;
+using GV5.Assets.Import;
 using GV5.Data.Migrations;
 using GV5.Data.Diagnostics;
 using GV5.Data.Assets;
@@ -12,6 +14,7 @@ using GV5.Data.Storage;
 using GV5.Data.Thumbnails;
 using GV5.Modules.Customizador;
 using GV5.Modules.Fabricador;
+using GV5.Modules.Fabricador.Import;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace GV5.App.Composition;
@@ -26,6 +29,7 @@ internal static class AppComposition
 
         services.AddSingleton<IAppDataPaths>(_ => AppDataPaths.ForCurrentUser());
         services.AddSingleton<IOperationCorrelationContext, OperationCorrelationContext>();
+        services.AddSingleton<IFilePicker, AvaloniaFilePicker>();
         services.AddSingleton<IStructuredDiagnosticLogger, StructuredFileLogger>();
         services.AddSingleton<IGv5Database, SqliteDatabase>();
         services.AddSingleton<ISqliteMigration, InitialAssetSchemaMigration>();
@@ -42,6 +46,13 @@ internal static class AppComposition
         services.AddSingleton<IModelDraftCheckpointStore, SqliteModelDraftCheckpointStore>();
         services.AddSingleton<IDataPlatformBackupService, DatabaseBackupService>();
         services.AddSingleton<AssetImageDecoder>();
+        services.AddSingleton(provider => new AssetImportStager(
+            Path.Combine(provider.GetRequiredService<IAppDataPaths>().TempDirectory, "fabricator-source-imports"),
+            new AssetImportLimits(
+                MaximumBytes: 50L * 1024 * 1024,
+                MaximumDimension: 16_384,
+                MaximumPixels: 32_000_000)));
+        services.AddSingleton<ModelSourceImportService>();
         services.AddSingleton<AssetBitmapCache>();
         services.AddSingleton<AvaloniaRenderedFrameAdapter>();
         services.AddSingleton<IThumbnailService, ThumbnailService>();

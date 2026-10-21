@@ -4,6 +4,7 @@ using System.Diagnostics;
 using GV5.Application.Contracts;
 using GV5.Core.Identity;
 using GV5.Core.Models;
+using GV5.Modules.Fabricador.Import;
 
 namespace GV5.Modules.Fabricador.ViewModels;
 
@@ -15,12 +16,38 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
     private readonly IModelDraftCheckpointStore? _checkpointStore;
     private readonly IStructuredDiagnosticLogger? _logger;
     private readonly IOperationCorrelationContext? _correlationContext;
+    private readonly IFilePicker? _filePicker;
+    private readonly ModelSourceImportService? _modelSourceImportService;
+    private readonly IAssetStore? _assetStore;
     private ModelDraft? _savedDraft;
     private ModelId? _pendingModelId;
     private Guid? _pendingCheckpointId;
     private CancellationTokenSource? _autosaveCancellation;
     private Task? _autosaveTask;
     private Task? _activeSaveTask;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasImportPreview))]
+    [NotifyPropertyChangedFor(nameof(ImportPreviewDimensions))]
+    [NotifyPropertyChangedFor(nameof(CanPublishModelSource))]
+    [NotifyCanExecuteChangedFor(nameof(PublishModelSourceCommand))]
+    private ModelSourceImportPreview? importPreview;
+
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(SelectModelSourceCommand))]
+    [NotifyCanExecuteChangedFor(nameof(PublishModelSourceCommand))]
+    [NotifyPropertyChangedFor(nameof(CanSelectModelSource))]
+    [NotifyPropertyChangedFor(nameof(CanPublishModelSource))]
+    [NotifyPropertyChangedFor(nameof(CanCancelImport))]
+    private bool isImporting;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasImportError))]
+    private string? importError;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasImportStatus))]
+    private string? importStatus;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanSave))]
@@ -65,6 +92,15 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
     public bool CanSave => !IsSaving && !IsCheckingRecovery && !HasPendingRecovery && !string.IsNullOrWhiteSpace(ModelName);
     public bool CanEdit => !IsSaving && !IsCheckingRecovery && !HasPendingRecovery;
     public bool HasSaveError => !string.IsNullOrWhiteSpace(SaveError);
+    public bool HasImportPreview => ImportPreview is not null;
+    public bool HasImportError => !string.IsNullOrWhiteSpace(ImportError);
+    public bool HasImportStatus => !string.IsNullOrWhiteSpace(ImportStatus);
+    public bool CanCancelImport => !IsImporting;
+    public string ImportPreviewDimensions => ImportPreview is { } preview
+        ? $"Fonte: {preview.Width} × {preview.Height} px · prévia {preview.PreviewWidth} × {preview.PreviewHeight} px"
+        : string.Empty;
+    public bool CanSelectModelSource => !IsImporting && _filePicker is not null && _modelSourceImportService is not null;
+    public bool CanPublishModelSource => !IsImporting && ImportPreview is { IsPublished: false } && _assetStore is not null;
     public bool HasPendingRecovery => PendingRecoveryCheckpoint is not null;
     public bool HasRecoveryMessage => !string.IsNullOrWhiteSpace(RecoveryMessage);
     public Task RecoveryTask { get; }
@@ -85,13 +121,19 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
         IDataPlatformInitializer dataInitializer,
         IModelDraftCheckpointStore? checkpointStore = null,
         IStructuredDiagnosticLogger? logger = null,
-        IOperationCorrelationContext? correlationContext = null)
+        IOperationCorrelationContext? correlationContext = null,
+        IFilePicker? filePicker = null,
+        ModelSourceImportService? modelSourceImportService = null,
+        IAssetStore? assetStore = null)
     {
         _repository = repository ?? throw new ArgumentNullException(nameof(repository));
         _dataInitializer = dataInitializer ?? throw new ArgumentNullException(nameof(dataInitializer));
         _checkpointStore = checkpointStore;
         _logger = logger;
         _correlationContext = correlationContext;
+        _filePicker = filePicker;
+        _modelSourceImportService = modelSourceImportService;
+        _assetStore = assetStore;
         RecoveryTask = _checkpointStore is null ? Task.CompletedTask : DiscoverPendingRecoveryAsync();
     }
 
@@ -116,6 +158,96 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
 
     [RelayCommand(CanExecute = nameof(CanSave))]
     private Task SaveAsync() => SaveDraftAsync(cancelPendingAutosave: true);
+
+    [RelayCommand(CanExecute = nameof(CanSelectModelSource))]
+    private async Task SelectModelSourceAsync()
+    {
+        if (_filePicker is null || _modelSourceImportService is null)
+        {
+            return;
+        }
+
+        ImportError = null;
+        ImportStatus = null;
+        IsImporting = true;
+        try
+        {
+            await using var selected = await _filePicker.PickImageAsync();
+            if (selected is null)
+            {
+                return;
+            }
+
+            var result = await _modelSourceImportService.PrepareAsync(selected.Content, selected.MediaType);
+            if (result.IsFailure)
+            {
+                ImportError = result.Error!.Message;
+                return;
+            }
+
+            var previous = ImportPreview;
+            ImportPreview = result.Value;
+            if (previous is not null)
+            {
+                await previous.DisposeAsync();
+            }
+
+            ImportStatus = $"Prévia validada · {ImportPreview.Width} × {ImportPreview.Height} · {ImportPreview.MediaType}";
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidOperationException)
+        {
+            ImportError = "Não foi possível abrir ou validar essa folha de imagem.";
+        }
+        finally
+        {
+            IsImporting = false;
+        }
+    }
+
+    [RelayCommand(CanExecute = nameof(CanPublishModelSource))]
+    private async Task PublishModelSourceAsync()
+    {
+        if (ImportPreview is not { } preview || _assetStore is null || _modelSourceImportService is null)
+        {
+            return;
+        }
+
+        ImportError = null;
+        IsImporting = true;
+        try
+        {
+            var result = await _modelSourceImportService.PublishAsync(preview, _assetStore);
+            if (result.IsFailure)
+            {
+                ImportError = result.Error!.Message;
+                return;
+            }
+
+            ImportStatus = $"Asset publicado · {preview.Width} × {preview.Height} · {result.Value.Id}";
+            OnPropertyChanged(nameof(CanPublishModelSource));
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidOperationException)
+        {
+            ImportError = "Não foi possível publicar a folha de imagem. A prévia permanece disponível para nova tentativa.";
+        }
+        finally
+        {
+            IsImporting = false;
+        }
+    }
+
+    [RelayCommand]
+    private async Task CancelModelSourceImportAsync()
+    {
+        var preview = ImportPreview;
+        ImportPreview = null;
+        ImportError = null;
+        ImportStatus = null;
+        if (preview is not null)
+        {
+            await preview.DisposeAsync();
+        }
+    }
 
     public async Task<bool> FlushPendingChangesAsync(CancellationToken cancellationToken = default)
     {
