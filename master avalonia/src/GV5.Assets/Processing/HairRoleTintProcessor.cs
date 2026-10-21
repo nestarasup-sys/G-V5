@@ -209,7 +209,7 @@ public sealed class HairRoleTintProcessor
     }
 
     private static double Luminance(byte red, byte green, byte blue) => red * 0.2126 + green * 0.7152 + blue * 0.0722;
-    private static byte Clamp(double value) => (byte)Math.Clamp((int)value, 0, 255);
+    private static byte Clamp(double value) => (byte)Math.Clamp((int)Math.Round(value, MidpointRounding.ToEven), 0, 255);
 
     private sealed record ColorProfile(int Low, int High, double Hue, bool HasAccent);
 }

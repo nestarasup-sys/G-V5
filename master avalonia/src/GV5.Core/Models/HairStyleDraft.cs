@@ -56,7 +56,7 @@ public sealed record HairLayer
         if (!Finite(transform.Translation) || !Finite(transform.Scale) || !Finite(transform.Pivot)
             || transform.Translation.X is < -100_000 or > 100_000 || transform.Translation.Y is < -100_000 or > 100_000
             || transform.Scale.X is <= 0 or > 20 || transform.Scale.Y is <= 0 or > 20
-            || !double.IsFinite(transform.RotationRadians))
+            || !double.IsFinite(transform.RotationRadians) || transform.FlipY)
             throw new ArgumentOutOfRangeException(nameof(transform), "Hair transforms must be finite and within the supported placement limits.");
         return new HairLayer(part, assetId, transform, isVisible);
     }

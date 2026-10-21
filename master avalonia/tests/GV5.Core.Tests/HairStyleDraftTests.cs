@@ -50,6 +50,8 @@ public sealed class HairStyleDraftTests
             "Cabelo", [back, ponytail]));
         Assert.Throws<ArgumentOutOfRangeException>(() => HairLayer.Create(HairPartId.BackHair, AssetId.New(),
             new Transform2D(Point2D.Zero, new Point2D(21, 1), 0, Point2D.Zero)));
+        Assert.Throws<ArgumentOutOfRangeException>(() => HairLayer.Create(HairPartId.BackHair, AssetId.New(),
+            new Transform2D(Point2D.Zero, new Point2D(1, 1), 0, Point2D.Zero, flipY: true)));
         Assert.Throws<ArgumentOutOfRangeException>(() => HairPartSlots.GetSlot((HairPartId)99));
     }
 
