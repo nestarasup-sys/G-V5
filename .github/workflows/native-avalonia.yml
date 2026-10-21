@@ -1,0 +1,64 @@
+name: G-V5 Avalonia build and tests
+
+on:
+  push:
+    branches:
+      - Master-AValonia
+    paths:
+      - '.github/workflows/native-avalonia.yml'
+      - 'master avalonia/**'
+  pull_request:
+    branches:
+      - Master-AValonia
+    paths:
+      - '.github/workflows/native-avalonia.yml'
+      - 'master avalonia/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: native-avalonia-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    name: Build and test / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - windows-latest
+          - ubuntu-latest
+    defaults:
+      run:
+        working-directory: master avalonia
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install the SDK pinned by global.json
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: master avalonia/global.json
+
+      - name: Restore
+        run: dotnet restore GV5.sln --verbosity minimal
+
+      - name: Build Release
+        run: dotnet build GV5.sln -c Release --no-restore --verbosity minimal
+
+      - name: Run Core and architecture tests
+        run: dotnet test GV5.sln -c Release --no-build --verbosity minimal
+
+      - name: Run Avalonia Headless tests on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: .\TestarHeadless.bat
+
+      - name: Run Avalonia Headless tests on Linux
+        if: runner.os == 'Linux'
+        run: dotnet run --project tests/GV5.Headless.Tests/GV5.Headless.Tests.csproj --configuration Release

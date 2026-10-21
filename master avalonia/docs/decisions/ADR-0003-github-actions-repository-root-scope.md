@@ -1,6 +1,6 @@
 # ADR-0003 — Workflow do GitHub exige arquivo na raiz do repositório
 
-- **Estado:** Bloqueada por limite de escopo
+- **Estado:** Aceita; escopo excepcional autorizado
 - **Data:** 2026-10-20
 - **Escopo:** F01.12 — GitHub Actions
 
@@ -12,12 +12,11 @@ Colocar um YAML em `master avalonia/.github/workflows/` não atende F01.12: por 
 
 ## Decisão
 
-Não criar um workflow aninhado inerte e não escrever fora de `master avalonia/`. Manter F01.12 bloqueada até o escopo ser ampliado para permitir somente `.github/workflows/` na raiz, ou até que uma instrução superior defina outro local executável compatível com a fronteira.
+O usuário autorizou explicitamente a criação do workflow executável em `.github/workflows/` na raiz. Essa é a única exceção ao limite de edição restrito a `master avalonia/`; nenhum outro arquivo da raiz ou do legado pode ser alterado. Não criar workflow aninhado inerte.
 
-Depois de liberada, a implementação deverá continuar compilando e testando a solução a partir de `master avalonia/`, com SDK fixado em `global.json`; Windows será obrigatório e Linux será incluído se a execução comprovar compatibilidade.
+O workflow compila e testa a solução a partir de `master avalonia/`, usa o SDK fixado em `global.json` e executa a suíte Avalonia Headless. Windows é obrigatório. Linux entra na matriz para comprovar compatibilidade; eventual incompatibilidade deve ser corrigida ou documentada com evidência antes de remover essa plataforma.
 
 ## Consequências
 
 - A suíte local `dotnet test GV5.sln -c Release` continua disponível, mas não é CI remota.
-- F01.13 e o fechamento de G0 não podem ser declarados concluídos enquanto F01.12 estiver bloqueada.
-- Nenhum arquivo do legado ou da raiz do repositório foi modificado.
+- O YAML do workflow é o único arquivo permitido fora de `master avalonia/`; o restante do legado permanece somente leitura.
