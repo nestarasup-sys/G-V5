@@ -1,5 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using GV5.Application.Contracts;
 using GV5.Application.Services;
 using GV5.Core.Identity;
@@ -38,7 +40,7 @@ public sealed class SqliteFaceCatalogRepositoryTests
                 var component = FaceComponent.Restore(componentId, FaceComponentKind.Eye, "Olho esquerdo", asset,
                     FaceComponentSide.Left, Transform2D.Identity);
                 var mouth = FaceComponent.Create(FaceComponentKind.Mouth, "Boca aberta", mouthAsset, null,
-                    Transform2D.Identity, mouthVariant: FaceMouthVariant.Open);
+                    Transform2D.Identity, mouthVariant: FaceMouthVariant.Open, zOrder: 875);
                 var withComponent = initial.WithComponent(component).WithComponent(mouth);
                 var created = await repository.CreateAsync(initial, token);
                 Assert.True(created.IsSuccess, created.Error?.Message);
@@ -71,7 +73,23 @@ public sealed class SqliteFaceCatalogRepositoryTests
                 Assert.Equal(asset, item.AssetId);
                 Assert.Equal(new Point2D(10, -3), item.Transform.Translation);
                 Assert.Equal(FaceMouthVariant.Open, loaded.Value.Components.Single(component => component.Name == "Boca aberta").MouthVariant);
+                Assert.Equal(875, loaded.Value.Components.Single(component => component.Name == "Boca aberta").ZOrder);
                 Assert.Single(listed.Value);
+
+                var json = await ReadStringAsync(reopened, "SELECT draft_json FROM face_catalog_drafts WHERE face_id=$id;",
+                    token, ("$id", faceId.ToString()));
+                var legacySnapshot = JsonNode.Parse(json)!;
+                legacySnapshot["schemaVersion"] = 1;
+                foreach (var legacyComponent in legacySnapshot["components"]!.AsArray())
+                    legacyComponent!.AsObject().Remove("zOrder");
+                var legacyJson = legacySnapshot.ToJsonString(new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
+                var legacyHash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(legacyJson))).ToLowerInvariant();
+                await ExecuteAsync(reopened, "UPDATE face_catalog_drafts SET draft_json=$json,draft_sha256=$hash WHERE face_id=$id;",
+                    token, ("$json", legacyJson), ("$hash", legacyHash), ("$id", faceId.ToString()));
+                var legacyLoaded = await repository.GetAsync(faceId, token);
+                Assert.True(legacyLoaded.IsSuccess, legacyLoaded.Error?.Message);
+                Assert.Equal(100, legacyLoaded.Value.Components.Single(component => component.Name == "Olho esquerdo").ZOrder);
+                Assert.Equal(500, legacyLoaded.Value.Components.Single(component => component.Name == "Boca aberta").ZOrder);
             }
         }
         finally
@@ -178,6 +196,17 @@ public sealed class SqliteFaceCatalogRepositoryTests
         command.CommandText = sql;
         foreach (var (name, value) in parameters) command.Parameters.AddWithValue(name, value);
         return Convert.ToInt64(await command.ExecuteScalarAsync(token));
+    }
+
+    private static async Task<string> ReadStringAsync(SqliteDatabase database, string sql, CancellationToken token,
+        params (string Name, string Value)[] parameters)
+    {
+        await using var connection = await database.OpenReadConnectionAsync(token);
+        await using var command = connection.CreateCommand();
+        command.CommandText = sql;
+        foreach (var (name, value) in parameters) command.Parameters.AddWithValue(name, value);
+        return (string)(await command.ExecuteScalarAsync(token)
+            ?? throw new InvalidOperationException("The test query returned no snapshot."));
     }
 
     private static async Task ExecuteAsync(SqliteDatabase database, string sql, CancellationToken token,

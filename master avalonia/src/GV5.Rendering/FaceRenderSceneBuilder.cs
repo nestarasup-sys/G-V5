@@ -9,13 +9,17 @@ namespace GV5.Rendering;
 /// <summary>Resolves a catalog/selection into stable render layers without mutating catalog assets.</summary>
 public static class FaceRenderSceneBuilder
 {
-    private static readonly FaceAssemblySlot[] LayerOrder =
+    private static readonly FaceAssemblySlot[] StableSlotOrder =
     [
-        FaceAssemblySlot.EyebrowLeft, FaceAssemblySlot.EyebrowRight,
         FaceAssemblySlot.EyeLeft, FaceAssemblySlot.EyeRight,
         FaceAssemblySlot.ClosedEyeLeft, FaceAssemblySlot.ClosedEyeRight,
         FaceAssemblySlot.PupilLeft, FaceAssemblySlot.PupilRight,
-        FaceAssemblySlot.Nose, FaceAssemblySlot.MouthClosed, FaceAssemblySlot.MouthOpen
+        FaceAssemblySlot.EyeHighlightLeft, FaceAssemblySlot.EyeHighlightRight,
+        FaceAssemblySlot.EyebrowLeft, FaceAssemblySlot.EyebrowRight,
+        FaceAssemblySlot.Nose, FaceAssemblySlot.MouthClosed, FaceAssemblySlot.MouthOpen,
+        FaceAssemblySlot.Blush, FaceAssemblySlot.FacialShadow,
+        FaceAssemblySlot.HeadExtra1, FaceAssemblySlot.HeadExtra2, FaceAssemblySlot.HeadExtra3, FaceAssemblySlot.HeadExtra4,
+        FaceAssemblySlot.HeadExtra5, FaceAssemblySlot.HeadExtra6, FaceAssemblySlot.HeadExtra7, FaceAssemblySlot.HeadExtra8
     ];
 
     public static IReadOnlyList<RenderLayer> Build(FaceCatalogDraft catalog, FaceAssembly assembly,
@@ -31,9 +35,9 @@ public static class FaceRenderSceneBuilder
 
         var components = catalog.Components.ToDictionary(component => component.Id);
         var output = new List<RenderLayer>();
-        for (var orderIndex = 0; orderIndex < LayerOrder.Length; orderIndex++)
+        var selectedLayers = new List<(FaceAssemblySlot Slot, FaceComponent Component, Rect2D Crop, Transform2D Transform)>();
+        foreach (var slot in StableSlotOrder)
         {
-            var slot = LayerOrder[orderIndex];
             if (!IsActive(slot, assembly)) continue;
             if (!assembly.Selections.TryGetValue(slot, out var componentId)) continue;
             var component = components[componentId];
@@ -46,10 +50,12 @@ public static class FaceRenderSceneBuilder
             if (targetSide is { } side && component.Side != side)
                 transform = new Transform2D(transform.Translation, transform.Scale, transform.RotationRadians,
                     transform.Pivot, !transform.FlipX, transform.FlipY);
-
-            output.Add(new RenderLayer(CreateLayerId(catalog.Id, slot), component.AssetId, crop, transform,
-                alpha: 1, RenderBlendMode.Normal, checked(firstZOrder + orderIndex)));
+            selectedLayers.Add((slot, component, crop, transform));
         }
+        foreach (var layer in selectedLayers.OrderBy(item => item.Component.ZOrder).ThenBy(item => item.Slot))
+            output.Add(new RenderLayer(CreateLayerId(catalog.Id, layer.Slot), layer.Component.AssetId,
+                layer.Crop, layer.Transform, alpha: 1, RenderBlendMode.Normal,
+                checked(firstZOrder + layer.Component.ZOrder)));
         return output.AsReadOnly();
     }
 
@@ -66,8 +72,10 @@ public static class FaceRenderSceneBuilder
 
     private static FaceComponentSide? GetTargetSide(FaceAssemblySlot slot) => slot switch
     {
-        FaceAssemblySlot.EyeLeft or FaceAssemblySlot.PupilLeft or FaceAssemblySlot.ClosedEyeLeft or FaceAssemblySlot.EyebrowLeft => FaceComponentSide.Left,
-        FaceAssemblySlot.EyeRight or FaceAssemblySlot.PupilRight or FaceAssemblySlot.ClosedEyeRight or FaceAssemblySlot.EyebrowRight => FaceComponentSide.Right,
+        FaceAssemblySlot.EyeLeft or FaceAssemblySlot.PupilLeft or FaceAssemblySlot.ClosedEyeLeft
+            or FaceAssemblySlot.EyebrowLeft or FaceAssemblySlot.EyeHighlightLeft => FaceComponentSide.Left,
+        FaceAssemblySlot.EyeRight or FaceAssemblySlot.PupilRight or FaceAssemblySlot.ClosedEyeRight
+            or FaceAssemblySlot.EyebrowRight or FaceAssemblySlot.EyeHighlightRight => FaceComponentSide.Right,
         _ => null
     };
 

@@ -50,7 +50,7 @@ public sealed class FaceRenderSceneBuilderTests
         Assert.False(first[0].Transform.FlipX);
         Assert.True(first[1].Transform.FlipX);
         Assert.Equal(new Point2D(2, -1), first[3].Transform.Translation);
-        Assert.Equal(new[] { 52, 53, 56, 57, 58, 60 }, first.Select(layer => layer.ZOrder));
+        Assert.Equal(new[] { 150, 150, 250, 250, 450, 550 }, first.Select(layer => layer.ZOrder));
         Assert.Equal(first.Select(layer => layer.Id), second.Select(layer => layer.Id));
         Assert.DoesNotContain(first, layer => layer.AssetId == mouthClosedAsset);
     }
@@ -75,5 +75,34 @@ public sealed class FaceRenderSceneBuilderTests
             new Dictionary<AssetId, Rect2D>()));
         Assert.Throws<ArgumentException>(() => FaceRenderSceneBuilder.Build(catalog, assembly,
             new Dictionary<AssetId, Rect2D>()));
+    }
+
+    [Fact]
+    public void Build_ComposesDetailsInExplicitZOrderAndKeepsLayerIdsStable()
+    {
+        var model = ModelRevisionReference.Restore(ModelId.New(), ModelRevisionId.New(), Revision.Initial, new string('f', 64));
+        var baseAsset = AssetId.New();
+        var highlightAsset = AssetId.New();
+        var blushAsset = AssetId.New();
+        var extraAsset = AssetId.New();
+        var baseEye = FaceComponent.Create(FaceComponentKind.Eye, "Olho", baseAsset, FaceComponentSide.Left, Transform2D.Identity, zOrder: 100);
+        var highlight = FaceComponent.Create(FaceComponentKind.EyeHighlight, "Brilho", highlightAsset, FaceComponentSide.Left,
+            Transform2D.Identity, zOrder: 900);
+        var blush = FaceComponent.Create(FaceComponentKind.Blush, "Blush", blushAsset, null, Transform2D.Identity, zOrder: 300);
+        var extra = FaceComponent.Create(FaceComponentKind.HeadExtra, "Presilha", extraAsset, null, Transform2D.Identity, zOrder: 700);
+        var catalog = FaceCatalogDraft.Create(model, "Rosto");
+        foreach (var component in new[] { baseEye, highlight, blush, extra }) catalog = catalog.WithComponent(component);
+        var assembly = FaceAssembly.Create(catalog).Select(catalog, baseEye.Id).Select(catalog, highlight.Id)
+            .Select(catalog, blush.Id).Select(catalog, extra.Id);
+        var crops = new Dictionary<AssetId, Rect2D>
+        {
+            [baseAsset] = new Rect2D(0, 0, 8, 8), [highlightAsset] = new Rect2D(0, 0, 2, 2),
+            [blushAsset] = new Rect2D(0, 0, 3, 2), [extraAsset] = new Rect2D(0, 0, 4, 4)
+        };
+
+        var layers = FaceRenderSceneBuilder.Build(catalog, assembly, crops, firstZOrder: 20);
+        Assert.Equal(new[] { baseAsset, blushAsset, extraAsset, highlightAsset }, layers.Select(layer => layer.AssetId));
+        Assert.Equal(new[] { 120, 320, 720, 920 }, layers.Select(layer => layer.ZOrder));
+        Assert.Equal(layers.Select(layer => layer.Id), FaceRenderSceneBuilder.Build(catalog, assembly, crops, 20).Select(layer => layer.Id));
     }
 }

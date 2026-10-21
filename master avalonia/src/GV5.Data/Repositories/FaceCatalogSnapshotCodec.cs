@@ -44,7 +44,8 @@ internal static class FaceCatalogSnapshotCodec
                 FlipX = component.Transform.FlipX,
                 FlipY = component.Transform.FlipY,
                 IsVisible = component.IsVisible,
-                MouthVariant = (int)component.MouthVariant
+                MouthVariant = (int)component.MouthVariant,
+                ZOrder = component.ZOrder
             }).ToList()
         };
         var json = JsonSerializer.Serialize(document, Options);
@@ -55,7 +56,7 @@ internal static class FaceCatalogSnapshotCodec
     {
         if (!FixedHashMatches(json, expectedSha256)) throw new InvalidDataException("The face catalog checksum is invalid.");
         var document = JsonSerializer.Deserialize<Document>(json, Options) ?? throw new InvalidDataException("The face catalog is empty.");
-        if (document.SchemaVersion != FaceCatalogDraft.CurrentSchemaVersion || document.Model is null
+        if (document.SchemaVersion is < 1 or > FaceCatalogDraft.CurrentSchemaVersion || document.Model is null
             || document.Components is null || string.IsNullOrWhiteSpace(document.Name))
             throw new InvalidDataException("The face catalog snapshot is incomplete.");
         var model = ModelRevisionReference.Restore(ModelId.Parse(document.Model.ModelId),
@@ -66,7 +67,7 @@ internal static class FaceCatalogSnapshotCodec
             new Transform2D(new Point2D(component.X, component.Y), new Point2D(component.ScaleX, component.ScaleY),
                 component.Rotation, new Point2D(component.PivotX, component.PivotY), component.FlipX, component.FlipY),
             component.IsVisible, component.MouthVariant is { } mouthVariant
-                ? (FaceMouthVariant)mouthVariant : FaceMouthVariant.Closed));
+                ? (FaceMouthVariant)mouthVariant : FaceMouthVariant.Closed, component.ZOrder));
         return FaceCatalogDraft.Restore(FaceId.Parse(document.FaceId), model, Revision.From(document.Revision),
             document.Name, components);
     }
@@ -112,5 +113,6 @@ internal static class FaceCatalogSnapshotCodec
         public bool FlipY { get; set; }
         public bool IsVisible { get; set; }
         public int? MouthVariant { get; set; }
+        public int? ZOrder { get; set; }
     }
 }

@@ -15,7 +15,19 @@ public enum FaceAssemblySlot
     EyebrowRight = 8,
     Nose = 9,
     MouthClosed = 10,
-    MouthOpen = 11
+    MouthOpen = 11,
+    EyeHighlightLeft = 12,
+    EyeHighlightRight = 13,
+    Blush = 14,
+    FacialShadow = 15,
+    HeadExtra1 = 16,
+    HeadExtra2 = 17,
+    HeadExtra3 = 18,
+    HeadExtra4 = 19,
+    HeadExtra5 = 20,
+    HeadExtra6 = 21,
+    HeadExtra7 = 22,
+    HeadExtra8 = 23
 }
 
 public enum FaceEyeMode
@@ -104,7 +116,9 @@ public sealed record FaceAssembly
         EnsureCatalog(catalog);
         var component = catalog.Components.FirstOrDefault(item => item.Id == componentId)
             ?? throw new ArgumentException("The selected facial component is not in this catalog.", nameof(componentId));
-        var slot = GetSlot(component);
+        var slot = component.Kind == FaceComponentKind.HeadExtra
+            ? FindHeadExtraSlot(componentId)
+            : GetSlot(component);
         var updated = Selections.ToImmutableDictionary().SetItem(slot, componentId);
         if (EyeSidesLinked && IsEyePart(component.Kind))
             updated = updated.SetItem(GetOppositeSlot(slot), componentId);
@@ -180,6 +194,16 @@ public sealed record FaceAssembly
             throw new InvalidOperationException("The face assembly is pinned to a different catalog revision.");
     }
 
+    private FaceAssemblySlot FindHeadExtraSlot(FaceComponentId componentId)
+    {
+        foreach (var slot in HeadExtraSlots)
+            if (Selections.TryGetValue(slot, out var selected) && selected == componentId)
+                return slot;
+        foreach (var slot in HeadExtraSlots)
+            if (!Selections.ContainsKey(slot)) return slot;
+        throw new InvalidOperationException("A face assembly supports at most eight head extras.");
+    }
+
     private static FaceAssemblySlot GetSlot(FaceComponent component) => component.Kind switch
     {
         FaceComponentKind.Eye => component.Side == FaceComponentSide.Left ? FaceAssemblySlot.EyeLeft : FaceAssemblySlot.EyeRight,
@@ -189,6 +213,10 @@ public sealed record FaceAssembly
         FaceComponentKind.Nose => FaceAssemblySlot.Nose,
         FaceComponentKind.Mouth => component.MouthVariant == FaceMouthVariant.Closed
             ? FaceAssemblySlot.MouthClosed : FaceAssemblySlot.MouthOpen,
+        FaceComponentKind.EyeHighlight => component.Side == FaceComponentSide.Left ? FaceAssemblySlot.EyeHighlightLeft : FaceAssemblySlot.EyeHighlightRight,
+        FaceComponentKind.Blush => FaceAssemblySlot.Blush,
+        FaceComponentKind.FacialShadow => FaceAssemblySlot.FacialShadow,
+        FaceComponentKind.HeadExtra => FaceAssemblySlot.HeadExtra1,
         _ => throw new ArgumentOutOfRangeException(nameof(component))
     };
 
@@ -196,6 +224,7 @@ public sealed record FaceAssembly
         bool eyeSidesLinked, bool eyebrowSidesLinked)
     {
         var sourceSlot = GetSlot(component);
+        if (component.Kind == FaceComponentKind.HeadExtra) return IsHeadExtraSlot(slot);
         if (sourceSlot == slot) return true;
         if (eyeSidesLinked && IsEyePart(component.Kind)) return GetOppositeSlot(sourceSlot) == slot;
         return eyebrowSidesLinked && component.Kind == FaceComponentKind.Eyebrow
@@ -204,6 +233,10 @@ public sealed record FaceAssembly
     private static bool IsEyePart(FaceComponentKind kind) => kind is FaceComponentKind.Eye or FaceComponentKind.Pupil or FaceComponentKind.ClosedEye;
     private static bool IsEyeSlot(FaceAssemblySlot slot) => EyeSlotPairs.Any(pair => pair.Left == slot || pair.Right == slot);
     private static bool IsEyebrowSlot(FaceAssemblySlot slot) => slot is FaceAssemblySlot.EyebrowLeft or FaceAssemblySlot.EyebrowRight;
+    public static bool IsHeadExtraSlot(FaceAssemblySlot slot) => slot is >= FaceAssemblySlot.HeadExtra1 and <= FaceAssemblySlot.HeadExtra8;
+    private static readonly FaceAssemblySlot[] HeadExtraSlots =
+    [FaceAssemblySlot.HeadExtra1, FaceAssemblySlot.HeadExtra2, FaceAssemblySlot.HeadExtra3, FaceAssemblySlot.HeadExtra4,
+     FaceAssemblySlot.HeadExtra5, FaceAssemblySlot.HeadExtra6, FaceAssemblySlot.HeadExtra7, FaceAssemblySlot.HeadExtra8];
 
     private static FaceAssemblySlot GetOppositeSlot(FaceAssemblySlot slot) => slot switch
     {

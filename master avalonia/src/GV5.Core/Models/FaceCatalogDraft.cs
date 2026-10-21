@@ -11,7 +11,11 @@ public enum FaceComponentKind
     ClosedEye = 3,
     Eyebrow = 4,
     Nose = 5,
-    Mouth = 6
+    Mouth = 6,
+    EyeHighlight = 7,
+    Blush = 8,
+    FacialShadow = 9,
+    HeadExtra = 10
 }
 
 public enum FaceComponentSide
@@ -30,7 +34,7 @@ public enum FaceMouthVariant
 public sealed record FaceComponent
 {
     private FaceComponent(FaceComponentId id, FaceComponentKind kind, string name, AssetId assetId,
-        FaceComponentSide? side, Transform2D transform, bool isVisible, FaceMouthVariant mouthVariant)
+        FaceComponentSide? side, Transform2D transform, bool isVisible, FaceMouthVariant mouthVariant, int zOrder)
     {
         Id = id;
         Kind = kind;
@@ -40,6 +44,7 @@ public sealed record FaceComponent
         Transform = transform;
         IsVisible = isVisible;
         MouthVariant = mouthVariant;
+        ZOrder = zOrder;
     }
 
     public FaceComponentId Id { get; }
@@ -50,25 +55,28 @@ public sealed record FaceComponent
     public Transform2D Transform { get; }
     public bool IsVisible { get; }
     public FaceMouthVariant MouthVariant { get; }
+    public int ZOrder { get; }
 
     public static FaceComponent Create(FaceComponentKind kind, string name, AssetId assetId,
         FaceComponentSide? side, Transform2D transform, bool isVisible = true,
-        FaceMouthVariant mouthVariant = FaceMouthVariant.Closed) =>
-        Restore(FaceComponentId.New(), kind, name, assetId, side, transform, isVisible, mouthVariant);
+        FaceMouthVariant mouthVariant = FaceMouthVariant.Closed, int? zOrder = null) =>
+        Restore(FaceComponentId.New(), kind, name, assetId, side, transform, isVisible, mouthVariant, zOrder);
 
     public static FaceComponent Restore(FaceComponentId id, FaceComponentKind kind, string name,
         AssetId assetId, FaceComponentSide? side, Transform2D transform, bool isVisible = true,
-        FaceMouthVariant mouthVariant = FaceMouthVariant.Closed)
+        FaceMouthVariant mouthVariant = FaceMouthVariant.Closed, int? zOrder = null)
     {
         if (!id.IsValid || !assetId.IsValid) throw new ArgumentException("A facial component requires stable component and asset IDs.");
         if (!Enum.IsDefined(kind)) throw new ArgumentOutOfRangeException(nameof(kind));
         if (side is { } definedSide && !Enum.IsDefined(definedSide)) throw new ArgumentOutOfRangeException(nameof(side));
         var requiresSide = kind is FaceComponentKind.Eye or FaceComponentKind.Pupil
-            or FaceComponentKind.ClosedEye or FaceComponentKind.Eyebrow;
+            or FaceComponentKind.ClosedEye or FaceComponentKind.Eyebrow or FaceComponentKind.EyeHighlight;
         if (requiresSide != side.HasValue)
-            throw new ArgumentException("Eye, pupil, closed-eye and eyebrow components require a left or right side; nose and mouth do not.", nameof(side));
+            throw new ArgumentException("Eye, pupil, closed-eye, eyebrow and highlight components require a left or right side; decorative details do not.", nameof(side));
         if (!Enum.IsDefined(mouthVariant) || (kind != FaceComponentKind.Mouth && mouthVariant != FaceMouthVariant.Closed))
             throw new ArgumentOutOfRangeException(nameof(mouthVariant), "Only mouth assets can use the open-mouth variant.");
+        var resolvedZOrder = zOrder ?? GetDefaultZOrder(kind);
+        if (resolvedZOrder is < 0 or > 10_000) throw new ArgumentOutOfRangeException(nameof(zOrder));
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
         var normalizedName = name.Trim();
         if (normalizedName.Length > 120) throw new ArgumentOutOfRangeException(nameof(name));
@@ -77,22 +85,38 @@ public sealed record FaceComponent
             || transform.Scale.X is <= 0 or > 20 || transform.Scale.Y is <= 0 or > 20
             || !double.IsFinite(transform.RotationRadians))
             throw new ArgumentOutOfRangeException(nameof(transform), "Facial transforms must be finite and within supported placement limits.");
-        return new FaceComponent(id, kind, normalizedName, assetId, side, transform, isVisible, mouthVariant);
+        return new FaceComponent(id, kind, normalizedName, assetId, side, transform, isVisible, mouthVariant, resolvedZOrder);
     }
 
     public FaceComponent WithTransform(Transform2D transform) =>
-        Restore(Id, Kind, Name, AssetId, Side, transform, IsVisible, MouthVariant);
+        Restore(Id, Kind, Name, AssetId, Side, transform, IsVisible, MouthVariant, ZOrder);
+
+    public FaceComponent WithZOrder(int zOrder) =>
+        Restore(Id, Kind, Name, AssetId, Side, Transform, IsVisible, MouthVariant, zOrder);
 
     public FaceComponent WithVisibility(bool isVisible) =>
-        new(Id, Kind, Name, AssetId, Side, Transform, isVisible, MouthVariant);
+        new(Id, Kind, Name, AssetId, Side, Transform, isVisible, MouthVariant, ZOrder);
 
     private static bool Finite(Point2D point) => double.IsFinite(point.X) && double.IsFinite(point.Y);
+
+    public static int GetDefaultZOrder(FaceComponentKind kind) => kind switch
+    {
+        FaceComponentKind.Eye or FaceComponentKind.ClosedEye => 100,
+        FaceComponentKind.Pupil => 200,
+        FaceComponentKind.Eyebrow => 300,
+        FaceComponentKind.Nose => 400,
+        FaceComponentKind.Mouth => 500,
+        FaceComponentKind.EyeHighlight => 600,
+        FaceComponentKind.Blush or FaceComponentKind.FacialShadow => 700,
+        FaceComponentKind.HeadExtra => 800,
+        _ => throw new ArgumentOutOfRangeException(nameof(kind))
+    };
 }
 
 /// <summary>Editable facial asset catalog pinned to one exact immutable model publication.</summary>
 public sealed record FaceCatalogDraft
 {
-    public const int CurrentSchemaVersion = 1;
+    public const int CurrentSchemaVersion = 2;
     public const int MaximumComponents = 256;
 
     private FaceCatalogDraft(FaceId id, ModelRevisionReference model, Revision revision, string name,
@@ -160,6 +184,14 @@ public sealed record FaceCatalogDraft
         var index = FindComponentIndex(componentId);
         if (index < 0) throw new InvalidOperationException("The selected facial component is not present in this catalog.");
         return Restore(Id, Model, Revision.Next(), Name, Components.SetItem(index, Components[index].WithVisibility(isVisible)));
+    }
+
+    public FaceCatalogDraft WithComponentZOrder(FaceComponentId componentId, int zOrder)
+    {
+        if (!componentId.IsValid) throw new ArgumentException("A facial component ID must be valid.", nameof(componentId));
+        var index = FindComponentIndex(componentId);
+        if (index < 0) throw new InvalidOperationException("The selected facial component is not present in this catalog.");
+        return Restore(Id, Model, Revision.Next(), Name, Components.SetItem(index, Components[index].WithZOrder(zOrder)));
     }
 
     private int FindComponentIndex(FaceComponentId id)

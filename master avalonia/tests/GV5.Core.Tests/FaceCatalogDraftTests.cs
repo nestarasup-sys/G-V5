@@ -44,4 +44,21 @@ public sealed class FaceCatalogDraftTests
             new Transform2D(new Point2D(0, 0), new Point2D(double.NaN, 1), 0, Point2D.Zero)));
         Assert.Throws<ArgumentException>(() => FaceCatalogDraft.Restore(FaceId.New(), model, Revision.Initial, "Rosto", [eye, eye]));
     }
+
+    [Fact]
+    public void FacialDetailsHaveStableDefaultLayersAndCanBeReorderedExplicitly()
+    {
+        var model = ModelRevisionReference.Restore(ModelId.New(), ModelRevisionId.New(), Revision.Initial, new string('a', 64));
+        var highlight = FaceComponent.Create(FaceComponentKind.EyeHighlight, "Brilho", AssetId.New(),
+            FaceComponentSide.Left, Transform2D.Identity);
+        var accessory = FaceComponent.Create(FaceComponentKind.HeadExtra, "Presilha", AssetId.New(), null, Transform2D.Identity);
+        var catalog = FaceCatalogDraft.Create(model, "Detalhes").WithComponent(highlight).WithComponent(accessory);
+
+        Assert.Equal(600, highlight.ZOrder);
+        Assert.Equal(800, accessory.ZOrder);
+        var reordered = catalog.WithComponentZOrder(highlight.Id, 875);
+        Assert.Equal(875, reordered.Components.Single(component => component.Id == highlight.Id).ZOrder);
+        Assert.Equal(875, reordered.Components.Single(component => component.Id == highlight.Id).WithTransform(Transform2D.Identity).ZOrder);
+        Assert.Throws<ArgumentOutOfRangeException>(() => highlight.WithZOrder(10_001));
+    }
 }
