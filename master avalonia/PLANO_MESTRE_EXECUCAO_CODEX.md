@@ -185,7 +185,7 @@ Ambiente/SDK/CI: `TestarLocal.bat gate` passou em 2026-10-21; ver `docs/gates/GA
 - [x] **F04.02** — Formalizar espaços model/scene/view e conversões ida/volta em código + testes.
 - [x] **F04.03** — Implementar ordem de transformações, rotação com pivô e escalas não uniformes.
 - [x] **F04.04** — Implementar flip X/Y e rotação negativa/extrema preservando geometria.
-- [ ] **F04.05** — Implementar hierarquia pai/filho e matriz local/global com âncoras.
+- [x] **F04.05** — Implementar hierarquia pai/filho e matriz local/global com âncoras.
 - [ ] **F04.06** — Implementar joints, bones e propagação de movimento com ciclos rejeitados.
 - [ ] **F04.07** — Implementar hit testing em coordenadas transformadas, bounds/crop e z-order.
 - [ ] **F04.08** — Implementar snap/guides como lógica independente de UI/documento.
