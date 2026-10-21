@@ -13,15 +13,15 @@
 | Branch obrigatória | `Master-AValonia` |
 | Pasta exclusiva do novo aplicativo | `master avalonia/` |
 | Commit-base inspecionado antes deste arquivo | `53b7f7a97321e85063a8dd4f9635e48d36548323` |
-| Último commit de implementação validado | `b92fd2c` (F09.06: catálogo facial por modelo, transforms e persistência SQLite) |
+| Último commit de implementação validado | `8b586f0` (F09.07: composição facial com lados ligados e estados de olhos/boca) |
 | Checkout local revalidado | `TestarLocal.bat rapido` passou em 2026-10-21: build Debug com 2 avisos CS0618 e 1 aviso xUnit preexistentes; **285 testes, 0 falhas** |
-| Fase ativa | **F09 — Fabricador IV — cabelos, face, expressões e completação (F09.06 validada; próxima F09.07)** |
-| Última tarefa VALIDADA | **F09.06** — catálogo facial com IDs estáveis, transforms independentes e rascunhos persistentes por revisão de modelo |
-| Próxima tarefa PENDENTE | **F09.07** — montagem de rosto com esquerda/direita, linkedSides, nariz, boca aberta/fechada |
+| Fase ativa | **F09 — Fabricador IV — cabelos, face, expressões e completação (F09.07 validada; próxima F09.08)** |
+| Última tarefa VALIDADA | **F09.07** — montagem/render facial com seleção por lado, espelhamento ligado e boca/olhos abertos ou fechados |
+| Próxima tarefa PENDENTE | **F09.08** — detalhes faciais e acessórios com z-order explícito |
 | Requisito transversal atualizado | ADR-0006: aparência reconhecível, não pixel-perfect; todos os botões e funcionalidades; revisão final visual pendente |
 | Gate atual | **GATE-F08 PASSOU tecnicamente; UI/visual Windows/GPU e paridade completa continuam pendentes** |
-| Progresso validado neste controle | **118 / 247 tarefas (47,8%)** |
-| Tarefas em execução | Nenhuma neste instante; F09.07 é a próxima tarefa autorizada |
+| Progresso validado neste controle | **119 / 247 tarefas (48,2%)** |
+| Tarefas em execução | Nenhuma neste instante; F09.08 é a próxima tarefa autorizada |
 | Pendências conhecidas | F06: folha real/capturas/worker não testados; ferramentas de Modelos ausentes catalogadas em `docs/legacy-contracts/PENDENCIAS_FUNCIONAIS_FABRICADOR.md` e obrigatórias antes do G2. Isso não impede a programação F07, mas impede declarar Fabricador completo. Limite download F01 documentado |
 | Aceite Windows/GPU | **F06 Windows/visual não executado; GPU continua fora do escopo comprovado** |
 
@@ -57,7 +57,7 @@ Se o Codex encontrar algo já implementado, **validar e registrar evidências**,
 | F06 | Fabricador I — modelos e peças | 14 | 14 | LIBERADA TECNICAMENTE | 198 testes previamente registrados; aceites Windows/visual pendentes para G2/F12/entrega |
 | F07 | Fabricador II — rig, poses e animador | 12 | 12 | VALIDADA | F07.01–F07.12 validadas tecnicamente; `docs/gates/GATE-F07.md` registra provas e lacunas remanescentes de paridade para F09.13/G2 |
 | F08 | Fabricador III — roupas, binding e revisões | 12 | 12 | VALIDADA | GATE-F08 PASSOU tecnicamente; integração UI e paridade visual ficam pendentes nos gates de produto |
-| F09 | Fabricador IV — cabelos, face, expressões e completação | 15 | 6 | EM_EXECUCAO | F09.01–F09.06 validadas; próxima F09.07 |
+| F09 | Fabricador IV — cabelos, face, expressões e completação | 15 | 7 | EM_EXECUCAO | F09.01–F09.07 validadas; próxima F09.08 |
 | F10 | Customizador completo e CharacterResolver | 19 | 0 | PENDENTE | — |
 | F11 | Studio e Scene Engine | 15 | 0 | PENDENTE | — |
 | F12 | Gate vertical obrigatório e confiabilidade | 12 | 0 | PENDENTE | — |
@@ -196,6 +196,8 @@ Adicionar uma linha ao concluir ou bloquear cada tarefa. A linha inicial abaixo 
 | **F09.05** | **VALIDADA** | `f5ce538` + `dadb877` | `TestarLocal.bat rapido` em 2026-10-21: build Debug, **281 testes, 0 falhas**, dois avisos CS0618 preexistentes no `ThumbnailService` e um aviso xUnit preexistente em outro teste. `FaceSheetProcessor` trabalha em cópia e worker thread, limita folha a 32 milhões de pixels, remove somente fundo amostrado conectado à borda, despilla bordas verdes, recorta com coordenadas da folha e dá suporte a olhos (olho/pupila/fechado por lado), sobrancelhas, nariz 1/6/auto e 21 variantes de boca em ordem linha-major. `EyeInteriorMaskProcessor` reproduz a máscara alpha graduada: contorno escuro transparente e área clara branca/opaca, preservando alpha da fonte. Testes sintéticos cobrem pixels/cores, bounds, fonte intacta, nariz auto sem falso positivo, folha vazia, opções, cancelamento e máscara interna do olho. | `src/GV5.Assets/Processing/FaceSheetProcessor.cs`; `src/GV5.Assets/Processing/EyeInteriorMaskProcessor.cs`; `tests/GV5.Assets.Tests/FaceSheetProcessorTests.cs` | Processadores isolados prontos; integração de catálogo e UI segue em F09.06+. Captura Windows/GPU e validação visual de folhas reais não executadas. Próxima F09.06. |
 
 | **F09.06** | **VALIDADA** | `b92fd2c` | `TestarLocal.bat rapido` em 2026-10-21: build Debug e **285 testes, 0 falhas**; 2 avisos CS0618 em `ThumbnailService` e 1 aviso xUnit1051 preexistente em `HairRoleTintProcessorTests`. Criado `FaceCatalogDraft` com `FaceId` e `FaceComponentId`, componentes de olhos/pupilas/olhos fechados/sobrancelhas por lado e nariz/boca sem lado, transform individual, visibilidade, limite de 256 componentes e validação de IDs/números/revisão. O catálogo fica pinado à publicação exata do modelo. Migração SQLite v14 e repositório guardam snapshots JSON com SHA-256, fazem save otimista, listagem por revisão, checam modelo/assets disponíveis e mantêm referências estáveis por ID de componente. Testes cobrem transforms independentes, lados, remoção/visibilidade, pinning, round-trip após reabrir, conflitos, dependências ausentes e detecção de adulteração. | `src/GV5.Core/Models/FaceCatalogDraft.cs`; `src/GV5.Application/Contracts/IFaceCatalogRepository.cs`; `src/GV5.Data/Migrations/FaceCatalogRepositorySchemaMigration.cs`; `src/GV5.Data/Repositories/SqliteFaceCatalogRepository.cs`; `src/GV5.Data/Repositories/FaceCatalogSnapshotCodec.cs`; `tests/GV5.Core.Tests/FaceCatalogDraftTests.cs`; `tests/GV5.Data.Tests/SqliteFaceCatalogRepositoryTests.cs`; registro em `AppComposition.cs` | Domínio e persistência do catálogo prontos; interface de edição e montagem do rosto seguem para as próximas tarefas. Captura visual Windows/GPU não executada. Próxima F09.07. |
+
+| **F09.07** | **VALIDADA** | `8b586f0` | `TestarLocal.bat rapido` em 2026-10-21: build Debug e **289 testes, 0 falhas**; 2 avisos CS0618 em `ThumbnailService` e 1 aviso xUnit1051 preexistente em `HairRoleTintProcessorTests`. `FaceAssembly` seleciona componentes de olho, pupila, olho fechado, sobrancelha, nariz e variantes de boca, preserva configurações esquerda/direita, espelha por slot quando `eyeSidesLinked`/`browSidesLinked` está ativo e troca entre olhos/boca abertos e fechados. `FaceRenderSceneBuilder` produz camadas ordenadas com IDs estáveis por slot, usa transforms independentes do catálogo e valida recortes disponíveis sem editar os assets. Testes cobrem vínculo/espelho, seleções por lado, variantes de boca e olho, identidade estável, transform e rejeição de catálogo/crop incompatível. | `src/GV5.Core/Models/FaceAssembly.cs`; `src/GV5.Core/Models/FaceCatalogDraft.cs`; `src/GV5.Data/Repositories/FaceCatalogSnapshotCodec.cs`; `src/GV5.Rendering/FaceRenderSceneBuilder.cs`; `tests/GV5.Core.Tests/FaceAssemblyTests.cs`; `tests/GV5.Rendering.Tests/FaceRenderSceneBuilderTests.cs`; `tests/GV5.Data.Tests/SqliteFaceCatalogRepositoryTests.cs` | A composição e camada de render estão prontas; detalhes, acessórios, UI e integração do rosto completo ao builder unificado continuam nas próximas tarefas. Captura visual Windows/GPU não executada. Próxima F09.08. |
 
 **Estados aceitos:** `PENDENTE`, `EM_EXECUCAO`, `BLOQUEADA`, `VALIDADA`.
 
@@ -375,7 +377,7 @@ Após concluir um lote ou fase, adicionar uma linha. Não inflar contador só po
 3. Inspecionar evidências reais da última tarefa validada; caso não existam, corrigir seu estado.
 4. **F07 liberada tecnicamente conforme ADR-0006.** A F06 tem 14 tarefas registradas e 198 testes anteriores; revisão de folha real/Windows/worker/capturas segue pendente até G2/F12/aceite final. Não afirmar que foi realizada.
 5. Continuar automaticamente pelas tarefas seguintes **uma de cada vez**, em lotes flexíveis de aproximadamente 3–8 tarefas relacionadas, enquanto todos os gates pertinentes passam.
-6. F07 está tecnicamente encerrada em `docs/gates/GATE-F07.md`. F08 passou tecnicamente em `docs/gates/GATE-F08.md`. F09.01–F09.06 estão validadas; continuar em **F09.07** conforme o Plano Mestre e retomar as diferenças de paridade do Animador em F09.13. Não implementar Video Studio antes da fase apropriada.
+6. F07 está tecnicamente encerrada em `docs/gates/GATE-F07.md`. F08 passou tecnicamente em `docs/gates/GATE-F08.md`. F09.01–F09.07 estão validadas; continuar em **F09.08** conforme o Plano Mestre e retomar as diferenças de paridade do Animador em F09.13. Não implementar Video Studio antes da fase apropriada.
 7. Ao encerrar, informar: **branch, HEAD, último ID VALIDADO, próximo ID PENDENTE, commits, comandos verdes, evidências, bloqueios e condição de desbloqueio**.
 
 ### Prompt de retomada
