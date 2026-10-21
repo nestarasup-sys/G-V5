@@ -1,6 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
+    <PackageReference Include="Microsoft.Data.Sqlite" />
     <ProjectReference Include="..\GV5.Application\GV5.Application.csproj" />
     <ProjectReference Include="..\GV5.Core\GV5.Core.csproj" />
     <ProjectReference Include="..\GV5.Assets\GV5.Assets.csproj" />
