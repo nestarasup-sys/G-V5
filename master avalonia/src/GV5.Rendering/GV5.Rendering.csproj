@@ -3,6 +3,8 @@
   <ItemGroup>
     <ProjectReference Include="..\GV5.Scene\GV5.Scene.csproj" />
     <ProjectReference Include="..\GV5.Assets\GV5.Assets.csproj" />
+    <ProjectReference Include="..\GV5.Core\GV5.Core.csproj" />
+    <ProjectReference Include="..\GV5.Geometry\GV5.Geometry.csproj" />
   </ItemGroup>
 
   <PropertyGroup>
