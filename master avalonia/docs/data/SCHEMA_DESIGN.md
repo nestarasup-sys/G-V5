@@ -109,6 +109,12 @@ O Fabricador grava o checkpoint antes do `CreateAsync`/`UpdateAsync`. Repetir um
 
 Restore exige uma raiz de dados nova sem banco existente, copia para um arquivo temporário, recalcula o hash e executa as verificações SQLite antes de mover o arquivo para o destino. Não sobrescreve banco existente. A versão 1 inclui somente o SQLite porque ainda não existe AssetStore binário; quando o AssetStore entrar, seus arquivos deverão ser incorporados ao manifesto/hash antes do backup ser considerado completo para dados de assets.
 
+## Contrato público do AssetStore (F03.01)
+
+`AssetId` é um GUID tipado e não vazio, serializado no formato canônico `D`; nome exibido, hash e caminho físico não substituem sua identidade. `IAssetStore` oferece `ImportAsync`, `OpenReadAsync`, `GetMetadataAsync`, `AddReferenceAsync` e `ReleaseReferenceAsync`, sempre por ID/stream e sem expor caminhos físicos. A stream de entrada continua pertencendo ao chamador; a stream retornada por `OpenReadAsync` pertence ao chamador e deve ser descartada por ele.
+
+`AssetMetadata` expõe somente ID, SHA-256, MIME type, tamanho, estado de verificação e data de criação. Localização relativa e detalhes de armazenamento ficam dentro de `GV5.Data`. `AssetReferenceKey` é a chave estável `(owner_type, owner_id, slot)`, validada como identificadores ASCII minúsculos com separadores simples. Adicionar a mesma relação é idempotente; ocupar a mesma chave com outro asset retorna conflito. Liberar uma chave remove apenas a relação e não apaga o binário. Importação e lifecycle dos arquivos serão implementados nas tarefas F03.02–F03.04.
+
 ## Decisões ainda adiadas
 
 O desenho não escolhe o provider SQLite, DDL definitivo, política WAL, journal, schema versions ou semântica exata de `ON DELETE`; isso pertence a F02.03–F02.04 e às tarefas de recovery. As tabelas de domínios futuros são contratos conceituais, não autorização para antecipar módulos fora da ordem do plano.

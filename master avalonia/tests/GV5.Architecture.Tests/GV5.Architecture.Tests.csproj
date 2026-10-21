@@ -8,6 +8,7 @@
 
   <ItemGroup>
     <PackageReference Include="xunit.v3" />
+    <ProjectReference Include="../../src/GV5.Application/GV5.Application.csproj" />
     <ProjectReference Include="../../src/GV5.Core/GV5.Core.csproj" />
     <Content Include="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
