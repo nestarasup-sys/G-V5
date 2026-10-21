@@ -1,6 +1,6 @@
 # Contrato de animação corporal do Fabricador
 
-Estado: definido em F07.09; ainda sem editor, player, persistência ou migração implementados.
+Estado: F07.09–F07.12 validadas tecnicamente; editor, prévia, playback básico e persistência SQLite implementados. Paridade completa do Animador legado permanece parcial conforme `docs/legacy-contracts/F07_ANIMACAO_PENDENCIAS.md`.
 
 ## Identidade e origem
 
@@ -24,7 +24,7 @@ Estado: definido em F07.09; ainda sem editor, player, persistência ou migraçã
 - `AnimationEasing`: `Step`, `Linear` ou `Smooth`. `Smooth` corresponde à suavização smoothstep que o Animador legado usa para a interpolação suave; `Step` corresponde ao modo em etapas do legado.
 - `AnimationLoopMode`: `Once`, `Loop` ou `PingPong`, cobrindo os três modos existentes no legado.
 - A velocidade é finita e limitada a 0,1–4,0×, conforme o validador legado.
-- Rotação e avaliação temporal são responsabilidades da engine de animação da aplicação, fora de Avalonia. A semântica de interpolação de transforms e anchors será implementada e testada na F07.10; este contrato não declara um player existente.
+- Rotação, avaliação temporal e playback são responsabilidades da engine de animação da aplicação, fora de Avalonia. `AnimationEvaluator` implementa interpolação de transforms/anchors e os modos Once/Loop/PingPong; a view Avalonia expõe reprodução/pausa sem mover essas regras para a UI.
 
 ## Limites e compatibilidade
 
@@ -34,4 +34,4 @@ Os limites observados no validador Electron foram preservados para quantidade de
 
 Referências lidas: `docs/legacy-contracts/FABRICADOR_INVENTARIO.md`, `docs/legacy-contracts/FORMATOS_E_IDS_ELECTRON.md`, `../../../src/shared/fabricator.ts` (`AnimatorFrame`/`AnimatorAnimation`), `../../../electron/main.ts` (`validateAnimatorDocument`) e `../../../src/renderer/src/features/fabricator/AnimatorWorkspace.tsx` (`interpolateFrames`). O legado foi consultado somente para leitura.
 
-O contrato está em `GV5.Core` e depende apenas de Core/Geometry. F07.10 ainda deverá implementar edição e prévia; F07.11 deverá provar fluxo pose→animação→reabertura e casos geométricos extremos. Não declarar paridade funcional de animação até esses passos serem validados.
+O contrato está em `GV5.Core` e depende apenas de Core/Geometry. F07.10 implementou edição, prévia, playback e persistência; F07.11 provou pose→animação→reabertura e casos geométricos extremos. O gate técnico F07 passou. Slots nomeados do legado, miniaturas, `characterId` e demais diferenças de workflow seguem abertas para F09.13/G2; consultar o inventário de pendências antes de declarar paridade funcional completa.

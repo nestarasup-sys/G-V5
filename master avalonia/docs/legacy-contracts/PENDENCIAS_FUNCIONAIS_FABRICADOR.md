@@ -30,4 +30,4 @@
 
 ## Estado atual
 
-O inventário ainda contém lacunas abertas. F07.02 (`8f11586`) cobre CRUD, validação, undo/redo e persistência/reabertura de juntas; F07.04 (`49b206b`) cobre guias/handles, snap geométrico, undo/redo e persistência/reabertura. A validação manual com mouse/DPI permanece pendente, assim como a heurística de conexões automáticas e outras lacunas listadas acima. A fase F07 só encerra quando seu gate técnico passar.
+O inventário ainda contém lacunas abertas. F07.02 (`8f11586`) cobre CRUD, validação, undo/redo e persistência/reabertura de juntas; F07.04 (`49b206b`) cobre guias/handles, snap geométrico, undo/redo e persistência/reabertura. A validação manual com mouse/DPI permanece pendente, assim como a heurística de conexões automáticas e outras lacunas listadas acima. **F07 foi encerrada tecnicamente no gate `docs/gates/GATE-F07.md`;** isso não conclui o G2 nem os itens remanescentes do Animador. Para o detalhe atualizado da animação corporal, consultar [`F07_ANIMACAO_PENDENCIAS.md`](F07_ANIMACAO_PENDENCIAS.md), com complementações previstas em F09.13.

@@ -255,9 +255,9 @@ Ambiente/SDK/CI: `TestarLocal.bat gate` passou em 2026-10-21; ver `docs/gates/GA
 - [x] **F07.07** — Implementar salvar/carregar/duplicar/publicar pose e thumbnails lazily.
 - [x] **F07.08** — Implementar Undo/Redo de rig/pose e persistência com revisão.
 - [x] **F07.09** — Definir contrato mínimo de animação do Fabricador (frames, keys, easing e rig).
-- [ ] **F07.10** — Implementar animações básicas do Fabricador com editor e prévia sem Video Studio.
-- [ ] **F07.11** — Testar pose→animação→reopen e personagens sintéticos com braços/pivôs extremos.
-- [ ] **F07.12** — Fechar GATE-F07 e atualizar inventário de animações ainda pendentes.
+- [x] **F07.10** — Implementar animações básicas do Fabricador com editor e prévia sem Video Studio.
+- [x] **F07.11** — Testar pose→animação→reopen e personagens sintéticos com braços/pivôs extremos.
+- [x] **F07.12** — Fechar GATE-F07 e atualizar inventário de animações ainda pendentes.
 
 **Encerramento F07:** registrar `docs/gates/GATE-F07.md` e marcar a fase validada somente se o gate acima foi comprovado. Se estiver bloqueado, documentar a evidência que falta e não iniciar F08.
 
