@@ -97,6 +97,12 @@ O diagrama apresenta ownership e relações de domínio; nomes de IDs locais e t
 
 Repositórios atualizam apenas as linhas do agregado alterado, filtrando pelo ID e `expectedRevision` na mesma transação. Uma operação que não altera conteúdo devolve sucesso sem executar `UPDATE`; mudança de um modelo não reescreve outras entidades nem serializa o banco inteiro. Ao persistir filhos no futuro, o repositório compara IDs/valores dirty e insere, atualiza ou remove apenas as linhas alteradas, com o agregado como limite transacional. WAL é mecanismo interno de recuperação e concorrência do SQLite; não é um snapshot do banco por gesto.
 
+## Journal executável de rascunhos (migration 3)
+
+`model_draft_checkpoints` é um write-ahead journal pequeno para operações de `ModelDraft` que ainda não foram confirmadas. O registro guarda um `checkpoint_id` imutável, `model_id` estável, a revisão-base esperada (NULL para criação), o nome pretendido e o instante da captura. Ele não tem FK para `models`, pois uma criação precisa ser registrada antes de a linha do modelo existir. O índice por modelo/horário permite procurar checkpoints pendentes e reproduzir cada operação de forma determinística.
+
+O Fabricador grava o checkpoint antes do `CreateAsync`/`UpdateAsync`. Repetir um salvamento pendente atualiza o mesmo checkpoint pelo ID, sem acumular snapshots duplicados. Depois do commit do agregado, remove apenas o checkpoint daquele ID. Na abertura do Fabricador, checkpoints são apresentados ao usuário: recuperar tenta aplicar usando a revisão esperada; se a revisão já avançou e o conteúdo confere, reconhece o commit como concluído e só limpa o journal; se divergiu, mantém o checkpoint e nunca substitui silenciosamente a versão atual. Descartar remove somente o checkpoint, sem apagar o modelo confirmado. O teste de interrupção injeta falha depois do write-ahead, cria um novo ViewModel e verifica a recuperação em SQLite de arquivo temporário.
+
 ## Decisões ainda adiadas
 
 O desenho não escolhe o provider SQLite, DDL definitivo, política WAL, journal, schema versions ou semântica exata de `ON DELETE`; isso pertence a F02.03–F02.04 e às tarefas de recovery. As tabelas de domínios futuros são contratos conceituais, não autorização para antecipar módulos fora da ordem do plano.

@@ -10,6 +10,41 @@
                 <TextBlock Text="{Binding Status}" FontSize="{DynamicResource Gv5FontSizeBody}" TextWrapping="Wrap" Foreground="{DynamicResource Gv5BrushTextSecondary}" />
             </StackPanel>
 
+            <TextBlock Text="Verificando alterações interrompidas…"
+                       IsVisible="{Binding IsCheckingRecovery}"
+                       Foreground="{DynamicResource Gv5BrushTextSecondary}" />
+
+            <Border IsVisible="{Binding HasPendingRecovery}"
+                    Background="{DynamicResource Gv5BrushCanvas}"
+                    BorderBrush="{DynamicResource Gv5BrushAccent}"
+                    BorderThickness="1"
+                    CornerRadius="10"
+                    Padding="16">
+                <StackPanel Spacing="10">
+                    <TextBlock Text="Rascunho recuperável encontrado"
+                               FontWeight="SemiBold"
+                               Foreground="{DynamicResource Gv5BrushTextPrimary}" />
+                    <TextBlock Text="{Binding PendingRecoveryCheckpoint.Name}"
+                               FontSize="{DynamicResource Gv5FontSizeBody}"
+                               Foreground="{DynamicResource Gv5BrushTextSecondary}" />
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <Button Content="Recuperar rascunho"
+                                Command="{Binding RestoreCheckpointCommand}"
+                                Padding="14,9"
+                                Background="{DynamicResource Gv5BrushAccent}"
+                                Foreground="{DynamicResource Gv5BrushOnAccent}" />
+                        <Button Content="Descartar checkpoint"
+                                Command="{Binding DiscardCheckpointCommand}"
+                                Padding="14,9" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <TextBlock Text="{Binding RecoveryMessage}"
+                       IsVisible="{Binding HasRecoveryMessage}"
+                       TextWrapping="Wrap"
+                       Foreground="#B4233C" />
+
             <StackPanel Spacing="8">
                 <TextBlock Text="Nome do modelo" FontWeight="SemiBold" Foreground="{DynamicResource Gv5BrushTextPrimary}" />
                 <TextBox Text="{Binding ModelName}"

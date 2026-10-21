@@ -20,8 +20,18 @@ public sealed record ModelDraft
     public long CreatedUtcMs { get; }
     public long UpdatedUtcMs { get; }
 
-    public static ModelDraft Create(string name, long nowUtcMs) =>
-        new(ModelId.New(), Revision.Initial, NormalizeName(name), ValidateTimestamp(nowUtcMs), nowUtcMs);
+    public static ModelDraft Create(string name, long nowUtcMs) => Create(ModelId.New(), name, nowUtcMs);
+
+    public static ModelDraft Create(ModelId id, string name, long nowUtcMs)
+    {
+        if (!id.IsValid)
+        {
+            throw new ArgumentException("A model draft requires a valid stable ID.", nameof(id));
+        }
+
+        ValidateTimestamp(nowUtcMs);
+        return new ModelDraft(id, Revision.Initial, NormalizeName(name), nowUtcMs, nowUtcMs);
+    }
 
     public static ModelDraft Restore(ModelId id, Revision revision, string name, long createdUtcMs, long updatedUtcMs)
     {

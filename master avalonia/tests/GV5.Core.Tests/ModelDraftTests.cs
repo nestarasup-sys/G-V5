@@ -41,4 +41,29 @@ public sealed class ModelDraftTests
         var draft = ModelDraft.Create("Base", 100);
         Assert.Throws<ArgumentOutOfRangeException>(() => draft.Rename("Alterado", 99));
     }
+
+    [Fact]
+    public void Checkpoint_PreservesStableDraftIdentityAndExpectedRevision()
+    {
+        var modelId = ModelId.New();
+        var checkpoint = ModelDraftCheckpoint.Create(modelId, Revision.From(3), "  Recuperar  ", 456);
+
+        var draft = ModelDraft.Create(checkpoint.ModelId, checkpoint.Name, checkpoint.CreatedUtcMs);
+
+        Assert.Equal(modelId, draft.Id);
+        Assert.Equal("Recuperar", draft.Name);
+        Assert.Equal(Revision.Initial, draft.Revision);
+        Assert.Equal(Revision.From(3), checkpoint.ExpectedRevision);
+        Assert.NotEqual(Guid.Empty, checkpoint.CheckpointId);
+    }
+
+    [Fact]
+    public void Checkpoint_RejectsInvalidIdentityRevisionNameAndTime()
+    {
+        Assert.Throws<ArgumentException>(() => ModelDraftCheckpoint.Create(default, null, "Modelo", 1));
+        Assert.Throws<ArgumentException>(() => ModelDraftCheckpoint.Create(ModelId.New(), default(Revision), "Modelo", 1));
+        Assert.Throws<ArgumentException>(() => ModelDraftCheckpoint.Create(ModelId.New(), null, " ", 1));
+        Assert.Throws<ArgumentOutOfRangeException>(() => ModelDraftCheckpoint.Create(ModelId.New(), null, new string('x', 121), 1));
+        Assert.Throws<ArgumentOutOfRangeException>(() => ModelDraftCheckpoint.Create(ModelId.New(), null, "Modelo", -1));
+    }
 }

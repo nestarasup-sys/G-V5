@@ -23,9 +23,11 @@ internal static class AppComposition
         services.AddSingleton<IGv5Database, SqliteDatabase>();
         services.AddSingleton<ISqliteMigration, InitialAssetSchemaMigration>();
         services.AddSingleton<ISqliteMigration, ModelDraftSchemaMigration>();
+        services.AddSingleton<ISqliteMigration, ModelDraftCheckpointSchemaMigration>();
         services.AddSingleton<SqliteMigrationRunner>();
         services.AddSingleton<IDataPlatformInitializer>(provider => provider.GetRequiredService<SqliteMigrationRunner>());
         services.AddSingleton<IModelDraftRepository, SqliteModelDraftRepository>();
+        services.AddSingleton<IModelDraftCheckpointStore, SqliteModelDraftCheckpointStore>();
         services.AddSingleton(new ModuleRouteCatalog(routes));
         services.AddTransient<IModulePageFactory, ServiceProviderModulePageFactory>();
         foreach (var route in routes)
