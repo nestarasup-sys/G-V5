@@ -191,6 +191,8 @@ public sealed class FabricatorModelSourceImportTests
             Assert.Equal(new ImageCropBounds(6, 4, 18, 18), parts.Value[0].SourceBounds);
             Assert.Equal(new ImageCropBounds(34, 21, 18, 18), parts.Value[1].SourceBounds);
             Assert.All(parts.Value, part => Assert.Equal("image/png", part.Asset.MediaType));
+            await AssertPngPixelsAsync(store, parts.Value[0].Asset.Id, new SKColor(240, 30, 30), TestContext.Current.CancellationToken);
+            await AssertPngPixelsAsync(store, parts.Value[1].Asset.Id, new SKColor(30, 30, 240), TestContext.Current.CancellationToken);
             Assert.Equal(3, store.ImportCount);
         }
         finally
@@ -231,6 +233,31 @@ public sealed class FabricatorModelSourceImportTests
         using var image = SKImage.FromBitmap(bitmap);
         using var encoded = image.Encode(SKEncodedImageFormat.Png, 100);
         return encoded!.ToArray();
+    }
+
+    private static async Task AssertPngPixelsAsync(RecordingAssetStore store, AssetId assetId, SKColor foreground, CancellationToken cancellationToken)
+    {
+        var asset = await store.OpenReadAsync(assetId, cancellationToken);
+        Assert.True(asset.IsSuccess, asset.Error?.Message);
+        await using var stream = asset.Value;
+        using var bitmap = SKBitmap.Decode(stream);
+        Assert.NotNull(bitmap);
+        Assert.Equal(18, bitmap.Width);
+        Assert.Equal(18, bitmap.Height);
+
+        for (var y = 0; y < bitmap.Height; y++)
+        for (var x = 0; x < bitmap.Width; x++)
+        {
+            var actual = bitmap.GetPixel(x, y);
+            if (x is >= 4 and < 14 && y is >= 4 and < 14)
+            {
+                Assert.Equal(foreground, actual);
+            }
+            else
+            {
+                Assert.Equal((byte)0, actual.Alpha);
+            }
+        }
     }
 
     private static string NewTempRoot() => Path.Combine(Path.GetTempPath(), $"gv5-fabricator-import-{Guid.NewGuid():N}");
