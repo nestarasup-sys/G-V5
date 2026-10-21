@@ -145,7 +145,7 @@ Ambiente/SDK/CI: <comandos e resultados reais>
 - [x] **F02.09** — Expor estado Saved/Dirty/Saving/Error confirmado em UI e teste de falha de save.
 - [x] **F02.10** — Implementar debounce de autosave e flush de fechamento sem sobrescrever versões recentes.
 - [x] **F02.11** — Implementar checkpoint/journal de operação incompleta com recuperação do último estado consistente.
-- [ ] **F02.12** — Implementar backup consistente com WAL, manifesto/hashes e restore testado em cópia isolada.
+- [x] **F02.12** — Implementar backup consistente com WAL, manifesto/hashes e restore testado em cópia isolada.
 - [ ] **F02.13** — Implementar log estruturado mínimo/correlation ID com rotação e sem dados pessoais.
 - [ ] **F02.14** — Testar falta de espaço, acesso negado, schema futuro, interrupção e integrity_check em fixtures.
 - [ ] **F02.15** — Fechar GATE-F02 com comandos, schema e evidências de reopen/restore.

@@ -103,6 +103,12 @@ Repositórios atualizam apenas as linhas do agregado alterado, filtrando pelo ID
 
 O Fabricador grava o checkpoint antes do `CreateAsync`/`UpdateAsync`. Repetir um salvamento pendente atualiza o mesmo checkpoint pelo ID, sem acumular snapshots duplicados. Depois do commit do agregado, remove apenas o checkpoint daquele ID. Na abertura do Fabricador, checkpoints são apresentados ao usuário: recuperar tenta aplicar usando a revisão esperada; se a revisão já avançou e o conteúdo confere, reconhece o commit como concluído e só limpa o journal; se divergiu, mantém o checkpoint e nunca substitui silenciosamente a versão atual. Descartar remove somente o checkpoint, sem apagar o modelo confirmado. O teste de interrupção injeta falha depois do write-ahead, cria um novo ViewModel e verifica a recuperação em SQLite de arquivo temporário.
 
+## Backup executável SQLite (formato 1)
+
+`DatabaseBackupService` cria cada backup em uma pasta nova, usando a API online backup do SQLite enquanto o gate de escrita local está fechado. Isso copia uma visão transacional consistente que inclui páginas committed ainda residentes em WAL; não copia o arquivo principal isoladamente. A pasta contém `database/gv5.sqlite3` e `manifest.json`. O manifesto guarda versão do formato/schema, timestamp UTC e tamanho/SHA-256 do banco. O serviço verifica caminho relativo permitido, formato, tamanho, hash, `integrity_check`, `foreign_key_check` e versão real do schema antes de aceitar o backup.
+
+Restore exige uma raiz de dados nova sem banco existente, copia para um arquivo temporário, recalcula o hash e executa as verificações SQLite antes de mover o arquivo para o destino. Não sobrescreve banco existente. A versão 1 inclui somente o SQLite porque ainda não existe AssetStore binário; quando o AssetStore entrar, seus arquivos deverão ser incorporados ao manifesto/hash antes do backup ser considerado completo para dados de assets.
+
 ## Decisões ainda adiadas
 
 O desenho não escolhe o provider SQLite, DDL definitivo, política WAL, journal, schema versions ou semântica exata de `ON DELETE`; isso pertence a F02.03–F02.04 e às tarefas de recovery. As tabelas de domínios futuros são contratos conceituais, não autorização para antecipar módulos fora da ordem do plano.

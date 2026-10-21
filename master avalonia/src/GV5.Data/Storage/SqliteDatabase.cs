@@ -66,6 +66,44 @@ public sealed class SqliteDatabase : IGv5Database, IDisposable
         }
     }
 
+    /// <summary>Uses SQLite's online backup API so committed WAL pages are copied as one consistent snapshot.</summary>
+    public async Task BackupDatabaseToAsync(string destinationFile, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(destinationFile);
+        ThrowIfDisposed();
+        var fullDestination = Path.GetFullPath(destinationFile);
+        if (string.Equals(fullDestination, Path.GetFullPath(_paths.DatabaseFile), StringComparison.OrdinalIgnoreCase))
+        {
+            throw new ArgumentException("A backup destination must differ from the source database.", nameof(destinationFile));
+        }
+
+        if (File.Exists(fullDestination))
+        {
+            throw new IOException("The backup destination already exists; it will not be overwritten.");
+        }
+
+        Directory.CreateDirectory(Path.GetDirectoryName(fullDestination)!);
+        await _writer.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await using var source = await OpenConfiguredConnectionAsync(cancellationToken).ConfigureAwait(false);
+            var builder = new SqliteConnectionStringBuilder
+            {
+                DataSource = fullDestination,
+                Mode = SqliteOpenMode.ReadWriteCreate,
+                Pooling = false,
+                DefaultTimeout = BusyTimeoutMilliseconds / 1000
+            };
+            await using var destination = new SqliteConnection(builder.ToString());
+            await destination.OpenAsync(cancellationToken).ConfigureAwait(false);
+            await Task.Run(() => source.BackupDatabase(destination), cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _writer.Release();
+        }
+    }
+
     public void Dispose()
     {
         if (_disposed)

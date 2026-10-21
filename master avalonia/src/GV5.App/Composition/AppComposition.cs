@@ -28,6 +28,7 @@ internal static class AppComposition
         services.AddSingleton<IDataPlatformInitializer>(provider => provider.GetRequiredService<SqliteMigrationRunner>());
         services.AddSingleton<IModelDraftRepository, SqliteModelDraftRepository>();
         services.AddSingleton<IModelDraftCheckpointStore, SqliteModelDraftCheckpointStore>();
+        services.AddSingleton<IDataPlatformBackupService, DatabaseBackupService>();
         services.AddSingleton(new ModuleRouteCatalog(routes));
         services.AddTransient<IModulePageFactory, ServiceProviderModulePageFactory>();
         foreach (var route in routes)
