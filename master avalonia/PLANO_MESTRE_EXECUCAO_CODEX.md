@@ -11,7 +11,7 @@
 
 ## 0. COMO O CODEX DEVE TRABALHAR — INSTRUÇÃO PERMANENTE
 
-**Meta vigente:** paridade funcional completa, interface familiar e melhorada — não pixel-perfect. F06 liberada tecnicamente; F09.01–F09.05 validadas localmente; próxima tarefa F09.06. Não deixar controle do legado ausente nem marcar tarefas concluídas sem implementação, persistência e testes.
+**Meta vigente:** paridade funcional completa, interface familiar e melhorada — não pixel-perfect. F06 liberada tecnicamente; F09.01–F09.06 validadas localmente; próxima tarefa F09.07. Não deixar controle do legado ausente nem marcar tarefas concluídas sem implementação, persistência e testes.
 
 1. Antes de qualquer edição: confirmar `git branch --show-current` = `Master-AValonia`, ler `git status --short` e conferir HEAD local. Consultar o remoto somente após autorização explícita do usuário; reconciliar mudanças concorrentes sem sobrescrever trabalho. **Nunca dar force push nem apagar trabalho em andamento.**
 2. Ler este arquivo, `PLANO_DO_NOVO_APP.md`, `README.md`, `global.json` e `EXECUTION_STATUS.md`. Se não houver status, criá-lo na tarefa F00.05.
@@ -293,7 +293,7 @@ Ambiente/SDK/CI: `TestarLocal.bat gate` passou em 2026-10-21; ver `docs/gates/GA
 - [x] **F09.03** — Implementar painel de camadas, ordenação, recoloração por roles e publicação.
 - [x] **F09.04** — Inventariar face: sheets, peças, olhos/pupilas/brows/nose/mouth, detalhes, head extras.
 - [x] **F09.05** — Implementar processador de folhas faciais e splitting/masks com goldens.
-- [ ] **F09.06** — Implementar catálogo de componentes faciais por modelo com transform independente.
+- [x] **F09.06** — Implementar catálogo de componentes faciais por modelo com transform independente.
 - [ ] **F09.07** — Implementar montagem de rosto com esquerda/direita, linkedSides, nariz, boca aberta/fechada.
 - [ ] **F09.08** — Implementar detalhes faciais e acessórios com z-order explícito.
 - [ ] **F09.09** — Implementar efeitos (shadow, blush, mouth blush) e parâmetros testáveis.
