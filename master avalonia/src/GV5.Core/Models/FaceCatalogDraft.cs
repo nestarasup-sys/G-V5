@@ -20,11 +20,17 @@ public enum FaceComponentSide
     Right = 2
 }
 
+public enum FaceMouthVariant
+{
+    Closed = 1,
+    Open = 2
+}
+
 /// <summary>An independently selectable facial asset with its own model-space transform.</summary>
 public sealed record FaceComponent
 {
     private FaceComponent(FaceComponentId id, FaceComponentKind kind, string name, AssetId assetId,
-        FaceComponentSide? side, Transform2D transform, bool isVisible)
+        FaceComponentSide? side, Transform2D transform, bool isVisible, FaceMouthVariant mouthVariant)
     {
         Id = id;
         Kind = kind;
@@ -33,6 +39,7 @@ public sealed record FaceComponent
         Side = side;
         Transform = transform;
         IsVisible = isVisible;
+        MouthVariant = mouthVariant;
     }
 
     public FaceComponentId Id { get; }
@@ -42,13 +49,16 @@ public sealed record FaceComponent
     public FaceComponentSide? Side { get; }
     public Transform2D Transform { get; }
     public bool IsVisible { get; }
+    public FaceMouthVariant MouthVariant { get; }
 
     public static FaceComponent Create(FaceComponentKind kind, string name, AssetId assetId,
-        FaceComponentSide? side, Transform2D transform, bool isVisible = true) =>
-        Restore(FaceComponentId.New(), kind, name, assetId, side, transform, isVisible);
+        FaceComponentSide? side, Transform2D transform, bool isVisible = true,
+        FaceMouthVariant mouthVariant = FaceMouthVariant.Closed) =>
+        Restore(FaceComponentId.New(), kind, name, assetId, side, transform, isVisible, mouthVariant);
 
     public static FaceComponent Restore(FaceComponentId id, FaceComponentKind kind, string name,
-        AssetId assetId, FaceComponentSide? side, Transform2D transform, bool isVisible = true)
+        AssetId assetId, FaceComponentSide? side, Transform2D transform, bool isVisible = true,
+        FaceMouthVariant mouthVariant = FaceMouthVariant.Closed)
     {
         if (!id.IsValid || !assetId.IsValid) throw new ArgumentException("A facial component requires stable component and asset IDs.");
         if (!Enum.IsDefined(kind)) throw new ArgumentOutOfRangeException(nameof(kind));
@@ -57,6 +67,8 @@ public sealed record FaceComponent
             or FaceComponentKind.ClosedEye or FaceComponentKind.Eyebrow;
         if (requiresSide != side.HasValue)
             throw new ArgumentException("Eye, pupil, closed-eye and eyebrow components require a left or right side; nose and mouth do not.", nameof(side));
+        if (!Enum.IsDefined(mouthVariant) || (kind != FaceComponentKind.Mouth && mouthVariant != FaceMouthVariant.Closed))
+            throw new ArgumentOutOfRangeException(nameof(mouthVariant), "Only mouth assets can use the open-mouth variant.");
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
         var normalizedName = name.Trim();
         if (normalizedName.Length > 120) throw new ArgumentOutOfRangeException(nameof(name));
@@ -65,14 +77,14 @@ public sealed record FaceComponent
             || transform.Scale.X is <= 0 or > 20 || transform.Scale.Y is <= 0 or > 20
             || !double.IsFinite(transform.RotationRadians))
             throw new ArgumentOutOfRangeException(nameof(transform), "Facial transforms must be finite and within supported placement limits.");
-        return new FaceComponent(id, kind, normalizedName, assetId, side, transform, isVisible);
+        return new FaceComponent(id, kind, normalizedName, assetId, side, transform, isVisible, mouthVariant);
     }
 
     public FaceComponent WithTransform(Transform2D transform) =>
-        Restore(Id, Kind, Name, AssetId, Side, transform, IsVisible);
+        Restore(Id, Kind, Name, AssetId, Side, transform, IsVisible, MouthVariant);
 
     public FaceComponent WithVisibility(bool isVisible) =>
-        new(Id, Kind, Name, AssetId, Side, Transform, isVisible);
+        new(Id, Kind, Name, AssetId, Side, Transform, isVisible, MouthVariant);
 
     private static bool Finite(Point2D point) => double.IsFinite(point.X) && double.IsFinite(point.Y);
 }

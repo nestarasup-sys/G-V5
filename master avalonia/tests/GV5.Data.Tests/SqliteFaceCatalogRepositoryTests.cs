@@ -23,6 +23,7 @@ public sealed class SqliteFaceCatalogRepositoryTests
         var faceId = FaceId.New();
         var componentId = FaceComponentId.New();
         var asset = AssetId.New();
+        var mouthAsset = AssetId.New();
         try
         {
             using (var database = new SqliteDatabase(paths))
@@ -31,11 +32,14 @@ public sealed class SqliteFaceCatalogRepositoryTests
                 var model = await CreatePublishedModelAsync(database, token);
                 Assert.True(model.IsSuccess, model.Error?.Message);
                 await InsertAssetAsync(database, asset, token);
+                await InsertAssetAsync(database, mouthAsset, token);
                 var repository = new SqliteFaceCatalogRepository(database);
                 var initial = FaceCatalogDraft.Create(ModelRevisionReference.From(model.Value), "Rosto");
                 var component = FaceComponent.Restore(componentId, FaceComponentKind.Eye, "Olho esquerdo", asset,
                     FaceComponentSide.Left, Transform2D.Identity);
-                var withComponent = initial.WithComponent(component);
+                var mouth = FaceComponent.Create(FaceComponentKind.Mouth, "Boca aberta", mouthAsset, null,
+                    Transform2D.Identity, mouthVariant: FaceMouthVariant.Open);
+                var withComponent = initial.WithComponent(component).WithComponent(mouth);
                 var created = await repository.CreateAsync(initial, token);
                 Assert.True(created.IsSuccess, created.Error?.Message);
                 faceId = created.Value.Id;
@@ -62,10 +66,11 @@ public sealed class SqliteFaceCatalogRepositoryTests
                 var listed = await repository.ListAsync(loaded.Value.Model.RevisionId, token);
                 Assert.True(loaded.IsSuccess, loaded.Error?.Message);
                 Assert.True(listed.IsSuccess, listed.Error?.Message);
-                var item = Assert.Single(loaded.Value.Components);
+                var item = loaded.Value.Components.Single(component => component.Id == componentId);
                 Assert.Equal(componentId, item.Id);
                 Assert.Equal(asset, item.AssetId);
                 Assert.Equal(new Point2D(10, -3), item.Transform.Translation);
+                Assert.Equal(FaceMouthVariant.Open, loaded.Value.Components.Single(component => component.Name == "Boca aberta").MouthVariant);
                 Assert.Single(listed.Value);
             }
         }

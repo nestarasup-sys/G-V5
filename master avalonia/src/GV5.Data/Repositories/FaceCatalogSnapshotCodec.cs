@@ -43,7 +43,8 @@ internal static class FaceCatalogSnapshotCodec
                 PivotY = component.Transform.Pivot.Y,
                 FlipX = component.Transform.FlipX,
                 FlipY = component.Transform.FlipY,
-                IsVisible = component.IsVisible
+                IsVisible = component.IsVisible,
+                MouthVariant = (int)component.MouthVariant
             }).ToList()
         };
         var json = JsonSerializer.Serialize(document, Options);
@@ -64,7 +65,8 @@ internal static class FaceCatalogSnapshotCodec
             AssetId.Parse(component.AssetId), component.Side is { } side ? (FaceComponentSide)side : null,
             new Transform2D(new Point2D(component.X, component.Y), new Point2D(component.ScaleX, component.ScaleY),
                 component.Rotation, new Point2D(component.PivotX, component.PivotY), component.FlipX, component.FlipY),
-            component.IsVisible));
+            component.IsVisible, component.MouthVariant is { } mouthVariant
+                ? (FaceMouthVariant)mouthVariant : FaceMouthVariant.Closed));
         return FaceCatalogDraft.Restore(FaceId.Parse(document.FaceId), model, Revision.From(document.Revision),
             document.Name, components);
     }
@@ -109,5 +111,6 @@ internal static class FaceCatalogSnapshotCodec
         public bool FlipX { get; set; }
         public bool FlipY { get; set; }
         public bool IsVisible { get; set; }
+        public int? MouthVariant { get; set; }
     }
 }
