@@ -1,9 +1,12 @@
 # GATE-F05 — RenderScene e SkiaRenderer
 
-**Data:** 2026-10-21  
-**Branch:** `Master-AValonia`  
-**Tarefas:** F05.01–F05.11  
-**Resultado:** **PASSOU para renderização determinística CPU/headless e composição de personagem sintético.**  
+**Data:** 2026-10-21
+
+**Branch:** `Master-AValonia`
+
+**Tarefas:** F05.01–F05.11
+
+**Resultado:** **PASSOU para renderização determinística CPU/headless e composição de personagem sintético.**
 **G1 global:** **PASSOU para a fundação local CPU/headless**, junto às evidências F02–F04. GPU e paridade visual do produto continuam fora do aceite deste gate.
 
 ## Critérios e evidências
