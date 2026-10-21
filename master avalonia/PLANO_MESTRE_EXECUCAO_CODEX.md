@@ -211,7 +211,7 @@ Ambiente/SDK/CI: `TestarLocal.bat gate` passou em 2026-10-21; ver `docs/gates/GA
 - [x] **F05.08** — Implementar versão de entrada e cancelamento para descartar resultado atrasado de preview.
 - [x] **F05.09** — Implementar invalidação incremental por assinatura, somente depois de teste de equivalência com render completo.
 - [x] **F05.10** — Medir primeira prévia, render quente/frio, bytes retidos e diferenças de alpha/cor.
-- [ ] **F05.11** — Registrar limites CPU/GPU e evitar GRContext independente prematuro; fechar GATE-F05.
+- [x] **F05.11** — Registrar limites CPU/GPU e evitar GRContext independente prematuro; fechar GATE-F05.
 
 **Encerramento F05:** registrar `docs/gates/GATE-F05.md` e marcar a fase validada somente se o gate acima foi comprovado. Se estiver bloqueado, documentar a evidência que falta e não iniciar F06.
 
