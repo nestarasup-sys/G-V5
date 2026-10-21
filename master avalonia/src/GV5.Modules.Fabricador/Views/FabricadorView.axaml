@@ -4,9 +4,46 @@
              x:Class="GV5.Modules.Fabricador.Views.FabricadorView"
              x:DataType="vm:FabricadorViewModel">
     <Border Background="{DynamicResource Gv5BrushSurface}" BorderBrush="{DynamicResource Gv5BrushBorder}" BorderThickness="1" CornerRadius="{DynamicResource Gv5RadiusCard}" Padding="{DynamicResource Gv5SpaceCard}">
-        <StackPanel Spacing="14" VerticalAlignment="Center" HorizontalAlignment="Center" MaxWidth="620">
-            <TextBlock Text="Área de modelos" FontSize="{DynamicResource Gv5FontSizeTitle}" FontWeight="SemiBold" Foreground="{DynamicResource Gv5BrushTextPrimary}" />
-            <TextBlock Text="{Binding Status}" FontSize="{DynamicResource Gv5FontSizeBody}" TextWrapping="Wrap" TextAlignment="Center" Foreground="{DynamicResource Gv5BrushTextSecondary}" />
+        <StackPanel Spacing="20" HorizontalAlignment="Stretch" MaxWidth="760">
+            <StackPanel Spacing="6">
+                <TextBlock Text="Novo modelo" FontSize="{DynamicResource Gv5FontSizeTitle}" FontWeight="SemiBold" Foreground="{DynamicResource Gv5BrushTextPrimary}" />
+                <TextBlock Text="{Binding Status}" FontSize="{DynamicResource Gv5FontSizeBody}" TextWrapping="Wrap" Foreground="{DynamicResource Gv5BrushTextSecondary}" />
+            </StackPanel>
+
+            <StackPanel Spacing="8">
+                <TextBlock Text="Nome do modelo" FontWeight="SemiBold" Foreground="{DynamicResource Gv5BrushTextPrimary}" />
+                <TextBox Text="{Binding ModelName}"
+                         IsEnabled="{Binding CanEdit}"
+                         PlaceholderText="Ex.: Modelo base"
+                         MinHeight="44"
+                         FontSize="16"
+                         Padding="12,9" />
+            </StackPanel>
+
+            <Border Background="{DynamicResource Gv5BrushCanvas}"
+                    BorderBrush="{DynamicResource Gv5BrushBorder}"
+                    BorderThickness="1"
+                    CornerRadius="10"
+                    Padding="16">
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
+                    <StackPanel Spacing="5" VerticalAlignment="Center">
+                        <TextBlock x:Name="SaveStateText" Text="{Binding SaveStateLabel}" FontWeight="SemiBold" Foreground="{DynamicResource Gv5BrushTextPrimary}" />
+                        <TextBlock x:Name="SaveErrorText"
+                                   Text="{Binding SaveError}"
+                                   IsVisible="{Binding HasSaveError}"
+                                   TextWrapping="Wrap"
+                                   Foreground="#B4233C" />
+                    </StackPanel>
+                    <Button Grid.Column="1"
+                            Content="Salvar rascunho"
+                            Command="{Binding SaveCommand}"
+                            IsEnabled="{Binding CanSave}"
+                            VerticalAlignment="Center"
+                            Padding="18,11"
+                            Background="{DynamicResource Gv5BrushAccent}"
+                            Foreground="{DynamicResource Gv5BrushOnAccent}" />
+                </Grid>
+            </Border>
         </StackPanel>
     </Border>
 </UserControl>

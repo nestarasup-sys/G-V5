@@ -1,12 +1,13 @@
 using System.Security.Cryptography;
 using System.Text;
+using GV5.Application.Contracts;
 using GV5.Data.Storage;
 using Microsoft.Data.Sqlite;
 
 namespace GV5.Data.Migrations;
 
 /// <summary>Applies an immutable contiguous migration sequence atomically and verifies stored checksums.</summary>
-public sealed class SqliteMigrationRunner
+public sealed class SqliteMigrationRunner : IDataPlatformInitializer
 {
     private readonly IGv5Database _database;
     private readonly ISqliteMigration[] _migrations;
@@ -29,6 +30,11 @@ public sealed class SqliteMigrationRunner
 
     public Task<MigrationRunResult> MigrateAsync(CancellationToken cancellationToken = default) =>
         _database.ExecuteWriteAsync(ApplyMigrationsAsync, cancellationToken);
+
+    public async Task InitializeAsync(CancellationToken cancellationToken = default)
+    {
+        await MigrateAsync(cancellationToken).ConfigureAwait(false);
+    }
 
     private async Task<MigrationRunResult> ApplyMigrationsAsync(
         SqliteConnection connection,

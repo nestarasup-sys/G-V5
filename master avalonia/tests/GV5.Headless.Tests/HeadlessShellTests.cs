@@ -8,6 +8,9 @@ using GV5.App.Navigation;
 using GV5.App.ViewModels;
 using GV5.App.Views;
 using GV5.Application.Contracts;
+using GV5.Data.Migrations;
+using GV5.Data.Repositories;
+using GV5.Data.Storage;
 using GV5.Modules.Customizador;
 using GV5.Modules.Customizador.ViewModels;
 using GV5.Modules.Fabricador;
@@ -21,7 +24,8 @@ public sealed class HeadlessShellTests
     [AvaloniaFact]
     public void Shell_Navigates_Between_Real_Module_ViewModels_Without_Desktop()
     {
-        var vm = MakeMainViewModel();
+        using var data = new TestDatabaseFixture();
+        var vm = MakeMainViewModel(data);
         var window = OpenHeadlessShell(vm);
         try
         {
@@ -51,7 +55,8 @@ public sealed class HeadlessShellTests
     [AvaloniaFact]
     public void Headless_Skia_Captures_A_Real_Png_Without_Desktop_Window()
     {
-        var window = OpenHeadlessShell(MakeMainViewModel());
+        using var data = new TestDatabaseFixture();
+        var window = OpenHeadlessShell(MakeMainViewModel(data));
         try
         {
         using var bitmap = window.CaptureRenderedFrame();
@@ -104,10 +109,10 @@ public sealed class HeadlessShellTests
         }
     }
 
-    private static MainViewModel MakeMainViewModel()
+    private static MainViewModel MakeMainViewModel(TestDatabaseFixture data)
     {
         var catalog = new ModuleRouteCatalog(new[] { FabricadorModule.Route, CustomizadorModule.Route });
-        return new MainViewModel(catalog, new FakePageFactory());
+        return new MainViewModel(catalog, new FakePageFactory(data.CreateFabricadorViewModel));
     }
 
     private static MainWindow OpenHeadlessShell(MainViewModel vm)
@@ -122,13 +127,37 @@ public sealed class HeadlessShellTests
         return window;
     }
 
-    private sealed class FakePageFactory : IModulePageFactory
+    private sealed class FakePageFactory(Func<FabricadorViewModel> createFabricador) : IModulePageFactory
     {
         public IModulePageViewModel Create(ModuleRoute route) => route.Id switch
         {
-            "fabricador" => new FabricadorViewModel(),
+            "fabricador" => createFabricador(),
             "customizador" => new CustomizadorViewModel(),
             _ => throw new InvalidOperationException($"Unexpected route: {route.Id}")
         };
+    }
+
+    private sealed class TestDatabaseFixture : IDisposable
+    {
+        private readonly string _root = Path.Combine(Path.GetTempPath(), $"gv5-headless-{Guid.NewGuid():N}");
+        private readonly SqliteDatabase _database;
+
+        public TestDatabaseFixture()
+        {
+            _database = new SqliteDatabase(new AppDataPaths(_root));
+        }
+
+        public FabricadorViewModel CreateFabricadorViewModel() => new(
+            new SqliteModelDraftRepository(_database),
+            new SqliteMigrationRunner(_database, [new InitialAssetSchemaMigration(), new ModelDraftSchemaMigration()]));
+
+        public void Dispose()
+        {
+            _database.Dispose();
+            if (Directory.Exists(_root))
+            {
+                Directory.Delete(_root, recursive: true);
+            }
+        }
     }
 }
