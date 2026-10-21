@@ -16,7 +16,7 @@ Escopo F08.02: contrato puro de domínio, sem UI, persistência ou publicação 
 ## Regras de fronteira
 
 - Revisão de roupa e revisão de modelo são independentes; cada conjunto fica preso à revisão exata do modelo que fornece seus ossos.
-- `AssetId` referencia bytes geridos pelo AssetStore. Recorte/transparência, hash de conteúdo, thumbnail e validação do decoder são responsabilidade da importação F08.03.
+- `AssetId` referencia bytes geridos pelo AssetStore. F08.03 prepara um crop PNG alpha-preserving em staging, oferece uma prévia reduzida e só publica depois da confirmação; cancelamento limpa o stage. Limites de bytes/dimensões, hash e validação do decoder ficam antes da publicação.
 - Publicar exige ao menos um componente, horário não negativo e hash SHA-256 hexadecimal de 64 caracteres. Sequenciamento concorrente, dependências reversas e pinning de consumidores serão responsabilidade dos serviços/repositórios nas tarefas seguintes.
 - O domínio valida estrutura e vínculo ID/osso; confirmar que o osso existe na publicação exata requer carregar essa publicação no serviço. Não aceitar gravação órfã no repositório.
 - Renderização em pose usa `GV5.Geometry.WardrobeBindingMath`; o Core não depende de Avalonia, Skia nem Electron.
@@ -29,4 +29,4 @@ Escopo F08.02: contrato puro de domínio, sem UI, persistência ou publicação 
 - `src/GV5.Geometry/WardrobeBindingMath.cs`
 - `tests/GV5.Core.Tests/WardrobeContractTests.cs`
 
-Persistência SQLite, integração com AssetStore, resolução de binding contra uma publicação carregada e UI ainda não fazem parte de F08.02.
+Persistência SQLite, UI de seleção/edição, resolução de binding contra uma publicação carregada e ligação do serviço de importação aos comandos de tela seguem fora de F08.02/F08.03.
