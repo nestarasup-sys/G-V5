@@ -36,4 +36,4 @@ O builder usa crop proveniente dos metadados do asset, preserva posição/escala
 
 Validação final em 2026-10-21: `TestarLocal.bat gate` — build Release, 2 avisos CS0618 preexistentes em `ThumbnailService`, 0 erros; Core 38, Architecture 8, Geometry 43, Data 56, Assets 33, Rendering 28 e Headless 49; **255 testes, 0 falhas**. `TestarLocal.bat rapido` também passou com o mesmo conjunto. `git diff --check` passou.
 
-Commit do gate: preencher após commit.
+Commit do gate: `e3bed48` (`native: audit and compose wardrobe render layers`).
