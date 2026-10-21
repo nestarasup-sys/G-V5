@@ -3,10 +3,11 @@ using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using GV5.App.ViewModels;
 using GV5.App.Views;
+using AvaloniaApp = Avalonia.Application;
 
 namespace GV5.App;
 
-public partial class App : Application
+public partial class App : AvaloniaApp
 {
     public override void Initialize()
     {
