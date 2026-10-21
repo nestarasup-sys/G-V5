@@ -6,303 +6,215 @@
              x:Class="GV5.Modules.Fabricador.Views.FabricadorView"
              x:DataType="vm:FabricadorViewModel"
              DataContextChanged="OnDataContextChanged">
-    <Border Background="{DynamicResource Gv5BrushSurface}" BorderBrush="{DynamicResource Gv5BrushBorder}" BorderThickness="1" CornerRadius="{DynamicResource Gv5RadiusCard}" Padding="{DynamicResource Gv5SpaceCard}">
-        <StackPanel Spacing="20" HorizontalAlignment="Stretch" MaxWidth="1280">
-            <StackPanel Spacing="6">
-                <TextBlock Text="Novo modelo" FontSize="{DynamicResource Gv5FontSizeTitle}" FontWeight="SemiBold" Foreground="{DynamicResource Gv5BrushTextPrimary}" />
-                <TextBlock Text="{Binding Status}" FontSize="{DynamicResource Gv5FontSizeBody}" TextWrapping="Wrap" Foreground="{DynamicResource Gv5BrushTextSecondary}" />
-            </StackPanel>
-
-            <Grid ColumnDefinitions="*,320" ColumnSpacing="14">
-              <StackPanel Grid.Column="0" Spacing="8">
-                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
-                    <TextBlock Text="Prévia do modelo"
-                               VerticalAlignment="Center"
-                               FontWeight="SemiBold"
-                               Foreground="{DynamicResource Gv5BrushTextPrimary}" />
-                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
-                        <Button Content="↶ Desfazer"
-                                Command="{Binding UndoCommand}"
-                                ToolTip.Tip="Desfazer última edição"
-                                Padding="10,6" />
-                        <Button Content="↷ Refazer"
-                                Command="{Binding RedoCommand}"
-                                ToolTip.Tip="Refazer edição desfeita"
-                                Padding="10,6" />
-                    </StackPanel>
-                </Grid>
-                <StackPanel Orientation="Horizontal" Spacing="8">
-                    <RadioButton Content="Selecionar"
-                                 GroupName="FabricatorTool"
-                                 IsChecked="{Binding IsSelectTool}"
-                                 Command="{Binding SetToolCommand}"
-                                 CommandParameter="{x:Static interaction:FabricatorTool.Select}" />
-                    <RadioButton Content="Mover tela"
-                                 GroupName="FabricatorTool"
-                                 IsChecked="{Binding IsPanTool}"
-                                 Command="{Binding SetToolCommand}"
-                                 CommandParameter="{x:Static interaction:FabricatorTool.Pan}" />
-                    <TextBlock Text="{Binding SelectedPartName}"
-                               VerticalAlignment="Center"
-                               Margin="8,0,0,0"
-                               Foreground="{DynamicResource Gv5BrushTextSecondary}" />
-                </StackPanel>
-                <views:FabricatorCanvas x:Name="ModelCanvas" MinHeight="360" MaxHeight="560" />
-                <TextBlock Text="{Binding ModelRenderError}"
-                           IsVisible="{Binding HasModelRenderError}"
-                           TextWrapping="Wrap"
-                           Foreground="#B4233C" />
-              </StackPanel>
-              <Border Grid.Column="1"
-                      IsVisible="{Binding HasModelParts}"
-                        Background="{DynamicResource Gv5BrushCanvas}"
-                        BorderBrush="{DynamicResource Gv5BrushBorder}"
-                        BorderThickness="1"
-                        CornerRadius="8"
-                        Padding="10">
-                    <StackPanel Spacing="10">
-                        <StackPanel Spacing="3">
-                            <TextBlock Text="Camadas"
-                                       FontSize="18"
-                                       FontWeight="SemiBold"
-                                       Foreground="{DynamicResource Gv5BrushTextPrimary}" />
-                            <TextBlock Text="O topo da lista fica na frente."
-                                       FontSize="12"
-                                       Foreground="{DynamicResource Gv5BrushTextSecondary}" />
+    <Border Background="#FFFFFF"
+            BorderBrush="#EDE8EC"
+            BorderThickness="1"
+            CornerRadius="14"
+            ClipToBounds="True">
+        <Grid RowDefinitions="76,60,*">
+            <Border Grid.Row="0"
+                    Background="#FDFBFC"
+                    BorderBrush="#F0EBEF"
+                    BorderThickness="0,0,0,1"
+                    Padding="12,9">
+                <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
+                    <Border Width="30" Height="30" CornerRadius="9" Background="#FFF1F6" VerticalAlignment="Center">
+                        <TextBlock Text="✦" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="#C74677" />
+                    </Border>
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+                        <StackPanel Width="118" Spacing="3" VerticalAlignment="Center">
+                            <TextBlock Text="Modelos" FontSize="12" FontWeight="Bold" Foreground="#342E36" />
+                            <TextBlock Text="Fabricador" FontSize="12" Foreground="#AAA1AA" />
                         </StackPanel>
-                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
-                            <StackPanel Spacing="3">
-                                <TextBlock Text="Peça selecionada"
-                                           FontSize="11"
-                                           Foreground="{DynamicResource Gv5BrushTextSecondary}" />
-                                <TextBlock Text="{Binding SelectedPartName}"
-                                           FontWeight="SemiBold"
-                                           TextTrimming="CharacterEllipsis"
-                                           Foreground="{DynamicResource Gv5BrushTextPrimary}" />
-                            </StackPanel>
-                            <Button Grid.Column="1"
-                                    Content="Limpar seleção"
-                                    Command="{Binding ClearSelectionCommand}"
-                                    Padding="8,5" />
-                        </Grid>
-                        <ListBox x:Name="ModelPartLayerList"
-                                 ItemsSource="{Binding PartLayers}"
-                                 MaxHeight="470"
-                                 Background="Transparent"
-                                 BorderThickness="0">
-                            <ListBox.ItemTemplate>
-                                <DataTemplate x:DataType="vm:ModelPartLayerItem">
-                                    <Border Background="{DynamicResource Gv5BrushSurface}"
-                                            BorderBrush="{DynamicResource Gv5BrushBorder}"
-                                            BorderThickness="1"
-                                            CornerRadius="8"
-                                            Padding="5"
-                                            Margin="0,0,0,3">
-                                        <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto" ColumnSpacing="4">
-                                            <TextBlock Text="●"
-                                                       IsVisible="{Binding IsSelected}"
-                                                       VerticalAlignment="Center"
-                                                       Foreground="{DynamicResource Gv5BrushAccent}" />
-                                            <Button Grid.Column="1"
-                                                    HorizontalContentAlignment="Left"
-                                                    Command="{Binding $parent[views:FabricadorView].DataContext.SelectPartLayerCommand}"
-                                                    CommandParameter="{Binding Id}"
-                                                    Padding="7,5">
-                                                <StackPanel Spacing="2">
-                                                    <TextBlock Text="{Binding Name}"
-                                                               FontWeight="SemiBold"
-                                                               TextTrimming="CharacterEllipsis" />
-                                                    <TextBlock Text="{Binding LayerStatus}"
-                                                               FontSize="11"
-                                                               Foreground="{DynamicResource Gv5BrushTextSecondary}" />
-                                                </StackPanel>
-                                            </Button>
-                                            <Button Grid.Column="2"
-                                                    Content="↑"
-                                                    ToolTip.Tip="Mover para frente"
-                                                    IsEnabled="{Binding CanMoveForward}"
-                                                    Command="{Binding $parent[views:FabricadorView].DataContext.BringPartForwardCommand}"
-                                                    CommandParameter="{Binding Id}"
-                                                    Padding="7,5" />
-                                            <Button Grid.Column="3"
-                                                    Content="↓"
-                                                    ToolTip.Tip="Mover para trás"
-                                                    IsEnabled="{Binding CanMoveBackward}"
-                                                    Command="{Binding $parent[views:FabricadorView].DataContext.SendPartBackwardCommand}"
-                                                    CommandParameter="{Binding Id}"
-                                                    Padding="7,5" />
-                                            <Button Grid.Column="4"
-                                                    Content="{Binding VisibilityLabel}"
-                                                    Command="{Binding $parent[views:FabricadorView].DataContext.TogglePartVisibilityCommand}"
-                                                    CommandParameter="{Binding Id}"
-                                                    IsEnabled="{Binding CanEdit}"
-                                                    ToolTip.Tip="Mostrar ou ocultar esta peça"
-                                                    Padding="7,5" />
-                                        </Grid>
-                                    </Border>
-                                </DataTemplate>
-                            </ListBox.ItemTemplate>
-                        </ListBox>
+                        <TextBox Text="{Binding ModelName}"
+                                 IsEnabled="{Binding CanEdit}"
+                                 PlaceholderText="Nome do modelo"
+                                 MinWidth="180"
+                                 MaxWidth="320"
+                                 VerticalAlignment="Center"
+                                 Padding="9,6" />
                     </StackPanel>
-                </Border>
-            </Grid>
-
-            <TextBlock Text="Verificando alterações interrompidas…"
-                       IsVisible="{Binding IsCheckingRecovery}"
-                       Foreground="{DynamicResource Gv5BrushTextSecondary}" />
-
-            <Border IsVisible="{Binding HasPendingRecovery}"
-                    Background="{DynamicResource Gv5BrushCanvas}"
-                    BorderBrush="{DynamicResource Gv5BrushAccent}"
-                    BorderThickness="1"
-                    CornerRadius="10"
-                    Padding="16">
-                <StackPanel Spacing="10">
-                    <TextBlock Text="Rascunho recuperável encontrado"
-                               FontWeight="SemiBold"
-                               Foreground="{DynamicResource Gv5BrushTextPrimary}" />
-                    <TextBlock Text="{Binding PendingRecoveryCheckpoint.Name}"
-                               FontSize="{DynamicResource Gv5FontSizeBody}"
-                               Foreground="{DynamicResource Gv5BrushTextSecondary}" />
-                    <StackPanel Orientation="Horizontal" Spacing="8">
-                        <Button Content="Recuperar rascunho"
-                                Command="{Binding RestoreCheckpointCommand}"
-                                Padding="14,9"
-                                Background="{DynamicResource Gv5BrushAccent}"
-                                Foreground="{DynamicResource Gv5BrushOnAccent}" />
-                        <Button Content="Descartar checkpoint"
-                                Command="{Binding DiscardCheckpointCommand}"
-                                Padding="14,9" />
-                    </StackPanel>
-                </StackPanel>
-            </Border>
-
-            <TextBlock Text="{Binding RecoveryMessage}"
-                       IsVisible="{Binding HasRecoveryMessage}"
-                       TextWrapping="Wrap"
-                       Foreground="#B4233C" />
-
-            <StackPanel Spacing="8">
-                <TextBlock Text="Nome do modelo" FontWeight="SemiBold" Foreground="{DynamicResource Gv5BrushTextPrimary}" />
-                <TextBox Text="{Binding ModelName}"
-                         IsEnabled="{Binding CanEdit}"
-                         PlaceholderText="Ex.: Modelo base"
-                         MinHeight="44"
-                         FontSize="16"
-                         Padding="12,9" />
-            </StackPanel>
-
-            <Border Background="{DynamicResource Gv5BrushCanvas}"
-                    BorderBrush="{DynamicResource Gv5BrushBorder}"
-                    BorderThickness="1"
-                    CornerRadius="10"
-                    Padding="16">
-                <StackPanel Spacing="12">
-                    <StackPanel Spacing="5">
-                        <TextBlock Text="Folha de imagem do modelo"
-                                   FontWeight="SemiBold"
-                                   Foreground="{DynamicResource Gv5BrushTextPrimary}" />
-                        <TextBlock Text="Selecione uma imagem para revisar. Ela só será adicionada aos assets após sua confirmação."
-                                   TextWrapping="Wrap"
-                                   Foreground="{DynamicResource Gv5BrushTextSecondary}" />
-                    </StackPanel>
-                    <Button Content="Selecionar folha de imagem"
+                    <Button Grid.Column="2"
+                            Content="＋  Importar folha"
                             Command="{Binding SelectModelSourceCommand}"
                             IsEnabled="{Binding CanSelectModelSource}"
-                            HorizontalAlignment="Left"
-                            Padding="16,10"
-                            Background="{DynamicResource Gv5BrushAccent}"
-                            Foreground="{DynamicResource Gv5BrushOnAccent}" />
-                    <TextBlock Text="Abrindo seletor ou preparando prévia…"
-                               IsVisible="{Binding IsImporting}"
-                               Foreground="{DynamicResource Gv5BrushTextSecondary}" />
-                    <TextBlock Text="{Binding ImportError}"
-                               IsVisible="{Binding HasImportError}"
-                               TextWrapping="Wrap"
-                               Foreground="#B4233C" />
-                    <TextBlock Text="{Binding ImportStatus}"
-                               IsVisible="{Binding HasImportStatus}"
-                               TextWrapping="Wrap"
-                               Foreground="{DynamicResource Gv5BrushTextSecondary}" />
-                    <Border IsVisible="{Binding HasImportPreview}"
-                            Background="{DynamicResource Gv5BrushSurface}"
-                            BorderBrush="{DynamicResource Gv5BrushBorder}"
-                            BorderThickness="1"
-                            CornerRadius="8"
-                            Padding="12">
-                        <StackPanel Spacing="10">
-                            <Border Background="{DynamicResource Gv5BrushCanvas}"
-                                    CornerRadius="6"
-                                    MinHeight="180"
-                                    MaxHeight="360">
-                                <Image x:Name="ModelSourcePreviewImage"
-                                       Stretch="Uniform"
-                                       HorizontalAlignment="Center"
-                                       VerticalAlignment="Center"
-                                       MaxWidth="680"
-                                       MaxHeight="336" />
-                            </Border>
-                            <TextBlock Text="{Binding ImportPreviewDimensions}"
-                                       Foreground="{DynamicResource Gv5BrushTextPrimary}" />
-                            <TextBlock Text="{Binding ImportPreview.MediaType}"
-                                       Foreground="{DynamicResource Gv5BrushTextSecondary}" />
-                            <StackPanel Orientation="Horizontal" Spacing="8">
-                                <Button Content="Publicar asset"
-                                        Command="{Binding PublishModelSourceCommand}"
-                                        IsEnabled="{Binding CanPublishModelSource}"
-                                        Padding="16,10"
-                                        Background="{DynamicResource Gv5BrushAccent}"
-                                        Foreground="{DynamicResource Gv5BrushOnAccent}" />
-                                <Button Content="Cancelar"
-                                        Command="{Binding CancelModelSourceImportCommand}"
-                                        IsEnabled="{Binding CanCancelImport}"
-                                        Padding="16,10" />
-                            </StackPanel>
-                        </StackPanel>
-                    </Border>
-                </StackPanel>
-            </Border>
-
-            <Border Background="{DynamicResource Gv5BrushCanvas}"
-                    BorderBrush="{DynamicResource Gv5BrushBorder}"
-                    BorderThickness="1"
-                    CornerRadius="10"
-                    Padding="16">
-                <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="10">
-                    <StackPanel Spacing="5" VerticalAlignment="Center">
-                        <TextBlock x:Name="SaveStateText" Text="{Binding SaveStateLabel}" FontWeight="SemiBold" Foreground="{DynamicResource Gv5BrushTextPrimary}" />
-                        <TextBlock x:Name="SaveErrorText"
-                                   Text="{Binding SaveError}"
-                                   IsVisible="{Binding HasSaveError}"
-                                   TextWrapping="Wrap"
-                                   Foreground="#B4233C" />
-                        <TextBlock Text="{Binding PublishStatus}"
-                                   IsVisible="{Binding HasPublishStatus}"
-                                   TextWrapping="Wrap"
-                                   Foreground="{DynamicResource Gv5BrushTextPrimary}" />
-                        <TextBlock Text="{Binding PublishError}"
-                                   IsVisible="{Binding HasPublishError}"
-                                   TextWrapping="Wrap"
-                                   Foreground="#B4233C" />
-                    </StackPanel>
-                    <Button Grid.Column="1"
-                            Content="{Binding PublishRevisionButtonLabel}"
-                            Command="{Binding PublishModelRevisionCommand}"
-                            IsEnabled="{Binding CanPublishRevision}"
                             VerticalAlignment="Center"
-                            Padding="18,11"
-                            BorderBrush="{DynamicResource Gv5BrushAccent}"
-                            Foreground="{DynamicResource Gv5BrushAccent}" />
-                    <Button Grid.Column="2"
-                            Content="Salvar rascunho"
-                            Command="{Binding SaveCommand}"
-                            IsEnabled="{Binding CanSave}"
-                            VerticalAlignment="Center"
-                            Padding="18,11"
-                            Background="{DynamicResource Gv5BrushAccent}"
-                            Foreground="{DynamicResource Gv5BrushOnAccent}" />
+                            Padding="12,8"
+                            BorderBrush="#EFCBD8"
+                            Background="#FFF5F8"
+                            Foreground="#A84368" />
                 </Grid>
             </Border>
-        </StackPanel>
+
+            <Border Grid.Row="1" BorderBrush="#F0EBEF" BorderThickness="0,0,0,1" Padding="15,7">
+                <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto" ColumnSpacing="10">
+                    <StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center">
+                        <Button Content="↶" Command="{Binding UndoCommand}" IsEnabled="{Binding CanUndo}" ToolTip.Tip="Desfazer última edição" Width="31" Height="31" Padding="0" />
+                        <Button Content="↷" Command="{Binding RedoCommand}" IsEnabled="{Binding CanRedo}" ToolTip.Tip="Refazer edição desfeita" Width="31" Height="31" Padding="0" />
+                        <TextBlock Text="{Binding UndoCount}" MinWidth="28" VerticalAlignment="Center" TextAlignment="Center" FontSize="10" Foreground="#958B96" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="5" VerticalAlignment="Center">
+                        <RadioButton Content="Selecionar"
+                                     GroupName="FabricatorTool"
+                                     IsChecked="{Binding IsSelectTool}"
+                                     Command="{Binding SetToolCommand}"
+                                     CommandParameter="{x:Static interaction:FabricatorTool.Select}" />
+                        <RadioButton Content="Mover tela"
+                                     GroupName="FabricatorTool"
+                                     IsChecked="{Binding IsPanTool}"
+                                     Command="{Binding SetToolCommand}"
+                                     CommandParameter="{x:Static interaction:FabricatorTool.Pan}" />
+                    </StackPanel>
+                    <TextBlock Grid.Column="2"
+                               Text="{Binding SelectedPartName}"
+                               VerticalAlignment="Center"
+                               Margin="8,0"
+                               Foreground="#706872"
+                               TextTrimming="CharacterEllipsis" />
+                    <TextBlock x:Name="SaveStateText"
+                               Grid.Column="3"
+                               Text="{Binding SaveStateLabel}"
+                               VerticalAlignment="Center"
+                               Foreground="#8E898F"
+                               Margin="0,0,3,0" />
+                    <StackPanel Grid.Column="4" Orientation="Horizontal" Spacing="7" VerticalAlignment="Center">
+                        <Button Content="{Binding PublishRevisionButtonLabel}"
+                                Command="{Binding PublishModelRevisionCommand}"
+                                IsEnabled="{Binding CanPublishRevision}"
+                                Padding="10,6"
+                                BorderBrush="#EFCBD8"
+                                Foreground="#A84368" />
+                        <Button Content="Salvar"
+                                Command="{Binding SaveCommand}"
+                                IsEnabled="{Binding CanSave}"
+                                Padding="12,6"
+                                Background="#C74677"
+                                Foreground="#FFFFFF" />
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <Grid Grid.Row="2" ColumnDefinitions="1.7*,1*" ColumnSpacing="11" Margin="11" MinHeight="420">
+                <Border Grid.Column="0"
+                        BorderBrush="#EEE9ED"
+                        BorderThickness="1"
+                        CornerRadius="11"
+                        Background="#FBFAFB"
+                        ClipToBounds="True">
+                    <Grid RowDefinitions="32,*,29">
+                        <Border Grid.Row="0" Background="#FBFAFB" BorderBrush="#F0EBEF" BorderThickness="0,0,0,1" Padding="11,0">
+                            <Grid ColumnDefinitions="*,Auto">
+                                <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                    <Ellipse Width="6" Height="6" Fill="#E786A6" />
+                                    <TextBlock Text="CANVAS DE MONTAGEM" FontSize="12" FontWeight="Bold" LetterSpacing="0.8" Foreground="#A198A2" />
+                                </StackPanel>
+                                <TextBlock Grid.Column="1" Text="Prévia do modelo" FontSize="12" Foreground="#A198A2" VerticalAlignment="Center" />
+                            </Grid>
+                        </Border>
+                        <views:FabricatorCanvas x:Name="ModelCanvas" Grid.Row="1" MinHeight="360" />
+                        <Border Grid.Row="2" BorderBrush="#EEE9ED" BorderThickness="0,1,0,0" Padding="9,0">
+                            <TextBlock Text="Arraste a peça para posicionar  ·  Arraste o fundo para mover a prévia"
+                                       VerticalAlignment="Center"
+                                       FontSize="12"
+                                       Foreground="#A29AA3"
+                                       TextTrimming="CharacterEllipsis" />
+                        </Border>
+                    </Grid>
+                </Border>
+
+                <Border Grid.Column="1"
+                        Background="#FFFFFF"
+                        BorderBrush="#EEE9ED"
+                        BorderThickness="1"
+                        CornerRadius="11"
+                        ClipToBounds="True">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                        <StackPanel Spacing="10" Margin="10">
+                            <StackPanel Spacing="3">
+                                <TextBlock Text="Camadas" FontSize="15" FontWeight="Bold" Foreground="#342E36" />
+                                <TextBlock Text="O topo da lista fica na frente." FontSize="12" Foreground="#AAA1AA" />
+                            </StackPanel>
+                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
+                                <StackPanel Spacing="3">
+                                    <TextBlock Text="Peça selecionada" FontSize="11" Foreground="#AAA1AA" />
+                                    <TextBlock Text="{Binding SelectedPartName}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" Foreground="#342E36" />
+                                </StackPanel>
+                                <Button Grid.Column="1" Content="Limpar seleção" Command="{Binding ClearSelectionCommand}" Padding="8,5" />
+                            </Grid>
+                            <ListBox x:Name="ModelPartLayerList"
+                                     ItemsSource="{Binding PartLayers}"
+                                     MinHeight="100"
+                                     MaxHeight="360"
+                                     Background="Transparent"
+                                     BorderThickness="0">
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate x:DataType="vm:ModelPartLayerItem">
+                                        <Border Background="#FFFFFF" BorderBrush="#EEE9ED" BorderThickness="1" CornerRadius="7" Padding="5" Margin="0,0,0,3">
+                                            <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto" ColumnSpacing="4">
+                                                <TextBlock Text="●" IsVisible="{Binding IsSelected}" VerticalAlignment="Center" Foreground="#C74677" />
+                                                <Button Grid.Column="1"
+                                                        HorizontalContentAlignment="Left"
+                                                        Command="{Binding $parent[views:FabricadorView].DataContext.SelectPartLayerCommand}"
+                                                        CommandParameter="{Binding Id}"
+                                                        Padding="7,5">
+                                                    <StackPanel Spacing="2">
+                                                        <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                                        <TextBlock Text="{Binding LayerStatus}" FontSize="11" Foreground="#AAA1AA" />
+                                                    </StackPanel>
+                                                </Button>
+                                                <Button Grid.Column="2" Content="↑" ToolTip.Tip="Mover para frente" IsEnabled="{Binding CanMoveForward}" Command="{Binding $parent[views:FabricadorView].DataContext.BringPartForwardCommand}" CommandParameter="{Binding Id}" Padding="7,5" />
+                                                <Button Grid.Column="3" Content="↓" ToolTip.Tip="Mover para trás" IsEnabled="{Binding CanMoveBackward}" Command="{Binding $parent[views:FabricadorView].DataContext.SendPartBackwardCommand}" CommandParameter="{Binding Id}" Padding="7,5" />
+                                                <Button Grid.Column="4" Content="{Binding VisibilityLabel}" Command="{Binding $parent[views:FabricadorView].DataContext.TogglePartVisibilityCommand}" CommandParameter="{Binding Id}" IsEnabled="{Binding CanEdit}" ToolTip.Tip="Mostrar ou ocultar esta peça" Padding="7,5" />
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+
+                            <Border IsVisible="{Binding HasPendingRecovery}" Background="#FBFAFB" BorderBrush="#C74677" BorderThickness="1" CornerRadius="9" Padding="10">
+                                <StackPanel Spacing="8">
+                                    <TextBlock Text="Rascunho recuperável encontrado" FontWeight="SemiBold" Foreground="#342E36" />
+                                    <TextBlock Text="{Binding PendingRecoveryCheckpoint.Name}" FontSize="12" Foreground="#706872" />
+                                    <StackPanel Orientation="Horizontal" Spacing="7">
+                                        <Button Content="Recuperar" Command="{Binding RestoreCheckpointCommand}" Padding="10,6" Background="#C74677" Foreground="#FFFFFF" />
+                                        <Button Content="Descartar checkpoint" Command="{Binding DiscardCheckpointCommand}" Padding="10,6" />
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
+                            <TextBlock Text="Verificando alterações interrompidas…" IsVisible="{Binding IsCheckingRecovery}" FontSize="12" Foreground="#706872" />
+                            <TextBlock Text="{Binding RecoveryMessage}" IsVisible="{Binding HasRecoveryMessage}" TextWrapping="Wrap" Foreground="#B4233C" />
+                            <Button Content="Selecionar folha de imagem"
+                                    Command="{Binding SelectModelSourceCommand}"
+                                    IsEnabled="{Binding CanSelectModelSource}"
+                                    HorizontalAlignment="Stretch"
+                                    Padding="11,8"
+                                    Background="#FFF5F8"
+                                    BorderBrush="#EFCBD8"
+                                    Foreground="#A84368" />
+                            <TextBlock Text="Abrindo seletor ou preparando prévia…" IsVisible="{Binding IsImporting}" FontSize="12" Foreground="#706872" />
+                            <TextBlock Text="{Binding ImportError}" IsVisible="{Binding HasImportError}" TextWrapping="Wrap" Foreground="#B4233C" />
+                            <TextBlock Text="{Binding ImportStatus}" IsVisible="{Binding HasImportStatus}" TextWrapping="Wrap" Foreground="#706872" />
+                            <Border IsVisible="{Binding HasImportPreview}" Background="#FFFFFF" BorderBrush="#EEE9ED" BorderThickness="1" CornerRadius="8" Padding="9">
+                                <StackPanel Spacing="8">
+                                    <Border Background="#FBFAFB" CornerRadius="6" MinHeight="120" MaxHeight="220">
+                                        <Image x:Name="ModelSourcePreviewImage" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center" MaxHeight="210" />
+                                    </Border>
+                                    <TextBlock Text="{Binding ImportPreviewDimensions}" FontSize="12" Foreground="#342E36" />
+                                    <TextBlock Text="{Binding ImportPreview.MediaType}" FontSize="12" Foreground="#706872" />
+                                    <StackPanel Orientation="Horizontal" Spacing="7">
+                                        <Button Content="Publicar folha" Command="{Binding PublishModelSourceCommand}" IsEnabled="{Binding CanPublishModelSource}" Padding="10,6" Background="#C74677" Foreground="#FFFFFF" />
+                                        <Button Content="Cancelar" Command="{Binding CancelModelSourceImportCommand}" IsEnabled="{Binding CanCancelImport}" Padding="10,6" />
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
+                            <TextBlock x:Name="SaveErrorText" Text="{Binding SaveError}" IsVisible="{Binding HasSaveError}" TextWrapping="Wrap" Foreground="#B4233C" />
+                            <TextBlock Text="{Binding PublishStatus}" IsVisible="{Binding HasPublishStatus}" TextWrapping="Wrap" Foreground="#342E36" />
+                            <TextBlock Text="{Binding PublishError}" IsVisible="{Binding HasPublishError}" TextWrapping="Wrap" Foreground="#B4233C" />
+                            <TextBlock Text="{Binding ModelRenderError}" IsVisible="{Binding HasModelRenderError}" TextWrapping="Wrap" Foreground="#B4233C" />
+                        </StackPanel>
+                    </ScrollViewer>
+                </Border>
+            </Grid>
+        </Grid>
     </Border>
 </UserControl>
