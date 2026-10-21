@@ -13,14 +13,14 @@
 | Branch obrigatória | `Master-AValonia` |
 | Pasta exclusiva do novo aplicativo | `master avalonia/` |
 | Commit-base inspecionado antes deste arquivo | `53b7f7a97321e85063a8dd4f9635e48d36548323` |
-| Último commit de implementação validado | `7517c2f` (F01.11; testes de fronteira dos projetos) |
+| Último commit de implementação validado | `bbb9579` (F01.12; CI Windows/Linux verde) |
 | Fase ativa | **F01 — Solution .NET, contratos, módulo e CI** |
-| Última tarefa VALIDADA | **F01.11** — testes de arquitetura para referências entre projetos |
-| Próxima tarefa PENDENTE | **F01.12 (EM_EXECUCAO)** — GitHub Actions de build/teste |
+| Última tarefa VALIDADA | **F01.12** — GitHub Actions de build/teste Windows/Linux |
+| Próxima tarefa PENDENTE | **F01.13 (EM_EXECUCAO)** — clone limpo e GATE-F01 |
 | Gate atual | **GATE F00: PASSOU; G0 segue aberto** |
-| Progresso validado neste controle | **24 / 247 tarefas (9,7%)** |
-| Tarefas em execução | **Nenhuma** |
-| Bloqueios conhecidos | Execução remota Windows/Linux da nova Action ainda pendente para validar os dois runners |
+| Progresso validado neste controle | **25 / 247 tarefas (10,1%)** |
+| Tarefas em execução | **F01.13** |
+| Bloqueios conhecidos | Nenhum conhecido; clone limpo e GATE-F01 ainda não executados |
 | Aceite Windows/GPU | **Não executado / não registrado** |
 
 **Importante:** 24/247 representa **tarefas com evidência de validação registrada neste documento**, não a porcentagem de código já implementado. O shell, a solution, os projetos-base e os scripts de preparação podem estar presentes. O Codex deve auditar o que existe antes de implementar.
@@ -41,7 +41,7 @@ Se o Codex encontrar algo já implementado, **validar e registrar evidências**,
 | Fase | Objetivo | Tarefas totais | Validadas | Estado | Gate |
 | --- | --- | ---: | ---: | --- | --- |
 | F00 | Auditoria do legado, baseline e sincronização | 13 | 13 | VALIDADA | PASSOU |
-| F01 | Solution .NET, contratos, módulo e CI | 13 | 11 | EM_EXECUCAO | G0 não fechado |
+| F01 | Solution .NET, contratos, módulo e CI | 13 | 12 | EM_EXECUCAO | G0 não fechado |
 | F02 | SQLite, revisões, transações e recuperação básica | 15 | 0 | PENDENTE | — |
 | F03 | AssetStore, thumbnails e cache limitado | 11 | 0 | PENDENTE | — |
 | F04 | Geometry Engine canônica | 11 | 0 | PENDENTE | — |
@@ -91,7 +91,7 @@ Adicionar uma linha ao concluir ou bloquear cada tarefa. A linha inicial abaixo 
 | **F01.09** | **VALIDADA** | `324d1fa`, `58a3c18` (teste e evidência) | Tokens de cor, tipografia, espaçamento e raio estão em `GV5Tokens.axaml`, usados no shell e nas Views; estilos de navegação centralizados e convenções MVVM documentadas. `TestarHeadless.bat` passou: 3/3 testes, 0 erros/falhas/avisos; captura por Skia em memória mostrou o shell real (1100×700), e a asserção confirmou o brush dinâmico de navegação `#211B2B`. SHA-256 do PNG: `6BA1929E749D6E63616CECCF33EBF4B4ED60EFF6D091B3DF7A0AE5E9EB6B5FDE`. Build Release da solution passou com 0 warnings/0 errors; `git diff --check` passou. | `src/GV5.App/Theme/{GV5Tokens,GV5Styles}.axaml`; `src/GV5.App/App.axaml`; Views do shell/Fabricador/Customizador; `docs/architecture/MVVM_CONVENTIONS.md`; captura em `tests/GV5.Headless.Tests/bin/Release/net10.0/TestResults/headless/shell.png` (ignorada pelo Git) | Teste inteiramente headless e sem interação física; captura avalia pixels/estilos do shell, não substitui validação GPU ou visual em janela real, que segue NÃO TESTADA. A tentativa inicial encontrou `Bitmap.Save(Stream, int?)` obsoleto; foi substituída por `PngBitmapEncoderOptions.Default`. F01.10 liberada |
 | **F01.10** | **VALIDADA** | `dfc038a` | Criado `GV5.Core.Tests`, separado de Avalonia e integrado à `GV5.sln`, usando `xunit.v3` 3.2.2 fixado em `tests/Directory.Packages.props` e runner com concorrência limitada. 3 testes passaram: geração/round-trip de `ModelId`, rejeição de `Guid.Empty` e rejeição de revisões não positivas. `dotnet test GV5.sln -c Release --verbosity minimal` restaurou o projeto e passou (3/3); build Release da solução passou com 0 warnings/0 errors; `TestarHeadless.bat` passou novamente (3/3); `git diff --check` passou. | `tests/GV5.Core.Tests/`; `GV5.sln`; `tests/Directory.Packages.props`; saída dos comandos nesta execução | Projeto puro referencia somente `GV5.Core`; os testes não usam dados reais, banco ou UI. Runner Headless continua isolado e validado separadamente. F01.11 liberada |
 | **F01.11** | **VALIDADA** | `7517c2f` | Adicionado `GV5.Architecture.Tests` à `GV5.sln`: 4 testes verificam ausência de dependências UI no Core, ausência de referências App/entre módulos nos módulos de produto, localização/existência de todos os projetos da solution e rejeição de caminhos de legado/traversal/absolutos. `dotnet test GV5.sln -c Release --verbosity minimal` passou (4 arquitetura + 3 Core); build Release passou com 0 warnings/0 errors; `TestarHeadless.bat` passou (3/3); `git diff --check` passou. | `tests/GV5.Architecture.Tests/ProjectBoundaryTests.cs`; `GV5.sln`; logs em `tests/*/bin/Release/net10.0/TestResults/` (ignorados pelo Git) | O primeiro ciclo revelou falso positivo de substring (`GV5.App` dentro de `GV5.Application`); comparação foi corrigida para nome exato de projeto e a suíte completa passou. Testes cobrem referências declaradas em `.csproj` e projetos listados em `.sln`, não análise de IL/runtime. F01.12 liberada |
-| **F01.12** | **EM_EXECUCAO** | `9a9b361` (workflow) | Criado `.github/workflows/native-avalonia.yml` com trigger para push/PR da branch `Master-AValonia`, execução manual, permissões read-only e matriz `windows-latest`/`ubuntu-latest`. Pipeline usa o SDK em `master avalonia/global.json`, restaura, compila Release, executa xUnit e Avalonia Headless. YAML validado por parser; local Windows: restore passou, build Release 0 warnings/0 errors, xUnit 7/7 e Headless 3/3. | `.github/workflows/native-avalonia.yml`; `docs/decisions/ADR-0003-github-actions-repository-root-scope.md`; saídas locais desta execução | O usuário autorizou somente esse arquivo na raiz; demais alterações permanecem em `master avalonia/`. **Pendente:** execução real GitHub Actions em Windows e Linux; não validar F01.12 nem iniciar F01.13 antes de ambos os jobs concluírem com sucesso |
+| **F01.12** | **VALIDADA** | `9a9b361`, `8d48b7a`, `bbb9579` | Criado `.github/workflows/native-avalonia.yml` para push/PR da branch `Master-AValonia` e execução manual, permissões read-only e matriz `windows-latest`/`ubuntu-latest`. CI usa SDK `global.json`, restaura, compila Release, executa xUnit e Avalonia Headless. Execução GitHub Actions `39528951140` passou nos dois jobs: Windows 1m14s e Ubuntu 45s. Em iterações anteriores foram corrigidos o uso indevido de `TestarHeadless.bat` (exige SDK portátil) e o restore separado do projeto Headless (não listado na solution). | `.github/workflows/native-avalonia.yml`; [Action 39528951140](https://github.com/nestarasup-sys/G-V5/actions/runs/39528951140); `docs/decisions/ADR-0003-github-actions-repository-root-scope.md` | O usuário autorizou somente `.github/workflows/native-avalonia.yml` fora da pasta nova; todo o restante permanece no escopo. O PC local não tem SDK global 10.0.402; validação CI executa SDK fixado em runner limpo. F01.13 liberada |
 
 **Estados aceitos:** `PENDENTE`, `EM_EXECUCAO`, `BLOQUEADA`, `VALIDADA`.
 
@@ -155,7 +155,7 @@ Ainda não há entradas registradas neste controle. Toda mudança material do ro
 | 2026-10-20 | `dfc038a` | F01.10 | GATE F00 passou | Primeiro projeto xUnit v3 de domínio integrado à solution; 3 casos Core passaram e suíte Headless de regressão ficou verde |
 | 2026-10-20 | `7517c2f` | F01.11 | GATE F00 passou | Testes automatizados das fronteiras Core/módulos/solution, incluindo paths de legado proibidos; 4/4 arquitetura e 3/3 Core passaram |
 | 2026-10-20 | `b861f34` | F01.11 | G0 aberto | Investigado conflito entre localização do workflow e limite de escopo; o usuário autorizou somente `.github/workflows/` na raiz |
-| 2026-10-20 | `9a9b361` | F01.11 validada; F01.12 em execução | G0 aberto | Workflow Windows/Linux criado; validação local passou; execução remota ainda pendente |
+| 2026-10-21 | `bbb9579` | F01.12 validada; F01.13 em execução | G0 aberto | Action `39528951140` passou build, testes Core/Arquitetura e Headless em Windows e Ubuntu; iniciada validação de clone limpo |
 
 Após concluir um lote ou fase, adicionar uma linha. Não inflar contador só porque o commit contém múltiplos arquivos; contar apenas tarefas comprovadas.
 
@@ -164,7 +164,7 @@ Após concluir um lote ou fase, adicionar uma linha. Não inflar contador só po
 1. Atualizar branch/remoto com segurança, sem force push e sem sobrescrever trabalho local de outra sessão.
 2. Ler `AGENTS.md`, `PLANO_DO_NOVO_APP.md`, `PLANO_MESTRE_EXECUCAO_CODEX.md` e este arquivo.
 3. Inspecionar evidências reais da última tarefa validada; caso não existam, corrigir seu estado.
-4. **Concluir F01.12**: enviar `9a9b361` ao remoto autorizado, aguardar a Action e corrigir qualquer falha dos jobs Windows/Linux antes de marcar a tarefa validada ou iniciar F01.13.
+4. **Concluir F01.13**: fazer clone limpo limitado por sparse-checkout a `master avalonia/`, validar restore/build/testes no clone e executar o GATE-F01 documentado; corrigir toda falha antes de avançar para F02.
 5. Continuar automaticamente pelas tarefas seguintes **uma de cada vez**, em lotes flexíveis de aproximadamente 3–8 tarefas relacionadas, enquanto todos os gates pertinentes passam.
 6. Atualizar o registro e commitar entregas reais na branch `Master-AValonia`; não desenvolver Video Studio antecipadamente.
 7. Ao encerrar, informar: **branch, HEAD, último ID VALIDADO, próximo ID PENDENTE, commits, comandos verdes, evidências, bloqueios e condição de desbloqueio**.
