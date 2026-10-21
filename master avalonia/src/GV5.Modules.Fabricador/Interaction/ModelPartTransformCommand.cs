@@ -5,7 +5,7 @@ using GV5.Geometry;
 namespace GV5.Modules.Fabricador.Interaction;
 
 /// <summary>A reversible transform edit recorded once when a pointer gesture completes.</summary>
-public sealed record ModelPartTransformCommand(ModelPartId PartId, Transform2D Before, Transform2D After)
+public sealed record ModelPartTransformCommand(ModelPartId PartId, Transform2D Before, Transform2D After) : IModelDraftCommand
 {
     public ModelDraftContent Apply(ModelDraftContent content) => Replace(content, After);
 

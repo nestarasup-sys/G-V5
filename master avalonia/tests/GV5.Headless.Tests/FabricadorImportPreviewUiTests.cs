@@ -86,6 +86,8 @@ public sealed class FabricadorImportPreviewUiTests
             var parts = persisted.Value.Parts;
             Assert.Equal(3, parts.Length);
             Assert.Equal(3, viewModel.PartLayers.Count);
+            Assert.Equal(0, viewModel.UndoCount);
+            Assert.False(viewModel.UndoCommand.CanExecute(null));
             Assert.Equal(parts.Select(partItem => partItem.Id).Reverse(), viewModel.PartLayers.Select(item => item.Id));
             Assert.False(viewModel.PartLayers.Single(item => item.Id == parts[2].Id).CanMoveForward);
             Assert.False(viewModel.PartLayers.Single(item => item.Id == parts[0].Id).CanMoveBackward);
@@ -97,15 +99,19 @@ public sealed class FabricadorImportPreviewUiTests
             Assert.True(viewModel.PartLayers.Single(item => item.Id == parts[0].Id).IsSelected);
             Assert.True(viewModel.PartLayers.Single(item => item.Id == parts[0].Id).CanMoveForward);
             viewModel.BringPartForwardCommand.Execute(parts[0].Id);
+            Assert.Equal(1, viewModel.UndoCount);
             Assert.Equal([parts[2].Id, parts[0].Id, parts[1].Id], viewModel.PartLayers.Select(item => item.Id));
             viewModel.SendPartBackwardCommand.Execute(parts[0].Id);
+            Assert.Equal(2, viewModel.UndoCount);
             Assert.Equal(parts.Select(partItem => partItem.Id).Reverse(), viewModel.PartLayers.Select(item => item.Id));
 
             viewModel.TogglePartVisibilityCommand.Execute(parts[2].Id);
+            Assert.Equal(3, viewModel.UndoCount);
             Assert.False(viewModel.PartLayers.Single(item => item.Id == parts[2].Id).IsVisible);
             viewModel.SelectModelPartAt(new Point2D(3, 3));
             Assert.Equal(parts[1].Id, viewModel.SelectedModelPartId);
             viewModel.TogglePartVisibilityCommand.Execute(parts[2].Id);
+            Assert.Equal(4, viewModel.UndoCount);
             Assert.True(viewModel.PartLayers.Single(item => item.Id == parts[2].Id).IsVisible);
             viewModel.ClearSelectionCommand.Execute(null);
             Assert.Null(viewModel.SelectedModelPartId);
@@ -126,9 +132,11 @@ public sealed class FabricadorImportPreviewUiTests
             Assert.Equal(part.Id, viewModel.SelectedModelPartId);
             viewModel.BeginModelPartTransform(new TransformGestureStart(ModelPartTransformKind.Move, gestureStart));
             viewModel.UpdateModelPartTransform(new Point2D(gestureStart.X + 12, gestureStart.Y - 4));
+            Assert.Equal(4, viewModel.UndoCount);
             Assert.Equal(1, contentRepository.SaveCount);
             viewModel.UpdateModelPartTransform(new Point2D(gestureStart.X + 20, gestureStart.Y - 6));
             viewModel.CompleteModelPartTransform();
+            Assert.Equal(5, viewModel.UndoCount);
             Assert.Equal(1, contentRepository.SaveCount);
             Assert.Equal(1, viewModel.PendingTransformCommandCount);
             var movedBounds = viewModel.SelectedPartBounds!.Value;
@@ -141,6 +149,7 @@ public sealed class FabricadorImportPreviewUiTests
             viewModel.BeginModelPartTransform(new TransformGestureStart(ModelPartTransformKind.Scale, scaleStart));
             viewModel.UpdateModelPartTransform(new Point2D(scaleStart.X + beforeScale.Width, scaleStart.Y));
             viewModel.CompleteModelPartTransform();
+            Assert.Equal(6, viewModel.UndoCount);
             var afterScale = viewModel.SelectedPartBounds!.Value;
             Assert.True(afterScale.Width > beforeScale.Width * 1.5, $"Expected width to grow beyond {beforeScale.Width * 1.5}, got {afterScale.Width}.");
 
@@ -154,7 +163,34 @@ public sealed class FabricadorImportPreviewUiTests
             viewModel.CompleteModelPartTransform();
             var afterRotate = viewModel.SelectedPartBounds!.Value;
             Assert.True(afterRotate.Width > beforeRotate.Width, $"Expected rotation to expand the bounds beyond {beforeRotate.Width}, got {afterRotate.Width}.");
+            Assert.Equal(7, viewModel.UndoCount);
             Assert.Equal(3, viewModel.PendingTransformCommandCount);
+            Assert.Equal(1, contentRepository.SaveCount);
+
+            viewModel.UndoCommand.Execute(null);
+            Assert.Equal(beforeRotate, viewModel.SelectedPartBounds!.Value);
+            Assert.Equal(6, viewModel.UndoCount);
+            Assert.Equal(1, viewModel.RedoCount);
+            viewModel.RedoCommand.Execute(null);
+            Assert.Equal(afterRotate, viewModel.SelectedPartBounds!.Value);
+            Assert.Equal(7, viewModel.UndoCount);
+            Assert.Equal(0, viewModel.RedoCount);
+
+            for (var index = 0; index < 7; index++)
+            {
+                viewModel.UndoCommand.Execute(null);
+            }
+
+            Assert.Equal(0, viewModel.UndoCount);
+            Assert.Equal(7, viewModel.RedoCount);
+            Assert.Equal(bounds, viewModel.SelectedPartBounds!.Value);
+            Assert.Equal(parts.Select(partItem => partItem.Id).Reverse(), viewModel.PartLayers.Select(item => item.Id));
+            Assert.All(viewModel.PartLayers, item => Assert.True(item.IsVisible));
+            viewModel.TogglePartVisibilityCommand.Execute(parts[0].Id);
+            Assert.Equal(0, viewModel.RedoCount);
+            viewModel.UndoCommand.Execute(null);
+            Assert.Equal(0, viewModel.UndoCount);
+            Assert.Equal(1, viewModel.RedoCount);
             Assert.Equal(1, contentRepository.SaveCount);
             Assert.Empty(Directory.GetFiles(root));
 

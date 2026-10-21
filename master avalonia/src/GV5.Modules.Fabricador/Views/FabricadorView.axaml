@@ -15,9 +15,22 @@
 
             <Grid ColumnDefinitions="*,320" ColumnSpacing="14">
               <StackPanel Grid.Column="0" Spacing="8">
-                <TextBlock Text="Prévia do modelo"
-                           FontWeight="SemiBold"
-                           Foreground="{DynamicResource Gv5BrushTextPrimary}" />
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+                    <TextBlock Text="Prévia do modelo"
+                               VerticalAlignment="Center"
+                               FontWeight="SemiBold"
+                               Foreground="{DynamicResource Gv5BrushTextPrimary}" />
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
+                        <Button Content="↶ Desfazer"
+                                Command="{Binding UndoCommand}"
+                                ToolTip.Tip="Desfazer última edição"
+                                Padding="10,6" />
+                        <Button Content="↷ Refazer"
+                                Command="{Binding RedoCommand}"
+                                ToolTip.Tip="Refazer edição desfeita"
+                                Padding="10,6" />
+                    </StackPanel>
+                </Grid>
                 <StackPanel Orientation="Horizontal" Spacing="8">
                     <RadioButton Content="Selecionar"
                                  GroupName="FabricatorTool"

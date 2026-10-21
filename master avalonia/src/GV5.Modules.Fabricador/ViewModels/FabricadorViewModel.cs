@@ -1,5 +1,6 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using System.Collections.Immutable;
 using System.Diagnostics;
 using GV5.Application.Contracts;
 using GV5.Core.Identity;
@@ -15,6 +16,7 @@ namespace GV5.Modules.Fabricador.ViewModels;
 public partial class FabricadorViewModel : ObservableObject, IModulePageViewModel, IFlushablePageViewModel, IDisposable
 {
     private static readonly TimeSpan AutosaveDelay = TimeSpan.FromMilliseconds(600);
+    private const int HistoryLimit = 50;
     private readonly IModelDraftRepository _repository;
     private readonly IDataPlatformInitializer _dataInitializer;
     private readonly IModelDraftCheckpointStore? _checkpointStore;
@@ -30,7 +32,8 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
     private long _previewVersion;
     private ModelDraftContent? _modelContent;
     private ActiveModelTransformGesture? _activeTransformGesture;
-    private readonly List<ModelPartTransformCommand> _completedTransformCommands = [];
+    private readonly List<IModelDraftCommand> _undoStack = [];
+    private readonly List<IModelDraftCommand> _redoStack = [];
     private ModelDraft? _savedDraft;
     private ModelId? _pendingModelId;
     private Guid? _pendingCheckpointId;
@@ -93,6 +96,10 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
     [NotifyCanExecuteChangedFor(nameof(SaveCommand))]
     [NotifyCanExecuteChangedFor(nameof(RestoreCheckpointCommand))]
     [NotifyCanExecuteChangedFor(nameof(DiscardCheckpointCommand))]
+    [NotifyPropertyChangedFor(nameof(CanUndo))]
+    [NotifyPropertyChangedFor(nameof(CanRedo))]
+    [NotifyCanExecuteChangedFor(nameof(UndoCommand))]
+    [NotifyCanExecuteChangedFor(nameof(RedoCommand))]
     private bool isSaving;
 
     [ObservableProperty]
@@ -103,6 +110,10 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
     [NotifyCanExecuteChangedFor(nameof(SaveCommand))]
     [NotifyCanExecuteChangedFor(nameof(RestoreCheckpointCommand))]
     [NotifyCanExecuteChangedFor(nameof(DiscardCheckpointCommand))]
+    [NotifyPropertyChangedFor(nameof(CanUndo))]
+    [NotifyPropertyChangedFor(nameof(CanRedo))]
+    [NotifyCanExecuteChangedFor(nameof(UndoCommand))]
+    [NotifyCanExecuteChangedFor(nameof(RedoCommand))]
     private ModelDraftCheckpoint? pendingRecoveryCheckpoint;
 
     [ObservableProperty]
@@ -114,6 +125,10 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
     [NotifyPropertyChangedFor(nameof(CanEdit))]
     [NotifyPropertyChangedFor(nameof(PartLayers))]
     [NotifyCanExecuteChangedFor(nameof(SaveCommand))]
+    [NotifyPropertyChangedFor(nameof(CanUndo))]
+    [NotifyPropertyChangedFor(nameof(CanRedo))]
+    [NotifyCanExecuteChangedFor(nameof(UndoCommand))]
+    [NotifyCanExecuteChangedFor(nameof(RedoCommand))]
     private bool isCheckingRecovery;
 
     [ObservableProperty]
@@ -186,7 +201,11 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
         }
     }
     public bool HasModelParts => _modelContent is { Parts.IsDefaultOrEmpty: false };
-    public int PendingTransformCommandCount => _completedTransformCommands.Count;
+    public int UndoCount => _undoStack.Count;
+    public int RedoCount => _redoStack.Count;
+    public bool CanUndo => CanEdit && _activeTransformGesture is null && _undoStack.Count > 0;
+    public bool CanRedo => CanEdit && _activeTransformGesture is null && _redoStack.Count > 0;
+    public int PendingTransformCommandCount => _undoStack.OfType<ModelPartTransformCommand>().Count();
     public bool HasPendingTransformCommands => PendingTransformCommandCount > 0;
     public bool HasPendingRecovery => PendingRecoveryCheckpoint is not null;
     public bool HasRecoveryMessage => !string.IsNullOrWhiteSpace(RecoveryMessage);
@@ -385,6 +404,7 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
             }
 
             _modelContent = content;
+            ClearHistory();
             SelectedModelPartId = null;
             OnPropertyChanged(nameof(PartLayers));
             OnPropertyChanged(nameof(HasModelParts));
@@ -438,9 +458,7 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
             return;
         }
 
-        ReplaceModelContent(_modelContent.Parts.Select(candidate => candidate.Id == partId
-            ? candidate.WithVisibility(!candidate.IsVisible)
-            : candidate), _modelContent.LayerOrder);
+        ExecuteModelCommand(new ModelPartVisibilityCommand(part.Id, part.IsVisible, !part.IsVisible));
     }
 
     [RelayCommand]
@@ -448,6 +466,40 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
 
     [RelayCommand]
     private void SendPartBackward(ModelPartId partId) => MovePartLayer(partId, -1);
+
+    [RelayCommand(CanExecute = nameof(CanUndo))]
+    private void Undo()
+    {
+        if (!CanUndo || _modelContent is null)
+        {
+            return;
+        }
+
+        var command = _undoStack[^1];
+        _undoStack.RemoveAt(_undoStack.Count - 1);
+        _modelContent = command.Revert(_modelContent);
+        _redoStack.Add(command);
+        TrimHistory(_redoStack);
+        NotifyHistoryChanged();
+        NotifyModelContentChanged();
+    }
+
+    [RelayCommand(CanExecute = nameof(CanRedo))]
+    private void Redo()
+    {
+        if (!CanRedo || _modelContent is null)
+        {
+            return;
+        }
+
+        var command = _redoStack[^1];
+        _redoStack.RemoveAt(_redoStack.Count - 1);
+        _modelContent = command.Apply(_modelContent);
+        _undoStack.Add(command);
+        TrimHistory(_undoStack);
+        NotifyHistoryChanged();
+        NotifyModelContentChanged();
+    }
 
     private void SelectModelPart(ModelPartId? partId)
     {
@@ -479,36 +531,74 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
 
         var layerOrder = _modelContent.LayerOrder.ToArray();
         (layerOrder[currentIndex], layerOrder[targetIndex]) = (layerOrder[targetIndex], layerOrder[currentIndex]);
-        ReplaceModelContent(_modelContent.Parts, layerOrder);
+        ExecuteModelCommand(new ModelPartLayerOrderCommand(_modelContent.LayerOrder, layerOrder.ToImmutableArray()));
     }
 
-    private void ReplaceModelContent(IEnumerable<ModelPart> parts, IEnumerable<ModelPartId> layerOrder)
+    private void ExecuteModelCommand(IModelDraftCommand command)
     {
         if (_modelContent is null)
         {
             return;
         }
 
-        _modelContent = ModelDraftContent.Restore(
-            _modelContent.SchemaVersion,
-            _modelContent.ModelId,
-            _modelContent.Revision,
-            _modelContent.Slot,
-            _modelContent.SourceAssetId,
-            _modelContent.SourceWidth,
-            _modelContent.SourceHeight,
-            parts,
-            layerOrder);
+        _modelContent = command.Apply(_modelContent);
+        PushUndoCommand(command);
+        NotifyModelContentChanged();
+    }
+
+    private void PushUndoCommand(IModelDraftCommand command)
+    {
+        _undoStack.Add(command);
+        TrimHistory(_undoStack);
+        _redoStack.Clear();
+        NotifyHistoryChanged();
+    }
+
+    private void ClearHistory()
+    {
+        _undoStack.Clear();
+        _redoStack.Clear();
+        NotifyHistoryChanged();
+    }
+
+    private static void TrimHistory(List<IModelDraftCommand> history)
+    {
+        if (history.Count > HistoryLimit)
+        {
+            history.RemoveRange(0, history.Count - HistoryLimit);
+        }
+    }
+
+    private void NotifyHistoryChanged()
+    {
+        OnPropertyChanged(nameof(UndoCount));
+        OnPropertyChanged(nameof(RedoCount));
+        OnPropertyChanged(nameof(CanUndo));
+        OnPropertyChanged(nameof(CanRedo));
+        OnPropertyChanged(nameof(PendingTransformCommandCount));
+        OnPropertyChanged(nameof(HasPendingTransformCommands));
+        UndoCommand.NotifyCanExecuteChanged();
+        RedoCommand.NotifyCanExecuteChanged();
+    }
+
+    private void NotifyModelContentChanged()
+    {
+        var content = _modelContent;
+        if (content is null)
+        {
+            return;
+        }
+
         OnPropertyChanged(nameof(PartLayers));
         OnPropertyChanged(nameof(HasModelParts));
         OnPropertyChanged(nameof(SelectedPartBounds));
         OnPropertyChanged(nameof(SelectedPartPivot));
-        _ = RenderModelPreviewAsync(_modelContent);
+        _ = RenderModelPreviewAsync(content);
     }
 
     public void BeginModelPartTransform(TransformGestureStart gesture)
     {
-        if (_modelContent is null || SelectedModelPartId is not { } partId)
+        if (!CanEdit || _modelContent is null || SelectedModelPartId is not { } partId)
         {
             return;
         }
@@ -541,11 +631,12 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
             sceneMatrix,
             previewSize.Scale,
             sceneMatrix.Transform(part.Transform.Pivot));
+        NotifyHistoryChanged();
     }
 
     public void UpdateModelPartTransform(Point2D scenePoint)
     {
-        if (_activeTransformGesture is not { } active || _modelContent is null)
+        if (!CanEdit || _activeTransformGesture is not { } active || _modelContent is null)
         {
             return;
         }
@@ -626,9 +717,11 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
         _activeTransformGesture = null;
         if (active.Command.Before != active.Command.After)
         {
-            _completedTransformCommands.Add(active.Command);
-            OnPropertyChanged(nameof(PendingTransformCommandCount));
-            OnPropertyChanged(nameof(HasPendingTransformCommands));
+            PushUndoCommand(active.Command);
+        }
+        else
+        {
+            NotifyHistoryChanged();
         }
     }
 
