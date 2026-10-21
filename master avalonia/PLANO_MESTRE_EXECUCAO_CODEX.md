@@ -11,7 +11,7 @@
 
 ## 0. COMO O CODEX DEVE TRABALHAR — INSTRUÇÃO PERMANENTE
 
-**Meta vigente:** paridade funcional completa, interface familiar e melhorada — não pixel-perfect. F06 liberada tecnicamente; F07.02–F07.06 validadas localmente; próxima tarefa F07.07. Não deixar controle do legado ausente nem marcar tarefas concluídas sem implementação, persistência e testes.
+**Meta vigente:** paridade funcional completa, interface familiar e melhorada — não pixel-perfect. F06 liberada tecnicamente; F07.02–F07.07 validadas localmente; próxima tarefa F07.08. Não deixar controle do legado ausente nem marcar tarefas concluídas sem implementação, persistência e testes.
 
 1. Antes de qualquer edição: confirmar `git branch --show-current` = `Master-AValonia`, ler `git status --short` e conferir HEAD local. Consultar o remoto somente após autorização explícita do usuário; reconciliar mudanças concorrentes sem sobrescrever trabalho. **Nunca dar force push nem apagar trabalho em andamento.**
 2. Ler este arquivo, `PLANO_DO_NOVO_APP.md`, `README.md`, `global.json` e `EXECUTION_STATUS.md`. Se não houver status, criá-lo na tarefa F00.05.
@@ -252,7 +252,7 @@ Ambiente/SDK/CI: `TestarLocal.bat gate` passou em 2026-10-21; ver `docs/gates/GA
 - [x] **F07.04** — Exibir guias/handles de junta e snap sem acoplar geometria ao controle. Evidência local e fluxo headless de snap/undo/persistência: `EXECUTION_STATUS.md`.
 - [x] **F07.05** — Definir PoseDraft e poses publicadas referenciando revisão exata do modelo. Evidência de contrato e rejeição de dados inválidos: `EXECUTION_STATUS.md`.
 - [x] **F07.06** — Implementar editor de pose (mover/rotacionar bone) e visualização pela engine. Sessão ligada ao ViewModel e canvas, testes SQLite/headless em `EXECUTION_STATUS.md`.
-- [ ] **F07.07** — Implementar salvar/carregar/duplicar/publicar pose e thumbnails lazily.
+- [x] **F07.07** — Implementar salvar/carregar/duplicar/publicar pose e thumbnails lazily.
 - [ ] **F07.08** — Implementar Undo/Redo de rig/pose e persistência com revisão.
 - [ ] **F07.09** — Definir contrato mínimo de animação do Fabricador (frames, keys, easing e rig).
 - [ ] **F07.10** — Implementar animações básicas do Fabricador com editor e prévia sem Video Studio.
