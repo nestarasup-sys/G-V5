@@ -1,0 +1,72 @@
+# Matriz de paridade do legado — G-V5 Avalonia
+
+Data da baseline: 2026-10-20. Escopo: funcionalidades identificadas no código-fonte legado e comparação com o estado rastreado da nova aplicação. Nenhuma linha implica validação visual ou execução do Electron nesta sessão.
+
+## Como ler
+
+- **Prova** aponta para o inventário e contrato que registram a evidência do comportamento legado. Esses documentos trazem os arquivos-fonte consultados.
+- **Estado** descreve exclusivamente o G-V5 Avalonia. `PENDENTE` significa que ainda não há implementação e evidência funcional cadastrada; presença de shell, navegação ou contrato não conta como paridade.
+- **Lacuna** descreve o comportamento/evidência necessários para promover a linha. As tarefas são executadas na ordem do Plano Mestre; a matriz não autoriza antecipar áreas.
+- Atualizar a linha quando houver implementação, testes e evidência adequados. Usar `EM_EXECUCAO`, `VALIDADA` ou `DIVERGENTE` somente com evidência rastreável. Divergência requer decisão documentada quando alterar contrato.
+
+| Área | Funcionalidade do Electron | Prova do legado | Estado no Avalonia | Lacuna/evidência de aceite |
+| --- | --- | --- | --- | --- |
+| Fabricador | Importação, validação e divisão de modelo em peças | [Inventário Fabricador](FABRICADOR_INVENTARIO.md), modelos e peças | PENDENTE | Importar fixture sintética; limites, recortes e IDs persistidos; reabrir e comparar render |
+| Fabricador | Chroma, tolerância e despill | [Inventário Fabricador](FABRICADOR_INVENTARIO.md), Chroma | PENDENTE | Resultado determinístico em imagem sintética, controles, cancelamento e regressão visual |
+| Fabricador | Seleção, edição, transformação, ocultação e organização de peças | [Inventário Fabricador](FABRICADOR_INVENTARIO.md), modelos e peças | PENDENTE | Comandos reversíveis; teste positivo/negativo e persistência após reabertura |
+| Fabricador | Dividir/mesclar peças e restaurar fonte importada | [Inventário Fabricador](FABRICADOR_INVENTARIO.md), modelos e peças | PENDENTE | Operações preservam pixels/identidade e desfazem sem corrupção |
+| Fabricador | Rig de juntas, anchors, pivôs e relação pai/filho | [Inventário Fabricador](FABRICADOR_INVENTARIO.md), Rig | PENDENTE | Geometria canônica; fixtures de conexões, casos extremos e teste de pose |
+| Fabricador | Ordem de camada independente do rig | [Inventário Fabricador](FABRICADOR_INVENTARIO.md), Rig | PENDENTE | Reordenação visual e persistente sem alterar parentesco |
+| Fabricador | Histórico undo/redo e recuperação de assets | [Inventário Fabricador](FABRICADOR_INVENTARIO.md), Histórico | PENDENTE | Histórico por comandos/gestos, limite e round-trip após fechar/reabrir |
+| Fabricador | Poses, rascunhos e cinco slots de exportação | [Inventário Fabricador](FABRICADOR_INVENTARIO.md), Poses | PENDENTE | Pose contém transforms, juntas e layers; rascunho recuperável; seleção e export verificadas |
+| Fabricador | Animador corporal, frames e modos de loop | [Inventário Fabricador](FABRICADOR_INVENTARIO.md), Animador corporal | PENDENTE | Limites e interpolações cobertos; playback/revisão determinísticos em fixture |
+| Fabricador | Roupas, componentes, binding e migração de categorias | [Inventário Fabricador](FABRICADOR_INVENTARIO.md), Roupas | PENDENTE | Binding continua correto entre poses; publicação versionada e compatibilidade cobertas |
+| Fabricador | Catálogos faciais e processamento de folhas | [Inventário Fabricador](FABRICADOR_INVENTARIO.md), Face/olhos | PENDENTE | Importar fixture, recortar componentes e validar dimensões, índices e lados |
+| Fabricador | Componentes faciais independentes, guias e transforms | [Inventário Fabricador](FABRICADOR_INVENTARIO.md), Face/olhos | PENDENTE | IDs estáveis, transforms/cor/ligações e exportação de assets testados |
+| Fabricador | Presets e collections de expressão com efeitos | [Inventário Fabricador](FABRICADOR_INVENTARIO.md), Expressões | PENDENTE | Edição, rascunho, publicação imutável e render de efeitos com golden |
+| Fabricador | Gravação e exportação de animação facial | [Inventário Fabricador](FABRICADOR_INVENTARIO.md), Animador facial | PENDENTE | Captura sintética, formato validado, limites e arquivo reaberto |
+| Fabricador | Cabelo, partes, estilos, cores e remoção de fundo | [Inventário Fabricador](FABRICADOR_INVENTARIO.md), Cabelos | PENDENTE | Assets separados do manifesto, processamento testado e estilo publicado reproduzível |
+| Fabricador | Extras de cabeça posicionáveis | [Inventário Fabricador](FABRICADOR_INVENTARIO.md), Extras de cabeça | PENDENTE | Seleção, transforms, preview e persistência por referência |
+| Fabricador | Banner/área Design Dev | [Inventário Fabricador](FABRICADOR_INVENTARIO.md), Navegação e áreas | PENDENTE | Definir escopo/produto e evidência; o inventário atual identifica a área como edição de banner |
+| Customizador | Criar, listar, renomear e excluir personagens | [Inventário das demais áreas](OUTRAS_AREAS_INVENTARIO.md), Customizador | PENDENTE | CRUD com IDs, concorrência, validação e restart testado |
+| Customizador | Escolher modelo e pose publicados | [Inventário das demais áreas](OUTRAS_AREAS_INVENTARIO.md), Customizador | PENDENTE | Referências somente leitura e compatibilidade de revisão comprovadas |
+| Customizador | Ajustar proporções e dimensões corporais | [Inventário das demais áreas](OUTRAS_AREAS_INVENTARIO.md), Customizador | PENDENTE | Overrides isolados no personagem, limites e render validado |
+| Customizador | Aplicar roupas e paletas por componente | [Inventário das demais áreas](OUTRAS_AREAS_INVENTARIO.md), Customizador | PENDENTE | Overrides privados não alteram fonte; round-trip de cores e binding |
+| Customizador | Aplicar cabelo, cores e peças independentes | [Inventário das demais áreas](OUTRAS_AREAS_INVENTARIO.md), Customizador | PENDENTE | Resolver hair style/parts por IDs e render fiel após reabertura |
+| Customizador | Compor rosto e expressões a partir dos catálogos | [Inventário das demais áreas](OUTRAS_AREAS_INVENTARIO.md), Customizador | PENDENTE | Seleções, transformações, lados e compatibilidade verificadas no mesmo renderer |
+| Customizador | Prévia de personagem com estado salvo | [Inventário das demais áreas](OUTRAS_AREAS_INVENTARIO.md), Customizador | PENDENTE | Preview incremental sem travar UI e imagem idêntica à cena de teste |
+| Studio | Criar, listar, abrir, renomear e excluir projetos | [Inventário das demais áreas](OUTRAS_AREAS_INVENTARIO.md), Studio | PENDENTE | Documentos e assets persistem isolados; abrir/salvar/reabrir sem perda |
+| Studio | Definir cor, imagem e transform do fundo | [Inventário das demais áreas](OUTRAS_AREAS_INVENTARIO.md), Studio | PENDENTE | Coordenadas, crop, alpha e composição cobertos por golden sintético |
+| Studio | Importar e posicionar imagens/objetos | [Inventário das demais áreas](OUTRAS_AREAS_INVENTARIO.md), Studio | PENDENTE | AssetStore por ID/hash, transform e z-order persistentes |
+| Studio | Adicionar personagens e editar propriedades locais | [Inventário das demais áreas](OUTRAS_AREAS_INVENTARIO.md), Studio | PENDENTE | CharacterResolver compartilhado; mudanças de cena não mutam personagem original |
+| Studio | Expressão, fala/blink, pose e transform local do ator | [Inventário das demais áreas](OUTRAS_AREAS_INVENTARIO.md), Studio | PENDENTE | Estado da instância isolado, render reproduzível e save/reopen validado |
+| Studio | Elementos de narração, fala e pensamento | [Inventário das demais áreas](OUTRAS_AREAS_INVENTARIO.md), Studio | PENDENTE | Texto/estilo/posição persistentes; golden de composição |
+| Studio | Salvar e abrir impressão/exportação PNG | [Inventário das demais áreas](OUTRAS_AREAS_INVENTARIO.md), Studio | PENDENTE | PNG validado, dimensões e composição corretas, cancelamento/erro tratados |
+| Base de Vídeos | Importar vídeo e criar rascunho | [Inventário das demais áreas](OUTRAS_AREAS_INVENTARIO.md), Base de Vídeos | PENDENTE | Cópia/hash íntegros, probing, limites e duração opcional/pendente tratados |
+| Base de Vídeos | Gerar número permanente ao publicar | [Inventário das demais áreas](OUTRAS_AREAS_INVENTARIO.md), Base de Vídeos | PENDENTE | Numeração não muda quando outro item é removido; IDs permanecem estáveis |
+| Base de Vídeos | Prévia, busca, filtros, ordenação e carga progressiva | [Inventário das demais áreas](OUTRAS_AREAS_INVENTARIO.md), Base de Vídeos | PENDENTE | Preview não lê o arquivo inteiro; listas grandes virtualizadas e resultado estável |
+| Base de Vídeos | Descrição, linha do tempo, tempos de reação e contexto IA | [Inventário das demais áreas](OUTRAS_AREAS_INVENTARIO.md), Base de Vídeos | PENDENTE | Campos persistem incrementalmente e sobrevivem a restart |
+| Base de Vídeos | Criar/renomear/excluir categorias e atribuir cor | [Inventário das demais áreas](OUTRAS_AREAS_INVENTARIO.md), Base de Vídeos | PENDENTE | IDs/cores sem colisão indevida, exclusão e remoção de atribuição consistentes |
+| Base de Vídeos | Excluir ou desvincular vídeo com proteção de referências | [Inventário das demais áreas](OUTRAS_AREAS_INVENTARIO.md), Base de Vídeos | PENDENTE | Exclusão recusa referências ativas; desvincular não apaga o asset compartilhado |
+| Roteiros | CRUD, ordem e elenco referenciado por ID | [Inventário das demais áreas](OUTRAS_AREAS_INVENTARIO.md), Roteiros | PENDENTE | Gravação transacional/incremental; ordem e elenco recuperados após restart |
+| Roteiros | Abertura e TikToks com vídeo opcional | [Inventário das demais áreas](OUTRAS_AREAS_INVENTARIO.md), Roteiros | PENDENTE | Seções têm IDs estáveis e referência removível sem apagar a Base |
+| Roteiros | Blocos de fala/pensamento, expressão e tradução PT/EN | [Inventário das demais áreas](OUTRAS_AREAS_INVENTARIO.md), Roteiros | PENDENTE | Ordem, personagem, texto e tipo persistem e passam validação de referência |
+| Roteiros | Descrição, contexto adicional e temporização | [Inventário das demais áreas](OUTRAS_AREAS_INVENTARIO.md), Roteiros | PENDENTE | Campos da abertura/TikTok persistem, limites negativos e valores ausentes testados |
+| Roteiros | Preferência de recolher detalhes por roteiro | [Inventário das demais áreas](OUTRAS_AREAS_INVENTARIO.md), Roteiros | PENDENTE | Preferência é por ID de roteiro, mantém-se ao reabrir |
+| Roteiros | Exportar elenco/personagens em estrutura de projeto | [Inventário das demais áreas](OUTRAS_AREAS_INVENTARIO.md), Roteiros | PENDENTE | Arquivos esperados, substituição controlada e cancelamento verificados em temp |
+| Roteiros | Exportar roteiro, fundo, vídeos e GIF | [Inventário das demais áreas](OUTRAS_AREAS_INVENTARIO.md), Roteiros | PENDENTE | Formato e destino documentados; referência ID resolvida; todos os casos/erros testados |
+| Roteiros | Logs de exportação e biblioteca de GIFs | [Inventário das demais áreas](OUTRAS_AREAS_INVENTARIO.md), Roteiros | PENDENTE | Logs limitados/reabríveis; GIF padrão protegido; importação e exclusão validadas |
+| Opções | Medir dados armazenados por domínio | [Inventário das demais áreas](OUTRAS_AREAS_INVENTARIO.md), Opções | PENDENTE | Métrica não altera arquivos; valores reconciliados com fixture temporária |
+| Opções | Migração guiada, retomável e verificável | [Inventário das demais áreas](OUTRAS_AREAS_INVENTARIO.md), Opções | PENDENTE | Cópia/hash, pausa, falha no meio, restart e preservação da origem testados |
+| Opções | Backup, verificação, restauração e exclusão | [Inventário das demais áreas](OUTRAS_AREAS_INVENTARIO.md), Opções | PENDENTE | Backup de fixture, integridade e restore real reaberto em ambiente isolado |
+| Video Studio | Criar, listar e persistir projeto isolado | [Inventário das demais áreas](OUTRAS_AREAS_INVENTARIO.md), Video Studio | PENDENTE | Só iniciar após G4/G5; manifestos leves e round-trip de projeto |
+| Video Studio | Timeline 60 fps com vídeo, áudio, ator e texto | [Inventário das demais áreas](OUTRAS_AREAS_INVENTARIO.md), Video Studio | PENDENTE | Timeline não sobrepõe segmentos indevidamente; edição, precisão e restart testados |
+| Video Studio | Keyframes, interpolação, transform e sincronismo | [Inventário das demais áreas](OUTRAS_AREAS_INVENTARIO.md), Video Studio | PENDENTE | Contrato de mídia escolhido por ADR posterior; seek/frame stepping/áudio medidos |
+| Video Studio | Preview de mídia e composição com overlays | [Inventário das demais áreas](OUTRAS_AREAS_INVENTARIO.md), Video Studio | PENDENTE | Vídeo/atores/textos sincronizados sem airspace ou bloqueio de UI; teste Windows real |
+| Video Studio | Exportar H.264 com áudio opcional | [Inventário das demais áreas](OUTRAS_AREAS_INVENTARIO.md), Video Studio | PENDENTE | Duração deriva do último evento; frames, áudio, dimensões e hash conferidos |
+| Video Studio | Jobs, cancelamento e recuperação de export | [Inventário das demais áreas](OUTRAS_AREAS_INVENTARIO.md), Video Studio | PENDENTE | Falha/cancelamento/restart deixam saída recuperável ou estado explícito |
+
+## Estado inicial da nova aplicação
+
+As linhas desta matriz estão `PENDENTE` porque ainda não há funcionalidades de produto implementadas no shell Avalonia. O inventário em [BASELINE_IMPLEMENTATION.md](../architecture/BASELINE_IMPLEMENTATION.md) registra o que existe de fato. Uma mudança futura deve atualizar apenas as linhas cobertas pela evidência e citar teste, fixture, golden ou gate correspondente; não transformar contrato/tipo em alegação de paridade.
+
