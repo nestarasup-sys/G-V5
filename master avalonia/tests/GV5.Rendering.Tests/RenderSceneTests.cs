@@ -59,6 +59,50 @@ public sealed class RenderSceneTests
         Assert.Throws<ArgumentOutOfRangeException>(() => Layer(blendMode: (RenderBlendMode)99));
     }
 
+    [Fact]
+    public void BodyBuilderUsesExplicitOrderSkipsUnknownAndDuplicateIdsThenAppendsMissingParts()
+    {
+        var head = Part("head");
+        var torso = Part("torso");
+        var arm = Part("arm");
+        var scene = BodyRenderSceneBuilder.Build(
+            SceneId.New(),
+            400,
+            600,
+            [head, torso, arm],
+            layerOrder: ["torso", "missing", "torso", "head"]);
+
+        Assert.Equal([torso.LayerId, head.LayerId, arm.LayerId], scene.Layers.Select(layer => layer.Id));
+        Assert.Equal([0, 1, 2], scene.Layers.Select(layer => layer.ZOrder));
+    }
+
+    [Fact]
+    public void BodyBuilderExcludesHiddenPartsWithoutReorderingVisibleLayers()
+    {
+        var head = Part("head");
+        var torso = Part("torso");
+        var arm = Part("arm");
+        var scene = BodyRenderSceneBuilder.Build(
+            SceneId.New(),
+            400,
+            600,
+            [head, torso, arm],
+            layerOrder: ["arm", "torso", "head"],
+            hiddenPartIds: new HashSet<string>(["torso"], StringComparer.Ordinal));
+
+        Assert.Equal([arm.LayerId, head.LayerId], scene.Layers.Select(layer => layer.Id));
+        Assert.Equal([0, 2], scene.Layers.Select(layer => layer.ZOrder));
+    }
+
+    [Fact]
+    public void BodyBuilderRejectsDuplicatePartIds()
+    {
+        var first = Part("torso");
+        var second = Part("torso");
+
+        Assert.Throws<ArgumentException>(() => BodyRenderSceneBuilder.Build(SceneId.New(), 100, 100, [first, second]));
+    }
+
     private static RenderLayer Layer(
         int zOrder = 0,
         Transform2D? transform = null,
@@ -73,4 +117,11 @@ public sealed class RenderSceneTests
             alpha,
             blendMode,
             zOrder);
+
+    private static BodyPartRenderSource Part(string partId) => new(
+        partId,
+        RenderLayerId.New(),
+        AssetId.New(),
+        new Rect2D(0, 0, 80, 120),
+        Transform2D.Identity);
 }
