@@ -7,7 +7,7 @@ Os itens abaixo têm fontes/estrutura identificadas; a referência visual real a
 | Módulo / componente | Fonte do legado | Código inventariado | Captura Electron | Avalonia / evidência | Estado |
 |---|---|---|---|---|---|
 | Shell, top bar e navegação | `src/renderer/src/ui/App.tsx`; `ui/components/TopBar.tsx`; `ui/styles.css` | rotas e estados CSS | pendente | nenhuma | REFERENCIA_PENDENTE |
-| Fabricador — Modelos/peças/canvas | `features/fabricator/FabricatorPage.tsx`; `ui/styles.css` | estrutura, slots, preview, layers | pendente | `FabricatorCanvas` mostra frame composto por Skia; pipeline coberto em Headless e builder em testes Rendering | VALIDACAO_VISUAL_PENDENTE |
+| Fabricador — Modelos/peças/canvas | `features/fabricator/FabricatorPage.tsx`; `ui/styles.css` | estrutura, slots, preview, layers | pendente | `FabricatorCanvas` mostra frame Skia, ferramentas de seleção/pan, hit test e overlay; Headless cobre coordenadas e zoom | VALIDACAO_VISUAL_PENDENTE |
 | Fabricador — Importação e revisão da folha | `features/fabricator/FabricatorPage.tsx`; estilos do workspace | seleção, revisão e confirmação mapeadas estaticamente | pendente | cartão Avalonia e prévia funcionais; teste Headless `FabricadorImportPreviewUiTests`; captura Electron/Avalonia pendente | VALIDACAO_VISUAL_PENDENTE |
 | Fabricador — Chroma e histórico | `features/fabricator/FabricatorPage.tsx`; `models/*` | controles e operações | pendente | nenhuma | REFERENCIA_PENDENTE |
 | Fabricador — Poses | `features/fabricator/PoseWorkspace.tsx` | slots, edição e diálogos | pendente | nenhuma | REFERENCIA_PENDENTE |
