@@ -412,6 +412,7 @@
                             <StackPanel Spacing="3">
                                 <TextBlock Text="Animador do Fabricador" FontSize="15" FontWeight="Bold" Foreground="#342E36" />
                                 <TextBlock Text="{Binding AnimationModelRevisionLabel}" FontSize="12" Foreground="#706872" TextWrapping="Wrap" />
+                                <TextBlock Text="{Binding AnimationBasePoseLabel}" FontSize="11" Foreground="#6450A5" TextWrapping="Wrap" />
                             </StackPanel>
                             <Border Background="#F8F6FF" BorderBrush="#DDD6F4" BorderThickness="1" CornerRadius="8" Padding="9">
                                 <StackPanel Spacing="7">
@@ -435,6 +436,30 @@
                                             </DataTemplate>
                                         </ItemsControl.ItemTemplate>
                                     </ItemsControl>
+                                    <Border Background="#FFFFFF" BorderBrush="#E7E1F5" BorderThickness="1" CornerRadius="7" Padding="8">
+                                        <StackPanel Spacing="6">
+                                            <TextBlock Text="Criar animação a partir de pose" FontWeight="SemiBold" Foreground="#6450A5" />
+                                            <TextBlock Text="Nenhuma pose salva para esta versão do modelo." IsVisible="{Binding HasNoAnimationBasePoses}" FontSize="11" Foreground="#8A8290" />
+                                            <ItemsControl ItemsSource="{Binding AnimationBasePoses}">
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate x:DataType="vm:AnimationBasePoseListItem">
+                                                        <Button HorizontalContentAlignment="Left" Margin="0,0,0,3" Padding="8,6"
+                                                                IsEnabled="{Binding $parent[ItemsControl].DataContext.CanCreateAnimationFromPose}"
+                                                                Command="{Binding $parent[ItemsControl].DataContext.CreateAnimationFromPoseCommand}"
+                                                                CommandParameter="{Binding Id}">
+                                                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8" Width="260">
+                                                                <StackPanel Spacing="2">
+                                                                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                                                    <TextBlock Text="{Binding Category, TargetNullValue=Sem categoria}" FontSize="10" Foreground="#706872" />
+                                                                </StackPanel>
+                                                                <TextBlock Grid.Column="1" Text="{Binding RevisionLabel}" FontSize="11" Foreground="#6450A5" VerticalAlignment="Center" />
+                                                            </Grid>
+                                                        </Button>
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+                                        </StackPanel>
+                                    </Border>
                                 </StackPanel>
                             </Border>
 

@@ -345,6 +345,9 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
     public ModelDraftContent? PosePreviewContent => IsPoseWorkspace ? _poseSession?.PreviewContent : null;
     public ObservableCollection<PoseListItem> SavedPoses { get; } = [];
     public ObservableCollection<AnimationListItem> SavedAnimations { get; } = [];
+    public ObservableCollection<AnimationBasePoseListItem> AnimationBasePoses { get; } = [];
+    public bool HasAnimationBasePoses => AnimationBasePoses.Count > 0;
+    public bool HasNoAnimationBasePoses => AnimationBasePoses.Count == 0;
     public ObservableCollection<AnimationFrameListItem> AnimationFrames { get; } = [];
     public IReadOnlyList<AnimationEasingOption> AnimationEasingOptions { get; } =
     [
@@ -361,6 +364,9 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
     public string AnimationModelRevisionLabel => _animationModelRevision is null
         ? "Selecione uma versão publicada do modelo"
         : $"{_animationModelRevision.Name} · versão {_animationModelRevision.Revision.Value:00}";
+    public string AnimationBasePoseLabel => _animationSession?.Draft.BasePoseId is { } poseId
+        ? $"Pose base: {AnimationBasePoses.FirstOrDefault(pose => pose.Id == poseId)?.Name ?? poseId.ToString()}"
+        : "Base: modelo publicado";
     public string AnimationName { get => _animationName; set => SetProperty(ref _animationName, value); }
     public string AnimationFrameDuration { get => _animationFrameDuration; set => SetProperty(ref _animationFrameDuration, value); }
     public string AnimationKeyX { get => _animationKeyX; set => SetProperty(ref _animationKeyX, value); }
@@ -409,6 +415,7 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
         }
     }
     public bool CanCreateAnimation => IsAnimationWorkspace && _animationModelRevision is not null && _animationRepository is not null;
+    public bool CanCreateAnimationFromPose => CanCreateAnimation && _poseRepository is not null;
     public bool CanSaveAnimation => IsAnimationWorkspace && _animationSession is not null && _animationRepository is not null;
     public bool CanEditAnimation => IsAnimationWorkspace && CanEdit && _animationSession is not null && !IsAnimationPlaying;
     public bool CanToggleAnimationPlayback => IsAnimationWorkspace && _animationSession is not null;
@@ -750,6 +757,17 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
             foreach (var item in saved.Value)
                 SavedAnimations.Add(new AnimationListItem(item.Id, item.Name, item.Revision));
 
+            AnimationBasePoses.Clear();
+            if (_poseRepository is not null)
+            {
+                var poses = await _poseRepository.ListAsync(_animationModelRevision.Id);
+                if (poses.IsSuccess)
+                    foreach (var pose in poses.Value)
+                        AnimationBasePoses.Add(new AnimationBasePoseListItem(pose.Id, pose.Name, pose.Revision, pose.Category));
+                else
+                    AnimationEditorStatus = "As animações abrem, mas as poses salvas não puderam ser listadas.";
+            }
+
             _animationSession = null;
             ClearAnimationHistory();
             _savedAnimationRevision = null;
@@ -778,7 +796,7 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
     private async Task CreateAnimationAsync()
     {
         if (_animationModelRevision is null || !CanCreateAnimation) return;
-        if (_animationSession is not null && (_savedAnimationRevision is null || _animationSession.Draft.Revision != _savedAnimationRevision))
+        if (HasPendingAnimationChanges)
         {
             await SaveAnimationAsync();
             if (HasAnimationEditorError) return;
@@ -786,21 +804,59 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
         try
         {
             var animation = AnimationDraft.CreateFromModelRevision(_animationModelRevision, $"Animação {SavedAnimations.Count + 1:00}");
-            _animationSession = new AnimationEditorSession(_animationModelRevision, animation);
-            ClearAnimationHistory();
-            _savedAnimationRevision = null;
-            _savedAnimationSnapshot = null;
-            AnimationName = animation.Name;
-            SelectedModelPartId = _animationSession.SelectedPartId;
-            AnimationEditorError = null;
-            AnimationEditorStatus = "Rascunho novo · salve para persistir.";
-            UpdateAnimationEditorProperties();
-            await RenderModelPreviewAsync(_animationSession.PreviewContent);
+            await StartAnimationDraftAsync(animation, "Animação nova · salve para persistir.");
         }
         catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
         {
             AnimationEditorError = exception.Message;
         }
+    }
+
+    [RelayCommand(CanExecute = nameof(CanCreateAnimationFromPose))]
+    private async Task CreateAnimationFromPoseAsync(PoseId poseId)
+    {
+        if (!CanCreateAnimationFromPose || _animationModelRevision is null || _poseRepository is null) return;
+        if (HasPendingAnimationChanges)
+        {
+            await SaveAnimationAsync();
+            if (HasAnimationEditorError) return;
+        }
+        var pose = await _poseRepository.GetAsync(poseId);
+        if (pose.IsFailure)
+        {
+            AnimationEditorError = pose.Error!.Message;
+            return;
+        }
+        try
+        {
+            if (pose.Value.Model != ModelRevisionReference.From(_animationModelRevision))
+                throw new InvalidOperationException("A pose pertence a outra revisão de modelo e não pode ser usada nesta animação.");
+            var name = $"Animação {SavedAnimations.Count + 1:00} — {pose.Value.Name}";
+            if (name.Length > 120) name = name[..120];
+            var animation = AnimationDraft.CreateFromPose(pose.Value, name);
+            await StartAnimationDraftAsync(animation, $"Nova animação baseada na pose ‘{pose.Value.Name}’.");
+        }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
+        {
+            AnimationEditorError = exception.Message;
+        }
+    }
+
+    private async Task StartAnimationDraftAsync(AnimationDraft animation, string status)
+    {
+        _animationSession = new AnimationEditorSession(_animationModelRevision!, animation);
+        ClearAnimationHistory();
+        _savedAnimationRevision = null;
+        _savedAnimationSnapshot = null;
+        AnimationName = animation.Name;
+        SelectedAnimationEasing = animation.Easing;
+        SelectedAnimationLoopMode = animation.LoopMode;
+        AnimationPlaybackSpeed = animation.PlaybackSpeed;
+        SelectedModelPartId = _animationSession.SelectedPartId;
+        AnimationEditorError = null;
+        AnimationEditorStatus = status;
+        UpdateAnimationEditorProperties();
+        await RenderModelPreviewAsync(_animationSession.PreviewContent);
     }
 
     [RelayCommand(CanExecute = nameof(CanSaveAnimation))]
@@ -826,6 +882,14 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
             return Task.CompletedTask;
         }
     }
+
+    private bool HasPendingAnimationChanges => _animationSession is not null
+        && (_savedAnimationSnapshot is null
+            || !HasSameAnimationContent(_savedAnimationSnapshot, _animationSession.Draft)
+            || !string.Equals(AnimationName.Trim(), _animationSession.Draft.Name, StringComparison.Ordinal)
+            || SelectedAnimationEasing != _animationSession.Draft.Easing
+            || SelectedAnimationLoopMode != _animationSession.Draft.LoopMode
+            || !AnimationPlaybackSpeed.Equals(_animationSession.Draft.PlaybackSpeed));
 
     private AnimationDraft UpdateAnimationSettingsAndGetDraft()
     {
@@ -863,7 +927,7 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
     private async Task LoadAnimationAsync(AnimationId animationId)
     {
         if (_animationRepository is null || _animationModelRevision is null || IsAnimationPlaying) return;
-        if (_animationSession is not null && (_savedAnimationRevision is null || _animationSession.Draft.Revision != _savedAnimationRevision))
+        if (HasPendingAnimationChanges)
         {
             await SaveAnimationAsync();
             if (HasAnimationEditorError) return;
@@ -1011,6 +1075,7 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
         SelectedModelPartId = partId;
         RefreshAnimationKeyFields();
         OnPropertyChanged(nameof(AnimationPartItems));
+        OnPropertyChanged(nameof(AnimationBasePoseLabel));
         OnPropertyChanged(nameof(SelectedPartName));
         OnPropertyChanged(nameof(SelectedPartBounds));
         OnPropertyChanged(nameof(SelectedPartPivot));
@@ -1148,6 +1213,9 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
     {
         OnPropertyChanged(nameof(CanToggleAnimationWorkspace));
         OnPropertyChanged(nameof(CanCreateAnimation));
+        OnPropertyChanged(nameof(CanCreateAnimationFromPose));
+        OnPropertyChanged(nameof(HasAnimationBasePoses));
+        OnPropertyChanged(nameof(HasNoAnimationBasePoses));
         OnPropertyChanged(nameof(CanSaveAnimation));
         OnPropertyChanged(nameof(CanEditAnimation));
         OnPropertyChanged(nameof(CanToggleAnimationPlayback));
@@ -1157,6 +1225,7 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
         OnPropertyChanged(nameof(AnimationDurationLabel));
         ToggleAnimationWorkspaceCommand.NotifyCanExecuteChanged();
         CreateAnimationCommand.NotifyCanExecuteChanged();
+        CreateAnimationFromPoseCommand.NotifyCanExecuteChanged();
         SaveAnimationCommand.NotifyCanExecuteChanged();
         AddAnimationFrameCommand.NotifyCanExecuteChanged();
         DeleteAnimationFrameCommand.NotifyCanExecuteChanged();
@@ -3114,6 +3183,11 @@ public sealed record PoseListItem(PoseId Id, string Name, string? Category, Revi
 }
 
 public sealed record AnimationListItem(AnimationId Id, string Name, Revision Revision)
+{
+    public string RevisionLabel => $"r{Revision.Value:00}";
+}
+
+public sealed record AnimationBasePoseListItem(PoseId Id, string Name, Revision Revision, string? Category)
 {
     public string RevisionLabel => $"r{Revision.Value:00}";
 }

@@ -154,6 +154,48 @@ public sealed class AnimationDraftContractTests
             .Parts.Single(part => part.Id == armId).Transform);
     }
 
+    [Fact]
+    public void AnimationEvaluatorRemainsFiniteForExtremeArmTransformsPivotsAndRigAnchors()
+    {
+        var model = CreatePublishedModel();
+        var pose = PoseDraft.CreateFromModelRevision(model, "Base extrema");
+        var animation = AnimationDraft.CreateFromPose(pose, "Braço extremo");
+        var originalSourceTransforms = model.Content.Parts.Select(part => part.SourceTransform).ToArray();
+        var armId = model.Content.Parts[1].Id;
+        var first = animation.Frames[0];
+        var left = new Transform2D(new Point2D(-1_000_000, 1_000_000), new Point2D(0.1, 8), Math.PI - 0.01,
+            new Point2D(-100_000, 100_000), true, false);
+        var right = new Transform2D(new Point2D(1_000_000, -1_000_000), new Point2D(4, 0.25), -Math.PI + 0.01,
+            new Point2D(100_000, -100_000), false, true);
+        var firstFrame = AnimationFrame.Create(250,
+            first.Keys.Select(key => key.PartId == armId ? AnimationPartKey.Create(armId, left) : key),
+            first.RigJoints.Select(joint => joint with
+            {
+                ParentAnchor = new Point2D(-1_000_000, 1_000_000),
+                ChildAnchor = new Point2D(1_000_000, -1_000_000)
+            }));
+        var secondFrame = AnimationFrame.Create(250,
+            first.Keys.Select(key => key.PartId == armId ? AnimationPartKey.Create(armId, right) : key),
+            first.RigJoints.Select(joint => joint with
+            {
+                ParentAnchor = new Point2D(1_000_000, -1_000_000),
+                ChildAnchor = new Point2D(-1_000_000, 1_000_000)
+            }));
+        animation = animation.WithContent("Braço extremo", null, [firstFrame, secondFrame],
+            AnimationEasing.Linear, AnimationLoopMode.Once, 1);
+
+        var evaluated = AnimationEvaluator.Evaluate(animation, model, 125);
+        var transform = evaluated.Parts.Single(part => part.Id == armId).Transform;
+        Assert.Equal(Point2D.Zero, transform.Translation);
+        Assert.Equal(Point2D.Zero, transform.Pivot);
+        Assert.Equal(new Point2D(2.05, 4.125), transform.Scale);
+        Assert.InRange(Math.Abs(Math.Abs(transform.RotationRadians) - Math.PI), 0, 0.0001);
+        var joint = Assert.Single(evaluated.RigJoints);
+        Assert.Equal(Point2D.Zero, joint.ParentAnchor);
+        Assert.Equal(Point2D.Zero, joint.ChildAnchor);
+        Assert.Equal(originalSourceTransforms, model.Content.Parts.Select(part => part.SourceTransform));
+    }
+
     private static PoseDraft CreatePose()
     {
         var torso = ModelPartId.New();

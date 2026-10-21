@@ -40,6 +40,7 @@ public sealed class FabricadorImportPreviewUiTests
         ModelId modelId;
         PoseId savedPoseId;
         AnimationId savedAnimationId;
+        AnimationId poseBasedAnimationId;
         ModelDraftContent savedContent;
 
         try
@@ -282,8 +283,27 @@ public sealed class FabricadorImportPreviewUiTests
                     Assert.Equal(2, viewModel.AnimationFrames.Count);
                     Assert.Equal(AnimationLoopMode.PingPong, viewModel.SelectedAnimationLoopMode);
                     Assert.Null(viewModel.AnimationEditorError);
+                    Assert.Contains(viewModel.AnimationBasePoses, item => item.Id == savedPoseId);
+                    await viewModel.CreateAnimationFromPoseCommand.ExecuteAsync(savedPoseId);
+                    Assert.Single(viewModel.AnimationFrames);
+                    Assert.Contains("baseada na pose", viewModel.AnimationEditorStatus, StringComparison.OrdinalIgnoreCase);
+                    await viewModel.SaveAnimationCommand.ExecuteAsync(null);
+                    Assert.Null(viewModel.AnimationEditorError);
+                    poseBasedAnimationId = Assert.Single(viewModel.SavedAnimations, item => item.Id != savedAnimationId).Id;
+                    var poseBasedDraft = await animationRepository.GetAsync(poseBasedAnimationId, cancellationToken);
+                    Assert.True(poseBasedDraft.IsSuccess, poseBasedDraft.Error?.Message);
+                    Assert.Equal(savedPoseId, poseBasedDraft.Value.BasePoseId);
+                    var basePoseDraft = await poseRepository.GetAsync(savedPoseId, cancellationToken);
+                    Assert.True(basePoseDraft.IsSuccess, basePoseDraft.Error?.Message);
+                    Assert.Equal(basePoseDraft.Value.PartTransforms.Select(item => (item.PartId, item.Transform, item.IsVisible)),
+                        Assert.Single(poseBasedDraft.Value.Frames).Keys.Select(item => (item.PartId, item.Transform, item.IsVisible)));
                     await viewModel.ToggleAnimationWorkspaceCommand.ExecuteAsync(null);
                     Assert.False(viewModel.IsAnimationWorkspace);
+                    await viewModel.ToggleAnimationWorkspaceCommand.ExecuteAsync(null);
+                    await viewModel.LoadAnimationCommand.ExecuteAsync(poseBasedAnimationId);
+                    Assert.Single(viewModel.AnimationFrames);
+                    Assert.Contains("Pose de teste atualizada", viewModel.AnimationBasePoseLabel, StringComparison.OrdinalIgnoreCase);
+                    await viewModel.ToggleAnimationWorkspaceCommand.ExecuteAsync(null);
                 }
                 finally
                 {
@@ -354,6 +374,10 @@ public sealed class FabricadorImportPreviewUiTests
                 Assert.Equal(Revision.From(1), animation.Value.Revision);
                 Assert.Equal(2, animation.Value.Frames.Length);
                 Assert.Equal(AnimationLoopMode.PingPong, animation.Value.LoopMode);
+                var poseBasedAnimation = await reopenedAnimations.GetAsync(poseBasedAnimationId, cancellationToken);
+                Assert.True(poseBasedAnimation.IsSuccess, poseBasedAnimation.Error?.Message);
+                Assert.Equal(savedPoseId, poseBasedAnimation.Value.BasePoseId);
+                Assert.Single(poseBasedAnimation.Value.Frames);
             }
         }
         finally
