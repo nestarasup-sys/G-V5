@@ -132,6 +132,15 @@ public sealed record AnimationDraft
             AnimationEasing.Smooth, AnimationLoopMode.Once, 1.0, pose.LayerOrder);
     }
 
+    public static AnimationDraft CreateFromModelRevision(PublishedModelRevision modelRevision, string name, int firstFrameDurationMs = 250)
+    {
+        ArgumentNullException.ThrowIfNull(modelRevision);
+        var pose = PoseDraft.CreateFromModelRevision(modelRevision, "Base da animação");
+        var created = CreateFromPose(pose, name, firstFrameDurationMs);
+        return Restore(created.Id, created.Model, created.Revision, created.Name, null, created.Frames,
+            created.Easing, created.LoopMode, created.PlaybackSpeed, created.LayerOrder);
+    }
+
     public static AnimationDraft Restore(AnimationId id, ModelRevisionReference model, Revision revision,
         string name, PoseId? basePoseId, IEnumerable<AnimationFrame> frames, AnimationEasing easing,
         AnimationLoopMode loopMode, double playbackSpeed, IEnumerable<ModelPartId>? layerOrder = null)
@@ -177,4 +186,56 @@ public sealed record AnimationDraft
     public AnimationDraft WithContent(string name, PoseId? basePoseId, IEnumerable<AnimationFrame> frames,
         AnimationEasing easing, AnimationLoopMode loopMode, double playbackSpeed, IEnumerable<ModelPartId>? layerOrder = null) =>
         Restore(Id, Model, Revision.Next(), name, basePoseId, frames, easing, loopMode, playbackSpeed, layerOrder ?? LayerOrder);
+
+    public AnimationDraft PrepareInitialSave(string name) =>
+        Restore(Id, Model, Revision.Initial, name, BasePoseId, Frames, Easing, LoopMode, PlaybackSpeed, LayerOrder);
+
+    /// <summary>Restores prior content while keeping identity and advancing the optimistic revision.</summary>
+    public AnimationDraft WithSnapshotContent(AnimationDraft snapshot)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+        if (Id != snapshot.Id || Model != snapshot.Model)
+            throw new ArgumentException("An animation history snapshot must belong to the same animation and model publication.", nameof(snapshot));
+        return WithContent(snapshot.Name, snapshot.BasePoseId, snapshot.Frames, snapshot.Easing,
+            snapshot.LoopMode, snapshot.PlaybackSpeed, snapshot.LayerOrder);
+    }
+
+    /// <summary>Builds a non-destructive preview snapshot after checking the exact model publication and rig.</summary>
+    public ModelDraftContent ApplyFrameToModelRevision(PublishedModelRevision modelRevision, AnimationFrameId frameId)
+    {
+        ArgumentNullException.ThrowIfNull(modelRevision);
+        if (Model != ModelRevisionReference.From(modelRevision))
+            throw new ArgumentException("The animation is pinned to a different model publication.", nameof(modelRevision));
+        var frame = Frames.FirstOrDefault(candidate => candidate.Id == frameId)
+            ?? throw new KeyNotFoundException("The animation frame does not exist.");
+        return ApplySnapshotToModelRevision(modelRevision, frame.Keys, frame.RigJoints);
+    }
+
+    internal ModelDraftContent ApplySnapshotToModelRevision(PublishedModelRevision modelRevision,
+        IEnumerable<AnimationPartKey> partKeys, IEnumerable<RigJoint> rigJoints)
+    {
+        ArgumentNullException.ThrowIfNull(modelRevision);
+        if (Model != ModelRevisionReference.From(modelRevision))
+            throw new ArgumentException("The animation is pinned to a different model publication.", nameof(modelRevision));
+        ArgumentNullException.ThrowIfNull(partKeys);
+        ArgumentNullException.ThrowIfNull(rigJoints);
+        var keysSnapshot = partKeys.ToArray();
+        var jointsSnapshot = rigJoints.ToArray();
+        var source = modelRevision.Content;
+        var sourcePartIds = source.Parts.Select(part => part.Id).ToHashSet();
+        if (!keysSnapshot.Select(key => key.PartId).ToHashSet().SetEquals(sourcePartIds)
+            || !LayerOrder.ToHashSet().SetEquals(sourcePartIds))
+            throw new ArgumentException("Animation keys and layer order must match the pinned model publication.", nameof(modelRevision));
+
+        var sourceJoints = source.RigJoints.ToDictionary(joint => joint.Id);
+        if (!jointsSnapshot.Select(joint => joint.Id).ToHashSet().SetEquals(sourceJoints.Keys)
+            || jointsSnapshot.Any(joint => sourceJoints[joint.Id].ParentPartId != joint.ParentPartId
+                || sourceJoints[joint.Id].ChildPartId != joint.ChildPartId))
+            throw new ArgumentException("The animation rig must match the pinned model topology.", nameof(modelRevision));
+
+        var keys = keysSnapshot.ToDictionary(key => key.PartId);
+        var parts = source.Parts.Select(part => part.WithTransform(keys[part.Id].Transform).WithVisibility(keys[part.Id].IsVisible));
+        return ModelDraftContent.Restore(source.SchemaVersion, source.ModelId, source.Revision, source.Slot,
+            source.SourceAssetId, source.SourceWidth, source.SourceHeight, parts, LayerOrder, jointsSnapshot);
+    }
 }

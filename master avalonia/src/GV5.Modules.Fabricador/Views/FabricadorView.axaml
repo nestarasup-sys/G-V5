@@ -51,7 +51,7 @@
 
             <Border Grid.Row="1" BorderBrush="#F0EBEF" BorderThickness="0,0,0,1" Padding="15,7">
                 <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto" ColumnSpacing="10">
-                    <StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center" IsVisible="{Binding IsModelWorkspace}">
+                    <StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center" IsVisible="{Binding IsEditorWorkspace}">
                         <Button Content="↶" Command="{Binding UndoCommand}" IsEnabled="{Binding CanUndo}" ToolTip.Tip="Desfazer última edição" Width="31" Height="31" Padding="0" />
                         <Button Content="↷" Command="{Binding RedoCommand}" IsEnabled="{Binding CanRedo}" ToolTip.Tip="Refazer edição desfeita" Width="31" Height="31" Padding="0" />
                         <TextBlock Text="{Binding UndoCount}" MinWidth="28" VerticalAlignment="Center" TextAlignment="Center" FontSize="10" Foreground="#958B96" />
@@ -85,10 +85,26 @@
                         <Button Content="{Binding PoseWorkspaceButtonLabel}"
                                 Command="{Binding TogglePoseWorkspaceCommand}"
                                 IsEnabled="{Binding CanTogglePoseWorkspace}"
+                                IsVisible="{Binding IsNotAnimationWorkspace}"
                                 Padding="10,6"
                                 Background="#FFF1F6"
                                 BorderBrush="#EFCBD8"
                                 Foreground="#A84368" />
+                        <Button Content="{Binding AnimationWorkspaceButtonLabel}"
+                                Command="{Binding ToggleAnimationWorkspaceCommand}"
+                                IsEnabled="{Binding CanToggleAnimationWorkspace}"
+                                IsVisible="{Binding IsModelWorkspace}"
+                                Padding="10,6"
+                                Background="#F3F0FF"
+                                BorderBrush="#DCD3FF"
+                                Foreground="#6450A5" />
+                        <Button Content="Voltar ao modelo"
+                                Command="{Binding ToggleAnimationWorkspaceCommand}"
+                                IsVisible="{Binding IsAnimationWorkspace}"
+                                Padding="10,6"
+                                Background="#F3F0FF"
+                                BorderBrush="#DCD3FF"
+                                Foreground="#6450A5" />
                         <Button Content="{Binding PublishRevisionButtonLabel}"
                                 Command="{Binding PublishModelRevisionCommand}"
                                 IsEnabled="{Binding CanPublishRevision}"
@@ -389,6 +405,130 @@
                             </Border>
                             <TextBlock Text="{Binding PoseEditorStatus}" IsVisible="{Binding IsPoseWorkspace}" TextWrapping="Wrap" FontSize="12" Foreground="#706872" />
                             <TextBlock Text="{Binding PoseEditorError}" IsVisible="{Binding HasPoseEditorError}" TextWrapping="Wrap" FontSize="12" Foreground="#B4233C" />
+                        </StackPanel>
+                    </ScrollViewer>
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" IsVisible="{Binding IsAnimationWorkspace}">
+                        <StackPanel Spacing="10" Margin="10">
+                            <StackPanel Spacing="3">
+                                <TextBlock Text="Animador do Fabricador" FontSize="15" FontWeight="Bold" Foreground="#342E36" />
+                                <TextBlock Text="{Binding AnimationModelRevisionLabel}" FontSize="12" Foreground="#706872" TextWrapping="Wrap" />
+                            </StackPanel>
+                            <Border Background="#F8F6FF" BorderBrush="#DDD6F4" BorderThickness="1" CornerRadius="8" Padding="9">
+                                <StackPanel Spacing="7">
+                                    <TextBlock Text="Animações salvas" FontWeight="SemiBold" Foreground="#6450A5" />
+                                    <TextBox PlaceholderText="Nome da animação" Text="{Binding AnimationName}" IsEnabled="{Binding CanEditAnimation}" />
+                                    <WrapPanel Orientation="Horizontal" ItemSpacing="6" LineSpacing="6">
+                                        <Button Content="Nova animação" Command="{Binding CreateAnimationCommand}" IsEnabled="{Binding CanCreateAnimation}" />
+                                        <Button Content="Salvar" Command="{Binding SaveAnimationCommand}" IsEnabled="{Binding CanSaveAnimation}" Background="#7058C9" Foreground="#FFFFFF" />
+                                    </WrapPanel>
+                                    <ItemsControl ItemsSource="{Binding SavedAnimations}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate x:DataType="vm:AnimationListItem">
+                                                <Button HorizontalContentAlignment="Left" Margin="0,0,0,4" Padding="8,6"
+                                                        Command="{Binding $parent[ItemsControl].DataContext.LoadAnimationCommand}"
+                                                        CommandParameter="{Binding Id}">
+                                                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8" Width="270">
+                                                        <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                                        <TextBlock Grid.Column="1" Text="{Binding RevisionLabel}" FontSize="11" Foreground="#6450A5" VerticalAlignment="Center" />
+                                                    </Grid>
+                                                </Button>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+                            </Border>
+
+                            <Border Background="#FBFAFB" BorderBrush="#EEE9ED" BorderThickness="1" CornerRadius="9" Padding="9">
+                                <StackPanel Spacing="8">
+                                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                                        <TextBlock Text="Quadros-chave" FontWeight="SemiBold" Foreground="#342E36" VerticalAlignment="Center" />
+                                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="5">
+                                            <Button Content="＋ Quadro" Command="{Binding AddAnimationFrameCommand}" IsEnabled="{Binding CanEditAnimation}" Padding="8,5" />
+                                            <Button Content="Excluir" Command="{Binding DeleteAnimationFrameCommand}" IsEnabled="{Binding CanDeleteAnimationFrame}" Padding="8,5" Foreground="#B4233C" />
+                                        </StackPanel>
+                                    </Grid>
+                                    <ItemsControl ItemsSource="{Binding AnimationFrames}">
+                                        <ItemsControl.ItemsPanel>
+                                            <ItemsPanelTemplate>
+                                                <WrapPanel Orientation="Horizontal" ItemSpacing="5" LineSpacing="5" />
+                                            </ItemsPanelTemplate>
+                                        </ItemsControl.ItemsPanel>
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate x:DataType="vm:AnimationFrameListItem">
+                                                <Button Padding="8,6" MinWidth="80"
+                                                        Command="{Binding $parent[ItemsControl].DataContext.SelectAnimationFrameCommand}"
+                                                        CommandParameter="{Binding Id}">
+                                                    <StackPanel Spacing="2">
+                                                        <TextBlock Text="{Binding NumberLabel}" FontWeight="Bold" HorizontalAlignment="Center" />
+                                                        <TextBlock Text="{Binding DurationLabel}" FontSize="10" HorizontalAlignment="Center" />
+                                                        <TextBlock Text="Selecionado" IsVisible="{Binding IsSelected}" FontSize="9" Foreground="#6450A5" HorizontalAlignment="Center" />
+                                                    </StackPanel>
+                                                </Button>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                    <StackPanel Orientation="Horizontal" Spacing="5">
+                                        <Button Content="← Mover quadro" Command="{Binding MoveAnimationFrameCommand}" CommandParameter="previous" IsEnabled="{Binding CanEditAnimation}" Padding="8,5" />
+                                        <Button Content="Mover quadro →" Command="{Binding MoveAnimationFrameCommand}" CommandParameter="next" IsEnabled="{Binding CanEditAnimation}" Padding="8,5" />
+                                    </StackPanel>
+                                    <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6">
+                                        <TextBox Text="{Binding AnimationFrameDuration}" IsEnabled="{Binding CanEditAnimation}" PlaceholderText="Duração em ms" />
+                                        <TextBlock Grid.Column="1" Text="ms" VerticalAlignment="Center" Foreground="#706872" />
+                                        <Button Grid.Column="2" Content="Aplicar" Command="{Binding ApplyAnimationFrameDurationCommand}" IsEnabled="{Binding CanEditAnimation}" Padding="8,5" />
+                                    </Grid>
+                                </StackPanel>
+                            </Border>
+
+                            <StackPanel Spacing="3">
+                                <TextBlock Text="Peças animadas" FontSize="13" FontWeight="Bold" Foreground="#342E36" />
+                                <ListBox ItemsSource="{Binding AnimationPartItems}" MinHeight="80" MaxHeight="190" Background="Transparent" BorderThickness="0">
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate x:DataType="vm:AnimationPartListItem">
+                                            <Button HorizontalContentAlignment="Left" Padding="8,6" Margin="0,0,0,3"
+                                                    Command="{Binding $parent[views:FabricadorView].DataContext.SelectAnimationPartCommand}"
+                                                    CommandParameter="{Binding Id}">
+                                                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8" Width="270">
+                                                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                                    <TextBlock Grid.Column="1" Text="{Binding VisibilityLabel}" FontSize="11" Foreground="#706872" />
+                                                </Grid>
+                                            </Button>
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
+                            </StackPanel>
+
+                            <Border Background="#F8F6FF" BorderBrush="#DDD6F4" BorderThickness="1" CornerRadius="9" Padding="9">
+                                <StackPanel Spacing="8">
+                                    <TextBlock Text="Transformação da peça no quadro" FontWeight="SemiBold" Foreground="#342E36" />
+                                    <Grid ColumnDefinitions="*,*" ColumnSpacing="6">
+                                        <TextBox Text="{Binding AnimationKeyX}" IsEnabled="{Binding CanEditAnimation}" PlaceholderText="Posição X" />
+                                        <TextBox Grid.Column="1" Text="{Binding AnimationKeyY}" IsEnabled="{Binding CanEditAnimation}" PlaceholderText="Posição Y" />
+                                    </Grid>
+                                    <TextBox Text="{Binding AnimationKeyRotation}" IsEnabled="{Binding CanEditAnimation}" PlaceholderText="Rotação em graus" />
+                                    <CheckBox Content="Peça visível neste quadro" IsChecked="{Binding AnimationKeyVisible}" IsEnabled="{Binding CanEditAnimation}" />
+                                    <Button Content="Aplicar transformação" Command="{Binding ApplyAnimationKeyCommand}" IsEnabled="{Binding CanApplyAnimationKey}" Padding="9,6" />
+                                </StackPanel>
+                            </Border>
+
+                            <Border Background="#FBFAFB" BorderBrush="#EEE9ED" BorderThickness="1" CornerRadius="9" Padding="9">
+                                <StackPanel Spacing="8">
+                                    <TextBlock Text="Reprodução e interpolação" FontWeight="SemiBold" Foreground="#342E36" />
+                                    <ComboBox ItemsSource="{Binding AnimationEasingOptions}" SelectedItem="{Binding SelectedAnimationEasingOption}" DisplayMemberBinding="{Binding Label}" />
+                                    <ComboBox ItemsSource="{Binding AnimationLoopModeOptions}" SelectedItem="{Binding SelectedAnimationLoopModeOption}" DisplayMemberBinding="{Binding Label}" />
+                                    <TextBlock Text="{Binding AnimationDurationLabel}" FontSize="11" Foreground="#706872" />
+                                    <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="7">
+                                        <TextBlock Text="Velocidade" VerticalAlignment="Center" Foreground="#706872" />
+                                        <Slider Grid.Column="1" Minimum="0.1" Maximum="4" TickFrequency="0.1" IsSnapToTickEnabled="False" Value="{Binding AnimationPlaybackSpeed}" />
+                                        <TextBlock Grid.Column="2" Text="{Binding AnimationPlaybackSpeed, StringFormat='{}{0:0.0}×'}" VerticalAlignment="Center" Foreground="#706872" />
+                                    </Grid>
+                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                        <Button Content="Aplicar parâmetros" Command="{Binding ApplyAnimationSettingsCommand}" IsEnabled="{Binding CanEditAnimation}" Padding="8,5" />
+                                        <Button Content="{Binding AnimationPlaybackButtonLabel}" Command="{Binding ToggleAnimationPlaybackCommand}" Padding="8,5" />
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
+                            <TextBlock Text="{Binding AnimationEditorStatus}" TextWrapping="Wrap" FontSize="12" Foreground="#706872" />
+                            <TextBlock Text="{Binding AnimationEditorError}" IsVisible="{Binding HasAnimationEditorError}" TextWrapping="Wrap" FontSize="12" Foreground="#B4233C" />
                         </StackPanel>
                     </ScrollViewer>
                     </Grid>

@@ -39,6 +39,7 @@ public sealed class FabricadorImportPreviewUiTests
         var sourceBytes = CreateModelSheetPng();
         ModelId modelId;
         PoseId savedPoseId;
+        AnimationId savedAnimationId;
         ModelDraftContent savedContent;
 
         try
@@ -54,6 +55,7 @@ public sealed class FabricadorImportPreviewUiTests
                 var contentRepository = new SqliteModelDraftContentRepository(database);
                 var revisionRepository = new SqliteModelRevisionRepository(database);
                 var poseRepository = new SqlitePoseRepository(database);
+                var animationRepository = new SqliteAnimationRepository(database);
                 var duplicatePoseService = new DuplicatePoseService(poseRepository);
                 using var renderAssetsCache = new AssetBitmapCache(16 * 1024 * 1024);
                 var sceneRenderer = new SkiaRenderer(new TestRenderAssetProvider(assetStore, decoder, renderAssetsCache));
@@ -74,7 +76,8 @@ public sealed class FabricadorImportPreviewUiTests
                     publishModelRevisionService: publishService,
                     modelRevisionRepository: revisionRepository,
                     poseRepository: poseRepository,
-                    duplicatePoseService: duplicatePoseService);
+                    duplicatePoseService: duplicatePoseService,
+                    animationRepository: animationRepository);
                 viewModel.ModelName = "Modelo SQLite real";
                 var window = new Window { Width = 900, Height = 700, Content = new FabricadorView { DataContext = viewModel } };
                 window.Show();
@@ -233,6 +236,54 @@ public sealed class FabricadorImportPreviewUiTests
                     await viewModel.TogglePoseWorkspaceCommand.ExecuteAsync(null);
                     Assert.False(viewModel.IsPoseWorkspace);
                     Assert.Null(viewModel.PosePreviewContent);
+
+                    await viewModel.ToggleAnimationWorkspaceCommand.ExecuteAsync(null);
+                    Assert.True(viewModel.IsAnimationWorkspace);
+                    Assert.Contains("versão 01", viewModel.AnimationModelRevisionLabel, StringComparison.OrdinalIgnoreCase);
+                    await viewModel.CreateAnimationCommand.ExecuteAsync(null);
+                    Assert.Single(viewModel.AnimationFrames);
+                    var animationPart = viewModel.AnimationPartItems.First(item => item.Id == movable.Id);
+                    viewModel.SelectAnimationPartCommand.Execute(animationPart.Id);
+                    var initialAnimationBounds = viewModel.SelectedPartBounds;
+                    Assert.NotNull(initialAnimationBounds);
+                    var initialAnimationX = double.Parse(viewModel.AnimationKeyX, System.Globalization.CultureInfo.InvariantCulture);
+                    viewModel.AnimationKeyX = (initialAnimationX + 5).ToString(System.Globalization.CultureInfo.InvariantCulture);
+                    viewModel.ApplyAnimationKeyCommand.Execute(null);
+                    Assert.NotEqual(initialAnimationBounds, viewModel.SelectedPartBounds);
+                    Assert.Equal(1, viewModel.UndoCount);
+                    viewModel.UndoCommand.Execute(null);
+                    Assert.Equal(initialAnimationBounds, viewModel.SelectedPartBounds);
+                    Assert.Equal(1, viewModel.RedoCount);
+                    viewModel.RedoCommand.Execute(null);
+                    Assert.NotEqual(initialAnimationBounds, viewModel.SelectedPartBounds);
+
+                    viewModel.AddAnimationFrameCommand.Execute(null);
+                    Assert.Equal(2, viewModel.AnimationFrames.Count);
+                    Assert.Equal(2, viewModel.UndoCount);
+                    viewModel.UndoCommand.Execute(null);
+                    Assert.Single(viewModel.AnimationFrames);
+                    viewModel.RedoCommand.Execute(null);
+                    Assert.Equal(2, viewModel.AnimationFrames.Count);
+                    viewModel.AnimationName = "Ciclo de teste";
+                    viewModel.SelectedAnimationLoopModeOption = viewModel.AnimationLoopModeOptions.Single(option => option.Value == AnimationLoopMode.PingPong);
+                    viewModel.ApplyAnimationSettingsCommand.Execute(null);
+                    Assert.Contains("Parâmetros aplicados", viewModel.AnimationEditorStatus, StringComparison.OrdinalIgnoreCase);
+                    await viewModel.SaveAnimationCommand.ExecuteAsync(null);
+                    Assert.Null(viewModel.AnimationEditorError);
+                    Assert.Contains("Salva", viewModel.AnimationEditorStatus, StringComparison.OrdinalIgnoreCase);
+                    savedAnimationId = Assert.Single(viewModel.SavedAnimations).Id;
+                    await viewModel.ToggleAnimationWorkspaceCommand.ExecuteAsync(null);
+                    Assert.False(viewModel.IsAnimationWorkspace);
+
+                    await viewModel.ToggleAnimationWorkspaceCommand.ExecuteAsync(null);
+                    Assert.True(viewModel.IsAnimationWorkspace);
+                    await viewModel.LoadAnimationCommand.ExecuteAsync(savedAnimationId);
+                    Assert.Equal("Ciclo de teste", viewModel.AnimationName);
+                    Assert.Equal(2, viewModel.AnimationFrames.Count);
+                    Assert.Equal(AnimationLoopMode.PingPong, viewModel.SelectedAnimationLoopMode);
+                    Assert.Null(viewModel.AnimationEditorError);
+                    await viewModel.ToggleAnimationWorkspaceCommand.ExecuteAsync(null);
+                    Assert.False(viewModel.IsAnimationWorkspace);
                 }
                 finally
                 {
@@ -296,6 +347,13 @@ public sealed class FabricadorImportPreviewUiTests
                 Assert.Equal("Braços", pose.Value.Category);
                 Assert.Single(publications.Value);
                 Assert.Equal("Pose de teste", publications.Value[0].Name);
+                var reopenedAnimations = new SqliteAnimationRepository(reopenedDatabase);
+                var animation = await reopenedAnimations.GetAsync(savedAnimationId, cancellationToken);
+                Assert.True(animation.IsSuccess, animation.Error?.Message);
+                Assert.Equal("Ciclo de teste", animation.Value.Name);
+                Assert.Equal(Revision.From(1), animation.Value.Revision);
+                Assert.Equal(2, animation.Value.Frames.Length);
+                Assert.Equal(AnimationLoopMode.PingPong, animation.Value.LoopMode);
             }
         }
         finally
@@ -593,7 +651,8 @@ public sealed class FabricadorImportPreviewUiTests
         new ModelDraftContentSchemaMigration(),
         new ModelRevisionSchemaMigration(),
         new ModelRigJointSchemaMigration(),
-        new PoseRepositorySchemaMigration()
+        new PoseRepositorySchemaMigration(),
+        new AnimationRepositorySchemaMigration()
     ]);
 
     private static byte[] CreateModelSheetPng()
