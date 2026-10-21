@@ -13,13 +13,13 @@
 | Branch obrigatória | `Master-AValonia` |
 | Pasta exclusiva do novo aplicativo | `master avalonia/` |
 | Commit-base inspecionado antes deste arquivo | `53b7f7a97321e85063a8dd4f9635e48d36548323` |
-| Último commit de implementação validado | `c7bd351` (F04.08; snap engine independente de UI) |
+| Último commit de implementação validado | `7a538d2` (F04.09; encaixe geométrico de roupas) |
 | Fase ativa | **F04 — Geometry Engine canônica** |
-| Última tarefa VALIDADA | **F04.08** — snap/guides independentes de UI/documento |
-| Próxima tarefa PENDENTE | **F04.09** — WardrobeBinding e fixtures neutro/rotacionado/espelhado |
+| Última tarefa VALIDADA | **F04.09** — WardrobeBinding e fixtures neutro/rotacionado/espelhado |
+| Próxima tarefa PENDENTE | **F04.10** — precisão, determinismo, reversão e comparação com o legado |
 | Requisito transversal adicionado | Fidelidade visual ao Gacha 5 Electron, registrada em ADR-0004; documentos em `docs/ui-fidelity/`; sem paridade visual aprovada ainda |
 | Gate atual | **GATE F00: PASSOU; G0: PASSOU; F02: PASSOU; F03: PASSOU; G1 global em execução até F04–F05** |
-| Progresso validado neste controle | **60 / 247 tarefas (24,3%)** |
+| Progresso validado neste controle | **61 / 247 tarefas (24,7%)** |
 | Tarefas em execução | Nenhuma |
 | Bloqueios conhecidos | Primeiro download do SDK em clone vazio não progrediu; evidência e limite de F01 estão registrados em `docs/gates/GATE-F01.md` |
 | Aceite Windows/GPU | **Não executado / não registrado** |
@@ -49,7 +49,7 @@ Se o Codex encontrar algo já implementado, **validar e registrar evidências**,
 | F01 | Solution .NET, contratos, módulo e CI | 13 | 13 | VALIDADA | G0 PASSOU |
 | F02 | SQLite, revisões, transações e recuperação básica | 15 | 15 | VALIDADA | GATE-F02 PASSOU |
 | F03 | AssetStore, thumbnails e cache limitado | 11 | 11 | VALIDADA | GATE-F03 PASSOU; G1 global em execução |
-| F04 | Geometry Engine canônica | 11 | 8 | EM_EXECUCAO | G1 global em execução |
+| F04 | Geometry Engine canônica | 11 | 9 | EM_EXECUCAO | G1 global em execução |
 | F05 | RenderScene e SkiaRenderer independentes | 11 | 0 | PENDENTE | — |
 | F06 | Fabricador I — modelos e peças | 14 | 0 | PENDENTE | — |
 | F07 | Fabricador II — rig, poses e animador | 12 | 0 | PENDENTE | — |
@@ -132,6 +132,7 @@ Adicionar uma linha ao concluir ou bloquear cada tarefa. A linha inicial abaixo 
 | **F04.06** | **VALIDADA** | `b9c9b6d` | `RigSkeleton` compõe matriz global de partes em ordem pai→filho; joints/bones guardam âncoras nos dois lados, modo e indicação de sugestão. Teste de torso→braço→mão confirma propagação da translação, escala, rotação e ponto de ancoragem. Ciclos, auto-parent, múltiplas juntas para o mesmo filho, IDs/pais inválidos e poses incompletas são rejeitados. `TestarLocal.bat rapido`: build 0 erros; Core 11/11, Architecture 6/6, Geometry 23/23, Assets 27/27, Data 44/44, Headless 15/15. | `src/GV5.Geometry/RigSkeleton.cs`; `tests/GV5.Geometry.Tests/RigSkeletonTests.cs` | `Mode`/`IsSuggested` são metadados da junta; regras interativas de bloqueio/heurística continuam na implementação de Fabricador, não nesta engine geométrica. 2 avisos CS0618 Skia fora do escopo. |
 | **F04.07** | **VALIDADA** | `6fe6992` | `GeometryHitTester` mapeia ponto global para coordenada local por matriz inversa, respeita retângulo e clip local, escolhe maior z-order e desempata pelo item mais recente; regiões singulares são ignoradas. `Matrix2D.TransformBounds` calcula AABB após rotação/flip; `Rect2D.Intersect` computa crop/interseção, incluindo limites encostados. Testes cobrem transformação, seleção, clip, singularidade, bounds e interseção. `TestarLocal.bat rapido`: build 0 erros; Core 11/11, Architecture 6/6, Geometry 27/27, Assets 27/27, Data 44/44, Headless 15/15. | `src/GV5.Geometry/GeometryHitTester.cs`; `src/GV5.Geometry/Matrix2D.cs`; `src/GV5.Geometry/Rect2D.cs`; `tests/GV5.Geometry.Tests/GeometryHitTesterTests.cs` | 2 avisos CS0618 Skia em thumbnail; o tester retangular não substitui hit testing por pixel alpha, que não faz parte do critério F04.07. |
 | **F04.08** | **VALIDADA** | `c7bd351` | `SnapEngine` calcula deslocamento independente nos eixos a partir de guias verticais/horizontais e anchors start/center/end, com limiar finito não negativo, escolha de candidato mais próximo e desempate determinístico pela ordem dos guias. Resultado pode aplicar o deslocamento diretamente a bounds; não acessa Avalonia, documento ou estado de ferramenta. Testes cobrem correspondência nos dois eixos, aplicação, fora do limiar, entradas inválidas e desempate. `TestarLocal.bat rapido`: build 0 erros; Core 11/11, Architecture 6/6, Geometry 30/30, Assets 27/27, Data 44/44, Headless 15/15. | `src/GV5.Geometry/Snapping.cs`; `tests/GV5.Geometry.Tests/SnapEngineTests.cs` | A tolerância está em unidades geométricas; UI futura deve converter o threshold em unidades de cena antes de chamar a engine. 2 avisos CS0618 em thumbnail. |
+| **F04.09** | **VALIDADA** | `7a538d2` | `WardrobeBinding` congela o centro local normalizado, proporções de largura/altura e rotação relativa a um `BoneId`, seguindo as fórmulas de `poseTransform.ts` do Electron. `WardrobeBindingMath.Resolve` reprojeta para pose neutra, girada e espelhada, mantendo escalas X/Y independentes e sem modificar a peça de origem. Fixtures sintéticas em testes cobrem preservação neutra, rotação + escala não uniforme, flip horizontal e erros de identidade/dimensão. `TestarLocal.bat rapido`: build 0 erros; Core 11/11, Architecture 6/6, Geometry 34/34, Assets 27/27, Data 44/44, Headless 15/15. | `src/GV5.Geometry/WardrobeBindingMath.cs`; `tests/GV5.Geometry.Tests/WardrobeBindingMathTests.cs`; legado consultado em `src/renderer/src/features/fabricator/wardrobe/poseTransform.ts` (somente leitura) | A lógica cobre binding/placement geométrico; overlap de joelho e padding de mangas são regras visuais de categoria do legado e ficam para os módulos de roupa/renderização. 2 avisos CS0618 em thumbnail. |
 
 **Estados aceitos:** `PENDENTE`, `EM_EXECUCAO`, `BLOQUEADA`, `VALIDADA`.
 
@@ -233,6 +234,7 @@ Toda mudança material do roteiro ou arquitetura deve apontar para um ADR em `do
 | 2026-10-21 | `b9c9b6d` | F04.06 validada; próxima F04.07 | G1 em execução | Rig com junta/âncora e propagação torso→braço→mão; ciclos/relacionamentos inválidos rejeitados. Suíte rápida: Core 11, Architecture 6, Geometry 23, Assets 27, Data 44, Headless 15; build 0 erros, 2 avisos Skia. |
 | 2026-10-21 | `6fe6992` | F04.07 validada; próxima F04.08 | G1 em execução | Hit test local invertido com clip/z-order, bounds rotacionados/espelhados e interseção; suíte rápida: Core 11, Architecture 6, Geometry 27, Assets 27, Data 44, Headless 15; build 0 erros, 2 avisos Skia. |
 | 2026-10-21 | `c7bd351` | F04.08 validada; próxima F04.09 | G1 em execução | Snap por anchors e guias, com threshold validado e desempate determinístico; suíte rápida: Core 11, Architecture 6, Geometry 30, Assets 27, Data 44, Headless 15; build 0 erros, 2 avisos Skia. |
+| 2026-10-21 | `7a538d2` | F04.09 validada; próxima F04.10 | G1 em execução | WardrobeBinding mantém proporções, posição relativa e ângulo no osso de origem, com fixtures neutra/rotacionada/espelhada; suíte rápida: Core 11, Architecture 6, Geometry 34, Assets 27, Data 44, Headless 15; build 0 erros, 2 avisos Skia. |
 
 Após concluir um lote ou fase, adicionar uma linha. Não inflar contador só porque o commit contém múltiplos arquivos; contar apenas tarefas comprovadas.
 
@@ -241,7 +243,7 @@ Após concluir um lote ou fase, adicionar uma linha. Não inflar contador só po
 1. Confirmar branch, HEAD e árvore de trabalho localmente; não consultar nem sincronizar o remoto até autorização explícita.
 2. Ler `AGENTS.md`, `PLANO_DO_NOVO_APP.md`, `PLANO_MESTRE_EXECUCAO_CODEX.md` e este arquivo.
 3. Inspecionar evidências reais da última tarefa validada; caso não existam, corrigir seu estado.
-4. **Retomar F04.09**: implementar matemática de WardrobeBinding com fixtures neutro/rotacionado/espelhado, mantendo Geometry independente de Avalonia.
+4. **Retomar F04.10**: testar precisão, determinismo, reversão de transforms e comparar casos geométricos com o legado, sem abrir dados pessoais.
 5. Continuar automaticamente pelas tarefas seguintes **uma de cada vez**, em lotes flexíveis de aproximadamente 3–8 tarefas relacionadas, enquanto todos os gates pertinentes passam.
 6. Atualizar o registro e commitar entregas reais localmente na branch `Master-AValonia`; não desenvolver Video Studio antecipadamente.
 7. Ao encerrar, informar: **branch, HEAD, último ID VALIDADO, próximo ID PENDENTE, commits, comandos verdes, evidências, bloqueios e condição de desbloqueio**.
