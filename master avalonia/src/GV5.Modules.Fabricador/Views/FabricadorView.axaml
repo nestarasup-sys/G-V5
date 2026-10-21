@@ -29,6 +29,7 @@
                         <TextBox x:Name="ModelNameInput"
                                  Text="{Binding ModelName}"
                                  IsEnabled="{Binding CanEdit}"
+                                 IsVisible="{Binding IsModelWorkspace}"
                                  PlaceholderText="Nome do modelo"
                                  MinWidth="180"
                                  MaxWidth="320"
@@ -39,6 +40,7 @@
                             Content="＋  Importar folha"
                             Command="{Binding SelectModelSourceCommand}"
                             IsEnabled="{Binding CanSelectModelSource}"
+                            IsVisible="{Binding IsModelWorkspace}"
                             VerticalAlignment="Center"
                             Padding="12,8"
                             BorderBrush="#EFCBD8"
@@ -49,12 +51,12 @@
 
             <Border Grid.Row="1" BorderBrush="#F0EBEF" BorderThickness="0,0,0,1" Padding="15,7">
                 <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto" ColumnSpacing="10">
-                    <StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center">
+                    <StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center" IsVisible="{Binding IsModelWorkspace}">
                         <Button Content="↶" Command="{Binding UndoCommand}" IsEnabled="{Binding CanUndo}" ToolTip.Tip="Desfazer última edição" Width="31" Height="31" Padding="0" />
                         <Button Content="↷" Command="{Binding RedoCommand}" IsEnabled="{Binding CanRedo}" ToolTip.Tip="Refazer edição desfeita" Width="31" Height="31" Padding="0" />
                         <TextBlock Text="{Binding UndoCount}" MinWidth="28" VerticalAlignment="Center" TextAlignment="Center" FontSize="10" Foreground="#958B96" />
                     </StackPanel>
-                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="5" VerticalAlignment="Center">
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="5" VerticalAlignment="Center" IsVisible="{Binding IsModelWorkspace}">
                         <RadioButton Content="Selecionar"
                                      GroupName="FabricatorTool"
                                      IsChecked="{Binding IsSelectTool}"
@@ -75,19 +77,29 @@
                     <TextBlock x:Name="SaveStateText"
                                Grid.Column="3"
                                Text="{Binding SaveStateLabel}"
+                               IsVisible="{Binding IsModelWorkspace}"
                                VerticalAlignment="Center"
                                Foreground="#8E898F"
                                Margin="0,0,3,0" />
                     <StackPanel Grid.Column="4" Orientation="Horizontal" Spacing="7" VerticalAlignment="Center">
+                        <Button Content="{Binding PoseWorkspaceButtonLabel}"
+                                Command="{Binding TogglePoseWorkspaceCommand}"
+                                IsEnabled="{Binding CanTogglePoseWorkspace}"
+                                Padding="10,6"
+                                Background="#FFF1F6"
+                                BorderBrush="#EFCBD8"
+                                Foreground="#A84368" />
                         <Button Content="{Binding PublishRevisionButtonLabel}"
                                 Command="{Binding PublishModelRevisionCommand}"
                                 IsEnabled="{Binding CanPublishRevision}"
+                                IsVisible="{Binding IsModelWorkspace}"
                                 Padding="10,6"
                                 BorderBrush="#EFCBD8"
                                 Foreground="#A84368" />
                         <Button Content="Salvar"
                                 Command="{Binding SaveCommand}"
                                 IsEnabled="{Binding CanSave}"
+                                IsVisible="{Binding IsModelWorkspace}"
                                 Padding="12,6"
                                 Background="#C74677"
                                 Foreground="#FFFFFF" />
@@ -107,14 +119,14 @@
                             <Grid ColumnDefinitions="*,Auto">
                                 <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
                                     <Ellipse Width="6" Height="6" Fill="#E786A6" />
-                                    <TextBlock Text="CANVAS DE MONTAGEM" FontSize="12" FontWeight="Bold" LetterSpacing="0.8" Foreground="#A198A2" />
+                                    <TextBlock Text="{Binding CanvasHeader}" FontSize="12" FontWeight="Bold" LetterSpacing="0.8" Foreground="#A198A2" />
                                 </StackPanel>
-                                <TextBlock Grid.Column="1" Text="Prévia do modelo" FontSize="12" Foreground="#A198A2" VerticalAlignment="Center" />
+                                <TextBlock Grid.Column="1" Text="{Binding CanvasSubtitle}" FontSize="12" Foreground="#A198A2" VerticalAlignment="Center" />
                             </Grid>
                         </Border>
                         <views:FabricatorCanvas x:Name="ModelCanvas" Grid.Row="1" MinHeight="360" />
                         <Border Grid.Row="2" BorderBrush="#EEE9ED" BorderThickness="0,1,0,0" Padding="9,0">
-                            <TextBlock Text="Arraste a peça para posicionar  ·  Arraste o fundo para mover a prévia"
+                            <TextBlock Text="{Binding CanvasHelpText}"
                                        VerticalAlignment="Center"
                                        FontSize="12"
                                        Foreground="#A29AA3"
@@ -129,7 +141,8 @@
                         BorderThickness="1"
                         CornerRadius="11"
                         ClipToBounds="True">
-                    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                    <Grid>
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" IsVisible="{Binding IsModelWorkspace}">
                         <StackPanel Spacing="10" Margin="10">
                             <StackPanel Spacing="3">
                                 <TextBlock Text="Camadas" FontSize="15" FontWeight="Bold" Foreground="#342E36" />
@@ -279,9 +292,77 @@
                             <TextBlock x:Name="SaveErrorText" Text="{Binding SaveError}" IsVisible="{Binding HasSaveError}" TextWrapping="Wrap" Foreground="#B4233C" />
                             <TextBlock Text="{Binding PublishStatus}" IsVisible="{Binding HasPublishStatus}" TextWrapping="Wrap" Foreground="#342E36" />
                             <TextBlock Text="{Binding PublishError}" IsVisible="{Binding HasPublishError}" TextWrapping="Wrap" Foreground="#B4233C" />
+                            <TextBlock Text="{Binding PoseEditorError}" IsVisible="{Binding HasPoseEditorError}" TextWrapping="Wrap" Foreground="#B4233C" />
                             <TextBlock Text="{Binding ModelRenderError}" IsVisible="{Binding HasModelRenderError}" TextWrapping="Wrap" Foreground="#B4233C" />
                         </StackPanel>
                     </ScrollViewer>
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" IsVisible="{Binding IsPoseWorkspace}">
+                        <StackPanel Spacing="10" Margin="10">
+                            <StackPanel Spacing="3">
+                                <TextBlock Text="Editor de poses" FontSize="15" FontWeight="Bold" Foreground="#342E36" />
+                                <TextBlock Text="{Binding PoseModelRevisionLabel}" FontSize="12" Foreground="#706872" TextWrapping="Wrap" />
+                            </StackPanel>
+                            <Border Background="#FFF9FB" BorderBrush="#F0D7E1" BorderThickness="1" CornerRadius="8" Padding="9">
+                                <StackPanel Spacing="4">
+                                    <TextBlock Text="Pose temporária" FontWeight="SemiBold" Foreground="#A84368" />
+                                    <TextBlock Text="Mover e girar atualizam a prévia a partir da revisão publicada. Salvar, duplicar e publicar poses entram na próxima etapa." FontSize="11" Foreground="#706872" TextWrapping="Wrap" />
+                                </StackPanel>
+                            </Border>
+                            <StackPanel Spacing="3">
+                                <TextBlock Text="Peças do modelo" FontSize="13" FontWeight="Bold" Foreground="#342E36" />
+                                <ListBox ItemsSource="{Binding PosePartItems}"
+                                         MinHeight="100"
+                                         MaxHeight="260"
+                                         Background="Transparent"
+                                         BorderThickness="0">
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate x:DataType="vm:ModelPartLayerItem">
+                                            <Button HorizontalContentAlignment="Left"
+                                                    Command="{Binding $parent[views:FabricadorView].DataContext.SelectPosePartCommand}"
+                                                    CommandParameter="{Binding Id}"
+                                                    Padding="8,7"
+                                                    Margin="0,0,0,3"
+                                                    BorderBrush="#EEE9ED"
+                                                    Background="#FFFFFF">
+                                                <StackPanel Spacing="2">
+                                                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" Foreground="#342E36" />
+                                                    <TextBlock Text="{Binding LayerStatus}" FontSize="11" Foreground="#AAA1AA" />
+                                                    <TextBlock Text="Peça selecionada" IsVisible="{Binding IsSelected}" FontSize="10" FontWeight="SemiBold" Foreground="#A84368" />
+                                                </StackPanel>
+                                            </Button>
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
+                            </StackPanel>
+                            <Border Background="#FBFAFB" BorderBrush="#EEE9ED" BorderThickness="1" CornerRadius="9" Padding="9">
+                                <StackPanel Spacing="8">
+                                    <TextBlock Text="Mover peça" FontWeight="SemiBold" Foreground="#342E36" />
+                                    <Grid ColumnDefinitions="*,*,*" RowDefinitions="Auto,Auto,Auto" HorizontalAlignment="Center">
+                                        <Button Grid.Column="1" Content="↑" Command="{Binding NudgePosePartCommand}" CommandParameter="up" IsEnabled="{Binding CanMoveSelectedPosePart}" Width="48" />
+                                        <Button Grid.Row="1" Content="←" Command="{Binding NudgePosePartCommand}" CommandParameter="left" IsEnabled="{Binding CanMoveSelectedPosePart}" Width="48" />
+                                        <Button Grid.Row="1" Grid.Column="1" Content="5 px" IsEnabled="False" Width="48" />
+                                        <Button Grid.Row="1" Grid.Column="2" Content="→" Command="{Binding NudgePosePartCommand}" CommandParameter="right" IsEnabled="{Binding CanMoveSelectedPosePart}" Width="48" />
+                                        <Button Grid.Row="2" Grid.Column="1" Content="↓" Command="{Binding NudgePosePartCommand}" CommandParameter="down" IsEnabled="{Binding CanMoveSelectedPosePart}" Width="48" />
+                                    </Grid>
+                                    <TextBlock Text="As juntas fixas acompanham a peça. Tronco e cabeça não podem ser reposicionados." FontSize="11" Foreground="#706872" TextWrapping="Wrap" />
+                                </StackPanel>
+                            </Border>
+                            <Border Background="#FBFAFB" BorderBrush="#EEE9ED" BorderThickness="1" CornerRadius="9" Padding="9">
+                                <StackPanel Spacing="8">
+                                    <TextBlock Text="Girar peça" FontWeight="SemiBold" Foreground="#342E36" />
+                                    <Grid ColumnDefinitions="*,*" ColumnSpacing="7">
+                                        <Button Content="↶  Girar 15°" Command="{Binding RotatePosePartCommand}" CommandParameter="left" IsEnabled="{Binding CanRotateSelectedPosePart}" Padding="8,7" />
+                                        <Button Grid.Column="1" Content="Girar 15°  ↷" Command="{Binding RotatePosePartCommand}" CommandParameter="right" IsEnabled="{Binding CanRotateSelectedPosePart}" Padding="8,7" />
+                                    </Grid>
+                                    <CheckBox Content="Incluir descendentes de juntas fixas"
+                                              IsChecked="{Binding PoseRotateIncludesFixedDescendants}" />
+                                </StackPanel>
+                            </Border>
+                            <TextBlock Text="{Binding PoseEditorStatus}" IsVisible="{Binding IsPoseWorkspace}" TextWrapping="Wrap" FontSize="12" Foreground="#706872" />
+                            <TextBlock Text="{Binding PoseEditorError}" IsVisible="{Binding HasPoseEditorError}" TextWrapping="Wrap" FontSize="12" Foreground="#B4233C" />
+                        </StackPanel>
+                    </ScrollViewer>
+                    </Grid>
                 </Border>
             </Grid>
         </Grid>

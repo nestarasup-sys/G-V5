@@ -67,7 +67,8 @@ public partial class FabricadorView : UserControl
             or nameof(FabricadorViewModel.ActiveTool)
             or nameof(FabricadorViewModel.CanEditRig)
             or nameof(FabricadorViewModel.RigJointItems)
-            or nameof(FabricadorViewModel.SelectedRigJoint))
+            or nameof(FabricadorViewModel.SelectedRigJoint)
+            or nameof(FabricadorViewModel.IsPoseWorkspace))
         {
             if (Dispatcher.UIThread.CheckAccess())
             {
@@ -197,7 +198,10 @@ public partial class FabricadorView : UserControl
             return;
         }
 
-        ModelCanvas.SetSelection(_viewModel.SelectedPartBounds, _viewModel.SelectedPartPivot);
+        ModelCanvas.SetSelection(
+            _viewModel.SelectedPartBounds,
+            _viewModel.SelectedPartPivot,
+            showTransformHandles: !_viewModel.IsPoseWorkspace);
         ModelCanvas.SetTool(_viewModel.ActiveTool);
         ModelCanvas.SetRigJoints(
             _viewModel.RigJointItems.Select(item => item.Joint),

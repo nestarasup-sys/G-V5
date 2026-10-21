@@ -36,6 +36,7 @@ public partial class FabricatorCanvas : UserControl
     private RigJoint[] _rigJoints = [];
     private RigJointId? _selectedRigJointId;
     private bool _canEditRig;
+    private bool _showTransformHandles = true;
     private (RigJointId JointId, bool IsParent)? _activeRigAnchor;
     private SnapResult _activeRigSnap;
     private bool _isPanning;
@@ -61,10 +62,11 @@ public partial class FabricatorCanvas : UserControl
         Cursor = new Cursor(tool == FabricatorTool.Pan ? StandardCursorType.Hand : StandardCursorType.Arrow);
     }
 
-    public void SetSelection(Rect2D? bounds, Point2D? rotationPivot = null)
+    public void SetSelection(Rect2D? bounds, Point2D? rotationPivot = null, bool showTransformHandles = true)
     {
         SelectedBounds = bounds;
         RotationPivot = bounds is null ? null : rotationPivot;
+        _showTransformHandles = showTransformHandles;
         UpdateViewport();
     }
 
@@ -228,7 +230,7 @@ public partial class FabricatorCanvas : UserControl
 
     private bool TryGetHandleGesture(Point pointer, out ModelPartTransformKind kind)
     {
-        if (Frame is null || SelectedBounds is not { } bounds)
+        if (!_showTransformHandles || Frame is null || SelectedBounds is not { } bounds)
         {
             kind = default;
             return false;
@@ -362,7 +364,7 @@ public partial class FabricatorCanvas : UserControl
             var scaleHandleTop = top + bounds.Bottom * scale - ScaleHandle.Height / 2;
             Canvas.SetLeft(ScaleHandle, scaleHandleLeft);
             Canvas.SetTop(ScaleHandle, scaleHandleTop);
-            ScaleHandle.IsVisible = true;
+            ScaleHandle.IsVisible = _showTransformHandles;
 
             var pivot = RotationPivot ?? new Point2D(bounds.X + bounds.Width / 2, bounds.Y + bounds.Height / 2);
             var pivotScreen = new Point(left + pivot.X * scale, top + pivot.Y * scale);
@@ -370,8 +372,8 @@ public partial class FabricatorCanvas : UserControl
             Canvas.SetTop(RotationHandle, pivotScreen.Y - 24 - RotationHandle.Height / 2);
             RotationStem.StartPoint = pivotScreen;
             RotationStem.EndPoint = new Point(pivotScreen.X, pivotScreen.Y - 24);
-            RotationStem.IsVisible = true;
-            RotationHandle.IsVisible = true;
+            RotationStem.IsVisible = _showTransformHandles;
+            RotationHandle.IsVisible = _showTransformHandles;
         }
         else
         {

@@ -68,7 +68,8 @@ public sealed class FabricadorImportPreviewUiTests
                     contentRepository: contentRepository,
                     sceneRenderer: sceneRenderer,
                     autosaveDelay: TimeSpan.FromHours(1),
-                    publishModelRevisionService: publishService);
+                    publishModelRevisionService: publishService,
+                    modelRevisionRepository: revisionRepository);
                 viewModel.ModelName = "Modelo SQLite real";
                 var window = new Window { Width = 900, Height = 700, Content = new FabricadorView { DataContext = viewModel } };
                 window.Show();
@@ -128,6 +129,57 @@ public sealed class FabricadorImportPreviewUiTests
 
                     Assert.True(await viewModel.FlushPendingChangesAsync(cancellationToken));
                     Assert.Equal(PersistenceState.Saved, viewModel.SaveState);
+
+                    var beforePoseResult = await contentRepository.GetAsync(loadedContent.Value.ModelId, cancellationToken);
+                    Assert.True(beforePoseResult.IsSuccess, beforePoseResult.Error?.Message);
+                    var modelBeforePose = beforePoseResult.Value;
+                    await viewModel.PublishModelRevisionCommand.ExecuteAsync(null);
+                    Assert.Null(viewModel.PublishError);
+                    await viewModel.TogglePoseWorkspaceCommand.ExecuteAsync(null);
+                    Assert.True(viewModel.IsPoseWorkspace);
+                    Assert.NotNull(viewModel.RenderedModelFrame);
+                    Assert.Contains("versão 01", viewModel.PoseModelRevisionLabel, StringComparison.OrdinalIgnoreCase);
+
+                    var movable = viewModel.PosePartItems.First(item =>
+                        !item.Name.Contains("tronco", StringComparison.OrdinalIgnoreCase)
+                        && !item.Name.Contains("corpo", StringComparison.OrdinalIgnoreCase)
+                        && !item.Name.Contains("cabeça", StringComparison.OrdinalIgnoreCase)
+                        && !item.Name.Contains("cabeca", StringComparison.OrdinalIgnoreCase));
+                    viewModel.SelectPosePartCommand.Execute(movable.Id);
+                    Assert.True(viewModel.CanMoveSelectedPosePart);
+                    var initialPosePart = viewModel.PosePreviewContent!.Parts.Single(part => part.Id == movable.Id);
+                    var frameBeforeNudge = viewModel.RenderedModelFrame;
+                    viewModel.NudgePosePartCommand.Execute("right");
+                    Assert.NotEqual(initialPosePart.Transform, viewModel.PosePreviewContent!.Parts.Single(part => part.Id == movable.Id).Transform);
+                    await WaitUntilAsync(() => !ReferenceEquals(frameBeforeNudge, viewModel.RenderedModelFrame), cancellationToken);
+
+                    var beforeRotation = viewModel.PosePreviewContent!.Parts.Single(part => part.Id == movable.Id).Transform;
+                    var frameBeforeRotation = viewModel.RenderedModelFrame;
+                    viewModel.RotatePosePartCommand.Execute("right");
+                    var afterRotation = viewModel.PosePreviewContent!.Parts.Single(part => part.Id == movable.Id).Transform;
+                    Assert.NotEqual(beforeRotation.RotationRadians, afterRotation.RotationRadians);
+                    await WaitUntilAsync(() => !ReferenceEquals(frameBeforeRotation, viewModel.RenderedModelFrame), cancellationToken);
+
+                    var canvas = window.GetVisualDescendants().OfType<FabricatorCanvas>().Single();
+                    Assert.NotNull(canvas.TransformGestureStarted);
+                    Assert.NotNull(canvas.TransformGestureMoved);
+                    Assert.NotNull(canvas.TransformGestureCompleted);
+                    var boundsBeforeDrag = ModelDraftHitTester.GetPartBounds(viewModel.PosePreviewContent!, movable.Id)!.Value;
+                    var dragStart = new Point2D(boundsBeforeDrag.X + boundsBeforeDrag.Width / 2, boundsBeforeDrag.Y + boundsBeforeDrag.Height / 2);
+                    var beforeDrag = viewModel.PosePreviewContent!.Parts.Single(part => part.Id == movable.Id).Transform;
+                    canvas.TransformGestureStarted!(new TransformGestureStart(ModelPartTransformKind.Move, dragStart));
+                    canvas.TransformGestureMoved!(dragStart + new Point2D(12, -4));
+                    canvas.TransformGestureCompleted!();
+                    var afterDrag = viewModel.PosePreviewContent!.Parts.Single(part => part.Id == movable.Id).Transform;
+                    Assert.NotEqual(beforeDrag.Translation, afterDrag.Translation);
+
+                    var afterPoseResult = await contentRepository.GetAsync(loadedContent.Value.ModelId, cancellationToken);
+                    Assert.True(afterPoseResult.IsSuccess, afterPoseResult.Error?.Message);
+                    Assert.Equal(modelBeforePose.Parts.Select(part => part.Transform), afterPoseResult.Value.Parts.Select(part => part.Transform));
+                    Assert.Equal(modelBeforePose.RigJoints, afterPoseResult.Value.RigJoints);
+                    await viewModel.TogglePoseWorkspaceCommand.ExecuteAsync(null);
+                    Assert.False(viewModel.IsPoseWorkspace);
+                    Assert.Null(viewModel.PosePreviewContent);
                 }
                 finally
                 {

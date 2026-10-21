@@ -30,6 +30,14 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
     private readonly IModelDraftContentRepository? _contentRepository;
     private readonly IRenderSceneRenderer? _sceneRenderer;
     private readonly PublishModelRevisionService? _publishModelRevisionService;
+    private readonly IModelRevisionRepository? _modelRevisionRepository;
+    private PoseEditorSession? _poseSession;
+    private PublishedModelRevision? _poseModelRevision;
+    private ActivePoseTransformGesture? _activePoseTransformGesture;
+    private bool _isPoseWorkspace;
+    private bool _poseRotateIncludesFixedDescendants = true;
+    private string? _poseEditorError;
+    private string _poseEditorStatus = string.Empty;
     private readonly object _previewSync = new();
     private CancellationTokenSource? _previewCancellation;
     private CancellationTokenSource? _modelImportCancellation;
@@ -97,6 +105,11 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
     [NotifyPropertyChangedFor(nameof(SelectedPartBounds))]
     [NotifyPropertyChangedFor(nameof(SelectedPartPivot))]
     [NotifyPropertyChangedFor(nameof(PartLayers))]
+    [NotifyPropertyChangedFor(nameof(PosePartItems))]
+    [NotifyPropertyChangedFor(nameof(CanMoveSelectedPosePart))]
+    [NotifyPropertyChangedFor(nameof(CanRotateSelectedPosePart))]
+    [NotifyCanExecuteChangedFor(nameof(NudgePosePartCommand))]
+    [NotifyCanExecuteChangedFor(nameof(RotatePosePartCommand))]
     private ModelPartId? selectedModelPartId;
 
     [ObservableProperty]
@@ -212,26 +225,90 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
     public bool HasModelRenderError => !string.IsNullOrWhiteSpace(ModelRenderError);
     public bool IsSelectTool => ActiveTool == FabricatorTool.Select;
     public bool IsPanTool => ActiveTool == FabricatorTool.Pan;
-    public string SelectedPartName => _modelContent is null || SelectedModelPartId is not { } id
+    private ModelDraftContent? ActiveCanvasContent => IsPoseWorkspace ? _poseSession?.PreviewContent : _modelContent;
+    public bool IsPoseWorkspace
+    {
+        get => _isPoseWorkspace;
+        private set
+        {
+            if (!SetProperty(ref _isPoseWorkspace, value)) return;
+            OnPropertyChanged(nameof(IsModelWorkspace));
+            OnPropertyChanged(nameof(CanvasHeader));
+            OnPropertyChanged(nameof(CanvasSubtitle));
+            OnPropertyChanged(nameof(CanvasHelpText));
+            OnPropertyChanged(nameof(PoseWorkspaceButtonLabel));
+            OnPropertyChanged(nameof(PosePreviewContent));
+            OnPropertyChanged(nameof(CanTogglePoseWorkspace));
+            OnPropertyChanged(nameof(CanEditRig));
+            OnPropertyChanged(nameof(PartLayers));
+            OnPropertyChanged(nameof(SelectedPartName));
+            OnPropertyChanged(nameof(SelectedPartBounds));
+            OnPropertyChanged(nameof(SelectedPartPivot));
+            OnPropertyChanged(nameof(RigJointItems));
+            OnPropertyChanged(nameof(PosePartItems));
+            OnPropertyChanged(nameof(CanMoveSelectedPosePart));
+            OnPropertyChanged(nameof(CanRotateSelectedPosePart));
+            OnPropertyChanged(nameof(PoseEditorStatus));
+            TogglePoseWorkspaceCommand.NotifyCanExecuteChanged();
+            NudgePosePartCommand.NotifyCanExecuteChanged();
+            RotatePosePartCommand.NotifyCanExecuteChanged();
+        }
+    }
+    public bool IsModelWorkspace => !IsPoseWorkspace;
+    public bool CanTogglePoseWorkspace => IsPoseWorkspace || (_modelRevisionRepository is not null && _savedDraft is not null && _modelContent is not null);
+    public string PoseWorkspaceButtonLabel => IsPoseWorkspace ? "Voltar aos modelos" : "Editar poses";
+    public string CanvasHeader => IsPoseWorkspace ? "CANVAS DE POSE" : "CANVAS DE MONTAGEM";
+    public string CanvasSubtitle => IsPoseWorkspace ? PoseModelRevisionLabel : "Prévia do modelo";
+    public string CanvasHelpText => IsPoseWorkspace
+        ? "Arraste uma peça selecionada para mover · use os controles para girar a pose"
+        : "Arraste a peça para posicionar  ·  Arraste o fundo para mover a prévia";
+    public bool PoseRotateIncludesFixedDescendants
+    {
+        get => _poseRotateIncludesFixedDescendants;
+        set => SetProperty(ref _poseRotateIncludesFixedDescendants, value);
+    }
+    public string PoseModelRevisionLabel => _poseModelRevision is null
+        ? "Selecione uma versão publicada do modelo"
+        : $"{_poseModelRevision.Name} · versão {_poseModelRevision.Revision.Value:00}";
+    public ModelDraftContent? PosePreviewContent => IsPoseWorkspace ? _poseSession?.PreviewContent : null;
+    public string PoseEditorStatus
+    {
+        get => _poseEditorStatus;
+        private set => SetProperty(ref _poseEditorStatus, value);
+    }
+    public string? PoseEditorError
+    {
+        get => _poseEditorError;
+        private set
+        {
+            if (SetProperty(ref _poseEditorError, value)) OnPropertyChanged(nameof(HasPoseEditorError));
+        }
+    }
+    public bool HasPoseEditorError => !string.IsNullOrWhiteSpace(PoseEditorError);
+    public bool CanMoveSelectedPosePart => IsPoseWorkspace && _poseSession?.CanMoveSelectedPart == true;
+    public bool CanRotateSelectedPosePart => IsPoseWorkspace && SelectedModelPartId is not null;
+    public IReadOnlyList<ModelPartLayerItem> PosePartItems => IsPoseWorkspace ? PartLayers : [];
+    public string SelectedPartName => ActiveCanvasContent is not { } activeContent || SelectedModelPartId is not { } id
         ? "Nenhuma peça selecionada"
-        : _modelContent.Parts.FirstOrDefault(part => part.Id == id)?.Name ?? "Nenhuma peça selecionada";
-    public Rect2D? SelectedPartBounds => _modelContent is null || SelectedModelPartId is not { } id
+        : activeContent.Parts.FirstOrDefault(part => part.Id == id)?.Name ?? "Nenhuma peça selecionada";
+    public Rect2D? SelectedPartBounds => ActiveCanvasContent is not { } activeContent || SelectedModelPartId is not { } id
         ? null
-        : ModelDraftHitTester.GetPartBounds(_modelContent, id);
-    public Point2D? SelectedPartPivot => _modelContent is null || SelectedModelPartId is not { } id
+        : ModelDraftHitTester.GetPartBounds(activeContent, id);
+    public Point2D? SelectedPartPivot => ActiveCanvasContent is not { } activeContent || SelectedModelPartId is not { } id
         ? null
-        : ModelDraftHitTester.GetPartPivot(_modelContent, id);
+        : ModelDraftHitTester.GetPartPivot(activeContent, id);
     public IReadOnlyList<ModelPartLayerItem> PartLayers
     {
         get
         {
-            if (_modelContent is null)
+            var content = ActiveCanvasContent;
+            if (content is null)
             {
                 return [];
             }
 
-            var partsById = _modelContent.Parts.ToDictionary(part => part.Id);
-            return _modelContent.LayerOrder
+            var partsById = content.Parts.ToDictionary(part => part.Id);
+            return content.LayerOrder
                 .Select((id, index) => (id, index))
                 .Reverse()
                 .Select(item =>
@@ -245,15 +322,15 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
                         part.IsVisible,
                         SelectedModelPartId == part.Id,
                         part.IsVisible ? "Ocultar" : "Mostrar",
-                        CanEdit,
-                        CanEdit && item.index < _modelContent.LayerOrder.Length - 1,
-                        CanEdit && item.index > 0);
+                        CanEdit && !IsPoseWorkspace,
+                        CanEdit && !IsPoseWorkspace && item.index < content.LayerOrder.Length - 1,
+                        CanEdit && !IsPoseWorkspace && item.index > 0);
                 })
                 .ToArray();
         }
     }
-    public bool HasModelParts => _modelContent is { Parts.IsDefaultOrEmpty: false };
-    public bool CanEditRig => CanEdit && _modelContent is { Parts.Length: >= 2 };
+    public bool HasModelParts => ActiveCanvasContent is { Parts.IsDefaultOrEmpty: false };
+    public bool CanEditRig => !IsPoseWorkspace && CanEdit && _modelContent is { Parts.Length: >= 2 };
     public bool HasRigEditingParts => _modelContent is { Parts.Length: >= 2 };
     public bool NeedsRigParts => !HasRigEditingParts;
     public IReadOnlyList<RigPartOption> RigPartOptions => _modelContent?.Parts
@@ -262,9 +339,10 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
     {
         get
         {
-            if (_modelContent is null) return [];
-            var names = _modelContent.Parts.ToDictionary(part => TransformNodeId.From(part.Id.Value), part => part.Name);
-            return _modelContent.RigJoints.Select(joint => new RigJointItem(
+            var content = ActiveCanvasContent;
+            if (content is null) return [];
+            var names = content.Parts.ToDictionary(part => TransformNodeId.From(part.Id.Value), part => part.Name);
+            return content.RigJoints.Select(joint => new RigJointItem(
                 joint,
                 $"{names[joint.ParentPartId]} → {names[joint.ChildPartId]}",
                 joint.Mode == RigJointMode.Fixed ? "Fixa" : "Livre")).ToArray();
@@ -340,7 +418,8 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
         IModelDraftContentRepository? contentRepository = null,
         IRenderSceneRenderer? sceneRenderer = null,
         TimeSpan? autosaveDelay = null,
-        PublishModelRevisionService? publishModelRevisionService = null)
+        PublishModelRevisionService? publishModelRevisionService = null,
+        IModelRevisionRepository? modelRevisionRepository = null)
     {
         _repository = repository ?? throw new ArgumentNullException(nameof(repository));
         _dataInitializer = dataInitializer ?? throw new ArgumentNullException(nameof(dataInitializer));
@@ -353,6 +432,7 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
         _contentRepository = contentRepository;
         _sceneRenderer = sceneRenderer;
         _publishModelRevisionService = publishModelRevisionService;
+        _modelRevisionRepository = modelRevisionRepository;
         _autosaveDelay = autosaveDelay ?? TimeSpan.FromMilliseconds(600);
         if (_autosaveDelay < TimeSpan.Zero)
         {
@@ -422,6 +502,8 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
             }
 
             PublishStatus = $"Versão {published.Value.Revision.Value:00} publicada e preservada.";
+            OnPropertyChanged(nameof(CanTogglePoseWorkspace));
+            TogglePoseWorkspaceCommand.NotifyCanExecuteChanged();
         }
         catch (Exception)
         {
@@ -431,6 +513,170 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
         {
             IsPublishingRevision = false;
         }
+    }
+
+    [RelayCommand(CanExecute = nameof(CanTogglePoseWorkspace))]
+    private async Task TogglePoseWorkspaceAsync()
+    {
+        PoseEditorError = null;
+        if (IsPoseWorkspace)
+        {
+            _activePoseTransformGesture = null;
+            _poseSession = null;
+            _poseModelRevision = null;
+            IsPoseWorkspace = false;
+            PoseEditorStatus = string.Empty;
+            SelectedModelPartId = null;
+            if (_modelContent is { } modelContent)
+            {
+                await RenderModelPreviewAsync(modelContent);
+            }
+            return;
+        }
+
+        if (_modelRevisionRepository is null || _savedDraft is null || _modelContent is null)
+        {
+            PoseEditorError = "Salve o modelo e publique uma versão antes de editar poses.";
+            return;
+        }
+
+        try
+        {
+            await _dataInitializer.InitializeAsync();
+            var result = await _modelRevisionRepository.ListAsync(_savedDraft.Id);
+            if (result.IsFailure)
+            {
+                PoseEditorError = result.Error!.Message;
+                return;
+            }
+
+            var latest = result.Value.OrderByDescending(item => item.Revision.Value).FirstOrDefault();
+            if (latest is null)
+            {
+                PoseEditorError = "Publique uma versão do modelo antes de abrir o editor de poses.";
+                return;
+            }
+
+            _poseModelRevision = latest;
+            _poseSession = new PoseEditorSession(latest);
+            if (!latest.Content.LayerOrder.IsDefaultOrEmpty)
+            {
+                var firstPart = latest.Content.LayerOrder[0];
+                SelectedModelPartId = firstPart;
+                _poseSession.SelectPart(firstPart);
+            }
+            else
+            {
+                SelectedModelPartId = null;
+            }
+
+            IsPoseWorkspace = true;
+            PoseEditorStatus = "Edição temporária · as poses ainda não são salvas nesta etapa.";
+            OnPropertyChanged(nameof(PoseModelRevisionLabel));
+            OnPropertyChanged(nameof(PosePartItems));
+            OnPropertyChanged(nameof(PosePreviewContent));
+            OnPropertyChanged(nameof(CanMoveSelectedPosePart));
+            OnPropertyChanged(nameof(CanRotateSelectedPosePart));
+            OnPropertyChanged(nameof(SelectedPartName));
+            OnPropertyChanged(nameof(SelectedPartBounds));
+            OnPropertyChanged(nameof(SelectedPartPivot));
+            OnPropertyChanged(nameof(PartLayers));
+            await RenderModelPreviewAsync(_poseSession.PreviewContent);
+            if (HasModelRenderError)
+            {
+                PoseEditorError = ModelRenderError;
+            }
+        }
+        catch (Exception exception) when (exception is IOException or InvalidOperationException or ArgumentException)
+        {
+            IsPoseWorkspace = false;
+            _poseSession = null;
+            _poseModelRevision = null;
+            PoseEditorError = "Não foi possível abrir a pose para esta versão do modelo.";
+        }
+    }
+
+    [RelayCommand]
+    private void SelectPosePart(ModelPartId partId)
+    {
+        if (!IsPoseWorkspace || _poseSession is null) return;
+        try
+        {
+            _poseSession.SelectPart(partId);
+            SelectedModelPartId = partId;
+            PoseEditorError = null;
+            OnPropertyChanged(nameof(CanMoveSelectedPosePart));
+            OnPropertyChanged(nameof(CanRotateSelectedPosePart));
+            OnPropertyChanged(nameof(PosePartItems));
+            OnPropertyChanged(nameof(PosePreviewContent));
+            OnPropertyChanged(nameof(SelectedPartName));
+            OnPropertyChanged(nameof(SelectedPartBounds));
+            OnPropertyChanged(nameof(SelectedPartPivot));
+        }
+        catch (ArgumentException exception)
+        {
+            PoseEditorError = exception.Message;
+        }
+    }
+
+    [RelayCommand(CanExecute = nameof(CanMoveSelectedPosePart))]
+    private void NudgePosePart(string direction)
+    {
+        if (!CanMoveSelectedPosePart || _poseSession is null) return;
+        var delta = direction switch
+        {
+            "left" => new Point2D(-5, 0),
+            "right" => new Point2D(5, 0),
+            "up" => new Point2D(0, 5),
+            "down" => new Point2D(0, -5),
+            _ => Point2D.Zero
+        };
+        ApplyPoseOperation(() => _poseSession.MoveSelected(delta), "Peça movida 5 px.");
+    }
+
+    [RelayCommand(CanExecute = nameof(CanRotateSelectedPosePart))]
+    private void RotatePosePart(string direction)
+    {
+        if (!CanRotateSelectedPosePart || _poseSession is null) return;
+        var radians = direction switch
+        {
+            "left" => -Math.PI / 12,
+            "right" => Math.PI / 12,
+            _ => 0
+        };
+        if (radians == 0) return;
+        ApplyPoseOperation(() => _poseSession.RotateSelectedBy(radians, PoseRotateIncludesFixedDescendants), "Pose girada 15°.");
+    }
+
+    private void ApplyPoseOperation(Action operation, string successMessage)
+    {
+        try
+        {
+            operation();
+            PoseEditorError = null;
+            PoseEditorStatus = $"{successMessage} · edição temporária";
+            NotifyPosePreviewChanged();
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or ArgumentException)
+        {
+            PoseEditorError = exception.Message;
+        }
+    }
+
+    private void NotifyPosePreviewChanged()
+    {
+        if (_poseSession is null) return;
+        OnPropertyChanged(nameof(PartLayers));
+        OnPropertyChanged(nameof(PosePartItems));
+        OnPropertyChanged(nameof(PosePreviewContent));
+        OnPropertyChanged(nameof(CanMoveSelectedPosePart));
+        OnPropertyChanged(nameof(CanRotateSelectedPosePart));
+        OnPropertyChanged(nameof(SelectedPartBounds));
+        OnPropertyChanged(nameof(SelectedPartPivot));
+        OnPropertyChanged(nameof(RigJointItems));
+        _ = RenderModelPreviewAsync(_poseSession.PreviewContent);
+        NudgePosePartCommand.NotifyCanExecuteChanged();
+        RotatePosePartCommand.NotifyCanExecuteChanged();
     }
 
     [RelayCommand(CanExecute = nameof(CanSelectModelSource))]
@@ -591,6 +837,8 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
             OnPropertyChanged(nameof(CanPublishModelSource));
             OnPropertyChanged(nameof(CanPublishRevision));
             PublishModelRevisionCommand.NotifyCanExecuteChanged();
+            OnPropertyChanged(nameof(CanTogglePoseWorkspace));
+            TogglePoseWorkspaceCommand.NotifyCanExecuteChanged();
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidOperationException)
         {
@@ -658,7 +906,14 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
 
     public void SelectModelPartAt(Point2D scenePoint)
     {
-        SelectModelPart(_modelContent is null ? null : ModelDraftHitTester.HitTest(_modelContent, scenePoint));
+        var content = ActiveCanvasContent;
+        var partId = content is null ? null : ModelDraftHitTester.HitTest(content, scenePoint);
+        if (IsPoseWorkspace)
+        {
+            if (partId is { } selected) SelectPosePart(selected);
+            return;
+        }
+        SelectModelPart(partId);
     }
 
     [RelayCommand]
@@ -848,11 +1103,17 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
 
     private void SelectModelPart(ModelPartId? partId)
     {
-        if (partId is { } id && (_modelContent is null || !_modelContent.Parts.Any(part => part.Id == id)))
+        var content = ActiveCanvasContent;
+        if (partId is { } id && (content is null || !content.Parts.Any(part => part.Id == id)))
         {
             return;
         }
 
+        if (IsPoseWorkspace)
+        {
+            if (partId is { } posePart) SelectPosePart(posePart);
+            return;
+        }
         SelectedModelPartId = partId;
     }
 
@@ -993,6 +1254,19 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
 
     public void BeginModelPartTransform(TransformGestureStart gesture)
     {
+        if (IsPoseWorkspace)
+        {
+            if (gesture.Kind != ModelPartTransformKind.Move || _poseSession is null || _poseModelRevision is null
+                || SelectedModelPartId is not { } posePartId || !CanMoveSelectedPosePart)
+            {
+                return;
+            }
+
+            var scale = ModelDraftRenderSceneBuilder.GetPreviewSize(_poseSession.PreviewContent).Scale;
+            _activePoseTransformGesture = new ActivePoseTransformGesture(posePartId, gesture.ScenePoint, _poseSession.Draft, scale);
+            return;
+        }
+
         if (!CanEdit || _modelContent is null || SelectedModelPartId is not { } partId)
         {
             return;
@@ -1031,6 +1305,26 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
 
     public void UpdateModelPartTransform(Point2D scenePoint)
     {
+        if (_activePoseTransformGesture is { } poseGesture && _poseModelRevision is { } poseRevision)
+        {
+            var delta = new Point2D(
+                (scenePoint.X - poseGesture.StartScenePoint.X) / poseGesture.SceneScale,
+                -(scenePoint.Y - poseGesture.StartScenePoint.Y) / poseGesture.SceneScale);
+            try
+            {
+                var updated = new PoseEditorSession(poseRevision, poseGesture.Before);
+                updated.SelectPart(poseGesture.PartId);
+                updated.MoveSelected(delta);
+                _poseSession = updated;
+                NotifyPosePreviewChanged();
+            }
+            catch (Exception exception) when (exception is InvalidOperationException or ArgumentException)
+            {
+                PoseEditorError = exception.Message;
+            }
+            return;
+        }
+
         if (!CanEdit || _activeTransformGesture is not { } active || _modelContent is null)
         {
             return;
@@ -1104,6 +1398,13 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
 
     public void CompleteModelPartTransform()
     {
+        if (_activePoseTransformGesture is not null)
+        {
+            _activePoseTransformGesture = null;
+            PoseEditorStatus = "Movimento aplicado à pose temporária.";
+            return;
+        }
+
         if (_activeTransformGesture is not { } active)
         {
             return;
@@ -1358,6 +1659,8 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
                 ModelName = _savedDraft.Name;
                 OnPropertyChanged(nameof(CanPublishRevision));
                 PublishModelRevisionCommand.NotifyCanExecuteChanged();
+                OnPropertyChanged(nameof(CanTogglePoseWorkspace));
+                TogglePoseWorkspaceCommand.NotifyCanExecuteChanged();
             }
 
             if (_isModelContentDirty && _modelContent is { } currentContent)
@@ -1702,4 +2005,10 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
         bool IsParentAnchor,
         ImmutableArray<RigJoint> Before,
         RigJointCollectionCommand? Command);
+
+    private sealed record ActivePoseTransformGesture(
+        ModelPartId PartId,
+        Point2D StartScenePoint,
+        PoseDraft Before,
+        double SceneScale);
 }
