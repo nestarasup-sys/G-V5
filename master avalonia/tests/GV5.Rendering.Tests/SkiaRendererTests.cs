@@ -80,6 +80,65 @@ public sealed class SkiaRendererTests
     }
 
     [Fact]
+    public async Task RenderAsyncComposesCroppedRotatedFlippedAndTranslucentLayersAndWritesPngComparison()
+    {
+        using var assets = new TestRenderAssetProvider(CreateFourColorPng());
+        var twoByTwo = new Rect2D(0, 0, 2, 2);
+        var center = new Point2D(1, 1);
+        var baseline = new Transform2D(new Point2D(3, 3), new Point2D(1, 1), 0, Point2D.Zero);
+        var flip = new Transform2D(new Point2D(3, 3), new Point2D(1, 1), 0, center, flipX: true);
+        var croppedRotateFlip = new Transform2D(
+            new Point2D(10.5, 3.5),
+            new Point2D(1, 1),
+            Math.PI / 2,
+            new Point2D(0.5, 1),
+            flipY: true);
+        var scene = Scene(
+        [
+            Layer(twoByTwo, baseline, alpha: 1, zOrder: 0),
+            Layer(twoByTwo, flip, alpha: 0.5, zOrder: 1),
+            Layer(new Rect2D(0, 0, 1, 2), croppedRotateFlip, alpha: 0.75, zOrder: 2)
+        ], width: 32, height: 32);
+        using var expected = SKBitmap.Decode(Path.Combine(AppContext.BaseDirectory, "Fixtures", "rendering", "multi-layer.golden.png"))
+            ?? throw new InvalidDataException("Could not decode multi-layer renderer golden.");
+        using var actual = await new SkiaRenderer(assets).RenderAsync(scene, TestContext.Current.CancellationToken);
+        var comparisonPath = Path.Combine(AppContext.BaseDirectory, "TestResults", "Rendering", "multi-layer-comparison.png");
+        var comparison = PngGoldenComparer.Compare(expected, actual.Bitmap, comparisonPath);
+
+        Assert.Equal(0, comparison.DifferentPixels);
+        Assert.Equal(0, comparison.MeanAbsoluteChannelError);
+        Assert.True(File.Exists(comparison.ComparisonPngPath));
+        Assert.True(new FileInfo(comparison.ComparisonPngPath).Length > 0);
+        using var comparisonArtifact = SKBitmap.Decode(comparison.ComparisonPngPath)
+            ?? throw new InvalidDataException("Could not decode generated PNG comparison artifact.");
+        Assert.Equal(96, comparisonArtifact.Width);
+        Assert.Equal(32, comparisonArtifact.Height);
+        Assert.Equal(0, assets.Cache.Metrics.ActiveLeaseCount);
+    }
+
+    [Fact]
+    public void PngGoldenComparerReportsAndHighlightsAnActualPixelDifference()
+    {
+        using var expected = new SKBitmap(new SKImageInfo(2, 2, SKColorType.Rgba8888, SKAlphaType.Premul));
+        using var actual = new SKBitmap(new SKImageInfo(2, 2, SKColorType.Rgba8888, SKAlphaType.Premul));
+        expected.Erase(SKColors.Transparent);
+        actual.Erase(SKColors.Transparent);
+        actual.SetPixel(0, 0, SKColors.Red);
+        var output = Path.Combine(AppContext.BaseDirectory, "TestResults", "Rendering", "known-difference.png");
+
+        var comparison = PngGoldenComparer.Compare(expected, actual, output);
+
+        Assert.Equal(1, comparison.DifferentPixels);
+        Assert.True(comparison.MeanAbsoluteChannelError > 0);
+        using var artifact = SKBitmap.Decode(output)
+            ?? throw new InvalidDataException("Could not decode generated difference artifact.");
+        Assert.Equal(6, artifact.Width);
+        Assert.Equal(2, artifact.Height);
+        Assert.Equal(new SKColor(255, 0, 0, 255), artifact.GetPixel(4, 0));
+        Assert.Equal(SKColors.Black, artifact.GetPixel(5, 1));
+    }
+
+    [Fact]
     public async Task RenderAsyncRejectsTargetsBeyondTheConfiguredBudgetAndHonorsCancellation()
     {
         using var assets = new TestRenderAssetProvider(CreateFourColorPng());
@@ -93,14 +152,14 @@ public sealed class SkiaRendererTests
 
     private static RenderScene Scene(IEnumerable<RenderLayer> layers, int width = 8, int height = 8) => new(SceneId.New(), width, height, layers);
 
-    private static RenderLayer Layer(Rect2D crop, Transform2D? transform = null) => new(
+    private static RenderLayer Layer(Rect2D crop, Transform2D? transform = null, double alpha = 1, int zOrder = 0) => new(
         RenderLayerId.New(),
         AssetId.New(),
         crop,
         transform ?? Transform2D.Identity,
-        1,
+        alpha,
         RenderBlendMode.Normal,
-        0);
+        zOrder);
 
     private static byte[] CreateFourColorPng()
     {
