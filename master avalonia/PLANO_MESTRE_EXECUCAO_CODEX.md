@@ -226,7 +226,7 @@ Ambiente/SDK/CI: `TestarLocal.bat gate` passou em 2026-10-21; ver `docs/gates/GA
 - [x] **F06.03** — Importar folha de imagem com prévia e validação antes de publicar asset.
 - [x] **F06.04** — Portar chroma/crop mínimo com worker cancelável e testes de borda/transparência.
 - [x] **F06.05** — Separar peças em assets e metadados com round-trip verificável.
-- [ ] **F06.06** — Mostrar modelo pelo FabricatorCanvas reutilizando RenderScene/SkiaRenderer.
+- [x] **F06.06** — Mostrar modelo pelo FabricatorCanvas reutilizando RenderScene/SkiaRenderer.
 - [ ] **F06.07** — Implementar selecionar/hit test, zoom/pan, overlays e estado da ferramenta.
 - [ ] **F06.08** — Implementar mover, escalar e rotacionar peças por commands; sem alterar cada mousemove no banco.
 - [ ] **F06.09** — Implementar layer order, ocultar/exibir e operações de seleção.
