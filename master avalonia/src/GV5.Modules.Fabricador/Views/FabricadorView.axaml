@@ -82,6 +82,21 @@
                                Foreground="#8E898F"
                                Margin="0,0,3,0" />
                     <StackPanel Grid.Column="4" Orientation="Horizontal" Spacing="7" VerticalAlignment="Center">
+                        <Button Content="{Binding HairWorkspaceButtonLabel}"
+                                Command="{Binding ToggleHairWorkspaceCommand}"
+                                IsEnabled="{Binding CanToggleHairWorkspace}"
+                                IsVisible="{Binding IsModelWorkspace}"
+                                Padding="10,6"
+                                Background="#F7F0FA"
+                                BorderBrush="#E4D4EA"
+                                Foreground="#704A82" />
+                        <Button Content="Voltar ao modelo"
+                                Command="{Binding ToggleHairWorkspaceCommand}"
+                                IsVisible="{Binding IsHairWorkspace}"
+                                Padding="10,6"
+                                Background="#F7F0FA"
+                                BorderBrush="#E4D4EA"
+                                Foreground="#704A82" />
                         <Button Content="{Binding PoseWorkspaceButtonLabel}"
                                 Command="{Binding TogglePoseWorkspaceCommand}"
                                 IsEnabled="{Binding CanTogglePoseWorkspace}"
@@ -556,6 +571,8 @@
                             <TextBlock Text="{Binding AnimationEditorError}" IsVisible="{Binding HasAnimationEditorError}" TextWrapping="Wrap" FontSize="12" Foreground="#B4233C" />
                         </StackPanel>
                     </ScrollViewer>
+                    <views:HairWorkspacePanel DataContext="{Binding HairWorkspace}"
+                                              IsVisible="{Binding $parent[views:FabricadorView].DataContext.IsHairWorkspace}" />
                     </Grid>
                 </Border>
             </Grid>

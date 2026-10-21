@@ -5,6 +5,7 @@ using System.Collections.ObjectModel;
 using System.Diagnostics;
 using GV5.Application.Contracts;
 using GV5.Application.Services;
+using GV5.Assets.Processing;
 using GV5.Core.Identity;
 using GV5.Core.Models;
 using GV5.Modules.Fabricador.Import;
@@ -100,6 +101,7 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
     private string _rigChildAnchorX = "0";
     private string _rigChildAnchorY = "0";
     private string? _rigError;
+    private bool _isHairWorkspace;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasImportPreview))]
@@ -278,6 +280,7 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
             OnPropertyChanged(nameof(CanvasHelpText));
             OnPropertyChanged(nameof(PoseWorkspaceButtonLabel));
             OnPropertyChanged(nameof(IsNotAnimationWorkspace));
+            OnPropertyChanged(nameof(HairWorkspaceButtonLabel));
             OnPropertyChanged(nameof(PosePreviewContent));
             OnPropertyChanged(nameof(CanTogglePoseWorkspace));
             OnPropertyChanged(nameof(CanEditRig));
@@ -293,6 +296,7 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
             NotifyHistoryChanged();
             TogglePoseWorkspaceCommand.NotifyCanExecuteChanged();
             ToggleAnimationWorkspaceCommand.NotifyCanExecuteChanged();
+            ToggleHairWorkspaceCommand.NotifyCanExecuteChanged();
             NudgePosePartCommand.NotifyCanExecuteChanged();
             RotatePosePartCommand.NotifyCanExecuteChanged();
         }
@@ -313,27 +317,53 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
             OnPropertyChanged(nameof(PoseWorkspaceButtonLabel));
             OnPropertyChanged(nameof(IsNotAnimationWorkspace));
             OnPropertyChanged(nameof(AnimationWorkspaceButtonLabel));
+            OnPropertyChanged(nameof(HairWorkspaceButtonLabel));
             OnPropertyChanged(nameof(AnimationPlaybackButtonLabel));
             TogglePoseWorkspaceCommand.NotifyCanExecuteChanged();
             ToggleAnimationWorkspaceCommand.NotifyCanExecuteChanged();
+            ToggleHairWorkspaceCommand.NotifyCanExecuteChanged();
             NotifyAnimationCommands();
             NotifyHistoryChanged();
         }
     }
-    public bool IsModelWorkspace => !IsPoseWorkspace && !IsAnimationWorkspace;
-    public bool IsEditorWorkspace => !IsPoseWorkspace;
+    public bool IsHairWorkspace
+    {
+        get => _isHairWorkspace;
+        private set
+        {
+            if (!SetProperty(ref _isHairWorkspace, value)) return;
+            OnPropertyChanged(nameof(IsModelWorkspace));
+            OnPropertyChanged(nameof(IsEditorWorkspace));
+            OnPropertyChanged(nameof(CanvasHeader));
+            OnPropertyChanged(nameof(CanvasSubtitle));
+            OnPropertyChanged(nameof(CanvasHelpText));
+            OnPropertyChanged(nameof(HairWorkspaceButtonLabel));
+            OnPropertyChanged(nameof(CanTogglePoseWorkspace));
+            OnPropertyChanged(nameof(CanToggleAnimationWorkspace));
+            ToggleHairWorkspaceCommand.NotifyCanExecuteChanged();
+            TogglePoseWorkspaceCommand.NotifyCanExecuteChanged();
+            ToggleAnimationWorkspaceCommand.NotifyCanExecuteChanged();
+            NotifyHistoryChanged();
+        }
+    }
+    public bool IsModelWorkspace => !IsPoseWorkspace && !IsAnimationWorkspace && !IsHairWorkspace;
+    public bool IsEditorWorkspace => !IsPoseWorkspace && !IsHairWorkspace;
     public bool IsNotAnimationWorkspace => !IsAnimationWorkspace;
-    public bool CanTogglePoseWorkspace => IsPoseWorkspace || (_modelRevisionRepository is not null && _savedDraft is not null && _modelContent is not null);
-    public bool CanToggleAnimationWorkspace => IsAnimationWorkspace || (!IsPoseWorkspace && _animationRepository is not null
+    public bool CanToggleHairWorkspace => IsHairWorkspace || (!IsPoseWorkspace && !IsAnimationWorkspace);
+    public string HairWorkspaceButtonLabel => IsHairWorkspace ? "Voltar ao modelo" : "Editar cabelos";
+    public bool CanTogglePoseWorkspace => IsPoseWorkspace || (!IsHairWorkspace && _modelRevisionRepository is not null && _savedDraft is not null && _modelContent is not null);
+    public bool CanToggleAnimationWorkspace => IsAnimationWorkspace || (!IsPoseWorkspace && !IsHairWorkspace && _animationRepository is not null
         && _modelRevisionRepository is not null && _savedDraft is not null && _modelContent is not null);
     public string PoseWorkspaceButtonLabel => IsPoseWorkspace ? "Voltar aos modelos" : "Editar poses";
     public string AnimationWorkspaceButtonLabel => IsAnimationWorkspace ? "Voltar ao modelo" : "Animador";
     public string AnimationPlaybackButtonLabel => IsAnimationPlaying ? "Pausar prévia" : "Reproduzir prévia";
-    public string CanvasHeader => IsPoseWorkspace ? "CANVAS DE POSE" : "CANVAS DE MONTAGEM";
-    public string CanvasSubtitle => IsPoseWorkspace ? PoseModelRevisionLabel : "Prévia do modelo";
-    public string CanvasHelpText => IsPoseWorkspace
-        ? "Arraste uma peça selecionada para mover · use os controles para girar a pose"
-        : "Arraste a peça para posicionar  ·  Arraste o fundo para mover a prévia";
+    public string CanvasHeader => IsHairWorkspace ? "OFICINA DE CABELO" : IsPoseWorkspace ? "CANVAS DE POSE" : "CANVAS DE MONTAGEM";
+    public string CanvasSubtitle => IsHairWorkspace ? "Prévia das peças processadas" : IsPoseWorkspace ? PoseModelRevisionLabel : "Prévia do modelo";
+    public string CanvasHelpText => IsHairWorkspace
+        ? "A imagem original permanece intacta; ajuste chroma e cores no painel lateral"
+        : IsPoseWorkspace
+            ? "Arraste uma peça selecionada para mover · use os controles para girar a pose"
+            : "Arraste a peça para posicionar  ·  Arraste o fundo para mover a prévia";
     public bool PoseRotateIncludesFixedDescendants
     {
         get => _poseRotateIncludesFixedDescendants;
@@ -569,6 +599,7 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
         : !string.Equals(ModelName.Trim(), _savedDraft.Name, StringComparison.Ordinal) || _isModelContentDirty;
     public bool HasRecoveryMessage => !string.IsNullOrWhiteSpace(RecoveryMessage);
     public Task RecoveryTask { get; }
+    public HairWorkspaceViewModel HairWorkspace { get; }
 
     public string SaveStateLabel => SaveState switch
     {
@@ -597,7 +628,9 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
         IModelRevisionRepository? modelRevisionRepository = null,
         IPoseRepository? poseRepository = null,
         DuplicatePoseService? duplicatePoseService = null,
-        IAnimationRepository? animationRepository = null)
+        IAnimationRepository? animationRepository = null,
+        HairSheetImportService? hairSheetImportService = null,
+        HairRoleTintProcessor? hairRoleTintProcessor = null)
     {
         _repository = repository ?? throw new ArgumentNullException(nameof(repository));
         _dataInitializer = dataInitializer ?? throw new ArgumentNullException(nameof(dataInitializer));
@@ -606,6 +639,7 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
         _correlationContext = correlationContext;
         _filePicker = filePicker;
         _modelSourceImportService = modelSourceImportService;
+        HairWorkspace = new HairWorkspaceViewModel(_filePicker, hairSheetImportService, hairRoleTintProcessor);
         _assetStore = assetStore;
         _contentRepository = contentRepository;
         _sceneRenderer = sceneRenderer;
@@ -790,6 +824,25 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
             _animationModelRevision = null;
             AnimationEditorError = "Não foi possível abrir o Animador para esta versão do modelo.";
         }
+    }
+
+    [RelayCommand(CanExecute = nameof(CanToggleHairWorkspace))]
+    private async Task ToggleHairWorkspaceAsync()
+    {
+        if (IsHairWorkspace)
+        {
+            IsHairWorkspace = false;
+            if (_modelContent is { } modelContent) await RenderModelPreviewAsync(modelContent);
+            return;
+        }
+
+        if (!CanToggleHairWorkspace) return;
+        if (HasPendingChanges && !await FlushPendingChangesAsync())
+        {
+            SaveError = SaveError ?? "Resolva as alterações pendentes do modelo antes de abrir a oficina de cabelo.";
+            return;
+        }
+        IsHairWorkspace = true;
     }
 
     [RelayCommand(CanExecute = nameof(CanCreateAnimation))]
@@ -2654,6 +2707,7 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
 
     public void Dispose()
     {
+        _ = HairWorkspace.DisposeAsync();
         _animationPlaybackTimer.Stop();
         _animationPlaybackTimer.Tick -= OnAnimationPlaybackTick;
         CancellationTokenSource? active;

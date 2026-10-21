@@ -14,6 +14,38 @@ namespace GV5.Headless.Tests;
 public sealed class FabricadorPersistenceStateTests
 {
     [AvaloniaFact]
+    public async Task FabricadorView_TogglesHairWorkspacePanelWithoutLosingModelWorkspace()
+    {
+        var root = NewTempRoot();
+        using var database = new SqliteDatabase(new AppDataPaths(root));
+        var viewModel = new FabricadorViewModel(new SqliteModelDraftRepository(database),
+            new BlockingInitializer(CreateMigrationRunner(database)));
+        var window = OpenEditor(viewModel);
+
+        try
+        {
+            var panel = window.GetVisualDescendants().OfType<HairWorkspacePanel>().Single();
+            Assert.False(viewModel.IsHairWorkspace);
+            Assert.False(panel.IsVisible);
+
+            await viewModel.ToggleHairWorkspaceCommand.ExecuteAsync(null);
+            Assert.True(viewModel.IsHairWorkspace);
+            Assert.True(panel.IsVisible);
+            Assert.Same(viewModel.HairWorkspace, panel.DataContext);
+
+            await viewModel.ToggleHairWorkspaceCommand.ExecuteAsync(null);
+            Assert.False(viewModel.IsHairWorkspace);
+            Assert.False(panel.IsVisible);
+        }
+        finally
+        {
+            window.Close();
+            viewModel.Dispose();
+            DeleteTempRoot(root);
+        }
+    }
+
+    [AvaloniaFact]
     public async Task FabricadorView_ShowsDirtySavingSavedAndErrorAfterRealFileAccessFailure()
     {
         var cancellationToken = TestContext.Current.CancellationToken;

@@ -1,0 +1,93 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:GV5.Modules.Fabricador.ViewModels"
+             x:Class="GV5.Modules.Fabricador.Views.HairWorkspacePanel"
+             x:DataType="vm:HairWorkspaceViewModel"
+             DataContextChanged="OnDataContextChanged">
+    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <StackPanel Spacing="10" Margin="10">
+            <StackPanel Spacing="3">
+                <TextBlock Text="Oficina de cabelo" FontSize="15" FontWeight="Bold" Foreground="#342E36" />
+                <TextBlock Text="Importe uma folha com Posterior em cima e Traseiro embaixo." FontSize="12" Foreground="#706872" TextWrapping="Wrap" />
+            </StackPanel>
+
+            <Border Background="#FFF5F8" BorderBrush="#EFCBD8" BorderThickness="1" CornerRadius="9" Padding="9">
+                <StackPanel Spacing="7">
+                    <Button Content="＋  Importar folha de cabelo" Command="{Binding SelectSheetCommand}"
+                            IsEnabled="{Binding CanSelectSheet}" Background="#C74677" Foreground="White" Padding="10,8" />
+                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                        <ComboBox ItemsSource="{Binding Modes}" SelectedItem="{Binding SelectedMode}" DisplayMemberBinding="{Binding Label}" />
+                        <Button Grid.Column="1" Content="Reprocessar" Command="{Binding ReprocessCommand}"
+                                IsEnabled="{Binding CanReprocess}" Padding="9,6" />
+                    </Grid>
+                    <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="7">
+                        <TextBlock Text="Tolerância" VerticalAlignment="Center" FontSize="11" Foreground="#706872" />
+                        <Slider Grid.Column="1" Minimum="0" Maximum="100" TickFrequency="1" Value="{Binding Tolerance}" />
+                        <TextBlock Grid.Column="2" Text="{Binding Tolerance}" VerticalAlignment="Center" FontSize="11" Foreground="#706872" />
+                    </Grid>
+                    <Button Content="Cancelar / limpar prévia" Command="{Binding CancelCommand}"
+                            IsEnabled="{Binding CanCancel}" Padding="8,5" HorizontalAlignment="Left" />
+                </StackPanel>
+            </Border>
+
+            <TextBlock Text="{Binding PreviewDimensions}" IsVisible="{Binding HasPreview}"
+                       FontSize="10" Foreground="#706872" TextWrapping="Wrap" />
+            <Grid ColumnDefinitions="*,*" ColumnSpacing="7">
+                <Border Background="#F5F1F5" BorderBrush="#EEE9ED" BorderThickness="1" CornerRadius="8" Padding="5">
+                    <StackPanel Spacing="4">
+                        <TextBlock Text="POSTERIOR" FontSize="10" FontWeight="Bold" Foreground="#706872" HorizontalAlignment="Center" />
+                        <Border Height="126" Background="#FFFFFF" CornerRadius="5" ClipToBounds="True">
+                            <Image x:Name="PosteriorImage" Stretch="Uniform" />
+                        </Border>
+                    </StackPanel>
+                </Border>
+                <Border Grid.Column="1" Background="#F5F1F5" BorderBrush="#EEE9ED" BorderThickness="1" CornerRadius="8" Padding="5">
+                    <StackPanel Spacing="4">
+                        <TextBlock Text="TRASEIRO" FontSize="10" FontWeight="Bold" Foreground="#706872" HorizontalAlignment="Center" />
+                        <Border Height="126" Background="#FFFFFF" CornerRadius="5" ClipToBounds="True">
+                            <Image x:Name="TraseiroImage" Stretch="Uniform" />
+                        </Border>
+                    </StackPanel>
+                </Border>
+            </Grid>
+
+            <Border Background="#FBFAFB" BorderBrush="#EEE9ED" BorderThickness="1" CornerRadius="9" Padding="9">
+                <StackPanel Spacing="7">
+                    <Grid ColumnDefinitions="*,Auto">
+                        <StackPanel Spacing="2">
+                            <TextBlock Text="Cores por função" FontWeight="Bold" Foreground="#342E36" />
+                            <TextBlock Text="Ajuste a prévia sem alterar a folha original." FontSize="10" Foreground="#AAA1AA" />
+                        </StackPanel>
+                        <Button Grid.Column="1" Content="Restaurar" Command="{Binding ResetPaletteCommand}" Padding="7,4" />
+                    </Grid>
+                    <ItemsControl ItemsSource="{Binding RoleColors}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:HairRoleColorItem">
+                                <Grid ColumnDefinitions="*,92,Auto,Auto" ColumnSpacing="5" Margin="0,2">
+                                    <TextBlock Text="{Binding Label}" VerticalAlignment="Center" FontSize="11" Foreground="#342E36" />
+                                    <TextBox Grid.Column="1" Text="{Binding HexColor}" MaxLength="7" Padding="6,4" FontSize="11" />
+                                    <Button Grid.Column="2" Content="Aplicar"
+                                            Command="{Binding $parent[ItemsControl].DataContext.ApplyRoleColorCommand}"
+                                            CommandParameter="{Binding}" Padding="6,4" />
+                                    <Button Grid.Column="3" Content="↺" ToolTip.Tip="Restaurar cor original"
+                                            IsVisible="{Binding IsOverridden}"
+                                            Command="{Binding $parent[ItemsControl].DataContext.ResetRoleColorCommand}"
+                                            CommandParameter="{Binding}" Padding="6,4" />
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+            </Border>
+
+            <Border Background="#F8F6FF" BorderBrush="#DDD6F4" BorderThickness="1" CornerRadius="8" Padding="8"
+                    IsVisible="{Binding IsBusy}">
+                <TextBlock Text="Processando a folha em segundo plano…" FontSize="11" Foreground="#6450A5" />
+            </Border>
+            <TextBlock Text="{Binding Status}" IsVisible="{Binding HasStatus}" TextWrapping="Wrap" FontSize="11" Foreground="#26734D" />
+            <TextBlock Text="{Binding Error}" IsVisible="{Binding HasError}" TextWrapping="Wrap" FontSize="11" Foreground="#B4233C" />
+            <TextBlock Text="Salvar e publicar as peças será conectado à persistência do catálogo de cabelos." FontSize="10"
+                       Foreground="#AAA1AA" TextWrapping="Wrap" />
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>
