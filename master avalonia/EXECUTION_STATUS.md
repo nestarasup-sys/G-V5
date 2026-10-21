@@ -15,13 +15,13 @@
 | Commit-base inspecionado antes deste arquivo | `53b7f7a97321e85063a8dd4f9635e48d36548323` |
 | Último commit de implementação validado | `11a18d7` (F09.14: cancelamento dos repositórios persistentes do Fabricador) |
 | Checkout local revalidado | `TestarLocal.bat rapido` passou em 2026-10-21: build Debug; **305 testes, 0 falhas**; avisos existentes: 2 CS0618 no `ThumbnailService` e 1 xUnit1051 em `HairRoleTintProcessorTests` |
-| Fase ativa | **F09 — Fabricador IV — cabelos, face, expressões e completação (F09.14 validada; F09.15 a iniciar)** |
+| Fase ativa | **F09 — Fabricador IV — cabelos, face, expressões e completação (F09.15 em execução)** |
 | Última tarefa VALIDADA | **F09.14** — validação cruzada de persistência, importação inválida e cancelamento nas subáreas do Fabricador |
-| Próxima tarefa PENDENTE | **F09.15** — fechar GATE-F09/G2 com auditoria de todas as subáreas do Fabricador |
+| Tarefa em execução | **F09.15** — auditar e fechar as lacunas funcionais do Fabricador antes do GATE-F09/G2 |
 | Requisito transversal atualizado | ADR-0006: aparência reconhecível, não pixel-perfect; todos os botões e funcionalidades; revisão final visual pendente |
 | Gate atual | **GATE-F08 PASSOU tecnicamente; UI/visual Windows/GPU e paridade completa continuam pendentes** |
 | Progresso validado neste controle | **126 / 247 tarefas (51,0%)** |
-| Tarefas em execução | Nenhuma; próxima tarefa autorizada: **F09.15** |
+| Tarefas em execução | **F09.15** — auditoria funcional completa do Fabricador, começando pelas ferramentas de Modelos e pela UI facial ausente |
 | Pendências conhecidas | F06: folha real/capturas/worker não testados; ferramentas de Modelos ausentes catalogadas em `docs/legacy-contracts/PENDENCIAS_FUNCIONAIS_FABRICADOR.md` e obrigatórias antes do G2. Isso não impede a programação F07, mas impede declarar Fabricador completo. Limite download F01 documentado |
 | Aceite Windows/GPU | **F06 Windows/visual não executado; GPU continua fora do escopo comprovado** |
 
