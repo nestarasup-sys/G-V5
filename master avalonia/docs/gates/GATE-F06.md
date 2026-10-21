@@ -18,7 +18,7 @@ O Plano Mestre exige importar, editar, desfazer, salvar, reabrir e publicar um m
 | Editar, desfazer, salvar, fechar e reabrir SQLite | `FabricadorImportPreviewUiTests.RealSqliteImportEditUndoSaveReopenAndPublishKeepsModelAssetsAndRevision`; verifica duas peças, revisão salva, bytes/metadata disponíveis após reopen e edição antes da publicação | COMPROVADO COM FIXTURE SINTÉTICA |
 | Publicar depois da reabertura e ler snapshot | O teste integrado publica `Revision.Initial`, recupera o snapshot persistido e compara AssetIds/transforms às peças salvas | COMPROVADO |
 | Erro de importação e retry/cancelamento | `InvalidImageFailsBeforePublicationAndRemovesItsStageFile`; `PublishFailureKeepsPreviewAvailableForRetryAndCancellationDoesNotPublish`; limites de pixel/arquivo | COMPROVADO |
-| PNG e comportamento de canvas antes da separação | `SkiaRendererTests.ModelDraftPreviewPngMatchesLegacySourceCanvasForUnseparatedModel` confirma dimensões, origem e pixels contra a regra estática do canvas legado. `FabricatorModelSourceImportTests` compara todos os pixels das peças de uma fixture sólida, incluindo conteúdo e margem alfa de 4 px, com o resultado esperado pelo worker legado | PARCIAL — fixture simples |
+| PNG e comportamento de canvas antes da separação | `SkiaRendererTests.ModelDraftPreviewPngMatchesLegacySourceCanvasForUnseparatedModel` confirma dimensões, origem e pixels contra a regra estática do canvas legado. `FabricatorModelSourceImportTests` compara a peça sólida inteira, margem alfa de 4 px e a cor/alfa de uma borda chroma-feathered com valores esperados pela fórmula portada | PARCIAL — fixture sintética |
 | Paridade visual da página Modelos em estado equivalente | Não há capturas reais do Electron e Avalonia na mesma resolução/fixture, nem aprovação visual | PENDENTE |
 | Uso com uma folha real representativa no Windows | Não realizado; nenhum arquivo pessoal foi aberto. Diálogo de arquivo, janela nativa, DPI e interação de ponteiro não foram exercitados neste gate | PENDENTE |
 
@@ -31,7 +31,7 @@ TestarLocal.bat rapido
 TestarLocal.bat gate
 ```
 
-Resultado rápido: exit code 0; build Debug com 0 avisos e 0 erros. Resultado Gate: exit code 0; build Release com 2 avisos CS0618 preexistentes em `src/GV5.Data/Thumbnails/ThumbnailService.cs:218` (`SKPaint.FilterQuality` e `SKFilterQuality`) e 0 erros. Core 18/18, Architecture 8/8, Geometry 35/35, Assets 31/31, Data 51/51, Rendering 22/22 e Headless 32/32. Total: 197 testes aprovados, nenhum falho ou ignorado. `git diff --check` passou antes do commit `e37901a`.
+Resultado rápido: exit code 0; build Debug com 0 avisos e 0 erros antes do último teste de borda. Resultado Gate mais recente: exit code 0; build Release incremental com 0 avisos/erros. Core 18/18, Architecture 8/8, Geometry 35/35, Assets 31/31, Data 51/51, Rendering 22/22 e Headless 33/33. Total: 198 testes aprovados, nenhum falho ou ignorado. Uma compilação Release anterior recompilou `ThumbnailService.cs` e registrou dois avisos CS0618 preexistentes (`SKPaint.FilterQuality` e `SKFilterQuality`). `git diff --check` passou antes dos commits locais.
 
 O teste integrado usa pastas temporárias, fonte PNG sintética, SQLite, `SqliteAssetStore`, pipeline de importação e revisão. Ele não lê nem altera os dados Electron do usuário.
 
@@ -39,7 +39,7 @@ O teste integrado usa pastas temporárias, fonte PNG sintética, SQLite, `Sqlite
 
 1. Conferir a folha de modelo real usada pelo fluxo pretendido em Avalonia no Windows, cobrindo seleção, separação, edição, undo/redo, salvamento/reabertura e publicação.
 2. Capturar Electron e Avalonia com o mesmo estado, conteúdo, resolução e DPI; comparar estrutura, cores, medidas, estados e PNGs conforme `docs/ui-fidelity/CONTRATO_VISUAL_GACHA5.md`.
-3. Ampliar a comparação de pixels para bordas antialias/chroma e uma folha representativa; o teste atual cobre formas sólidas sintéticas e não substitui um PNG capturado de uma execução do worker legado.
+3. Comparar a saída do caso antialias/chroma com um PNG capturado de uma execução independente do worker legado; os valores atuais foram derivados da fórmula portada e não substituem essa comparação independente.
 4. Atualizar esta página e a matriz novamente quando as capturas Windows/Electron e os casos ampliados de pixels forem coletados. Até lá, não iniciar F07 conforme a regra de gates do Plano Mestre.
 
 Não há captura ou arquivo de fixture de usuário registrado. O status **BLOQUEADO** refere-se ao gate completo; as tarefas F06.12–F06.14 estão documentadas como concluídas, e o trabalho já validado não é desfeito por essa pendência.
