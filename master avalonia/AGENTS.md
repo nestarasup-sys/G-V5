@@ -34,8 +34,12 @@ Em caso de divergência, não decidir silenciosamente: preservar os requisitos d
 - Não usar Electron, React, Node.js, Chromium, WebView, componentes Avalonia Pro obrigatórios, nem servidor remoto obrigatório.
 - Respeitar o SDK portátil, `global.json`, `Preparar.bat`, `Desenvolver.bat` e os caches locais. **Visual Studio não é requisito.**
 - Não alterar versões de .NET, Avalonia, NuGets ou backend gráfico sem necessidade comprovada, testes e ADR.
-- Proibido force push ou sobrescrever alterações de outra sessão/agente. Consultar HEAD remoto; reconciliar divergências de forma não destrutiva.
+- Proibido force push ou sobrescrever alterações de outra sessão/agente. **Não consultar nem sincronizar GitHub até autorização explícita do usuário**; até lá usar só Git e testes locais.
 - Não executar operações destrutivas no Git, limpar dados ou excluir o legado sem autorização explícita do usuário.
+
+## Meta operacional curta vigente — 2026-10-21
+
+**Construir o G-V5 Avalonia com todos os botões, fluxos e funcionalidades do Gacha 5, mas UI apenas parecida e reconhecível, não pixel-perfect.** Melhorar a experiência com recursos nativos. Avançar continuamente desde **F07.02** com implementação real, testes, persistência e reabertura; registrar evidências e commits locais. Não bloquear por capturas estéticas pendentes, não marcar pronto sem prova funcional. Resolver as lacunas listadas em `docs/legacy-contracts/PENDENCIAS_FUNCIONAIS_FABRICADOR.md` antes de G2. Proteger legado Electron e dados pessoais. Respeitar a ordem de módulos e deixar Video Studio por último. **Não usar GitHub, fetch, pull nem push sem nova autorização do usuário.**
 
 ## Execução contínua, mas estritamente sequencial
 
