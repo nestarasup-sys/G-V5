@@ -13,12 +13,12 @@
 | Branch obrigatória | `Master-AValonia` |
 | Pasta exclusiva do novo aplicativo | `master avalonia/` |
 | Commit-base inspecionado antes deste arquivo | `53b7f7a97321e85063a8dd4f9635e48d36548323` |
-| HEAD de execução do Codex | **Não registrado ainda** — conferir com `git rev-parse HEAD` ao iniciar |
+| HEAD de execução do Codex | `09a93fb75de0472c7d013822df073100b59c3493` (F00.01, branch/remoto sincronizados) |
 | Fase ativa | **F00 — Auditoria do legado, baseline e sincronização** |
-| Última tarefa VALIDADA | **Nenhuma** |
-| Próxima tarefa PENDENTE | **F00.01** |
+| Última tarefa VALIDADA | **F00.01** — branch, HEAD local/remoto, working tree e pasta nova conferidos |
+| Próxima tarefa PENDENTE | **F00.02** |
 | Gate atual | **GATE F00: PENDENTE** |
-| Progresso validado neste controle | **0 / 247 tarefas (0%)** |
+| Progresso validado neste controle | **1 / 247 tarefas** |
 | Tarefas em execução | **Nenhuma registrada** |
 | Bloqueios conhecidos | **Nenhum confirmado; ambiente local ainda não auditado** |
 | Aceite Windows/GPU | **Não executado / não registrado** |
@@ -40,7 +40,7 @@ Se o Codex encontrar algo já implementado, **validar e registrar evidências**,
 
 | Fase | Objetivo | Tarefas totais | Validadas | Estado | Gate |
 | --- | --- | ---: | ---: | --- | --- |
-| F00 | Auditoria do legado, baseline e sincronização | 13 | 0 | PENDENTE | — |
+| F00 | Auditoria do legado, baseline e sincronização | 13 | 1 | EM_EXECUCAO | — |
 | F01 | Solution .NET, contratos, módulo e CI | 13 | 0 | PENDENTE | — |
 | F02 | SQLite, revisões, transações e recuperação básica | 15 | 0 | PENDENTE | — |
 | F03 | AssetStore, thumbnails e cache limitado | 11 | 0 | PENDENTE | — |
@@ -67,7 +67,7 @@ Adicionar uma linha ao concluir ou bloquear cada tarefa. A linha inicial abaixo 
 
 | ID | Estado | Commit de entrega | Verificação realizada e resultado | Evidências/arquivos | Observações |
 | --- | --- | --- | --- | --- | --- |
-| **F00.01** | **PENDENTE** | — | Git local/remote ainda não auditado pelo Codex | — | Primeira tarefa da ordem obrigatória |
+| **F00.01** | **VALIDADA** | a registrar no checkpoint de commit | `git branch --show-current` = `Master-AValonia`; `git status --short` limpo; `git rev-parse HEAD` = `09a93fb75de0472c7d013822df073100b59c3493`; `git fetch origin` e `git rev-parse origin/Master-AValonia` iguais; `git rev-list --left-right --count HEAD...origin/Master-AValonia` = `0 0`; `Test-Path 'master avalonia'` = `True` | comandos executados no checkout; árvore limpa | Sem mudanças concorrentes detectadas |
 
 **Estados aceitos:** `PENDENTE`, `EM_EXECUCAO`, `BLOQUEADA`, `VALIDADA`.
 
@@ -81,9 +81,9 @@ Adicionar uma linha ao concluir ou bloquear cada tarefa. A linha inicial abaixo 
 
 | Verificação | Estado inicial | Evidência a registrar |
 | --- | --- | --- |
-| `git branch --show-current` | NÃO EXECUTADO LOCALMENTE | branch exata |
-| `git status --short` | NÃO EXECUTADO LOCALMENTE | mudanças existentes e autoria |
-| `git rev-parse HEAD` / remoto | NÃO EXECUTADO LOCALMENTE | SHA e divergência |
+| `git branch --show-current` | VALIDADO | `Master-AValonia` |
+| `git status --short` | VALIDADO | limpo antes de iniciar F00.01 |
+| `git rev-parse HEAD` / remoto | VALIDADO | `09a93fb75de0472c7d013822df073100b59c3493`, divergência `0 0` |
 | SDK portátil `.tools/dotnet` | NÃO VERIFICADO | `dotnet --info` e versão de `global.json` |
 | `Preparar.bat` | NÃO VERIFICADO NESTE CONTROLE | instalação idempotente, hash e código de saída |
 | `Desenvolver.bat` | NÃO VERIFICADO NESTE CONTROLE | shell abriu ou erro reproduzível |
@@ -120,7 +120,7 @@ Ainda não há entradas registradas neste controle. Toda mudança material do ro
 
 | Data | HEAD/commit | Último ID validado | Gate | Resumo |
 | --- | --- | --- | --- | --- |
-| 2026-10-20 | `53b7f7a97321e85063a8dd4f9635e48d36548323` (base anterior à criação deste controle) | Nenhum | F00 PENDENTE | Estado inicial estabelecido; sem validação local declarada |
+| 2026-10-20 | `09a93fb75de0472c7d013822df073100b59c3493` | F00.01 | F00 em execução | Branch `Master-AValonia`, árvore limpa, pasta nova existe e local/remoto sincronizados |
 
 Após concluir um lote ou fase, adicionar uma linha. Não inflar contador só porque o commit contém múltiplos arquivos; contar apenas tarefas comprovadas.
 
