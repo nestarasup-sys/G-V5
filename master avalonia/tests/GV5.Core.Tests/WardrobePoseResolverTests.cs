@@ -56,6 +56,32 @@ public sealed class WardrobePoseResolverTests
         Assert.Throws<ArgumentException>(() => WardrobePoseResolver.Resolve(wardrobe, model, otherPose));
     }
 
+    [Fact]
+    public void ResolveInterleavesGarmentsAtAttachedBodyLayersAndPlacesHeadExtrasAboveHairLast()
+    {
+        var modelId = ModelId.New();
+        var arm = CreatePart("Braço", new Point2D(10, 0));
+        var torso = CreatePart("Tronco", new Point2D(0, 0));
+        var content = ModelDraftContent.Restore(ModelDraftContent.CurrentSchemaVersion, modelId, Revision.Initial,
+            ModelSlot.From(1), AssetId.New(), 100, 100, [arm, torso], [arm.Id, torso.Id]);
+        var model = PublishedModelRevision.Restore(ModelRevisionId.New(), modelId, Revision.Initial,
+            Revision.Initial, "Modelo", 1, new string('d', 64), content);
+        var sleeve = CreateComponent("Manga", WardrobeCategory.UpperSleeve, torso);
+        var glasses = CreateComponent("Óculos", WardrobeCategory.Glasses, torso).WithRenderAboveHair(true);
+        var glove = CreateComponent("Luva", WardrobeCategory.Gloves, arm);
+        var wardrobe = WardrobeSet.Create(model, "Roupa").WithContent("Roupa", [sleeve, glasses, glove]);
+        var pose = PoseDraft.CreateFromModelRevision(model, "Base");
+
+        var ordered = WardrobePoseResolver.Resolve(wardrobe, model, pose);
+
+        Assert.Equal([glove.Id, sleeve.Id, glasses.Id], ordered.Select(item => item.ComponentId));
+        Assert.Equal([0, 1, int.MaxValue], ordered.Select(item => item.BodyLayerIndex));
+        Assert.Equal([WardrobeRenderPhase.AttachedToBodyLayer, WardrobeRenderPhase.AttachedToBodyLayer,
+            WardrobeRenderPhase.AboveHair], ordered.Select(item => item.RenderPhase));
+        Assert.Equal([2, 0, 1], ordered.Select(item => item.ComponentSequence));
+        Assert.Throws<ArgumentException>(() => sleeve.WithRenderAboveHair(true));
+    }
+
     private static PublishedModelRevision CreateModel(ModelId? modelId = null, ModelRevisionId? revisionId = null,
         Revision? sequence = null)
     {
@@ -68,5 +94,21 @@ public sealed class WardrobePoseResolverTests
             ModelSlot.From(1), AssetId.New(), 100, 100, [part], [part.Id]);
         return PublishedModelRevision.Restore(revisionId ?? ModelRevisionId.New(), id, sequence ?? Revision.Initial,
             Revision.Initial, "Modelo", 1, new string('a', 64), content);
+    }
+
+    private static WardrobeComponent CreateComponent(string name, WardrobeCategory category, ModelPart part)
+    {
+        var frame = WardrobeBoneFrame.FromTransform(part.Id.ToString(), part.SourceTransform.Crop,
+            part.SourceTransform.Transform);
+        return WardrobeComponent.Create(name, category, part.Id, AssetId.New(),
+            new Rect2D(frame.Center.X - 5, frame.Center.Y - 5, 10, 10), 0, frame);
+    }
+
+    private static ModelPart CreatePart(string name, Point2D translation)
+    {
+        var transform = new Transform2D(translation, new Point2D(1, 1), 0, Point2D.Zero);
+        var crop = new Rect2D(0, 0, 20, 30);
+        return new ModelPart(ModelPartId.New(), name, AssetId.New(), crop, transform,
+            new ModelPartSourceTransform(crop, transform));
     }
 }

@@ -9,6 +9,10 @@ public sealed record WardrobeComponentPosePlacement(
     WardrobeComponentId ComponentId,
     AssetId AssetId,
     WardrobeCategory Category,
+    ModelPartId AttachedBoneId,
+    WardrobeRenderPhase RenderPhase,
+    int BodyLayerIndex,
+    int ComponentSequence,
     WardrobePlacement Placement);
 
 /// <summary>Projects wardrobe bindings onto pose transforms without mutating the wardrobe or pose snapshots.</summary>
@@ -26,9 +30,13 @@ public static class WardrobePoseResolver
 
         var sourceParts = model.Content.Parts.ToDictionary(part => part.Id);
         var poseTransforms = pose.PartTransforms.ToDictionary(part => part.PartId);
-        var resolved = ImmutableArray.CreateBuilder<WardrobeComponentPosePlacement>(wardrobe.Components.Length);
-        foreach (var component in wardrobe.Components)
+        var layerIndices = model.Content.LayerOrder.Select((partId, index) => (partId, index))
+            .ToDictionary(item => item.partId, item => item.index);
+        var attached = new List<(int Layer, int Sequence, WardrobeComponentPosePlacement Item)>();
+        var aboveHair = new List<(int Sequence, WardrobeComponentPosePlacement Item)>();
+        for (var sequence = 0; sequence < wardrobe.Components.Length; sequence++)
         {
+            var component = wardrobe.Components[sequence];
             if (!sourceParts.TryGetValue(component.BoneId, out var sourcePart))
                 throw new InvalidDataException("A wardrobe component refers to a bone missing from its pinned model revision.");
             if (!poseTransforms.TryGetValue(component.BoneId, out var posePart))
@@ -45,9 +53,17 @@ public static class WardrobePoseResolver
 
             var poseFrame = WardrobeBoneFrame.FromTransform(posePart.PartId.ToString(),
                 sourcePart.SourceTransform.Crop, posePart.Transform);
-            resolved.Add(new WardrobeComponentPosePlacement(component.Id, component.AssetId, component.Category,
-                WardrobeBindingMath.Resolve(component.Binding, poseFrame)));
+            var renderPhase = component.RenderAboveHair
+                ? WardrobeRenderPhase.AboveHair
+                : WardrobeRenderPhase.AttachedToBodyLayer;
+            var layerIndex = component.RenderAboveHair ? int.MaxValue : layerIndices[component.BoneId];
+            var item = new WardrobeComponentPosePlacement(component.Id, component.AssetId, component.Category,
+                component.BoneId, renderPhase, layerIndex, sequence,
+                WardrobeBindingMath.Resolve(component.Binding, poseFrame));
+            if (component.RenderAboveHair) aboveHair.Add((sequence, item));
+            else attached.Add((layerIndex, sequence, item));
         }
-        return resolved.MoveToImmutable();
+        return attached.OrderBy(item => item.Layer).ThenBy(item => item.Sequence).Select(item => item.Item)
+            .Concat(aboveHair.OrderBy(item => item.Sequence).Select(item => item.Item)).ToImmutableArray();
     }
 }

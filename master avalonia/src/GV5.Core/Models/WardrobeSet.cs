@@ -23,11 +23,18 @@ public enum WardrobeCategory
     Shoes = 15
 }
 
+public enum WardrobeRenderPhase
+{
+    AttachedToBodyLayer = 1,
+    AboveHair = 2
+}
+
 /// <summary>A transparent garment asset placed on the immutable source model and bound to one stable bone.</summary>
 public sealed record WardrobeComponent
 {
     private WardrobeComponent(WardrobeComponentId id, string name, WardrobeCategory category,
-        ModelPartId boneId, AssetId assetId, Rect2D placement, double rotationDegrees, WardrobeBinding binding)
+        ModelPartId boneId, AssetId assetId, Rect2D placement, double rotationDegrees,
+        WardrobeBinding binding, bool renderAboveHair)
     {
         Id = id;
         Name = name;
@@ -37,6 +44,7 @@ public sealed record WardrobeComponent
         Placement = placement;
         RotationDegrees = rotationDegrees;
         Binding = binding;
+        RenderAboveHair = renderAboveHair;
     }
 
     public WardrobeComponentId Id { get; }
@@ -48,14 +56,18 @@ public sealed record WardrobeComponent
     public Rect2D Placement { get; }
     public double RotationDegrees { get; }
     public WardrobeBinding Binding { get; }
+    /// <summary>Head extras may opt into the final composition phase above all hair layers.</summary>
+    public bool RenderAboveHair { get; }
 
     public static WardrobeComponent Create(string name, WardrobeCategory category, ModelPartId boneId,
-        AssetId assetId, Rect2D placement, double rotationDegrees, WardrobeBoneFrame sourceBone) =>
+        AssetId assetId, Rect2D placement, double rotationDegrees, WardrobeBoneFrame sourceBone,
+        bool renderAboveHair = false) =>
         Restore(WardrobeComponentId.New(), name, category, boneId, assetId, placement, rotationDegrees,
-            WardrobeBinding.Bind(sourceBone, placement, rotationDegrees));
+            WardrobeBinding.Bind(sourceBone, placement, rotationDegrees), renderAboveHair);
 
     public static WardrobeComponent Restore(WardrobeComponentId id, string name, WardrobeCategory category,
-        ModelPartId boneId, AssetId assetId, Rect2D placement, double rotationDegrees, WardrobeBinding binding)
+        ModelPartId boneId, AssetId assetId, Rect2D placement, double rotationDegrees,
+        WardrobeBinding binding, bool renderAboveHair = false)
     {
         if (!id.IsValid || !boneId.IsValid || !assetId.IsValid)
             throw new ArgumentException("A wardrobe component requires valid component, bone and asset IDs.");
@@ -63,20 +75,26 @@ public sealed record WardrobeComponent
         var normalizedName = name.Trim();
         if (normalizedName.Length > 120) throw new ArgumentOutOfRangeException(nameof(name));
         if (!Enum.IsDefined(category)) throw new ArgumentOutOfRangeException(nameof(category));
+        if (renderAboveHair && category is not (WardrobeCategory.Glasses or WardrobeCategory.HeadAccessory))
+            throw new ArgumentException("Only glasses and head accessories can render above hair.", nameof(renderAboveHair));
         if (placement.Width <= 0 || placement.Height <= 0) throw new ArgumentOutOfRangeException(nameof(placement));
         if (!double.IsFinite(rotationDegrees)) throw new ArgumentOutOfRangeException(nameof(rotationDegrees));
         if (binding.Version != 1 || !string.Equals(binding.BoneId, boneId.ToString(), StringComparison.Ordinal))
             throw new ArgumentException("The wardrobe binding must target the component's stable bone ID.", nameof(binding));
-        return new WardrobeComponent(id, normalizedName, category, boneId, assetId, placement, rotationDegrees, binding);
+        return new WardrobeComponent(id, normalizedName, category, boneId, assetId, placement,
+            rotationDegrees, binding, renderAboveHair);
     }
 
     public WardrobeComponent WithPlacement(Rect2D placement, double rotationDegrees, WardrobeBoneFrame sourceBone) =>
         Restore(Id, Name, Category, BoneId, AssetId, placement, rotationDegrees,
-            WardrobeBinding.Bind(sourceBone, placement, rotationDegrees));
+            WardrobeBinding.Bind(sourceBone, placement, rotationDegrees), RenderAboveHair);
 
     public WardrobeComponent WithBone(ModelPartId boneId, WardrobeBoneFrame sourceBone) =>
         Restore(Id, Name, Category, boneId, AssetId, Placement, RotationDegrees,
-            WardrobeBinding.Bind(sourceBone, Placement, RotationDegrees));
+            WardrobeBinding.Bind(sourceBone, Placement, RotationDegrees), RenderAboveHair);
+
+    public WardrobeComponent WithRenderAboveHair(bool renderAboveHair) =>
+        Restore(Id, Name, Category, BoneId, AssetId, Placement, RotationDegrees, Binding, renderAboveHair);
 }
 
 /// <summary>Editable wardrobe data pinned to one exact published model; its revision is independent of model revisions.</summary>
