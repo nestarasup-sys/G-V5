@@ -86,6 +86,10 @@ public partial class MainViewModel : ViewModelBase
     private void SetRoute(ModuleRoute route)
     {
         var page = _pageFactory.Create(route);
+        if (CurrentPage is IDisposable disposablePage)
+        {
+            disposablePage.Dispose();
+        }
         ActiveRoute = route;
         CurrentPage = page;
     }

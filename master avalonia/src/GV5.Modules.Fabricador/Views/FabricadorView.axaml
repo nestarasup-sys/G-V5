@@ -1,6 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:GV5.Modules.Fabricador.ViewModels"
+             xmlns:views="using:GV5.Modules.Fabricador.Views"
              x:Class="GV5.Modules.Fabricador.Views.FabricadorView"
              x:DataType="vm:FabricadorViewModel"
              DataContextChanged="OnDataContextChanged">
@@ -9,6 +10,17 @@
             <StackPanel Spacing="6">
                 <TextBlock Text="Novo modelo" FontSize="{DynamicResource Gv5FontSizeTitle}" FontWeight="SemiBold" Foreground="{DynamicResource Gv5BrushTextPrimary}" />
                 <TextBlock Text="{Binding Status}" FontSize="{DynamicResource Gv5FontSizeBody}" TextWrapping="Wrap" Foreground="{DynamicResource Gv5BrushTextSecondary}" />
+            </StackPanel>
+
+            <StackPanel Spacing="8">
+                <TextBlock Text="Prévia do modelo"
+                           FontWeight="SemiBold"
+                           Foreground="{DynamicResource Gv5BrushTextPrimary}" />
+                <views:FabricatorCanvas x:Name="ModelCanvas" MinHeight="360" MaxHeight="560" />
+                <TextBlock Text="{Binding ModelRenderError}"
+                           IsVisible="{Binding HasModelRenderError}"
+                           TextWrapping="Wrap"
+                           Foreground="#B4233C" />
             </StackPanel>
 
             <TextBlock Text="Verificando alterações interrompidas…"

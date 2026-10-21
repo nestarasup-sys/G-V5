@@ -16,6 +16,7 @@ using GV5.Data.Thumbnails;
 using GV5.Modules.Customizador;
 using GV5.Modules.Fabricador;
 using GV5.Modules.Fabricador.Import;
+using GV5.Rendering;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace GV5.App.Composition;
@@ -59,6 +60,8 @@ internal static class AppComposition
         services.AddSingleton<ModelSourceImportService>();
         services.AddSingleton<AssetBitmapCache>();
         services.AddSingleton<AvaloniaRenderedFrameAdapter>();
+        services.AddSingleton<IRenderAssetProvider, AssetStoreRenderProvider>();
+        services.AddSingleton<IRenderSceneRenderer, SkiaRenderer>();
         services.AddSingleton<IThumbnailService, ThumbnailService>();
         services.AddSingleton<SqliteAssetImportPipeline>();
         services.AddSingleton<IAssetStore, SqliteAssetStore>();

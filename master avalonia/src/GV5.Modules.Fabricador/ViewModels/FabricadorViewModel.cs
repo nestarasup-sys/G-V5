@@ -5,10 +5,12 @@ using GV5.Application.Contracts;
 using GV5.Core.Identity;
 using GV5.Core.Models;
 using GV5.Modules.Fabricador.Import;
+using GV5.Rendering;
+using Avalonia.Threading;
 
 namespace GV5.Modules.Fabricador.ViewModels;
 
-public partial class FabricadorViewModel : ObservableObject, IModulePageViewModel, IFlushablePageViewModel
+public partial class FabricadorViewModel : ObservableObject, IModulePageViewModel, IFlushablePageViewModel, IDisposable
 {
     private static readonly TimeSpan AutosaveDelay = TimeSpan.FromMilliseconds(600);
     private readonly IModelDraftRepository _repository;
@@ -19,6 +21,12 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
     private readonly IFilePicker? _filePicker;
     private readonly ModelSourceImportService? _modelSourceImportService;
     private readonly IAssetStore? _assetStore;
+    private readonly IModelDraftContentRepository? _contentRepository;
+    private readonly IRenderSceneRenderer? _sceneRenderer;
+    private readonly object _previewSync = new();
+    private CancellationTokenSource? _previewCancellation;
+    private long _previewVersion;
+    private ModelDraftContent? _modelContent;
     private ModelDraft? _savedDraft;
     private ModelId? _pendingModelId;
     private Guid? _pendingCheckpointId;
@@ -51,8 +59,16 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanSave))]
+    [NotifyCanExecuteChangedFor(nameof(PublishModelSourceCommand))]
     [NotifyCanExecuteChangedFor(nameof(SaveCommand))]
     private string modelName = string.Empty;
+
+    [ObservableProperty]
+    private RenderedFrame? renderedModelFrame;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasModelRenderError))]
+    private string? modelRenderError;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanSave))]
@@ -100,7 +116,14 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
         ? $"Fonte: {preview.Width} × {preview.Height} px · prévia {preview.PreviewWidth} × {preview.PreviewHeight} px"
         : string.Empty;
     public bool CanSelectModelSource => !IsImporting && _filePicker is not null && _modelSourceImportService is not null;
-    public bool CanPublishModelSource => !IsImporting && ImportPreview is { IsPublished: false } && _assetStore is not null;
+    public bool CanPublishModelSource => !IsImporting
+        && !string.IsNullOrWhiteSpace(ModelName)
+        && ImportPreview is { } preview
+        && _assetStore is not null
+        && _contentRepository is not null
+        && _sceneRenderer is not null
+        && (!preview.IsPublished || _modelContent?.SourceAssetId != preview.PublishedAssetId);
+    public bool HasModelRenderError => !string.IsNullOrWhiteSpace(ModelRenderError);
     public bool HasPendingRecovery => PendingRecoveryCheckpoint is not null;
     public bool HasRecoveryMessage => !string.IsNullOrWhiteSpace(RecoveryMessage);
     public Task RecoveryTask { get; }
@@ -124,7 +147,9 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
         IOperationCorrelationContext? correlationContext = null,
         IFilePicker? filePicker = null,
         ModelSourceImportService? modelSourceImportService = null,
-        IAssetStore? assetStore = null)
+        IAssetStore? assetStore = null,
+        IModelDraftContentRepository? contentRepository = null,
+        IRenderSceneRenderer? sceneRenderer = null)
     {
         _repository = repository ?? throw new ArgumentNullException(nameof(repository));
         _dataInitializer = dataInitializer ?? throw new ArgumentNullException(nameof(dataInitializer));
@@ -134,11 +159,14 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
         _filePicker = filePicker;
         _modelSourceImportService = modelSourceImportService;
         _assetStore = assetStore;
+        _contentRepository = contentRepository;
+        _sceneRenderer = sceneRenderer;
         RecoveryTask = _checkpointStore is null ? Task.CompletedTask : DiscoverPendingRecoveryAsync();
     }
 
     partial void OnModelNameChanged(string value)
     {
+        PublishModelSourceCommand.NotifyCanExecuteChanged();
         if (IsSaving)
         {
             return;
@@ -207,7 +235,8 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
     [RelayCommand(CanExecute = nameof(CanPublishModelSource))]
     private async Task PublishModelSourceAsync()
     {
-        if (ImportPreview is not { } preview || _assetStore is null || _modelSourceImportService is null)
+        if (ImportPreview is not { } preview || _assetStore is null || _modelSourceImportService is null
+            || _contentRepository is null || _sceneRenderer is null)
         {
             return;
         }
@@ -216,14 +245,83 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
         IsImporting = true;
         try
         {
-            var result = await _modelSourceImportService.PublishAsync(preview, _assetStore);
-            if (result.IsFailure)
+            AssetId assetId;
+            if (preview.IsPublished && preview.PublishedAssetId is { } publishedAssetId)
             {
-                ImportError = result.Error!.Message;
+                assetId = publishedAssetId;
+            }
+            else
+            {
+                var result = await _modelSourceImportService.PublishAsync(preview, _assetStore);
+                if (result.IsFailure)
+                {
+                    ImportError = result.Error!.Message;
+                    return;
+                }
+
+                assetId = result.Value.Id;
+            }
+
+            if (_savedDraft is null)
+            {
+                await SaveDraftAsync(cancelPendingAutosave: true);
+                if (_activeSaveTask is not null)
+                {
+                    await _activeSaveTask;
+                }
+            }
+
+            if (_savedDraft is null)
+            {
+                ImportError = "Salve o nome do modelo antes de anexar a folha de imagem.";
                 return;
             }
 
-            ImportStatus = $"Asset publicado · {preview.Width} × {preview.Height} · {result.Value.Id}";
+            await _dataInitializer.InitializeAsync();
+            var loaded = await _contentRepository.GetAsync(_savedDraft.Id);
+            var existingContent = loaded.IsSuccess ? loaded.Value : null;
+            if (loaded.IsFailure && loaded.Error!.Code != ApplicationErrorCode.NotFound)
+            {
+                ImportError = loaded.Error.Message;
+                return;
+            }
+
+            var content = existingContent is null
+                ? ModelDraftContent.Restore(
+                    ModelDraftContent.CurrentSchemaVersion,
+                    _savedDraft.Id,
+                    Revision.From(1),
+                    null,
+                    assetId,
+                    preview.Width,
+                    preview.Height,
+                    [],
+                    [])
+                : existingContent.SourceAssetId == assetId
+                    ? existingContent
+                    : existingContent.WithSource(assetId, preview.Width, preview.Height);
+
+            if (!ReferenceEquals(content, existingContent))
+            {
+                var savedContent = await _contentRepository.SaveAsync(content, existingContent?.Revision);
+                if (savedContent.IsFailure)
+                {
+                    ImportError = savedContent.Error!.Message;
+                    return;
+                }
+
+                content = savedContent.Value;
+            }
+
+            await RenderModelPreviewAsync(content);
+            if (HasModelRenderError)
+            {
+                ImportError = ModelRenderError;
+                return;
+            }
+
+            _modelContent = content;
+            ImportStatus = $"Modelo carregado · {preview.Width} × {preview.Height} · {assetId}";
             OnPropertyChanged(nameof(CanPublishModelSource));
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidOperationException)
@@ -233,6 +331,117 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
         finally
         {
             IsImporting = false;
+        }
+    }
+
+    private async Task RenderModelPreviewAsync(ModelDraftContent content)
+    {
+        if (_sceneRenderer is null)
+        {
+            return;
+        }
+
+        var scene = ModelDraftRenderSceneBuilder.Build(content);
+        var request = new CancellationTokenSource();
+        CancellationTokenSource? previous;
+        long version;
+        lock (_previewSync)
+        {
+            version = checked(++_previewVersion);
+            previous = _previewCancellation;
+            _previewCancellation = request;
+        }
+        CancelPreviewSafely(previous);
+        RenderedFrame? frame = null;
+        try
+        {
+            frame = await _sceneRenderer.RenderAsync(scene, request.Token).ConfigureAwait(false);
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                lock (_previewSync)
+                {
+                    if (version != _previewVersion || request.IsCancellationRequested)
+                    {
+                        return;
+                    }
+
+                    var previousFrame = RenderedModelFrame;
+                    RenderedModelFrame = frame;
+                    frame = null;
+                    previousFrame?.Dispose();
+                    ModelRenderError = null;
+                }
+            });
+        }
+        catch (OperationCanceledException) when (request.IsCancellationRequested)
+        {
+            // A newer model revision superseded this preview request.
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or IOException or ArgumentException)
+        {
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                lock (_previewSync)
+                {
+                    if (version == _previewVersion && !request.IsCancellationRequested)
+                    {
+                        ModelRenderError = "Não foi possível compor a prévia do modelo. Verifique os assets e tente novamente.";
+                    }
+                }
+            });
+        }
+        finally
+        {
+            frame?.Dispose();
+            lock (_previewSync)
+            {
+                if (ReferenceEquals(_previewCancellation, request))
+                {
+                    _previewCancellation = null;
+                }
+            }
+            request.Dispose();
+        }
+    }
+
+    public void Dispose()
+    {
+        CancellationTokenSource? active;
+        RenderedFrame? frame;
+        lock (_previewSync)
+        {
+            _previewVersion = checked(_previewVersion + 1);
+            active = _previewCancellation;
+            _previewCancellation = null;
+            frame = RenderedModelFrame;
+            RenderedModelFrame = null;
+        }
+
+        CancelPreviewSafely(active);
+        frame?.Dispose();
+        CancelPendingAutosave();
+        var stagedPreview = ImportPreview;
+        ImportPreview = null;
+        if (stagedPreview is not null)
+        {
+            _ = stagedPreview.DisposeAsync();
+        }
+    }
+
+    private static void CancelPreviewSafely(CancellationTokenSource? source)
+    {
+        if (source is null)
+        {
+            return;
+        }
+
+        try
+        {
+            source.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+            // The render completed between publishing the cancellation source and signaling it.
         }
     }
 

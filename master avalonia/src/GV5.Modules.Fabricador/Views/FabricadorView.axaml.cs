@@ -30,10 +30,25 @@ public partial class FabricadorView : UserControl
         }
 
         UpdatePreviewImage();
+        UpdateRenderedModel();
     }
 
     private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
+        if (e.PropertyName == nameof(FabricadorViewModel.RenderedModelFrame))
+        {
+            if (Dispatcher.UIThread.CheckAccess())
+            {
+                UpdateRenderedModel();
+            }
+            else
+            {
+                Dispatcher.UIThread.Post(UpdateRenderedModel);
+            }
+
+            return;
+        }
+
         if (e.PropertyName != nameof(FabricadorViewModel.ImportPreview))
         {
             return;
@@ -96,5 +111,50 @@ public partial class FabricadorView : UserControl
         }
 
         ModelSourcePreviewImage.Source = null;
+    }
+
+    private void UpdateRenderedModel()
+    {
+        if (_viewModel?.RenderedModelFrame is not { } frame)
+        {
+            ModelCanvas.Frame = null;
+            return;
+        }
+
+        var source = frame.Bitmap;
+        var bitmap = new WriteableBitmap(
+            new PixelSize(source.Width, source.Height),
+            new Vector(96, 96),
+            PixelFormats.Rgba8888,
+            AlphaFormat.Premul);
+        try
+        {
+            using var framebuffer = bitmap.Lock();
+            var bytesPerRow = checked(source.Width * 4);
+            if (source.RowBytes < bytesPerRow || framebuffer.RowBytes < bytesPerRow)
+            {
+                throw new InvalidOperationException("A rendered model row is shorter than its declared RGBA width.");
+            }
+
+            var pixels = source.GetPixels();
+            if (pixels == IntPtr.Zero || framebuffer.Address == IntPtr.Zero)
+            {
+                throw new InvalidOperationException("A rendered model pixel buffer could not be allocated.");
+            }
+
+            var row = new byte[bytesPerRow];
+            for (var y = 0; y < source.Height; y++)
+            {
+                Marshal.Copy(IntPtr.Add(pixels, checked(y * source.RowBytes)), row, 0, row.Length);
+                Marshal.Copy(row, 0, IntPtr.Add(framebuffer.Address, checked(y * framebuffer.RowBytes)), row.Length);
+            }
+
+            ModelCanvas.Frame = bitmap;
+        }
+        catch
+        {
+            bitmap.Dispose();
+            throw;
+        }
     }
 }
