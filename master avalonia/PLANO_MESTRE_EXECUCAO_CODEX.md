@@ -11,7 +11,7 @@
 
 ## 0. COMO O CODEX DEVE TRABALHAR — INSTRUÇÃO PERMANENTE
 
-**Meta vigente:** paridade funcional completa, interface familiar e melhorada — não pixel-perfect. F06 liberada tecnicamente; F07.02 e F07.03 validadas localmente; próxima tarefa F07.04. Não deixar controle do legado ausente nem marcar tarefas concluídas sem implementação, persistência e testes.
+**Meta vigente:** paridade funcional completa, interface familiar e melhorada — não pixel-perfect. F06 liberada tecnicamente; F07.02–F07.04 validadas localmente; próxima tarefa F07.05. Não deixar controle do legado ausente nem marcar tarefas concluídas sem implementação, persistência e testes.
 
 1. Antes de qualquer edição: confirmar `git branch --show-current` = `Master-AValonia`, ler `git status --short` e conferir HEAD local. Consultar o remoto somente após autorização explícita do usuário; reconciliar mudanças concorrentes sem sobrescrever trabalho. **Nunca dar force push nem apagar trabalho em andamento.**
 2. Ler este arquivo, `PLANO_DO_NOVO_APP.md`, `README.md`, `global.json` e `EXECUTION_STATUS.md`. Se não houver status, criá-lo na tarefa F00.05.
@@ -249,7 +249,7 @@ Ambiente/SDK/CI: `TestarLocal.bat gate` passou em 2026-10-21; ver `docs/gates/GA
 - [x] **F07.01** — Inventariar rig legado, joints, anchors, sourceTransforms e as regras de fixed joint. Evidência: docs/legacy-contracts/F07_RIG_DETALHADO.md; ver EXECUTION_STATUS.
 - [x] **F07.02** — Implementar editor de criar/editar/remover joints, rejeitando ciclos e refs inválidas. Evidência local e persistência: `EXECUTION_STATUS.md`.
 - [x] **F07.03** — Implementar mover hierarquia a partir do pivô e recalcular descendentes corretamente. Evidência de transforms, anchors, juntas fixas/livres e undo: `EXECUTION_STATUS.md`.
-- [ ] **F07.04** — Exibir guias/handles de junta e snap sem acoplar geometria ao controle.
+- [x] **F07.04** — Exibir guias/handles de junta e snap sem acoplar geometria ao controle. Evidência local e fluxo headless de snap/undo/persistência: `EXECUTION_STATUS.md`.
 - [ ] **F07.05** — Definir PoseDraft e poses publicadas referenciando revisão exata do modelo.
 - [ ] **F07.06** — Implementar editor de pose (mover/rotacionar bone) e visualização pela engine.
 - [ ] **F07.07** — Implementar salvar/carregar/duplicar/publicar pose e thumbnails lazily.

@@ -9,12 +9,12 @@
 | Recurso do Electron | Situação documentada no Avalonia até F06 | Fase de implementação sugerida | Critério funcional de encerramento |
 | --- | --- | --- | --- |
 | Dez slots de modelos, selecionar/limpar/excluir | Layout aproximado existe, mas os 10 slots com navegação/exclusão não | F09.15/G2, após dependências F07/F08 | Criar/selecionar/substituir/remover por slot, persistir e reabrir, respeitando proteção de referências |
-| Abas Peças, Camadas e Juntas | Painel de camadas existe; abas dedicadas ainda ausentes | Peças/Juntas: F07.02–F07.04; revisão do conjunto: F09.15/G2 | Abas acessíveis, seleção preservada, cada controle executa ação correspondente |
+| Abas Peças, Camadas e Juntas | Painel de camadas e editor de juntas existem; abas dedicadas ainda ausentes | F09.15/G2 | Abas acessíveis, seleção preservada, cada controle executa ação correspondente |
 | Miniaturas de peças | Listagem de layers existe, miniaturas ainda ausentes | F09.15/G2 | Gerar/carregar sob cache limitado, atualizar ao alterar assets, não bloquear UI |
-| Quadrícula do canvas | Prévia clara e seleção presentes; grid ausente no estado atual | F07.04 ou F09.15/G2 | Exibir/ocultar, escala e pan corretos, não alterar render/export base |
+| Quadrícula do canvas | Prévia clara e seleção presentes; grid ausente no estado atual | F09.15/G2 | Exibir/ocultar, escala e pan corretos, não alterar render/export base |
 | Controles de tolerância de chroma | ChromaCropProcessor existe, controles no editor não | F09.15/G2 | Ajustar tolerância e prévia, confirmar/cancelar, não destruir fonte |
 | Misturador/edição de pixels | Ferramenta do legado mapeada; sem UI/serviço correspondente validado | F09.15/G2 | Ferramenta funcional com undo/redo, assets sem perda e round-trip |
-| Edição de pivôs/âncoras e estado fixed | Motor geométrico existe; ferramentas de UI específicas não validadas | F07.02–F07.04 | Criar/editar/excluir juntas; arrastar pivôs; fixar/soltar sem snap; salvar/reabrir |
+| Edição de pivôs/âncoras e estado fixed | CRUD, edição de âncoras, handles/snap e persistência implementados em F07.02/F07.04 | F09.15/G2 para revisão de conjunto e mouse/DPI no Windows | Criar/editar/excluir juntas; arrastar pivôs; fixar/soltar; snap opcional por proximidade; salvar/reabrir |
 | Dividir/mesclar peças e restaurar fonte | Legado possui; não há prova completa de controles Avalonia | F09.15/G2 | Ações reversíveis, assets/crop preservados, reabertura |
 | Reordenação por arrasto na lista | Alteração por botões existe, drag de linhas ausente | F09.15/G2 | Drag de camada atualiza ordem e undo sem mudar joints |
 | Heurística de conexões automáticas | Legacy rig.ts auditado F07.01; integração UI nativa ainda não | F07.02–F07.04 / fechamento G2 | Sugestões sem ciclos/pais duplicados, usuário pode corrigir manualmente |
@@ -30,4 +30,4 @@
 
 ## Estado atual
 
-**0 lacunas funcionais deste inventário estão declaradas resolvidas por esta auditoria.** A F07.02 foi validada localmente no commit `8f11586`: UI de CRUD de juntas, validação de ciclos/referências, revisão otimista, undo/redo e persistência/reabertura foram cobertos. Continuam pendentes as guias/handles e arrasto de pivôs (F07.04), a heurística de conexões automáticas e outras lacunas listadas acima. A fase F07 só encerra quando seu gate técnico passar.
+O inventário ainda contém lacunas abertas. F07.02 (`8f11586`) cobre CRUD, validação, undo/redo e persistência/reabertura de juntas; F07.04 (`49b206b`) cobre guias/handles, snap geométrico, undo/redo e persistência/reabertura. A validação manual com mouse/DPI permanece pendente, assim como a heurística de conexões automáticas e outras lacunas listadas acima. A fase F07 só encerra quando seu gate técnico passar.
