@@ -16,6 +16,74 @@ namespace GV5.Data.Tests;
 public sealed class SqliteModelRevisionRepositoryTests
 {
     [Fact]
+    public async Task PublishRejectsUnavailableReferencedAssetWithoutCreatingRevisionOrReferences()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var root = Path.Combine(Path.GetTempPath(), $"gv5-model-revision-missing-asset-{Guid.NewGuid():N}");
+        var paths = new AppDataPaths(root);
+        var modelId = ModelId.New();
+
+        try
+        {
+            using var database = new SqliteDatabase(paths);
+            await CreateInitializer(database).InitializeAsync(cancellationToken);
+            var sourceAsset = await InsertAvailableAssetAsync(database, "available-source", cancellationToken);
+            var partAsset = await InsertAvailableAssetAsync(database, "part-to-mark-missing", cancellationToken);
+            var drafts = new SqliteModelDraftRepository(database);
+            var draft = ModelDraft.Create(modelId, "Peça ausente", 10);
+            Assert.True((await drafts.CreateAsync(draft, cancellationToken)).IsSuccess);
+            var partId = ModelPartId.New();
+            var part = new ModelPart(
+                partId,
+                "Cabeça",
+                partAsset,
+                new Rect2D(0, 0, 4, 4),
+                Transform2D.Identity,
+                new ModelPartSourceTransform(new Rect2D(0, 0, 4, 4), Transform2D.Identity));
+            var content = ModelDraftContent.Restore(
+                ModelDraftContent.CurrentSchemaVersion,
+                modelId,
+                Revision.Initial,
+                null,
+                sourceAsset,
+                4,
+                4,
+                [part],
+                [partId]);
+            var contentRepository = new SqliteModelDraftContentRepository(database);
+            Assert.True((await contentRepository.SaveAsync(content, null, cancellationToken)).IsSuccess);
+
+            await database.ExecuteWriteAsync(async (connection, transaction, token) =>
+            {
+                await using var command = connection.CreateCommand();
+                command.Transaction = transaction;
+                command.CommandText = "UPDATE assets SET verification_state = 'missing' WHERE asset_id = $asset;";
+                command.Parameters.AddWithValue("$asset", partAsset.ToString());
+                return await command.ExecuteNonQueryAsync(token) == 1;
+            }, cancellationToken);
+
+            var failed = await new SqliteModelRevisionRepository(database).PublishAsync(draft, content, 20, cancellationToken);
+
+            Assert.True(failed.IsFailure);
+            Assert.Equal(ApplicationErrorCode.NotFound, failed.Error!.Code);
+            Assert.Equal(0L, await ScalarAsync(database,
+                "SELECT COUNT(*) FROM model_revisions WHERE model_id = $model;",
+                cancellationToken,
+                ("$model", modelId.ToString())));
+            Assert.Equal(0L, await ScalarAsync(database,
+                "SELECT COUNT(*) FROM asset_references WHERE owner_type = 'fabricator.model-revision';",
+                cancellationToken));
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+            {
+                Directory.Delete(root, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
     public async Task Publish_CreatesImmutableSnapshots_PinsAssets_AndIsIdempotent()
     {
         var cancellationToken = TestContext.Current.CancellationToken;

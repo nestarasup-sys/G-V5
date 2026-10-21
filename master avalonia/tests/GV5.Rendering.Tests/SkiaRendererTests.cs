@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using GV5.Assets.Decoding;
 using GV5.Core.Identity;
+using GV5.Core.Models;
 using GV5.Geometry;
 using GV5.Rendering;
 using SkiaSharp;
@@ -30,6 +31,26 @@ public sealed class SkiaRendererTests
 
         frame.Dispose();
         Assert.Throws<ObjectDisposedException>(() => _ = frame.Bitmap);
+    }
+
+    [Fact]
+    public async Task ModelDraftPreviewPngMatchesLegacySourceCanvasForUnseparatedModel()
+    {
+        var sourceAssetId = AssetId.New();
+        using var assets = new TestRenderAssetProvider(CreateFourColorPng());
+        var content = ModelDraftContent.CreateEmpty(ModelId.New(), Revision.Initial)
+            .WithSource(sourceAssetId, 2, 2);
+        var scene = ModelDraftRenderSceneBuilder.Build(content);
+        using var actual = await new SkiaRenderer(assets).RenderAsync(scene, TestContext.Current.CancellationToken);
+
+        // Legacy canvas displays the original source at its native dimensions and origin before separation.
+        Assert.Equal(2, actual.Width);
+        Assert.Equal(2, actual.Height);
+        Assert.Equal(SKColors.Red, actual.Bitmap.GetPixel(0, 0));
+        Assert.Equal(SKColors.Green, actual.Bitmap.GetPixel(1, 0));
+        Assert.Equal(SKColors.Blue, actual.Bitmap.GetPixel(0, 1));
+        Assert.Equal(SKColors.Yellow, actual.Bitmap.GetPixel(1, 1));
+        Assert.Equal(0, assets.Cache.Metrics.ActiveLeaseCount);
     }
 
     [Fact]
