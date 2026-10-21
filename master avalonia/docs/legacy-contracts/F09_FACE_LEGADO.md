@@ -57,7 +57,7 @@ Para uma sobrancelha existente, o controle “Remover fundo verde da sobrancelha
 
 ### Detalhes faciais
 
-O catálogo independente possui dois destaques de olho (`eye-highlight-left/right`), `blush` e `facial-shadow`. São imagens PNG independentes, com transform inicial por categoria, dimensões medidas e seleção por slot de modelo. A prévia compõe os detalhes selecionados em conjunto e permite arrastar o detalhe da categoria ativa; o transform atualizado é salvo no asset. Seus efeitos parametrizados de expressão são outro contrato e ficam para F09.09/F09.10.
+O catálogo independente possui dois destaques de olho (`eye-highlight-left/right`), `blush` e `facial-shadow`. São imagens PNG independentes, com transform inicial por categoria, dimensões medidas e seleção por slot de modelo. A prévia compõe os detalhes selecionados em conjunto e permite arrastar o detalhe da categoria ativa; o transform atualizado é salvo no asset. Seus efeitos parametrizados de expressão são outro contrato: F09.09 já implementa os valores/defaults, interpolação e rasterização CPU; presets, collections e persistência ficam em F09.10+.
 
 ## Edição e preview
 
