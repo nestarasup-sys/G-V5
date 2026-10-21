@@ -3,6 +3,7 @@ using GV5.App.Views;
 using GV5.App.Navigation;
 using GV5.Application.Contracts;
 using GV5.Data.Migrations;
+using GV5.Data.Repositories;
 using GV5.Data.Storage;
 using GV5.Modules.Customizador;
 using GV5.Modules.Fabricador;
@@ -21,7 +22,9 @@ internal static class AppComposition
         services.AddSingleton<IAppDataPaths>(_ => AppDataPaths.ForCurrentUser());
         services.AddSingleton<IGv5Database, SqliteDatabase>();
         services.AddSingleton<ISqliteMigration, InitialAssetSchemaMigration>();
+        services.AddSingleton<ISqliteMigration, ModelDraftSchemaMigration>();
         services.AddSingleton<SqliteMigrationRunner>();
+        services.AddSingleton<IModelDraftRepository, SqliteModelDraftRepository>();
         services.AddSingleton(new ModuleRouteCatalog(routes));
         services.AddTransient<IModulePageFactory, ServiceProviderModulePageFactory>();
         foreach (var route in routes)

@@ -60,8 +60,8 @@ Em caso de divergência, não decidir silenciosamente: preservar os requisitos d
 - Rodar `TestarLocal.bat rapido` após alterações funcionais/tarefas (build Debug incremental + testes da solution + Avalonia Headless). É permitido usar CPU/RAM do PC; não abrir janelas nem manipular mouse/teclado real.
 - Rodar `TestarLocal.bat gate` ao finalizar uma fase, depois de mudanças amplas ou antes de declarar um gate aprovado (restore/build Release + testes + Headless). Corrigir falhas localmente primeiro.
 - Para testar **somente UI headless**, `TestarHeadless.bat` continua disponível; para testes específicos durante implementação, pode executar comandos direcionados do .NET conforme a tarefa.
-- No GitHub, `.github/workflows/native-avalonia.yml` só dispara automaticamente ao modificar `docs/gates/**` na branch, ou na abertura/atualização de PR. Ele também declara gatilho manual. Pushes comuns de implementação/status **não devem acionar CI**.
-- Em gates, confirmar resultado real de CI quando o gate exigir verificação remota; não marcar aprovado se estiver falhando ou não executado. O Ubuntu é validação suplementar no GitHub, não um runtime exigido no PC.
+- A meta ativa desta execução restringe todo o trabalho ao ambiente local. **Não executar `git fetch`, `pull`, `push`, comandos `gh`, chamadas GitHub API ou GitHub Actions até o usuário autorizar explicitamente.** A referência local `origin/*` pode estar desatualizada e não deve ser consultada.
+- Se um gate exigir validação remota, registrar `VALIDAÇÃO REMOTA ADIADA PELO USUÁRIO`; não inventar aprovação nem deixar a exigência remota bloquear o trabalho local independente. Se a evidência remota for condição essencial do gate, ele permanece sem aprovação final.
 - `EXECUTION_STATUS.md` preserva o avanço existente. Este ajuste de infraestrutura não valida, remove nem reordena tarefas F00–F17. Documentação e tarefas prosseguem na ordem original.
 
 ## Qualidade, testes e evidências
@@ -86,6 +86,7 @@ Registrar em `EXECUTION_STATUS.md`: ID, estado, commits, testes executados, evid
 - Não misturar reformatação/refatoração global com implementação de feature sem justificativa.
 - Ações paralelas de leitura/revisão são aceitáveis; **evitar dois agentes editando os mesmos arquivos**. Preservar alterações locais do usuário.
 - Quando uma tarefa exigir revisão do Plano Mestre, fazer commit dedicado e registrar ADR/impacto.
+- Commits e verificações Git locais continuam obrigatórios. Operações remotas ficam proibidas até solicitação explícita do usuário, mesmo que a branch possua um remote configurado.
 
 ## Relatório obrigatório ao encerrar cada sessão
 

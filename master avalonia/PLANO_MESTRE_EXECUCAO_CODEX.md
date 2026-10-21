@@ -138,8 +138,8 @@ Ambiente/SDK/CI: <comandos e resultados reais>
 - [x] **F02.02** — Desenhar schema SQLite e ownership por domínio; usar tabelas relacionais principais e JSON só para atributos extensíveis.
 - [x] **F02.03** — Implementar banco e conexão central com foreign keys, índices, WAL e política de escrita, sem SQL na UI.
 - [x] **F02.04** — Implementar migrations numeradas/versionadas e teste de base vazia→versão atual→reabertura.
-- [ ] **F02.05** — Definir ModelDraft com ID/revision e repositório interface + implementação Data.
-- [ ] **F02.06** — Implementar create/update/get de draft e teste real de arquivo SQLite temporário.
+- [x] **F02.05** — Definir ModelDraft com ID/revision e repositório interface + implementação Data.
+- [x] **F02.06** — Implementar create/update/get de draft e teste real de arquivo SQLite temporário.
 - [ ] **F02.07** — Implementar expectedRevision e teste de dois escritores com revisão divergente (Conflict).
 - [ ] **F02.08** — Implementar gravação de apenas deltas/entidades dirty, sem regravar arquivo completo por gesto.
 - [ ] **F02.09** — Expor estado Saved/Dirty/Saving/Error confirmado em UI e teste de falha de save.
