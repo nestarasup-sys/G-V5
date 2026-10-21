@@ -15,9 +15,9 @@
 
 - **Fontes principais:** `src/renderer/src/features/fabricator/FabricatorPage.tsx`, `PoseWorkspace.tsx`, `AnimatorWorkspace.tsx`, `wardrobe/WardrobeWorkspace.tsx`, `ExpressionPresetWorkspace.tsx`, `FaceAnimatorWorkspace.tsx`, `DesignWorkspace.tsx`, `face/FaceComponentsWorkspace.tsx`, `face/HeadExtrasWorkspace.tsx`; estilos locais correspondentes e `styles.css`.
 - **Áreas localizadas no inventário funcional:** Modelos/peças, Chroma, rig e juntas, histórico, Poses, Animador corporal, Roupas, Face/olhos, presets/coleções de expressão, Animador facial, Cabelos, Extras de cabeça e Design Dev (banner).
-- **Elementos de interface observados por código:** lista de seções; slots de modelo; undo/redo; título do modelo; ajuste de chroma; prévia/canvas com pivôs; painel com abas/ferramentas e lista de layers; workspaces especializados com slots, preview, listas, propriedades e diálogos.
+- **Elementos de interface observados por código:** lista de seções; slots de modelo; undo/redo; título do modelo; ajuste de chroma; prévia/canvas com pivôs; painel lateral com abas/ferramentas e lista de layers da frente para trás. As linhas têm miniatura, seleção, nome, estado da camada, setas de ordem, visibilidade e suporte a arrastar para reordenar. Workspaces especializados têm slots, preview, listas, propriedades e diálogos.
 - **Evidência disponível:** estrutura/semântica e controles estáticos; ver `../legacy-contracts/FABRICADOR_INVENTARIO.md`.
-- **Estado parcial do Avalonia:** seleção de folha, cartão de revisão, prévia de imagem e confirmação de publicação estão ligados ao ViewModel e cobertos em Avalonia Headless. Esta tela ainda é provisória e não foi comparada com captura Electron; não considerar visualmente aprovada.
+- **Estado parcial do Avalonia:** seleção de folha, cartão de revisão, prévia de imagem e confirmação de publicação estão ligados ao ViewModel e cobertos em Avalonia Headless. Há um canvas e um painel lateral com lista, seleção, visibilidade e setas de ordenação. Miniaturas e arrastar as linhas ainda faltam. Esta tela ainda é provisória e não foi comparada com captura Electron; não considerar visualmente aprovada.
 - **Pendente:** capturar a página e cada workspace em estados vazio, ocupado, seleção, edição, diálogo, erro e scroll. Medidas e tokens próprios de cada seção ainda não foram extraídos de forma completa.
 
 ## Customizador
