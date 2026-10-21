@@ -1,4 +1,4 @@
-# Uso moderno de Avalonia preservando o visual do Gacha 5
+# Uso moderno de Avalonia mantendo a identidade familiar do Gacha 5
 
 **Base:** Avalonia e dependências fixadas pela solução (consulte `global.json` e `Directory.Packages.props`). Estratégias abaixo são propostas arquiteturais; antes de implementar, confirmar API e comportamento na versão instalada e validar no alvo Windows. Não são alegações de que todos os recursos já estão configurados.
 
@@ -17,6 +17,8 @@
 | Popups/dialogs Avalonia + serviços de sistema | Manter dialogs de produto consistentes e integrar seletor de arquivos nativo | Todas; import/export | Dialogs de produto customizados; seleção de arquivo por serviço `IFilePicker` | Janela nativa tem aparência do Windows e ciclo de vida próprio | Classificar dialog como produto/sistema e comparar somente escopo equivalente |
 | Diagnóstico e inspeção visual | Encontrar bindings, layout e re-renderizações custosas | Desenvolvimento/testes | Habilitar ferramentas permitidas em Debug/testes; manter desativadas no produto quando intrusivas | Ferramentas/licenças opcionais não podem virar dependência do app | Comprovar ausência de dependência paga/runtime; registrar métricas e capturas |
 | Avalonia Headless | Testar bindings, composição e fluxos UI sem manipular desktop | Todas | Usar para testes determinísticos que o backend suporta | Não prova janela nativa, GPU, DPI real ou file dialogs Windows | Rotular como teste headless; completar aceite Windows quando aplicável |
+
+**Diretriz vigente (ADR-0006):** comparação pixel-perfect de controles e screenshots é ferramenta de refinamento, não gate obrigatório de engenharia. Todos os botões e fluxos precisam funcionar; pequenas diferenças de UI são aceitáveis. Testes Windows reais continuam distintos do Headless.
 
 ## Fronteiras
 
