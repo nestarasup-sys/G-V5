@@ -13,13 +13,13 @@
 | Branch obrigatória | `Master-AValonia` |
 | Pasta exclusiva do novo aplicativo | `master avalonia/` |
 | Commit-base inspecionado antes deste arquivo | `53b7f7a97321e85063a8dd4f9635e48d36548323` |
-| Último commit de implementação validado | `b749cf0` (F06.03) |
+| Último commit de implementação validado | `a1b780f` (F06.04) |
 | Fase ativa | **F06 — Fabricador I: modelos e peças** |
-| Última tarefa VALIDADA | **F06.03** — importar folha com prévia limitada, validação e publicação explícita |
-| Próxima tarefa PENDENTE | **F06.04** — portar chroma/crop com worker cancelável e testes de borda/transparência |
+| Última tarefa VALIDADA | **F06.04** — processamento chroma/crop cancelável com preservação de transparência |
+| Próxima tarefa PENDENTE | **F06.05** — separar peças em assets e metadados com round-trip verificável |
 | Requisito transversal adicionado | Fidelidade visual ao Gacha 5 Electron, registrada em ADR-0004; documentos em `docs/ui-fidelity/`; sem paridade visual aprovada ainda |
 | Gate atual | **GATE F00: PASSOU; G0: PASSOU; F02: PASSOU; F03: PASSOU; F04: PASSOU; F05: PASSOU; G1 CPU/headless: PASSOU** |
-| Progresso validado neste controle | **77 / 247 tarefas (31,2%)** |
+| Progresso validado neste controle | **78 / 247 tarefas (31,6%)** |
 | Tarefas em execução | Nenhuma |
 | Bloqueios conhecidos | Primeiro download do SDK em clone vazio não progrediu; evidência e limite de F01 estão registrados em `docs/gates/GATE-F01.md` |
 | Aceite Windows/GPU | **Não executado / não registrado** |
@@ -51,7 +51,7 @@ Se o Codex encontrar algo já implementado, **validar e registrar evidências**,
 | F03 | AssetStore, thumbnails e cache limitado | 11 | 11 | VALIDADA | GATE-F03 PASSOU; G1 global em execução |
 | F04 | Geometry Engine canônica | 11 | 11 | VALIDADA | GATE-F04 PASSOU; G1 global em execução |
 | F05 | RenderScene e SkiaRenderer independentes | 11 | 11 | VALIDADA | GATE-F05 e G1 CPU/headless PASSOU |
-| F06 | Fabricador I — modelos e peças | 14 | 3 | EM_EXECUCAO | — |
+| F06 | Fabricador I — modelos e peças | 14 | 4 | EM_EXECUCAO | — |
 | F07 | Fabricador II — rig, poses e animador | 12 | 0 | PENDENTE | — |
 | F08 | Fabricador III — roupas, binding e revisões | 12 | 0 | PENDENTE | — |
 | F09 | Fabricador IV — cabelos, face, expressões e completação | 15 | 0 | PENDENTE | — |
@@ -149,6 +149,7 @@ Adicionar uma linha ao concluir ou bloquear cada tarefa. A linha inicial abaixo 
 | **F06.01** | **VALIDADA** | `147e3bf` | `ModelSlot` restringe os dez slots legados, `ModelPartId` fornece identidade tipada, parte mantém AssetId/crop/transform editável e sourceTransform independente. `ModelDraftContent` valida versão 1, ID/revisão, asset+dimensões pareados, unicidade, ordem back-to-front completa e crops dentro da fonte. TestarLocal.bat rapido: build sem avisos/erros; Core 18, Architecture 8, Geometry 35, Assets 27, Data 44, Rendering 18, Headless 20; nenhuma falha. | `src/GV5.Core/Models/ModelSlot.cs`; `ModelPart.cs`; `ModelDraftContent.cs`; `Identity/ModelPartId.cs`; `tests/GV5.Core.Tests/ModelDraftContentTests.cs`; `docs/decisions/ADR-0005-fabricator-model-draft-contract.md` | No momento da validação F06.01, o snapshot de conteúdo ainda não persistia. F06.02 persistiu metadados; armazenamento serializado de peças/assets, import, edição, undo e publicação continuam pendentes. UI e paridade visual não foram exercitadas. |
 | **F06.02** | **VALIDADA** | `fece8e9` | Repositório SQLite cria, busca, lista em ordem determinística por atualização/ID, renomeia com revisão otimista e duplica metadados em transação. Testes confirmam source inalterado, nova identidade/revisão/timestamps, listagem após reopen, conflito, source ausente e entradas inválidas sem escrita. `TestarLocal.bat rapido`: build com 2 avisos CS0618 preexistentes em ThumbnailService e 0 erros; Core 18, Architecture 8, Geometry 35, Assets 27, Data 47, Rendering 18, Headless 20; sem falhas. | `src/GV5.Application/Contracts/IModelDraftRepository.cs`; `src/GV5.Data/Repositories/SqliteModelDraftRepository.cs`; `tests/GV5.Data.Tests/SqliteModelDraftRepositoryTests.cs`; wrappers de testes Headless atualizados | Duplicate cria draft vazio nesta etapa: os blobs e snapshots de peças ainda não são persistidos; cópia completa será integrada com o armazenamento de conteúdo em F06.05. UI e paridade visual ainda não foram exercitadas. |
 | **F06.03** | **VALIDADA** | `b749cf0` | Serviço prepara PNG/JPEG/WebP em staging, valida limites, decodifica em worker e cria bitmap independente de prévia limitado a 1280 px; publicar só após confirmação transfere os bytes originais e confere hash/tipo/tamanho, falha preserva a prévia para retry e cancelamento remove o staging. `TestarLocal.bat rapido`: build Debug 0 avisos/erros; Core 18, Architecture 8, Geometry 35, Assets 27, Data 47, Rendering 18, Headless 26; sem falhas. Teste Headless percorreu picker fake → prévia visível → publicação confirmada → descarte; teste 2000×1000 confirmou preview 1280×640 e publicação dos bytes originais. | `src/GV5.Modules.Fabricador/Import/ModelSourceImportService.cs`; View/VM; `src/GV5.App/Services/AvaloniaFilePicker.cs`; `tests/GV5.Headless.Tests/FabricadorImportPreviewUiTests.cs`; `FabricadorModelSourceImportTests.cs` | UI foi testada em Avalonia Headless com `IFilePicker` sintético. O diálogo nativo Windows e paridade visual com captura Electron não foram exercitados. O asset publicado ainda não é anexado ao draft; persistência integrada pertence a F06.05. |
+| **F06.04** | **VALIDADA** | `a1b780f` | `ChromaCropProcessor` remove fundo pela mediana das bordas, aplica matte feather, despill verde e crop com margem 4 px. Executa em `Task.Run`, verifica cancelamento por linha, não altera a imagem fonte, mantém alfa e retorna imagem tipada vazia quando tudo é chroma. TestarLocal.bat rapido: Core 18, Architecture 8, Geometry 35, Assets 31, Data 47, Rendering 18, Headless 26; sem falhas. Cobertos chroma sólido, feather/alfa, crop nas bordas, transparência, imagem sem conteúdo e cancelamento. | `src/GV5.Assets/Processing/ChromaCropProcessor.cs`; `tests/GV5.Assets.Tests/ChromaCropProcessorTests.cs`; registro DI em `src/GV5.App/Composition/AppComposition.cs`; algoritmo legado consultado em `src/renderer/src/features/fabricator/models/chroma.ts` e `imageProcessor.worker.ts` (somente leitura) | Processador de imagem está registrado para consumo pelo Fabricador, ainda sem UI de tolerância ou integração com publicação de peças. O fluxo de múltiplos componentes/peças e sua persistência pertencem às tarefas seguintes. |
 
 **Estados aceitos:** `PENDENTE`, `EM_EXECUCAO`, `BLOQUEADA`, `VALIDADA`.
 
@@ -267,6 +268,7 @@ Toda mudança material do roteiro ou arquitetura deve apontar para um ADR em `do
 | 2026-10-21 | `147e3bf` | F06.01 validada; próxima F06.02 | Fabricador I | Definidos slots 1–10, IDs tipados de peça, snapshot content schema 1 com revisão, assets, dimensões, transforms imutáveis e layer order completo. `TestarLocal.bat rapido`: Core 18, Architecture 8, Geometry 35, Assets 27, Data 44, Rendering 18, Headless 20; build sem avisos/erros e testes sem falhas. |
 | 2026-10-21 | `fece8e9` | F06.02 validada; próxima F06.03 | Fabricador I | Catálogo SQLite de drafts agora lista deterministicamente e duplica metadados transacionalmente; reopen e erros tipados exercitados. TestarLocal.bat rapido: Core 18, Architecture 8, Geometry 35, Assets 27, Data 47, Rendering 18, Headless 20; 2 avisos Skia preexistentes, 0 falhas. Conteúdo de peças fica para F06.05. |
 | 2026-10-21 | `b749cf0` | F06.03 validada; próxima F06.04 | Fabricador I | Importação revisável com staging, preview limitado, confirmação, retry e cancelamento. `TestarLocal.bat rapido`: build 0 avisos/erros; Core 18, Architecture 8, Geometry 35, Assets 27, Data 47, Rendering 18, Headless 26; sem falhas. Picker nativo Windows e paridade visual permanecem pendentes. |
+| 2026-10-21 | `a1b780f` | F06.04 validada; próxima F06.05 | Fabricador I | Engine de chroma/crop cancelável preserva fonte e alfa; cases de matte, borda, crop, sheet vazia e cancelamento. `TestarLocal.bat rapido`: build 0 erros (2 avisos CS0618 preexistentes em ThumbnailService), Core 18, Architecture 8, Geometry 35, Assets 31, Data 47, Rendering 18, Headless 26; sem falhas. |
 
 Após concluir um lote ou fase, adicionar uma linha. Não inflar contador só porque o commit contém múltiplos arquivos; contar apenas tarefas comprovadas.
 
@@ -275,7 +277,7 @@ Após concluir um lote ou fase, adicionar uma linha. Não inflar contador só po
 1. Confirmar branch, HEAD e árvore de trabalho localmente; não consultar nem sincronizar o remoto até autorização explícita.
 2. Ler `AGENTS.md`, `PLANO_DO_NOVO_APP.md`, `PLANO_MESTRE_EXECUCAO_CODEX.md` e este arquivo.
 3. Inspecionar evidências reais da última tarefa validada; caso não existam, corrigir seu estado.
-4. **Retomar F06.04**: portar chroma/crop com worker cancelável e testes de borda/transparência; preservar o gate F06 Import→editar→undo→salvar→reabrir→publicar.
+4. **Retomar F06.05**: separar peças em assets e metadados com round-trip verificável; preservar o gate F06 Import→editar→undo→salvar→reabrir→publicar.
 5. Continuar automaticamente pelas tarefas seguintes **uma de cada vez**, em lotes flexíveis de aproximadamente 3–8 tarefas relacionadas, enquanto todos os gates pertinentes passam.
 6. Atualizar o registro e commitar entregas reais localmente na branch `Master-AValonia`; não desenvolver Video Studio antecipadamente.
 7. Ao encerrar, informar: **branch, HEAD, último ID VALIDADO, próximo ID PENDENTE, commits, comandos verdes, evidências, bloqueios e condição de desbloqueio**.
