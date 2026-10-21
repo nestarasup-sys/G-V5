@@ -117,6 +117,18 @@ Restore exige uma raiz de dados nova sem banco existente, copia para um arquivo 
 
 F03.02 introduz staging temporário de imagens via stream não necessariamente seekable, cópia limitada e SHA-256 incremental. Tipos suportados na importação inicial: PNG, JPEG e WebP; o MIME declarado precisa corresponder à assinatura. Os limites padrão de staging são 256 MiB, 16.384 pixels por eixo e 100 milhões de pixels totais. O parser lê somente os cabeçalhos estruturais para classificar tipo/dimensões; decodificação completa e validação de pixels/alpha ficam para F03.05. Arquivos de staging usam nomes aleatórios e são removidos ao descartar a importação ou após erro/cancelamento; o arquivo por hash e a gravação de metadados chegam em F03.03.
 
+## Journal de publicação de assets (migration 4)
+
+`asset_import_journal` contém a intenção durável de publicar um asset antes de criar sua linha final em `assets`. O registro associa `operation_id`, `asset_id`, SHA-256, caminho relativo derivado do hash, arquivo temporário de operação, MIME type, tamanho e dimensões do cabeçalho. O journal deliberadamente não tem FK para `assets`, pois ele precisa existir antes da publicação do arquivo e do metadado definitivo.
+
+O pipeline valida e grava o stream em staging, copia para `temp/asset-operations/<operation-id>.stage` verificando de novo tamanho/hash, confirma o journal em SQLite e então move o arquivo para `assets/sha256/<prefixo>/<sha256>`. A movimentação ocorre dentro da mesma raiz de dados e não sobrescreve um destino; arquivos existentes só são aceitos após verificação do tamanho e SHA-256. A criação do metadado e a remoção do journal acontecem juntas numa transação SQLite.
+
+Antes de cada operação pública, a recuperação percorre os journals: se só o stage existe, verifica e publica; se só o destino existe, verifica e finaliza a linha SQLite; se ambos existem, valida o destino e remove o stage excedente. Hash/tamanho divergentes ou ausência dos dois arquivos preservam o journal e falham sem apagar nem substituir bytes. Se houver uma linha `assets` sem arquivo, `GetMetadata` registra `missing`; se o mesmo arquivo reaparecer, tamanho/hash são verificados antes de voltar para `available`. Arquivos temporários sem journal, possíveis se o processo cair antes da confirmação do journal, não são apagados automaticamente nesta tarefa.
+
+Migration 4 cria apenas o journal de publicação. A migration 1 continua dona dos metadados finais `assets`/`asset_derivatives`; relações persistentes de owner/slot são uma mudança posterior separada.
+
+**Limite de backup atual:** o formato 1 do `DatabaseBackupService` ainda copia somente SQLite e não inclui os arquivos em `assets/sha256`. Portanto, ele não é um backup completo dos binários criados nesta fase. A cobertura de backup/restore dos arquivos deve ser concluída antes do gate final de F03 e do uso de assets como dados de usuário.
+
 ## Decisões ainda adiadas
 
 O desenho não escolhe o provider SQLite, DDL definitivo, política WAL, journal, schema versions ou semântica exata de `ON DELETE`; isso pertence a F02.03–F02.04 e às tarefas de recovery. As tabelas de domínios futuros são contratos conceituais, não autorização para antecipar módulos fora da ordem do plano.

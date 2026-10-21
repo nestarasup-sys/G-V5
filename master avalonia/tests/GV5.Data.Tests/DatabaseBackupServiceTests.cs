@@ -53,7 +53,7 @@ public sealed class DatabaseBackupServiceTests
             Assert.True(File.Exists(backup.ManifestPath));
             Assert.Equal(new FileInfo(backup.DatabasePath).Length, backup.SizeBytes);
             Assert.Matches("^[0-9a-f]{64}$", backup.Sha256);
-            Assert.Equal(3, backup.SchemaVersion);
+            Assert.Equal(4, backup.SchemaVersion);
 
             var verification = await service.VerifyAsync(backup.DirectoryPath, cancellationToken);
             Assert.True(verification.IsValid, verification.Error);
@@ -61,7 +61,7 @@ public sealed class DatabaseBackupServiceTests
 
             var restored = await service.RestoreToNewRootAsync(backup.DirectoryPath, restoreRoot, cancellationToken);
             Assert.Equal(Path.Combine(restoreRoot, "database", AppDataPaths.DatabaseFileName), restored.DatabasePath);
-            Assert.Equal(3, restored.SchemaVersion);
+            Assert.Equal(4, restored.SchemaVersion);
             using var restoredDatabase = new SqliteDatabase(new AppDataPaths(restoreRoot));
             var restoredInitializer = CreateInitializer(restoredDatabase);
             await restoredInitializer.InitializeAsync(cancellationToken);
@@ -161,7 +161,7 @@ public sealed class DatabaseBackupServiceTests
 
     private static SqliteMigrationRunner CreateInitializer(SqliteDatabase database) => new(
         database,
-        [new InitialAssetSchemaMigration(), new ModelDraftSchemaMigration(), new ModelDraftCheckpointSchemaMigration()]);
+        [new InitialAssetSchemaMigration(), new ModelDraftSchemaMigration(), new ModelDraftCheckpointSchemaMigration(), new AssetImportJournalSchemaMigration()]);
 
     private static DatabaseBackupService CreateService(AppDataPaths paths, SqliteDatabase database, SqliteMigrationRunner initializer)
     {

@@ -4,6 +4,7 @@ using GV5.App.Navigation;
 using GV5.Application.Contracts;
 using GV5.Data.Migrations;
 using GV5.Data.Diagnostics;
+using GV5.Data.Assets;
 using GV5.Data.Repositories;
 using GV5.Data.Storage;
 using GV5.Modules.Customizador;
@@ -27,11 +28,13 @@ internal static class AppComposition
         services.AddSingleton<ISqliteMigration, InitialAssetSchemaMigration>();
         services.AddSingleton<ISqliteMigration, ModelDraftSchemaMigration>();
         services.AddSingleton<ISqliteMigration, ModelDraftCheckpointSchemaMigration>();
+        services.AddSingleton<ISqliteMigration, AssetImportJournalSchemaMigration>();
         services.AddSingleton<SqliteMigrationRunner>();
         services.AddSingleton<IDataPlatformInitializer>(provider => provider.GetRequiredService<SqliteMigrationRunner>());
         services.AddSingleton<IModelDraftRepository, SqliteModelDraftRepository>();
         services.AddSingleton<IModelDraftCheckpointStore, SqliteModelDraftCheckpointStore>();
         services.AddSingleton<IDataPlatformBackupService, DatabaseBackupService>();
+        services.AddSingleton<SqliteAssetImportPipeline>();
         services.AddSingleton(new ModuleRouteCatalog(routes));
         services.AddTransient<IModulePageFactory, ServiceProviderModulePageFactory>();
         foreach (var route in routes)

@@ -11,7 +11,11 @@ public enum DiagnosticEventCode
     BackupVerificationFailed = 7,
     BackupRestored = 8,
     BackupOperationFailed = 9,
-    DraftCheckpointDiscarded = 10
+    DraftCheckpointDiscarded = 10,
+    AssetImportCompleted = 11,
+    AssetImportFailed = 12,
+    AssetRecoveryCompleted = 13,
+    AssetRecoveryFailed = 14
 }
 
 public enum DiagnosticOutcome
@@ -29,7 +33,8 @@ public enum DiagnosticErrorCode
     RevisionConflict = 4,
     InvalidBackup = 5,
     Cancelled = 6,
-    Unknown = 7
+    Unknown = 7,
+    InvalidAsset = 8
 }
 
 public interface IOperationCorrelationContext
