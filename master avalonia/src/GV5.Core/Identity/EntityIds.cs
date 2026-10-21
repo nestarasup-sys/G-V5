@@ -134,6 +134,30 @@ public readonly record struct FaceComponentId : IEntityId
     public override string ToString() => Value.ToString("D");
 }
 
+public readonly record struct FaceExpressionCollectionId : IEntityId
+{
+    public Guid Value { get; }
+    public bool IsValid => Value != Guid.Empty;
+    private FaceExpressionCollectionId(Guid value) => Value = value;
+    public static FaceExpressionCollectionId New() => new(Guid.NewGuid());
+    public static FaceExpressionCollectionId From(Guid value) => new(IdValue.RequireValid(value, nameof(value)));
+    public static FaceExpressionCollectionId Parse(string value) => new(IdValue.Parse(value, nameof(FaceExpressionCollectionId)));
+    public static bool TryParse(string? value, out FaceExpressionCollectionId id) => IdValue.TryParse(value, static parsed => new FaceExpressionCollectionId(parsed), out id);
+    public override string ToString() => Value.ToString("D");
+}
+
+public readonly record struct FaceExpressionPresetId : IEntityId
+{
+    public Guid Value { get; }
+    public bool IsValid => Value != Guid.Empty;
+    private FaceExpressionPresetId(Guid value) => Value = value;
+    public static FaceExpressionPresetId New() => new(Guid.NewGuid());
+    public static FaceExpressionPresetId From(Guid value) => new(IdValue.RequireValid(value, nameof(value)));
+    public static FaceExpressionPresetId Parse(string value) => new(IdValue.Parse(value, nameof(FaceExpressionPresetId)));
+    public static bool TryParse(string? value, out FaceExpressionPresetId id) => IdValue.TryParse(value, static parsed => new FaceExpressionPresetId(parsed), out id);
+    public override string ToString() => Value.ToString("D");
+}
+
 public readonly record struct HairId : IEntityId
 {
     public Guid Value { get; }

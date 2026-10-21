@@ -23,6 +23,7 @@ public sealed class SqliteFaceCatalogRepositoryTests
         var root = Path.Combine(Path.GetTempPath(), $"gv5-face-catalog-{Guid.NewGuid():N}");
         var paths = new AppDataPaths(root);
         var faceId = FaceId.New();
+        var sparePresetId = FaceExpressionPresetId.New();
         var componentId = FaceComponentId.New();
         var asset = AssetId.New();
         var mouthAsset = AssetId.New();
@@ -58,6 +59,37 @@ public sealed class SqliteFaceCatalogRepositoryTests
                     new Transform2D(new Point2D(10, -3), new Point2D(1.1, 0.8), 0.2, new Point2D(4, 5)));
                 var updated = await repository.SaveAsync(moved, saved.Value.Revision, token);
                 Assert.True(updated.IsSuccess, updated.Error?.Message);
+
+                var expressionRepository = new SqliteFaceExpressionRepository(database);
+                var collection = FaceExpressionCollection.Create(ModelRevisionReference.From(model.Value), "Expressões", 10);
+                var createdCollection = await expressionRepository.CreateCollectionAsync(collection, token);
+                Assert.True(createdCollection.IsSuccess, createdCollection.Error?.Message);
+                var renamedCollection = collection.WithName("Expressões Dev", 20);
+                var savedCollection = await expressionRepository.SaveCollectionAsync(renamedCollection, collection.Revision, token);
+                Assert.True(savedCollection.IsSuccess, savedCollection.Error?.Message);
+                var staleCollection = await expressionRepository.SaveCollectionAsync(renamedCollection, collection.Revision, token);
+                Assert.True(staleCollection.IsFailure);
+                Assert.Equal(ApplicationErrorCode.Conflict, staleCollection.Error!.Code);
+                var assembly = FaceAssembly.Create(updated.Value).Select(updated.Value, component.Id)
+                    .Select(updated.Value, mouth.Id);
+                var preset = FaceExpressionPresetDraft.Create(collection, updated.Value, 12, "Irritada", assembly);
+                var createdPreset = await expressionRepository.CreatePresetAsync(preset, token);
+                Assert.True(createdPreset.IsSuccess, createdPreset.Error?.Message);
+                var sparePreset = FaceExpressionPresetDraft.Create(collection, updated.Value, 13, "Triste");
+                sparePresetId = sparePreset.Id;
+                var createdSparePreset = await expressionRepository.CreatePresetAsync(sparePreset, token);
+                Assert.True(createdSparePreset.IsSuccess, createdSparePreset.Error?.Message);
+                var effects = FaceExpressionEffects.Create(preset.Effects.Shadow,
+                    FaceExpressionEffectParameters.Create(true, "#ef3456", 0.55, 0.6, 0.7, 0.05,
+                        style: FaceExpressionEffectStyle.Cheeks), preset.Effects.MouthBlush);
+                var presetChanges = preset.WithTransform(FaceAssemblySlot.EyeLeft,
+                    new Transform2D(new Point2D(12, -4), new Point2D(1.1, 0.9), 0.1, Point2D.Zero))
+                    .WithEffects(effects);
+                var savedPreset = await expressionRepository.SavePresetAsync(presetChanges, preset.Revision, token);
+                Assert.True(savedPreset.IsSuccess, savedPreset.Error?.Message);
+                var stalePreset = await expressionRepository.SavePresetAsync(presetChanges, preset.Revision, token);
+                Assert.True(stalePreset.IsFailure);
+                Assert.Equal(ApplicationErrorCode.Conflict, stalePreset.Error!.Code);
             }
 
             using (var reopened = new SqliteDatabase(paths))
@@ -75,6 +107,39 @@ public sealed class SqliteFaceCatalogRepositoryTests
                 Assert.Equal(FaceMouthVariant.Open, loaded.Value.Components.Single(component => component.Name == "Boca aberta").MouthVariant);
                 Assert.Equal(875, loaded.Value.Components.Single(component => component.Name == "Boca aberta").ZOrder);
                 Assert.Single(listed.Value);
+                var expressionRepository = new SqliteFaceExpressionRepository(reopened);
+                var collections = await expressionRepository.ListCollectionsAsync(loaded.Value.Model.RevisionId, token);
+                Assert.True(collections.IsSuccess, collections.Error?.Message);
+                var collection = Assert.Single(collections.Value);
+                Assert.Equal("Expressões Dev", collection.Name);
+                var presets = await expressionRepository.ListPresetsAsync(collection.Id, token);
+                Assert.True(presets.IsSuccess, presets.Error?.Message);
+                Assert.Equal(2, presets.Value.Count);
+                var expression = Assert.Single(presets.Value, item => item.ExpressionIndex == 12);
+                Assert.Equal("Irritada", expression.Name);
+                Assert.Equal(12, expression.ExpressionIndex);
+                Assert.Equal(new Point2D(12, -4), expression.Transforms[FaceAssemblySlot.EyeLeft].Translation);
+                Assert.Equal("#ef3456", expression.Effects.Blush.Color);
+                Assert.Equal(FaceMouthVariant.Open, loaded.Value.Components.Single(component => component.Name == "Boca aberta").MouthVariant);
+                var deleted = await expressionRepository.DeletePresetAsync(expression.Id, Revision.Initial, token);
+                Assert.True(deleted.IsFailure);
+                Assert.Equal(ApplicationErrorCode.Conflict, deleted.Error!.Code);
+                await ExecuteAsync(reopened, "UPDATE face_expression_presets SET draft_json='{}' WHERE preset_id=$id;", token,
+                    ("$id", expression.Id.ToString()));
+                var tamperedPreset = await expressionRepository.GetPresetAsync(expression.Id, token);
+                Assert.True(tamperedPreset.IsFailure);
+                Assert.Equal(ApplicationErrorCode.Persistence, tamperedPreset.Error!.Code);
+                var removed = await expressionRepository.DeletePresetAsync(expression.Id, expression.Revision, token);
+                Assert.True(removed.IsSuccess && removed.Value);
+                var staleCollectionDelete = await expressionRepository.DeleteCollectionAsync(collection.Id, Revision.Initial, token);
+                Assert.True(staleCollectionDelete.IsFailure);
+                Assert.Equal(ApplicationErrorCode.Conflict, staleCollectionDelete.Error!.Code);
+                var removedCollection = await expressionRepository.DeleteCollectionAsync(collection.Id, collection.Revision, token);
+                Assert.True(removedCollection.IsSuccess && removedCollection.Value);
+                Assert.Empty((await expressionRepository.ListCollectionsAsync(loaded.Value.Model.RevisionId, token)).Value);
+                var cascadedPreset = await expressionRepository.GetPresetAsync(sparePresetId, token);
+                Assert.True(cascadedPreset.IsFailure);
+                Assert.Equal(ApplicationErrorCode.NotFound, cascadedPreset.Error!.Code);
 
                 var json = await ReadStringAsync(reopened, "SELECT draft_json FROM face_catalog_drafts WHERE face_id=$id;",
                     token, ("$id", faceId.ToString()));
@@ -140,7 +205,7 @@ public sealed class SqliteFaceCatalogRepositoryTests
         new AssetImportJournalSchemaMigration(), new AssetReferenceSchemaMigration(), new AssetGarbageCollectionSchemaMigration(),
         new ModelDraftContentSchemaMigration(), new ModelRevisionSchemaMigration(), new ModelRigJointSchemaMigration(),
         new PoseRepositorySchemaMigration(), new AnimationRepositorySchemaMigration(), new WardrobeRepositorySchemaMigration(),
-        new HairStyleRepositorySchemaMigration(), new FaceCatalogRepositorySchemaMigration()
+        new HairStyleRepositorySchemaMigration(), new FaceCatalogRepositorySchemaMigration(), new FaceExpressionRepositorySchemaMigration()
     ]);
 
     private static async Task InsertAssetAsync(SqliteDatabase database, AssetId id, CancellationToken token)

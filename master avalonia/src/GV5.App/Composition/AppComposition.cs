@@ -51,6 +51,7 @@ internal static class AppComposition
         services.AddSingleton<ISqliteMigration, WardrobeRepositorySchemaMigration>();
         services.AddSingleton<ISqliteMigration, HairStyleRepositorySchemaMigration>();
         services.AddSingleton<ISqliteMigration, FaceCatalogRepositorySchemaMigration>();
+        services.AddSingleton<ISqliteMigration, FaceExpressionRepositorySchemaMigration>();
         services.AddSingleton<SqliteMigrationRunner>();
         services.AddSingleton<IDataPlatformInitializer>(provider => provider.GetRequiredService<SqliteMigrationRunner>());
         services.AddSingleton<IAssetCatalog, SqliteAssetCatalog>();
@@ -63,6 +64,7 @@ internal static class AppComposition
         services.AddSingleton<IWardrobeRepository, SqliteWardrobeRepository>();
         services.AddSingleton<IHairStyleRepository, SqliteHairStyleRepository>();
         services.AddSingleton<IFaceCatalogRepository, SqliteFaceCatalogRepository>();
+        services.AddSingleton<IFaceExpressionRepository, SqliteFaceExpressionRepository>();
         services.AddSingleton<IFabricatorDependencyCatalog, SqliteFabricatorDependencyCatalog>();
         services.AddSingleton<IWardrobeCatalog>(provider => new WardrobeCatalog(
             provider.GetRequiredService<IWardrobeRepository>(), provider.GetRequiredService<IThumbnailService>()));
