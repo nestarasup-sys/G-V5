@@ -5,7 +5,15 @@
 
 ## Missão e fontes de verdade
 
-Reconstruir o G-V5/Gacha Nymi como uma aplicação desktop **C# + .NET 10 + Avalonia**, sem Chromium, mantendo fidelidade funcional ao legado quando especificada e criando uma arquitetura modular sustentável. **Não é uma conversão linha a linha** das telas React.
+Reconstruir o G-V5/Gacha Nymi como uma aplicação desktop **C# + .NET 10 + Avalonia**, sem Chromium, mantendo fidelidade funcional e **visual** ao Gacha 5 original em Electron, com arquitetura modular sustentável. **Não é uma conversão linha a linha** das telas React: reproduzir a experiência visual em controles Avalonia nativos, sem transportar o runtime antigo.
+
+### Identidade visual obrigatória
+
+- A aparência, organização e experiência observável do Gacha 5 original são requisitos de produto. **Não fazer redesign, reorganização ou simplificação visual** sem autorização explícita.
+- Consultar `docs/ui-fidelity/CONTRATO_VISUAL_GACHA5.md` antes de alterar UI e manter inventários, tokens, matriz visual e critérios de aceite em `docs/ui-fidelity/` atualizados.
+- Usar somente o Gacha 5 original deste repositório como referência. **Editor V4 é outro projeto e não é referência visual**.
+- Distinguir evidência de código, captura Electron real e validação visual no Avalonia. Não afirmar paridade por semelhança de nomes, build verde ou screenshot fictícia.
+- Modernizar implementação, fluidez, virtualização, acessibilidade e uso de Avalonia sem descaracterizar o design. Melhorias invisíveis podem ser adotadas dentro da arquitetura; mudanças visíveis relevantes exigem aprovação.
 
 Leia, nesta ordem, **no início de cada sessão**:
 

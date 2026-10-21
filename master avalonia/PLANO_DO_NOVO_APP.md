@@ -1,5 +1,7 @@
 # Novo Gacha Nymi — C# + Avalonia
 
+> **Requisito permanente de produto:** reconstruir a aparência e a experiência do Gacha 5 original em Electron com a stack Avalonia, sem redesign. O contrato, inventário, matriz e critérios estão em [`docs/ui-fidelity/`](docs/ui-fidelity/CONTRATO_VISUAL_GACHA5.md). A exigência complementa as fases existentes; não altera a ordem, os IDs nem a contagem das 247 tarefas.
+
 Status: plano de arquitetura com solução inicial criada. O shell Avalonia e os projetos-base compilam; as funcionalidades de Fabricador, Customizador e demais áreas ainda serão implementadas por etapas.
 
 Estrutura inicial atual: `GV5.sln`, shell `GV5.App`, bibliotecas `Core`, `Application`, `Geometry`, `Assets`, `Characters`, `Scene`, `Rendering`, `Data` e `Jobs`, além dos módulos-base de Fabricador e Customizador. A janela inicial só demonstra a navegação do shell; ela não representa as áreas de produto prontas.
@@ -50,6 +52,14 @@ Não há Chromium nessa pilha. No Windows, Avalonia usa APIs Win32 para serviço
 Avalonia é a camada da interface e o cliente da engine do G5; não será a engine. Ela não será o lugar das regras de personagem, do esquema do banco, da codificação de vídeo ou de tarefas pesadas. XAML descreve a estrutura visual; C# liga eventos de interface a ViewModels e casos de uso. Controles especializados, como canvas e timeline, tratam input e hospedam a apresentação do resultado da engine, sem implementar as regras de domínio.
 
 ## 2. Princípios de construção
+
+### Fidelidade visual ao Gacha 5
+
+O visual criado pelo usuário no Gacha 5 original é a identidade do novo produto. Reproduzir cores, tipografia, dimensões, posições, hierarquia, painéis, barras, ícones, estados, menus, diálogos, navegação e comportamento visual observável. Não introduzir redesign, estilo genérico de framework ou reorganização em nome de modernização. A referência é somente o Gacha 5 original deste repositório; o Editor V4 é outro projeto e fica excluído.
+
+Essa fidelidade define **o resultado**; não impõe reaproveitar Electron, React, DOM, CSS ou sua estrutura interna. Usar Avalonia/XAML, templates, estilos, recursos, controles especializados, MVVM e virtualização conforme apropriado à versão fixada. Atualizações técnicas de desempenho, estabilidade, acessibilidade e DPI devem preservar a aparência e os fluxos observáveis. Uma diferença visual deliberada exige aprovação explícita e registro da exceção.
+
+Manter a rastreabilidade em `docs/ui-fidelity/`: contrato, inventário por página/subpágina, matriz de paridade, tokens extraídos do legado, estratégia Avalonia e critérios de aceite por módulo. Toda afirmação deve indicar se vem de código estático, captura real do Electron ou validação no Avalonia. Referências e estados ainda não capturados permanecem pendentes; nunca inventar cores, medidas ou screenshots.
 
 - Uma funcionalidade possui responsabilidades e limites explícitos.
 - Interface apresenta dados e encaminha ações; regras de personagem e persistência não ficam no código da tela.

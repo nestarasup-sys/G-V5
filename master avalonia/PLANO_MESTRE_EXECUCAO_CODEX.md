@@ -34,6 +34,7 @@
 - Não criar bibliotecas vazias para "cumprir estrutura"; cada projeto/contrato deve nascer com consumidor e teste reais.
 - Não dizer "pronto" por screenshot estática, classe vazia, interface fake, método mockado ou smoke que não testa comportamento.
 - Não trocar versões fixadas do SDK/NuGet sem ADR, compatibilidade verificada, build e testes.
+- **Fidelidade visual é requisito transversal:** seguir `docs/ui-fidelity/CONTRATO_VISUAL_GACHA5.md`; não redesenhar. Atualizar evidência por área e validar contra captura real/golden sempre que houver interface. A referência é Gacha 5 Electron, nunca Editor V4. A exigência não cria, remove ou renumera tarefas F00–F17.
 - Não iniciar timeline/playback/export do Video Studio antes dos gates do Fabricador, Customizador, Studio, Base e Roteiros.
 
 ### Artefatos de acompanhamento (criar quando a tarefa pedir)
@@ -44,6 +45,7 @@
 - `docs/gates/GATE-FXX.md`: testes, screenshots/goldens quando aplicável, SHA, métricas, cenários negativos e aceite humano/local.
 - `tests/Fixtures` e projetos de testes: **dados sintéticos**, sem personagens/arquivos pessoais.
 - `docs/performance/BASELINES.md`: ambiente, carga de teste, medições, deltas, não promessas.
+- `docs/ui-fidelity/`: contrato visual, inventário, matriz de paridade, tokens, estratégia Avalonia e critérios de aceite por módulo.
 
 **Modelo mínimo de status:**
 ```markdown
@@ -68,6 +70,7 @@ Ambiente/SDK/CI: <comandos e resultados reais>
 - Código **funciona** no cenário prometido, aceita erro e não perde dados.
 - Tem teste com caso positivo e negativo relevante; regressões existentes continuam verdes.
 - Se persistente: reabrir/restart e revisão íntegros; se visual: comparação com golden/oráculo.
+- Para UI: comprovar fidelidade em estados e resolução de referência; distinguir inspeção de código, captura Electron real e screenshot Avalonia. Se captura/aceite local não estiver disponível, registrar pendência e não declarar paridade visual.
 - Sem bloqueio da UI, recursos sem descarte ou dependência proibida.
 - Compilação e testes executados com resultado registrado; CI quando disponível.
 - Matriz de paridade, decisão e status atualizados.
