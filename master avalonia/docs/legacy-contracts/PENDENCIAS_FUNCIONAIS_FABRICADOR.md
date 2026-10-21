@@ -30,4 +30,4 @@
 
 ## Estado atual
 
-**0 lacunas deste inventário estão declaradas resolvidas por esta auditoria.** A F07.02 está EM_EXECUCAO: base RigJointGraph no domínio + testes escritos, mas integração com View/ViewModel, persistência e execução de testes ainda não aconteceram. A fase F07 só encerra quando seu gate técnico passar.
+**0 lacunas deste inventário estão declaradas resolvidas por esta auditoria.** A F07.02 está EM_EXECUCAO: RigJointGraph/ModelRigEditor e testes escritos; um teste Headless falhou no CI 39646435562 por asserção incorreta, corrigida em 32beda0. A integração com View/ViewModel, persistência de juntas e testes de reopen ainda não foi concluída. A fase F07 só encerra quando seu gate técnico passar.
