@@ -68,6 +68,7 @@ internal static class AppComposition
         services.AddSingleton<IDataPlatformBackupService, DatabaseBackupService>();
         services.AddSingleton<AssetImageDecoder>();
         services.AddSingleton<ChromaCropProcessor>();
+        services.AddSingleton<HairSheetProcessor>();
         services.AddSingleton<ModelSheetSegmentationProcessor>();
         services.AddSingleton(provider => new AssetImportStager(
             Path.Combine(provider.GetRequiredService<IAppDataPaths>().TempDirectory, "fabricator-source-imports"),
@@ -76,6 +77,7 @@ internal static class AppComposition
                 MaximumDimension: 16_384,
                 MaximumPixels: 32_000_000)));
         services.AddSingleton<ModelSourceImportService>();
+        services.AddSingleton<HairSheetImportService>();
         services.AddSingleton<AssetBitmapCache>();
         services.AddSingleton<AvaloniaRenderedFrameAdapter>();
         services.AddSingleton<IRenderAssetProvider, AssetStoreRenderProvider>();
