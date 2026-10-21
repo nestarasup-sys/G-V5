@@ -49,6 +49,19 @@ public sealed class PoseRevisionContractTests
     }
 
     [Fact]
+    public void DraftRejectsIncompleteLayerOrderAndJointsReferencingUnknownParts()
+    {
+        var first = PosePartTransform.Create(ModelPartId.New(), Transform(0));
+        var second = PosePartTransform.Create(ModelPartId.New(), Transform(10));
+        var model = ModelReference("8");
+        var foreignJoint = new RigJoint(RigJointId.New(), TransformNodeId.From(first.PartId.Value),
+            TransformNodeId.New(), Point2D.Zero, Point2D.Zero);
+
+        Assert.Throws<ArgumentException>(() => PoseDraft.Create(model, "Camadas incompletas", [first, second], layerOrder: [first.PartId]));
+        Assert.Throws<ArgumentException>(() => PoseDraft.Create(model, "Junta órfã", [first, second], rigJoints: [foreignJoint]));
+    }
+
+    [Fact]
     public void PublishedPoseRejectsInvalidSnapshotHashAndEmptyTransformSet()
     {
         var draft = PoseDraft.Create(ModelReference("e"), "Em pé", [PosePartTransform.Create(ModelPartId.New(), Transform(0))]);
