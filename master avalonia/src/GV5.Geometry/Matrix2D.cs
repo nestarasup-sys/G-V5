@@ -33,6 +33,13 @@ public readonly record struct Matrix2D
     public static Matrix2D Identity => new(1, 0, 0, 1, 0, 0);
     public static Matrix2D CreateTranslation(double x, double y) => new(1, 0, 0, 1, x, y);
     public static Matrix2D CreateScale(double x, double y) => new(x, 0, 0, y, 0, 0);
+    public static Matrix2D CreateRotation(double radians)
+    {
+        GeometryValue.RequireFinite(radians, nameof(radians));
+        var cosine = Math.Cos(radians);
+        var sine = Math.Sin(radians);
+        return new Matrix2D(cosine, sine, -sine, cosine, 0, 0);
+    }
 
     public Point2D Transform(Point2D point) => new(
         M11 * point.X + M21 * point.Y + OffsetX,

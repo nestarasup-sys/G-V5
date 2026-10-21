@@ -55,9 +55,43 @@ public sealed class GeometryPrimitiveTests
     [Fact]
     public void Transform_ThenAppliesTheNextTransformAfterThisOne()
     {
-        var move = new Transform2D(Matrix2D.CreateTranslation(5, 0));
-        var scale = new Transform2D(Matrix2D.CreateScale(2, 2));
+        var move = new Transform2D(new Point2D(5, 0), new Point2D(1, 1), 0, Point2D.Zero);
+        var scale = new Transform2D(Point2D.Zero, new Point2D(2, 2), 0, Point2D.Zero);
 
-        Assert.Equal(new Point2D(12, 2), move.Then(scale).Apply(new Point2D(1, 1)));
+        Assert.Equal(new Point2D(12, 2), (scale.Matrix * move.Matrix).Transform(new Point2D(1, 1)));
+    }
+
+    [Fact]
+    public void Transform_RotatesAroundPivotAfterNonUniformScaleThenTranslates()
+    {
+        var transform = new Transform2D(
+            translation: new Point2D(5, 6),
+            scale: new Point2D(2, 3),
+            rotationRadians: Math.PI / 2,
+            pivot: Point2D.Zero);
+
+        Assert.Equal(new Point2D(5, 8), transform.Apply(new Point2D(1, 0)));
+        Assert.Equal(new Point2D(5, 6), transform.Apply(Point2D.Zero));
+
+        var aroundPivot = new Transform2D(
+            translation: new Point2D(5, 6),
+            scale: new Point2D(2, 3),
+            rotationRadians: Math.PI / 2,
+            pivot: new Point2D(2, 3));
+        var transformedPivotEdge = aroundPivot.Apply(new Point2D(3, 3));
+        Assert.Equal(7, transformedPivotEdge.X, 10);
+        Assert.Equal(11, transformedPivotEdge.Y, 10);
+    }
+
+    [Fact]
+    public void Transform_PreservesTranslatedPivotAndRejectsNonFiniteRotation()
+    {
+        var pivot = new Point2D(4, -3);
+        var transform = new Transform2D(new Point2D(-2, 7), new Point2D(0.5, 2), 1.2, pivot);
+
+        var transformedPivot = transform.Apply(pivot);
+        Assert.Equal(pivot.X - 2, transformedPivot.X, 10);
+        Assert.Equal(pivot.Y + 7, transformedPivot.Y, 10);
+        Assert.Throws<ArgumentOutOfRangeException>(() => new Transform2D(Point2D.Zero, new Point2D(1, 1), double.NaN, Point2D.Zero));
     }
 }
