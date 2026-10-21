@@ -12,6 +12,7 @@ Escopo F08.02: contrato puro de domínio, sem UI, persistência ou publicação 
 - `WardrobePoseResolver` só resolve quando o conjunto, pose e modelo apontam à mesma publicação exata. Para cada componente, confere se osso e frame congelado ainda correspondem à geometria-fonte e projeta binding sobre o transform da peça na pose, incluindo escala desigual, rotação e flips. O resultado contém AssetId, categoria e placement efêmero; nem roupa nem pose são modificadas.
 - Composição tem duas fases explícitas: `AttachedToBodyLayer` posiciona a peça logo após desenhar seu osso no índice da ordem de camadas publicada; `AboveHair` reserva a fase final para óculos/acessórios de cabeça que optaram por isso. Componentes comuns não podem ativar a fase sobre cabelo. A ordenação é determinística: índice do osso, sequência autoral dos componentes e, por último, sequência autoral dos head extras.
 - `PublishedWardrobeRevision` é um snapshot imutável com ID próprio, sequência de publicação, revisão editável de origem, referência do modelo, data UTC, SHA-256 e cópia da coleção de componentes. Alterar o rascunho depois da publicação não modifica o snapshot.
+- `IWardrobeCatalog` filtra componentes de publicações pela referência exata da revisão do modelo e categoria opcional. Pages limitadas ordenam por data de publicação, ID da revisão e ID do componente, com cursor composto estável. A janela de thumbnails usa o serviço central com prefetch limitado e streams de propriedade do chamador; não carrega imagens fora do page enviado pelo catálogo.
 
 ## Categorias
 
@@ -33,4 +34,4 @@ Escopo F08.02: contrato puro de domínio, sem UI, persistência ou publicação 
 - `src/GV5.Geometry/WardrobeBindingMath.cs`
 - `tests/GV5.Core.Tests/WardrobeContractTests.cs`
 
-Persistência SQLite, UI de seleção/edição e integração visual dos serviços com a tela ainda estão pendentes. A matriz mantém paridade de roupas pendente até completar persistência, composição de camadas e interação visual.
+O serviço atual consulta snapshots imutáveis fornecidos pelo limite de dados; o repositório SQLite e o fluxo de publicação ficam em F08.09. UI de seleção/edição e integração visual dos serviços com a tela ainda estão pendentes. A matriz mantém paridade de roupas pendente até completar persistência, composição de camadas e interação visual.
