@@ -115,6 +115,8 @@ Restore exige uma raiz de dados nova sem banco existente, copia para um arquivo 
 
 `AssetMetadata` expõe somente ID, SHA-256, MIME type, tamanho, estado de verificação e data de criação. Localização relativa e detalhes de armazenamento ficam dentro de `GV5.Data`. `AssetReferenceKey` é a chave estável `(owner_type, owner_id, slot)`, validada como identificadores ASCII minúsculos com separadores simples. Adicionar a mesma relação é idempotente; ocupar a mesma chave com outro asset retorna conflito. Liberar uma chave remove apenas a relação e não apaga o binário. Importação e lifecycle dos arquivos serão implementados nas tarefas F03.02–F03.04.
 
+F03.02 introduz staging temporário de imagens via stream não necessariamente seekable, cópia limitada e SHA-256 incremental. Tipos suportados na importação inicial: PNG, JPEG e WebP; o MIME declarado precisa corresponder à assinatura. Os limites padrão de staging são 256 MiB, 16.384 pixels por eixo e 100 milhões de pixels totais. O parser lê somente os cabeçalhos estruturais para classificar tipo/dimensões; decodificação completa e validação de pixels/alpha ficam para F03.05. Arquivos de staging usam nomes aleatórios e são removidos ao descartar a importação ou após erro/cancelamento; o arquivo por hash e a gravação de metadados chegam em F03.03.
+
 ## Decisões ainda adiadas
 
 O desenho não escolhe o provider SQLite, DDL definitivo, política WAL, journal, schema versions ou semântica exata de `ON DELETE`; isso pertence a F02.03–F02.04 e às tarefas de recovery. As tabelas de domínios futuros são contratos conceituais, não autorização para antecipar módulos fora da ordem do plano.
