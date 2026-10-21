@@ -29,6 +29,8 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
     private CancellationTokenSource? _previewCancellation;
     private long _previewVersion;
     private ModelDraftContent? _modelContent;
+    private ActiveModelTransformGesture? _activeTransformGesture;
+    private readonly List<ModelPartTransformCommand> _completedTransformCommands = [];
     private ModelDraft? _savedDraft;
     private ModelId? _pendingModelId;
     private Guid? _pendingCheckpointId;
@@ -71,6 +73,7 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(SelectedPartName))]
     [NotifyPropertyChangedFor(nameof(SelectedPartBounds))]
+    [NotifyPropertyChangedFor(nameof(SelectedPartPivot))]
     private ModelPartId? selectedModelPartId;
 
     [ObservableProperty]
@@ -144,6 +147,11 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
     public Rect2D? SelectedPartBounds => _modelContent is null || SelectedModelPartId is not { } id
         ? null
         : ModelDraftHitTester.GetPartBounds(_modelContent, id);
+    public Point2D? SelectedPartPivot => _modelContent is null || SelectedModelPartId is not { } id
+        ? null
+        : ModelDraftHitTester.GetPartPivot(_modelContent, id);
+    public int PendingTransformCommandCount => _completedTransformCommands.Count;
+    public bool HasPendingTransformCommands => PendingTransformCommandCount > 0;
     public bool HasPendingRecovery => PendingRecoveryCheckpoint is not null;
     public bool HasRecoveryMessage => !string.IsNullOrWhiteSpace(RecoveryMessage);
     public Task RecoveryTask { get; }
@@ -344,6 +352,7 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
             SelectedModelPartId = null;
             OnPropertyChanged(nameof(SelectedPartName));
             OnPropertyChanged(nameof(SelectedPartBounds));
+            OnPropertyChanged(nameof(SelectedPartPivot));
             ImportStatus = $"Modelo carregado · {preview.Width} × {preview.Height} · {assetId}";
             OnPropertyChanged(nameof(CanPublishModelSource));
         }
@@ -371,6 +380,132 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
         SelectedModelPartId = _modelContent is null
             ? null
             : ModelDraftHitTester.HitTest(_modelContent, scenePoint);
+    }
+
+    public void BeginModelPartTransform(TransformGestureStart gesture)
+    {
+        if (_modelContent is null || SelectedModelPartId is not { } partId)
+        {
+            return;
+        }
+
+        var part = _modelContent.Parts.FirstOrDefault(candidate => candidate.Id == partId && candidate.IsVisible);
+        var partIndex = _modelContent.LayerOrder.IndexOf(partId);
+        if (part is null || partIndex < 0)
+        {
+            return;
+        }
+
+        var previewSize = ModelDraftRenderSceneBuilder.GetPreviewSize(_modelContent);
+        var layer = ModelDraftRenderSceneBuilder.CreatePartLayer(part, previewSize.Scale, partIndex);
+        var sceneMatrix = RenderLayerGeometry.GetSceneMatrix(layer, previewSize.Height);
+        Point2D localStart;
+        try
+        {
+            localStart = sceneMatrix.Invert().Transform(gesture.ScenePoint);
+        }
+        catch (InvalidOperationException)
+        {
+            return;
+        }
+
+        _activeTransformGesture = new ActiveModelTransformGesture(
+            new ModelPartTransformCommand(part.Id, part.Transform, part.Transform),
+            gesture.Kind,
+            gesture.ScenePoint,
+            localStart,
+            sceneMatrix,
+            previewSize.Scale,
+            sceneMatrix.Transform(part.Transform.Pivot));
+    }
+
+    public void UpdateModelPartTransform(Point2D scenePoint)
+    {
+        if (_activeTransformGesture is not { } active || _modelContent is null)
+        {
+            return;
+        }
+
+        var before = active.Command.Before;
+        Transform2D after;
+        switch (active.Kind)
+        {
+            case ModelPartTransformKind.Move:
+                after = new Transform2D(
+                    new Point2D(
+                        before.Translation.X + (scenePoint.X - active.StartScenePoint.X) / active.SceneScale,
+                        before.Translation.Y - (scenePoint.Y - active.StartScenePoint.Y) / active.SceneScale),
+                    before.Scale,
+                    before.RotationRadians,
+                    before.Pivot,
+                    before.FlipX,
+                    before.FlipY);
+                break;
+            case ModelPartTransformKind.Scale:
+                Point2D localCurrent;
+                try
+                {
+                    localCurrent = active.SceneMatrix.Invert().Transform(scenePoint);
+                }
+                catch (InvalidOperationException)
+                {
+                    return;
+                }
+
+                var startX = active.LocalStartPoint.X - before.Pivot.X;
+                var startY = active.LocalStartPoint.Y - before.Pivot.Y;
+                var ratioX = Math.Abs(startX) < 0.001 ? 1 : (localCurrent.X - before.Pivot.X) / startX;
+                var ratioY = Math.Abs(startY) < 0.001 ? 1 : (localCurrent.Y - before.Pivot.Y) / startY;
+                after = new Transform2D(
+                    before.Translation,
+                    new Point2D(before.Scale.X * Math.Clamp(ratioX, 0.05, 50), before.Scale.Y * Math.Clamp(ratioY, 0.05, 50)),
+                    before.RotationRadians,
+                    before.Pivot,
+                    before.FlipX,
+                    before.FlipY);
+                break;
+            case ModelPartTransformKind.Rotate:
+                var startAngle = Math.Atan2(active.StartScenePoint.Y - active.PivotScenePoint.Y, active.StartScenePoint.X - active.PivotScenePoint.X);
+                var currentAngle = Math.Atan2(scenePoint.Y - active.PivotScenePoint.Y, scenePoint.X - active.PivotScenePoint.X);
+                after = new Transform2D(
+                    before.Translation,
+                    before.Scale,
+                    before.RotationRadians + startAngle - currentAngle,
+                    before.Pivot,
+                    before.FlipX,
+                    before.FlipY);
+                break;
+            default:
+                return;
+        }
+
+        if (after == active.Command.After)
+        {
+            return;
+        }
+
+        var command = active.Command with { After = after };
+        _modelContent = command.Apply(_modelContent);
+        _activeTransformGesture = active with { Command = command };
+        OnPropertyChanged(nameof(SelectedPartBounds));
+        OnPropertyChanged(nameof(SelectedPartPivot));
+        _ = RenderModelPreviewAsync(_modelContent);
+    }
+
+    public void CompleteModelPartTransform()
+    {
+        if (_activeTransformGesture is not { } active)
+        {
+            return;
+        }
+
+        _activeTransformGesture = null;
+        if (active.Command.Before != active.Command.After)
+        {
+            _completedTransformCommands.Add(active.Command);
+            OnPropertyChanged(nameof(PendingTransformCommandCount));
+            OnPropertyChanged(nameof(HasPendingTransformCommands));
+        }
     }
 
     private async Task RenderModelPreviewAsync(ModelDraftContent content)
@@ -845,4 +980,13 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
         DiagnosticErrorCode? errorCode = null,
         long? durationMilliseconds = null) =>
         _logger?.WriteAsync(eventCode, outcome, errorCode, durationMilliseconds, CancellationToken.None) ?? Task.CompletedTask;
+
+    private sealed record ActiveModelTransformGesture(
+        ModelPartTransformCommand Command,
+        ModelPartTransformKind Kind,
+        Point2D StartScenePoint,
+        Point2D LocalStartPoint,
+        Matrix2D SceneMatrix,
+        double SceneScale,
+        Point2D PivotScenePoint);
 }

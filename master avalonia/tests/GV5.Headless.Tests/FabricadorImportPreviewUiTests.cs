@@ -8,6 +8,7 @@ using GV5.Assets.Decoding;
 using GV5.Assets.Import;
 using GV5.Core.Identity;
 using GV5.Core.Models;
+using GV5.Geometry;
 using GV5.Modules.Fabricador.Import;
 using GV5.Modules.Fabricador.Interaction;
 using GV5.Modules.Fabricador.ViewModels;
@@ -27,7 +28,7 @@ public sealed class FabricadorImportPreviewUiTests
         var bytes = CreatePng(9, 6);
         var picker = new RecordingFilePicker(bytes);
         var store = new RecordingAssetStore();
-        var contentRepository = new RecordingContentRepository();
+        var contentRepository = new RecordingContentRepository(store, includePiece: true);
         using var renderAssetsCache = new AssetBitmapCache(4 * 1024 * 1024);
         var renderAssets = new TestRenderAssetProvider(store, new AssetImageDecoder(), renderAssetsCache);
         var sceneRenderer = new SkiaRenderer(renderAssets);
@@ -69,7 +70,7 @@ public sealed class FabricadorImportPreviewUiTests
             Assert.NotNull(viewModel.RenderedModelFrame);
             Assert.Equal(9, viewModel.RenderedModelFrame!.Width);
             Assert.Equal(6, viewModel.RenderedModelFrame.Height);
-            Assert.Equal(new SKColor(76, 81, 160), viewModel.RenderedModelFrame.Bitmap.GetPixel(4, 3));
+            Assert.NotEqual(SKColors.Transparent, viewModel.RenderedModelFrame.Bitmap.GetPixel(2, 2));
             viewModel.SetToolCommand.Execute(FabricatorTool.Pan);
             Assert.True(viewModel.IsPanTool);
             viewModel.SetToolCommand.Execute(FabricatorTool.Select);
@@ -81,6 +82,52 @@ public sealed class FabricadorImportPreviewUiTests
             Assert.Equal(store.LastImported!.Id, persisted.Value.SourceAssetId);
             Assert.Equal(9, persisted.Value.SourceWidth);
             Assert.Equal(6, persisted.Value.SourceHeight);
+
+            var part = Assert.Single(persisted.Value.Parts);
+            var bounds = ModelDraftHitTester.GetPartBounds(persisted.Value, part.Id)!.Value;
+            var afterTransform = new Transform2D(new Point2D(8, 9), new Point2D(2, 3), 0.35, new Point2D(1, 1));
+            var transformCommand = new ModelPartTransformCommand(part.Id, part.Transform, afterTransform);
+            var applied = transformCommand.Apply(persisted.Value);
+            Assert.Equal(afterTransform, Assert.Single(applied.Parts).Transform);
+            Assert.Equal(persisted.Value.Revision, applied.Revision);
+            var reverted = transformCommand.Revert(applied);
+            Assert.Equal(part.Transform, Assert.Single(reverted.Parts).Transform);
+
+            var gestureStart = new Point2D(bounds.X + bounds.Width / 2, bounds.Y + bounds.Height / 2);
+            viewModel.SelectModelPartAt(gestureStart);
+            Assert.Equal(part.Id, viewModel.SelectedModelPartId);
+            viewModel.BeginModelPartTransform(new TransformGestureStart(ModelPartTransformKind.Move, gestureStart));
+            viewModel.UpdateModelPartTransform(new Point2D(gestureStart.X + 12, gestureStart.Y - 4));
+            Assert.Equal(1, contentRepository.SaveCount);
+            viewModel.UpdateModelPartTransform(new Point2D(gestureStart.X + 20, gestureStart.Y - 6));
+            viewModel.CompleteModelPartTransform();
+            Assert.Equal(1, contentRepository.SaveCount);
+            Assert.Equal(1, viewModel.PendingTransformCommandCount);
+            var movedBounds = viewModel.SelectedPartBounds!.Value;
+            Assert.Equal(bounds.X + 20, movedBounds.X, precision: 6);
+            Assert.Equal(bounds.Y - 6, movedBounds.Y, precision: 6);
+            Assert.Equal(part.Transform, contentRepository.LastSaved!.Parts.Single().Transform);
+
+            var beforeScale = viewModel.SelectedPartBounds!.Value;
+            var scaleStart = new Point2D(beforeScale.Right, beforeScale.Top);
+            viewModel.BeginModelPartTransform(new TransformGestureStart(ModelPartTransformKind.Scale, scaleStart));
+            viewModel.UpdateModelPartTransform(new Point2D(scaleStart.X + beforeScale.Width, scaleStart.Y));
+            viewModel.CompleteModelPartTransform();
+            var afterScale = viewModel.SelectedPartBounds!.Value;
+            Assert.True(afterScale.Width > beforeScale.Width * 1.5, $"Expected width to grow beyond {beforeScale.Width * 1.5}, got {afterScale.Width}.");
+
+            var beforeRotate = viewModel.SelectedPartBounds!.Value;
+            var pivot = viewModel.SelectedPartPivot!.Value;
+            var startAngle = new Point2D(pivot.X + 20, pivot.Y);
+            const double rotationDelta = 0.5;
+            var endAngle = new Point2D(pivot.X + 20 * Math.Cos(rotationDelta), pivot.Y + 20 * Math.Sin(rotationDelta));
+            viewModel.BeginModelPartTransform(new TransformGestureStart(ModelPartTransformKind.Rotate, startAngle));
+            viewModel.UpdateModelPartTransform(endAngle);
+            viewModel.CompleteModelPartTransform();
+            var afterRotate = viewModel.SelectedPartBounds!.Value;
+            Assert.True(afterRotate.Width > beforeRotate.Width, $"Expected rotation to expand the bounds beyond {beforeRotate.Width}, got {afterRotate.Width}.");
+            Assert.Equal(3, viewModel.PendingTransformCommandCount);
+            Assert.Equal(1, contentRepository.SaveCount);
             Assert.Empty(Directory.GetFiles(root));
 
             await viewModel.CancelModelSourceImportCommand.ExecuteAsync(null);
@@ -161,18 +208,46 @@ public sealed class FabricadorImportPreviewUiTests
             Task.FromResult(Result<Unit>.Success(Unit.Value));
     }
 
-    private sealed class RecordingContentRepository : IModelDraftContentRepository
+    private sealed class RecordingContentRepository(RecordingAssetStore store, bool includePiece) : IModelDraftContentRepository
     {
         public ModelDraftContent? LastSaved { get; private set; }
+        public int SaveCount { get; private set; }
 
-        public Task<Result<ModelDraftContent>> GetAsync(ModelId modelId, CancellationToken cancellationToken = default) =>
-            Task.FromResult(LastSaved?.ModelId == modelId
+        public Task<Result<ModelDraftContent>> GetAsync(ModelId modelId, CancellationToken cancellationToken = default)
+        {
+            if (LastSaved is null && includePiece && store.LastImported is { } source)
+            {
+                var partId = ModelPartId.New();
+                var crop = new Rect2D(0, 0, 2, 2);
+                var part = new ModelPart(
+                    partId,
+                    "Peça sintética",
+                    source.Id,
+                    crop,
+                    new Transform2D(new Point2D(2, 2), new Point2D(1, 1), 0, Point2D.Zero),
+                    new ModelPartSourceTransform(crop, Transform2D.Identity));
+                LastSaved = ModelDraftContent.Restore(
+                    ModelDraftContent.CurrentSchemaVersion,
+                    modelId,
+                    Revision.Initial,
+                    null,
+                    source.Id,
+                    9,
+                    6,
+                    [part],
+                    [partId]);
+                SaveCount = 1;
+            }
+
+            return Task.FromResult(LastSaved?.ModelId == modelId
                 ? Result<ModelDraftContent>.Success(LastSaved)
                 : Result<ModelDraftContent>.Failure(new ApplicationError(ApplicationErrorCode.NotFound, "Not found.")));
+        }
 
         public Task<Result<ModelDraftContent>> SaveAsync(ModelDraftContent content, Revision? expectedRevision, CancellationToken cancellationToken = default)
         {
             LastSaved = content;
+            SaveCount++;
             return Task.FromResult(Result<ModelDraftContent>.Success(content));
         }
     }

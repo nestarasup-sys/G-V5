@@ -59,4 +59,19 @@ public static class ModelDraftHitTester
         return RenderLayerGeometry.GetSceneMatrix(layer, previewSize.Height)
             .TransformBounds(new Rect2D(0, 0, part.SourceCrop.Width, part.SourceCrop.Height));
     }
+
+    public static Point2D? GetPartPivot(ModelDraftContent content, ModelPartId partId, int maximumDimension = ModelDraftRenderSceneBuilder.MaximumPreviewDimension)
+    {
+        ArgumentNullException.ThrowIfNull(content);
+        var previewSize = ModelDraftRenderSceneBuilder.GetPreviewSize(content, maximumDimension);
+        var part = content.Parts.FirstOrDefault(candidate => candidate.Id == partId && candidate.IsVisible);
+        var partIndex = content.LayerOrder.IndexOf(partId);
+        if (part is null || partIndex < 0)
+        {
+            return null;
+        }
+
+        var layer = ModelDraftRenderSceneBuilder.CreatePartLayer(part, previewSize.Scale, partIndex);
+        return RenderLayerGeometry.GetSceneMatrix(layer, previewSize.Height).Transform(part.Transform.Pivot);
+    }
 }

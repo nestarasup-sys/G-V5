@@ -21,6 +21,24 @@
                            Stroke="#FF91B9FF"
                            StrokeThickness="2"
                            Fill="#2681B9FF" />
+                <Line x:Name="RotationStem"
+                      IsHitTestVisible="False"
+                      Stroke="#FF91B9FF"
+                      StrokeThickness="2" />
+                <Ellipse x:Name="RotationHandle"
+                         IsHitTestVisible="False"
+                         Width="12"
+                         Height="12"
+                         Fill="#FF91B9FF"
+                         Stroke="#FF25232B"
+                         StrokeThickness="2" />
+                <Rectangle x:Name="ScaleHandle"
+                           IsHitTestVisible="False"
+                           Width="12"
+                           Height="12"
+                           Fill="#FFFFD166"
+                           Stroke="#FF25232B"
+                           StrokeThickness="2" />
             </Canvas>
             <TextBlock x:Name="EmptyMessage"
                        Text="Publique uma folha de imagem para visualizar o modelo"

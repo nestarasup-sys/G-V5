@@ -62,7 +62,7 @@ public sealed class ModelDraftHitTesterTests
         {
             var pointer = new Point(canvas.Bounds.Width * 0.67, canvas.Bounds.Height * 0.42);
             canvas.SetSelection(new Rect2D(10, 5, 20, 10));
-            var overlay = Assert.Single(canvas.GetVisualDescendants().OfType<Rectangle>());
+            var overlay = Assert.Single(canvas.GetVisualDescendants().OfType<Rectangle>(), control => control.Name == "SelectionOverlay");
             Assert.True(overlay.IsVisible);
             Assert.True(overlay.Width > 0);
 

@@ -75,11 +75,17 @@ public sealed class ModelDraftRenderSceneBuilderTests
         Assert.Equal(visibleAsset, layer.AssetId);
         Assert.Equal(1, layer.ZOrder);
         Assert.Equal(new Rect2D(0, 0, 64, 96), layer.Crop);
-        Assert.Equal(new Point2D(60, 40), layer.Transform.Translation);
+        Assert.Equal(new Point2D(55, 30), layer.Transform.Translation);
         Assert.Equal(new Point2D(0.75, 1), layer.Transform.Scale);
-        Assert.Equal(new Point2D(5, 10), layer.Transform.Pivot);
+        Assert.Equal(new Point2D(10, 20), layer.Transform.Pivot);
         Assert.True(layer.Transform.FlipX);
         Assert.Equal(0.25, layer.Transform.RotationRadians);
+
+        var originalPoint = visibleTransform.Apply(new Point2D(14, 28));
+        var expectedPreviewPoint = new Point2D(originalPoint.X * 0.5, originalPoint.Y * 0.5);
+        var actualPreviewPoint = layer.Transform.Apply(new Point2D(14, 28));
+        Assert.Equal(expectedPreviewPoint.X, actualPreviewPoint.X, precision: 6);
+        Assert.Equal(expectedPreviewPoint.Y, actualPreviewPoint.Y, precision: 6);
     }
 
     [Fact]

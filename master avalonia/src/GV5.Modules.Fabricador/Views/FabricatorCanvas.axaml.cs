@@ -23,9 +23,14 @@ public partial class FabricatorCanvas : UserControl
     public double ZoomFactor { get; private set; } = 1;
     public Vector PanOffset { get; private set; }
     public Rect2D? SelectedBounds { get; private set; }
+    public Point2D? RotationPivot { get; private set; }
     public FabricatorTool CurrentTool { get; private set; } = FabricatorTool.Select;
     public Action<Point2D>? SceneClicked { get; set; }
+    public Action<TransformGestureStart>? TransformGestureStarted { get; set; }
+    public Action<Point2D>? TransformGestureMoved { get; set; }
+    public Action? TransformGestureCompleted { get; set; }
     private bool _isPanning;
+    private ModelPartTransformKind? _activeTransformKind;
     private Point _pointerStart;
     private Vector _panStart;
 
@@ -47,9 +52,10 @@ public partial class FabricatorCanvas : UserControl
         Cursor = new Cursor(tool == FabricatorTool.Pan ? StandardCursorType.Hand : StandardCursorType.Arrow);
     }
 
-    public void SetSelection(Rect2D? bounds)
+    public void SetSelection(Rect2D? bounds, Point2D? rotationPivot = null)
     {
         SelectedBounds = bounds;
+        RotationPivot = bounds is null ? null : rotationPivot;
         UpdateViewport();
     }
 
@@ -74,13 +80,33 @@ public partial class FabricatorCanvas : UserControl
 
         if (properties.IsLeftButtonPressed && CurrentTool == FabricatorTool.Select)
         {
-            SceneClicked?.Invoke(ScreenToScene(point));
+            var scenePoint = ScreenToScene(point);
+            if (TryGetHandleGesture(point, out var handleGesture))
+            {
+                BeginTransform(handleGesture, scenePoint, e);
+                return;
+            }
+
+            SceneClicked?.Invoke(scenePoint);
+            if (SelectedBounds is { } bounds && bounds.Contains(scenePoint))
+            {
+                BeginTransform(ModelPartTransformKind.Move, scenePoint, e);
+                return;
+            }
+
             e.Handled = true;
         }
     }
 
     private void OnPointerMoved(object? sender, PointerEventArgs e)
     {
+        if (_activeTransformKind is not null)
+        {
+            TransformGestureMoved?.Invoke(ScreenToScene(e.GetPosition(Viewport)));
+            e.Handled = true;
+            return;
+        }
+
         if (!_isPanning)
         {
             return;
@@ -94,6 +120,15 @@ public partial class FabricatorCanvas : UserControl
 
     private void OnPointerReleased(object? sender, PointerReleasedEventArgs e)
     {
+        if (_activeTransformKind is not null)
+        {
+            _activeTransformKind = null;
+            e.Pointer.Capture(null);
+            TransformGestureCompleted?.Invoke();
+            e.Handled = true;
+            return;
+        }
+
         if (!_isPanning)
         {
             return;
@@ -143,6 +178,47 @@ public partial class FabricatorCanvas : UserControl
         UpdateViewport();
     }
 
+    private bool TryGetHandleGesture(Point pointer, out ModelPartTransformKind kind)
+    {
+        if (Frame is null || SelectedBounds is not { } bounds)
+        {
+            kind = default;
+            return false;
+        }
+
+        var scale = GetBaseScale() * ZoomFactor;
+        var left = (Viewport.Bounds.Width - Frame.PixelSize.Width * scale) / 2 + PanOffset.X;
+        var top = (Viewport.Bounds.Height - Frame.PixelSize.Height * scale) / 2 + PanOffset.Y;
+        var scaleHandle = new Point(left + bounds.Right * scale, top + bounds.Bottom * scale);
+        if (Math.Abs(pointer.X - scaleHandle.X) <= 10 && Math.Abs(pointer.Y - scaleHandle.Y) <= 10)
+        {
+            kind = ModelPartTransformKind.Scale;
+            return true;
+        }
+
+        var pivot = RotationPivot ?? new Point2D(bounds.X + bounds.Width / 2, bounds.Y + bounds.Height / 2);
+        var pivotScreen = new Point(left + pivot.X * scale, top + pivot.Y * scale);
+        var rotateHandle = new Point(pivotScreen.X, pivotScreen.Y - 24);
+        var rotateDx = pointer.X - rotateHandle.X;
+        var rotateDy = pointer.Y - rotateHandle.Y;
+        if (rotateDx * rotateDx + rotateDy * rotateDy <= 100)
+        {
+            kind = ModelPartTransformKind.Rotate;
+            return true;
+        }
+
+        kind = default;
+        return false;
+    }
+
+    private void BeginTransform(ModelPartTransformKind kind, Point2D scenePoint, PointerPressedEventArgs e)
+    {
+        _activeTransformKind = kind;
+        e.Pointer.Capture(Viewport);
+        TransformGestureStarted?.Invoke(new TransformGestureStart(kind, scenePoint));
+        e.Handled = true;
+    }
+
     public Point2D ScreenToScene(Point point)
     {
         var frame = Frame ?? throw new InvalidOperationException("The model canvas has no rendered frame.");
@@ -164,6 +240,10 @@ public partial class FabricatorCanvas : UserControl
             ModelImage.Source = null;
             SelectionOverlay.Width = 0;
             SelectionOverlay.Height = 0;
+            SelectionOverlay.IsVisible = false;
+            RotationStem.IsVisible = false;
+            RotationHandle.IsVisible = false;
+            ScaleHandle.IsVisible = false;
             return;
         }
 
@@ -187,10 +267,27 @@ public partial class FabricatorCanvas : UserControl
             Canvas.SetLeft(SelectionOverlay, left + bounds.X * scale);
             Canvas.SetTop(SelectionOverlay, top + bounds.Y * scale);
             SelectionOverlay.IsVisible = true;
+            var scaleHandleLeft = left + bounds.Right * scale - ScaleHandle.Width / 2;
+            var scaleHandleTop = top + bounds.Bottom * scale - ScaleHandle.Height / 2;
+            Canvas.SetLeft(ScaleHandle, scaleHandleLeft);
+            Canvas.SetTop(ScaleHandle, scaleHandleTop);
+            ScaleHandle.IsVisible = true;
+
+            var pivot = RotationPivot ?? new Point2D(bounds.X + bounds.Width / 2, bounds.Y + bounds.Height / 2);
+            var pivotScreen = new Point(left + pivot.X * scale, top + pivot.Y * scale);
+            Canvas.SetLeft(RotationHandle, pivotScreen.X - RotationHandle.Width / 2);
+            Canvas.SetTop(RotationHandle, pivotScreen.Y - 24 - RotationHandle.Height / 2);
+            RotationStem.StartPoint = pivotScreen;
+            RotationStem.EndPoint = new Point(pivotScreen.X, pivotScreen.Y - 24);
+            RotationStem.IsVisible = true;
+            RotationHandle.IsVisible = true;
         }
         else
         {
             SelectionOverlay.IsVisible = false;
+            ScaleHandle.IsVisible = false;
+            RotationHandle.IsVisible = false;
+            RotationStem.IsVisible = false;
         }
 
         EmptyMessage.IsVisible = false;

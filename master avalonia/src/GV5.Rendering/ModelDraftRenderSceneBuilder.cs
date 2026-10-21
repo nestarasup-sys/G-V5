@@ -60,10 +60,12 @@ public static class ModelDraftRenderSceneBuilder
 
         var transform = part.Transform;
         var scaledTransform = new Transform2D(
-            new Point2D(transform.Translation.X * sceneScale, transform.Translation.Y * sceneScale),
+            new Point2D(
+                transform.Translation.X * sceneScale + (sceneScale - 1) * transform.Pivot.X,
+                transform.Translation.Y * sceneScale + (sceneScale - 1) * transform.Pivot.Y),
             new Point2D(transform.Scale.X * sceneScale, transform.Scale.Y * sceneScale),
             transform.RotationRadians,
-            new Point2D(transform.Pivot.X * sceneScale, transform.Pivot.Y * sceneScale),
+            transform.Pivot,
             transform.FlipX,
             transform.FlipY);
         return new RenderLayer(

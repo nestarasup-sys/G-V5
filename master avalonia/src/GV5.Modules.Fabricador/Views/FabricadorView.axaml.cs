@@ -33,6 +33,9 @@ public partial class FabricadorView : UserControl
 
         ModelCanvas.SceneClicked -= OnCanvasSceneClicked;
         ModelCanvas.SceneClicked += OnCanvasSceneClicked;
+        ModelCanvas.TransformGestureStarted = OnCanvasTransformStarted;
+        ModelCanvas.TransformGestureMoved = OnCanvasTransformMoved;
+        ModelCanvas.TransformGestureCompleted = OnCanvasTransformCompleted;
         UpdateCanvasInteractionState();
         UpdatePreviewImage();
         UpdateRenderedModel();
@@ -56,7 +59,9 @@ public partial class FabricadorView : UserControl
             return;
         }
 
-        if (e.PropertyName is nameof(FabricadorViewModel.SelectedPartBounds) or nameof(FabricadorViewModel.ActiveTool))
+        if (e.PropertyName is nameof(FabricadorViewModel.SelectedPartBounds)
+            or nameof(FabricadorViewModel.SelectedPartPivot)
+            or nameof(FabricadorViewModel.ActiveTool))
         {
             if (Dispatcher.UIThread.CheckAccess())
             {
@@ -186,9 +191,12 @@ public partial class FabricadorView : UserControl
             return;
         }
 
-        ModelCanvas.SetSelection(_viewModel.SelectedPartBounds);
+        ModelCanvas.SetSelection(_viewModel.SelectedPartBounds, _viewModel.SelectedPartPivot);
         ModelCanvas.SetTool(_viewModel.ActiveTool);
     }
 
     private void OnCanvasSceneClicked(Point2D scenePoint) => _viewModel?.SelectModelPartAt(scenePoint);
+    private void OnCanvasTransformStarted(TransformGestureStart gesture) => _viewModel?.BeginModelPartTransform(gesture);
+    private void OnCanvasTransformMoved(Point2D scenePoint) => _viewModel?.UpdateModelPartTransform(scenePoint);
+    private void OnCanvasTransformCompleted() => _viewModel?.CompleteModelPartTransform();
 }
