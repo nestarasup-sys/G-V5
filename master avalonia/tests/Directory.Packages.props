@@ -1,0 +1,8 @@
+<Project>
+  <!-- Isolated test-only package versions. Never rewrite the app's central props while Codex works. -->
+  <Import Project="../Directory.Packages.props" />
+  <ItemGroup>
+    <PackageVersion Include="Avalonia.Headless.XUnit" Version="12.1.4" />
+    <PackageVersion Include="xunit.v3" Version="3.2.2" />
+  </ItemGroup>
+</Project>
