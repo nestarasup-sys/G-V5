@@ -1,9 +1,9 @@
 # GATE-F06 — Fabricador I: modelos e peças
 
-**Data da verificação local:** 2026-10-21  
-**Branch:** `Master-AValonia`  
-**Tarefas:** F06.01–F06.14  
-**Resultado:** **BLOQUEADO — validação de produto/visual pendente.**  
+**Data da verificação local:** 2026-10-21
+**Branch:** `Master-AValonia`
+**Tarefas:** F06.01–F06.14
+**Resultado:** **BLOQUEADO — validação de produto/visual pendente.**
 **Código e persistência:** fluxo integrado comprovado com fixture sintética e SQLite/AssetStore reais.
 
 ## Critério do gate
