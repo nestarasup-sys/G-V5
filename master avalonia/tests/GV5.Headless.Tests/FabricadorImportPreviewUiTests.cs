@@ -493,6 +493,7 @@ public sealed class FabricadorImportPreviewUiTests
         var draftRepository = new EmptyDraftRepository();
         var revisionRepository = new RecordingModelRevisionRepository();
         var publishService = new PublishModelRevisionService(draftRepository, contentRepository, revisionRepository);
+        var thumbnails = new RecordingThumbnails(CreateModelSheetPng());
         using var renderAssetsCache = new AssetBitmapCache(4 * 1024 * 1024);
         var renderAssets = new TestRenderAssetProvider(store, new AssetImageDecoder(), renderAssetsCache);
         var sceneRenderer = new SkiaRenderer(renderAssets);
@@ -506,7 +507,8 @@ public sealed class FabricadorImportPreviewUiTests
             contentRepository: contentRepository,
             sceneRenderer: sceneRenderer,
             autosaveDelay: TimeSpan.FromHours(1),
-            publishModelRevisionService: publishService);
+            publishModelRevisionService: publishService,
+            thumbnailService: thumbnails);
         viewModel.ModelName = "Modelo de teste";
         var view = new FabricadorView { DataContext = viewModel };
         var window = new Window { Width = 900, Height = 700, Content = view };
@@ -572,6 +574,9 @@ public sealed class FabricadorImportPreviewUiTests
             var parts = persisted.Value.Parts;
             Assert.Equal(2, parts.Length);
             Assert.Equal(2, viewModel.PartLayers.Count);
+            await viewModel.LoadVisiblePartLayerThumbnailsAsync(0, 8);
+            Assert.All(viewModel.PartLayers, layer => Assert.NotNull(layer.Thumbnail));
+            Assert.Equal(2, thumbnails.RequestedIds.Distinct().Count());
             Assert.Equal(0, viewModel.UndoCount);
             Assert.False(viewModel.UndoCommand.CanExecute(null));
             Assert.Equal(parts.Select(partItem => partItem.Id).Reverse(), viewModel.PartLayers.Select(item => item.Id));
@@ -883,6 +888,31 @@ public sealed class FabricadorImportPreviewUiTests
                 return await decoder.DecodeAsync(stream, token);
             }, cancellationToken);
             return result.Lease ?? throw new InvalidOperationException("Test asset decode failed.");
+        }
+    }
+
+    private sealed class RecordingThumbnails(byte[] png) : IThumbnailService
+    {
+        public List<AssetId> RequestedIds { get; } = [];
+
+        public Task<Result<Stream>> GetOrCreateAsync(AssetId assetId, ThumbnailRecipe recipe,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(Result<Stream>.Success(new MemoryStream(png, writable: false)));
+
+        public Task<Result<IReadOnlyList<AssetThumbnailStream>>> GetVisibleWindowAsync(
+            IReadOnlyList<AssetId> orderedAssetIds, int firstVisibleIndex, int visibleCount,
+            ThumbnailRecipe recipe, int maximumPrefetch = 4, CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var indexes = AssetThumbnailWindowPlanner.SelectIndexes(orderedAssetIds.Count, firstVisibleIndex,
+                visibleCount, maximumPrefetch);
+            var streams = indexes.Select(index =>
+            {
+                var id = orderedAssetIds[index];
+                RequestedIds.Add(id);
+                return new AssetThumbnailStream(id, new MemoryStream(png, writable: false));
+            }).ToArray();
+            return Task.FromResult(Result<IReadOnlyList<AssetThumbnailStream>>.Success(streams));
         }
     }
 

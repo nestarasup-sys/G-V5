@@ -1,9 +1,11 @@
 using System.ComponentModel;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Interactivity;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 using GV5.Modules.Fabricador.ViewModels;
 using GV5.Modules.Fabricador.Interaction;
 using GV5.Geometry;
@@ -15,6 +17,9 @@ public partial class FabricadorView : UserControl
 {
     private FabricadorViewModel? _viewModel;
     private WriteableBitmap? _previewBitmap;
+    private ScrollViewer? _partLayerScrollViewer;
+    private int _lastThumbnailWindowStart = -1;
+    private int _lastThumbnailWindowCount = -1;
 
     public FabricadorView() => InitializeComponent();
 
@@ -23,6 +28,12 @@ public partial class FabricadorView : UserControl
         if (_viewModel is not null)
         {
             _viewModel.PropertyChanged -= OnViewModelPropertyChanged;
+        }
+
+        if (_partLayerScrollViewer is not null)
+        {
+            _partLayerScrollViewer.ScrollChanged -= OnPartLayerScrollChanged;
+            _partLayerScrollViewer = null;
         }
 
         _viewModel = DataContext as FabricadorViewModel;
@@ -46,6 +57,11 @@ public partial class FabricadorView : UserControl
 
     private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
+        if (e.PropertyName == nameof(FabricadorViewModel.PartLayers))
+        {
+            RequestVisiblePartLayerThumbnails(force: true);
+        }
+
         if (e.PropertyName == nameof(FabricadorViewModel.RenderedModelFrame))
         {
             if (Dispatcher.UIThread.CheckAccess())
@@ -93,6 +109,45 @@ public partial class FabricadorView : UserControl
         {
             Dispatcher.UIThread.Post(UpdatePreviewImage);
         }
+    }
+
+    private void OnModelPartLayerListLoaded(object? sender, RoutedEventArgs e)
+    {
+        if (_partLayerScrollViewer is not null)
+        {
+            _partLayerScrollViewer.ScrollChanged -= OnPartLayerScrollChanged;
+        }
+
+        _partLayerScrollViewer = ModelPartLayerList.GetVisualDescendants().OfType<ScrollViewer>().FirstOrDefault();
+        if (_partLayerScrollViewer is not null)
+        {
+            _partLayerScrollViewer.ScrollChanged += OnPartLayerScrollChanged;
+        }
+
+        RequestVisiblePartLayerThumbnails(force: true);
+    }
+
+    private void OnPartLayerScrollChanged(object? sender, ScrollChangedEventArgs e) =>
+        RequestVisiblePartLayerThumbnails(force: false);
+
+    private void RequestVisiblePartLayerThumbnails(bool force)
+    {
+        if (_viewModel is null || _partLayerScrollViewer is not { } scrollViewer)
+        {
+            return;
+        }
+
+        const double estimatedRowHeight = 56;
+        var firstIndex = Math.Max(0, (int)Math.Floor(scrollViewer.Offset.Y / estimatedRowHeight));
+        var visibleCount = Math.Max(1, (int)Math.Ceiling(scrollViewer.Viewport.Height / estimatedRowHeight) + 2);
+        if (!force && firstIndex == _lastThumbnailWindowStart && visibleCount == _lastThumbnailWindowCount)
+        {
+            return;
+        }
+
+        _lastThumbnailWindowStart = firstIndex;
+        _lastThumbnailWindowCount = visibleCount;
+        _ = _viewModel.LoadVisiblePartLayerThumbnailsAsync(firstIndex, visibleCount);
     }
 
     private void UpdatePreviewImage()

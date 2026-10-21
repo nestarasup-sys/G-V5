@@ -34,6 +34,12 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
     private readonly IFilePicker? _filePicker;
     private readonly ModelSourceImportService? _modelSourceImportService;
     private readonly IAssetStore? _assetStore;
+    private readonly IThumbnailService? _thumbnailService;
+    private readonly Dictionary<AssetId, Bitmap> _partLayerThumbnailCache = [];
+    private readonly Queue<(AssetId Id, Bitmap Bitmap)> _partLayerThumbnailOrder = [];
+    private CancellationTokenSource? _partLayerThumbnailCancellation;
+    private bool _isPublishingPartLayerThumbnailUpdate;
+    private const int MaximumPartLayerThumbnails = 24;
     private readonly IModelDraftContentRepository? _contentRepository;
     private readonly IRenderSceneRenderer? _sceneRenderer;
     private readonly PublishModelRevisionService? _publishModelRevisionService;
@@ -98,6 +104,7 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
     private CancellationTokenSource? _autosaveCancellation;
     private Task? _autosaveTask;
     private Task? _activeSaveTask;
+    private bool _isFabricatorDisposed;
     private RigPartOption? _selectedRigParent;
     private RigPartOption? _selectedRigChild;
     private RigJointItem? _selectedRigJoint;
@@ -574,7 +581,10 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
                         part.IsVisible ? "Ocultar" : "Mostrar",
                         CanEdit && IsModelWorkspace,
                         CanEdit && IsModelWorkspace && item.index < content.LayerOrder.Length - 1,
-                        CanEdit && IsModelWorkspace && item.index > 0);
+                        CanEdit && IsModelWorkspace && item.index > 0)
+                    {
+                        Thumbnail = _partLayerThumbnailCache.GetValueOrDefault(part.AssetId)
+                    };
                 })
                 .ToArray();
         }
@@ -680,7 +690,8 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
         IAnimationRepository? animationRepository = null,
         HairSheetImportService? hairSheetImportService = null,
         HairRoleTintProcessor? hairRoleTintProcessor = null,
-        IHairStyleRepository? hairStyleRepository = null)
+        IHairStyleRepository? hairStyleRepository = null,
+        IThumbnailService? thumbnailService = null)
     {
         _repository = repository ?? throw new ArgumentNullException(nameof(repository));
         _dataInitializer = dataInitializer ?? throw new ArgumentNullException(nameof(dataInitializer));
@@ -692,6 +703,7 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
         HairWorkspace = new HairWorkspaceViewModel(_filePicker, hairSheetImportService, hairRoleTintProcessor,
             hairStyleRepository, assetStore);
         _assetStore = assetStore;
+        _thumbnailService = thumbnailService;
         _contentRepository = contentRepository;
         _sceneRenderer = sceneRenderer;
         _publishModelRevisionService = publishModelRevisionService;
@@ -2753,6 +2765,113 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
         _ = RenderModelPreviewAsync(content);
     }
 
+    /// <summary>Loads only thumbnails near the layer list's visible range through the shared thumbnail service.</summary>
+    public async Task LoadVisiblePartLayerThumbnailsAsync(int firstVisibleIndex, int visibleCount)
+    {
+        var content = IsModelWorkspace ? _modelContent : null;
+        if (_isFabricatorDisposed || _isPublishingPartLayerThumbnailUpdate || content is null
+            || _thumbnailService is null || visibleCount <= 0)
+        {
+            return;
+        }
+
+        var orderedParts = content.LayerOrder.Reverse()
+            .Select(id => content.Parts.FirstOrDefault(part => part.Id == id))
+            .Where(part => part is not null)
+            .ToArray();
+        if (orderedParts.Length == 0)
+        {
+            return;
+        }
+
+        firstVisibleIndex = Math.Clamp(firstVisibleIndex, 0, orderedParts.Length);
+        var indexes = AssetThumbnailWindowPlanner.SelectIndexes(orderedParts.Length, firstVisibleIndex,
+            Math.Min(visibleCount, orderedParts.Length - firstVisibleIndex), maximumPrefetch: 4);
+        var missingIds = indexes.Select(index => orderedParts[index]!.AssetId)
+            .Distinct()
+            .Where(id => !_partLayerThumbnailCache.ContainsKey(id))
+            .ToArray();
+        if (missingIds.Length == 0)
+        {
+            var obsoleteRequest = Interlocked.Exchange(ref _partLayerThumbnailCancellation, null);
+            CancelPreviewSafely(obsoleteRequest);
+            return;
+        }
+
+        var operation = new CancellationTokenSource();
+        var previous = Interlocked.Exchange(ref _partLayerThumbnailCancellation, operation);
+        CancelPreviewSafely(previous);
+        try
+        {
+            var result = await _thumbnailService.GetVisibleWindowAsync(missingIds, 0, missingIds.Length,
+                ThumbnailRecipe.Create(48, 48), maximumPrefetch: 0, operation.Token);
+            if (result.IsFailure || operation.IsCancellationRequested || _isFabricatorDisposed)
+            {
+                return;
+            }
+
+            if (!Dispatcher.UIThread.CheckAccess())
+            {
+                throw new InvalidOperationException("Fabricator layer thumbnails must be attached on the UI dispatcher.");
+            }
+
+            foreach (var thumbnail in result.Value)
+            {
+                await using (thumbnail)
+                {
+                    if (operation.IsCancellationRequested || _isFabricatorDisposed
+                        || _partLayerThumbnailCache.ContainsKey(thumbnail.AssetId))
+                    {
+                        continue;
+                    }
+
+                    try
+                    {
+                        var bitmap = new Bitmap(thumbnail.Content);
+                        _partLayerThumbnailCache.Add(thumbnail.AssetId, bitmap);
+                        _partLayerThumbnailOrder.Enqueue((thumbnail.AssetId, bitmap));
+                    }
+                    catch (Exception exception) when (exception is IOException or ArgumentException)
+                    {
+                        // A bad derived thumbnail must not block layer selection or editing.
+                    }
+                }
+            }
+
+            while (_partLayerThumbnailCache.Count > MaximumPartLayerThumbnails
+                && _partLayerThumbnailOrder.TryDequeue(out var oldest))
+            {
+                if (_partLayerThumbnailCache.TryGetValue(oldest.Id, out var current)
+                    && ReferenceEquals(current, oldest.Bitmap)
+                    && _partLayerThumbnailCache.Remove(oldest.Id, out var evicted))
+                    evicted.Dispose();
+            }
+
+            _isPublishingPartLayerThumbnailUpdate = true;
+            try
+            {
+                OnPropertyChanged(nameof(PartLayers));
+            }
+            finally
+            {
+                _isPublishingPartLayerThumbnailUpdate = false;
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Scrolling or closing the editor cancels obsolete thumbnail work.
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidOperationException)
+        {
+            // Thumbnails are optional decoration; failures never disable model editing.
+        }
+        finally
+        {
+            Interlocked.CompareExchange(ref _partLayerThumbnailCancellation, null, operation);
+            operation.Dispose();
+        }
+    }
+
     private void RefreshRigPanel(RigJointId? selectedJointId = null)
     {
         var currentJointId = selectedJointId ?? SelectedRigJoint?.Joint.Id;
@@ -3054,6 +3173,12 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
 
     public void Dispose()
     {
+        _isFabricatorDisposed = true;
+        var thumbnailCancellation = Interlocked.Exchange(ref _partLayerThumbnailCancellation, null);
+        CancelPreviewSafely(thumbnailCancellation);
+        foreach (var thumbnail in _partLayerThumbnailCache.Values) thumbnail.Dispose();
+        _partLayerThumbnailCache.Clear();
+        _partLayerThumbnailOrder.Clear();
         _ = HairWorkspace.DisposeAsync();
         _animationPlaybackTimer.Stop();
         _animationPlaybackTimer.Tick -= OnAnimationPlaybackTick;
