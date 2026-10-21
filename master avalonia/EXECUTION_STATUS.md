@@ -17,6 +17,7 @@
 | Fase ativa | **F03 — AssetStore, thumbnails e cache limitado** |
 | Última tarefa VALIDADA | **F03.09** — lixeira/GC seguro com carência e backup verificado |
 | Próxima tarefa PENDENTE | **F03.10** — testar cache pequeno, duplicados, corrupção, interrupção e reabertura |
+| Requisito transversal adicionado | Fidelidade visual ao Gacha 5 Electron, registrada em ADR-0004; documentos em `docs/ui-fidelity/`; sem paridade visual aprovada ainda |
 | Gate atual | **GATE F00: PASSOU; G0: PASSOU; F02: PASSOU; G1 global em execução até F03–F05** |
 | Progresso validado neste controle | **50 / 247 tarefas (20,2%)** |
 | Tarefas em execução | Nenhuma |
@@ -168,12 +169,15 @@ Condição objetiva de desbloqueio:
 
 ## 7. Decisões e desvios aprovados
 
-Ainda não há entradas registradas neste controle. Toda mudança material do roteiro ou arquitetura deve apontar para um ADR em `docs/decisions/`, com justificativa, risco, contrato alterado, impacto nos testes e commit. Não trocar stack/backend apenas por conveniência.
+- `docs/decisions/ADR-0004-gacha5-visual-fidelity.md`: requisito explícito do usuário para preservar a identidade visual do Gacha 5; complementa tarefas/gates sem alterar a contagem; screenshots e validação Avalonia continuam pendentes.
+
+Toda mudança material do roteiro ou arquitetura deve apontar para um ADR em `docs/decisions/`, com justificativa, risco, contrato alterado, impacto nos testes e commit. Não trocar stack/backend apenas por conveniência.
 
 ## 8. Registro de checkpoints
 
 | Data | HEAD/commit | Último ID validado | Gate | Resumo |
 | --- | --- | --- | --- | --- |
+| 2026-10-21 | `d96395d` | F03.09 | G1 em execução | ADR-0004 e contrato transversal de fidelidade ao Gacha 5; inventário/tokens iniciais são leitura estática. F03.10 continua próxima; nenhuma tela tem paridade visual aprovada. `git diff --check` passou; sem teste visual/runtime nesta documentação. |
 | 2026-10-20 | `d3afdd9` | F01.04 | GATE F00 passou | 13 tarefas F00 e F01.04 validadas; launcher, NuGet centralizado, solution e ignores conferidos |
 | 2026-10-20 | `9b8d250` | F01.05 | GATE F00 passou | Nove IDs tipados e Revision implementados; 120 assertions e build Release passaram |
 | 2026-10-20 | `8f608b3` | F01.06 | GATE F00 passou | Resultados/erros tipados e handlers de command/query com cancelamento; 14 assertions e build Release passaram |
