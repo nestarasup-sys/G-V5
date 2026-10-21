@@ -10,7 +10,7 @@ namespace GV5.Headless.Tests;
 /// Bootstraps the REAL G-V5 App under an in-memory headless platform.
 /// No native window, desktop mouse or desktop keyboard is ever created.
 /// </summary>
-public static class TestAppBuilder
+public sealed class TestAppBuilder
 {
     public static AppBuilder BuildAvaloniaApp()
         => AppBuilder.Configure<GV5.App.App>()
