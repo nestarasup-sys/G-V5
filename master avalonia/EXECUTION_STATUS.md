@@ -13,12 +13,12 @@
 | Branch obrigatória | `Master-AValonia` |
 | Pasta exclusiva do novo aplicativo | `master avalonia/` |
 | Commit-base inspecionado antes deste arquivo | `53b7f7a97321e85063a8dd4f9635e48d36548323` |
-| Último commit de implementação validado | `532101b` (F02.04; migrations versionadas e atômicas) |
+| Último commit de implementação validado | `7d5930d` (F02.05–F02.06; ModelDraft com persistência) |
 | Fase ativa | **F02 — SQLite, revisões, transações e recuperação básica** |
-| Última tarefa VALIDADA | **F02.04** — migrations SQLite versionadas, atômicas e verificadas |
-| Próxima tarefa PENDENTE | **F02.05** — ModelDraft e contrato de repositório |
+| Última tarefa VALIDADA | **F02.06** — CRUD de ModelDraft com persistência SQLite temporária |
+| Próxima tarefa PENDENTE | **F02.07** — expectedRevision e conflito de dois escritores |
 | Gate atual | **GATE F00: PASSOU; G0: PASSOU em clone limpo; G1 em execução** |
-| Progresso validado neste controle | **30 / 247 tarefas (12,1%)** |
+| Progresso validado neste controle | **32 / 247 tarefas (13,0%)** |
 | Tarefas em execução | Nenhuma |
 | Bloqueios conhecidos | Primeiro download do SDK em clone vazio não progrediu; evidência e limite de F01 estão registrados em `docs/gates/GATE-F01.md` |
 | Aceite Windows/GPU | **Não executado / não registrado** |
@@ -34,6 +34,10 @@
 
 Sempre conferir a branch e mudanças locais antes de agir. **Não modificar nada fora de `master avalonia/`.** Consultar código Electron somente em leitura. Não editar arquivos pessoais, dados antigos ou referências que não pertencem ao novo produto.
 
+### Política operacional ativa — execução 100% local
+
+A meta atual do usuário desativa o GitHub até autorização explícita. Não executar `git fetch`, `pull`, `push`, `gh`, API do GitHub ou Actions durante o desenvolvimento. O trabalho, testes e commits continuam normalmente nesta branch local. Referências `origin/*` são snapshots possivelmente antigos e não contam como estado remoto confirmado. Se uma validação remota for requisito essencial de um gate, registrar `VALIDAÇÃO REMOTA ADIADA PELO USUÁRIO` e manter o gate sem aprovação final; não inventar resultado.
+
 Se o Codex encontrar algo já implementado, **validar e registrar evidências**, em vez de reimplementar ou marcar como concluído por suposição. Se encontrar código alterado por outra sessão, reconciliar sem sobrescrever.
 
 ## 3. Resumo por fase (inicialmente não validado)
@@ -42,7 +46,7 @@ Se o Codex encontrar algo já implementado, **validar e registrar evidências**,
 | --- | --- | ---: | ---: | --- | --- |
 | F00 | Auditoria do legado, baseline e sincronização | 13 | 13 | VALIDADA | PASSOU |
 | F01 | Solution .NET, contratos, módulo e CI | 13 | 13 | VALIDADA | G0 PASSOU |
-| F02 | SQLite, revisões, transações e recuperação básica | 15 | 4 | EM_EXECUCAO | G0 passou |
+| F02 | SQLite, revisões, transações e recuperação básica | 15 | 6 | EM_EXECUCAO | G0 passou |
 | F03 | AssetStore, thumbnails e cache limitado | 11 | 0 | PENDENTE | — |
 | F04 | Geometry Engine canônica | 11 | 0 | PENDENTE | — |
 | F05 | RenderScene e SkiaRenderer independentes | 11 | 0 | PENDENTE | — |
@@ -97,6 +101,8 @@ Adicionar uma linha ao concluir ou bloquear cada tarefa. A linha inicial abaixo 
 | **F02.02** | **VALIDADA** | `1959fec` | Revisado o ownership relacional e corrigidas relações que não garantiam compatibilidade de modelo; chaves compostas agora validam modelo/pose/peça/roupa, elementos de cena usam referências tipadas e roteiros distinguem vídeo da biblioteca de mídia privada de rascunho. `git diff --check` passou; DDL/provider/migrations continuam fora do escopo desta tarefa. | `docs/data/SCHEMA_DESIGN.md`; checkbox F02.02 no Plano Mestre | Revisão documental do desenho; o schema executável e os testes reais de SQLite são tarefas F02.03–F02.04. |
 | **F02.03** | **VALIDADA** | `a79d115`, `a04b1d6` | Implementados `IGv5Database`/`SqliteDatabase` e registro singleton no composition root. Abrir banco aplica WAL, foreign keys, `busy_timeout=5000` e `synchronous=FULL`; conexões de leitura usam `query_only`; escrita passa por transação imediata e gate serializador. `TestarLocal.bat rapido` passou: build Debug 0 warnings/0 errors, Core 3/3, Architecture 4/4, Data 8/8, Headless 3/3. O primeiro ciclo encontrou apenas mismatch int/long no assert e avisos xUnit; ambos foram corrigidos antes do ciclo verde. | `src/GV5.Data/Storage/IGv5Database.cs`; `SqliteDatabase.cs`; `tests/GV5.Data.Tests/SqliteDatabaseTests.cs`; `AppComposition.cs`; saída local desta sessão | Exercitado banco temporário sintético, leitura somente leitura, WAL/FK/durabilidade, rollback, rejeição de FK órfã e serialização de escritores. Migrations ficam em F02.04. |
 | **F02.04** | **VALIDADA** | `532101b` | `SqliteMigrationRunner` aplica migrations contíguas em uma transação, registra SHA-256, recusa checksum alterado/gap/schema futuro e faz rollback integral em falha. A migration inicial cria `assets`/`asset_derivatives` com constraints e índices. Testes verificaram banco vazio→v1→fechar/reabrir→sem reaplicação, preservação do registro e `PRAGMA integrity_check=ok`. `TestarLocal.bat rapido` passou: build Debug 0 warnings/0 errors, Core 3/3, Architecture 4/4, Data 12/12, Headless 3/3. | `src/GV5.Data/Migrations/*`; `tests/GV5.Data.Tests/SqliteMigrationRunnerTests.cs`; saída local desta sessão | Fixtures usaram raiz temporária. O migration runner está registrado no DI; a aplicação não abre nem migra o perfil real até algum fluxo de dados solicitá-lo. |
+| **F02.05** | **VALIDADA** | `7d5930d` | Definidos `ModelDraft` com `ModelId`, `Revision`, nome e timestamps validados; contrato `IModelDraftRepository` em Application; migration v2 para a tabela `models`; implementação SQLite registrada no composition root. Testes Core cobrem normalização, revisionamento, timestamps e entradas inválidas. | `src/GV5.Core/Models/ModelDraft.cs`; `src/GV5.Application/Contracts/IModelDraftRepository.cs`; `src/GV5.Data/Repositories/SqliteModelDraftRepository.cs`; migration v2; `tests/GV5.Core.Tests/ModelDraftTests.cs` | Sem novo acesso à pasta real de dados; banco de teste foi temporário. |
+| **F02.06** | **VALIDADA** | `7d5930d` | CRUD create/get/update usa SQLite real temporário e transações. Testes confirmam fechar/reabrir mantendo nome/ID/revisão/datas, duplicata como Conflict, ID ausente como NotFound, ID inválido como Validation e rejeição de timestamps adulterados. `TestarLocal.bat rapido` passou: build Debug 0 warnings/0 errors, Core 6/6, Architecture 4/4, Data 14/14, Headless 3/3. A primeira rodada detectou e corrigiu a possibilidade de retroceder `updated_utc_ms`; rodada final verde. | `src/GV5.Data/Repositories/SqliteModelDraftRepository.cs`; `tests/GV5.Data.Tests/SqliteModelDraftRepositoryTests.cs`; saída local desta sessão | Testes usam somente diretórios temporários. O cenário concorrente dedicado de expectedRevision pertence à F02.07. |
 
 **Estados aceitos:** `PENDENTE`, `EM_EXECUCAO`, `BLOQUEADA`, `VALIDADA`.
 
@@ -120,7 +126,7 @@ Adicionar uma linha ao concluir ou bloquear cada tarefa. A linha inicial abaixo 
 | `dotnet build GV5.sln -c Release --no-restore --verbosity minimal` | PASSOU | exit 0; 14 assemblies; 0 warnings, 0 errors após integrar os projetos Core e Architecture Tests |
 | `TestarHeadless.bat` | PASSOU | 3/3; zero errors, failures, skipped; execução sem janela nativa; screenshot Skia gerada e inspecionada |
 | `dotnet test GV5.sln -c Release --verbosity minimal` | PASSOU | `GV5.Core.Tests`: 3/3; `GV5.Architecture.Tests`: 4/4; F01.05 também teve harness temporário com 120 assertions |
-| CI Windows/Linux | PENDENTE | Workflow commit `9a9b361`; após push, registrar URL do run, commit e resultado de cada runner |
+| CI Windows/Linux | Histórico da F01 validado; **remoto desativado nesta execução** | Não consultar Actions. Para gates futuros que dependam de CI, registrar `VALIDAÇÃO REMOTA ADIADA PELO USUÁRIO` e distinguir a validação local da aprovação final |
 | Teste de UI / GPU Windows | F01.09 headless Skia PASSOU; janela nativa/GPU NÃO TESTADAS | Captura em memória confirmou shell e recursos visuais em 1100×700; não abriu janela visível nem usou hardware do usuário |
 
 Os valores acima descrevem **este controle**, não negam testes que o Codex possa ter feito antes. Na F00, verificar evidências existentes e atualizá-los.
@@ -166,17 +172,18 @@ Ainda não há entradas registradas neste controle. Toda mudança material do ro
 | 2026-10-20 | `1959fec` | F02.02 validada; próxima F02.03 | G1 em execução | Schema revisado: ownership e chaves compostas, vínculos tipados de cena/personagem e distinção entre referências de vídeo da biblioteca e mídia de rascunho |
 | 2026-10-20 | `a04b1d6` | F02.03 validada; F02.04 em execução | G1 em execução | SQLite central com WAL, FK, leitura protegida e gravações serializadas; `TestarLocal.bat rapido` verde (18 testes combinados incluindo Headless, sem warnings no build) |
 | 2026-10-20 | `532101b` | F02.04 validada; próxima F02.05 | G1 em execução | Migrations sequenciais com checksum e rollback transacional; banco sintético vazio→v1→reabertura íntegra, suíte rápida verde (22 testes combinados incluindo Headless) |
+| 2026-10-20 | `7d5930d` | F02.06 validada; próxima F02.07 | G1 em execução | ModelDraft com CRUD SQLite e optimistic concurrency; `TestarLocal.bat rapido` passou (Core 6/6, Architecture 4/4, Data 14/14, Headless 3/3) |
 
 Após concluir um lote ou fase, adicionar uma linha. Não inflar contador só porque o commit contém múltiplos arquivos; contar apenas tarefas comprovadas.
 
 ## 9. Retomada obrigatória para a próxima sessão Codex
 
-1. Atualizar branch/remoto com segurança, sem force push e sem sobrescrever trabalho local de outra sessão.
+1. Confirmar branch, HEAD e árvore de trabalho localmente; não consultar nem sincronizar o remoto até autorização explícita.
 2. Ler `AGENTS.md`, `PLANO_DO_NOVO_APP.md`, `PLANO_MESTRE_EXECUCAO_CODEX.md` e este arquivo.
 3. Inspecionar evidências reais da última tarefa validada; caso não existam, corrigir seu estado.
-4. **Retomar F02.05**: definir `ModelDraft` com ID/revision e contrato de repositório + implementação Data; preservar a sequência de migrations sem alterar versões já aplicadas.
+4. **Retomar F02.07**: testar expectedRevision com dois escritores em revisões divergentes; consolidar conflito tipado sem sobrescrever o valor mais recente.
 5. Continuar automaticamente pelas tarefas seguintes **uma de cada vez**, em lotes flexíveis de aproximadamente 3–8 tarefas relacionadas, enquanto todos os gates pertinentes passam.
-6. Atualizar o registro e commitar entregas reais na branch `Master-AValonia`; não desenvolver Video Studio antecipadamente.
+6. Atualizar o registro e commitar entregas reais localmente na branch `Master-AValonia`; não desenvolver Video Studio antecipadamente.
 7. Ao encerrar, informar: **branch, HEAD, último ID VALIDADO, próximo ID PENDENTE, commits, comandos verdes, evidências, bloqueios e condição de desbloqueio**.
 
 ### Prompt de retomada
