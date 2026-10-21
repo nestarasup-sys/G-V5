@@ -26,6 +26,10 @@ public sealed class SqliteFabricatorDependencyCatalog(IGv5Database database) : I
                 FabricatorResourceKind.Model => ModelUsagesSql,
                 FabricatorResourceKind.Pose => PoseUsagesSql,
                 FabricatorResourceKind.Wardrobe => WardrobeUsagesSql,
+                FabricatorResourceKind.Hair => HairUsagesSql,
+                FabricatorResourceKind.Face => FaceUsagesSql,
+                FabricatorResourceKind.FaceExpressionCollection => ExpressionCollectionUsagesSql,
+                FabricatorResourceKind.FaceExpressionPreset => ExpressionPresetUsagesSql,
                 _ => throw new ArgumentOutOfRangeException(nameof(resource))
             };
             command.Parameters.AddWithValue("$id", resource.Id.ToString("D"));
@@ -53,6 +57,10 @@ public sealed class SqliteFabricatorDependencyCatalog(IGv5Database database) : I
             FabricatorResourceKind.Model => ("models", "model_id"),
             FabricatorResourceKind.Pose => ("pose_drafts", "pose_id"),
             FabricatorResourceKind.Wardrobe => ("wardrobe_drafts", "wardrobe_id"),
+            FabricatorResourceKind.Hair => ("hair_drafts", "hair_id"),
+            FabricatorResourceKind.Face => ("face_catalog_drafts", "face_id"),
+            FabricatorResourceKind.FaceExpressionCollection => ("face_expression_collections", "collection_id"),
+            FabricatorResourceKind.FaceExpressionPreset => ("face_expression_presets", "preset_id"),
             _ => throw new ArgumentOutOfRangeException(nameof(resource))
         };
         await using var command = connection.CreateCommand();
@@ -76,6 +84,23 @@ public sealed class SqliteFabricatorDependencyCatalog(IGv5Database database) : I
         UNION ALL
         SELECT 'wardrobe-publication', wardrobe_revision_id, display_name, model_revision_id
         FROM wardrobe_revisions WHERE model_id = $id
+        UNION ALL
+        SELECT 'hair-draft', hair_id, display_name, model_revision_id FROM hair_drafts WHERE model_id = $id
+        UNION ALL
+        SELECT 'hair-publication', hair_revision_id, display_name, model_revision_id FROM hair_revisions WHERE model_id = $id
+        UNION ALL
+        SELECT 'face-draft', face_id, display_name, model_revision_id FROM face_catalog_drafts WHERE model_id = $id
+        UNION ALL
+        SELECT 'face-publication', face_revision_id, display_name, model_revision_id FROM face_revisions WHERE model_id = $id
+        UNION ALL
+        SELECT 'expression-collection', collection_id, display_name, model_revision_id FROM face_expression_collections WHERE model_id = $id
+        UNION ALL
+        SELECT 'expression-preset', p.preset_id, p.display_name, c.model_revision_id FROM face_expression_presets p
+        JOIN face_expression_collections c USING(collection_id) WHERE c.model_id = $id
+        UNION ALL
+        SELECT 'expression-publication', r.expression_revision_id, p.display_name, c.model_revision_id
+        FROM face_expression_revisions r JOIN face_expression_presets p USING(preset_id)
+        JOIN face_expression_collections c USING(collection_id) WHERE c.model_id = $id
         ORDER BY usage_type, owner_name COLLATE NOCASE, owner_id;
         """;
 
@@ -93,5 +118,37 @@ public sealed class SqliteFabricatorDependencyCatalog(IGv5Database database) : I
         SELECT 'immutable-publication' AS usage_type, wardrobe_revision_id AS owner_id, display_name AS owner_name, model_revision_id AS pinned_revision
         FROM wardrobe_revisions WHERE wardrobe_id = $id
         ORDER BY revision;
+        """;
+
+    private const string HairUsagesSql = """
+        SELECT 'immutable-publication' AS usage_type, hair_revision_id AS owner_id, display_name AS owner_name, model_revision_id AS pinned_revision
+        FROM hair_revisions WHERE hair_id = $id
+        ORDER BY revision;
+        """;
+
+    private const string FaceUsagesSql = """
+        SELECT 'expression-preset' AS usage_type, preset_id AS owner_id, display_name AS owner_name, CAST(face_revision AS TEXT) AS pinned_revision
+        FROM face_expression_presets WHERE face_id = $id
+        UNION ALL
+        SELECT 'immutable-publication', face_revision_id, display_name, CAST(draft_revision AS TEXT)
+        FROM face_revisions WHERE face_id = $id
+        ORDER BY usage_type, owner_name COLLATE NOCASE, owner_id;
+        """;
+
+    private const string ExpressionCollectionUsagesSql = """
+        SELECT 'expression-preset' AS usage_type, preset_id AS owner_id, display_name AS owner_name, CAST(revision AS TEXT) AS pinned_revision
+        FROM face_expression_presets WHERE collection_id = $id
+        UNION ALL
+        SELECT 'published-expression', r.expression_revision_id, p.display_name, CAST(r.revision AS TEXT)
+        FROM face_expression_revisions r JOIN face_expression_presets p USING(preset_id)
+        WHERE p.collection_id = $id
+        ORDER BY usage_type, owner_name COLLATE NOCASE, owner_id;
+        """;
+
+    private const string ExpressionPresetUsagesSql = """
+        SELECT 'immutable-publication' AS usage_type, expression_revision_id AS owner_id, p.display_name AS owner_name, CAST(r.revision AS TEXT) AS pinned_revision
+        FROM face_expression_revisions r JOIN face_expression_presets p USING(preset_id)
+        WHERE r.preset_id = $id
+        ORDER BY r.revision;
         """;
 }

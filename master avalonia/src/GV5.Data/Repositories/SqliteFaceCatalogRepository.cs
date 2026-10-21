@@ -120,6 +120,172 @@ public sealed class SqliteFaceCatalogRepository(IGv5Database database) : IFaceCa
         { return Failure<FaceCatalogDraft>(ApplicationErrorCode.Persistence, "Não foi possível salvar o catálogo facial.", draft.Id.ToString()); }
     }
 
+    public async Task<Result<PublishedFaceCatalogRevision>> PublishAsync(FaceId faceId,
+        Revision expectedDraftRevision, long publishedUtcMs, CancellationToken cancellationToken = default)
+    {
+        if (!faceId.IsValid || !expectedDraftRevision.IsValid || publishedUtcMs < 0)
+            return Failure<PublishedFaceCatalogRevision>(ApplicationErrorCode.Validation, "Os dados de publicação facial são inválidos.");
+        try
+        {
+            var outcome = await _database.ExecuteWriteAsync(async (connection, transaction, token) =>
+            {
+                await using var select = connection.CreateCommand();
+                select.Transaction = transaction;
+                select.CommandText = SelectDraft + " WHERE face_id=$id;";
+                select.Parameters.AddWithValue("$id", faceId.ToString());
+                FaceCatalogDraft? draft;
+                await using (var reader = await select.ExecuteReaderAsync(token).ConfigureAwait(false))
+                {
+                    if (!await reader.ReadAsync(token).ConfigureAwait(false)) return PublishOutcome.NotFound;
+                    var decoded = Decode(reader);
+                    if (decoded.IsFailure) return PublishOutcome.Corrupt;
+                    draft = decoded.Value;
+                }
+                if (draft.Revision != expectedDraftRevision) return PublishOutcome.Conflict;
+                if (!await IsModelAvailableAsync(connection, transaction, draft.Model, token).ConfigureAwait(false)
+                    || !await AreAssetsAvailableAsync(connection, transaction, draft.Components.Select(component => component.AssetId), token).ConfigureAwait(false))
+                    return PublishOutcome.MissingDependencies;
+
+                await using var latest = connection.CreateCommand();
+                latest.Transaction = transaction;
+                latest.CommandText = PublishedSelect + " WHERE r.face_id=$id ORDER BY r.revision DESC LIMIT 1;";
+                latest.Parameters.AddWithValue("$id", faceId.ToString());
+                await using (var reader = await latest.ExecuteReaderAsync(token).ConfigureAwait(false))
+                {
+                    if (await reader.ReadAsync(token).ConfigureAwait(false))
+                    {
+                        var prior = DecodePublication(reader);
+                        if (prior.IsFailure) return PublishOutcome.Corrupt;
+                        if (prior.Value.DraftRevision == expectedDraftRevision) return PublishOutcome.Success with { Publication = prior.Value };
+                    }
+                }
+
+                await using var sequenceCommand = connection.CreateCommand();
+                sequenceCommand.Transaction = transaction;
+                sequenceCommand.CommandText = "SELECT COALESCE(MAX(revision),0)+1 FROM face_revisions WHERE face_id=$id;";
+                sequenceCommand.Parameters.AddWithValue("$id", faceId.ToString());
+                var sequence = Revision.From(Convert.ToInt64(await sequenceCommand.ExecuteScalarAsync(token).ConfigureAwait(false)));
+                var id = FaceRevisionId.New();
+                var encoded = FaceCatalogSnapshotCodec.Encode(draft);
+                var publication = PublishedFaceCatalogRevision.Restore(id, faceId, sequence, draft.Revision,
+                    publishedUtcMs, encoded.Sha256, draft);
+                await using var insert = connection.CreateCommand();
+                insert.Transaction = transaction;
+                insert.CommandText = "INSERT INTO face_revisions(face_revision_id,face_id,model_revision_id,model_id,revision,draft_revision,display_name,published_utc_ms,snapshot_json,snapshot_sha256) VALUES($id,$face,$model_revision,$model,$revision,$draft_revision,$name,$published,$json,$hash);";
+                insert.Parameters.AddWithValue("$id", id.ToString());
+                insert.Parameters.AddWithValue("$face", faceId.ToString());
+                insert.Parameters.AddWithValue("$model_revision", draft.Model.RevisionId.ToString());
+                insert.Parameters.AddWithValue("$model", draft.Model.ModelId.ToString());
+                insert.Parameters.AddWithValue("$revision", sequence.Value);
+                insert.Parameters.AddWithValue("$draft_revision", draft.Revision.Value);
+                insert.Parameters.AddWithValue("$name", draft.Name);
+                insert.Parameters.AddWithValue("$published", publishedUtcMs);
+                insert.Parameters.AddWithValue("$json", encoded.Json);
+                insert.Parameters.AddWithValue("$hash", encoded.Sha256);
+                await insert.ExecuteNonQueryAsync(token).ConfigureAwait(false);
+                await CopyPublishedAssetReferencesAsync(connection, transaction, faceId, id, token).ConfigureAwait(false);
+                return PublishOutcome.Success with { Publication = publication };
+            }, cancellationToken).ConfigureAwait(false);
+            return outcome.Status switch
+            {
+                PublishStatus.Success => Result<PublishedFaceCatalogRevision>.Success(outcome.Publication!),
+                PublishStatus.NotFound => Failure<PublishedFaceCatalogRevision>(ApplicationErrorCode.NotFound, "O catálogo facial não existe.", faceId.ToString()),
+                PublishStatus.Conflict => Failure<PublishedFaceCatalogRevision>(ApplicationErrorCode.Conflict, "O catálogo mudou antes da publicação.", faceId.ToString()),
+                PublishStatus.MissingDependencies => Failure<PublishedFaceCatalogRevision>(ApplicationErrorCode.NotFound, "O modelo pinado ou um asset facial não está disponível.", faceId.ToString()),
+                _ => Failure<PublishedFaceCatalogRevision>(ApplicationErrorCode.Persistence, "O snapshot facial está corrompido.", faceId.ToString())
+            };
+        }
+        catch (Exception exception) when (exception is SqliteException or InvalidDataException or ArgumentException or System.Text.Json.JsonException or OverflowException)
+        { return Failure<PublishedFaceCatalogRevision>(ApplicationErrorCode.Persistence, "Não foi possível publicar o catálogo facial.", faceId.ToString()); }
+    }
+
+    public async Task<Result<PublishedFaceCatalogRevision>> GetPublishedAsync(FaceId faceId, Revision revision,
+        CancellationToken cancellationToken = default)
+    {
+        if (!faceId.IsValid || !revision.IsValid)
+            return Failure<PublishedFaceCatalogRevision>(ApplicationErrorCode.Validation, "O ID e a revisão facial são obrigatórios.");
+        try
+        {
+            await using var connection = await _database.OpenReadConnectionAsync(cancellationToken).ConfigureAwait(false);
+            await using var command = connection.CreateCommand();
+            command.CommandText = PublishedSelect + " WHERE r.face_id=$id AND r.revision=$revision;";
+            command.Parameters.AddWithValue("$id", faceId.ToString());
+            command.Parameters.AddWithValue("$revision", revision.Value);
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            return await reader.ReadAsync(cancellationToken).ConfigureAwait(false)
+                ? DecodePublication(reader)
+                : Failure<PublishedFaceCatalogRevision>(ApplicationErrorCode.NotFound, "A revisão facial publicada não existe.", faceId.ToString());
+        }
+        catch (Exception exception) when (exception is SqliteException or InvalidDataException or ArgumentException or System.Text.Json.JsonException)
+        { return Failure<PublishedFaceCatalogRevision>(ApplicationErrorCode.Persistence, "A revisão facial publicada não pôde ser verificada.", faceId.ToString()); }
+    }
+
+    public async Task<Result<IReadOnlyList<PublishedFaceCatalogRevision>>> ListPublishedAsync(FaceId faceId,
+        CancellationToken cancellationToken = default)
+    {
+        if (!faceId.IsValid) return Failure<IReadOnlyList<PublishedFaceCatalogRevision>>(ApplicationErrorCode.Validation, "O ID do catálogo facial é inválido.");
+        try
+        {
+            await using var connection = await _database.OpenReadConnectionAsync(cancellationToken).ConfigureAwait(false);
+            await using var command = connection.CreateCommand();
+            command.CommandText = PublishedSelect + " WHERE r.face_id=$id ORDER BY r.revision DESC;";
+            command.Parameters.AddWithValue("$id", faceId.ToString());
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            var publications = new List<PublishedFaceCatalogRevision>();
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                var decoded = DecodePublication(reader);
+                if (decoded.IsFailure) return Result<IReadOnlyList<PublishedFaceCatalogRevision>>.Failure(decoded.Error!);
+                publications.Add(decoded.Value);
+            }
+            return Result<IReadOnlyList<PublishedFaceCatalogRevision>>.Success(publications.AsReadOnly());
+        }
+        catch (Exception exception) when (exception is SqliteException or InvalidDataException or ArgumentException or System.Text.Json.JsonException)
+        { return Failure<IReadOnlyList<PublishedFaceCatalogRevision>>(ApplicationErrorCode.Persistence, "As revisões faciais não puderam ser verificadas.", faceId.ToString()); }
+    }
+
+    private static Result<PublishedFaceCatalogRevision> DecodePublication(SqliteDataReader reader)
+    {
+        var id = FaceRevisionId.Parse(reader.GetString(0));
+        var faceId = FaceId.Parse(reader.GetString(1));
+        var revision = Revision.From(reader.GetInt64(2));
+        var draftRevision = Revision.From(reader.GetInt64(3));
+        var published = reader.GetInt64(4);
+        var hash = reader.GetString(5);
+        var snapshot = FaceCatalogSnapshotCodec.Decode(reader.GetString(6), hash);
+        var pinnedModel = ModelRevisionReference.Restore(ModelId.Parse(reader.GetString(8)),
+            ModelRevisionId.Parse(reader.GetString(7)), Revision.From(reader.GetInt64(9)), reader.GetString(10));
+        if (snapshot.Model != pinnedModel)
+            throw new InvalidDataException("The published face catalog does not match its pinned model revision.");
+        return Result<PublishedFaceCatalogRevision>.Success(PublishedFaceCatalogRevision.Restore(id, faceId,
+            revision, draftRevision, published, hash, snapshot));
+    }
+
+    private const string PublishedSelect = "SELECT r.face_revision_id,r.face_id,r.revision,r.draft_revision,r.published_utc_ms,r.snapshot_sha256,r.snapshot_json,r.model_revision_id,r.model_id,m.revision,m.snapshot_sha256 FROM face_revisions r JOIN model_revisions m ON m.revision_id=r.model_revision_id";
+
+    private static async Task CopyPublishedAssetReferencesAsync(SqliteConnection connection, SqliteTransaction transaction,
+        FaceId faceId, FaceRevisionId revisionId, CancellationToken token)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "INSERT INTO asset_references(owner_type,owner_id,slot,asset_id,created_utc_ms) SELECT 'fabricator.face-revision',$revision,slot,asset_id,$created FROM asset_references WHERE owner_type=$owner AND owner_id=$face;";
+        command.Parameters.AddWithValue("$revision", revisionId.Value.ToString("D"));
+        command.Parameters.AddWithValue("$created", DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+        command.Parameters.AddWithValue("$owner", AssetOwner);
+        command.Parameters.AddWithValue("$face", faceId.Value.ToString("D"));
+        await command.ExecuteNonQueryAsync(token).ConfigureAwait(false);
+    }
+
+    private enum PublishStatus { Success, NotFound, Conflict, MissingDependencies, Corrupt }
+    private sealed record PublishOutcome(PublishStatus Status, PublishedFaceCatalogRevision? Publication = null)
+    {
+        public static PublishOutcome NotFound => new(PublishStatus.NotFound);
+        public static PublishOutcome Conflict => new(PublishStatus.Conflict);
+        public static PublishOutcome MissingDependencies => new(PublishStatus.MissingDependencies);
+        public static PublishOutcome Corrupt => new(PublishStatus.Corrupt);
+        public static PublishOutcome Success => new(PublishStatus.Success);
+    }
+
     private const string SelectDraft = "SELECT face_id,model_revision_id,model_revision_sequence,model_snapshot_sha256,model_id,revision,display_name,draft_json,draft_sha256 FROM face_catalog_drafts";
 
     private static void AddParameters(SqliteCommand command, FaceCatalogDraft draft, string json, string hash)

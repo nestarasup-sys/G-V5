@@ -120,6 +120,30 @@ public readonly record struct FaceId : IEntityId
     public override string ToString() => Value.ToString("D");
 }
 
+public readonly record struct FaceRevisionId : IEntityId
+{
+    public Guid Value { get; }
+    public bool IsValid => Value != Guid.Empty;
+    private FaceRevisionId(Guid value) => Value = value;
+    public static FaceRevisionId New() => new(Guid.NewGuid());
+    public static FaceRevisionId From(Guid value) => new(IdValue.RequireValid(value, nameof(value)));
+    public static FaceRevisionId Parse(string value) => new(IdValue.Parse(value, nameof(FaceRevisionId)));
+    public static bool TryParse(string? value, out FaceRevisionId id) => IdValue.TryParse(value, static parsed => new FaceRevisionId(parsed), out id);
+    public override string ToString() => Value.ToString("D");
+}
+
+public readonly record struct FaceExpressionRevisionId : IEntityId
+{
+    public Guid Value { get; }
+    public bool IsValid => Value != Guid.Empty;
+    private FaceExpressionRevisionId(Guid value) => Value = value;
+    public static FaceExpressionRevisionId New() => new(Guid.NewGuid());
+    public static FaceExpressionRevisionId From(Guid value) => new(IdValue.RequireValid(value, nameof(value)));
+    public static FaceExpressionRevisionId Parse(string value) => new(IdValue.Parse(value, nameof(FaceExpressionRevisionId)));
+    public static bool TryParse(string? value, out FaceExpressionRevisionId id) => IdValue.TryParse(value, static parsed => new FaceExpressionRevisionId(parsed), out id);
+    public override string ToString() => Value.ToString("D");
+}
+
 public readonly record struct FaceComponentId : IEntityId
 {
     public Guid Value { get; }

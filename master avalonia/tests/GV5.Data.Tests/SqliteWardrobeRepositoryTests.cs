@@ -230,7 +230,9 @@ public sealed class SqliteWardrobeRepositoryTests
         new InitialAssetSchemaMigration(), new ModelDraftSchemaMigration(), new ModelDraftCheckpointSchemaMigration(),
         new AssetImportJournalSchemaMigration(), new AssetReferenceSchemaMigration(), new AssetGarbageCollectionSchemaMigration(),
         new ModelDraftContentSchemaMigration(), new ModelRevisionSchemaMigration(), new ModelRigJointSchemaMigration(),
-        new PoseRepositorySchemaMigration(), new AnimationRepositorySchemaMigration(), new WardrobeRepositorySchemaMigration()
+        new PoseRepositorySchemaMigration(), new AnimationRepositorySchemaMigration(), new WardrobeRepositorySchemaMigration(),
+        new HairStyleRepositorySchemaMigration(), new FaceCatalogRepositorySchemaMigration(),
+        new FaceExpressionRepositorySchemaMigration(), new FacePublicationSchemaMigration()
     ]);
 
     private static async Task<AssetId> InsertAssetAsync(SqliteDatabase database, string value, CancellationToken token)

@@ -10,4 +10,10 @@ public interface IFaceCatalogRepository
     Task<Result<FaceCatalogDraft>> GetAsync(FaceId faceId, CancellationToken cancellationToken = default);
     Task<Result<IReadOnlyList<FaceCatalogDraft>>> ListAsync(ModelRevisionId modelRevisionId, CancellationToken cancellationToken = default);
     Task<Result<FaceCatalogDraft>> SaveAsync(FaceCatalogDraft draft, Revision expectedRevision, CancellationToken cancellationToken = default);
+    Task<Result<PublishedFaceCatalogRevision>> PublishAsync(FaceId faceId, Revision expectedDraftRevision,
+        long publishedUtcMs, CancellationToken cancellationToken = default);
+    Task<Result<PublishedFaceCatalogRevision>> GetPublishedAsync(FaceId faceId, Revision revision,
+        CancellationToken cancellationToken = default);
+    Task<Result<IReadOnlyList<PublishedFaceCatalogRevision>>> ListPublishedAsync(FaceId faceId,
+        CancellationToken cancellationToken = default);
 }

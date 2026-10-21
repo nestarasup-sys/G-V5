@@ -124,6 +124,8 @@ public sealed class SqliteFaceExpressionRepository(IGv5Database database) : IFac
             return current.IsFailure ? Failure<bool>(current.Error!.Code, current.Error.Message, current.Error.Target)
                 : Failure<bool>(ApplicationErrorCode.Conflict, "A coleção foi alterada antes da exclusão.", id.ToString());
         }
+        catch (SqliteException exception) when (exception.SqliteErrorCode == 19)
+        { return Failure<bool>(ApplicationErrorCode.Conflict, "A coleção possui expressões publicadas e não pode ser removida.", id.ToString()); }
         catch (SqliteException)
         { return Failure<bool>(ApplicationErrorCode.Persistence, "Não foi possível excluir a coleção.", id.ToString()); }
     }
@@ -244,8 +246,172 @@ public sealed class SqliteFaceExpressionRepository(IGv5Database database) : IFac
             return current.IsFailure ? Failure<bool>(current.Error!.Code, current.Error.Message, current.Error.Target)
                 : Failure<bool>(ApplicationErrorCode.Conflict, "O preset foi alterado antes da exclusão.", id.ToString());
         }
+        catch (SqliteException exception) when (exception.SqliteErrorCode == 19)
+        { return Failure<bool>(ApplicationErrorCode.Conflict, "O preset possui revisões publicadas e não pode ser removido.", id.ToString()); }
         catch (SqliteException)
         { return Failure<bool>(ApplicationErrorCode.Persistence, "Não foi possível excluir o preset.", id.ToString()); }
+    }
+
+    public async Task<Result<PublishedFaceExpressionRevision>> PublishPresetAsync(FaceExpressionPresetId id,
+        Revision expectedDraftRevision, long publishedUtcMs, CancellationToken cancellationToken = default)
+    {
+        if (!id.IsValid || !expectedDraftRevision.IsValid || publishedUtcMs < 0)
+            return Failure<PublishedFaceExpressionRevision>(ApplicationErrorCode.Validation, "Os dados de publicação da expressão são inválidos.");
+        try
+        {
+            var outcome = await _database.ExecuteWriteAsync(async (connection, transaction, token) =>
+            {
+                await using var draftCommand = connection.CreateCommand();
+                draftCommand.Transaction = transaction;
+                draftCommand.CommandText = PresetSelect + " WHERE preset_id=$id;";
+                draftCommand.Parameters.AddWithValue("$id", id.ToString());
+                FaceExpressionPresetDraft preset;
+                await using (var reader = await draftCommand.ExecuteReaderAsync(token).ConfigureAwait(false))
+                {
+                    if (!await reader.ReadAsync(token).ConfigureAwait(false)) return PublishOutcome.NotFound;
+                    preset = DecodePreset(reader);
+                }
+                if (preset.Revision != expectedDraftRevision) return PublishOutcome.Conflict;
+                if (!await DependenciesMatchAsync(connection, transaction, preset, token).ConfigureAwait(false))
+                    return PublishOutcome.MissingDependencies;
+
+                await using var faceCommand = connection.CreateCommand();
+                faceCommand.Transaction = transaction;
+                faceCommand.CommandText = "SELECT face_revision_id,revision,draft_revision FROM face_revisions WHERE face_id=$face ORDER BY revision DESC LIMIT 1;";
+                faceCommand.Parameters.AddWithValue("$face", preset.FaceId.ToString());
+                FaceRevisionId faceRevisionId;
+                Revision faceDraftRevision;
+                await using (var reader = await faceCommand.ExecuteReaderAsync(token).ConfigureAwait(false))
+                {
+                    if (!await reader.ReadAsync(token).ConfigureAwait(false)) return PublishOutcome.FaceNotPublished;
+                    faceRevisionId = FaceRevisionId.Parse(reader.GetString(0));
+                    faceDraftRevision = Revision.From(reader.GetInt64(2));
+                }
+                if (preset.FaceRevision != faceDraftRevision) return PublishOutcome.FaceStale;
+
+                await using var latest = connection.CreateCommand();
+                latest.Transaction = transaction;
+                latest.CommandText = PublishedSelect + " WHERE r.preset_id=$id ORDER BY r.revision DESC LIMIT 1;";
+                latest.Parameters.AddWithValue("$id", id.ToString());
+                await using (var reader = await latest.ExecuteReaderAsync(token).ConfigureAwait(false))
+                {
+                    if (await reader.ReadAsync(token).ConfigureAwait(false))
+                    {
+                        var prior = DecodePublication(reader);
+                        if (prior.DraftRevision == expectedDraftRevision && prior.FaceRevisionId == faceRevisionId)
+                            return PublishOutcome.Success with { Publication = prior };
+                    }
+                }
+                await using var sequenceCommand = connection.CreateCommand();
+                sequenceCommand.Transaction = transaction;
+                sequenceCommand.CommandText = "SELECT COALESCE(MAX(revision),0)+1 FROM face_expression_revisions WHERE preset_id=$id;";
+                sequenceCommand.Parameters.AddWithValue("$id", id.ToString());
+                var sequence = Revision.From(Convert.ToInt64(await sequenceCommand.ExecuteScalarAsync(token).ConfigureAwait(false)));
+                var publicationId = FaceExpressionRevisionId.New();
+                var encoded = FaceExpressionSnapshotCodec.Encode(preset);
+                var publication = PublishedFaceExpressionRevision.Restore(publicationId, preset.Id, faceRevisionId,
+                    sequence, preset.Revision, publishedUtcMs, encoded.Sha256, preset);
+                await using var insert = connection.CreateCommand();
+                insert.Transaction = transaction;
+                insert.CommandText = "INSERT INTO face_expression_revisions(expression_revision_id,preset_id,face_revision_id,revision,draft_revision,published_utc_ms,snapshot_json,snapshot_sha256) VALUES($id,$preset,$face_revision,$revision,$draft_revision,$published,$json,$hash);";
+                insert.Parameters.AddWithValue("$id", publicationId.ToString());
+                insert.Parameters.AddWithValue("$preset", id.ToString());
+                insert.Parameters.AddWithValue("$face_revision", faceRevisionId.ToString());
+                insert.Parameters.AddWithValue("$revision", sequence.Value);
+                insert.Parameters.AddWithValue("$draft_revision", preset.Revision.Value);
+                insert.Parameters.AddWithValue("$published", publishedUtcMs);
+                insert.Parameters.AddWithValue("$json", encoded.Json);
+                insert.Parameters.AddWithValue("$hash", encoded.Sha256);
+                await insert.ExecuteNonQueryAsync(token).ConfigureAwait(false);
+                return PublishOutcome.Success with { Publication = publication };
+            }, cancellationToken).ConfigureAwait(false);
+            return outcome.Status switch
+            {
+                PublishStatus.Success => Result<PublishedFaceExpressionRevision>.Success(outcome.Publication!),
+                PublishStatus.NotFound => Failure<PublishedFaceExpressionRevision>(ApplicationErrorCode.NotFound, "O preset de expressão não existe.", id.ToString()),
+                PublishStatus.Conflict => Failure<PublishedFaceExpressionRevision>(ApplicationErrorCode.Conflict, "O preset mudou antes da publicação.", id.ToString()),
+                PublishStatus.FaceNotPublished => Failure<PublishedFaceExpressionRevision>(ApplicationErrorCode.NotFound, "Publique primeiro o catálogo facial deste preset.", id.ToString()),
+                PublishStatus.FaceStale => Failure<PublishedFaceExpressionRevision>(ApplicationErrorCode.Conflict, "Publique a revisão facial atual antes de publicar esta expressão.", id.ToString()),
+                _ => Failure<PublishedFaceExpressionRevision>(ApplicationErrorCode.NotFound, "A coleção, catálogo facial ou um componente selecionado não está disponível.", id.ToString())
+            };
+        }
+        catch (Exception exception) when (exception is SqliteException or InvalidDataException or ArgumentException or System.Text.Json.JsonException or OverflowException)
+        { return Failure<PublishedFaceExpressionRevision>(ApplicationErrorCode.Persistence, "Não foi possível publicar a expressão.", id.ToString()); }
+    }
+
+    public async Task<Result<IReadOnlyList<PublishedFaceExpressionRevision>>> ListPublishedPresetsAsync(
+        FaceExpressionPresetId id, CancellationToken cancellationToken = default)
+    {
+        if (!id.IsValid) return Failure<IReadOnlyList<PublishedFaceExpressionRevision>>(ApplicationErrorCode.Validation, "O ID do preset é inválido.");
+        try
+        {
+            await using var connection = await _database.OpenReadConnectionAsync(cancellationToken).ConfigureAwait(false);
+            await using var command = connection.CreateCommand();
+            command.CommandText = PublishedSelect + " WHERE r.preset_id=$id ORDER BY r.revision DESC;";
+            command.Parameters.AddWithValue("$id", id.ToString());
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            var items = new List<PublishedFaceExpressionRevision>();
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false)) items.Add(DecodePublication(reader));
+            return Result<IReadOnlyList<PublishedFaceExpressionRevision>>.Success(items.AsReadOnly());
+        }
+        catch (Exception exception) when (exception is SqliteException or InvalidDataException or ArgumentException or System.Text.Json.JsonException)
+        { return Failure<IReadOnlyList<PublishedFaceExpressionRevision>>(ApplicationErrorCode.Persistence, "As revisões de expressão não puderam ser verificadas.", id.ToString()); }
+    }
+
+    public async Task<Result<PublishedFaceExpressionRevision>> GetPublishedPresetAsync(FaceExpressionPresetId id,
+        Revision revision, CancellationToken cancellationToken = default)
+    {
+        if (!id.IsValid || !revision.IsValid)
+            return Failure<PublishedFaceExpressionRevision>(ApplicationErrorCode.Validation, "O ID e a revisão da expressão são obrigatórios.");
+        try
+        {
+            await using var connection = await _database.OpenReadConnectionAsync(cancellationToken).ConfigureAwait(false);
+            await using var command = connection.CreateCommand();
+            command.CommandText = PublishedSelect + " WHERE r.preset_id=$id AND r.revision=$revision;";
+            command.Parameters.AddWithValue("$id", id.ToString());
+            command.Parameters.AddWithValue("$revision", revision.Value);
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            return await reader.ReadAsync(cancellationToken).ConfigureAwait(false)
+                ? Result<PublishedFaceExpressionRevision>.Success(DecodePublication(reader))
+                : Failure<PublishedFaceExpressionRevision>(ApplicationErrorCode.NotFound, "A revisão publicada da expressão não existe.", id.ToString());
+        }
+        catch (Exception exception) when (exception is SqliteException or InvalidDataException or ArgumentException or System.Text.Json.JsonException)
+        { return Failure<PublishedFaceExpressionRevision>(ApplicationErrorCode.Persistence, "A revisão publicada da expressão não pôde ser verificada.", id.ToString()); }
+    }
+
+    private static PublishedFaceExpressionRevision DecodePublication(SqliteDataReader reader)
+    {
+        var id = FaceExpressionRevisionId.Parse(reader.GetString(0));
+        var presetId = FaceExpressionPresetId.Parse(reader.GetString(1));
+        var faceRevisionId = FaceRevisionId.Parse(reader.GetString(2));
+        var pinnedFaceId = FaceId.Parse(reader.GetString(3));
+        var pinnedFaceDraftRevision = Revision.From(reader.GetInt64(4));
+        var pinnedModel = ModelRevisionReference.Restore(ModelId.Parse(reader.GetString(6)),
+            ModelRevisionId.Parse(reader.GetString(5)), Revision.From(reader.GetInt64(7)), reader.GetString(8));
+        var revision = Revision.From(reader.GetInt64(9));
+        var draftRevision = Revision.From(reader.GetInt64(10));
+        var published = reader.GetInt64(11);
+        var hash = reader.GetString(12);
+        var snapshot = FaceExpressionSnapshotCodec.Decode(reader.GetString(13), hash);
+        if (snapshot.FaceId != pinnedFaceId || snapshot.FaceRevision != pinnedFaceDraftRevision)
+            throw new InvalidDataException("The published expression does not match its immutable face revision.");
+        if (snapshot.Model != pinnedModel)
+            throw new InvalidDataException("The published expression does not match its immutable model revision.");
+        return PublishedFaceExpressionRevision.Restore(id, presetId, faceRevisionId, revision,
+            draftRevision, published, hash, snapshot);
+    }
+
+    private const string PublishedSelect = "SELECT r.expression_revision_id,r.preset_id,r.face_revision_id,f.face_id,f.draft_revision,f.model_revision_id,f.model_id,m.revision,m.snapshot_sha256,r.revision,r.draft_revision,r.published_utc_ms,r.snapshot_sha256,r.snapshot_json FROM face_expression_revisions r JOIN face_revisions f ON f.face_revision_id=r.face_revision_id JOIN model_revisions m ON m.revision_id=f.model_revision_id";
+
+    private enum PublishStatus { Success, NotFound, Conflict, MissingDependencies, FaceNotPublished, FaceStale }
+    private sealed record PublishOutcome(PublishStatus Status, PublishedFaceExpressionRevision? Publication = null)
+    {
+        public static PublishOutcome NotFound => new(PublishStatus.NotFound);
+        public static PublishOutcome Conflict => new(PublishStatus.Conflict);
+        public static PublishOutcome MissingDependencies => new(PublishStatus.MissingDependencies);
+        public static PublishOutcome FaceNotPublished => new(PublishStatus.FaceNotPublished);
+        public static PublishOutcome FaceStale => new(PublishStatus.FaceStale);
+        public static PublishOutcome Success => new(PublishStatus.Success);
     }
 
     private const string CollectionSelect = "SELECT collection_id,model_revision_id,model_revision_sequence,model_snapshot_sha256,model_id,revision,display_name,created_utc_ms,updated_utc_ms FROM face_expression_collections";

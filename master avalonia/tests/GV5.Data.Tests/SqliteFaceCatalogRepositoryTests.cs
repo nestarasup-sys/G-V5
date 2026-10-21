@@ -6,10 +6,12 @@ using GV5.Application.Contracts;
 using GV5.Application.Services;
 using GV5.Core.Identity;
 using GV5.Core.Models;
+using GV5.Data.Dependencies;
 using GV5.Data.Migrations;
 using GV5.Data.Repositories;
 using GV5.Data.Storage;
 using GV5.Geometry;
+using Microsoft.Data.Sqlite;
 using Xunit;
 
 namespace GV5.Data.Tests;
@@ -24,6 +26,8 @@ public sealed class SqliteFaceCatalogRepositoryTests
         var paths = new AppDataPaths(root);
         var faceId = FaceId.New();
         var sparePresetId = FaceExpressionPresetId.New();
+        FaceRevisionId publishedFaceId = default;
+        FaceExpressionRevisionId publishedExpressionId = default;
         var componentId = FaceComponentId.New();
         var asset = AssetId.New();
         var mouthAsset = AssetId.New();
@@ -64,6 +68,9 @@ public sealed class SqliteFaceCatalogRepositoryTests
                 var collection = FaceExpressionCollection.Create(ModelRevisionReference.From(model.Value), "Expressões", 10);
                 var createdCollection = await expressionRepository.CreateCollectionAsync(collection, token);
                 Assert.True(createdCollection.IsSuccess, createdCollection.Error?.Message);
+                var cascadeCollection = FaceExpressionCollection.Create(ModelRevisionReference.From(model.Value), "Descartável", 11);
+                var createdCascadeCollection = await expressionRepository.CreateCollectionAsync(cascadeCollection, token);
+                Assert.True(createdCascadeCollection.IsSuccess, createdCascadeCollection.Error?.Message);
                 var renamedCollection = collection.WithName("Expressões Dev", 20);
                 var savedCollection = await expressionRepository.SaveCollectionAsync(renamedCollection, collection.Revision, token);
                 Assert.True(savedCollection.IsSuccess, savedCollection.Error?.Message);
@@ -75,7 +82,7 @@ public sealed class SqliteFaceCatalogRepositoryTests
                 var preset = FaceExpressionPresetDraft.Create(collection, updated.Value, 12, "Irritada", assembly);
                 var createdPreset = await expressionRepository.CreatePresetAsync(preset, token);
                 Assert.True(createdPreset.IsSuccess, createdPreset.Error?.Message);
-                var sparePreset = FaceExpressionPresetDraft.Create(collection, updated.Value, 13, "Triste");
+                var sparePreset = FaceExpressionPresetDraft.Create(cascadeCollection, updated.Value, 13, "Triste");
                 sparePresetId = sparePreset.Id;
                 var createdSparePreset = await expressionRepository.CreatePresetAsync(sparePreset, token);
                 Assert.True(createdSparePreset.IsSuccess, createdSparePreset.Error?.Message);
@@ -90,6 +97,21 @@ public sealed class SqliteFaceCatalogRepositoryTests
                 var stalePreset = await expressionRepository.SavePresetAsync(presetChanges, preset.Revision, token);
                 Assert.True(stalePreset.IsFailure);
                 Assert.Equal(ApplicationErrorCode.Conflict, stalePreset.Error!.Code);
+                var faceRepository = new SqliteFaceCatalogRepository(database);
+                var staleFacePublication = await faceRepository.PublishAsync(updated.Value.Id, Revision.Initial, 25, token);
+                Assert.True(staleFacePublication.IsFailure);
+                Assert.Equal(ApplicationErrorCode.Conflict, staleFacePublication.Error!.Code);
+                var expressionWithoutFacePublication = await expressionRepository.PublishPresetAsync(presetChanges.Id,
+                    savedPreset.Value.Revision, 25, token);
+                Assert.True(expressionWithoutFacePublication.IsFailure);
+                Assert.Equal(ApplicationErrorCode.NotFound, expressionWithoutFacePublication.Error!.Code);
+                var facePublication = await faceRepository.PublishAsync(updated.Value.Id, updated.Value.Revision, 26, token);
+                Assert.True(facePublication.IsSuccess, facePublication.Error?.Message);
+                publishedFaceId = facePublication.Value.Id;
+                var expressionPublication = await expressionRepository.PublishPresetAsync(presetChanges.Id,
+                    savedPreset.Value.Revision, 27, token);
+                Assert.True(expressionPublication.IsSuccess, expressionPublication.Error?.Message);
+                publishedExpressionId = expressionPublication.Value.Id;
             }
 
             using (var reopened = new SqliteDatabase(paths))
@@ -110,16 +132,50 @@ public sealed class SqliteFaceCatalogRepositoryTests
                 var expressionRepository = new SqliteFaceExpressionRepository(reopened);
                 var collections = await expressionRepository.ListCollectionsAsync(loaded.Value.Model.RevisionId, token);
                 Assert.True(collections.IsSuccess, collections.Error?.Message);
-                var collection = Assert.Single(collections.Value);
+                Assert.Equal(2, collections.Value.Count);
+                var collection = Assert.Single(collections.Value, item => item.Name == "Expressões Dev");
                 Assert.Equal("Expressões Dev", collection.Name);
                 var presets = await expressionRepository.ListPresetsAsync(collection.Id, token);
                 Assert.True(presets.IsSuccess, presets.Error?.Message);
-                Assert.Equal(2, presets.Value.Count);
+                Assert.Single(presets.Value);
                 var expression = Assert.Single(presets.Value, item => item.ExpressionIndex == 12);
                 Assert.Equal("Irritada", expression.Name);
                 Assert.Equal(12, expression.ExpressionIndex);
                 Assert.Equal(new Point2D(12, -4), expression.Transforms[FaceAssemblySlot.EyeLeft].Translation);
                 Assert.Equal("#ef3456", expression.Effects.Blush.Color);
+                var facePublications = await new SqliteFaceCatalogRepository(reopened).ListPublishedAsync(loaded.Value.Id, token);
+                var publishedFace = Assert.Single(facePublications.Value);
+                Assert.Equal(publishedFaceId, publishedFace.Id);
+                Assert.Equal(loaded.Value.Revision, publishedFace.DraftRevision);
+                var publishedExpressions = await expressionRepository.ListPublishedPresetsAsync(expression.Id, token);
+                var publishedExpression = Assert.Single(publishedExpressions.Value);
+                var publishedExpressionByRevision = await expressionRepository.GetPublishedPresetAsync(expression.Id,
+                    publishedExpression.Revision, token);
+                Assert.True(publishedExpressionByRevision.IsSuccess, publishedExpressionByRevision.Error?.Message);
+                Assert.Equal(publishedExpression.Id, publishedExpressionByRevision.Value.Id);
+                Assert.Equal(publishedExpressionId, publishedExpression.Id);
+                Assert.Equal(publishedFaceId, publishedExpression.FaceRevisionId);
+                Assert.Equal(expression.Revision, publishedExpression.DraftRevision);
+                await Assert.ThrowsAsync<SqliteException>(() => ExecuteAsync(reopened,
+                    "UPDATE face_revisions SET display_name='violado' WHERE face_revision_id=$id;", token,
+                    ("$id", publishedFaceId.ToString())));
+                await Assert.ThrowsAsync<SqliteException>(() => ExecuteAsync(reopened,
+                    "UPDATE face_expression_revisions SET published_utc_ms=0 WHERE expression_revision_id=$id;", token,
+                    ("$id", publishedExpressionId.ToString())));
+                var dependencyCatalog = new SqliteFabricatorDependencyCatalog(reopened);
+                var faceDependencies = await dependencyCatalog.AssessDeletionAsync(FabricatorResourceReference.For(loaded.Value.Id), token);
+                Assert.True(faceDependencies.IsSuccess, faceDependencies.Error?.Message);
+                Assert.Contains(faceDependencies.Value.Usages, usage => usage.UsageType == "expression-preset");
+                Assert.Contains(faceDependencies.Value.Usages, usage => usage.UsageType == "immutable-publication");
+                var collectionDependencies = await dependencyCatalog.AssessDeletionAsync(FabricatorResourceReference.For(collection.Id), token);
+                Assert.True(collectionDependencies.IsSuccess, collectionDependencies.Error?.Message);
+                Assert.Contains(collectionDependencies.Value.Usages, usage => usage.UsageType == "expression-preset");
+                var presetDependencies = await dependencyCatalog.AssessDeletionAsync(FabricatorResourceReference.For(expression.Id), token);
+                Assert.True(presetDependencies.IsSuccess, presetDependencies.Error?.Message);
+                Assert.Contains(presetDependencies.Value.Usages, usage => usage.UsageType == "immutable-publication");
+                var modelDependencies = await dependencyCatalog.AssessDeletionAsync(FabricatorResourceReference.For(loaded.Value.Model.ModelId), token);
+                Assert.True(modelDependencies.IsSuccess, modelDependencies.Error?.Message);
+                Assert.Contains(modelDependencies.Value.Usages, usage => usage.UsageType == "face-publication");
                 Assert.Equal(FaceMouthVariant.Open, loaded.Value.Components.Single(component => component.Name == "Boca aberta").MouthVariant);
                 var deleted = await expressionRepository.DeletePresetAsync(expression.Id, Revision.Initial, token);
                 Assert.True(deleted.IsFailure);
@@ -130,13 +186,18 @@ public sealed class SqliteFaceCatalogRepositoryTests
                 Assert.True(tamperedPreset.IsFailure);
                 Assert.Equal(ApplicationErrorCode.Persistence, tamperedPreset.Error!.Code);
                 var removed = await expressionRepository.DeletePresetAsync(expression.Id, expression.Revision, token);
-                Assert.True(removed.IsSuccess && removed.Value);
+                Assert.True(removed.IsFailure);
+                Assert.Equal(ApplicationErrorCode.Conflict, removed.Error!.Code);
                 var staleCollectionDelete = await expressionRepository.DeleteCollectionAsync(collection.Id, Revision.Initial, token);
                 Assert.True(staleCollectionDelete.IsFailure);
                 Assert.Equal(ApplicationErrorCode.Conflict, staleCollectionDelete.Error!.Code);
                 var removedCollection = await expressionRepository.DeleteCollectionAsync(collection.Id, collection.Revision, token);
-                Assert.True(removedCollection.IsSuccess && removedCollection.Value);
-                Assert.Empty((await expressionRepository.ListCollectionsAsync(loaded.Value.Model.RevisionId, token)).Value);
+                Assert.True(removedCollection.IsFailure);
+                Assert.Equal(ApplicationErrorCode.Conflict, removedCollection.Error!.Code);
+                var disposableCollection = Assert.Single(collections.Value, item => item.Name == "Descartável");
+                var deletedDisposableCollection = await expressionRepository.DeleteCollectionAsync(disposableCollection.Id,
+                    disposableCollection.Revision, token);
+                Assert.True(deletedDisposableCollection.IsSuccess && deletedDisposableCollection.Value);
                 var cascadedPreset = await expressionRepository.GetPresetAsync(sparePresetId, token);
                 Assert.True(cascadedPreset.IsFailure);
                 Assert.Equal(ApplicationErrorCode.NotFound, cascadedPreset.Error!.Code);
@@ -205,7 +266,8 @@ public sealed class SqliteFaceCatalogRepositoryTests
         new AssetImportJournalSchemaMigration(), new AssetReferenceSchemaMigration(), new AssetGarbageCollectionSchemaMigration(),
         new ModelDraftContentSchemaMigration(), new ModelRevisionSchemaMigration(), new ModelRigJointSchemaMigration(),
         new PoseRepositorySchemaMigration(), new AnimationRepositorySchemaMigration(), new WardrobeRepositorySchemaMigration(),
-        new HairStyleRepositorySchemaMigration(), new FaceCatalogRepositorySchemaMigration(), new FaceExpressionRepositorySchemaMigration()
+        new HairStyleRepositorySchemaMigration(), new FaceCatalogRepositorySchemaMigration(), new FaceExpressionRepositorySchemaMigration(),
+        new FacePublicationSchemaMigration()
     ]);
 
     private static async Task InsertAssetAsync(SqliteDatabase database, AssetId id, CancellationToken token)
