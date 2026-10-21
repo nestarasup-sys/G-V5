@@ -53,13 +53,14 @@ Avalonia é a camada da interface e o cliente da engine do G5; não será a engi
 
 ## 2. Princípios de construção
 
-### Fidelidade visual ao Gacha 5
+### Fidelidade visual pragmática ao Gacha 5 — ADR-0006
 
-O visual criado pelo usuário no Gacha 5 original é a identidade do novo produto. Reproduzir cores, tipografia, dimensões, posições, hierarquia, painéis, barras, ícones, estados, menus, diálogos, navegação e comportamento visual observável. Não introduzir redesign, estilo genérico de framework ou reorganização em nome de modernização. A referência é somente o Gacha 5 original deste repositório; o Editor V4 é outro projeto e fica excluído.
+O Gacha 5 Electron é a única referência visual; o Editor V4 é outro produto. O G-V5 Avalonia deve ser imediatamente **reconhecível e familiar**, com cores principais, hierarquia, áreas e navegação semelhantes, **sem exigência pixel a pixel**. Pequenas mudanças de posição, dimensões, margens, controles nativos e organização local são permitidas e podem ser refinadas posteriormente a pedido do usuário.
 
-Essa fidelidade define **o resultado**; não impõe reaproveitar Electron, React, DOM, CSS ou sua estrutura interna. Usar Avalonia/XAML, templates, estilos, recursos, controles especializados, MVVM e virtualização conforme apropriado à versão fixada. Atualizações técnicas de desempenho, estabilidade, acessibilidade e DPI devem preservar a aparência e os fluxos observáveis. Uma diferença visual deliberada exige aprovação explícita e registro da exceção.
+A prioridade é **preservar e melhorar todos os botões, subáreas e funcionalidades reais** do legado. Cada controle deve funcionar, salvar/reabrir quando cabível e lidar com erros. Não usar botões falsos nem simplificar eliminando operações. Uma mudança drástica de identidade/navegação ou retirada de função exige autorização.
 
-Manter a rastreabilidade em `docs/ui-fidelity/`: contrato, inventário por página/subpágina, matriz de paridade, tokens extraídos do legado, estratégia Avalonia e critérios de aceite por módulo. Toda afirmação deve indicar se vem de código estático, captura real do Electron ou validação no Avalonia. Referências e estados ainda não capturados permanecem pendentes; nunca inventar cores, medidas ou screenshots.
+Modernizar com Avalonia/XAML, MVVM, templates, virtualização, DPI, acessibilidade, processamento assíncrono e performance. Comparações visuais e screenshots Electron/Avalonia ajudam no refinamento e aceite final, mas **a ausência de captura ou asset pessoal não barra automaticamente uma fase cujo gate técnico funcional já tenha passado**. Falhas críticas de implementação, persistência, testes e arquitetura continuam bloqueantes. Distinguir evidências de código, testes headless, interação Windows e aparência aprovada; nunca inventar resultados.
+
 
 - Uma funcionalidade possui responsabilidades e limites explícitos.
 - Interface apresenta dados e encaminha ações; regras de personagem e persistência não ficam no código da tela.
