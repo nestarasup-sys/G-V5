@@ -13,13 +13,13 @@
 | Branch obrigatória | `Master-AValonia` |
 | Pasta exclusiva do novo aplicativo | `master avalonia/` |
 | Commit-base inspecionado antes deste arquivo | `53b7f7a97321e85063a8dd4f9635e48d36548323` |
-| Último commit de implementação validado | `f5aa191` (F04.02; espaços de coordenadas e conversões tipadas) |
+| Último commit de implementação validado | `724a496` (F04.03; ordem afim, pivô e escalas não uniformes) |
 | Fase ativa | **F04 — Geometry Engine canônica** |
-| Última tarefa VALIDADA | **F04.02** — espaços model/scene/view e conversões tipadas ida/volta |
-| Próxima tarefa PENDENTE | **F04.03** — ordem de transformações, rotação com pivô e escalas não uniformes |
+| Última tarefa VALIDADA | **F04.03** — ordem de transformações, rotação com pivô e escalas não uniformes |
+| Próxima tarefa PENDENTE | **F04.04** — flip X/Y e rotação negativa/extrema preservando geometria |
 | Requisito transversal adicionado | Fidelidade visual ao Gacha 5 Electron, registrada em ADR-0004; documentos em `docs/ui-fidelity/`; sem paridade visual aprovada ainda |
 | Gate atual | **GATE F00: PASSOU; G0: PASSOU; F02: PASSOU; F03: PASSOU; G1 global em execução até F04–F05** |
-| Progresso validado neste controle | **54 / 247 tarefas (21,9%)** |
+| Progresso validado neste controle | **55 / 247 tarefas (22,3%)** |
 | Tarefas em execução | Nenhuma |
 | Bloqueios conhecidos | Primeiro download do SDK em clone vazio não progrediu; evidência e limite de F01 estão registrados em `docs/gates/GATE-F01.md` |
 | Aceite Windows/GPU | **Não executado / não registrado** |
@@ -49,7 +49,7 @@ Se o Codex encontrar algo já implementado, **validar e registrar evidências**,
 | F01 | Solution .NET, contratos, módulo e CI | 13 | 13 | VALIDADA | G0 PASSOU |
 | F02 | SQLite, revisões, transações e recuperação básica | 15 | 15 | VALIDADA | GATE-F02 PASSOU |
 | F03 | AssetStore, thumbnails e cache limitado | 11 | 11 | VALIDADA | GATE-F03 PASSOU; G1 global em execução |
-| F04 | Geometry Engine canônica | 11 | 2 | EM_EXECUCAO | G1 global em execução |
+| F04 | Geometry Engine canônica | 11 | 3 | EM_EXECUCAO | G1 global em execução |
 | F05 | RenderScene e SkiaRenderer independentes | 11 | 0 | PENDENTE | — |
 | F06 | Fabricador I — modelos e peças | 14 | 0 | PENDENTE | — |
 | F07 | Fabricador II — rig, poses e animador | 12 | 0 | PENDENTE | — |
@@ -126,6 +126,7 @@ Adicionar uma linha ao concluir ou bloquear cada tarefa. A linha inicial abaixo 
 | **F03.11** | **VALIDADA** | `ea6097e` + gate local | As métricas snapshot de `AssetBitmapCache` cobrem hit/miss/eviction, além de bypass, bytes residentes, entries e leases; os testes verificam hits/misses em reuso/concorrência, eviction LRU e bypass. `TestarLocal.bat gate`: restore passou; build Release com 0 erros e 2 avisos CS0618 em `ThumbnailService.cs`; Core 11/11, Arquitetura 6/6, Assets 27/27, Data 44/44, Headless 15/15; exit code 0. Gate F03 documentado e aprovado; `git diff --check` passou. | `src/GV5.Assets/Decoding/AssetBitmapCache.cs`; `tests/GV5.Assets.Tests/AssetBitmapCacheTests.cs`; `docs/gates/GATE-F03.md` | Sem benchmark de orçamento em hardware real; sem execução visual/GPU; nenhum dado pessoal usado. Isso não bloqueia F03. G1 permanece aberto até F04/F05. |
 | **F04.01** | **VALIDADA** | `4ff464b` | `GV5.Geometry` implementa Point2D/Rect2D/Matrix2D/Transform2D sem dependências de UI. Valores NaN/infinito, dimensões negativas, edges/arithmetic com overflow são rejeitados; convenção de matriz com vetor coluna e composição `a*b` (b primeiro) documentada e testada. `TestarLocal.bat rapido`: build sem erros; Core 11/11, Architecture 6/6, Geometry 8/8, Assets 27/27, Data 44/44, Headless 15/15. | `src/GV5.Geometry/*.cs`; `tests/GV5.Geometry.Tests/GeometryPrimitiveTests.cs`; `GV5.sln` | A chamada direta ao `dotnet test` usou o runtime global 9 e não pôde iniciar o apphost net10; o launcher `TestarLocal.bat rapido` seleciona o SDK/runtime portátil e passou. F04.03 ainda formalizará a ordem dos componentes de Transform2D e pivôs. |
 | **F04.02** | **VALIDADA** | `f5aa191` | `ModelSpace`, `SceneSpace` e `ViewSpace` são marcadores distintos, `SpatialPoint<TSpace>` tipa pontos, e `SpaceTransform<TFrom,TTo>` converte, compõe e inverte transformações. `Matrix2D.Invert` rejeita matriz singular e valida overflow; teste cobre modelo→cena→view, composição e round-trip pela inversa. `TestarLocal.bat rapido`: build 0 erros; Core 11/11, Architecture 6/6, Geometry 11/11, Assets 27/27, Data 44/44, Headless 15/15. | `src/GV5.Geometry/CoordinateSpaces.cs`; `src/GV5.Geometry/Matrix2D.cs`; `tests/GV5.Geometry.Tests/CoordinateSpaceTests.cs` | 2 avisos CS0618 em `ThumbnailService.cs` relativos a API Skia obsoleta. ViewSpace é um contrato matemático agnóstico de UI; F04.03 define a ordem completa e o pivô. |
+| **F04.03** | **VALIDADA** | `724a496` | `Transform2D` declara componentes e convenção: aplicar escala local não uniforme, rotação anti-horária em radianos ao redor do pivô, depois translação; a matriz resultante segue a composição documentada em `Matrix2D`. Testes cobrem 90°, pivô não nulo, posição do próprio pivô e rejeição de rotação não finita. `TestarLocal.bat rapido`: build 0 erros; Core 11/11, Architecture 6/6, Geometry 13/13, Assets 27/27, Data 44/44, Headless 15/15. | `src/GV5.Geometry/Transform2D.cs`; `src/GV5.Geometry/Matrix2D.cs`; `tests/GV5.Geometry.Tests/GeometryPrimitiveTests.cs` | 2 avisos CS0618 em `ThumbnailService.cs` sobre API Skia obsoleta. A orientação canônica é cartesiana (+Y para cima); conversão a coordenadas de tela ficará no transform view. |
 
 **Estados aceitos:** `PENDENTE`, `EM_EXECUCAO`, `BLOQUEADA`, `VALIDADA`.
 
@@ -221,6 +222,7 @@ Toda mudança material do roteiro ou arquitetura deve apontar para um ADR em `do
 | 2026-10-21 | `ea6097e` | F03.11 validada; próxima F04.01 | F03 PASSOU; G1 em execução | `TestarLocal.bat gate` Release passou: Core 11/11, Architecture 6/6, Assets 27/27, Data 44/44, Headless 15/15; build 0 erros, 2 avisos Skia. Gate em `docs/gates/GATE-F03.md`; sem benchmark de hardware real ou validação GPU/visual. |
 | 2026-10-21 | `4ff464b` | F04.01 validada; próxima F04.02 | G1 em execução | Tipos geométricos imutáveis, invariantes finitos e ordem de composição cobertos por 8 testes; `TestarLocal.bat rapido` passou com Core 11, Architecture 6, Geometry 8, Assets 27, Data 44, Headless 15. |
 | 2026-10-21 | `f5aa191` | F04.02 validada; próxima F04.03 | G1 em execução | Coordenadas tipadas model/scene/view, conversão composta e round-trip via inversa validados. `TestarLocal.bat rapido`: Core 11, Architecture 6, Geometry 11, Assets 27, Data 44, Headless 15; build 0 erros, 2 avisos Skia. |
+| 2026-10-21 | `724a496` | F04.03 validada; próxima F04.04 | G1 em execução | Ordem Scale→Rotate(pivot)→Translate, rotação e escala não uniforme em teste; `TestarLocal.bat rapido`: Core 11, Architecture 6, Geometry 13, Assets 27, Data 44, Headless 15; build 0 erros, 2 avisos Skia. |
 
 Após concluir um lote ou fase, adicionar uma linha. Não inflar contador só porque o commit contém múltiplos arquivos; contar apenas tarefas comprovadas.
 
@@ -229,7 +231,7 @@ Após concluir um lote ou fase, adicionar uma linha. Não inflar contador só po
 1. Confirmar branch, HEAD e árvore de trabalho localmente; não consultar nem sincronizar o remoto até autorização explícita.
 2. Ler `AGENTS.md`, `PLANO_DO_NOVO_APP.md`, `PLANO_MESTRE_EXECUCAO_CODEX.md` e este arquivo.
 3. Inspecionar evidências reais da última tarefa validada; caso não existam, corrigir seu estado.
-4. **Retomar F04.03**: formalizar ordem de transformações, rotação com pivô e escalas não uniformes, mantendo Geometry independente de Avalonia.
+4. **Retomar F04.04**: implementar flips X/Y e rotações negativas/extremas preservando geometria, mantendo Geometry independente de Avalonia.
 5. Continuar automaticamente pelas tarefas seguintes **uma de cada vez**, em lotes flexíveis de aproximadamente 3–8 tarefas relacionadas, enquanto todos os gates pertinentes passam.
 6. Atualizar o registro e commitar entregas reais localmente na branch `Master-AValonia`; não desenvolver Video Studio antecipadamente.
 7. Ao encerrar, informar: **branch, HEAD, último ID VALIDADO, próximo ID PENDENTE, commits, comandos verdes, evidências, bloqueios e condição de desbloqueio**.
