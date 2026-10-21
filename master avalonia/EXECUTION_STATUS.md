@@ -13,13 +13,13 @@
 | Branch obrigatória | `Master-AValonia` |
 | Pasta exclusiva do novo aplicativo | `master avalonia/` |
 | Commit-base inspecionado antes deste arquivo | `53b7f7a97321e85063a8dd4f9635e48d36548323` |
-| Último commit de implementação validado | `24722fc` (F05.05; composição e comparação visual de PNG) |
+| Último commit de implementação validado | `0b363cc` (F05.06; adaptador de apresentação Avalonia) |
 | Fase ativa | **F05 — RenderScene e SkiaRenderer independentes** |
-| Última tarefa VALIDADA | **F05.05** — renderizar múltiplas partes e comparar PNGs |
-| Próxima tarefa PENDENTE | **F05.06** — adaptador de apresentação Avalonia |
+| Última tarefa VALIDADA | **F05.06** — adaptador de apresentação Avalonia |
+| Próxima tarefa PENDENTE | **F05.07** — overlays de seleção, pivôs e grids |
 | Requisito transversal adicionado | Fidelidade visual ao Gacha 5 Electron, registrada em ADR-0004; documentos em `docs/ui-fidelity/`; sem paridade visual aprovada ainda |
 | Gate atual | **GATE F00: PASSOU; G0: PASSOU; F02: PASSOU; F03: PASSOU; F04: PASSOU; G1 global em execução até F05** |
-| Progresso validado neste controle | **68 / 247 tarefas (27,5%)** |
+| Progresso validado neste controle | **69 / 247 tarefas (27,9%)** |
 | Tarefas em execução | Nenhuma |
 | Bloqueios conhecidos | Primeiro download do SDK em clone vazio não progrediu; evidência e limite de F01 estão registrados em `docs/gates/GATE-F01.md` |
 | Aceite Windows/GPU | **Não executado / não registrado** |
@@ -50,7 +50,7 @@ Se o Codex encontrar algo já implementado, **validar e registrar evidências**,
 | F02 | SQLite, revisões, transações e recuperação básica | 15 | 15 | VALIDADA | GATE-F02 PASSOU |
 | F03 | AssetStore, thumbnails e cache limitado | 11 | 11 | VALIDADA | GATE-F03 PASSOU; G1 global em execução |
 | F04 | Geometry Engine canônica | 11 | 11 | VALIDADA | GATE-F04 PASSOU; G1 global em execução |
-| F05 | RenderScene e SkiaRenderer independentes | 11 | 5 | EM_EXECUCAO | G1 global em execução |
+| F05 | RenderScene e SkiaRenderer independentes | 11 | 6 | EM_EXECUCAO | G1 global em execução |
 | F06 | Fabricador I — modelos e peças | 14 | 0 | PENDENTE | — |
 | F07 | Fabricador II — rig, poses e animador | 12 | 0 | PENDENTE | — |
 | F08 | Fabricador III — roupas, binding e revisões | 12 | 0 | PENDENTE | — |
@@ -140,6 +140,7 @@ Adicionar uma linha ao concluir ou bloquear cada tarefa. A linha inicial abaixo 
 | **F05.03** | **VALIDADA** | `ec26af4` | `SkiaRenderer` rasteriza `RenderScene` em CPU via superfície raster headless, respeita dimensões máximas, recorte, orientação do canvas, alpha/blend, cancelamento e ownership do bitmap retornado. Leases de assets e superfícies/imagens Skia são descartados; `RenderedFrame` libera bitmap sob ownership explícito. Testes sintéticos cobrem pixels/alpha, recorte, cena vazia, limite de dimensão, cancelamento e uso após descarte. `TestarLocal.bat rapido`: build 0 warnings/0 errors; Core 11/11, Architecture 6/6, Geometry 35/35, Rendering 10/10, Assets 27/27, Data 44/44, Headless 15/15. `git diff --check` passou antes desta atualização. | `src/GV5.Rendering/SkiaRenderer.cs`; `src/GV5.Rendering/RenderedFrame.cs`; `src/GV5.Rendering/IRenderAssetProvider.cs`; `tests/GV5.Rendering.Tests/SkiaRendererTests.cs`; SkiaSharp 3.119.4 existente no lock central | Golden aprovado de fixture é F05.04; comportamento visual/GPU do Avalonia não foi validado nesta tarefa. |
 | **F05.04** | **VALIDADA** | `bab1424` | Criado asset RGBA sintético 12×16 e golden PNG 32×32 com fundo transparente, mesmos pixels posicionados por transform canônico em `(10,8)`. Teste passa pelo decoder/cache reais e compara pixel a pixel a imagem rasterizada, verificando dimensões e liberação de lease. `TestarLocal.bat rapido`: build passou (2 avisos CS0618 preexistentes em `ThumbnailService.cs`, 0 erros); Core 11/11, Architecture 6/6, Geometry 35/35, Rendering 11/11, Assets 27/27, Data 44/44, Headless 15/15; `git diff --check` passou. | `tests/Fixtures/rendering/synthetic-garment.png` SHA-256 `AF901CA79954360F06F180412ABDD6330D524A61F8BC160B4521CD8A58A6C581`; `synthetic-garment.golden.png` SHA-256 `B89B2648E26D597E3DB8CFC32F9E80DF27234244E13D76086F2A29DCEB3FEC4B`; `tests/GV5.Rendering.Tests/SkiaRendererTests.cs` | A fixture é apenas oracle sintético de raster e não uma arte, captura ou aprovação visual do Gacha 5. Paridade visual do produto continua pendente conforme `docs/ui-fidelity/`. |
 | **F05.05** | **VALIDADA** | `24722fc` | Cena sintética de três camadas cobre composição normal, sobreposição com alpha 0,5, crop 1×2, rotação 90°, flip X/Y e alpha 0,75. Golden independente é comparado pixel a pixel; `PngGoldenComparer` grava PNG lado a lado com pane de diff vermelho amplificado. Teste negativo injeta um pixel diferente e confirma contagem/visualização; `TestarLocal.bat rapido`: build passou (2 avisos CS0618 preexistentes em `ThumbnailService.cs`, 0 erros); Core 11/11, Architecture 6/6, Geometry 35/35, Rendering 13/13, Assets 27/27, Data 44/44, Headless 15/15; `git diff --check` passou. | `tests/GV5.Rendering.Tests/SkiaRendererTests.cs`; `tests/GV5.Rendering.Tests/PngGoldenComparer.cs`; `tests/Fixtures/rendering/multi-layer.golden.png` SHA-256 `AD7D1E37877975D24FB2A786C5DB5167B8FACCA945600CB68A9BBA76EB1913E3`; artefato gerado sob `tests/GV5.Rendering.Tests/bin/Debug/net10.0/TestResults/Rendering/` | Golden e comparador são ferramentas de verificação do renderer sintético; não são evidência de paridade com Electron. API do comparador permanece em testes, não em assembly de produto. |
+| **F05.06** | **VALIDADA** | `0b363cc` | `AvaloniaRenderedFrameAdapter` copia frame já renderizado em buffer `WriteableBitmap` BGRA/RGBA premultiplicado, conforme o formato real do Skia, e exige criação no UI dispatcher. O controle visual é a `Image` nativa; seu desenho não faz decode nem consulta de assets/personagens. Headless abre uma janela in-memory com fixture 4 cores e confirma pixels na captura, contagem do provider sem chamadas adicionais, lease liberado e falha ao chamar adapter fora do dispatcher. `TestarLocal.bat rapido`: build 0 erros, dois avisos CS0618 preexistentes em `ThumbnailService.cs`; Core 11/11, Architecture 6/6, Geometry 35/35, Rendering 13/13, Assets 27/27, Data 44/44, Headless 16/16; `git diff --check` passou. | `src/GV5.App/Presentation/AvaloniaRenderedFrameAdapter.cs`; `src/GV5.App/Composition/AppComposition.cs`; `tests/GV5.Headless.Tests/HeadlessShellTests.cs` | Validação Avalonia.Headless comprova cópia e pixels em superfície in-memory; nenhuma janela Windows, GPU, DPI real ou paridade visual do Gacha 5 foi alegada. Bitmap Avalonia retornado pertence ao chamador e deve ser descartado. |
 
 **Estados aceitos:** `PENDENTE`, `EM_EXECUCAO`, `BLOQUEADA`, `VALIDADA`.
 
@@ -249,6 +250,7 @@ Toda mudança material do roteiro ou arquitetura deve apontar para um ADR em `do
 | 2026-10-21 | `ec26af4` | F05.03 validada; próxima F05.04 | G1 em execução | Skia CPU raster headless com ownership e descarte de surface/frame, crop e limites; suíte rápida: Core 11, Architecture 6, Geometry 35, Rendering 10, Assets 27, Data 44, Headless 15; build sem warnings/erros. |
 | 2026-10-21 | `bab1424` | F05.04 validada; próxima F05.05 | G1 em execução | Asset RGBA sintético renderizado e comparado pixel a pixel com golden PNG transparente; suíte rápida: Core 11, Architecture 6, Geometry 35, Rendering 11, Assets 27, Data 44, Headless 15; build 0 erros e 2 avisos preexistentes em `ThumbnailService.cs`. Golden apenas verifica raster sintético, sem alegação de paridade visual do produto. |
 | 2026-10-21 | `24722fc` | F05.05 validada; próxima F05.06 | G1 em execução | Composição multi-layer com crop/rotation/opacity/flips comparada a golden independente; PNG comparador gera esperado/atual/diff e teste de mutação confirma diff. Suíte rápida: Core 11, Architecture 6, Geometry 35, Rendering 13, Assets 27, Data 44, Headless 15; build 0 erros, 2 avisos preexistentes. |
+| 2026-10-21 | `0b363cc` | F05.06 validada; próxima F05.07 | G1 em execução | Adaptador de frame Avalonia usa formato real BGRA8888/Premul do Skia e foi validado em janela Headless com captura de pixels, confirmação de decode/provider não chamado durante render da Image e rejeição fora do UI dispatcher. `TestarLocal.bat rapido`: Core 11, Architecture 6, Geometry 35, Rendering 13, Assets 27, Data 44, Headless 16; build 0 erros, 2 avisos preexistentes. |
 
 Após concluir um lote ou fase, adicionar uma linha. Não inflar contador só porque o commit contém múltiplos arquivos; contar apenas tarefas comprovadas.
 
@@ -257,7 +259,7 @@ Após concluir um lote ou fase, adicionar uma linha. Não inflar contador só po
 1. Confirmar branch, HEAD e árvore de trabalho localmente; não consultar nem sincronizar o remoto até autorização explícita.
 2. Ler `AGENTS.md`, `PLANO_DO_NOVO_APP.md`, `PLANO_MESTRE_EXECUCAO_CODEX.md` e este arquivo.
 3. Inspecionar evidências reais da última tarefa validada; caso não existam, corrigir seu estado.
-4. **Retomar F05.06**: criar adaptador Avalonia que apenas apresenta frames entregues pela engine, sem resolver personagens ou decodificar assets em `Render()`; validar no Avalonia Headless e manter pendente o aceite visual Windows/GPU.
+4. **Retomar F05.07**: implementar overlays de seleção/pivôs/grids como camada visual independente, não persistida no conteúdo renderizado, com testes que confirmem que ativar/alterar overlays não muda o bitmap-base.
 5. Continuar automaticamente pelas tarefas seguintes **uma de cada vez**, em lotes flexíveis de aproximadamente 3–8 tarefas relacionadas, enquanto todos os gates pertinentes passam.
 6. Atualizar o registro e commitar entregas reais localmente na branch `Master-AValonia`; não desenvolver Video Studio antecipadamente.
 7. Ao encerrar, informar: **branch, HEAD, último ID VALIDADO, próximo ID PENDENTE, commits, comandos verdes, evidências, bloqueios e condição de desbloqueio**.

@@ -21,3 +21,10 @@
 ## Fronteiras
 
 Avalonia permanece na camada `GV5.App` e nos módulos de UI. `GV5.Core`, `GV5.Geometry`, `GV5.Characters`, `GV5.Scene`, `GV5.Rendering`, `GV5.Data` e `GV5.Jobs` não recebem dependência de Avalonia. Video Studio continua a última grande área conforme o Plano Mestre.
+
+## Adoção comprovada até F05.06 — 2026-10-21
+
+- `GV5.Rendering` entrega um `RenderedFrame` independente da UI. `GV5.App.Presentation.AvaloniaRenderedFrameAdapter` copia os pixels existentes para `WriteableBitmap` na thread de UI; não resolve personagens, não consulta `IAssetStore` e não decodifica assets.
+- O adaptador respeita `Bgra8888/Premul` ou `Rgba8888/Premul`, pois o formato retornado deve ser lido do bitmap real. O renderer CPU observado neste ambiente produziu `Bgra8888/Premul`; o teste Headless confirma que os canais aparecem corretamente numa `Image` Avalonia.
+- `Avalonia.Headless` renderizou uma janela em memória e a captura confirmou pixels de quatro cores. A contagem de aquisições do provider ficou igual antes/depois do desenho da `Image`; chamada do adaptador fora do UI dispatcher é rejeitada.
+- Essa validação comprova o caminho técnico de apresentação em Headless. Não comprova aparência final de módulo, DPI de Windows, janela nativa, GPU nem paridade visual com uma captura do Electron; esses aceites continuam pendentes na matriz visual.
