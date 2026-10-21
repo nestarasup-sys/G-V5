@@ -24,7 +24,7 @@ Este inventário descreve o comportamento expresso no código. Ele não declara 
 | Face/olhos | Catálogos importam folhas de olhos/sobrancelhas/nariz/boca fechada/boca aberta e guardam recortes, índices, transforms e ligação de lados. Há assets faciais independentes: olho, pupila, olho fechado, sobrancelha, destaques, blush, sombra e extras da cabeça. O editor tem guias e transforms padrão. | `face/FaceComponentsWorkspace.tsx`; `face/processFaceSheet.ts`; `face/splitEyeSheet.ts`; tipos `FaceCatalogItem`, `FaceComponentAsset*` |
 | Expressões | Presets apontam para assets compartilhados e guardam seleções e transforms privados, calibração de referência, opacidade do nariz e efeitos de sombra/blush. Collections e workspace draft ficam separados dos presets publicados; nomes e cópias locais também são persistidos. | `ExpressionPresetWorkspace.tsx`; `legacyStandardExpressions.json`; tipos `FaceExpressionPreset*`; `electron/main.ts` (`writeFaceExpressionPreset`, workspace draft) |
 | Animador facial | Área própria para gravar/analisar animação facial; exporta vídeo WebM por diálogo nativo do Electron, validando assinatura EBML e tamanho máximo de 250 MiB. | `FaceAnimatorWorkspace.tsx`; `electron/main.ts` (`fabricator:face-animation:export`) |
-| Cabelos | Rascunho por modelo com partes frente/trás/franja, transforms, origem recuperável e processamento de chroma nos modos auto/verde/quadriculado. Estilos publicados guardam peças, categoria e transforms separadamente. Categorias de hair-part conectam os assets ao Customizer. | `HairWorkspace.tsx`; `hairEraser.ts`; `hairProcessor.worker.ts`; `src/shared/hairCategories.ts`; tipos `HairWorkspace*`, `HairStyle*` |
+| Cabelos | Cinco IDs semânticos (`backHair`, `rearHair`, `ponytail`, `frontHair`, `ahoge`) ocupam três slots (`front`, `back`, `fringe`). Rascunho por modelo guarda transforms, folha original recuperável, chroma auto/verde/quadriculado e borracha raster. Estilos publicados têm categoria e transforms. O Customizador expõe cinco roles de cor e 20 paletas; a máscara de role é inferida em memória, sem bitmap persistido. Ver [contrato detalhado F09 cabelos](F09_CABELOS_LEGADO.md). | `HairWorkspace.tsx`; `HairPiecePreview.tsx`; `hairEraser.ts`; `hairProcessor.worker.ts`; `src/shared/hairCategories.ts`; tipos `HairWorkspace*`, `HairStyle*`; [contrato F09](F09_CABELOS_LEGADO.md) |
 | Extras de cabeça | Catálogo de assets de cabeça (óculos/acessório), posicionável sobre a cabeça com transforms e guias. | `face/HeadExtrasWorkspace.tsx`; tipo `FaceComponentAsset` |
 
 ## Persistência observada no código
@@ -65,6 +65,7 @@ IDs ainda são mistos: slots numéricos para modelos/poses/animações e IDs str
 - `src/renderer/src/features/fabricator/ExpressionPresetWorkspace.tsx`
 - `src/renderer/src/features/fabricator/FaceAnimatorWorkspace.tsx`
 - `src/renderer/src/features/fabricator/HairWorkspace.tsx`
+- `docs/legacy-contracts/F09_CABELOS_LEGADO.md`
 - `src/shared/fabricator.ts:1-415`; `src/shared/assetFlow.ts:1-112`
 - `electron/main.ts:224-277, 1537-1786, 1806-1894, 2590-3174`
 - `electron/preload.ts:1-66`
