@@ -11,7 +11,7 @@
 
 ## 0. COMO O CODEX DEVE TRABALHAR — INSTRUÇÃO PERMANENTE
 
-**Meta vigente:** paridade funcional completa, interface familiar e melhorada — não pixel-perfect. F06 liberada tecnicamente; F07.02–F07.05 validadas localmente; próxima tarefa F07.06. Não deixar controle do legado ausente nem marcar tarefas concluídas sem implementação, persistência e testes.
+**Meta vigente:** paridade funcional completa, interface familiar e melhorada — não pixel-perfect. F06 liberada tecnicamente; F07.02–F07.06 validadas localmente; próxima tarefa F07.07. Não deixar controle do legado ausente nem marcar tarefas concluídas sem implementação, persistência e testes.
 
 1. Antes de qualquer edição: confirmar `git branch --show-current` = `Master-AValonia`, ler `git status --short` e conferir HEAD local. Consultar o remoto somente após autorização explícita do usuário; reconciliar mudanças concorrentes sem sobrescrever trabalho. **Nunca dar force push nem apagar trabalho em andamento.**
 2. Ler este arquivo, `PLANO_DO_NOVO_APP.md`, `README.md`, `global.json` e `EXECUTION_STATUS.md`. Se não houver status, criá-lo na tarefa F00.05.
