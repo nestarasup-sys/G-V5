@@ -231,7 +231,7 @@ Ambiente/SDK/CI: `TestarLocal.bat gate` passou em 2026-10-21; ver `docs/gates/GA
 - [x] **F06.08** — Implementar mover, escalar e rotacionar peças por commands; sem alterar cada mousemove no banco.
 - [x] **F06.09** — Implementar layer order, ocultar/exibir e operações de seleção.
 - [x] **F06.10** — Implementar Undo/Redo coalescido: drag contínuo vira uma única ação.
-- [ ] **F06.11** — Implementar autosave e estado de save com conflitos de revisão.
+- [x] **F06.11** — Implementar autosave e estado de save com conflitos de revisão.
 - [ ] **F06.12** — Implementar publicação imutável de modelo + testes de manutenção da revisão antiga.
 - [ ] **F06.13** — Testar import inválido, falta de asset, reopen, PNG e comparar com legado.
 - [ ] **F06.14** — Registrar GATE-F06 e matriz de paridade de modelos.

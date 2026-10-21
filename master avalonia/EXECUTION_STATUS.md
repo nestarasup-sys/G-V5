@@ -13,13 +13,13 @@
 | Branch obrigatória | `Master-AValonia` |
 | Pasta exclusiva do novo aplicativo | `master avalonia/` |
 | Commit-base inspecionado antes deste arquivo | `53b7f7a97321e85063a8dd4f9635e48d36548323` |
-| Último commit de implementação validado | `2b654f7` (F06.10) |
+| Último commit de implementação validado | `5b8f0b6` (F06.11) |
 | Fase ativa | **F06 — Fabricador I: modelos e peças** |
-| Última tarefa VALIDADA | **F06.10** — Undo/Redo coalescido, um gesto contínuo por ação |
-| Próxima tarefa PENDENTE | **F06.11** — autosave e estado de save com conflitos de revisão |
+| Última tarefa VALIDADA | **F06.11** — autosave do conteúdo e estado de persistência com conflito de revisão |
+| Próxima tarefa PENDENTE | **F06.12** — publicação imutável de modelo e preservação de revisão antiga |
 | Requisito transversal adicionado | Fidelidade visual ao Gacha 5 Electron, registrada em ADR-0004; documentos em `docs/ui-fidelity/`; sem paridade visual aprovada ainda |
 | Gate atual | **GATE F00: PASSOU; G0: PASSOU; F02: PASSOU; F03: PASSOU; F04: PASSOU; F05: PASSOU; G1 CPU/headless: PASSOU** |
-| Progresso validado neste controle | **84 / 247 tarefas (34,0%)** |
+| Progresso validado neste controle | **85 / 247 tarefas (34,4%)** |
 | Tarefas em execução | Nenhuma |
 | Bloqueios conhecidos | Primeiro download do SDK em clone vazio não progrediu; evidência e limite de F01 estão registrados em `docs/gates/GATE-F01.md` |
 | Aceite Windows/GPU | **Não executado / não registrado** |
@@ -158,6 +158,8 @@ Adicionar uma linha ao concluir ou bloquear cada tarefa. A linha inicial abaixo 
 
 | **F06.10** | **VALIDADA** | `2b654f7` | Histórico limitado a 50 ações com Undo/Redo para transformação, ordem e visibilidade. Cada gesto contínuo de arrasto produz uma única ação ao terminar; previews não escrevem no banco; nova ação limpa o redo. `TestarLocal.bat rapido`: build com 2 avisos CS0618 preexistentes em `ThumbnailService`; Core 18, Architecture 8, Geometry 35, Assets 31, Data 49, Rendering 21, Headless 29; 0 falhas. Headless verifica coalescência do gesto, aplicação/reversão, edição nova após undo e ausência de gravação durante operações. Captura Windows e comparação visual com Electron seguem pendentes. | `src/GV5.Modules.Fabricador/Interaction/IModelDraftCommand.cs`; `ModelPartTransformCommand.cs`; `ModelPartLayerOrderCommand.cs`; `ModelPartVisibilityCommand.cs`; `ViewModels/FabricadorViewModel.cs`; `Views/FabricatorView.axaml`; `tests/GV5.Headless.Tests/FabricadorImportPreviewUiTests.cs` | Controles de Undo/Redo existem e estão funcionais no estado Avalonia; paridade de posição, tamanho, estilo, estados e ícones ainda exige captura real equivalente. |
 
+| **F06.11** | **VALIDADA** | `5b8f0b6` | Autosave com debounce salva nome e snapshot completo do conteúdo; estado só vira `Salvo` após confirmação do repositório, com revisão incrementada uma vez. Conflito otimista mostra erro sem sobrescrever a revisão concorrente e preserva a edição local. `TestarLocal.bat rapido`: Core 18, Architecture 8, Geometry 35, Assets 31, Data 49, Rendering 21, Headless 30; 0 falhas; build com 2 avisos CS0618 preexistentes em `ThumbnailService`. Headless cobriu debounce, persistência de transformação/camada/visibilidade e conflito. | `src/GV5.Modules.Fabricador/ViewModels/FabricadorViewModel.cs`; `tests/GV5.Headless.Tests/FabricadorImportPreviewUiTests.cs` | Fixture de repositório e estado Avalonia Headless; captura Windows/visual continua pendente. |
+
 **Estados aceitos:** `PENDENTE`, `EM_EXECUCAO`, `BLOQUEADA`, `VALIDADA`.
 
 **Ao finalizar uma tarefa:** registrar commit, comando efetivamente executado (build/teste), resultado, evidência concreta, comportamento negativo exercitado e pendências. Só então trocar para `VALIDADA`, atualizar contadores e iniciar a próxima.
@@ -281,6 +283,8 @@ Toda mudança material do roteiro ou arquitetura deve apontar para um ADR em `do
 | 2026-10-21 | `2821715` | F06.07 validada; próxima F06.08 | Fabricador I | Seleção por hit test sobreposta, ordem e transforms; ferramenta Selecionar/Mover tela, zoom ancorado no cursor e overlay. `TestarLocal.bat rapido`: Core 18, Architecture 8, Geometry 35, Assets 31, Data 49, Rendering 21, Headless 29; 0 erros/falhas. Comparação Windows/Electron permanece pendente. |
 | 2026-10-21 | `80e0273` | F06.08 validada; próxima F06.09 | Fabricador I | Arrasto de peça, escala e rotação geram commands reversíveis, sem gravar no banco por mousemove; escala/rotação e Apply/Revert cobertos no Headless. `TestarLocal.bat rapido`: build sem warnings/errors; Core 18, Architecture 8, Geometry 35, Assets 31, Data 49, Rendering 21, Headless 29; 0 erros/falhas. Captura Windows/GPU e comparação Electron pendentes. |
 | 2026-10-21 | `66de704` | F06.09 validada; próxima F06.10 | Fabricador I | Painel lateral de camadas, seleção, mover para frente/trás e visibilidade; reordenação e visibilidade não gravam durante a operação. `TestarLocal.bat rapido`: build 0 warnings/errors; Core 18, Architecture 8, Geometry 35, Assets 31, Data 49, Rendering 21, Headless 29; 0 erros/falhas. Arrastar linhas, miniaturas e comparação visual continuam pendentes. |
+| 2026-10-21 | `2b654f7` | F06.10 validada; próxima F06.11 | Fabricador I | Undo/Redo coalescido para transformações, layer order e visibilidade; gesto de ponteiro vira uma ação e nenhuma operação de histórico grava diretamente no banco. Suíte rápida local: Core 18, Architecture 8, Geometry 35, Assets 31, Data 49, Rendering 21, Headless 29; build com 2 avisos Skia preexistentes e 0 erros/falhas. |
+| 2026-10-21 | `5b8f0b6` | F06.11 validada; próxima F06.12 | Fabricador I | Autosave de snapshot de conteúdo com debounce, revisão otimista, estados visíveis, flush e preservação de edição local em conflito; suíte rápida: Core 18, Architecture 8, Geometry 35, Assets 31, Data 49, Rendering 21, Headless 30; 0 falhas, 2 avisos CS0618 preexistentes. |
 
 Após concluir um lote ou fase, adicionar uma linha. Não inflar contador só porque o commit contém múltiplos arquivos; contar apenas tarefas comprovadas.
 
