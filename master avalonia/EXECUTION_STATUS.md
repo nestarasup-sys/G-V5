@@ -13,13 +13,13 @@
 | Branch obrigatória | `Master-AValonia` |
 | Pasta exclusiva do novo aplicativo | `master avalonia/` |
 | Commit-base inspecionado antes deste arquivo | `53b7f7a97321e85063a8dd4f9635e48d36548323` |
-| Último commit de implementação validado | `66de704` (F06.09) |
+| Último commit de implementação validado | `2b654f7` (F06.10) |
 | Fase ativa | **F06 — Fabricador I: modelos e peças** |
-| Última tarefa VALIDADA | **F06.09** — ordenação de camadas, visibilidade e seleção de peças |
-| Próxima tarefa PENDENTE | **F06.10** — Undo/Redo coalescido, um gesto contínuo por ação |
+| Última tarefa VALIDADA | **F06.10** — Undo/Redo coalescido, um gesto contínuo por ação |
+| Próxima tarefa PENDENTE | **F06.11** — autosave e estado de save com conflitos de revisão |
 | Requisito transversal adicionado | Fidelidade visual ao Gacha 5 Electron, registrada em ADR-0004; documentos em `docs/ui-fidelity/`; sem paridade visual aprovada ainda |
 | Gate atual | **GATE F00: PASSOU; G0: PASSOU; F02: PASSOU; F03: PASSOU; F04: PASSOU; F05: PASSOU; G1 CPU/headless: PASSOU** |
-| Progresso validado neste controle | **83 / 247 tarefas (33,6%)** |
+| Progresso validado neste controle | **84 / 247 tarefas (34,0%)** |
 | Tarefas em execução | Nenhuma |
 | Bloqueios conhecidos | Primeiro download do SDK em clone vazio não progrediu; evidência e limite de F01 estão registrados em `docs/gates/GATE-F01.md` |
 | Aceite Windows/GPU | **Não executado / não registrado** |
@@ -156,6 +156,8 @@ Adicionar uma linha ao concluir ou bloquear cada tarefa. A linha inicial abaixo 
 | **F06.08** | **VALIDADA** | `80e0273` | Canvas oferece puxadores de escala e rotação e arrasto de peça selecionada. Um gesto aplica previews em memória e produz um command reversível ao concluir; nenhum Save do repositório é feito em mousemove. `ModelPartTransformCommand` Apply/Revert mantém a revisão do snapshot até o salvamento final. `TestarLocal.bat rapido`: build 0 avisos/erros; Core 18, Architecture 8, Geometry 35, Assets 31, Data 49, Rendering 21, Headless 29; 0 falhas. Headless verifica movimento, aumento por escala, rotação, Apply/Revert e ausência de escrita durante gestos; `git diff --check` passou. | `src/GV5.Modules.Fabricador/Interaction/ModelPartTransformCommand.cs`; `Views/FabricatorCanvas.axaml(.cs)`; `ViewModels/FabricadorViewModel.cs`; `tests/GV5.Headless.Tests/FabricadorImportPreviewUiTests.cs` | Correção complementar preserva o pivô ao reduzir transforms para o tamanho da prévia. Captura em janela Windows, DPI, acessibilidade dos puxadores e paridade visual com Electron NÃO TESTADAS. Persistência final/autosave é F06.11. |
 | **F06.09** | **VALIDADA** | `66de704` | Painel de camadas ao lado do canvas lista frente→trás, permite selecionar pela lista ou canvas, limpar seleção, subir/descer uma camada e mostrar/ocultar. Hit test ignora partes ocultas; os limites desabilitam movimento para além da frente/trás. Operações atualizam o snapshot em memória e renderizam sem gravar no repositório, preservando a revisão até autosave. `TestarLocal.bat rapido`: build 0 avisos/erros; Core 18, Architecture 8, Geometry 35, Assets 31, Data 49, Rendering 21, Headless 29; 0 falhas. Headless cobre três partes sobrepostas, ordem inversa na lista, seleção, reordenação nos dois sentidos, limites, ocultar/exibir, hit test e lista Avalonia; `git diff --check` passou. | `src/GV5.Modules.Fabricador/ViewModels/ModelPartLayerItem.cs`; `ViewModels/FabricadorViewModel.cs`; `Views/FabricadorView.axaml`; `tests/GV5.Headless.Tests/FabricadorImportPreviewUiTests.cs` | A auditoria estática do legado também identifica arrastar linhas e miniaturas. Esses dois detalhes ainda não estão implementados; comparar visualmente com Electron em captura equivalente segue pendente. Persistência final é F06.11. |
 
+| **F06.10** | **VALIDADA** | `2b654f7` | Histórico limitado a 50 ações com Undo/Redo para transformação, ordem e visibilidade. Cada gesto contínuo de arrasto produz uma única ação ao terminar; previews não escrevem no banco; nova ação limpa o redo. `TestarLocal.bat rapido`: build com 2 avisos CS0618 preexistentes em `ThumbnailService`; Core 18, Architecture 8, Geometry 35, Assets 31, Data 49, Rendering 21, Headless 29; 0 falhas. Headless verifica coalescência do gesto, aplicação/reversão, edição nova após undo e ausência de gravação durante operações. Captura Windows e comparação visual com Electron seguem pendentes. | `src/GV5.Modules.Fabricador/Interaction/IModelDraftCommand.cs`; `ModelPartTransformCommand.cs`; `ModelPartLayerOrderCommand.cs`; `ModelPartVisibilityCommand.cs`; `ViewModels/FabricadorViewModel.cs`; `Views/FabricatorView.axaml`; `tests/GV5.Headless.Tests/FabricadorImportPreviewUiTests.cs` | Controles de Undo/Redo existem e estão funcionais no estado Avalonia; paridade de posição, tamanho, estilo, estados e ícones ainda exige captura real equivalente. |
+
 **Estados aceitos:** `PENDENTE`, `EM_EXECUCAO`, `BLOQUEADA`, `VALIDADA`.
 
 **Ao finalizar uma tarefa:** registrar commit, comando efetivamente executado (build/teste), resultado, evidência concreta, comportamento negativo exercitado e pendências. Só então trocar para `VALIDADA`, atualizar contadores e iniciar a próxima.
@@ -287,7 +289,7 @@ Após concluir um lote ou fase, adicionar uma linha. Não inflar contador só po
 1. Confirmar branch, HEAD e árvore de trabalho localmente; não consultar nem sincronizar o remoto até autorização explícita.
 2. Ler `AGENTS.md`, `PLANO_DO_NOVO_APP.md`, `PLANO_MESTRE_EXECUCAO_CODEX.md` e este arquivo.
 3. Inspecionar evidências reais da última tarefa validada; caso não existam, corrigir seu estado.
-4. **Retomar F06.06**: mostrar o modelo pelo FabricatorCanvas reutilizando RenderScene/SkiaRenderer; preservar o gate F06 Import→editar→undo→salvar→reabrir→publicar.
+4. **Retomar F06.11**: autosalvar conteúdo do modelo, exibir estados de persistência e preservar edições locais quando houver conflito de revisão.
 5. Continuar automaticamente pelas tarefas seguintes **uma de cada vez**, em lotes flexíveis de aproximadamente 3–8 tarefas relacionadas, enquanto todos os gates pertinentes passam.
 6. Atualizar o registro e commitar entregas reais localmente na branch `Master-AValonia`; não desenvolver Video Studio antecipadamente.
 7. Ao encerrar, informar: **branch, HEAD, último ID VALIDADO, próximo ID PENDENTE, commits, comandos verdes, evidências, bloqueios e condição de desbloqueio**.
