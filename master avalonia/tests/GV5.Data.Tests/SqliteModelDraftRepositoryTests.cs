@@ -58,10 +58,22 @@ public sealed class SqliteModelDraftRepositoryTests
             using (var database = new SqliteDatabase(paths))
             {
                 await MigrateAsync(database, cancellationToken);
+                await database.ExecuteWriteAsync(async (connection, transaction, token) =>
+                {
+                    await using var command = connection.CreateCommand();
+                    command.Transaction = transaction;
+                    command.CommandText = "CREATE TABLE model_update_audit (model_id TEXT NOT NULL, revision INTEGER NOT NULL); CREATE TRIGGER audit_model_update AFTER UPDATE ON models BEGIN INSERT INTO model_update_audit(model_id, revision) VALUES (NEW.model_id, NEW.revision); END;";
+                    await command.ExecuteNonQueryAsync(token);
+                    return true;
+                }, cancellationToken);
+
                 var repository = new SqliteModelDraftRepository(database);
                 var created = await repository.CreateAsync(draft, cancellationToken);
                 Assert.True(created.IsSuccess);
                 Assert.Equal(draft, created.Value);
+
+                var untouchedDraft = ModelDraft.Create("Outro modelo preservado", 1100);
+                Assert.True((await repository.CreateAsync(untouchedDraft, cancellationToken)).IsSuccess);
 
                 var fetched = await repository.GetAsync(draft.Id, cancellationToken);
                 Assert.True(fetched.IsSuccess);
@@ -72,6 +84,24 @@ public sealed class SqliteModelDraftRepositoryTests
                 Assert.True(updated.IsSuccess);
                 Assert.Equal(Revision.From(2), updated.Value.Revision);
                 Assert.Equal("Modelo atualizado", updated.Value.Name);
+
+                var noOpSave = await repository.UpdateAsync(updatedDraft, updatedDraft.Revision, cancellationToken);
+                Assert.True(noOpSave.IsSuccess);
+
+                var untouched = await repository.GetAsync(untouchedDraft.Id, cancellationToken);
+                Assert.True(untouched.IsSuccess);
+                Assert.Equal(untouchedDraft, untouched.Value);
+
+                await using (var auditRead = await database.OpenReadConnectionAsync(cancellationToken))
+                {
+                    await using var audit = auditRead.CreateCommand();
+                    audit.CommandText = "SELECT model_id, revision FROM model_update_audit;";
+                    await using var auditRows = await audit.ExecuteReaderAsync(cancellationToken);
+                    Assert.True(await auditRows.ReadAsync(cancellationToken));
+                    Assert.Equal(draft.Id.ToString(), auditRows.GetString(0));
+                    Assert.Equal(2, auditRows.GetInt64(1));
+                    Assert.False(await auditRows.ReadAsync(cancellationToken));
+                }
 
                 var staleDraft = draft.Rename("Edição antiga", 3000);
                 var stale = await repository.UpdateAsync(staleDraft, draft.Revision, cancellationToken);

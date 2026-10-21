@@ -93,6 +93,10 @@ O diagrama apresenta ownership e relações de domínio; nomes de IDs locais e t
 - `CHECK` para revisão positiva, largura/altura e duração não negativas, FPS válido quando conhecido, enumeração de tipos reconhecidos e cores em formato validado. Campos desconhecidos não viram enums fechados sem política de compatibilidade.
 - Índices de pesquisa só depois de uma query real justificar o custo; evitar índices duplicados e JSON indexes como substituto de normalização.
 
+## Política de gravação incremental
+
+Repositórios atualizam apenas as linhas do agregado alterado, filtrando pelo ID e `expectedRevision` na mesma transação. Uma operação que não altera conteúdo devolve sucesso sem executar `UPDATE`; mudança de um modelo não reescreve outras entidades nem serializa o banco inteiro. Ao persistir filhos no futuro, o repositório compara IDs/valores dirty e insere, atualiza ou remove apenas as linhas alteradas, com o agregado como limite transacional. WAL é mecanismo interno de recuperação e concorrência do SQLite; não é um snapshot do banco por gesto.
+
 ## Decisões ainda adiadas
 
 O desenho não escolhe o provider SQLite, DDL definitivo, política WAL, journal, schema versions ou semântica exata de `ON DELETE`; isso pertence a F02.03–F02.04 e às tarefas de recovery. As tabelas de domínios futuros são contratos conceituais, não autorização para antecipar módulos fora da ordem do plano.

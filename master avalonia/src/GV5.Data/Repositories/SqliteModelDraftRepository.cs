@@ -77,6 +77,48 @@ public sealed class SqliteModelDraftRepository(IGv5Database database) : IModelDr
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(draft);
+        if (!expectedRevision.IsValid || !draft.Id.IsValid)
+        {
+            return Result<ModelDraft>.Failure(new ApplicationError(
+                ApplicationErrorCode.Validation,
+                "A valid model ID and expected revision are required.",
+                draft.Id.ToString()));
+        }
+
+        if (draft.Revision == expectedRevision)
+        {
+            try
+            {
+                var noOpOutcome = await _database.ExecuteWriteAsync(async (connection, transaction, token) =>
+                {
+                    var current = await ReadDraftAsync(connection, transaction, draft.Id, token).ConfigureAwait(false);
+                    if (current is null)
+                    {
+                        return UpdateOutcome.NotFound;
+                    }
+
+                    if (current.Revision != expectedRevision)
+                    {
+                        return UpdateOutcome.Conflict;
+                    }
+
+                    return current == draft ? UpdateOutcome.Unchanged : UpdateOutcome.Validation;
+                }, cancellationToken).ConfigureAwait(false);
+
+                return noOpOutcome switch
+                {
+                    UpdateOutcome.Unchanged => Result<ModelDraft>.Success(draft),
+                    UpdateOutcome.NotFound => Result<ModelDraft>.Failure(new ApplicationError(ApplicationErrorCode.NotFound, "The model draft does not exist.", draft.Id.ToString())),
+                    UpdateOutcome.Conflict => Result<ModelDraft>.Failure(new ApplicationError(ApplicationErrorCode.Conflict, "The model draft changed since it was loaded.", draft.Id.ToString())),
+                    _ => Result<ModelDraft>.Failure(new ApplicationError(ApplicationErrorCode.Validation, "Model draft content cannot change without advancing its revision.", draft.Id.ToString()))
+                };
+            }
+            catch (SqliteException exception)
+            {
+                return Result<ModelDraft>.Failure(new ApplicationError(ApplicationErrorCode.Persistence, exception.Message, draft.Id.ToString()));
+            }
+        }
+
         Revision nextRevision;
         try
         {
@@ -123,14 +165,17 @@ public sealed class SqliteModelDraftRepository(IGv5Database database) : IModelDr
                     return UpdateOutcome.NotFound;
                 }
 
+                if (reader.GetInt64(0) != expectedRevision.Value)
+                {
+                    return UpdateOutcome.Conflict;
+                }
+
                 if (reader.GetInt64(1) != draft.CreatedUtcMs || draft.UpdatedUtcMs < reader.GetInt64(2))
                 {
                     return UpdateOutcome.Validation;
                 }
 
-                return reader.GetInt64(0) == expectedRevision.Value
-                    ? UpdateOutcome.Validation
-                    : UpdateOutcome.Conflict;
+                return UpdateOutcome.Persistence;
             }, cancellationToken).ConfigureAwait(false);
 
             return outcome switch
@@ -138,6 +183,7 @@ public sealed class SqliteModelDraftRepository(IGv5Database database) : IModelDr
                 UpdateOutcome.Updated => Result<ModelDraft>.Success(draft),
                 UpdateOutcome.NotFound => Result<ModelDraft>.Failure(new ApplicationError(ApplicationErrorCode.NotFound, "The model draft does not exist.", draft.Id.ToString())),
                 UpdateOutcome.Validation => Result<ModelDraft>.Failure(new ApplicationError(ApplicationErrorCode.Validation, "The model draft creation time cannot be changed.", draft.Id.ToString())),
+                UpdateOutcome.Persistence => Result<ModelDraft>.Failure(new ApplicationError(ApplicationErrorCode.Persistence, "The model draft could not be updated.", draft.Id.ToString())),
                 _ => Result<ModelDraft>.Failure(new ApplicationError(ApplicationErrorCode.Conflict, "The model draft changed since it was loaded.", draft.Id.ToString()))
             };
         }
@@ -156,11 +202,29 @@ public sealed class SqliteModelDraftRepository(IGv5Database database) : IModelDr
         command.Parameters.AddWithValue("$updated", draft.UpdatedUtcMs);
     }
 
+    private static async Task<ModelDraft?> ReadDraftAsync(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        ModelId id,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "SELECT revision, display_name, created_utc_ms, updated_utc_ms FROM models WHERE model_id = $id;";
+        command.Parameters.AddWithValue("$id", id.ToString());
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        return await reader.ReadAsync(cancellationToken).ConfigureAwait(false)
+            ? ModelDraft.Restore(id, Revision.From(reader.GetInt64(0)), reader.GetString(1), reader.GetInt64(2), reader.GetInt64(3))
+            : null;
+    }
+
     private enum UpdateOutcome
     {
         Updated,
+        Unchanged,
         NotFound,
         Validation,
+        Persistence,
         Conflict
     }
 }
