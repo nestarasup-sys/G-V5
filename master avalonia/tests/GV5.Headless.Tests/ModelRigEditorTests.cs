@@ -43,7 +43,8 @@ public sealed class ModelRigEditorTests
         Assert.Throws<ArgumentException>(() => editor.Connect(parts[2], parts[0], Point2D.Zero, Point2D.Zero));
         Assert.Throws<ArgumentException>(() => editor.Connect(parts[0], parts[1], Point2D.Zero, Point2D.Zero));
         Assert.Throws<ArgumentException>(() => editor.Connect(parts[0], ModelPartId.New(), Point2D.Zero, Point2D.Zero));
-        Assert.Throws<ArgumentException>(() => editor.Reconnect(second.Id, parts[2], parts[0]));
+        // Reconnecting 2→0 is valid; reconnecting 2→1 creates the real 1→2→1 cycle.
+        Assert.Throws<ArgumentException>(() => editor.Reconnect(first.Id, parts[2], parts[1]));
         Assert.Throws<KeyNotFoundException>(() => editor.Disconnect(RigJointId.New()));
         Assert.Equal(2, editor.Graph.Joints.Count);
         Assert.Equal(first.Id, editor.Graph.Joints[0].Id);
