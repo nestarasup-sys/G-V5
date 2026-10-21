@@ -31,10 +31,7 @@ public sealed class ModelSheetSegmentationProcessor(ChromaCropProcessor chromaPr
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(source);
-        using var chroma = await _chromaProcessor.ProcessAsync(
-            source,
-            new ChromaCropOptions(Tolerance: tolerance, Feather: 44, CropMargin: CropMargin),
-            cancellationToken).ConfigureAwait(false);
+        using var chroma = await PreviewChromaAsync(source, tolerance, cancellationToken).ConfigureAwait(false);
 
         var bitmap = chroma.Image.Bitmap;
         var pixelCount = checked(bitmap.Width * bitmap.Height);
@@ -155,6 +152,19 @@ public sealed class ModelSheetSegmentationProcessor(ChromaCropProcessor chromaPr
             ArrayPool<byte>.Shared.Return(foreground, clearArray: true);
             ArrayPool<int>.Shared.Return(queue, clearArray: false);
         }
+    }
+
+    /// <summary>Applies the same chroma settings used by model segmentation without mutating the source.</summary>
+    public Task<ChromaCropResult> PreviewChromaAsync(
+        DecodedAssetImage source,
+        int tolerance,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        return _chromaProcessor.ProcessAsync(
+            source,
+            new ChromaCropOptions(Tolerance: tolerance, Feather: 44, CropMargin: CropMargin),
+            cancellationToken);
     }
 
     private static string GuessName(int minX, int minY, int maxX, int maxY, int width, int height)

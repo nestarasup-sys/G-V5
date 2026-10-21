@@ -101,7 +101,7 @@ public partial class FabricadorView : UserControl
         _previewBitmap = null;
         if (_viewModel?.ImportPreview is { } preview)
         {
-            var source = preview.Image.Bitmap;
+            var source = preview.DisplayImage.Bitmap;
             var bitmap = new WriteableBitmap(
                 new PixelSize(source.Width, source.Height),
                 new Vector(96, 96),

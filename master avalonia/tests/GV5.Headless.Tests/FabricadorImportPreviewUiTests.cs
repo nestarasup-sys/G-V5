@@ -525,6 +525,24 @@ public sealed class FabricadorImportPreviewUiTests
             Assert.Equal(0, store.ImportCount);
             Assert.Single(Directory.GetFiles(root));
 
+            var toleranceSlider = Assert.Single(window.GetVisualDescendants().OfType<Slider>(), control => control.Name == "ModelChromaToleranceSlider");
+            Assert.Equal(74, toleranceSlider.Value);
+            await viewModel.ApplyChromaPreviewCommand.ExecuteAsync(null);
+            Assert.True(viewModel.ImportPreview!.HasChromaPreview);
+            Assert.Equal(74, viewModel.ImportPreview.AppliedChromaTolerance);
+            viewModel.ChromaTolerance = 110;
+            Assert.Equal(110, toleranceSlider.Value);
+            Assert.True(viewModel.IsChromaPreviewStale);
+            Assert.False(viewModel.CanPublishModelSource);
+            await viewModel.ApplyChromaPreviewCommand.ExecuteAsync(null);
+            Assert.True(viewModel.ImportPreview!.HasChromaPreview);
+            Assert.Equal(110, viewModel.ImportPreview.AppliedChromaTolerance);
+            Assert.True(viewModel.ImportPreview.ChromaRemovedPixelCount > 0);
+            Assert.False(viewModel.IsChromaPreviewStale);
+            Assert.True(viewModel.CanPublishModelSource);
+            Assert.Equal(0, store.ImportCount);
+            Assert.Single(Directory.GetFiles(root));
+
             await viewModel.PublishModelSourceCommand.ExecuteAsync(null);
 
             Assert.Equal(3, store.ImportCount);

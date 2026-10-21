@@ -324,6 +324,28 @@
                                     </Border>
                                     <TextBlock Text="{Binding ImportPreviewDimensions}" FontSize="12" Foreground="#342E36" />
                                     <TextBlock Text="{Binding ImportPreview.MediaType}" FontSize="12" Foreground="#706872" />
+                                    <Border Background="#F8F4F7" BorderBrush="#EEE5EB" BorderThickness="1" CornerRadius="7" Padding="8">
+                                        <StackPanel Spacing="6">
+                                            <TextBlock Text="{Binding ChromaToleranceLabel}" FontSize="12" FontWeight="SemiBold" Foreground="#58424F" />
+                                            <Slider x:Name="ModelChromaToleranceSlider"
+                                                    Minimum="0"
+                                                    Maximum="280"
+                                                    TickFrequency="1"
+                                                    IsSnapToTickEnabled="True"
+                                                    Value="{Binding ChromaTolerance}"
+                                                    IsEnabled="{Binding CanApplyChromaPreview}" />
+                                            <TextBlock Text="Ajuste e gere uma prévia. A imagem-fonte original será publicada sem alterações."
+                                                       FontSize="11" Foreground="#827783" TextWrapping="Wrap" />
+                                            <TextBlock Text="A tolerância mudou; atualize a prévia antes de publicar."
+                                                       IsVisible="{Binding IsChromaPreviewStale}"
+                                                       FontSize="11" Foreground="#B4233C" TextWrapping="Wrap" />
+                                            <Button Content="Atualizar prévia do chroma"
+                                                    Command="{Binding ApplyChromaPreviewCommand}"
+                                                    IsEnabled="{Binding CanApplyChromaPreview}"
+                                                    HorizontalAlignment="Stretch"
+                                                    Padding="9,6" />
+                                        </StackPanel>
+                                    </Border>
                                     <StackPanel Orientation="Horizontal" Spacing="7">
                                         <Button Content="Publicar folha" Command="{Binding PublishModelSourceCommand}" IsEnabled="{Binding CanPublishModelSource}" Padding="10,6" Background="#C74677" Foreground="#FFFFFF" />
                                         <Button Content="Cancelar" Command="{Binding CancelModelSourceImportCommand}" IsEnabled="{Binding CanCancelImport}" Padding="10,6" />

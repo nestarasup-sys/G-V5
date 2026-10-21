@@ -12,7 +12,7 @@ Data da baseline: 2026-10-20. Escopo: funcionalidades identificadas no código-f
 | Área | Funcionalidade do Electron | Prova do legado | Estado no Avalonia | Lacuna/evidência de aceite |
 | --- | --- | --- | --- | --- |
 | Fabricador | Importação, validação e divisão de modelo em peças | [Inventário Fabricador](FABRICADOR_INVENTARIO.md), modelos e peças | PENDENTE | Importar fixture sintética; limites, recortes e IDs persistidos; reabrir e comparar render |
-| Fabricador | Chroma, tolerância e despill | [Inventário Fabricador](FABRICADOR_INVENTARIO.md), Chroma | PENDENTE | Resultado determinístico em imagem sintética, controles, cancelamento e regressão visual |
+| Fabricador | Chroma, tolerância e despill | [Inventário Fabricador](FABRICADOR_INVENTARIO.md), Chroma | EM_EXECUCAO | Processamento determinístico, slider de tolerância, preview temporário e publicação da fonte intacta cobertos em `docs/testing/F09.15_CHROMA.md`; falta validação Windows/GPU e revisão com folhas reais para encerrar G2 |
 | Fabricador | Seleção, edição, transformação, ocultação e organização de peças | [Inventário Fabricador](FABRICADOR_INVENTARIO.md), modelos e peças | PENDENTE | Comandos reversíveis; teste positivo/negativo e persistência após reabertura |
 | Fabricador | Dividir/mesclar peças e restaurar fonte importada | [Inventário Fabricador](FABRICADOR_INVENTARIO.md), modelos e peças | PENDENTE | Operações preservam pixels/identidade e desfazem sem corrupção |
 | Fabricador | Rig de juntas, anchors, pivôs e relação pai/filho | [Inventário Fabricador](FABRICADOR_INVENTARIO.md), Rig | PENDENTE | Geometria canônica; fixtures de conexões, casos extremos e teste de pose |

@@ -14,7 +14,7 @@
 | Pasta exclusiva do novo aplicativo | `master avalonia/` |
 | Commit-base inspecionado antes deste arquivo | `53b7f7a97321e85063a8dd4f9635e48d36548323` |
 | Último commit de implementação validado | `4d7d4b5` (F09.15: grade opcional do canvas do Fabricador) |
-| Checkout local revalidado | `TestarLocal.bat rapido` passou em 2026-10-21: build Debug; **307 testes, 0 falhas**; avisos existentes: 2 CS0618 no `ThumbnailService` e 1 xUnit1051 em `HairRoleTintProcessorTests` |
+| Checkout local revalidado | `TestarLocal.bat rapido` passou em 2026-10-21: build Debug; **308 testes, 0 falhas**; avisos existentes: 2 CS0618 no `ThumbnailService` e 1 xUnit1051 em `HairRoleTintProcessorTests` |
 | Fase ativa | **F09 — Fabricador IV — cabelos, face, expressões e completação (F09.15 em execução)** |
 | Última tarefa VALIDADA | **F09.14** — validação cruzada de persistência, importação inválida e cancelamento nas subáreas do Fabricador |
 | Tarefa em execução | **F09.15** — auditar e fechar as lacunas funcionais do Fabricador antes do GATE-F09/G2 |
@@ -397,4 +397,6 @@ Após concluir um lote ou fase, adicionar uma linha. Não inflar contador só po
 **F09.15 em execução — grade do canvas:** implementada alternância no workspace de modelos, com overlay em coordenadas do modelo e espaçamento adaptativo ao zoom. A grade é desenhada sobre a imagem para permanecer visível em previews opacos, mas abaixo de seleção/handles; não altera o bitmap nem o pipeline de publicação. Headless: 61/61; gate rápido: 307/307, sem falhas. Evidências e limitações Windows/DPI/GPU atualizadas em `docs/legacy-contracts/PENDENCIAS_FUNCIONAIS_FABRICADOR.md`. Avisos preexistentes: CS0618 no ThumbnailService e xUnit1051 em HairRoleTintProcessorTests.
 
 
-**F09.15 em execução — grade do canvas:** commit local 4d7d4b5 implementa alternância no workspace de modelos, overlay em coordenadas do modelo e espaçamento adaptativo ao zoom. A grade fica visível sobre previews opacos e abaixo de seleção/handles; não altera o bitmap nem o pipeline de publicação. Headless 61/61; TestarLocal.bat rapido 307/307, sem falhas. Revisão Windows com mouse/DPI e GPU continua pendente.
+**F09.15 em execução — grade do canvas:** commit local 4d7d4b5 implementa alternância no workspace de modelos, overlay em coordenadas do modelo e espaçamento adaptativo ao zoom. A grade fica visível sobre previews opacos e abaixo de seleção/handles; não altera o bitmap nem o pipeline de publicação. Headless 61/61; `TestarLocal.bat rapido` 307/307, sem falhas. Revisão Windows com mouse/DPI e GPU continua pendente.
+
+**F09.15 em execução — chroma da folha de modelo:** slider de tolerância e prévia recalculável ligados ao mesmo parâmetro de segmentação. Alterar a tolerância após a prévia bloqueia a publicação até recalcular; cancelamento conserva o resultado anterior; a fonte original continua sendo a publicada. Headless 62/62; `TestarLocal.bat rapido` 308/308, sem falhas. Evidência em `docs/testing/F09.15_CHROMA.md`; validação Windows/GPU e revisão com folhas reais permanecem pendentes.

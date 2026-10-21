@@ -112,7 +112,10 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
     [NotifyPropertyChangedFor(nameof(HasImportPreview))]
     [NotifyPropertyChangedFor(nameof(ImportPreviewDimensions))]
     [NotifyPropertyChangedFor(nameof(CanPublishModelSource))]
+    [NotifyPropertyChangedFor(nameof(CanApplyChromaPreview))]
+    [NotifyPropertyChangedFor(nameof(IsChromaPreviewStale))]
     [NotifyCanExecuteChangedFor(nameof(PublishModelSourceCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ApplyChromaPreviewCommand))]
     private ModelSourceImportPreview? importPreview;
 
     [ObservableProperty]
@@ -123,7 +126,16 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
     [NotifyPropertyChangedFor(nameof(CanPublishRevision))]
     [NotifyCanExecuteChangedFor(nameof(PublishModelRevisionCommand))]
     [NotifyPropertyChangedFor(nameof(CanCancelImport))]
+    [NotifyPropertyChangedFor(nameof(CanApplyChromaPreview))]
     private bool isImporting;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ChromaToleranceLabel))]
+    [NotifyPropertyChangedFor(nameof(IsChromaPreviewStale))]
+    [NotifyPropertyChangedFor(nameof(CanPublishModelSource))]
+    [NotifyCanExecuteChangedFor(nameof(ApplyChromaPreviewCommand))]
+    [NotifyCanExecuteChangedFor(nameof(PublishModelSourceCommand))]
+    private int chromaTolerance = 74;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanvasGridEnabled))]
@@ -260,6 +272,10 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
     public bool HasImportError => !string.IsNullOrWhiteSpace(ImportError);
     public bool HasImportStatus => !string.IsNullOrWhiteSpace(ImportStatus);
     public bool CanCancelImport => _modelImportCancellation is not null || (!IsImporting && ImportPreview is not null);
+    public bool CanApplyChromaPreview => !IsImporting && ImportPreview is { IsPublished: false } && _modelSourceImportService is not null;
+    public string ChromaToleranceLabel => $"Tolerância do chroma: {ChromaTolerance}";
+    public bool IsChromaPreviewStale => ImportPreview is { HasChromaPreview: true } preview
+        && preview.AppliedChromaTolerance != ChromaTolerance;
     public string ImportPreviewDimensions => ImportPreview is { } preview
         ? $"Fonte: {preview.Width} × {preview.Height} px · prévia {preview.PreviewWidth} × {preview.PreviewHeight} px"
         : string.Empty;
@@ -270,6 +286,7 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
         && _assetStore is not null
         && _contentRepository is not null
         && _sceneRenderer is not null
+        && !IsChromaPreviewStale
         && (!preview.IsPublished || _modelContent?.SourceAssetId != preview.PublishedAssetId);
     public bool HasModelRenderError => !string.IsNullOrWhiteSpace(ModelRenderError);
     public bool IsSelectTool => ActiveTool == FabricatorTool.Select;
@@ -2118,6 +2135,7 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
             }
 
             ImportStatus = $"Prévia validada · {ImportPreview.Width} × {ImportPreview.Height} · {ImportPreview.MediaType}";
+            ChromaTolerance = 74;
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidOperationException)
         {
@@ -2126,6 +2144,41 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
         catch (OperationCanceledException)
         {
             ImportStatus = "Importação cancelada.";
+        }
+        finally
+        {
+            _modelImportCancellation = null;
+            IsImporting = false;
+            OnPropertyChanged(nameof(CanCancelImport));
+        }
+    }
+
+    [RelayCommand(CanExecute = nameof(CanApplyChromaPreview))]
+    private async Task ApplyChromaPreviewAsync()
+    {
+        if (ImportPreview is not { IsPublished: false } preview || _modelSourceImportService is null)
+        {
+            return;
+        }
+
+        ImportError = null;
+        using var operation = new CancellationTokenSource();
+        _modelImportCancellation = operation;
+        OnPropertyChanged(nameof(CanCancelImport));
+        IsImporting = true;
+        try
+        {
+            await _modelSourceImportService.PrepareChromaPreviewAsync(preview, ChromaTolerance, operation.Token);
+            OnPropertyChanged(nameof(ImportPreview));
+            ImportStatus = $"Prévia do chroma atualizada · tolerância {ChromaTolerance} · {preview.ChromaRemovedPixelCount:N0} pixels removidos · a folha original será preservada.";
+        }
+        catch (OperationCanceledException)
+        {
+            ImportStatus = "Ajuste do chroma cancelado; a prévia anterior foi mantida.";
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidOperationException or ArgumentOutOfRangeException)
+        {
+            ImportError = "Não foi possível gerar a prévia do chroma. A folha original permanece intacta.";
         }
         finally
         {
@@ -2183,7 +2236,7 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
                 return;
             }
 
-            var extractedParts = await _modelSourceImportService.ImportSeparatedPartsAsync(preview, _assetStore, operation.Token);
+            var extractedParts = await _modelSourceImportService.ImportSeparatedPartsAsync(preview, _assetStore, operation.Token, ChromaTolerance);
             if (extractedParts.IsFailure)
             {
                 ImportError = extractedParts.Error!.Message;

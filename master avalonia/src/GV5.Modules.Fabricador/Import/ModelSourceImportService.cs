@@ -4,6 +4,7 @@ using GV5.Assets.Import;
 using GV5.Assets.Processing;
 using GV5.Core.Identity;
 using GV5.Geometry;
+using SkiaSharp;
 
 namespace GV5.Modules.Fabricador.Import;
 
@@ -129,7 +130,8 @@ public sealed class ModelSourceImportService(AssetImportStager stager, AssetImag
     public async Task<Result<IReadOnlyList<ModelSourcePartAsset>>> ImportSeparatedPartsAsync(
         ModelSourceImportPreview preview,
         IAssetStore assetStore,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        int tolerance = 74)
     {
         ArgumentNullException.ThrowIfNull(preview);
         ArgumentNullException.ThrowIfNull(assetStore);
@@ -157,7 +159,7 @@ public sealed class ModelSourceImportService(AssetImportStager stager, AssetImag
         ModelSheetSegmentationResult segmentation;
         try
         {
-            segmentation = await _segmentationProcessor.ProcessAsync(source, cancellationToken: cancellationToken).ConfigureAwait(false);
+            segmentation = await _segmentationProcessor.ProcessAsync(source, tolerance, cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
@@ -193,6 +195,40 @@ public sealed class ModelSourceImportService(AssetImportStager stager, AssetImag
 
         return Result<IReadOnlyList<ModelSourcePartAsset>>.Success(importedParts.AsReadOnly());
     }
+
+    /// <summary>Creates a disposable chroma/crop preview from the staged source while preserving its original bytes.</summary>
+    public async Task PrepareChromaPreviewAsync(
+        ModelSourceImportPreview preview,
+        int tolerance,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(preview);
+        if (preview.IsPublished)
+        {
+            throw new InvalidOperationException("A chroma preview can only be adjusted before the source is published.");
+        }
+
+        await using var sourceStream = await preview.OpenStagedReadAsync(cancellationToken).ConfigureAwait(false);
+        var decoded = await _decoder.DecodeAsync(sourceStream, cancellationToken).ConfigureAwait(false);
+        if (decoded.IsFailure)
+        {
+            throw new InvalidOperationException(decoded.Error!.Message);
+        }
+
+        using var source = decoded.Image!;
+        using var result = await _segmentationProcessor.PreviewChromaAsync(source, tolerance, cancellationToken).ConfigureAwait(false);
+        cancellationToken.ThrowIfCancellationRequested();
+        var displayImage = result.Image.CreatePreviewCopy(ModelSourceImportPreview.MaximumPreviewDimension);
+        try
+        {
+            preview.SetChromaPreview(displayImage, tolerance, result.SampledBackground, result.RemovedPixelCount);
+        }
+        catch
+        {
+            displayImage.Dispose();
+            throw;
+        }
+    }
 }
 
 public sealed record ModelSourcePartAsset(string Name, ImageCropBounds SourceBounds, AssetMetadata Asset);
@@ -204,6 +240,7 @@ public sealed class ModelSourceImportPreview : IAsyncDisposable
 
     private readonly StagedAssetImport _staged;
     private readonly DecodedAssetImage _image;
+    private DecodedAssetImage? _chromaPreviewImage;
     private readonly int _width;
     private readonly int _height;
     private int _publishState;
@@ -228,6 +265,10 @@ public sealed class ModelSourceImportPreview : IAsyncDisposable
     public int Height => _height;
     public int PreviewWidth => Image.Width;
     public int PreviewHeight => Image.Height;
+    public bool HasChromaPreview => _chromaPreviewImage is not null;
+    public int? AppliedChromaTolerance { get; private set; }
+    public SKColor? SampledChromaBackground { get; private set; }
+    public int ChromaRemovedPixelCount { get; private set; }
     public string Sha256 => _staged.Sha256;
     public DecodedAssetImage Image
     {
@@ -235,6 +276,14 @@ public sealed class ModelSourceImportPreview : IAsyncDisposable
         {
             ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
             return _image;
+        }
+    }
+    public DecodedAssetImage DisplayImage
+    {
+        get
+        {
+            ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+            return _chromaPreviewImage ?? _image;
         }
     }
     public bool IsPublished => Volatile.Read(ref _publishState) == 2;
@@ -256,6 +305,21 @@ public sealed class ModelSourceImportPreview : IAsyncDisposable
     internal Task<Stream> OpenStagedReadAsync(CancellationToken cancellationToken) =>
         _staged.OpenReadAsync(cancellationToken);
 
+    internal void SetChromaPreview(DecodedAssetImage previewImage, int tolerance, SKColor sampledBackground, int removedPixels)
+    {
+        ArgumentNullException.ThrowIfNull(previewImage);
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+        if (IsPublished)
+        {
+            throw new InvalidOperationException("A published source cannot be adjusted.");
+        }
+
+        Interlocked.Exchange(ref _chromaPreviewImage, previewImage)?.Dispose();
+        AppliedChromaTolerance = tolerance;
+        SampledChromaBackground = sampledBackground;
+        ChromaRemovedPixelCount = removedPixels;
+    }
+
     internal ValueTask DisposeStagedAsync() => _staged.DisposeAsync();
 
     public async ValueTask DisposeAsync()
@@ -263,6 +327,7 @@ public sealed class ModelSourceImportPreview : IAsyncDisposable
         if (Interlocked.Exchange(ref _disposed, 1) == 0)
         {
             _image.Dispose();
+            Interlocked.Exchange(ref _chromaPreviewImage, null)?.Dispose();
             await _staged.DisposeAsync().ConfigureAwait(false);
         }
     }

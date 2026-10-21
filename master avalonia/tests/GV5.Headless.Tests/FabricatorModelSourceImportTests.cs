@@ -168,6 +168,42 @@ public sealed class FabricatorModelSourceImportTests
     }
 
     [Fact]
+    public async Task ChromaPreviewUsesAdjustedCopyAndPublishesTheUntouchedSource()
+    {
+        var root = NewTempRoot();
+        var bytes = CreateModelSheetPng();
+        var service = CreateService(CreateStager(root));
+        var store = new RecordingAssetStore();
+
+        try
+        {
+            var prepared = await service.PrepareAsync(new MemoryStream(bytes), "image/png", TestContext.Current.CancellationToken);
+            Assert.True(prepared.IsSuccess, prepared.Error?.Message);
+            await using var preview = prepared.Value;
+            var originalPreview = preview.Image.Bitmap.GetPixel(0, 0);
+            Assert.Equal(new SKColor(0, 230, 0, 255), originalPreview);
+
+            await service.PrepareChromaPreviewAsync(preview, 110, TestContext.Current.CancellationToken);
+
+            Assert.True(preview.HasChromaPreview);
+            Assert.Equal(110, preview.AppliedChromaTolerance);
+            Assert.True(preview.ChromaRemovedPixelCount > 0);
+            Assert.NotEqual(preview.Image.Width, preview.DisplayImage.Width);
+            Assert.Equal(originalPreview, preview.Image.Bitmap.GetPixel(0, 0));
+            Assert.Single(Directory.GetFiles(root));
+
+            var published = await service.PublishAsync(preview, store, TestContext.Current.CancellationToken);
+            Assert.True(published.IsSuccess, published.Error?.Message);
+            Assert.Equal(Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant(), published.Value.Sha256);
+            Assert.Equal(bytes.LongLength, published.Value.ByteLength);
+        }
+        finally
+        {
+            DeleteTempRoot(root);
+        }
+    }
+
+    [Fact]
     public async Task ConfirmedSourceIsSplitIntoSortedLegacyCompatiblePngAssets()
     {
         var root = NewTempRoot();
