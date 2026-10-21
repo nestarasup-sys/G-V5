@@ -233,6 +233,57 @@ public sealed class HeadlessShellTests
             new EditorOverlayState(true, 0, null, [], CreateOverlayStyle()));
     }
 
+    [AvaloniaFact]
+    public async Task LatestPreviewRenderer_Cancels_Older_Request_And_Drops_Late_Frame()
+    {
+        using var provider = new TestRenderAssetProvider(CreateFourColorPng());
+        var delayedRenderer = new DelayedPreviewRenderer(new SkiaRenderer(provider));
+        var oldScene = new RenderScene(SceneId.New(), 4, 4, []);
+        delayedRenderer.Hold(oldScene);
+        using var coordinator = new LatestPreviewRenderer(delayedRenderer);
+        var publishedVersions = new List<long>();
+
+        var oldRequest = coordinator.RequestAsync(oldScene, (version, _) => publishedVersions.Add(version));
+        await delayedRenderer.WaitUntilHeldAsync();
+
+        var currentScene = new RenderScene(SceneId.New(), 4, 4, []);
+        var currentRequest = coordinator.RequestAsync(currentScene, (version, _) => publishedVersions.Add(version));
+        var currentResult = await currentRequest.WaitAsync(TimeSpan.FromSeconds(10));
+        delayedRenderer.ReleaseHeldFrame();
+        var oldResult = await oldRequest.WaitAsync(TimeSpan.FromSeconds(10));
+
+        Assert.Equal(PreviewRenderStatus.Published, currentResult.Status);
+        Assert.Equal(PreviewRenderStatus.Superseded, oldResult.Status);
+        Assert.True(delayedRenderer.HeldRequestObservedCancellation);
+        Assert.Equal([currentResult.Version], publishedVersions);
+        Assert.IsType<ObjectDisposedException>(Record.Exception(() => delayedRenderer.HeldFrame!.Bitmap));
+        Assert.Equal(0, provider.Cache.Metrics.ActiveLeaseCount);
+    }
+
+    [AvaloniaFact]
+    public async Task LatestPreviewRenderer_Drops_Explicitly_Canceled_Request()
+    {
+        using var provider = new TestRenderAssetProvider(CreateFourColorPng());
+        var delayedRenderer = new DelayedPreviewRenderer(new SkiaRenderer(provider));
+        var scene = new RenderScene(SceneId.New(), 4, 4, []);
+        delayedRenderer.Hold(scene);
+        using var coordinator = new LatestPreviewRenderer(delayedRenderer);
+        using var cancellation = new CancellationTokenSource();
+        var published = false;
+        var request = coordinator.RequestAsync(scene, (_, _) => published = true, cancellation.Token);
+        await delayedRenderer.WaitUntilHeldAsync();
+
+        cancellation.Cancel();
+        delayedRenderer.ReleaseHeldFrame();
+        var result = await request.WaitAsync(TimeSpan.FromSeconds(10));
+
+        Assert.Equal(PreviewRenderStatus.Canceled, result.Status);
+        Assert.False(published);
+        Assert.True(delayedRenderer.HeldRequestObservedCancellation);
+        Assert.IsType<ObjectDisposedException>(Record.Exception(() => delayedRenderer.HeldFrame!.Bitmap));
+        Assert.Equal(0, provider.Cache.Metrics.ActiveLeaseCount);
+    }
+
     private static EditorOverlayStyle CreateOverlayStyle() => new(
         gridColor: Color.FromRgb(0, 255, 255),
         selectionColor: Color.FromRgb(255, 0, 255),
@@ -399,6 +450,40 @@ public sealed class HeadlessShellTests
         {
             await using var stream = new MemoryStream(_png, writable: false);
             return await new AssetImageDecoder().DecodeAsync(stream, cancellationToken);
+        }
+    }
+
+    private sealed class DelayedPreviewRenderer(SkiaRenderer renderer) : IRenderSceneRenderer
+    {
+        private RenderScene? _heldScene;
+        private readonly TaskCompletionSource _heldFrameReady = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource _releaseHeldFrame = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private int _heldRequestObservedCancellation;
+
+        public RenderedFrame? HeldFrame { get; private set; }
+        public bool HeldRequestObservedCancellation => Volatile.Read(ref _heldRequestObservedCancellation) != 0;
+
+        public void Hold(RenderScene scene) => _heldScene = scene;
+
+        public Task WaitUntilHeldAsync() => _heldFrameReady.Task.WaitAsync(TimeSpan.FromSeconds(10));
+
+        public void ReleaseHeldFrame() => _releaseHeldFrame.TrySetResult();
+
+        public async Task<RenderedFrame> RenderAsync(RenderScene scene, CancellationToken cancellationToken = default)
+        {
+            var frame = await renderer.RenderAsync(scene, cancellationToken);
+            if (ReferenceEquals(scene, _heldScene))
+            {
+                HeldFrame = frame;
+                _heldFrameReady.TrySetResult();
+                await _releaseHeldFrame.Task; // Intentionally completes despite cancellation to exercise version rejection.
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    Volatile.Write(ref _heldRequestObservedCancellation, 1);
+                }
+            }
+
+            return frame;
         }
     }
 }

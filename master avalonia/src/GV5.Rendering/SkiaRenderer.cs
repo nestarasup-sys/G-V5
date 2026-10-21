@@ -24,7 +24,7 @@ public sealed record SkiaRendererLimits
 }
 
 /// <summary>Rasterizes immutable render snapshots using Skia's CPU raster surface.</summary>
-public sealed class SkiaRenderer(IRenderAssetProvider assets, SkiaRendererLimits? limits = null)
+public sealed class SkiaRenderer(IRenderAssetProvider assets, SkiaRendererLimits? limits = null) : IRenderSceneRenderer
 {
     private readonly IRenderAssetProvider _assets = assets ?? throw new ArgumentNullException(nameof(assets));
     private readonly SkiaRendererLimits _limits = limits ?? new SkiaRendererLimits();
