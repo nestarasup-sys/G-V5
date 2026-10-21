@@ -244,7 +244,7 @@ Ambiente/SDK/CI: `TestarLocal.bat gate` passou em 2026-10-21; ver `docs/gates/GA
 
 **Gate:** Rig/pose/animação do Fabricador persistem, não alteram fontes, têm previsibilidade visual.
 
-- [ ] **F07.01** — Inventariar rig legado, joints, anchors, sourceTransforms e as regras de fixed joint.
+- [x] **F07.01** — Inventariar rig legado, joints, anchors, sourceTransforms e as regras de fixed joint. Evidência: docs/legacy-contracts/F07_RIG_DETALHADO.md; ver EXECUTION_STATUS.
 - [ ] **F07.02** — Implementar editor de criar/editar/remover joints, rejeitando ciclos e refs inválidas.
 - [ ] **F07.03** — Implementar mover hierarquia a partir do pivô e recalcular descendentes corretamente.
 - [ ] **F07.04** — Exibir guias/handles de junta e snap sem acoplar geometria ao controle.

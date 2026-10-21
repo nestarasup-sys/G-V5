@@ -16,11 +16,11 @@
 | Último commit de implementação validado | `8782510` (teste de cor/alfa em borda chroma-feathered) |
 | Checkout local revalidado | `eaac213`; `TestarLocal.bat rapido` passou em 2026-10-21 (198 testes; ver revalidação em `docs/gates/GATE-F06.md`) |
 | Fase ativa | **F07 — Fabricador II: rig, poses e animador (liberada para iniciar)** |
-| Última tarefa VALIDADA | **F06.14** — registrar GATE-F06 e matriz de paridade de modelos |
-| Próxima tarefa PENDENTE | **F07.01** — inventário detalhado do rig legado |
+| Última tarefa VALIDADA | **F07.01** — inventário técnico de joints/anchors/sourceTransforms/fixed via código do legado |
+| Próxima tarefa PENDENTE | **F07.02** — editor nativo de criar/editar/remover joints, validação de ciclos e refs |
 | Requisito transversal atualizado | ADR-0006: aparência reconhecível, não pixel-perfect; todos os botões e funcionalidades; revisão final visual pendente |
 | Gate atual | **F00/G0/F02/F03/F04/F05/G1: PASSARAM conforme registros; F06: LIBERADA TECNICAMENTE PARA F07 por ADR-0006; aceite Windows/visual pendente** |
-| Progresso validado neste controle | **88 / 247 tarefas (35,6%)** |
+| Progresso validado neste controle | **89 / 247 tarefas (36,0%)** — F07.01 é inventário estático, sem build/testes novos |
 | Tarefas em execução | Nenhuma |
 | Pendências conhecidas | Folha representativa Windows, capturas Electron/Avalonia e comparador independente do worker F06 aguardam revisão de produto G2/F12/final, sem bloquear F07. Limite de download F01 permanece documentado |
 | Aceite Windows/GPU | **F06 Windows/visual não executado; GPU continua fora do escopo comprovado** |
@@ -55,7 +55,7 @@ Se o Codex encontrar algo já implementado, **validar e registrar evidências**,
 | F04 | Geometry Engine canônica | 11 | 11 | VALIDADA | GATE-F04 PASSOU; G1 global em execução |
 | F05 | RenderScene e SkiaRenderer independentes | 11 | 11 | VALIDADA | GATE-F05 e G1 CPU/headless PASSOU |
 | F06 | Fabricador I — modelos e peças | 14 | 14 | LIBERADA TECNICAMENTE | 198 testes previamente registrados; aceites Windows/visual pendentes para G2/F12/entrega |
-| F07 | Fabricador II — rig, poses e animador | 12 | 0 | PENDENTE | — |
+| F07 | Fabricador II — rig, poses e animador | 12 | 1 | EM_EXECUCAO | F07.01 inventariada por leitura de código; F07.02 próxima |
 | F08 | Fabricador III — roupas, binding e revisões | 12 | 0 | PENDENTE | — |
 | F09 | Fabricador IV — cabelos, face, expressões e completação | 15 | 0 | PENDENTE | — |
 | F10 | Customizador completo e CharacterResolver | 19 | 0 | PENDENTE | — |
@@ -165,6 +165,7 @@ Adicionar uma linha ao concluir ou bloquear cada tarefa. A linha inicial abaixo 
 | **F06.12** | **VALIDADA** | `c988b54` | Publicação append-only com revisão/hash canônicos, idempotência, conflito de revisão concorrente e pins de assets; duas revisões preservam o snapshot anterior e triggers impedem UPDATE/DELETE. Testes SQLite cobrem persistência/reabertura e Headless habilita o comando após edição. `TestarLocal.bat rapido`: Data 51/51, Headless 31/31 naquele checkpoint; 0 falhas. | `src/GV5.Core/Models/PublishedModelRevision.cs`; `src/GV5.Data/Repositories/SqliteModelRevisionRepository.cs`; `tests/GV5.Data.Tests/SqliteModelRevisionRepositoryTests.cs`; `tests/GV5.Headless.Tests/FabricadorImportPreviewUiTests.cs` | Validação de persistência imutável; captura visual do botão e do estado publicado pendente. |
 | **F06.13** | **VALIDADA** | `c3dbb33`, `51470ca`, `8782510` | Asset referenciado ausente não cria revisão nem pins parciais; import inválido mantém erro e remove staging; limites, cancelamento, reopen e PNG do canvas na origem são cobertos. Testes comparam cada pixel das peças sólidas/margens e conferem cor/alfa de uma borda chroma-feathered. `TestarLocal.bat gate`: Data 51/51, Rendering 22/22, Headless 33/33; 0 falhas. | `tests/GV5.Data.Tests/SqliteModelRevisionRepositoryTests.cs`; `tests/GV5.Headless.Tests/FabricadorModelSourceImportTests.cs`; `tests/GV5.Rendering.Tests/SkiaRendererTests.cs` | A comparação contra PNG produzido pelo worker real e a paridade visual da página seguem pendentes. |
 | **F06.14** | **VALIDADA** | `6cdcec2` | Registrados critérios, evidências e condição de desbloqueio do gate; matriz visual e inventário do Fabricador atualizados. `git diff --check` passou; `TestarLocal.bat gate`: Release incremental com 0 avisos/erros; Core 18, Architecture 8, Geometry 35, Assets 31, Data 51, Rendering 22, Headless 33; 198 testes, 0 falhas. Compilação anterior com recompilação de ThumbnailService registrou dois avisos CS0618 preexistentes. | `docs/gates/GATE-F06.md`; `docs/ui-fidelity/MATRIZ_PARIDADE_VISUAL.md`; `docs/ui-fidelity/INVENTARIO_VISUAL_COMPLETO.md` | Tarefa documental concluída. O gate da fase não passou; F07 permanece bloqueada até evidência Windows/visual. |
+| **F07.01** | **VALIDADA (inventário documental)** | `a confirmar no HEAD deste commit` | Inspeção estática direta do rig.ts, FabricatorPage, PoseWorkspace, AnimatorWorkspace, shared/fabricator.ts e RigSkeleton.cs. Documentados joints, pivôs, sourceTransform, fixed, heurística, semântica distinta de rotação e casos negativos. | `docs/legacy-contracts/F07_RIG_DETALHADO.md`; código legado somente leitura | Nenhum build/teste/Windows novo executado nesta tarefa de inventário. Próximo ID F07.02 requer implementação C# e testes reais. |
 
 **Estados aceitos:** `PENDENTE`, `EM_EXECUCAO`, `BLOQUEADA`, `VALIDADA`.
 
@@ -306,7 +307,7 @@ Após concluir um lote ou fase, adicionar uma linha. Não inflar contador só po
 3. Inspecionar evidências reais da última tarefa validada; caso não existam, corrigir seu estado.
 4. **F07 liberada tecnicamente conforme ADR-0006.** A F06 tem 14 tarefas registradas e 198 testes anteriores; revisão de folha real/Windows/worker/capturas segue pendente até G2/F12/aceite final. Não afirmar que foi realizada.
 5. Continuar automaticamente pelas tarefas seguintes **uma de cada vez**, em lotes flexíveis de aproximadamente 3–8 tarefas relacionadas, enquanto todos os gates pertinentes passam.
-6. Iniciar **F07.01**, depois as seguintes em ordem conforme gates técnicos. Não implementar Video Studio antes da fase apropriada.
+6. Executar **F07.02** (CRUD nativo de juntas com rejeição de ciclos/refs inválidas), depois seguintes em ordem conforme gates técnicos. Não implementar Video Studio antes da fase apropriada.
 7. Ao encerrar, informar: **branch, HEAD, último ID VALIDADO, próximo ID PENDENTE, commits, comandos verdes, evidências, bloqueios e condição de desbloqueio**.
 
 ### Prompt de retomada
