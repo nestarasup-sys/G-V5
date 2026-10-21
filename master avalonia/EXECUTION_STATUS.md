@@ -13,13 +13,13 @@
 | Branch obrigatória | `Master-AValonia` |
 | Pasta exclusiva do novo aplicativo | `master avalonia/` |
 | Commit-base inspecionado antes deste arquivo | `53b7f7a97321e85063a8dd4f9635e48d36548323` |
-| Último commit de implementação validado | `2766f24` (F01.08; checkpoint deste registro será criado em seguida) |
+| Último commit de implementação validado | `2766f24` (F01.08); F01.09 em andamento em `324d1fa` |
 | Fase ativa | **F01 — Solution .NET, contratos, módulo e CI** |
 | Última tarefa VALIDADA | **F01.08** — registro estático e navegação dos módulos |
-| Próxima tarefa PENDENTE | **F01.09** |
+| Próxima tarefa PENDENTE | **F01.09 (EM_EXECUCAO)** |
 | Gate atual | **GATE F00: PASSOU** |
 | Progresso validado neste controle | **21 / 247 tarefas (8,5%)** |
-| Tarefas em execução | **Nenhuma registrada** |
+| Tarefas em execução | **F01.09** — tokens compilam; validação visual aguarda captura local |
 | Bloqueios conhecidos | **Nenhum confirmado** |
 | Aceite Windows/GPU | **Não executado / não registrado** |
 
@@ -88,6 +88,7 @@ Adicionar uma linha ao concluir ou bloquear cada tarefa. A linha inicial abaixo 
 | **F01.06** | **VALIDADA** | `8f608b3` | Harness C# temporário executou **14 assertions** cobrindo sucesso/falha de `Result<T>`, acesso inválido a valor, erros nulos, códigos inválidos, mensagens vazias, fluxo de `Conflict` através de command handler, query handler e cancelamento propagado como `OperationCanceledException`. Passou sem avisos/erros. `dotnet build GV5.sln -c Release --no-restore --verbosity minimal` passou com 0 warnings/0 errors após corrigir colisão entre namespace `GV5.Application` e tipo Avalonia `Application`. `git diff --check` passou. | `src/GV5.Application/Contracts/{ApplicationError,Result,RequestHandlers}.cs`; `src/GV5.App/App.axaml.cs`; harness em `.tools/validation/F01.06 result contracts` (ignorado pelo Git) | Erros esperados retornam `ApplicationErrorCode`; cancelamento usa `CancellationToken`/Task padrão e não é mascarado como falha de negócio. Sem mediator ou DI; estes ficam fora do escopo de F01.06. A suíte xUnit segue pendente em F01.10 |
 | **F01.07** | **VALIDADA** | `1c6ac0e` | Restore de `GV5.sln` passou; `dotnet list package` confirmou `Microsoft.Extensions.DependencyInjection` e Abstractions em `10.0.13`. Build Release da solution passou com 0 warnings/0 errors. Busca estática em `src/GV5.App/Views` e `ViewModels` não encontrou criação direta de repositórios, `IServiceProvider` ou service locator. `git diff --check` passou. A tentativa inicial de executar `GV5.App.exe` diretamente mostrou o aviso para instalar o runtime .NET 10 e foi invalidada como prova de inicialização; o app foi reaberto pelo SDK portátil e respondeu com título `G-V5 Avalonia`. | `src/GV5.App/Composition/AppComposition.cs`; `src/GV5.App/App.axaml.cs`; `src/GV5.App/GV5.App.csproj`; `Directory.Packages.props`; `docs/decisions/ADR-0002-desktop-service-composition.md` | Provider valida registros/escopos no startup e é descartado no encerramento do Avalonia. Ainda não há repositórios reais para registrar. Dependência e versão justificadas no ADR. Executar o `.exe` sozinho requer runtime .NET 10 instalado; publicação autocontida fica para a fase de distribuição |
 | **F01.08** | **VALIDADA** | `2766f24` | Restore e build Release da solution passaram; build com 0 warnings/0 errors. Harness temporário executou **16 assertions** cobrindo registro das duas áreas, rota padrão, validação de duplicadas/vazias/desconhecidas e troca dos ViewModels. Executado pelo SDK portátil (`.tools/dotnet/dotnet.exe run --project src/GV5.App/GV5.App.csproj -c Release --no-build`): Windows abriu com título `G-V5 Avalonia`; a inspeção UI confirmou a View do Fabricador, clique em Customizador e renderização da View/ViewModel do Customizador. `git diff --check` passou. | `src/GV5.Application/Contracts/ModuleRoute.cs`; `src/GV5.App/Navigation/`; `src/GV5.App/Composition/AppComposition.cs`; Views/ViewModels e rotas de `src/GV5.Modules.Fabricador` e `src/GV5.Modules.Customizador`; harness `.tools/validation/F01.08 module routing` (ignorado pelo Git) | Registro é estático no composition root; Views recebem estado por DataTemplates tipados; não há plugin dinâmico. UI verificada no Windows via Computer Use. Módulos ainda não executam operações de domínio; persistência/edição pertence às fases posteriores |
+| **F01.09** | **EM_EXECUCAO** | `324d1fa` (implementação inicial) | Tokens de cor, tipografia, espaçamento e raio foram adicionados em `GV5Tokens.axaml` e usados no shell e nas duas Views; estilos de navegação centralizados; convenções MVVM documentadas. Build Release passou com 0 warnings/0 errors; parser XML validou os cinco XAML relevantes e um script verificou que as 20 chaves de recursos referenciadas existem; `git diff --check` passou. O app foi iniciado pelo SDK portátil e ficou `Responding=True`, título `G-V5 Avalonia`. A verificação de captura visual não terminou: Computer Use reportou que o usuário a interrompeu com Escape. | `src/GV5.App/Theme/{GV5Tokens,GV5Styles}.axaml`; `src/GV5.App/App.axaml`; Views do shell/Fabricador/Customizador; `docs/architecture/MVVM_CONVENTIONS.md` | **Pendente:** obter captura visual da aplicação em execução, confirmar que os recursos dinâmicos e o estilo dos botões aparecem corretamente e então registrar validação/commit de checkpoint. GPU não testada. Não iniciar F01.10 antes de validar esta tarefa |
 
 **Estados aceitos:** `PENDENTE`, `EM_EXECUCAO`, `BLOQUEADA`, `VALIDADA`.
 
@@ -103,15 +104,15 @@ Adicionar uma linha ao concluir ou bloquear cada tarefa. A linha inicial abaixo 
 | --- | --- | --- |
 | `git branch --show-current` | VALIDADO | `Master-AValonia` |
 | `git status --short` | VALIDADO | árvore limpa depois do commit de status desta tarefa |
-| `git rev-parse HEAD` / remoto | VALIDADO | commits F01.05 `9b8d250`, F01.06 `8f608b3`, F01.07 `1c6ac0e`, F01.08 `2766f24`; `git fetch origin` confirmou `origin/Master-AValonia` em `09a93fb`, sem commits novos. Branch estava 30 commits à frente após F01.08, antes deste checkpoint |
+| `git rev-parse HEAD` / remoto | VALIDADO | commits F01.05 `9b8d250`, F01.06 `8f608b3`, F01.07 `1c6ac0e`, F01.08 `2766f24`, implementação inicial F01.09 `324d1fa`; `git fetch origin` confirmou `origin/Master-AValonia` em `09a93fb`, sem commits novos. Branch estava 32 commits à frente após a implementação inicial F01.09, antes deste checkpoint |
 | SDK portátil `.tools/dotnet` | VALIDADO | SDK `10.0.402`, Windows x64, arquitetura x64 |
 | `Preparar.bat` | VALIDADO | exit 0, SDK `10.0.402`, ambiente local pronto |
 | `Desenvolver.bat` | NÃO VERIFICADO NESTE CONTROLE | shell abriu ou erro reproduzível |
 | `dotnet restore GV5.sln --verbosity minimal` | PASSOU | exit 0; todos os 12 projetos restaurados após adicionar Avalonia aos módulos |
-| `dotnet build GV5.sln -c Release --no-restore --verbosity minimal` | PASSOU | exit 0; 12 assemblies; 0 warnings, 0 errors após F01.08 |
+| `dotnet build GV5.sln -c Release --no-restore --verbosity minimal` | PASSOU | exit 0; 12 assemblies; 0 warnings, 0 errors após a implementação inicial F01.09 |
 | `dotnet test GV5.sln -c Release` | NÃO EXECUTADO | ainda não há projeto de testes na solution; a criação do projeto xUnit é F01.10. F01.05 foi testada por harness temporário de 120 assertions |
 | CI Windows | NÃO VERIFICADO | run URL, commit, resultado |
-| Teste de UI / GPU Windows | UI Windows PASSOU em F01.08; GPU NÃO TESTADA | via Computer Use: Fabricador exibido, navegação para Customizador e View/ViewModel correspondentes renderizados; nenhum teste específico de GPU |
+| Teste de UI / GPU Windows | F01.08 UI PASSOU; F01.09 captura interrompida; GPU NÃO TESTADA | Computer Use confirmou as Views de Fabricador/Customizador em F01.08; durante F01.09 o usuário interrompeu Computer Use com Escape antes da captura da tela com tokens |
 
 Os valores acima descrevem **este controle**, não negam testes que o Codex possa ter feito antes. Na F00, verificar evidências existentes e atualizá-los.
 
@@ -145,6 +146,7 @@ Ainda não há entradas registradas neste controle. Toda mudança material do ro
 | 2026-10-20 | `8f608b3` | F01.06 | GATE F00 passou | Resultados/erros tipados e handlers de command/query com cancelamento; 14 assertions e build Release passaram |
 | 2026-10-20 | `1c6ac0e` | F01.07 | GATE F00 passou | Composition root com provider validado, DI centralizado, inicialização Windows responsiva e auditoria de Views/ViewModels |
 | 2026-10-20 | `2766f24` | F01.08 | GATE F00 passou | Rotas estáticas, Views/ViewModels dos dois módulos, 16 assertions e navegação Windows confirmada |
+| 2026-10-20 | `324d1fa` | F01.08 validada; F01.09 em execução | GATE F00 passou | Tokens visuais iniciais e convenções MVVM compilam; falta captura visual após interrupção do Computer Use pelo usuário |
 
 Após concluir um lote ou fase, adicionar uma linha. Não inflar contador só porque o commit contém múltiplos arquivos; contar apenas tarefas comprovadas.
 
@@ -153,7 +155,7 @@ Após concluir um lote ou fase, adicionar uma linha. Não inflar contador só po
 1. Atualizar branch/remoto com segurança, sem force push e sem sobrescrever trabalho local de outra sessão.
 2. Ler `AGENTS.md`, `PLANO_DO_NOVO_APP.md`, `PLANO_MESTRE_EXECUCAO_CODEX.md` e este arquivo.
 3. Inspecionar evidências reais da última tarefa validada; caso não existam, corrigir seu estado.
-4. **Começar pela primeira tarefa PENDENTE indicada acima (F01.09)**; não repetir tarefas validadas sem evidência em contrário.
+4. **Retomar F01.09**: verificar visualmente os tokens no app em execução e só então marcar VALIDADA/seguir para F01.10; não repetir tarefas validadas sem evidência em contrário.
 5. Continuar automaticamente pelas tarefas seguintes **uma de cada vez**, em lotes flexíveis de aproximadamente 3–8 tarefas relacionadas, enquanto todos os gates pertinentes passam.
 6. Atualizar o registro e commitar entregas reais na branch `Master-AValonia`; não desenvolver Video Studio antecipadamente.
 7. Ao encerrar, informar: **branch, HEAD, último ID VALIDADO, próximo ID PENDENTE, commits, comandos verdes, evidências, bloqueios e condição de desbloqueio**.
