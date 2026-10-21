@@ -10,7 +10,7 @@ Reconstruir o G-V5/Gacha Nymi como uma aplicação desktop **C# + .NET 10 + Aval
 ### Identidade visual obrigatória
 
 - A identidade visual reconhecível do Gacha 5 é obrigatória, mas **não exige igualdade pixel a pixel**. ADR-0006 permite pequenos ajustes de posição, dimensões e estilo; a prioridade é preservar e melhorar **todos os botões e funcionalidades reais**, sem controle decorativo.
-- Consultar `docs/ui-fidelity/CONTRATO_VISUAL_GACHA5.md` antes de alterar UI e manter inventários, tokens, matriz visual e critérios de aceite em `docs/ui-fidelity/` atualizados.
+- Consultar `docs/ui-fidelity/CONTRATO_VISUAL_GACHA5.md` e o inventário `docs/legacy-contracts/PENDENCIAS_FUNCIONAIS_FABRICADOR.md`. Registrar separadamente **função ausente** (obrigação técnica) e **detalhe estético diferente** (refinamento opcional) antes de marcar área concluída.
 - Usar somente o Gacha 5 original deste repositório como referência. **Editor V4 é outro projeto e não é referência visual**.
 - Distinguir evidência de código, captura Electron real e validação visual no Avalonia. Não afirmar paridade por semelhança de nomes, build verde ou screenshot fictícia.
 - Modernizar com Avalonia, virtualização, acessibilidade e melhor performance. Pequenas diferenças visuais são aceitas e revisáveis; apenas redesign radical, perda de função ou descaracterização exigem aprovação.

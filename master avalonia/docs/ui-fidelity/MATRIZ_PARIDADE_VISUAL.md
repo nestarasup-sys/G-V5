@@ -2,7 +2,7 @@
 
 Estados: `INVENTARIADO`, `REFERENCIA_PENDENTE`, `IMPLEMENTACAO_PENDENTE`, `EM_IMPLEMENTACAO`, `VALIDACAO_VISUAL_PENDENTE`, `VALIDADO`, `DIVERGENTE`.
 
-Os itens abaixo têm fontes/estrutura identificadas; a referência visual real ainda não foi capturada. Portanto todos ficam `REFERENCIA_PENDENTE`. A coluna “código” é somente rastreio estático, não captura visual. Atualizar uma linha por componente/subárea conforme o inventário seja aprofundado.
+Os itens abaixo têm fontes/estrutura identificadas por inspeção estática, mas a captura Electron real ainda não foi feita. Os estados por linha refletem implementações e divergências já registradas. Conforme **ADR-0006**, paridade visual pixel a pixel não é pré-condição de avanço técnico, mas **falta de botões/funções é pendência funcional obrigatória**; ver docs/legacy-contracts/PENDENCIAS_FUNCIONAIS_FABRICADOR.md. Atualizar por componente/subárea e nunca afirmar validação visual Windows não realizada.
 
 | Módulo / componente | Fonte do legado | Código inventariado | Captura Electron | Avalonia / evidência | Estado |
 |---|---|---|---|---|---|
@@ -46,5 +46,5 @@ Os itens abaixo têm fontes/estrutura identificadas; a referência visual real a
 - `REFERENCIA_PENDENTE` → `INVENTARIADO`: localizar componentes, recursos, estados e interações no código, registrando paths e pontos desconhecidos.
 - `INVENTARIADO` → `IMPLEMENTACAO_PENDENTE` → `EM_IMPLEMENTACAO`: manter o vínculo com tarefa/gate existente; não criar progresso adicional na contagem das 247 tarefas.
 - `VALIDACAO_VISUAL_PENDENTE`: implementação existe, mas falta captura/golden lado a lado em condições equivalentes.
-- `VALIDADO`: captura real Electron e Avalonia comparadas, estados cobertos, divergências resolvidas e evidência aprovada conforme contrato.
-- `DIVERGENTE`: diferença encontrada; registrar pixels/elementos, causa, impacto e se foi autorizada. Não ocultar divergências sob um estado geral de “pronto”.
+- `VALIDADO`: identidade familiar e controles/estados comparados por evidência suficiente para a revisão visual, com pequenas diferenças permitidas; se não houve screenshot Windows real, registrar esta limitação, não declará-la testada.
+- `DIVERGENTE`: diferença relevante encontrada; separar desvio estético pequeno (não bloqueante) de **controle/função ausente** (bloqueante no aceite G2). Registrar causa, impacto e estado, sem mascarar lacunas funcionais.

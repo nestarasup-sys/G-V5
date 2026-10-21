@@ -4,7 +4,7 @@
 **Branch:** `Master-AValonia`
 **Tarefas:** F06.01–F06.14
 **Resultado técnico (ADR-0006): LIBERADO PARA INICIAR F07.** Os 198 testes locais já registrados cobrem importação, edição, undo, persistência, reabertura e publicação pelo pipeline real com fixture sintética. **Aceite final de produto: PENDENTE** (folha representativa, worker Electron independente, screenshots e Windows).
-**Código e persistência:** fluxo integrado comprovado com fixture sintética e SQLite/AssetStore reais.
+**Código e persistência:** fluxo integrado comprovado com fixture sintética e SQLite/AssetStore reais. **Este gate não significa Fabricador completo**: faltam ferramentas/controles catalogados em `docs/legacy-contracts/PENDENCIAS_FUNCIONAIS_FABRICADOR.md`, obrigatórios para G2/F09.15.
 
 ## Critério do gate
 

@@ -27,5 +27,5 @@ Este documento complementa os gates funcionais (ADR-0006). Priorizar funções r
 - Diferença estética discreta: aceitável agora, ajustável posteriormente por preferência do usuário.
 - Limite comprovado da plataforma: documentar impacto e alternativa Avalonia que preserve o resultado; não aprovar mudança de experiência automaticamente.
 - Windows/GPU/diálogo real: manter `VALIDACAO_VISUAL_PENDENTE` até executar no alvo; headless não substitui, mas a pendência visual não barra tarefa técnica independente.
-- Divergência visual intencional: obter aprovação explícita do usuário, registrar o que mudou e manter rastreio da exceção.
+- Pequena divergência visual intencional: permitida pela ADR-0006; registrar se relevante. Mudança radical de identidade/navegação ou remoção de funções exige autorização do usuário.
 - Estado/viewport não capturado: manter pendente, não generalizar aceite de outra tela.

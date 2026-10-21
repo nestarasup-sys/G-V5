@@ -40,7 +40,7 @@
 ### Artefatos de acompanhamento (criar quando a tarefa pedir)
 
 - `EXECUTION_STATUS.md`: única fonte de verdade de progresso, IDs validados, commits, ambiente, bloqueios, próxima tarefa.
-- `docs/legacy-contracts/MATRIZ_PARIDADE.md`: funcionalidades do Electron classificadas como pendentes / em desenvolvimento / validadas / divergentes, com link de evidência.
+- `docs/legacy-contracts/MATRIZ_PARIDADE.md`: funcionalidades do Electron classificadas como pendentes / em desenvolvimento / validadas / divergentes, com link de evidência. `docs/legacy-contracts/PENDENCIAS_FUNCIONAIS_FABRICADOR.md` rastreia recursos que o shell de F06 ainda não contém e devem existir antes de fechar G2.
 - `docs/decisions/ADR-XXXX.md`: decisões de unidade, convenção, banco, renderer, backend, formato.
 - `docs/gates/GATE-FXX.md`: testes, screenshots/goldens quando aplicável, SHA, métricas, cenários negativos e aceite humano/local.
 - `tests/Fixtures` e projetos de testes: **dados sintéticos**, sem personagens/arquivos pessoais.
@@ -284,7 +284,7 @@ Ambiente/SDK/CI: `TestarLocal.bat gate` passou em 2026-10-21; ver `docs/gates/GA
 
 ## F09 — Fabricador IV — cabelos, face, expressões e completação
 
-**Gate:** G2. Todos os fluxos reais do Fabricador revisados, persistentes e sem tela fake.
+**Gate:** G2. Todos os fluxos reais do Fabricador revisados, persistentes e sem tela fake. **Obrigatório conferir e solucionar pendências funcionais de Modelos/Fabricador em docs/legacy-contracts/PENDENCIAS_FUNCIONAIS_FABRICADOR.md**; pequenas diferenças estéticas são permitidas conforme ADR-0006, funções/botões ausentes não.
 
 - [ ] **F09.01** — Inventariar cabelos: front/back/rear/ponytail/ahoge, paletas, masks e alterações.
 - [ ] **F09.02** — Implementar import/crop/chroma de cabelo com original preservado e worker.

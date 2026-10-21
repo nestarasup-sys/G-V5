@@ -22,7 +22,7 @@
 | Gate atual | **F00/G0/F02/F03/F04/F05/G1: PASSARAM conforme registros; F06: LIBERADA TECNICAMENTE PARA F07 por ADR-0006; aceite Windows/visual pendente** |
 | Progresso validado neste controle | **89 / 247 tarefas (36,0%)** — F07.01 é inventário estático, sem build/testes novos |
 | Tarefas em execução | **F07.02** — base imutável de edição de juntas adicionada; integração com a UI, persistência e validação local ainda não concluídas |
-| Pendências conhecidas | Folha representativa Windows, capturas Electron/Avalonia e comparador independente do worker F06 aguardam revisão de produto G2/F12/final, sem bloquear F07. Limite de download F01 permanece documentado |
+| Pendências conhecidas | F06: folha real/capturas/worker não testados; ferramentas de Modelos ausentes catalogadas em `docs/legacy-contracts/PENDENCIAS_FUNCIONAIS_FABRICADOR.md` e obrigatórias antes do G2. Isso não impede a programação F07, mas impede declarar Fabricador completo. Limite download F01 documentado |
 | Aceite Windows/GPU | **F06 Windows/visual não executado; GPU continua fora do escopo comprovado** |
 
 **Importante:** a contagem acima representa **tarefas com evidência de validação registrada neste documento**, não a porcentagem de código já implementado. O shell, a solution, os projetos-base e os scripts de preparação podem estar presentes. O Codex deve auditar o que existe antes de implementar.
