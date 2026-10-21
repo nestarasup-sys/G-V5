@@ -5,6 +5,8 @@ using GV5.Data.Migrations;
 using GV5.Data.Diagnostics;
 using GV5.Data.Repositories;
 using GV5.Data.Storage;
+using System.Security.Cryptography;
+using System.Text.Json.Nodes;
 using Xunit;
 
 namespace GV5.Data.Tests;
@@ -119,6 +121,41 @@ public sealed class DatabaseBackupServiceTests
         {
             DeleteTempRoot(root);
             DeleteTempRoot(restoreRoot);
+        }
+    }
+
+    [Fact]
+    public async Task VerificationRejectsCorruptSqliteEvenWhenManifestHashMatchesFixture()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var root = NewTempRoot("corrupt-source");
+        var paths = new AppDataPaths(root);
+        using var database = new SqliteDatabase(paths);
+
+        try
+        {
+            var initializer = CreateInitializer(database);
+            await initializer.InitializeAsync(cancellationToken);
+            var service = CreateService(paths, database, initializer);
+            var backup = await service.CreateAsync(cancellationToken);
+
+            // A matching manifest hash ensures verification reaches SQLite's own corruption check.
+            var corruptBytes = Enumerable.Repeat((byte)0xCC, 4096).ToArray();
+            await File.WriteAllBytesAsync(backup.DatabasePath, corruptBytes, cancellationToken);
+            var manifest = JsonNode.Parse(await File.ReadAllTextAsync(backup.ManifestPath, cancellationToken))!.AsObject();
+            var databaseEntry = manifest["files"]![0]!.AsObject();
+            databaseEntry["sizeBytes"] = corruptBytes.Length;
+            databaseEntry["sha256"] = Convert.ToHexString(SHA256.HashData(corruptBytes)).ToLowerInvariant();
+            await File.WriteAllTextAsync(backup.ManifestPath, manifest.ToJsonString(), cancellationToken);
+
+            var verification = await service.VerifyAsync(backup.DirectoryPath, cancellationToken);
+            Assert.False(verification.IsValid);
+            Assert.Null(verification.Artifact);
+            Assert.DoesNotContain("SHA-256", verification.Error, StringComparison.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            DeleteTempRoot(root);
         }
     }
 

@@ -147,7 +147,7 @@ Ambiente/SDK/CI: <comandos e resultados reais>
 - [x] **F02.11** — Implementar checkpoint/journal de operação incompleta com recuperação do último estado consistente.
 - [x] **F02.12** — Implementar backup consistente com WAL, manifesto/hashes e restore testado em cópia isolada.
 - [x] **F02.13** — Implementar log estruturado mínimo/correlation ID com rotação e sem dados pessoais.
-- [ ] **F02.14** — Testar falta de espaço, acesso negado, schema futuro, interrupção e integrity_check em fixtures.
+- [x] **F02.14** — Testar falta de espaço, acesso negado, schema futuro, interrupção e integrity_check em fixtures.
 - [ ] **F02.15** — Fechar GATE-F02 com comandos, schema e evidências de reopen/restore.
 
 **Encerramento F02:** registrar `docs/gates/GATE-F02.md` e marcar a fase validada somente se o gate acima foi comprovado. Se estiver bloqueado, documentar a evidência que falta e não iniciar F03.

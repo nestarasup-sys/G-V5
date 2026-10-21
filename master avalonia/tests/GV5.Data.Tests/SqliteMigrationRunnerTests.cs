@@ -81,6 +81,38 @@ public sealed class SqliteMigrationRunnerTests
     }
 
     [Fact]
+    public async Task MigrateAsync_RejectsGenuinelyNewerSchemaWithoutDamagingIt()
+    {
+        var root = NewTempRoot();
+        var paths = new AppDataPaths(root);
+        var cancellationToken = TestContext.Current.CancellationToken;
+
+        try
+        {
+            using (var currentDatabase = new SqliteDatabase(paths))
+            {
+                var v1 = new SqliteMigration(1, "one", "CREATE TABLE v1_data (value TEXT NOT NULL);");
+                var v2 = new SqliteMigration(2, "two", "CREATE TABLE v2_data (value TEXT NOT NULL); INSERT INTO v2_data(value) VALUES ('preserve me');");
+                await new SqliteMigrationRunner(currentDatabase, [v1, v2]).MigrateAsync(cancellationToken);
+            }
+
+            using var olderApplicationDatabase = new SqliteDatabase(paths);
+            var olderApplication = new SqliteMigrationRunner(olderApplicationDatabase,
+                [new SqliteMigration(1, "one", "CREATE TABLE v1_data (value TEXT NOT NULL);")]);
+            await Assert.ThrowsAsync<InvalidOperationException>(() => olderApplication.MigrateAsync(cancellationToken));
+
+            await using var read = await olderApplicationDatabase.OpenReadConnectionAsync(cancellationToken);
+            Assert.Equal(2L, await ScalarAsync(read, "SELECT MAX(version) FROM schema_migrations;", cancellationToken));
+            Assert.Equal("preserve me", await ScalarAsync(read, "SELECT value FROM v2_data;", cancellationToken) as string);
+            Assert.Equal("ok", await ScalarAsync(read, "PRAGMA integrity_check;", cancellationToken) as string);
+        }
+        finally
+        {
+            DeleteTempRoot(root);
+        }
+    }
+
+    [Fact]
     public async Task MigrateAsync_RollsBackSchemaAndHistoryWhenMigrationFails()
     {
         var root = NewTempRoot();
