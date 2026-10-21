@@ -9,6 +9,7 @@ using GV5.Assets.Import;
 using GV5.Core.Identity;
 using GV5.Core.Models;
 using GV5.Modules.Fabricador.Import;
+using GV5.Modules.Fabricador.Interaction;
 using GV5.Modules.Fabricador.ViewModels;
 using GV5.Modules.Fabricador.Views;
 using GV5.Rendering;
@@ -69,6 +70,10 @@ public sealed class FabricadorImportPreviewUiTests
             Assert.Equal(9, viewModel.RenderedModelFrame!.Width);
             Assert.Equal(6, viewModel.RenderedModelFrame.Height);
             Assert.Equal(new SKColor(76, 81, 160), viewModel.RenderedModelFrame.Bitmap.GetPixel(4, 3));
+            viewModel.SetToolCommand.Execute(FabricatorTool.Pan);
+            Assert.True(viewModel.IsPanTool);
+            viewModel.SetToolCommand.Execute(FabricatorTool.Select);
+            Assert.True(viewModel.IsSelectTool);
             var canvas = Assert.Single(window.GetVisualDescendants().OfType<FabricatorCanvas>());
             Assert.IsType<WriteableBitmap>(canvas.Frame);
             var persisted = await contentRepository.GetAsync(contentRepository.LastSaved!.ModelId);

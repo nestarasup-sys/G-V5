@@ -5,6 +5,8 @@ using Avalonia.Media.Imaging;
 using Avalonia.Platform;
 using Avalonia.Threading;
 using GV5.Modules.Fabricador.ViewModels;
+using GV5.Modules.Fabricador.Interaction;
+using GV5.Geometry;
 using System.Runtime.InteropServices;
 
 namespace GV5.Modules.Fabricador.Views;
@@ -29,6 +31,9 @@ public partial class FabricadorView : UserControl
             _viewModel.PropertyChanged += OnViewModelPropertyChanged;
         }
 
+        ModelCanvas.SceneClicked -= OnCanvasSceneClicked;
+        ModelCanvas.SceneClicked += OnCanvasSceneClicked;
+        UpdateCanvasInteractionState();
         UpdatePreviewImage();
         UpdateRenderedModel();
     }
@@ -40,13 +45,27 @@ public partial class FabricadorView : UserControl
             if (Dispatcher.UIThread.CheckAccess())
             {
                 UpdateRenderedModel();
+                UpdateCanvasInteractionState();
             }
             else
             {
                 Dispatcher.UIThread.Post(UpdateRenderedModel);
+                Dispatcher.UIThread.Post(UpdateCanvasInteractionState);
             }
 
             return;
+        }
+
+        if (e.PropertyName is nameof(FabricadorViewModel.SelectedPartBounds) or nameof(FabricadorViewModel.ActiveTool))
+        {
+            if (Dispatcher.UIThread.CheckAccess())
+            {
+                UpdateCanvasInteractionState();
+            }
+            else
+            {
+                Dispatcher.UIThread.Post(UpdateCanvasInteractionState);
+            }
         }
 
         if (e.PropertyName != nameof(FabricadorViewModel.ImportPreview))
@@ -157,4 +176,19 @@ public partial class FabricadorView : UserControl
             throw;
         }
     }
+
+    private void UpdateCanvasInteractionState()
+    {
+        if (_viewModel is null)
+        {
+            ModelCanvas.SetSelection(null);
+            ModelCanvas.SetTool(FabricatorTool.Select);
+            return;
+        }
+
+        ModelCanvas.SetSelection(_viewModel.SelectedPartBounds);
+        ModelCanvas.SetTool(_viewModel.ActiveTool);
+    }
+
+    private void OnCanvasSceneClicked(Point2D scenePoint) => _viewModel?.SelectModelPartAt(scenePoint);
 }

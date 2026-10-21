@@ -77,7 +77,7 @@ public sealed class SkiaRenderer(IRenderAssetProvider assets, SkiaRendererLimits
     internal SKRect? GetLayerCullRect(RenderLayer layer, int targetWidth, int targetHeight)
     {
         var cropBounds = new Rect2D(0, 0, layer.Crop.Width, layer.Crop.Height);
-        var bounds = CreateLayerMatrix(layer, targetHeight).TransformBounds(cropBounds);
+        var bounds = RenderLayerGeometry.GetSceneMatrix(layer, targetHeight).TransformBounds(cropBounds);
         // Keep a one-pixel guard for linear sampling, while retaining the scene's full-coordinate transform.
         var left = (int)Math.Clamp(Math.Floor(bounds.Left) - 1, 0, targetWidth);
         var top = (int)Math.Clamp(Math.Floor(bounds.Top) - 1, 0, targetHeight);
@@ -89,7 +89,7 @@ public sealed class SkiaRenderer(IRenderAssetProvider assets, SkiaRendererLimits
     internal static void DrawLayer(SKCanvas canvas, RenderLayer layer, SKBitmap bitmap, int targetHeight)
     {
         var crop = layer.Crop;
-        var viewMatrix = CreateLayerMatrix(layer, targetHeight);
+        var viewMatrix = RenderLayerGeometry.GetSceneMatrix(layer, targetHeight);
 
         var saveCount = canvas.Save();
         try
@@ -122,18 +122,6 @@ public sealed class SkiaRenderer(IRenderAssetProvider assets, SkiaRendererLimits
         {
             canvas.RestoreToCount(saveCount);
         }
-    }
-
-    private static Matrix2D CreateLayerMatrix(RenderLayer layer, int targetHeight)
-    {
-        var yFlip = Matrix2D.CreateScale(1, -1);
-        var viewMatrix = Matrix2D.CreateTranslation(0, targetHeight)
-            * yFlip
-            * layer.Transform.Matrix
-            * Matrix2D.CreateTranslation(0, layer.Crop.Height)
-            * yFlip;
-
-        return viewMatrix;
     }
 
     internal static SKBlendMode ToSkiaBlendMode(RenderBlendMode blendMode) => blendMode switch

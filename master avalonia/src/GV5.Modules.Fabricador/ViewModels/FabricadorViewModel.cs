@@ -7,6 +7,8 @@ using GV5.Core.Models;
 using GV5.Modules.Fabricador.Import;
 using GV5.Rendering;
 using Avalonia.Threading;
+using GV5.Geometry;
+using GV5.Modules.Fabricador.Interaction;
 
 namespace GV5.Modules.Fabricador.ViewModels;
 
@@ -67,6 +69,16 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
     private RenderedFrame? renderedModelFrame;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(SelectedPartName))]
+    [NotifyPropertyChangedFor(nameof(SelectedPartBounds))]
+    private ModelPartId? selectedModelPartId;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsSelectTool))]
+    [NotifyPropertyChangedFor(nameof(IsPanTool))]
+    private FabricatorTool activeTool = FabricatorTool.Select;
+
+    [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasModelRenderError))]
     private string? modelRenderError;
 
@@ -124,6 +136,14 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
         && _sceneRenderer is not null
         && (!preview.IsPublished || _modelContent?.SourceAssetId != preview.PublishedAssetId);
     public bool HasModelRenderError => !string.IsNullOrWhiteSpace(ModelRenderError);
+    public bool IsSelectTool => ActiveTool == FabricatorTool.Select;
+    public bool IsPanTool => ActiveTool == FabricatorTool.Pan;
+    public string SelectedPartName => _modelContent is null || SelectedModelPartId is not { } id
+        ? "Nenhuma peça selecionada"
+        : _modelContent.Parts.FirstOrDefault(part => part.Id == id)?.Name ?? "Nenhuma peça selecionada";
+    public Rect2D? SelectedPartBounds => _modelContent is null || SelectedModelPartId is not { } id
+        ? null
+        : ModelDraftHitTester.GetPartBounds(_modelContent, id);
     public bool HasPendingRecovery => PendingRecoveryCheckpoint is not null;
     public bool HasRecoveryMessage => !string.IsNullOrWhiteSpace(RecoveryMessage);
     public Task RecoveryTask { get; }
@@ -321,6 +341,9 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
             }
 
             _modelContent = content;
+            SelectedModelPartId = null;
+            OnPropertyChanged(nameof(SelectedPartName));
+            OnPropertyChanged(nameof(SelectedPartBounds));
             ImportStatus = $"Modelo carregado · {preview.Width} × {preview.Height} · {assetId}";
             OnPropertyChanged(nameof(CanPublishModelSource));
         }
@@ -332,6 +355,22 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
         {
             IsImporting = false;
         }
+    }
+
+    [RelayCommand]
+    private void SetTool(FabricatorTool tool)
+    {
+        if (Enum.IsDefined(tool))
+        {
+            ActiveTool = tool;
+        }
+    }
+
+    public void SelectModelPartAt(Point2D scenePoint)
+    {
+        SelectedModelPartId = _modelContent is null
+            ? null
+            : ModelDraftHitTester.HitTest(_modelContent, scenePoint);
     }
 
     private async Task RenderModelPreviewAsync(ModelDraftContent content)

@@ -4,6 +4,8 @@ using GV5.Geometry;
 
 namespace GV5.Rendering;
 
+public readonly record struct RenderScenePreviewSize(int Width, int Height, double Scale);
+
 /// <summary>Builds a bounded preview scene from the Fabricator's persisted model snapshot.</summary>
 public static class ModelDraftRenderSceneBuilder
 {
@@ -12,18 +14,11 @@ public static class ModelDraftRenderSceneBuilder
     public static RenderScene Build(ModelDraftContent content, int maximumDimension = MaximumPreviewDimension)
     {
         ArgumentNullException.ThrowIfNull(content);
-        if (maximumDimension < 1)
-        {
-            throw new ArgumentOutOfRangeException(nameof(maximumDimension));
-        }
-        if (content.SourceAssetId is not { } sourceAssetId || content.SourceWidth is not { } sourceWidth || content.SourceHeight is not { } sourceHeight)
-        {
-            throw new ArgumentException("A Fabricator preview requires a published source image.", nameof(content));
-        }
-
-        var scale = Math.Min(1d, (double)maximumDimension / Math.Max(sourceWidth, sourceHeight));
-        var width = Math.Max(1, (int)Math.Round(sourceWidth * scale));
-        var height = Math.Max(1, (int)Math.Round(sourceHeight * scale));
+        var previewSize = GetPreviewSize(content, maximumDimension);
+        var sourceAssetId = content.SourceAssetId!.Value;
+        var sourceWidth = content.SourceWidth!.Value;
+        var sourceHeight = content.SourceHeight!.Value;
+        var scale = previewSize.Scale;
         var parts = content.Parts.ToDictionary(part => part.Id);
         var layers = new List<RenderLayer>();
 
@@ -48,25 +43,55 @@ public static class ModelDraftRenderSceneBuilder
                     continue;
                 }
 
-                var transform = part.Transform;
-                var scaledTransform = new Transform2D(
-                    new Point2D(transform.Translation.X * scale, transform.Translation.Y * scale),
-                    new Point2D(transform.Scale.X * scale, transform.Scale.Y * scale),
-                    transform.RotationRadians,
-                    new Point2D(transform.Pivot.X * scale, transform.Pivot.Y * scale),
-                    transform.FlipX,
-                    transform.FlipY);
-                layers.Add(new RenderLayer(
-                    RenderLayerId.New(),
-                    part.AssetId,
-                    new Rect2D(0, 0, part.SourceCrop.Width, part.SourceCrop.Height),
-                    scaledTransform,
-                    1,
-                    RenderBlendMode.Normal,
-                    index));
+                layers.Add(CreatePartLayer(part, scale, index));
             }
         }
 
-        return new RenderScene(SceneId.New(), width, height, layers);
+        return new RenderScene(SceneId.New(), previewSize.Width, previewSize.Height, layers);
+    }
+
+    public static RenderLayer CreatePartLayer(ModelPart part, double sceneScale, int zOrder)
+    {
+        ArgumentNullException.ThrowIfNull(part);
+        if (!double.IsFinite(sceneScale) || sceneScale <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(sceneScale));
+        }
+
+        var transform = part.Transform;
+        var scaledTransform = new Transform2D(
+            new Point2D(transform.Translation.X * sceneScale, transform.Translation.Y * sceneScale),
+            new Point2D(transform.Scale.X * sceneScale, transform.Scale.Y * sceneScale),
+            transform.RotationRadians,
+            new Point2D(transform.Pivot.X * sceneScale, transform.Pivot.Y * sceneScale),
+            transform.FlipX,
+            transform.FlipY);
+        return new RenderLayer(
+            RenderLayerId.New(),
+            part.AssetId,
+            new Rect2D(0, 0, part.SourceCrop.Width, part.SourceCrop.Height),
+            scaledTransform,
+            1,
+            RenderBlendMode.Normal,
+            zOrder);
+    }
+
+    public static RenderScenePreviewSize GetPreviewSize(ModelDraftContent content, int maximumDimension = MaximumPreviewDimension)
+    {
+        ArgumentNullException.ThrowIfNull(content);
+        if (maximumDimension < 1)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maximumDimension));
+        }
+        if (content.SourceWidth is not { } sourceWidth || content.SourceHeight is not { } sourceHeight || content.SourceAssetId is null)
+        {
+            throw new ArgumentException("A Fabricator preview requires a published source image.", nameof(content));
+        }
+
+        var scale = Math.Min(1d, (double)maximumDimension / Math.Max(sourceWidth, sourceHeight));
+        return new RenderScenePreviewSize(
+            Math.Max(1, (int)Math.Round(sourceWidth * scale)),
+            Math.Max(1, (int)Math.Round(sourceHeight * scale)),
+            scale);
     }
 }

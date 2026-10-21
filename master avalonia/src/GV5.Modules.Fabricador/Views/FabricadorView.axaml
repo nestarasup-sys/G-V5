@@ -2,6 +2,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:GV5.Modules.Fabricador.ViewModels"
              xmlns:views="using:GV5.Modules.Fabricador.Views"
+             xmlns:interaction="using:GV5.Modules.Fabricador.Interaction"
              x:Class="GV5.Modules.Fabricador.Views.FabricadorView"
              x:DataType="vm:FabricadorViewModel"
              DataContextChanged="OnDataContextChanged">
@@ -16,6 +17,22 @@
                 <TextBlock Text="Prévia do modelo"
                            FontWeight="SemiBold"
                            Foreground="{DynamicResource Gv5BrushTextPrimary}" />
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <RadioButton Content="Selecionar"
+                                 GroupName="FabricatorTool"
+                                 IsChecked="{Binding IsSelectTool}"
+                                 Command="{Binding SetToolCommand}"
+                                 CommandParameter="{x:Static interaction:FabricatorTool.Select}" />
+                    <RadioButton Content="Mover tela"
+                                 GroupName="FabricatorTool"
+                                 IsChecked="{Binding IsPanTool}"
+                                 Command="{Binding SetToolCommand}"
+                                 CommandParameter="{x:Static interaction:FabricatorTool.Pan}" />
+                    <TextBlock Text="{Binding SelectedPartName}"
+                               VerticalAlignment="Center"
+                               Margin="8,0,0,0"
+                               Foreground="{DynamicResource Gv5BrushTextSecondary}" />
+                </StackPanel>
                 <views:FabricatorCanvas x:Name="ModelCanvas" MinHeight="360" MaxHeight="560" />
                 <TextBlock Text="{Binding ModelRenderError}"
                            IsVisible="{Binding HasModelRenderError}"

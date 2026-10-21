@@ -7,12 +7,21 @@
             BorderThickness="1"
             CornerRadius="10"
             ClipToBounds="True">
-        <Grid>
-            <Image x:Name="ModelImage"
-                   Source="{Binding Frame, ElementName=Root}"
-                   Stretch="Uniform"
-                   HorizontalAlignment="Stretch"
-                   VerticalAlignment="Stretch" />
+        <Grid x:Name="Viewport"
+              Background="Transparent"
+              ClipToBounds="True"
+              PointerPressed="OnPointerPressed"
+              PointerMoved="OnPointerMoved"
+              PointerReleased="OnPointerReleased"
+              PointerWheelChanged="OnPointerWheelChanged">
+            <Canvas x:Name="ImageLayer" IsHitTestVisible="False">
+                <Image x:Name="ModelImage" Stretch="Fill" />
+                <Rectangle x:Name="SelectionOverlay"
+                           IsHitTestVisible="False"
+                           Stroke="#FF91B9FF"
+                           StrokeThickness="2"
+                           Fill="#2681B9FF" />
+            </Canvas>
             <TextBlock x:Name="EmptyMessage"
                        Text="Publique uma folha de imagem para visualizar o modelo"
                        HorizontalAlignment="Center"
@@ -20,7 +29,8 @@
                        TextAlignment="Center"
                        TextWrapping="Wrap"
                        Margin="24"
-                       Foreground="#D7D3DE" />
+                       Foreground="#D7D3DE"
+                       IsHitTestVisible="False" />
         </Grid>
     </Border>
 </UserControl>
