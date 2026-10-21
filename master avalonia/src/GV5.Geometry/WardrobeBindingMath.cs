@@ -93,6 +93,26 @@ public readonly record struct WardrobeBinding
             heightRatio,
             relativeRotation);
     }
+
+    public static WardrobeBinding Restore(int version, string boneId, double boneWidth, double boneHeight,
+        double boneRotationDegrees, double localCenterX, double localCenterY, double widthRatio,
+        double heightRatio, double relativeRotationDegrees)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(boneId);
+        if (version != 1) throw new ArgumentOutOfRangeException(nameof(version), "Wardrobe binding version is unsupported.");
+        GeometryValue.RequireFinite(boneWidth, nameof(boneWidth));
+        GeometryValue.RequireFinite(boneHeight, nameof(boneHeight));
+        GeometryValue.RequireFinite(boneRotationDegrees, nameof(boneRotationDegrees));
+        GeometryValue.RequireFinite(localCenterX, nameof(localCenterX));
+        GeometryValue.RequireFinite(localCenterY, nameof(localCenterY));
+        GeometryValue.RequireFinite(widthRatio, nameof(widthRatio));
+        GeometryValue.RequireFinite(heightRatio, nameof(heightRatio));
+        GeometryValue.RequireFinite(relativeRotationDegrees, nameof(relativeRotationDegrees));
+        if (boneWidth <= 0 || boneHeight <= 0 || widthRatio <= 0 || heightRatio <= 0)
+            throw new ArgumentOutOfRangeException(nameof(boneWidth), "Wardrobe binding dimensions and ratios must be positive.");
+        return new WardrobeBinding(boneId, boneWidth, boneHeight, boneRotationDegrees, localCenterX,
+            localCenterY, widthRatio, heightRatio, relativeRotationDegrees);
+    }
 }
 
 public readonly record struct WardrobePlacement(

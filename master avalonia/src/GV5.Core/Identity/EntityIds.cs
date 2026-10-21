@@ -78,6 +78,34 @@ public readonly record struct WardrobeId : IEntityId
     public override string ToString() => Value.ToString("D");
 }
 
+public readonly record struct WardrobeComponentId : IEntityId
+{
+    public Guid Value { get; }
+    public bool IsValid => Value != Guid.Empty;
+
+    private WardrobeComponentId(Guid value) => Value = value;
+
+    public static WardrobeComponentId New() => new(Guid.NewGuid());
+    public static WardrobeComponentId From(Guid value) => new(IdValue.RequireValid(value, nameof(value)));
+    public static WardrobeComponentId Parse(string value) => new(IdValue.Parse(value, nameof(WardrobeComponentId)));
+    public static bool TryParse(string? value, out WardrobeComponentId id) => IdValue.TryParse(value, static parsed => new WardrobeComponentId(parsed), out id);
+    public override string ToString() => Value.ToString("D");
+}
+
+public readonly record struct WardrobeRevisionId : IEntityId
+{
+    public Guid Value { get; }
+    public bool IsValid => Value != Guid.Empty;
+
+    private WardrobeRevisionId(Guid value) => Value = value;
+
+    public static WardrobeRevisionId New() => new(Guid.NewGuid());
+    public static WardrobeRevisionId From(Guid value) => new(IdValue.RequireValid(value, nameof(value)));
+    public static WardrobeRevisionId Parse(string value) => new(IdValue.Parse(value, nameof(WardrobeRevisionId)));
+    public static bool TryParse(string? value, out WardrobeRevisionId id) => IdValue.TryParse(value, static parsed => new WardrobeRevisionId(parsed), out id);
+    public override string ToString() => Value.ToString("D");
+}
+
 public readonly record struct FaceId : IEntityId
 {
     public Guid Value { get; }
