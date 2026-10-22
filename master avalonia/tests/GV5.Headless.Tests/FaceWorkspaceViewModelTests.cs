@@ -160,7 +160,8 @@ public sealed class FaceWorkspaceViewModelTests
     {
         var root = Path.Combine(Path.GetTempPath(), $"gv5-face-kinds-{Guid.NewGuid():N}");
         var repository = new MemoryFaceCatalogRepository();
-        var viewModel = new FaceWorkspaceViewModel(new SequenceFilePicker(CreateEyesSheet(), CreateMouthSheet(), CreateNoseSheet(), CreateMouthSheet()),
+        var viewModel = new FaceWorkspaceViewModel(new SequenceFilePicker(CreateEyesSheet(), CreateMouthSheet(),
+                CreateNoseSixSheet(), CreateNoseSixSheet(), CreateMouthSheet()),
             CreateImportService(root), repository, new MemoryAssetStore());
 
         try
@@ -188,12 +189,25 @@ public sealed class FaceWorkspaceViewModelTests
                 && component.MouthVariant == FaceMouthVariant.Open));
 
             viewModel.SelectedSheetKind = viewModel.SheetKinds.Single(choice => choice.Kind == FaceSheetKind.Nose);
+            Assert.True(viewModel.IsNoseSheetSelected);
+            Assert.True(viewModel.CanChangeNoseMode);
+            Assert.Equal(FaceNoseSheetMode.One, viewModel.SelectedNoseSheetMode.Mode);
             await viewModel.SelectFaceSheetCommand.ExecuteAsync(null);
             Assert.Single(viewModel.Preview!.Pieces);
+            Assert.False(viewModel.CanChangeNoseMode);
             await viewModel.ConfirmImportCommand.ExecuteAsync(null);
+            Assert.True(viewModel.CanChangeNoseMode);
             catalog = repository.Catalogs[catalog.Id];
             Assert.Single(catalog.Components, component => component.Kind == FaceComponentKind.Nose);
             Assert.Equal(Revision.From(3), catalog.Revision);
+
+            viewModel.SelectedNoseSheetMode = viewModel.NoseSheetModes.Single(choice => choice.Mode == FaceNoseSheetMode.Six);
+            await viewModel.SelectFaceSheetCommand.ExecuteAsync(null);
+            Assert.Equal(6, viewModel.Preview!.Pieces.Count);
+            await viewModel.ConfirmImportCommand.ExecuteAsync(null);
+            catalog = repository.Catalogs[catalog.Id];
+            Assert.Equal(6, catalog.Components.Count(component => component.Kind == FaceComponentKind.Nose));
+            Assert.Equal(Revision.From(4), catalog.Revision);
 
             viewModel.SelectedSheetKind = viewModel.SheetKinds.Single(choice => choice.Kind == FaceSheetKind.MouthClosed);
             await viewModel.SelectFaceSheetCommand.ExecuteAsync(null);
@@ -204,7 +218,7 @@ public sealed class FaceWorkspaceViewModelTests
                 && component.MouthVariant == FaceMouthVariant.Closed));
             Assert.Equal(21, catalog.Components.Count(component => component.Kind == FaceComponentKind.Mouth
                 && component.MouthVariant == FaceMouthVariant.Open));
-            Assert.Equal(Revision.From(4), catalog.Revision);
+            Assert.Equal(Revision.From(5), catalog.Revision);
         }
         finally
         {
@@ -267,11 +281,13 @@ public sealed class FaceWorkspaceViewModelTests
         return encoded!.ToArray();
     }
 
-    private static byte[] CreateNoseSheet()
+    private static byte[] CreateNoseSixSheet()
     {
-        using var bitmap = new SKBitmap(new SKImageInfo(20, 20, SKColorType.Rgba8888, SKAlphaType.Unpremul));
+        using var bitmap = new SKBitmap(new SKImageInfo(22, 14, SKColorType.Rgba8888, SKAlphaType.Unpremul));
         bitmap.Erase(new SKColor(0, 255, 0, 255));
-        Paint(bitmap, 8, 8, new SKColor(90, 50, 45, 255));
+        for (var index = 0; index < 6; index++)
+            Paint(bitmap, (index % 3) * 7 + 1, (index / 3) * 7 + 1,
+                new SKColor((byte)(40 + index * 20), 50, 45, 255));
         using var encoded = bitmap.Encode(SKEncodedImageFormat.Png, 100);
         return encoded!.ToArray();
     }

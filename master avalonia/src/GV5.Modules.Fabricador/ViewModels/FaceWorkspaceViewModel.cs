@@ -27,6 +27,7 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
     [NotifyPropertyChangedFor(nameof(HasPreview))]
     [NotifyPropertyChangedFor(nameof(CanConfirmImport))]
     [NotifyPropertyChangedFor(nameof(CanChangeSheetKind))]
+    [NotifyPropertyChangedFor(nameof(CanChangeNoseMode))]
     private FaceSheetImportPreview? preview;
 
     [ObservableProperty]
@@ -48,7 +49,12 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(SelectedSheetLabel))]
+    [NotifyPropertyChangedFor(nameof(IsNoseSheetSelected))]
+    [NotifyPropertyChangedFor(nameof(CanChangeNoseMode))]
     private FaceSheetKindChoiceItem selectedSheetKind = FaceSheetKindChoices[1];
+
+    [ObservableProperty]
+    private FaceNoseSheetModeChoiceItem selectedNoseSheetMode = FaceNoseSheetModeChoices[0];
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanPublishCatalog))]
@@ -60,6 +66,7 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
     [NotifyPropertyChangedFor(nameof(CanSelectSheet))]
     [NotifyPropertyChangedFor(nameof(CanConfirmImport))]
     [NotifyPropertyChangedFor(nameof(CanChangeSheetKind))]
+    [NotifyPropertyChangedFor(nameof(CanChangeNoseMode))]
     [NotifyCanExecuteChangedFor(nameof(SelectFaceSheetCommand))]
     [NotifyCanExecuteChangedFor(nameof(ConfirmImportCommand))]
     [NotifyCanExecuteChangedFor(nameof(PublishCatalogCommand))]
@@ -81,10 +88,13 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
     public bool CanChangeSheetKind => !HasPreview && !IsBusy;
     public bool HasMultipleCatalogs => CatalogChoices.Count > 1;
     public bool HasSavedCatalog => _savedCatalog is not null;
+    public bool IsNoseSheetSelected => SelectedSheetKind.Kind == FaceSheetKind.Nose;
     public ObservableCollection<FaceCatalogChoiceItem> CatalogChoices { get; }
     public IReadOnlyList<FaceSheetKindChoiceItem> SheetKinds => FaceSheetKindChoices;
+    public IReadOnlyList<FaceNoseSheetModeChoiceItem> NoseSheetModes => FaceNoseSheetModeChoices;
     public string SelectedSheetLabel => SelectedSheetKind.Label;
     public bool CanSelectSheet => !IsBusy && HeadPart is not null && _filePicker is not null && _importService is not null;
+    public bool CanChangeNoseMode => IsNoseSheetSelected && CanChangeSheetKind;
     public bool CanConfirmImport => !IsBusy && Preview is not null && _pinnedModel is not null
         && HeadPart is not null && _catalogRepository is not null && _assetStore is not null
         && (!HasMultipleCatalogs || SelectedCatalog is not null);
@@ -121,6 +131,13 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
         new(FaceSheetKind.Nose, "Nariz"),
         new(FaceSheetKind.MouthClosed, "Bocas fechadas"),
         new(FaceSheetKind.MouthOpen, "Bocas abertas")
+    ];
+
+    private static readonly FaceNoseSheetModeChoiceItem[] FaceNoseSheetModeChoices =
+    [
+        new(FaceNoseSheetMode.One, "Uma peça"),
+        new(FaceNoseSheetMode.Six, "Seis peças"),
+        new(FaceNoseSheetMode.Auto, "Detectar automaticamente")
     ];
 
     private ModelPart? HeadPart => _pinnedModel?.Content.Parts.FirstOrDefault(part =>
@@ -219,7 +236,8 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
             var file = await _filePicker.PickImageAsync(cancellationToken);
             if (file is null) return;
             await using var stream = file.Content;
-            var result = await _importService.PrepareAsync(stream, file.MediaType, SelectedSheetKind.Kind,
+            var options = new FaceSheetOptions(NoseMode: SelectedNoseSheetMode.Mode);
+            var result = await _importService.PrepareAsync(stream, file.MediaType, SelectedSheetKind.Kind, options,
                 cancellationToken: cancellationToken);
             if (result.IsFailure)
             {
@@ -473,6 +491,7 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
 }
 
 public sealed record FaceSheetKindChoiceItem(FaceSheetKind Kind, string Label);
+public sealed record FaceNoseSheetModeChoiceItem(FaceNoseSheetMode Mode, string Label);
 
 public sealed record FaceCatalogChoiceItem(FaceId Id, string Name, Revision Revision)
 {

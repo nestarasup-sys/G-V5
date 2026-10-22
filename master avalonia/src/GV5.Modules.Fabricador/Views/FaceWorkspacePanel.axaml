@@ -23,6 +23,13 @@
                               SelectedItem="{Binding SelectedSheetKind, Mode=TwoWay}"
                               DisplayMemberBinding="{Binding Label}"
                               IsEnabled="{Binding CanChangeSheetKind}" />
+                    <StackPanel Spacing="4" IsVisible="{Binding IsNoseSheetSelected}">
+                        <TextBlock Text="Divisão da folha de nariz" FontSize="10" FontWeight="Bold" Foreground="#706872" />
+                        <ComboBox ItemsSource="{Binding NoseSheetModes}"
+                                  SelectedItem="{Binding SelectedNoseSheetMode, Mode=TwoWay}"
+                                  DisplayMemberBinding="{Binding Label}"
+                                  IsEnabled="{Binding CanChangeNoseMode}" />
+                    </StackPanel>
                     <StackPanel Orientation="Horizontal" Spacing="7">
                         <Button Content="Selecionar arquivo da folha" Command="{Binding SelectFaceSheetCommand}"
                                 IsEnabled="{Binding CanSelectSheet}" Padding="10,6"
