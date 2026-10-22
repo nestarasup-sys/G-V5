@@ -13,15 +13,15 @@
 | Branch obrigatória | `Master-AValonia` |
 | Pasta exclusiva do novo aplicativo | `master avalonia/` |
 | Commit-base inspecionado antes deste arquivo | `53b7f7a97321e85063a8dd4f9635e48d36548323` |
-| Último commit de implementação validado | `3649ad0` (F09.15: preparação revisável de importação facial) |
-| Checkout local revalidado | `TestarLocal.bat rapido` passou em 2026-10-21: build Debug e **321/321 testes**, zero falhas; permanecem 2 CS0618 no `ThumbnailService` e 1 xUnit1051 em `HairRoleTintProcessorTests` |
+| Último commit de implementação validado | `6a911a5` (F09.15: workspace facial com importação persistente) |
+| Checkout local revalidado | `TestarLocal.bat rapido` passou em 2026-10-21: build Debug e **324/324 testes**, zero falhas; permanecem 2 CS0618 no `ThumbnailService` e 1 xUnit1051 em `HairRoleTintProcessorTests` |
 | Fase ativa | **F09 — Fabricador IV — cabelos, face, expressões e completação (F09.15 em execução)** |
 | Última tarefa VALIDADA | **F09.14** — validação cruzada de persistência, importação inválida e cancelamento nas subáreas do Fabricador |
 | Tarefa em execução | **F09.15** — auditar e fechar as lacunas funcionais do Fabricador antes do GATE-F09/G2 |
 | Requisito transversal atualizado | ADR-0006: aparência reconhecível, não pixel-perfect; todos os botões e funcionalidades; revisão final visual pendente |
 | Gate atual | **GATE-F08 PASSOU tecnicamente; UI/visual Windows/GPU e paridade completa continuam pendentes** |
 | Progresso validado neste controle | **126 / 247 tarefas (51,0%)** |
-| Tarefas em execução | **F09.15** — auditoria funcional do Fabricador; evidências incluem slots persistentes, transformação, rig, divisão/mesclagem, Misturador e preparação de folhas faciais; próxima lacuna: interface Olhos/Rosto com confirmação e persistência de importação |
+| Tarefas em execução | **F09.15** — auditoria funcional do Fabricador; inclui slots persistentes, transformação, rig, divisão/mesclagem, Misturador e importação persistente de sobrancelhas; próxima lacuna: editor facial com seleção, encaixe visual e demais folhas (olhos, pupilas, olhos fechados, nariz e bocas) |
 | Pendências conhecidas | F06: folha real/capturas/worker não testados; ferramentas de Modelos ausentes catalogadas em `docs/legacy-contracts/PENDENCIAS_FUNCIONAIS_FABRICADOR.md` e obrigatórias antes do G2. Isso não impede a programação F07, mas impede declarar Fabricador completo. Limite download F01 documentado |
 | Aceite Windows/GPU | **F06 Windows/visual não executado; GPU continua fora do escopo comprovado** |
 
@@ -424,4 +424,4 @@ Após concluir um lote ou fase, adicionar uma linha. Não inflar contador só po
 
 **F09.15 em execução — dez slots de modelos:** a migração 18 adiciona atribuições canônicas de slot separadas das revisões de conteúdo; novas atribuições são atômicas, abrir slot carrega o rascunho sob demanda e excluir bloqueia checkpoints/publicações/referências. A migração conserva todos os drafts, mantém a atribuição mais recente em slots duplicados e preenche vagas livres com modelos legados sem slot. Headless verifica dez cartões, seleção, criar/trocar/excluir e recuperação de checkpoint em slot livre; testes SQLite fecham/reabrem o banco e provam conflitos sem rascunho órfão. `TestarLocal.bat rapido` passou em 2026-10-21: **319/319 testes**, sem falhas. Evidência `docs/testing/F09.15_MODEL_SLOTS.md`. Modelos além da capacidade de dez e revisão visual Windows continuam pendentes.
 
-**F09.15 em execução — preparação de folhas faciais:** commit local `3649ad0` prepara a fonte e os componentes faciais independentes em staging, com previews limitados, validação de folha e limpeza após falha/cancelamento. Folhas de sobrancelha sem separação verdadeira entre lados são rejeitadas em vez de cortadas artificialmente. `TestarLocal.bat rapido` passou em 2026-10-21: build Debug e **321/321 testes**, zero falhas. Evidência em `docs/testing/F09.15_FACE_SHEET_IMPORT.md`. A tela Olhos/Rosto, confirmação/publicação e persistência ainda faltam e são o próximo recorte.
+**F09.15 em execução — workspace facial e sobrancelhas persistentes:** commits locais `3649ad0` (preparação revisável) e `6a911a5` (painel Avalonia e persistência em catálogo) expõem a área Olhos e rosto pelo Fabricador. A fonte é revisada antes da confirmação, os dois lados são gravados no mesmo avanço de revisão e uma nova importação substitui o par anterior sem duplicá-lo. `TestarLocal.bat rapido` passou em 2026-10-21: build Debug e **324/324 testes**, zero falhas, incluindo UI headless e persistência controlada. A prévia ainda não tem encaixe interativo sobre a cabeça e as folhas de olhos/nariz/boca seguem pendentes. Evidência em `docs/testing/F09.15_FACE_SHEET_IMPORT.md`.
