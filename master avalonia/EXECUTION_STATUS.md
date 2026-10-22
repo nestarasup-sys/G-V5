@@ -13,15 +13,15 @@
 | Branch obrigatória | `Master-AValonia` |
 | Pasta exclusiva do novo aplicativo | `master avalonia/` |
 | Commit-base inspecionado antes deste arquivo | `53b7f7a97321e85063a8dd4f9635e48d36548323` |
-| Último commit de implementação validado | `fade72e` (F09.15: mesclagem reversível de peças adjacentes do modelo) |
-| Checkout local revalidado | Build Debug da solution, **249 testes da solution** e **64 testes headless**, total **313, 0 falhas**, em 2026-10-21; aviso conhecido: 1 xUnit1051 em `HairRoleTintProcessorTests` |
+| Último commit de implementação validado | `d4a8a62` (F09.15: Misturador de emendas com undo por traço) |
+| Checkout local revalidado | `TestarLocal.bat rapido` passou: build Debug, **249 testes da solution** e **65 testes headless**, total **314, 0 falhas**, em 2026-10-21; avisos conhecidos: 2 CS0618 no `ThumbnailService` e 1 xUnit1051 em `HairRoleTintProcessorTests` |
 | Fase ativa | **F09 — Fabricador IV — cabelos, face, expressões e completação (F09.15 em execução)** |
 | Última tarefa VALIDADA | **F09.14** — validação cruzada de persistência, importação inválida e cancelamento nas subáreas do Fabricador |
 | Tarefa em execução | **F09.15** — auditar e fechar as lacunas funcionais do Fabricador antes do GATE-F09/G2 |
 | Requisito transversal atualizado | ADR-0006: aparência reconhecível, não pixel-perfect; todos os botões e funcionalidades; revisão final visual pendente |
 | Gate atual | **GATE-F08 PASSOU tecnicamente; UI/visual Windows/GPU e paridade completa continuam pendentes** |
 | Progresso validado neste controle | **126 / 247 tarefas (51,0%)** |
-| Tarefas em execução | **F09.15** — auditoria funcional completa do Fabricador; seleção/transformação/visibilidade/ordem, rename, restauração, divisão e mesclagem segura de peças têm evidência; próxima lacuna: misturador/edição de pixels |
+| Tarefas em execução | **F09.15** — auditoria funcional completa do Fabricador; seleção/transformação/visibilidade/ordem, rename, restauração, divisão, mesclagem segura e Misturador têm evidência; próxima lacuna: 10 slots de modelos |
 | Pendências conhecidas | F06: folha real/capturas/worker não testados; ferramentas de Modelos ausentes catalogadas em `docs/legacy-contracts/PENDENCIAS_FUNCIONAIS_FABRICADOR.md` e obrigatórias antes do G2. Isso não impede a programação F07, mas impede declarar Fabricador completo. Limite download F01 documentado |
 | Aceite Windows/GPU | **F06 Windows/visual não executado; GPU continua fora do escopo comprovado** |
 
@@ -34,6 +34,8 @@
 **F09.15 — divisão vertical de peças validada localmente:** commit `b8a9477`; build Debug da solution aprovada, 249 testes da solution + 64 headless aprovados (313 no total, zero falhas). O serviço separa os pixels sem perda e mantém alpha; comando preserva ID do lado esquerdo, desloca corretamente transform/pivô da metade direita, retém referências do rig e permite undo/redo. Evidência: [`docs/testing/F09.15_PART_SPLIT.md`](docs/testing/F09.15_PART_SPLIT.md). Mesclagem, round-trip SQLite dedicado e validação visual Windows continuam pendentes; próxima implementação F09.15: mesclar peças.
 
 **F09.15 — mesclagem horizontal adjacente validada localmente:** commit `fade72e`; build Debug aprovado e os mesmos 313 testes executaram com zero falhas (249 solution + 64 headless). O teste cobre split→merge com RGBA/alpha sem perda, ID e ordem preservados, rig mantido e undo reconstituindo peças/camadas/juntas. A mesclagem habilita apenas duas peças adjacentes com origem e transformação compatíveis; seleção múltipla livre, round-trip SQLite dedicado e revisão Windows continuam pendentes. Evidência: [`docs/testing/F09.15_PART_MERGE.md`](docs/testing/F09.15_PART_MERGE.md). Próxima lacuna: misturador/edição de pixels.
+
+**F09.15 — Misturador validado localmente:** commit `d4a8a62`; `TestarLocal.bat rapido` aprovou a build e 314 testes (249 solution + 65 headless). O teste confirma suavização apenas na camada superior onde há cobertura, pixels fora da emenda preservados, camada inferior intacta e undo restaurando o conteúdo. Evidência: [`docs/testing/F09.15_MIXER.md`](docs/testing/F09.15_MIXER.md). O uso físico do mouse/Windows e round-trip SQLite do traço ainda não foram validados. Próxima lacuna: os dez slots de modelos.
 
 ## 2. Fontes e regras de leitura
 
