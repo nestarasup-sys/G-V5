@@ -21,7 +21,7 @@
 | Requisito transversal atualizado | ADR-0006: aparência reconhecível, não pixel-perfect; todos os botões e funcionalidades; revisão final visual pendente |
 | Gate atual | **GATE-F08 PASSOU tecnicamente; UI/visual Windows/GPU e paridade completa continuam pendentes** |
 | Progresso validado neste controle | **126 / 247 tarefas (51,0%)** |
-| Tarefas em execução | **F09.15** — auditoria funcional completa do Fabricador; seleção/transformação/visibilidade/ordem e rename já têm evidência; próxima lacuna: dividir/mesclar peças e restaurar a fonte importada |
+| Tarefas em execução | **F09.15** — auditoria funcional completa do Fabricador; seleção/transformação/visibilidade/ordem, rename e restauração das transformações de origem já têm evidência; próxima lacuna: dividir/mesclar peças |
 | Pendências conhecidas | F06: folha real/capturas/worker não testados; ferramentas de Modelos ausentes catalogadas em `docs/legacy-contracts/PENDENCIAS_FUNCIONAIS_FABRICADOR.md` e obrigatórias antes do G2. Isso não impede a programação F07, mas impede declarar Fabricador completo. Limite download F01 documentado |
 | Aceite Windows/GPU | **F06 Windows/visual não executado; GPU continua fora do escopo comprovado** |
 
@@ -386,7 +386,7 @@ Após concluir um lote ou fase, adicionar uma linha. Não inflar contador só po
 3. Inspecionar evidências reais da última tarefa validada; caso não existam, corrigir seu estado.
 4. **F07 liberada tecnicamente conforme ADR-0006.** A F06 tem 14 tarefas registradas e 198 testes anteriores; revisão de folha real/Windows/worker/capturas segue pendente até G2/F12/aceite final. Não afirmar que foi realizada.
 5. Continuar automaticamente pelas tarefas seguintes **uma de cada vez**, em lotes flexíveis de aproximadamente 3–8 tarefas relacionadas, enquanto todos os gates pertinentes passam.
-6. F07 está tecnicamente encerrada em `docs/gates/GATE-F07.md`. F08 passou tecnicamente em `docs/gates/GATE-F08.md`. F09.01–F09.14 estão validadas; continuar em **F09.15** conforme o Plano Mestre, fechando as lacunas funcionais restantes do Fabricador uma a uma. A auditoria mais recente identificou dividir/mesclar peças e restaurar a fonte importada como próxima lacuna testável. `characterId` no Animador aguarda a fonte persistente de personagens, e validação visual/GPU segue para G2. Não implementar Video Studio antes da fase apropriada.
+6. F07 está tecnicamente encerrada em `docs/gates/GATE-F07.md`. F08 passou tecnicamente em `docs/gates/GATE-F08.md`. F09.01–F09.14 estão validadas; continuar em **F09.15** conforme o Plano Mestre, fechando as lacunas funcionais restantes do Fabricador uma a uma. A restauração das transformações de origem está validada; dividir/mesclar peças segue como a próxima lacuna técnica. `characterId` no Animador aguarda a fonte persistente de personagens, e validação visual/GPU segue para G2. Não implementar Video Studio antes da fase apropriada.
 7. Ao encerrar, informar: **branch, HEAD, último ID VALIDADO, próximo ID PENDENTE, commits, comandos verdes, evidências, bloqueios e condição de desbloqueio**.
 
 ### Prompt de retomada
