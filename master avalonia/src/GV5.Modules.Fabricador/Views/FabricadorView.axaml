@@ -251,7 +251,8 @@
                                     <Button Content="Restaurar transformações originais" Command="{Binding RestoreSourceTransformsCommand}" IsEnabled="{Binding CanRestoreSourceTransforms}" HorizontalAlignment="Left" Padding="8,5" ToolTip.Tip="Volta todas as peças à posição em que foram separadas da imagem-fonte. Desfazer restaura as posições anteriores." />
                                     <StackPanel Orientation="Horizontal" Spacing="6">
                                         <Button Content="Dividir peça verticalmente" Command="{Binding SplitSelectedPartCommand}" IsEnabled="{Binding CanSplitSelectedPart}" Padding="8,5" ToolTip.Tip="Cria duas peças lado a lado sem alterar a aparência. Desfazer restaura a peça original." />
-                                        <Button Content="Cancelar divisão" Command="{Binding CancelSplitModelPartCommand}" IsVisible="{Binding CanCancelSplitModelPart}" Padding="8,5" />
+                                        <Button Content="Mesclar peça adjacente" Command="{Binding MergeSelectedPartCommand}" IsEnabled="{Binding CanMergeSelectedPart}" Padding="8,5" ToolTip.Tip="Mescla a peça selecionada com a peça horizontal adjacente compatível. Desfazer restaura as duas." />
+                                        <Button Content="Cancelar operação" Command="{Binding CancelSplitModelPartCommand}" IsVisible="{Binding CanCancelSplitModelPart}" Padding="8,5" />
                                     </StackPanel>
                                     <TextBlock Text="{Binding ModelPartSplitError}" IsVisible="{Binding HasModelPartSplitError}" TextWrapping="Wrap" Foreground="#B4233C" />
                                     <TextBlock Text="{Binding ModelPartSplitStatus}" IsVisible="{Binding HasModelPartSplitStatus}" TextWrapping="Wrap" Foreground="#706872" />

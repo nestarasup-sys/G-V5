@@ -87,6 +87,7 @@ internal static class AppComposition
                 MaximumPixels: 32_000_000)));
         services.AddSingleton<ModelSourceImportService>();
         services.AddSingleton<ModelPartSplitService>();
+        services.AddSingleton<ModelPartMergeService>();
         services.AddSingleton<HairSheetImportService>();
         services.AddSingleton<AssetBitmapCache>();
         services.AddSingleton<AvaloniaRenderedFrameAdapter>();

@@ -34,6 +34,7 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
     private readonly IFilePicker? _filePicker;
     private readonly ModelSourceImportService? _modelSourceImportService;
     private readonly ModelPartSplitService? _modelPartSplitService;
+    private readonly ModelPartMergeService? _modelPartMergeService;
     private readonly IAssetStore? _assetStore;
     private readonly IThumbnailService? _thumbnailService;
     private readonly Dictionary<AssetId, Bitmap> _partLayerThumbnailCache = [];
@@ -175,9 +176,11 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
     [NotifyPropertyChangedFor(nameof(SelectedPartName))]
     [NotifyPropertyChangedFor(nameof(CanRenameSelectedPart))]
     [NotifyPropertyChangedFor(nameof(CanRestoreSourceTransforms))]
+    [NotifyPropertyChangedFor(nameof(CanMergeSelectedPart))]
     [NotifyPropertyChangedFor(nameof(CanEditSelectedPartName))]
     [NotifyCanExecuteChangedFor(nameof(RenameSelectedPartCommand))]
     [NotifyCanExecuteChangedFor(nameof(RestoreSourceTransformsCommand))]
+    [NotifyCanExecuteChangedFor(nameof(MergeSelectedPartCommand))]
     [NotifyPropertyChangedFor(nameof(SelectedPartBounds))]
     [NotifyPropertyChangedFor(nameof(SelectedPartPivot))]
     [NotifyPropertyChangedFor(nameof(PartLayers))]
@@ -201,7 +204,9 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
     [NotifyPropertyChangedFor(nameof(CanRedo))]
     [NotifyPropertyChangedFor(nameof(CanPublishRevision))]
     [NotifyPropertyChangedFor(nameof(CanSplitSelectedPart))]
+    [NotifyPropertyChangedFor(nameof(CanMergeSelectedPart))]
     [NotifyCanExecuteChangedFor(nameof(SplitSelectedPartCommand))]
+    [NotifyCanExecuteChangedFor(nameof(MergeSelectedPartCommand))]
     [NotifyCanExecuteChangedFor(nameof(CancelSplitModelPartCommand))]
     [NotifyCanExecuteChangedFor(nameof(SaveCommand))]
     [NotifyCanExecuteChangedFor(nameof(UndoCommand))]
@@ -232,9 +237,11 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
     [NotifyPropertyChangedFor(nameof(CanEditRig))]
     [NotifyPropertyChangedFor(nameof(CanRenameSelectedPart))]
     [NotifyPropertyChangedFor(nameof(CanRestoreSourceTransforms))]
+    [NotifyPropertyChangedFor(nameof(CanMergeSelectedPart))]
     [NotifyPropertyChangedFor(nameof(CanEditSelectedPartName))]
     [NotifyCanExecuteChangedFor(nameof(RenameSelectedPartCommand))]
     [NotifyCanExecuteChangedFor(nameof(RestoreSourceTransformsCommand))]
+    [NotifyCanExecuteChangedFor(nameof(MergeSelectedPartCommand))]
     [NotifyPropertyChangedFor(nameof(PartLayers))]
     [NotifyCanExecuteChangedFor(nameof(SaveCommand))]
     [NotifyCanExecuteChangedFor(nameof(RestoreCheckpointCommand))]
@@ -254,9 +261,11 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
     [NotifyPropertyChangedFor(nameof(CanEditRig))]
     [NotifyPropertyChangedFor(nameof(CanRenameSelectedPart))]
     [NotifyPropertyChangedFor(nameof(CanRestoreSourceTransforms))]
+    [NotifyPropertyChangedFor(nameof(CanMergeSelectedPart))]
     [NotifyPropertyChangedFor(nameof(CanEditSelectedPartName))]
     [NotifyCanExecuteChangedFor(nameof(RenameSelectedPartCommand))]
     [NotifyCanExecuteChangedFor(nameof(RestoreSourceTransformsCommand))]
+    [NotifyCanExecuteChangedFor(nameof(MergeSelectedPartCommand))]
     [NotifyPropertyChangedFor(nameof(PartLayers))]
     [NotifyCanExecuteChangedFor(nameof(SaveCommand))]
     [NotifyCanExecuteChangedFor(nameof(RestoreCheckpointCommand))]
@@ -279,8 +288,10 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
     [NotifyPropertyChangedFor(nameof(CanEditRig))]
     [NotifyPropertyChangedFor(nameof(CanRenameSelectedPart))]
     [NotifyPropertyChangedFor(nameof(CanRestoreSourceTransforms))]
+    [NotifyPropertyChangedFor(nameof(CanMergeSelectedPart))]
     [NotifyPropertyChangedFor(nameof(CanEditSelectedPartName))]
     [NotifyCanExecuteChangedFor(nameof(RenameSelectedPartCommand))]
+    [NotifyCanExecuteChangedFor(nameof(MergeSelectedPartCommand))]
     [NotifyPropertyChangedFor(nameof(PartLayers))]
     [NotifyCanExecuteChangedFor(nameof(SaveCommand))]
     [NotifyPropertyChangedFor(nameof(CanUndo))]
@@ -314,10 +325,12 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
     [NotifyPropertyChangedFor(nameof(CanEditRig))]
     [NotifyPropertyChangedFor(nameof(CanRenameSelectedPart))]
     [NotifyPropertyChangedFor(nameof(CanRestoreSourceTransforms))]
+    [NotifyPropertyChangedFor(nameof(CanMergeSelectedPart))]
     [NotifyPropertyChangedFor(nameof(CanEditSelectedPartName))]
     [NotifyPropertyChangedFor(nameof(PublishRevisionButtonLabel))]
     [NotifyCanExecuteChangedFor(nameof(PublishModelRevisionCommand))]
     [NotifyCanExecuteChangedFor(nameof(RestoreSourceTransformsCommand))]
+    [NotifyCanExecuteChangedFor(nameof(MergeSelectedPartCommand))]
     [NotifyCanExecuteChangedFor(nameof(SaveCommand))]
     private bool isPublishingRevision;
 
@@ -370,8 +383,10 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
             OnPropertyChanged(nameof(CanEditSelectedPartName));
             OnPropertyChanged(nameof(CanRenameSelectedPart));
             OnPropertyChanged(nameof(CanRestoreSourceTransforms));
+            OnPropertyChanged(nameof(CanMergeSelectedPart));
             RenameSelectedPartCommand.NotifyCanExecuteChanged();
             RestoreSourceTransformsCommand.NotifyCanExecuteChanged();
+            MergeSelectedPartCommand.NotifyCanExecuteChanged();
             OnPropertyChanged(nameof(IsEditorWorkspace));
             OnPropertyChanged(nameof(CanvasHeader));
             OnPropertyChanged(nameof(CanvasSubtitle));
@@ -410,8 +425,10 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
             OnPropertyChanged(nameof(CanEditSelectedPartName));
             OnPropertyChanged(nameof(CanRenameSelectedPart));
             OnPropertyChanged(nameof(CanRestoreSourceTransforms));
+            OnPropertyChanged(nameof(CanMergeSelectedPart));
             RenameSelectedPartCommand.NotifyCanExecuteChanged();
             RestoreSourceTransformsCommand.NotifyCanExecuteChanged();
+            MergeSelectedPartCommand.NotifyCanExecuteChanged();
             OnPropertyChanged(nameof(IsEditorWorkspace));
             OnPropertyChanged(nameof(HasModelParts));
             OnPropertyChanged(nameof(PartLayers));
@@ -441,8 +458,10 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
             OnPropertyChanged(nameof(CanEditSelectedPartName));
             OnPropertyChanged(nameof(CanRenameSelectedPart));
             OnPropertyChanged(nameof(CanRestoreSourceTransforms));
+            OnPropertyChanged(nameof(CanMergeSelectedPart));
             RenameSelectedPartCommand.NotifyCanExecuteChanged();
             RestoreSourceTransformsCommand.NotifyCanExecuteChanged();
+            MergeSelectedPartCommand.NotifyCanExecuteChanged();
             OnPropertyChanged(nameof(IsEditorWorkspace));
             OnPropertyChanged(nameof(CanvasHeader));
             OnPropertyChanged(nameof(CanvasSubtitle));
@@ -631,6 +650,8 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
         && splitPart.SourceCrop.Width >= 2
         && Math.Abs(splitPart.SourceCrop.Width - splitPart.SourceTransform.Crop.Width) < 0.0001
         && Math.Abs(splitPart.SourceCrop.Height - splitPart.SourceTransform.Crop.Height) < 0.0001;
+    public bool CanMergeSelectedPart => CanEdit && IsModelWorkspace && !IsSplittingModelPart
+        && _modelPartMergeService is not null && FindMergePair() is not null;
     public bool CanRestoreSourceTransforms => CanEdit && IsModelWorkspace && _modelContent is not null
         && _modelContent.Parts.Any(part => part.Transform != part.SourceTransform.Transform);
     public IReadOnlyList<ModelPartLayerItem> PosePartItems => IsPoseWorkspace ? PartLayers : [];
@@ -740,6 +761,95 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
 
     [RelayCommand(CanExecute = nameof(CanCancelSplitModelPart))]
     private void CancelSplitModelPart() => _partSplitCancellation?.Cancel();
+
+    [RelayCommand(CanExecute = nameof(CanMergeSelectedPart))]
+    private async Task MergeSelectedPartAsync()
+    {
+        var pair = FindMergePair();
+        if (!CanMergeSelectedPart || pair is null || _modelContent is null || _modelPartMergeService is null) return;
+
+        var (left, right) = pair.Value;
+        var before = _modelContent;
+        var mergeCancellation = new CancellationTokenSource();
+        _partSplitCancellation = mergeCancellation;
+        IsSplittingModelPart = true;
+        ModelPartSplitError = null;
+        ModelPartSplitStatus = "Mesclando as peças adjacentes…";
+        try
+        {
+            var mergedAsset = await _modelPartMergeService.MergeHorizontallyAsync(left, right, mergeCancellation.Token);
+            if (mergedAsset.IsFailure)
+            {
+                ModelPartSplitError = mergedAsset.Error?.Message ?? "Não foi possível mesclar as peças.";
+                ModelPartSplitStatus = null;
+                return;
+            }
+            mergeCancellation.Token.ThrowIfCancellationRequested();
+            if (!ReferenceEquals(before, _modelContent))
+                throw new InvalidOperationException("O modelo mudou durante a mesclagem.");
+
+            var sourceCrop = left.SourceTransform.Crop;
+            var merged = new ModelPart(left.Id, left.Name, mergedAsset.Value.AssetId,
+                new Rect2D(0, 0, mergedAsset.Value.Width, mergedAsset.Value.Height), left.Transform,
+                new ModelPartSourceTransform(new Rect2D(sourceCrop.X, sourceCrop.Y,
+                    mergedAsset.Value.Width, mergedAsset.Value.Height), left.SourceTransform.Transform), left.IsVisible);
+            ExecuteModelCommand(new ModelPartMergeCommand(left, right, merged, before.Parts,
+                before.LayerOrder, before.RigJoints));
+            ModelPartSplitStatus = $"Peças “{left.Name}” e “{right.Name}” mescladas. Desfazer restaura ambas.";
+        }
+        catch (OperationCanceledException) when (mergeCancellation.IsCancellationRequested)
+        {
+            ModelPartSplitStatus = "Mesclagem cancelada.";
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or ArgumentException or IOException)
+        {
+            ModelPartSplitError = "A mesclagem falhou; as peças originais foram mantidas.";
+            ModelPartSplitStatus = null;
+            _ = _logger?.WriteAsync(DiagnosticEventCode.AssetImportFailed, DiagnosticOutcome.Failure,
+                exception is IOException ? DiagnosticErrorCode.StorageFailure : DiagnosticErrorCode.InvalidAsset);
+        }
+        finally
+        {
+            mergeCancellation.Dispose();
+            if (ReferenceEquals(_partSplitCancellation, mergeCancellation)) _partSplitCancellation = null;
+            IsSplittingModelPart = false;
+        }
+    }
+
+    private (ModelPart Left, ModelPart Right)? FindMergePair()
+    {
+        if (_modelContent is null || SelectedModelPartId is not { } selectedId) return null;
+        var selected = _modelContent.Parts.FirstOrDefault(part => part.Id == selectedId);
+        if (selected is null) return null;
+        foreach (var candidate in _modelContent.Parts.Where(part => part.Id != selectedId)
+                     .OrderBy(part => Math.Abs(part.SourceTransform.Crop.X - selected.SourceTransform.Crop.X)))
+        {
+            var left = selected.SourceTransform.Crop.X < candidate.SourceTransform.Crop.X ? selected : candidate;
+            var right = ReferenceEquals(left, selected) ? candidate : selected;
+            var dimensions = ModelPartMergeService.GetDimensions(left, right);
+            if (dimensions is null || left.IsVisible != right.IsVisible
+                || !TransformsShareBasis(left.Transform, right.Transform)
+                || !TransformsShareBasis(left.SourceTransform.Transform, right.SourceTransform.Transform)
+                || !AreAdjacent(left.Transform, right.Transform, dimensions.Value.LeftWidth)
+                || !AreAdjacent(left.SourceTransform.Transform, right.SourceTransform.Transform, dimensions.Value.LeftWidth))
+                continue;
+            var leftIndex = _modelContent.LayerOrder.IndexOf(left.Id);
+            var rightIndex = _modelContent.LayerOrder.IndexOf(right.Id);
+            if (leftIndex >= 0 && Math.Abs(leftIndex - rightIndex) == 1) return (left, right);
+        }
+        return null;
+    }
+
+    private static bool TransformsShareBasis(Transform2D left, Transform2D right) =>
+        left.Scale == right.Scale && Math.Abs(left.RotationRadians - right.RotationRadians) < 0.0001
+        && left.Pivot == right.Pivot && left.FlipX == right.FlipX && left.FlipY == right.FlipY;
+
+    private static bool AreAdjacent(Transform2D left, Transform2D right, double width)
+    {
+        var expected = left.Apply(new Point2D(width, 0));
+        var actual = right.Apply(Point2D.Zero);
+        return Math.Abs(expected.X - actual.X) < 0.0001 && Math.Abs(expected.Y - actual.Y) < 0.0001;
+    }
 
     private static string BuildSplitPartName(string originalName, IEnumerable<string> existingNames)
     {
@@ -912,7 +1022,8 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
         HairRoleTintProcessor? hairRoleTintProcessor = null,
         IHairStyleRepository? hairStyleRepository = null,
         IThumbnailService? thumbnailService = null,
-        ModelPartSplitService? modelPartSplitService = null)
+        ModelPartSplitService? modelPartSplitService = null,
+        ModelPartMergeService? modelPartMergeService = null)
     {
         _repository = repository ?? throw new ArgumentNullException(nameof(repository));
         _dataInitializer = dataInitializer ?? throw new ArgumentNullException(nameof(dataInitializer));
@@ -926,6 +1037,7 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
         _assetStore = assetStore;
         _thumbnailService = thumbnailService;
         _modelPartSplitService = modelPartSplitService;
+        _modelPartMergeService = modelPartMergeService;
         _contentRepository = contentRepository;
         _sceneRenderer = sceneRenderer;
         _publishModelRevisionService = publishModelRevisionService;
@@ -3067,8 +3179,10 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
         SyncSelectedPartNameDraft();
         OnPropertyChanged(nameof(CanRenameSelectedPart));
         OnPropertyChanged(nameof(CanRestoreSourceTransforms));
+        OnPropertyChanged(nameof(CanMergeSelectedPart));
         RenameSelectedPartCommand.NotifyCanExecuteChanged();
         RestoreSourceTransformsCommand.NotifyCanExecuteChanged();
+        MergeSelectedPartCommand.NotifyCanExecuteChanged();
         RefreshRigPanel();
         SetModelContentDirty(true);
         _ = RenderModelPreviewAsync(content);

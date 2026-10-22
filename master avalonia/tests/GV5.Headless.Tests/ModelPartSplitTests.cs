@@ -14,7 +14,7 @@ namespace GV5.Headless.Tests;
 public sealed class ModelPartSplitTests
 {
     [Fact]
-    public async Task VerticalSplitPreservesPixelsAndAlphaAndCommandKeepsRigUndoable()
+    public async Task SplitAndMergePreservePixelsAlphaRigAndUndoRedo()
     {
         var store = new TestAssetStore();
         var sourceBytes = CreateStrip();
@@ -70,6 +70,28 @@ public sealed class ModelPartSplitTests
         var redone = command.Apply(undone);
         Assert.Equal(split.Parts, redone.Parts);
         Assert.Equal(split.LayerOrder, redone.LayerOrder);
+
+        var mergedAsset = await new ModelPartMergeService(store, new AssetImageDecoder())
+            .MergeHorizontallyAsync(left, right, cancellationToken);
+        Assert.True(mergedAsset.IsSuccess, mergedAsset.Error?.Message);
+        Assert.Equal(SKColors.Red, await ReadPixelAsync(store, mergedAsset.Value.AssetId, 0, 0));
+        Assert.Equal(SKColors.Green, await ReadPixelAsync(store, mergedAsset.Value.AssetId, 1, 1));
+        Assert.Equal(SKColors.Blue, await ReadPixelAsync(store, mergedAsset.Value.AssetId, 2, 0));
+        Assert.Equal(0, (await ReadPixelAsync(store, mergedAsset.Value.AssetId, 3, 0)).Alpha);
+
+        var mergedPart = new ModelPart(left.Id, left.Name, mergedAsset.Value.AssetId,
+            new Rect2D(0, 0, 4, 2), left.Transform,
+            new ModelPartSourceTransform(new Rect2D(1, 0, 4, 2), left.SourceTransform.Transform));
+        var mergeCommand = new ModelPartMergeCommand(left, right, mergedPart,
+            split.Parts, split.LayerOrder, split.RigJoints);
+        var mergedContent = mergeCommand.Apply(split);
+        Assert.Equal(new[] { originalId, followingId }, mergedContent.LayerOrder);
+        Assert.Single(mergedContent.Parts.Where(part => part.Id == originalId));
+        Assert.Equal(split.RigJoints, mergedContent.RigJoints);
+        var mergeUndone = mergeCommand.Revert(mergedContent);
+        Assert.Equal(split.Parts, mergeUndone.Parts);
+        Assert.Equal(split.LayerOrder, mergeUndone.LayerOrder);
+        Assert.Equal(split.RigJoints, mergeUndone.RigJoints);
     }
 
     private static Transform2D Offset(Transform2D transform, double x)
