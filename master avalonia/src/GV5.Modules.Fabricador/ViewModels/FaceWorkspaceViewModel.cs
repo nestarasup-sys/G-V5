@@ -20,6 +20,7 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
     private PublishedModelRevision? _pinnedModel;
     private FaceCatalogDraft? _savedCatalog;
     private readonly Dictionary<FaceId, FaceCatalogDraft> _catalogsById = [];
+    private readonly Dictionary<FaceId, PublishedFaceCatalogRevision> _latestPublications = [];
     private int _disposed;
 
     [ObservableProperty]
@@ -38,13 +39,24 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CatalogStatus))]
     [NotifyPropertyChangedFor(nameof(CanConfirmImport))]
+    [NotifyPropertyChangedFor(nameof(CanPublishCatalog))]
+    [NotifyPropertyChangedFor(nameof(PublicationStatus))]
+    [NotifyPropertyChangedFor(nameof(HasSavedCatalog))]
+    [NotifyPropertyChangedFor(nameof(PublishButtonLabel))]
     private FaceCatalogChoiceItem? selectedCatalog;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanPublishCatalog))]
+    [NotifyPropertyChangedFor(nameof(PublicationStatus))]
+    [NotifyPropertyChangedFor(nameof(PublishButtonLabel))]
+    private PublishedFaceCatalogRevision? latestPublication;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanSelectSheet))]
     [NotifyPropertyChangedFor(nameof(CanConfirmImport))]
     [NotifyCanExecuteChangedFor(nameof(SelectEyebrowSheetCommand))]
     [NotifyCanExecuteChangedFor(nameof(ConfirmImportCommand))]
+    [NotifyCanExecuteChangedFor(nameof(PublishCatalogCommand))]
     private bool isBusy;
 
     public FaceWorkspaceViewModel(IFilePicker? filePicker, FaceSheetImportService? importService,
@@ -61,11 +73,15 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
     public bool HasError => !string.IsNullOrWhiteSpace(Error);
     public bool HasStatus => !string.IsNullOrWhiteSpace(Status);
     public bool HasMultipleCatalogs => CatalogChoices.Count > 1;
+    public bool HasSavedCatalog => _savedCatalog is not null;
     public ObservableCollection<FaceCatalogChoiceItem> CatalogChoices { get; }
     public bool CanSelectSheet => !IsBusy && HeadPart is not null && _filePicker is not null && _importService is not null;
     public bool CanConfirmImport => !IsBusy && Preview is not null && _pinnedModel is not null
         && HeadPart is not null && _catalogRepository is not null && _assetStore is not null
         && (!HasMultipleCatalogs || SelectedCatalog is not null);
+    public bool CanPublishCatalog => !IsBusy && _savedCatalog is { Components.Length: > 0 }
+        && _catalogRepository is not null
+        && LatestPublication?.DraftRevision != _savedCatalog.Revision;
     public string ModelRevisionLabel => _pinnedModel is null
         ? "Abra uma revisão publicada do modelo para editar o rosto."
         : HeadPart is null
@@ -76,6 +92,16 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
         : _savedCatalog is null
         ? "O próximo salvamento cria o catálogo facial deste modelo."
         : $"Catálogo “{_savedCatalog.Name}” · {_savedCatalog.Components.Length} componentes salvos";
+    public string PublicationStatus => HasMultipleCatalogs && SelectedCatalog is null
+        ? "Selecione um catálogo para consultar a publicação."
+        : LatestPublication is null
+        ? "Este catálogo ainda não tem uma publicação."
+        : LatestPublication.DraftRevision == _savedCatalog?.Revision
+            ? $"Publicado · revisão {LatestPublication.Revision.Value}"
+            : $"Última publicação · revisão {LatestPublication.Revision.Value}; o rascunho atual tem mudanças";
+    public string PublishButtonLabel => LatestPublication is null
+        ? "Publicar catálogo facial"
+        : "Publicar nova revisão facial";
     public string PreviewSummary => Preview is null ? string.Empty
         : $"Folha {Preview.SourceWidth}×{Preview.SourceHeight} · {Preview.RemovedPixelCount:N0} pixels de fundo removidos · {Preview.Pieces.Count} lados prontos para revisão";
 
@@ -88,9 +114,13 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
     partial void OnSelectedCatalogChanged(FaceCatalogChoiceItem? value)
     {
         _savedCatalog = value is not null && _catalogsById.TryGetValue(value.Id, out var catalog) ? catalog : null;
+        LatestPublication = value is not null && _latestPublications.TryGetValue(value.Id, out var publication)
+            ? publication : null;
         OnPropertyChanged(nameof(CatalogStatus));
+        OnPropertyChanged(nameof(HasSavedCatalog));
         OnPropertyChanged(nameof(CanConfirmImport));
         ConfirmImportCommand.NotifyCanExecuteChanged();
+        PublishCatalogCommand.NotifyCanExecuteChanged();
     }
 
     public async Task OpenModelRevisionAsync(PublishedModelRevision model)
@@ -102,6 +132,7 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
         _pinnedModel = model;
         _savedCatalog = null;
         _catalogsById.Clear();
+        _latestPublications.Clear();
         CatalogChoices.Clear();
         OnPropertyChanged(nameof(HasMultipleCatalogs));
         SelectedCatalog = null;
@@ -109,6 +140,7 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
         Status = discardedPreview ? "A prévia anterior foi descartada ao trocar a revisão do modelo." : null;
         OnPropertyChanged(nameof(ModelRevisionLabel));
         OnPropertyChanged(nameof(CatalogStatus));
+        OnPropertyChanged(nameof(HasSavedCatalog));
         OnPropertyChanged(nameof(CanSelectSheet));
         OnPropertyChanged(nameof(CanConfirmImport));
         SelectEyebrowSheetCommand.NotifyCanExecuteChanged();
@@ -131,6 +163,18 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
         {
             _catalogsById.Add(catalog.Id, catalog);
             CatalogChoices.Add(new FaceCatalogChoiceItem(catalog.Id, catalog.Name, catalog.Revision));
+        }
+        _latestPublications.Clear();
+        foreach (var catalog in result.Value)
+        {
+            var publications = await _catalogRepository.ListPublishedAsync(catalog.Id, cancellationToken);
+            if (publications.IsFailure)
+            {
+                Error = publications.Error!.Message;
+                return;
+            }
+            var latest = publications.Value.OrderByDescending(publication => publication.Revision.Value).FirstOrDefault();
+            if (latest is not null) _latestPublications[catalog.Id] = latest;
         }
         OnPropertyChanged(nameof(HasMultipleCatalogs));
         var selected = result.Value.Count == 1 ? result.Value[0] : null;
@@ -268,6 +312,34 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
         await DisposePreviewAsync();
         Error = null;
         Status = "Prévia descartada; nenhum catálogo foi alterado.";
+    }
+
+    [RelayCommand(CanExecute = nameof(CanPublishCatalog))]
+    private async Task PublishCatalogAsync(CancellationToken cancellationToken)
+    {
+        if (_savedCatalog is not { Components.Length: > 0 } catalog || _catalogRepository is null) return;
+        Error = null;
+        Status = null;
+        IsBusy = true;
+        try
+        {
+            var result = await _catalogRepository.PublishAsync(catalog.Id, catalog.Revision,
+                DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), cancellationToken);
+            if (result.IsFailure)
+            {
+                Error = result.Error!.Message;
+                return;
+            }
+            _latestPublications[catalog.Id] = result.Value;
+            LatestPublication = result.Value;
+            OnPropertyChanged(nameof(PublicationStatus));
+            PublishCatalogCommand.NotifyCanExecuteChanged();
+            Status = $"Catálogo facial publicado na revisão {result.Value.Revision.Value}.";
+        }
+        catch (OperationCanceledException) { Status = "Publicação cancelada; a revisão publicada anterior foi preservada."; }
+        catch (Exception exception) when (exception is IOException or InvalidOperationException or ArgumentException)
+        { Error = "Não foi possível publicar o catálogo facial."; }
+        finally { IsBusy = false; }
     }
 
     private async Task DisposePreviewAsync()

@@ -66,6 +66,19 @@ public sealed class FaceWorkspaceViewModelTests
             Assert.DoesNotContain(firstSaved.Components.Select(component => component.Id),
                 id => replaced.Components.Any(component => component.Id == id));
             Assert.Contains("salvas", viewModel.Status, StringComparison.OrdinalIgnoreCase);
+
+            Assert.True(viewModel.CanPublishCatalog);
+            await viewModel.PublishCatalogCommand.ExecuteAsync(null);
+            var publication = Assert.Single(catalogRepository.Publications[replaced.Id]);
+            Assert.Equal(replaced.Revision, publication.DraftRevision);
+            Assert.Equal(Revision.Initial, publication.Revision);
+            Assert.False(viewModel.CanPublishCatalog);
+            Assert.Contains("publicado", viewModel.PublicationStatus, StringComparison.OrdinalIgnoreCase);
+
+            await viewModel.SelectEyebrowSheetCommand.ExecuteAsync(null);
+            await viewModel.ConfirmImportCommand.ExecuteAsync(null);
+            Assert.True(viewModel.CanPublishCatalog);
+            Assert.Contains("mudanças", viewModel.PublicationStatus, StringComparison.OrdinalIgnoreCase);
         }
         finally
         {
@@ -224,6 +237,7 @@ public sealed class FaceWorkspaceViewModelTests
     private sealed class MemoryFaceCatalogRepository : IFaceCatalogRepository
     {
         public Dictionary<FaceId, FaceCatalogDraft> Catalogs { get; } = [];
+        public Dictionary<FaceId, List<PublishedFaceCatalogRevision>> Publications { get; } = [];
 
         public Task<Result<FaceCatalogDraft>> CreateAsync(FaceCatalogDraft draft, CancellationToken cancellationToken = default)
         {
@@ -250,13 +264,35 @@ public sealed class FaceWorkspaceViewModelTests
             return Task.FromResult(Result<FaceCatalogDraft>.Success(draft));
         }
 
-        public Task<Result<PublishedFaceCatalogRevision>> PublishAsync(FaceId faceId, Revision expectedDraftRevision, long publishedUtcMs, CancellationToken cancellationToken = default) =>
-            Task.FromResult(Result<PublishedFaceCatalogRevision>.Failure(new ApplicationError(ApplicationErrorCode.NotFound, "Não usado no teste.")));
+        public Task<Result<PublishedFaceCatalogRevision>> PublishAsync(FaceId faceId, Revision expectedDraftRevision, long publishedUtcMs, CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!Catalogs.TryGetValue(faceId, out var draft))
+                return Task.FromResult(Result<PublishedFaceCatalogRevision>.Failure(new ApplicationError(ApplicationErrorCode.NotFound, "Catálogo inexistente.")));
+            if (draft.Revision != expectedDraftRevision)
+                return Task.FromResult(Result<PublishedFaceCatalogRevision>.Failure(new ApplicationError(ApplicationErrorCode.Conflict, "Conflito.")));
+            var publications = Publications.GetValueOrDefault(faceId) ?? [];
+            var publication = PublishedFaceCatalogRevision.Restore(FaceRevisionId.New(), faceId,
+                Revision.From(publications.Count + 1), draft.Revision, publishedUtcMs, new string('c', 64), draft);
+            publications.Add(publication);
+            Publications[faceId] = publications;
+            return Task.FromResult(Result<PublishedFaceCatalogRevision>.Success(publication));
+        }
 
-        public Task<Result<PublishedFaceCatalogRevision>> GetPublishedAsync(FaceId faceId, Revision revision, CancellationToken cancellationToken = default) =>
-            Task.FromResult(Result<PublishedFaceCatalogRevision>.Failure(new ApplicationError(ApplicationErrorCode.NotFound, "Não usado no teste.")));
+        public Task<Result<PublishedFaceCatalogRevision>> GetPublishedAsync(FaceId faceId, Revision revision, CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var publication = Publications.GetValueOrDefault(faceId)?.SingleOrDefault(item => item.Revision == revision);
+            return Task.FromResult(publication is null
+                ? Result<PublishedFaceCatalogRevision>.Failure(new ApplicationError(ApplicationErrorCode.NotFound, "Publicação inexistente."))
+                : Result<PublishedFaceCatalogRevision>.Success(publication));
+        }
 
-        public Task<Result<IReadOnlyList<PublishedFaceCatalogRevision>>> ListPublishedAsync(FaceId faceId, CancellationToken cancellationToken = default) =>
-            Task.FromResult(Result<IReadOnlyList<PublishedFaceCatalogRevision>>.Success([]));
+        public Task<Result<IReadOnlyList<PublishedFaceCatalogRevision>>> ListPublishedAsync(FaceId faceId, CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            IReadOnlyList<PublishedFaceCatalogRevision> publications = Publications.GetValueOrDefault(faceId) ?? [];
+            return Task.FromResult(Result<IReadOnlyList<PublishedFaceCatalogRevision>>.Success(publications));
+        }
     }
 }

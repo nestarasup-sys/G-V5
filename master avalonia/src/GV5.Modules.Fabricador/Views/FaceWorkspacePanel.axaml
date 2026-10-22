@@ -62,6 +62,15 @@
             <Button Content="Salvar par no catálogo facial" Command="{Binding ConfirmImportCommand}"
                     IsEnabled="{Binding CanConfirmImport}" IsVisible="{Binding HasPreview}"
                     Padding="11,7" Background="#C74677" BorderBrush="#C74677" Foreground="#FFFFFF" />
+            <Border IsVisible="{Binding HasSavedCatalog}" Background="#FBFAFB" BorderBrush="#EEE9ED"
+                    BorderThickness="1" CornerRadius="8" Padding="9">
+                <StackPanel Spacing="6">
+                    <TextBlock Text="{Binding PublicationStatus}" FontSize="11" Foreground="#706872" TextWrapping="Wrap" />
+                    <Button Content="{Binding PublishButtonLabel}" Command="{Binding PublishCatalogCommand}"
+                            IsEnabled="{Binding CanPublishCatalog}" HorizontalAlignment="Left" Padding="10,6"
+                            Background="#EEF6F1" BorderBrush="#CDE6D5" Foreground="#337A50" />
+                </StackPanel>
+            </Border>
             <TextBlock Text="{Binding Status}" IsVisible="{Binding HasStatus}" FontSize="11" Foreground="#5D7C6B" TextWrapping="Wrap" />
             <TextBlock Text="{Binding Error}" IsVisible="{Binding HasError}" FontSize="11" Foreground="#B4233C" TextWrapping="Wrap" />
         </StackPanel>
