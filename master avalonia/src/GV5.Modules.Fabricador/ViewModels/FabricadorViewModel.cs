@@ -6,6 +6,7 @@ using System.Diagnostics;
 using GV5.Application.Contracts;
 using GV5.Application.Services;
 using GV5.Assets.Processing;
+using GV5.Assets.Decoding;
 using GV5.Core.Identity;
 using GV5.Core.Models;
 using GV5.Modules.Fabricador.Import;
@@ -1200,7 +1201,8 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
         ModelPartMixerService? modelPartMixerService = null,
         IModelSlotRepository? modelSlotRepository = null,
         FaceSheetImportService? faceSheetImportService = null,
-        IFaceCatalogRepository? faceCatalogRepository = null)
+        IFaceCatalogRepository? faceCatalogRepository = null,
+        AssetImageDecoder? assetImageDecoder = null)
     {
         _repository = repository ?? throw new ArgumentNullException(nameof(repository));
         _dataInitializer = dataInitializer ?? throw new ArgumentNullException(nameof(dataInitializer));
@@ -1211,7 +1213,8 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
         _modelSourceImportService = modelSourceImportService;
         HairWorkspace = new HairWorkspaceViewModel(_filePicker, hairSheetImportService, hairRoleTintProcessor,
             hairStyleRepository, assetStore);
-        FaceWorkspace = new FaceWorkspaceViewModel(_filePicker, faceSheetImportService, faceCatalogRepository, assetStore);
+        FaceWorkspace = new FaceWorkspaceViewModel(_filePicker, faceSheetImportService, faceCatalogRepository,
+            assetStore, assetImageDecoder, sceneRenderer);
         _assetStore = assetStore;
         _thumbnailService = thumbnailService;
         _modelPartSplitService = modelPartSplitService;

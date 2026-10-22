@@ -3,11 +3,14 @@ using CommunityToolkit.Mvvm.Input;
 using System.Collections.ObjectModel;
 using System.Globalization;
 using GV5.Application.Contracts;
+using GV5.Assets.Decoding;
 using GV5.Assets.Processing;
 using GV5.Core.Identity;
 using GV5.Core.Models;
 using GV5.Geometry;
 using GV5.Modules.Fabricador.Import;
+using GV5.Modules.Fabricador.Rendering;
+using GV5.Rendering;
 
 namespace GV5.Modules.Fabricador.ViewModels;
 
@@ -18,11 +21,28 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
     private readonly FaceSheetImportService? _importService;
     private readonly IFaceCatalogRepository? _catalogRepository;
     private readonly IAssetStore? _assetStore;
+    private readonly FaceCatalogPreviewRenderer? _previewRenderer;
     private PublishedModelRevision? _pinnedModel;
     private FaceCatalogDraft? _savedCatalog;
     private readonly Dictionary<FaceId, FaceCatalogDraft> _catalogsById = [];
     private readonly Dictionary<FaceId, PublishedFaceCatalogRevision> _latestPublications = [];
     private int _disposed;
+    private CancellationTokenSource? _composedPreviewCancellation;
+    private long _composedPreviewVersion;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasComposedPreviewError))]
+    [NotifyPropertyChangedFor(nameof(HasComposedPreviewPlaceholder))]
+    private string? composedPreviewError;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasComposedPreview))]
+    [NotifyPropertyChangedFor(nameof(HasComposedPreviewPlaceholder))]
+    private RenderedFrame? composedPreviewFrame;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ComposedPreviewPlaceholder))]
+    private bool isRenderingComposedPreview;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasPreview))]
@@ -106,18 +126,27 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
     private bool isBusy;
 
     public FaceWorkspaceViewModel(IFilePicker? filePicker, FaceSheetImportService? importService,
-        IFaceCatalogRepository? catalogRepository = null, IAssetStore? assetStore = null)
+        IFaceCatalogRepository? catalogRepository = null, IAssetStore? assetStore = null,
+        AssetImageDecoder? imageDecoder = null, IRenderSceneRenderer? sceneRenderer = null)
     {
         _filePicker = filePicker;
         _importService = importService;
         _catalogRepository = catalogRepository;
         _assetStore = assetStore;
+        if (assetStore is not null && imageDecoder is not null && sceneRenderer is not null)
+            _previewRenderer = new FaceCatalogPreviewRenderer(assetStore, imageDecoder, sceneRenderer);
         CatalogChoices = [];
         ComponentChoices = [];
     }
 
     public bool HasPreview => Preview is not null;
     public bool HasError => !string.IsNullOrWhiteSpace(Error);
+    public bool HasComposedPreview => ComposedPreviewFrame is not null;
+    public bool HasComposedPreviewError => !string.IsNullOrWhiteSpace(ComposedPreviewError);
+    public bool HasComposedPreviewPlaceholder => !HasComposedPreview && !HasComposedPreviewError;
+    public string ComposedPreviewPlaceholder => IsRenderingComposedPreview
+        ? "Compondo prévia facial…"
+        : "A prévia aparece ao abrir uma revisão publicada do modelo.";
     public bool HasStatus => !string.IsNullOrWhiteSpace(Status);
     public bool CanChangeSheetKind => !HasPreview && !IsBusy;
     public bool HasMultipleCatalogs => CatalogChoices.Count > 1;
@@ -194,6 +223,7 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
         OnPropertyChanged(nameof(CanConfirmImport));
         ConfirmImportCommand.NotifyCanExecuteChanged();
         PublishCatalogCommand.NotifyCanExecuteChanged();
+        _ = RefreshComposedPreviewAsync();
     }
 
     partial void OnSelectedComponentChanged(FaceComponentChoiceItem? value)
@@ -212,6 +242,9 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
         if (_pinnedModel?.Id == model.Id) return;
         var discardedPreview = Preview is not null;
         await DisposePreviewAsync();
+        var previousComposedFrame = ComposedPreviewFrame;
+        ComposedPreviewFrame = null;
+        previousComposedFrame?.Dispose();
         _pinnedModel = model;
         _savedCatalog = null;
         _catalogsById.Clear();
@@ -228,6 +261,7 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
         OnPropertyChanged(nameof(CanConfirmImport));
         SelectFaceSheetCommand.NotifyCanExecuteChanged();
         ConfirmImportCommand.NotifyCanExecuteChanged();
+        await RefreshComposedPreviewAsync();
     }
 
     public async Task LoadCatalogAsync(CancellationToken cancellationToken = default)
@@ -270,6 +304,7 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
         SelectFaceSheetCommand.NotifyCanExecuteChanged();
         ConfirmImportCommand.NotifyCanExecuteChanged();
         Status = _savedCatalog is null ? "Nenhum catálogo facial salvo nesta revisão." : "Catálogo facial carregado.";
+        await RefreshComposedPreviewAsync(cancellationToken);
     }
 
     [RelayCommand(CanExecute = nameof(CanSelectSheet))]
@@ -551,6 +586,47 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
         if (previous is not null) await previous.DisposeAsync();
     }
 
+    private async Task RefreshComposedPreviewAsync(CancellationToken cancellationToken = default)
+    {
+        if (_previewRenderer is null || _pinnedModel is null) return;
+
+        var requestVersion = Interlocked.Increment(ref _composedPreviewVersion);
+        var previousCancellation = Interlocked.Exchange(ref _composedPreviewCancellation,
+            CancellationTokenSource.CreateLinkedTokenSource(cancellationToken));
+        previousCancellation?.Cancel();
+        previousCancellation?.Dispose();
+        var request = _composedPreviewCancellation!;
+        ComposedPreviewError = null;
+        IsRenderingComposedPreview = true;
+        try
+        {
+            var frame = await _previewRenderer.RenderAsync(_pinnedModel, _savedCatalog, 512, request.Token);
+            if (request.IsCancellationRequested || requestVersion != Volatile.Read(ref _composedPreviewVersion))
+            {
+                frame.Dispose();
+                return;
+            }
+
+            var previous = ComposedPreviewFrame;
+            ComposedPreviewFrame = frame;
+            previous?.Dispose();
+        }
+        catch (OperationCanceledException) when (request.IsCancellationRequested) { }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
+                                          or InvalidOperationException or InvalidDataException or ArgumentException)
+        {
+            if (requestVersion == Volatile.Read(ref _composedPreviewVersion))
+                ComposedPreviewError = "Não foi possível compor a prévia facial. Confira os assets do modelo e do catálogo.";
+        }
+        finally
+        {
+            if (requestVersion == Volatile.Read(ref _composedPreviewVersion))
+                IsRenderingComposedPreview = false;
+            if (ReferenceEquals(Interlocked.CompareExchange(ref _composedPreviewCancellation, null, request), request))
+                request.Dispose();
+        }
+    }
+
     private static Transform2D CreateInitialTransform(ModelPart head, FaceSheetImportPiecePreview piece,
         FaceComponentKind kind, FaceComponentSide? side, FaceSheetImportPiecePreview? sharedScaleSource = null)
     {
@@ -645,6 +721,12 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
+        var previewCancellation = Interlocked.Exchange(ref _composedPreviewCancellation, null);
+        previewCancellation?.Cancel();
+        previewCancellation?.Dispose();
+        ComposedPreviewFrame?.Dispose();
+        ComposedPreviewFrame = null;
+        IsRenderingComposedPreview = false;
         await DisposePreviewAsync();
     }
 }

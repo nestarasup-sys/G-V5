@@ -14,6 +14,24 @@
                 <TextBlock Text="{Binding ModelRevisionLabel}" FontSize="11" Foreground="#958B96" TextWrapping="Wrap" />
             </StackPanel>
 
+            <Border Background="#F6F3F6" BorderBrush="#E3DCE4" BorderThickness="1" CornerRadius="9" Padding="8">
+                <Grid RowDefinitions="Auto,Auto" RowSpacing="6">
+                    <TextBlock Text="Prévia do rosto no modelo" FontWeight="Bold" Foreground="#342E36" />
+                    <Border Grid.Row="1" Height="220" Background="#E9E4EA" CornerRadius="6" ClipToBounds="True">
+                        <Grid>
+                            <Image x:Name="ComposedFacePreviewImage" Stretch="Uniform" />
+                            <TextBlock Text="{Binding ComposedPreviewPlaceholder}"
+                                       IsVisible="{Binding HasComposedPreviewPlaceholder}" HorizontalAlignment="Center"
+                                       VerticalAlignment="Center" MaxWidth="280" TextAlignment="Center"
+                                       TextWrapping="Wrap" FontSize="11" Foreground="#706872" />
+                        </Grid>
+                    </Border>
+                    <TextBlock Grid.Row="1" Text="{Binding ComposedPreviewError}" IsVisible="{Binding HasComposedPreviewError}"
+                               HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="330"
+                               TextAlignment="Center" TextWrapping="Wrap" FontSize="11" Foreground="#B4233C" />
+                </Grid>
+            </Border>
+
             <Border Background="#FBFAFB" BorderBrush="#EEE9ED" BorderThickness="1" CornerRadius="9" Padding="10">
                 <StackPanel Spacing="8">
                     <TextBlock Text="Importar componentes faciais" FontWeight="Bold" Foreground="#342E36" />

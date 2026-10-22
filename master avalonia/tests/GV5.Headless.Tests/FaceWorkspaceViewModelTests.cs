@@ -7,7 +7,9 @@ using GV5.Core.Identity;
 using GV5.Core.Models;
 using GV5.Geometry;
 using GV5.Modules.Fabricador.Import;
+using GV5.Modules.Fabricador.Rendering;
 using GV5.Modules.Fabricador.ViewModels;
+using GV5.Rendering;
 using SkiaSharp;
 using Xunit;
 
@@ -15,6 +17,50 @@ namespace GV5.Headless.Tests;
 
 public sealed class FaceWorkspaceViewModelTests
 {
+    [Fact]
+    public async Task ComposedPreviewScene_UsesDecodedComponentBoundsAndOnlyDefaultVisibleSelections()
+    {
+        var assets = new MemoryAssetStore();
+        await using var stream = new MemoryStream(CreateSeparatedBrows(), writable: false);
+        var imported = await assets.ImportAsync(stream, "image/png", TestContext.Current.CancellationToken);
+        Assert.True(imported.IsSuccess);
+
+        var model = CreatePublishedModel("Modelo da prévia composta");
+        var transform = new Transform2D(new Point2D(24, 30), new Point2D(1, 1), 0, new Point2D(9, 5));
+        var catalog = FaceCatalogDraft.Create(ModelRevisionReference.From(model), "Rosto")
+            .WithComponent(FaceComponent.Create(FaceComponentKind.Eyebrow, "Sobrancelha esquerda",
+                imported.Value.Id, FaceComponentSide.Left, transform))
+            .WithComponent(FaceComponent.Create(FaceComponentKind.Eyebrow, "Sobrancelha direita",
+                imported.Value.Id, FaceComponentSide.Right, transform));
+        var previewRenderer = new FaceCatalogPreviewRenderer(assets, new AssetImageDecoder(), new UnusedSceneRenderer());
+
+        var scene = await previewRenderer.BuildSceneAsync(model, catalog, maximumDimension: 50,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(50, scene.Width);
+        Assert.Equal(50, scene.Height);
+        Assert.Equal(3, scene.Layers.Length);
+        var faceLayers = scene.Layers.Where(layer => layer.AssetId == imported.Value.Id).ToArray();
+        Assert.Equal(2, faceLayers.Length);
+        Assert.All(faceLayers, layer => Assert.Equal(new Rect2D(0, 0, 18, 10), layer.Crop));
+    }
+
+    [Fact]
+    public async Task ComposedPreviewScene_RejectsAnUnavailableSelectedFaceAsset()
+    {
+        var model = CreatePublishedModel("Modelo com asset facial ausente");
+        var missingAsset = AssetId.New();
+        var transform = new Transform2D(new Point2D(24, 30), new Point2D(1, 1), 0, new Point2D(9, 5));
+        var catalog = FaceCatalogDraft.Create(ModelRevisionReference.From(model), "Rosto")
+            .WithComponent(FaceComponent.Create(FaceComponentKind.Eyebrow, "Sobrancelha esquerda",
+                missingAsset, FaceComponentSide.Left, transform));
+        var previewRenderer = new FaceCatalogPreviewRenderer(new MemoryAssetStore(), new AssetImageDecoder(),
+            new UnusedSceneRenderer());
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => previewRenderer.BuildSceneAsync(model, catalog,
+            cancellationToken: TestContext.Current.CancellationToken));
+    }
+
     [Fact]
     public async Task ComponentTransform_RequiresValidValuesAndPersistsAsOneCatalogRevision()
     {
@@ -450,6 +496,12 @@ public sealed class FaceWorkspaceViewModelTests
 
         public Task<Result<Unit>> ReleaseReferenceAsync(AssetReferenceKey reference, CancellationToken cancellationToken = default) =>
             Task.FromResult(Result<Unit>.Success(Unit.Value));
+    }
+
+    private sealed class UnusedSceneRenderer : IRenderSceneRenderer
+    {
+        public Task<RenderedFrame> RenderAsync(RenderScene scene, CancellationToken cancellationToken = default) =>
+            throw new InvalidOperationException("The scene-only preview test must not rasterize pixels.");
     }
 
     private sealed class MemoryFaceCatalogRepository : IFaceCatalogRepository
