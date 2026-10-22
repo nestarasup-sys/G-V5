@@ -9,6 +9,45 @@ namespace GV5.Rendering.Tests;
 public sealed class FaceRenderSceneBuilderTests
 {
     [Fact]
+    public void CatalogPreviewScene_ComposesModelAndSelectedFaceAtThePreviewScale()
+    {
+        var modelId = ModelId.New();
+        var modelRevisionId = ModelRevisionId.New();
+        var sourceAsset = AssetId.New();
+        var headPartId = ModelPartId.New();
+        var headCrop = new Rect2D(0, 0, 100, 100);
+        var head = new ModelPart(headPartId, "Cabeça", sourceAsset, headCrop, Transform2D.Identity,
+            new ModelPartSourceTransform(headCrop, Transform2D.Identity));
+        var modelContent = ModelDraftContent.Restore(ModelDraftContent.CurrentSchemaVersion, modelId,
+            Revision.Initial, ModelSlot.From(1), sourceAsset, 100, 100, [head], [headPartId]);
+        var publishedModel = PublishedModelRevision.Restore(modelRevisionId, modelId, Revision.Initial,
+            Revision.Initial, "Modelo de preview", 1, new string('a', 64), modelContent);
+
+        var noseAsset = AssetId.New();
+        var noseTransform = new Transform2D(new Point2D(20, 40), new Point2D(2, 3), .25, new Point2D(5, 6));
+        var catalog = FaceCatalogDraft.Create(ModelRevisionReference.From(publishedModel), "Rosto")
+            .WithComponent(FaceComponent.Create(FaceComponentKind.Nose, "Nariz 01", noseAsset, null, noseTransform));
+
+        var scene = FaceCatalogPreviewSceneBuilder.Build(publishedModel, catalog,
+            new Dictionary<AssetId, Rect2D> { [noseAsset] = new Rect2D(0, 0, 12, 16) }, maximumDimension: 50);
+
+        Assert.Equal(50, scene.Width);
+        Assert.Equal(50, scene.Height);
+        Assert.Equal(2, scene.Layers.Length);
+        Assert.Equal(sourceAsset, scene.Layers[0].AssetId);
+        var faceLayer = Assert.Single(scene.Layers, layer => layer.AssetId == noseAsset);
+        Assert.Equal(new Point2D(7.5, 17), faceLayer.Transform.Translation);
+        Assert.Equal(new Point2D(1, 1.5), faceLayer.Transform.Scale);
+        Assert.Equal(noseTransform.Pivot, faceLayer.Transform.Pivot);
+        Assert.Equal(.25, faceLayer.Transform.RotationRadians);
+
+        var staleRevision = PublishedModelRevision.Restore(ModelRevisionId.New(), modelId, Revision.Initial,
+            Revision.Initial, "Outra revisão", 2, new string('b', 64), modelContent);
+        Assert.Throws<ArgumentException>(() => FaceCatalogPreviewSceneBuilder.Build(staleRevision, catalog,
+            new Dictionary<AssetId, Rect2D> { [noseAsset] = new Rect2D(0, 0, 12, 16) }, maximumDimension: 50));
+    }
+
+    [Fact]
     public void Build_ComposesLinkedEyesMirroredAndOnlySelectedMouthVariantInStableOrder()
     {
         var model = ModelRevisionReference.Restore(ModelId.New(), ModelRevisionId.New(), Revision.Initial, new string('d', 64));
