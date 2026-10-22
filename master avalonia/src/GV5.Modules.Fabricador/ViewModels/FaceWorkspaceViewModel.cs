@@ -448,6 +448,9 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
             if (saved.IsFailure)
             {
                 Error = saved.Error!.Message;
+                if (saved.Error.Code == ApplicationErrorCode.Conflict)
+                    await RefreshAfterTransformConflictAsync(_savedCatalog.Id, SelectedComponent.Id,
+                        [ComponentX, ComponentY, ComponentScaleX, ComponentScaleY, ComponentRotation], cancellationToken);
                 return;
             }
             _savedCatalog = saved.Value;
@@ -464,6 +467,30 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
         catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
         { Error = "Confira posição, escala e rotação do componente facial."; }
         finally { IsBusy = false; }
+    }
+
+    private async Task RefreshAfterTransformConflictAsync(FaceId catalogId, FaceComponentId componentId,
+        IReadOnlyList<string> pendingValues, CancellationToken cancellationToken)
+    {
+        if (_catalogRepository is null) return;
+        var latest = await _catalogRepository.GetAsync(catalogId, cancellationToken);
+        if (latest.IsFailure) return;
+        _savedCatalog = latest.Value;
+        _catalogsById[catalogId] = latest.Value;
+        var index = -1;
+        for (var item = 0; item < CatalogChoices.Count; item++)
+            if (CatalogChoices[item].Id == catalogId) { index = item; break; }
+        var choice = new FaceCatalogChoiceItem(catalogId, latest.Value.Name, latest.Value.Revision);
+        if (index >= 0) CatalogChoices[index] = choice;
+        SelectedCatalog = choice;
+        SelectedComponent = ComponentChoices.FirstOrDefault(item => item.Id == componentId);
+        if (SelectedComponent is null) return;
+        ComponentX = pendingValues[0];
+        ComponentY = pendingValues[1];
+        ComponentScaleX = pendingValues[2];
+        ComponentScaleY = pendingValues[3];
+        ComponentRotation = pendingValues[4];
+        Error = "O catálogo mudou em outra operação. A revisão atual foi carregada; confira o ajuste e salve novamente.";
     }
 
     private void RefreshComponentChoices()

@@ -66,6 +66,53 @@ public sealed class FaceWorkspaceViewModelTests
     }
 
     [Fact]
+    public async Task ComponentTransform_ConflictReloadsLatestCatalogAndPreservesPendingValuesForRetry()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"gv5-face-transform-conflict-{Guid.NewGuid():N}");
+        var repository = new MemoryFaceCatalogRepository();
+        var viewModel = new FaceWorkspaceViewModel(new RecordingFilePicker(CreateSeparatedBrows()), CreateImportService(root),
+            repository, new MemoryAssetStore());
+        try
+        {
+            await viewModel.OpenModelRevisionAsync(CreatePublishedModel("Modelo facial concorrente"));
+            await viewModel.LoadCatalogAsync(TestContext.Current.CancellationToken);
+            await viewModel.SelectFaceSheetCommand.ExecuteAsync(null);
+            await viewModel.ConfirmImportCommand.ExecuteAsync(null);
+
+            var initial = Assert.Single(repository.Catalogs.Values);
+            var selectedId = viewModel.SelectedComponent!.Id;
+            var otherId = Assert.Single(initial.Components, item => item.Id != selectedId).Id;
+            var concurrent = initial.WithTransform(otherId,
+                new Transform2D(new Point2D(9, 12), new Point2D(1.2, 1.1), .25, Point2D.Zero));
+            Assert.True((await repository.SaveAsync(concurrent, initial.Revision, TestContext.Current.CancellationToken)).IsSuccess);
+
+            viewModel.ComponentX = "41,5";
+            viewModel.ComponentY = "63";
+            viewModel.ComponentScaleX = "2,25";
+            viewModel.ComponentScaleY = "1,75";
+            viewModel.ComponentRotation = "30";
+            await viewModel.ApplyComponentTransformCommand.ExecuteAsync(null);
+
+            Assert.Equal(Revision.From(2), viewModel.SelectedCatalog!.Revision);
+            Assert.Equal(selectedId, viewModel.SelectedComponent!.Id);
+            Assert.Equal("41,5", viewModel.ComponentX);
+            Assert.Contains("mudou em outra operação", viewModel.Error, StringComparison.OrdinalIgnoreCase);
+            Assert.True(viewModel.CanApplyComponentTransform);
+
+            await viewModel.ApplyComponentTransformCommand.ExecuteAsync(null);
+            var saved = repository.Catalogs[initial.Id];
+            Assert.Equal(Revision.From(3), saved.Revision);
+            Assert.Equal(new Point2D(9, 12), Assert.Single(saved.Components, item => item.Id == otherId).Transform.Translation);
+            Assert.Equal(41.5, Assert.Single(saved.Components, item => item.Id == selectedId).Transform.Translation.X, 6);
+        }
+        finally
+        {
+            await viewModel.DisposeAsync();
+            if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task ConfirmImport_PersistsBothSidesAndReimportReplacesRatherThanDuplicatesThem()
     {
         var root = Path.Combine(Path.GetTempPath(), $"gv5-face-vm-{Guid.NewGuid():N}");
