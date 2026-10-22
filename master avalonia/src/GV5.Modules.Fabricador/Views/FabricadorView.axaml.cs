@@ -58,6 +58,12 @@ public partial class FabricadorView : UserControl
         UpdateRenderedModel();
     }
 
+    private void OnModelSlotClick(object? sender, RoutedEventArgs e)
+    {
+        if (sender is Button { DataContext: ModelSlotListItem item } && _viewModel is { } viewModel)
+            viewModel.SelectModelSlotCommand.Execute(item.Number);
+    }
+
     private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
         if (e.PropertyName == nameof(FabricadorViewModel.PartLayers))

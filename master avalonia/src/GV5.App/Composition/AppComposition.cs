@@ -54,11 +54,13 @@ internal static class AppComposition
         services.AddSingleton<ISqliteMigration, FaceExpressionRepositorySchemaMigration>();
         services.AddSingleton<ISqliteMigration, FacePublicationSchemaMigration>();
         services.AddSingleton<ISqliteMigration, AnimationSlotsSchemaMigration>();
+        services.AddSingleton<ISqliteMigration, ModelSlotSchemaMigration>();
         services.AddSingleton<SqliteMigrationRunner>();
         services.AddSingleton<IDataPlatformInitializer>(provider => provider.GetRequiredService<SqliteMigrationRunner>());
         services.AddSingleton<IAssetCatalog, SqliteAssetCatalog>();
         services.AddSingleton<IAssetGarbageCollector, SqliteAssetGarbageCollector>();
         services.AddSingleton<IModelDraftRepository, SqliteModelDraftRepository>();
+        services.AddSingleton<IModelSlotRepository, SqliteModelSlotRepository>();
         services.AddSingleton<IModelDraftContentRepository, SqliteModelDraftContentRepository>();
         services.AddSingleton<IModelRevisionRepository, SqliteModelRevisionRepository>();
         services.AddSingleton<IPoseRepository, SqlitePoseRepository>();

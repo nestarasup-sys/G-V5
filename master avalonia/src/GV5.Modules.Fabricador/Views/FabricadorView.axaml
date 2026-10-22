@@ -11,7 +11,7 @@
             BorderThickness="1"
             CornerRadius="14"
             ClipToBounds="True">
-        <Grid RowDefinitions="76,60,*">
+        <Grid RowDefinitions="76,54,60,*">
             <Border Grid.Row="0"
                     Background="#FDFBFC"
                     BorderBrush="#F0EBEF"
@@ -49,7 +49,40 @@
                 </Grid>
             </Border>
 
-            <Border Grid.Row="1" BorderBrush="#F0EBEF" BorderThickness="0,0,0,1" Padding="15,7">
+            <Border Grid.Row="1" Background="#FFFFFF" BorderBrush="#F0EBEF" BorderThickness="0,0,0,1" Padding="10,4">
+                <Grid RowDefinitions="34,Auto" ColumnDefinitions="*,Auto" ColumnSpacing="9" RowSpacing="1">
+                    <ScrollViewer Grid.Row="0" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+                        <ItemsControl ItemsSource="{Binding ModelSlots}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <StackPanel Orientation="Horizontal" Spacing="5" />
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="vm:ModelSlotListItem">
+                                    <Button Click="OnModelSlotClick" Padding="0" Width="92" Height="31" ToolTip.Tip="{Binding ToolTip}">
+                                        <Border Background="{Binding Background}" BorderBrush="{Binding BorderColor}" BorderThickness="1" CornerRadius="7" Padding="7,3">
+                                            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="6">
+                                                <TextBlock Text="{Binding Label}" FontSize="11" FontWeight="Bold" Foreground="#A84368" VerticalAlignment="Center" />
+                                                <StackPanel Grid.Column="1" Spacing="0" VerticalAlignment="Center">
+                                                    <TextBlock Text="{Binding Name}" FontSize="10" FontWeight="SemiBold" Foreground="#342E36" TextTrimming="CharacterEllipsis" />
+                                                    <TextBlock Text="{Binding StatusLabel}" FontSize="9" Foreground="#958B96" />
+                                                </StackPanel>
+                                            </Grid>
+                                        </Border>
+                                    </Button>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+                    <Button Grid.Column="1" Content="Excluir modelo" Command="{Binding DeleteSelectedModelSlotCommand}"
+                            IsEnabled="{Binding CanDeleteSelectedModelSlot}" VerticalAlignment="Center" Padding="9,5"
+                            Background="#FFF5F5" BorderBrush="#F0CACA" Foreground="#A33442" />
+                    <TextBlock Grid.Row="1" Grid.ColumnSpan="2" Text="{Binding ModelSlotsStatus}" FontSize="9" Foreground="#958B96" TextTrimming="CharacterEllipsis" />
+                </Grid>
+            </Border>
+
+            <Border Grid.Row="2" BorderBrush="#F0EBEF" BorderThickness="0,0,0,1" Padding="15,7">
                 <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto" ColumnSpacing="10">
                     <StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center" IsVisible="{Binding IsEditorWorkspace}">
                         <Button Content="↶" Command="{Binding UndoCommand}" IsEnabled="{Binding CanUndo}" ToolTip.Tip="Desfazer última edição" Width="31" Height="31" Padding="0" />
@@ -138,7 +171,7 @@
                 </Grid>
             </Border>
 
-            <Grid Grid.Row="2" ColumnDefinitions="1.7*,1*" ColumnSpacing="11" Margin="11" MinHeight="420">
+            <Grid Grid.Row="3" ColumnDefinitions="1.7*,1*" ColumnSpacing="11" Margin="11" MinHeight="420">
                 <Border Grid.Column="0"
                         BorderBrush="#EEE9ED"
                         BorderThickness="1"

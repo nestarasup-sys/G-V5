@@ -194,6 +194,62 @@ public sealed class SqliteModelDraftRepositoryTests
     }
 
     [Fact]
+    public async Task DeleteAsync_RemovesOnlyUnpublishedDraftsAndPreservesRecoveryOrPublishedModels()
+    {
+        var root = NewTempRoot();
+        var cancellationToken = TestContext.Current.CancellationToken;
+        using var database = new SqliteDatabase(new AppDataPaths(root));
+
+        try
+        {
+            await MigrateAsync(database, cancellationToken);
+            var repository = new SqliteModelDraftRepository(database);
+            var removable = ModelDraft.Create("Rascunho removível", 100);
+            var checkpointed = ModelDraft.Create("Com recuperação", 110);
+            var published = ModelDraft.Create("Publicado", 120);
+            Assert.True((await repository.CreateAsync(removable, cancellationToken)).IsSuccess);
+            Assert.True((await repository.CreateAsync(checkpointed, cancellationToken)).IsSuccess);
+            Assert.True((await repository.CreateAsync(published, cancellationToken)).IsSuccess);
+
+            await database.ExecuteWriteAsync(async (connection, transaction, token) =>
+            {
+                await using var command = connection.CreateCommand();
+                command.Transaction = transaction;
+                command.CommandText = """
+                    INSERT INTO model_draft_checkpoints(checkpoint_id, model_id, expected_revision, display_name, created_utc_ms)
+                    VALUES ($checkpoint, $recovery_model, NULL, 'Com recuperação', 130);
+                    INSERT INTO model_revisions(revision_id, model_id, revision, draft_revision, display_name, published_utc_ms, snapshot_json, snapshot_sha256)
+                    VALUES ($revision, $published_model, 1, 1, 'Publicado', 140, '{}', $hash);
+                    """;
+                command.Parameters.AddWithValue("$checkpoint", Guid.NewGuid().ToString("D"));
+                command.Parameters.AddWithValue("$recovery_model", checkpointed.Id.ToString());
+                command.Parameters.AddWithValue("$revision", Guid.NewGuid().ToString("D"));
+                command.Parameters.AddWithValue("$published_model", published.Id.ToString());
+                command.Parameters.AddWithValue("$hash", new string('a', 64));
+                await command.ExecuteNonQueryAsync(token);
+                return true;
+            }, cancellationToken);
+
+            Assert.True((await repository.DeleteAsync(removable.Id, removable.Revision, cancellationToken)).IsSuccess);
+            AssertFailure(await repository.GetAsync(removable.Id, cancellationToken), ApplicationErrorCode.NotFound);
+
+            var recoveryFailure = await repository.DeleteAsync(checkpointed.Id, checkpointed.Revision, cancellationToken);
+            AssertFailure(recoveryFailure, ApplicationErrorCode.Conflict);
+            Assert.Contains("checkpoint", recoveryFailure.Error!.Message, StringComparison.OrdinalIgnoreCase);
+            Assert.True((await repository.GetAsync(checkpointed.Id, cancellationToken)).IsSuccess);
+
+            var publishedFailure = await repository.DeleteAsync(published.Id, published.Revision, cancellationToken);
+            AssertFailure(publishedFailure, ApplicationErrorCode.Conflict);
+            Assert.True((await repository.GetAsync(published.Id, cancellationToken)).IsSuccess);
+            AssertFailure(await repository.DeleteAsync(published.Id, Revision.From(2), cancellationToken), ApplicationErrorCode.Conflict);
+        }
+        finally
+        {
+            DeleteTempRoot(root);
+        }
+    }
+
+    [Fact]
     public async Task DuplicateAsync_CreatesIndependentRevisionOneDraftAndSurvivesReopen()
     {
         var root = NewTempRoot();

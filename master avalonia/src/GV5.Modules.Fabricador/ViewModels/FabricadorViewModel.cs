@@ -46,6 +46,7 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
     private bool _isPublishingPartLayerThumbnailUpdate;
     private const int MaximumPartLayerThumbnails = 24;
     private readonly IModelDraftContentRepository? _contentRepository;
+    private readonly IModelSlotRepository? _modelSlotRepository;
     private readonly IRenderSceneRenderer? _sceneRenderer;
     private readonly PublishModelRevisionService? _publishModelRevisionService;
     private readonly IModelRevisionRepository? _modelRevisionRepository;
@@ -97,6 +98,10 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
     private ModelDraftContent? _modelContent;
     private ModelDraftContent? _savedModelContent;
     private bool _isModelContentDirty;
+    private int _selectedModelSlot = 1;
+    private bool _isLoadingModelSlot;
+    private bool _modelSlotsReady;
+    private readonly Dictionary<int, ModelId> _modelSlotAssignments = [];
     private ActiveModelTransformGesture? _activeTransformGesture;
     private ActiveRigAnchorGesture? _activeRigAnchorGesture;
     private readonly List<IModelDraftCommand> _undoStack = [];
@@ -374,9 +379,9 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
     [NotifyCanExecuteChangedFor(nameof(ToggleModelMixerCommand))]
     private bool isPublishingRevision;
 
-    public bool CanSave => !IsSaving && !IsPublishingRevision && !IsCheckingRecovery && !HasPendingRecovery && !IsSplittingModelPart && !IsApplyingModelMixer
+    public bool CanSave => !IsSaving && !IsLoadingModelSlot && !IsPublishingRevision && !IsCheckingRecovery && !HasPendingRecovery && !IsSplittingModelPart && !IsApplyingModelMixer
         && !string.IsNullOrWhiteSpace(ModelName) && HasPendingChanges;
-    public bool CanEdit => !IsSaving && !IsPublishingRevision && !IsCheckingRecovery && !HasPendingRecovery && !IsSplittingModelPart && !IsApplyingModelMixer;
+    public bool CanEdit => !IsSaving && !IsLoadingModelSlot && !IsPublishingRevision && !IsCheckingRecovery && !HasPendingRecovery && !IsSplittingModelPart && !IsApplyingModelMixer;
     public bool CanEditSelectedPartName => CanEdit && IsModelWorkspace && SelectedModelPartId is not null;
     public bool CanPublishRevision => _publishModelRevisionService is not null && _savedDraft is not null
         && _modelContent is not null && !IsPublishingRevision && !IsSaving && !IsCheckingRecovery && !HasPendingRecovery && !IsSplittingModelPart && !IsApplyingModelMixer;
@@ -562,6 +567,22 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
     public ObservableCollection<PoseListItem> SavedPoses { get; } = [];
     public ObservableCollection<AnimationListItem> SavedAnimations { get; } = [];
     public ObservableCollection<AnimationSlotListItem> AnimationSlots { get; } = [];
+    public ObservableCollection<ModelSlotListItem> ModelSlots { get; } = [];
+    public int SelectedModelSlot
+    {
+        get => _selectedModelSlot;
+        private set
+        {
+            if (!SetProperty(ref _selectedModelSlot, value)) return;
+            RefreshModelSlotSelection();
+        }
+    }
+    public Task ModelSlotsTask { get; }
+    public string ModelSlotsStatus { get; private set; } = "Carregando slots…";
+    public bool CanSelectModelSlot => IsModelWorkspace && _modelSlotsReady && !IsSaving && !IsImporting && !IsLoadingModelSlot;
+    public bool CanDeleteSelectedModelSlot => IsModelWorkspace && _modelSlotsReady && !IsSaving && !IsImporting && !IsLoadingModelSlot
+        && _modelSlotAssignments.ContainsKey(SelectedModelSlot);
+    public bool IsLoadingModelSlot { get => _isLoadingModelSlot; private set => SetProperty(ref _isLoadingModelSlot, value); }
     public int SelectedAnimationSlot
     {
         get => _selectedAnimationSlot;
@@ -1141,7 +1162,8 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
         IThumbnailService? thumbnailService = null,
         ModelPartSplitService? modelPartSplitService = null,
         ModelPartMergeService? modelPartMergeService = null,
-        ModelPartMixerService? modelPartMixerService = null)
+        ModelPartMixerService? modelPartMixerService = null,
+        IModelSlotRepository? modelSlotRepository = null)
     {
         _repository = repository ?? throw new ArgumentNullException(nameof(repository));
         _dataInitializer = dataInitializer ?? throw new ArgumentNullException(nameof(dataInitializer));
@@ -1158,6 +1180,7 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
         _modelPartMergeService = modelPartMergeService;
         _modelPartMixerService = modelPartMixerService;
         _contentRepository = contentRepository;
+        _modelSlotRepository = modelSlotRepository;
         _sceneRenderer = sceneRenderer;
         _publishModelRevisionService = publishModelRevisionService;
         _modelRevisionRepository = modelRevisionRepository;
@@ -1171,6 +1194,9 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
             throw new ArgumentOutOfRangeException(nameof(autosaveDelay));
         }
         RecoveryTask = _checkpointStore is null ? Task.CompletedTask : DiscoverPendingRecoveryAsync();
+        for (var slot = ModelSlot.Minimum; slot <= ModelSlot.Maximum; slot++)
+            ModelSlots.Add(new ModelSlotListItem(slot, null, "Vazio"));
+        ModelSlotsTask = LoadModelSlotsAsync();
     }
 
     partial void OnModelNameChanged(string value)
@@ -1204,6 +1230,277 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
 
     [RelayCommand(CanExecute = nameof(CanSave))]
     private Task SaveAsync() => SaveDraftAsync(cancelPendingAutosave: true);
+
+    [RelayCommand]
+    private async Task SelectModelSlotAsync(int slotNumber)
+    {
+        if (!ModelSlot.TryFrom(slotNumber, out var slot) || !CanSelectModelSlot)
+            return;
+
+        if (SelectedModelSlot == slot.Value && _modelSlotAssignments.TryGetValue(slot.Value, out var currentId)
+            && _savedDraft?.Id == currentId)
+            return;
+
+        if (HasPendingChanges && !await FlushPendingChangesAsync())
+        {
+            ModelSlotsStatus = SaveError ?? "Salve ou resolva o erro atual antes de trocar de slot.";
+            OnPropertyChanged(nameof(ModelSlotsStatus));
+            return;
+        }
+
+        var previousSelectedSlot = SelectedModelSlot;
+        SelectedModelSlot = slot.Value;
+        IsLoadingModelSlot = true;
+        OnPropertyChanged(nameof(CanEdit));
+        OnPropertyChanged(nameof(CanSave));
+        try
+        {
+            if (_modelSlotAssignments.TryGetValue(slot.Value, out var modelId))
+            {
+                await LoadModelSlotAsync(modelId);
+                if (_savedDraft?.Id != modelId)
+                    SelectedModelSlot = previousSelectedSlot;
+            }
+            else
+                ResetModelWorkspaceForEmptySlot();
+        }
+        finally
+        {
+            IsLoadingModelSlot = false;
+            OnPropertyChanged(nameof(CanEdit));
+            OnPropertyChanged(nameof(CanSave));
+            OnPropertyChanged(nameof(CanDeleteSelectedModelSlot));
+            DeleteSelectedModelSlotCommand.NotifyCanExecuteChanged();
+            SaveCommand.NotifyCanExecuteChanged();
+        }
+    }
+
+    [RelayCommand(CanExecute = nameof(CanDeleteSelectedModelSlot))]
+    private async Task DeleteSelectedModelSlotAsync()
+    {
+        if (!_modelSlotAssignments.TryGetValue(SelectedModelSlot, out var modelId)) return;
+
+        if (HasPendingChanges && !await FlushPendingChangesAsync())
+        {
+            ModelSlotsStatus = SaveError ?? "As alterações precisam ser salvas antes de excluir o modelo.";
+            OnPropertyChanged(nameof(ModelSlotsStatus));
+            return;
+        }
+
+        ModelDraft? draft = _savedDraft?.Id == modelId ? _savedDraft : null;
+        if (draft is null)
+        {
+            var loaded = await _repository.GetAsync(modelId);
+            if (loaded.IsFailure)
+            {
+                ModelSlotsStatus = loaded.Error!.Message;
+                OnPropertyChanged(nameof(ModelSlotsStatus));
+                return;
+            }
+            draft = loaded.Value;
+        }
+
+        var deleted = await _repository.DeleteAsync(modelId, draft.Revision);
+        if (deleted.IsFailure)
+        {
+            ModelSlotsStatus = deleted.Error!.Message;
+            OnPropertyChanged(nameof(ModelSlotsStatus));
+            return;
+        }
+
+        _modelSlotAssignments.Remove(SelectedModelSlot);
+        ResetModelWorkspaceForEmptySlot();
+        await RefreshModelSlotItemsAsync();
+        ModelSlotsStatus = $"Modelo excluído do slot {SelectedModelSlot:00}.";
+        OnPropertyChanged(nameof(ModelSlotsStatus));
+    }
+
+    private async Task LoadModelSlotsAsync()
+    {
+        if (_modelSlotRepository is null)
+        {
+            ModelSlotsStatus = "Persistência dos slots indisponível.";
+            OnPropertyChanged(nameof(ModelSlotsStatus));
+            return;
+        }
+
+        try
+        {
+            await _dataInitializer.InitializeAsync();
+            if (!await RefreshModelSlotItemsAsync()) return;
+            _modelSlotsReady = true;
+            ModelSlotsStatus = "Dez slots persistentes · os assets só são carregados ao abrir um modelo.";
+        }
+        catch (Exception)
+        {
+            ModelSlotsStatus = "Não foi possível carregar os slots. Os dados locais foram preservados.";
+        }
+        OnPropertyChanged(nameof(CanSelectModelSlot));
+        OnPropertyChanged(nameof(CanDeleteSelectedModelSlot));
+        DeleteSelectedModelSlotCommand.NotifyCanExecuteChanged();
+        OnPropertyChanged(nameof(ModelSlotsStatus));
+    }
+
+    private async Task<bool> RefreshModelSlotItemsAsync()
+    {
+        if (_modelSlotRepository is null) return false;
+        var slotsResult = await _modelSlotRepository.ListAsync();
+        if (slotsResult.IsFailure)
+        {
+            ModelSlotsStatus = slotsResult.Error!.Message;
+            OnPropertyChanged(nameof(ModelSlotsStatus));
+            return false;
+        }
+
+        var assignments = new Dictionary<int, ModelSlotEntry>();
+        foreach (var assignment in slotsResult.Value)
+        {
+            if (!assignment.Slot.IsValid || !assignment.ModelId.IsValid)
+            {
+                ModelSlotsStatus = "A biblioteca retornou uma atribuição de slot inválida. Nenhum modelo foi alterado.";
+                OnPropertyChanged(nameof(ModelSlotsStatus));
+                return false;
+            }
+            if (!assignments.TryAdd(assignment.Slot.Value, assignment))
+            {
+                ModelSlotsStatus = $"O slot {assignment.Slot.Value:00} contém uma atribuição duplicada. Reabra o app para aplicar a migração de integridade.";
+                OnPropertyChanged(nameof(ModelSlotsStatus));
+                return false;
+            }
+        }
+
+        _modelSlotAssignments.Clear();
+        foreach (var (slot, assignment) in assignments)
+            _modelSlotAssignments.Add(slot, assignment.ModelId);
+
+        for (var number = ModelSlot.Minimum; number <= ModelSlot.Maximum; number++)
+        {
+            assignments.TryGetValue(number, out var assignment);
+            var item = new ModelSlotListItem(number, assignment?.ModelId,
+                assignment?.Name ?? "Vazio")
+            { IsSelected = number == SelectedModelSlot };
+            var index = ModelSlots.ToList().FindIndex(candidate => candidate.Number == number);
+            if (index < 0) ModelSlots.Add(item);
+            else ModelSlots[index] = item;
+        }
+        OnPropertyChanged(nameof(CanDeleteSelectedModelSlot));
+        OnPropertyChanged(nameof(CanSelectModelSlot));
+        DeleteSelectedModelSlotCommand.NotifyCanExecuteChanged();
+        return true;
+    }
+
+    private void RefreshModelSlotSelection()
+    {
+        for (var index = 0; index < ModelSlots.Count; index++)
+            ModelSlots[index] = ModelSlots[index] with { IsSelected = ModelSlots[index].Number == SelectedModelSlot };
+        OnPropertyChanged(nameof(CanDeleteSelectedModelSlot));
+        DeleteSelectedModelSlotCommand.NotifyCanExecuteChanged();
+    }
+
+    private async Task LoadModelSlotAsync(ModelId modelId)
+    {
+        var draftResult = await _repository.GetAsync(modelId);
+        if (draftResult.IsFailure)
+        {
+            ModelSlotsStatus = draftResult.Error!.Message;
+            OnPropertyChanged(nameof(ModelSlotsStatus));
+            return;
+        }
+        ModelDraftContent? content = null;
+        if (_contentRepository is not null)
+        {
+            var contentResult = await _contentRepository.GetAsync(modelId);
+            if (contentResult.IsSuccess)
+                content = contentResult.Value;
+            else if (contentResult.Error?.Code != ApplicationErrorCode.NotFound)
+            {
+                ModelSlotsStatus = contentResult.Error!.Message;
+                OnPropertyChanged(nameof(ModelSlotsStatus));
+                return;
+            }
+        }
+
+        if (content is not null && content.Slot?.Value != SelectedModelSlot)
+        {
+            ModelSlotsStatus = "A atribuição deste slot mudou. Atualize os slots antes de continuar.";
+            OnPropertyChanged(nameof(ModelSlotsStatus));
+            await RefreshModelSlotItemsAsync();
+            return;
+        }
+
+        if (content is not null)
+        {
+            await RenderModelPreviewAsync(content);
+            if (HasModelRenderError)
+            {
+                ModelSlotsStatus = ModelRenderError ?? "A prévia do modelo não pôde ser aberta.";
+                OnPropertyChanged(nameof(ModelSlotsStatus));
+                return;
+            }
+        }
+        else
+        {
+            var previous = RenderedModelFrame;
+            RenderedModelFrame = null;
+            previous?.Dispose();
+        }
+
+        _savedDraft = draftResult.Value;
+        _pendingModelId = null;
+        _pendingCheckpointId = null;
+        _modelContent = content;
+        _savedModelContent = content;
+        SetModelContentDirty(false);
+        ModelName = draftResult.Value.Name;
+        SelectedModelPartId = null;
+        SelectedRigJoint = null;
+        RefreshRigPanel();
+        ClearHistory();
+        SaveError = null;
+        SaveState = PersistenceState.Saved;
+        OnPropertyChanged(nameof(PartLayers));
+        OnPropertyChanged(nameof(HasModelParts));
+        OnPropertyChanged(nameof(SelectedPartName));
+        OnPropertyChanged(nameof(SelectedPartBounds));
+        OnPropertyChanged(nameof(SelectedPartPivot));
+        OnPropertyChanged(nameof(CanPublishRevision));
+        PublishModelRevisionCommand.NotifyCanExecuteChanged();
+        OnPropertyChanged(nameof(CanTogglePoseWorkspace));
+        TogglePoseWorkspaceCommand.NotifyCanExecuteChanged();
+        ModelSlotsStatus = $"Slot {SelectedModelSlot:00} · {draftResult.Value.Name} · modelo carregado.";
+        OnPropertyChanged(nameof(ModelSlotsStatus));
+    }
+
+    private void ResetModelWorkspaceForEmptySlot()
+    {
+        _savedDraft = null;
+        _pendingModelId = null;
+        _pendingCheckpointId = null;
+        _modelContent = null;
+        _savedModelContent = null;
+        SetModelContentDirty(false);
+        ModelName = string.Empty;
+        SaveError = null;
+        SaveState = PersistenceState.Saved;
+        SelectedModelPartId = null;
+        SelectedRigJoint = null;
+        ClearHistory();
+        RefreshRigPanel();
+        var previous = RenderedModelFrame;
+        RenderedModelFrame = null;
+        previous?.Dispose();
+        OnPropertyChanged(nameof(PartLayers));
+        OnPropertyChanged(nameof(HasModelParts));
+        OnPropertyChanged(nameof(SelectedPartName));
+        OnPropertyChanged(nameof(SelectedPartBounds));
+        OnPropertyChanged(nameof(SelectedPartPivot));
+        OnPropertyChanged(nameof(CanPublishRevision));
+        PublishModelRevisionCommand.NotifyCanExecuteChanged();
+        OnPropertyChanged(nameof(CanTogglePoseWorkspace));
+        TogglePoseWorkspaceCommand.NotifyCanExecuteChanged();
+        ModelSlotsStatus = $"Slot {SelectedModelSlot:00} vazio · digite o nome e importe a folha para começar.";
+        OnPropertyChanged(nameof(ModelSlotsStatus));
+    }
 
     [RelayCommand(CanExecute = nameof(CanPublishRevision))]
     private async Task PublishModelRevisionAsync()
@@ -2722,7 +3019,7 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
                 && existingContent.SourceAssetId == assetId
                 && !existingContent.Parts.IsDefaultOrEmpty
                     ? existingContent
-                    : CreateContentWithSeparatedParts(_savedDraft.Id, existingContent, assetId, preview, extractedParts.Value);
+                    : CreateContentWithSeparatedParts(_savedDraft.Id, existingContent, assetId, preview, extractedParts.Value, ModelSlot.From(SelectedModelSlot));
 
             if (!ReferenceEquals(content, existingContent))
             {
@@ -2755,6 +3052,7 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
             OnPropertyChanged(nameof(SelectedPartBounds));
             OnPropertyChanged(nameof(SelectedPartPivot));
             ImportStatus = $"Modelo carregado · {content.Parts.Length} peças · {preview.Width} × {preview.Height} · {assetId}";
+            await RefreshModelSlotItemsAsync();
             OnPropertyChanged(nameof(CanPublishModelSource));
             OnPropertyChanged(nameof(CanPublishRevision));
             PublishModelRevisionCommand.NotifyCanExecuteChanged();
@@ -2782,7 +3080,8 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
         ModelDraftContent? existing,
         AssetId sourceAssetId,
         ModelSourceImportPreview preview,
-        IReadOnlyList<ModelSourcePartAsset> extractedParts)
+        IReadOnlyList<ModelSourcePartAsset> extractedParts,
+        ModelSlot slot)
     {
         var parts = extractedParts.Select(item =>
         {
@@ -2808,7 +3107,7 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
             ModelDraftContent.CurrentSchemaVersion,
             modelId,
             existing is null ? Revision.Initial : existing.Revision.Next(),
-            existing?.Slot,
+            existing?.Slot ?? slot,
             sourceAssetId,
             preview.Width,
             preview.Height,
@@ -3879,7 +4178,9 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
                     : _savedDraft.Rename(ModelName, now);
 
                 var result = _savedDraft is null
-                    ? await _repository.CreateAsync(draft)
+                    ? _modelSlotRepository is null
+                        ? await _repository.CreateAsync(draft)
+                        : await _repository.CreateInSlotAsync(draft, ModelSlot.From(SelectedModelSlot))
                     : await _repository.UpdateAsync(draft, _savedDraft.Revision);
 
                 if (result.IsFailure)
@@ -3949,6 +4250,7 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
             }
 
             SaveState = PersistenceState.Saved;
+            await RefreshModelSlotItemsAsync();
         }
         catch (Exception)
         {
@@ -4081,7 +4383,9 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
                 }
 
                 var candidate = ModelDraft.Create(checkpoint.ModelId, checkpoint.Name, checkpoint.CreatedUtcMs);
-                var createResult = await _repository.CreateAsync(candidate);
+                var createResult = _modelSlotRepository is null
+                    ? await _repository.CreateAsync(candidate)
+                    : await CreateRecoveredModelInAvailableSlotAsync(candidate);
                 if (createResult.IsFailure)
                 {
                     RecoveryMessage = createResult.Error!.Message;
@@ -4149,6 +4453,7 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
             ModelName = restoredDraft.Name;
             SaveState = PersistenceState.Saved;
             SaveError = null;
+            await RefreshModelSlotItemsAsync();
             await LogDiagnosticAsync(DiagnosticEventCode.DraftRecoveryCompleted, DiagnosticOutcome.Success, durationMilliseconds: stopwatch.ElapsedMilliseconds);
             await LoadNextCheckpointAsync();
         }
@@ -4162,6 +4467,34 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
         {
             IsSaving = false;
         }
+    }
+
+    private async Task<Result<ModelDraft>> CreateRecoveredModelInAvailableSlotAsync(ModelDraft draft)
+    {
+        if (_modelSlotRepository is null)
+            return await _repository.CreateAsync(draft);
+
+        var assignments = await _modelSlotRepository.ListAsync();
+        if (assignments.IsFailure)
+            return Result<ModelDraft>.Failure(assignments.Error!);
+
+        var occupied = assignments.Value.Select(item => item.Slot.Value).ToHashSet();
+        var slotNumber = !occupied.Contains(SelectedModelSlot)
+            ? SelectedModelSlot
+            : Enumerable.Range(ModelSlot.Minimum, ModelSlot.Maximum)
+                .FirstOrDefault(candidate => !occupied.Contains(candidate));
+        if (slotNumber == 0)
+        {
+            return Result<ModelDraft>.Failure(new ApplicationError(
+                ApplicationErrorCode.Conflict,
+                "Os dez slots estão ocupados. Libere um slot e tente recuperar novamente; o checkpoint continua preservado.",
+                draft.Id.ToString()));
+        }
+
+        var created = await _repository.CreateInSlotAsync(draft, ModelSlot.From(slotNumber));
+        if (created.IsSuccess)
+            SelectedModelSlot = slotNumber;
+        return created;
     }
 
     [RelayCommand(CanExecute = nameof(CanRecoverCheckpoint))]
@@ -4255,6 +4588,17 @@ public sealed record PoseListItem(PoseId Id, string Name, string? Category, Revi
 {
     public WriteableBitmap? Thumbnail { get; init; }
     public string RevisionLabel => $"r{Revision.Value:00}";
+}
+
+public sealed record ModelSlotListItem(int Number, ModelId? Id, string Name)
+{
+    public bool IsSelected { get; init; }
+    public bool IsOccupied => Id is { IsValid: true };
+    public string Label => $"{Number:00}";
+    public string StatusLabel => IsOccupied ? "Modelo" : "Vazio";
+    public string Background => IsSelected ? "#FFF0F5" : IsOccupied ? "#FFF9FB" : "#FBFAFB";
+    public string BorderColor => IsSelected ? "#C74677" : IsOccupied ? "#EFCBD8" : "#EEE9ED";
+    public string ToolTip => IsOccupied ? $"Slot {Number:00} · {Name}" : $"Slot {Number:00} vazio";
 }
 
 public sealed record AnimationSlotListItem(int Number, AnimationId? Id, string Name, Revision? Revision)

@@ -45,6 +45,54 @@ public sealed class SqliteModelDraftRepository(IGv5Database database) : IModelDr
         }
     }
 
+    public async Task<Result<ModelDraft>> CreateInSlotAsync(
+        ModelDraft draft,
+        ModelSlot slot,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(draft);
+        if (!slot.IsValid || draft.Revision != Revision.Initial || draft.CreatedUtcMs != draft.UpdatedUtcMs)
+            return Result<ModelDraft>.Failure(new ApplicationError(ApplicationErrorCode.Validation, "A new model in a slot requires valid slot and revision-1 metadata.", draft.Id.ToString()));
+
+        try
+        {
+            await _database.ExecuteWriteAsync(async (connection, transaction, token) =>
+            {
+                await using (var insert = connection.CreateCommand())
+                {
+                    insert.Transaction = transaction;
+                    insert.CommandText = "INSERT INTO models(model_id, revision, display_name, created_utc_ms, updated_utc_ms) VALUES ($id, $revision, $name, $created, $updated);";
+                    AddDraftParameters(insert, draft);
+                    await insert.ExecuteNonQueryAsync(token).ConfigureAwait(false);
+                }
+
+                await using var assignment = connection.CreateCommand();
+                assignment.Transaction = transaction;
+                assignment.CommandText = "INSERT INTO model_slots(slot_number, model_id, assigned_utc_ms) VALUES ($slot, $id, $updated);";
+                assignment.Parameters.AddWithValue("$slot", slot.Value);
+                assignment.Parameters.AddWithValue("$id", draft.Id.ToString());
+                assignment.Parameters.AddWithValue("$updated", draft.UpdatedUtcMs);
+                await assignment.ExecuteNonQueryAsync(token).ConfigureAwait(false);
+                return true;
+            }, cancellationToken).ConfigureAwait(false);
+            return Result<ModelDraft>.Success(draft);
+        }
+        catch (SqliteException exception) when (exception.SqliteErrorCode == 19)
+        {
+            return Result<ModelDraft>.Failure(new ApplicationError(
+                ApplicationErrorCode.Conflict,
+                "The model ID or slot is already assigned. No draft was created.",
+                slot.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+        }
+        catch (SqliteException exception)
+        {
+            return Result<ModelDraft>.Failure(new ApplicationError(
+                ApplicationErrorCode.Persistence,
+                "The model could not be created in its selected slot.",
+                exception.SqliteErrorCode.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+        }
+    }
+
     public async Task<Result<ModelDraft>> GetAsync(ModelId id, CancellationToken cancellationToken = default)
     {
         if (!id.IsValid)
@@ -287,6 +335,101 @@ public sealed class SqliteModelDraftRepository(IGv5Database database) : IModelDr
         }
     }
 
+    public async Task<Result<bool>> DeleteAsync(
+        ModelId id,
+        Revision expectedRevision,
+        CancellationToken cancellationToken = default)
+    {
+        if (!id.IsValid || !expectedRevision.IsValid)
+        {
+            return Result<bool>.Failure(new ApplicationError(
+                ApplicationErrorCode.Validation,
+                "A valid model ID and revision are required before deleting a draft.",
+                id.ToString()));
+        }
+
+        try
+        {
+            var outcome = await _database.ExecuteWriteAsync(async (connection, transaction, token) =>
+            {
+                await using (var current = connection.CreateCommand())
+                {
+                    current.Transaction = transaction;
+                    current.CommandText = "SELECT revision FROM models WHERE model_id = $id;";
+                    current.Parameters.AddWithValue("$id", id.ToString());
+                    var revision = await current.ExecuteScalarAsync(token).ConfigureAwait(false);
+                    if (revision is null) return DeleteOutcome.NotFound;
+                    if (Convert.ToInt64(revision, System.Globalization.CultureInfo.InvariantCulture) != expectedRevision.Value)
+                        return DeleteOutcome.Conflict;
+                }
+
+                await using (var recovery = connection.CreateCommand())
+                {
+                    recovery.Transaction = transaction;
+                    recovery.CommandText = "SELECT 1 FROM model_draft_checkpoints WHERE model_id = $id LIMIT 1;";
+                    recovery.Parameters.AddWithValue("$id", id.ToString());
+                    if (await recovery.ExecuteScalarAsync(token).ConfigureAwait(false) is not null)
+                        return DeleteOutcome.HasRecoveryCheckpoint;
+                }
+
+                await using (var references = connection.CreateCommand())
+                {
+                    references.Transaction = transaction;
+                    references.CommandText = "DELETE FROM asset_references WHERE owner_type = 'fabricator.model-draft' AND owner_id = $id;";
+                    references.Parameters.AddWithValue("$id", id.ToString());
+                    await references.ExecuteNonQueryAsync(token).ConfigureAwait(false);
+                }
+
+                bool hasSlotsTable;
+                await using (var table = connection.CreateCommand())
+                {
+                    table.Transaction = transaction;
+                    table.CommandText = "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'model_slots';";
+                    hasSlotsTable = await table.ExecuteScalarAsync(token).ConfigureAwait(false) is not null;
+                }
+                if (hasSlotsTable)
+                {
+                    await using var slots = connection.CreateCommand();
+                    slots.Transaction = transaction;
+                    slots.CommandText = "DELETE FROM model_slots WHERE model_id = $id;";
+                    slots.Parameters.AddWithValue("$id", id.ToString());
+                    await slots.ExecuteNonQueryAsync(token).ConfigureAwait(false);
+                }
+
+                await using var delete = connection.CreateCommand();
+                delete.Transaction = transaction;
+                delete.CommandText = "DELETE FROM models WHERE model_id = $id AND revision = $revision;";
+                delete.Parameters.AddWithValue("$id", id.ToString());
+                delete.Parameters.AddWithValue("$revision", expectedRevision.Value);
+                return await delete.ExecuteNonQueryAsync(token).ConfigureAwait(false) == 1
+                    ? DeleteOutcome.Deleted
+                    : DeleteOutcome.Conflict;
+            }, cancellationToken).ConfigureAwait(false);
+
+            return outcome switch
+            {
+                DeleteOutcome.Deleted => Result<bool>.Success(true),
+                DeleteOutcome.NotFound => Result<bool>.Failure(new ApplicationError(ApplicationErrorCode.NotFound, "The model draft does not exist.", id.ToString())),
+                DeleteOutcome.HasRecoveryCheckpoint => Result<bool>.Failure(new ApplicationError(ApplicationErrorCode.Conflict, "This model has a recovery checkpoint. Resolve or discard it before deleting the draft.", id.ToString())),
+                _ => Result<bool>.Failure(new ApplicationError(ApplicationErrorCode.Conflict, "This model changed or is referenced by a published item. Its data was preserved.", id.ToString()))
+            };
+        }
+        catch (SqliteException exception) when (exception.SqliteErrorCode == 19)
+        {
+            return Result<bool>.Failure(new ApplicationError(
+                ApplicationErrorCode.Conflict,
+                "This model is published or referenced by another item. Its data was preserved.",
+                id.ToString()));
+        }
+        catch (SqliteException exception)
+        {
+            return Result<bool>.Failure(new ApplicationError(
+                ApplicationErrorCode.Persistence,
+                "The model draft could not be deleted.",
+                exception.SqliteErrorCode.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+        }
+    }
+
     private static void AddDraftParameters(SqliteCommand command, ModelDraft draft)
     {
         command.Parameters.AddWithValue("$id", draft.Id.ToString());
@@ -294,6 +437,14 @@ public sealed class SqliteModelDraftRepository(IGv5Database database) : IModelDr
         command.Parameters.AddWithValue("$name", draft.Name);
         command.Parameters.AddWithValue("$created", draft.CreatedUtcMs);
         command.Parameters.AddWithValue("$updated", draft.UpdatedUtcMs);
+    }
+
+    private enum DeleteOutcome
+    {
+        Deleted,
+        NotFound,
+        Conflict,
+        HasRecoveryCheckpoint
     }
 
     private static async Task CopyContentSnapshotAsync(
@@ -308,7 +459,7 @@ public sealed class SqliteModelDraftRepository(IGv5Database database) : IModelDr
             copyContent.Transaction = transaction;
             copyContent.CommandText = """
                 INSERT INTO model_draft_contents(model_id, content_revision, schema_version, slot, source_asset_id, source_width, source_height, updated_utc_ms)
-                SELECT $target, 1, schema_version, slot, source_asset_id, source_width, source_height, $updated
+                SELECT $target, 1, schema_version, NULL, source_asset_id, source_width, source_height, $updated
                 FROM model_draft_contents WHERE model_id = $source;
                 """;
             copyContent.Parameters.AddWithValue("$target", duplicate.Id.ToString());
