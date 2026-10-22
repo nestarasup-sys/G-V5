@@ -13,15 +13,15 @@
 | Branch obrigatória | `Master-AValonia` |
 | Pasta exclusiva do novo aplicativo | `master avalonia/` |
 | Commit-base inspecionado antes deste arquivo | `53b7f7a97321e85063a8dd4f9635e48d36548323` |
-| Último commit de implementação validado | `d03e065` (F09.15: inspetor de modelos com abas Peças/Camadas/Juntas) |
-| Checkout local revalidado | `TestarLocal.bat rapido` passou em 2026-10-21: build Debug; **308 testes, 0 falhas**; avisos existentes: 2 CS0618 no `ThumbnailService` e 1 xUnit1051 em `HairRoleTintProcessorTests` |
+| Último commit de implementação validado | `6cff393` (F09.15: renomeação reversível de peças do modelo) |
+| Checkout local revalidado | `TestarLocal.bat rapido` passou em 2026-10-21: build Debug; **311 testes, 0 falhas**; avisos existentes: 2 CS0618 no `ThumbnailService` e 1 xUnit1051 em `HairRoleTintProcessorTests` |
 | Fase ativa | **F09 — Fabricador IV — cabelos, face, expressões e completação (F09.15 em execução)** |
 | Última tarefa VALIDADA | **F09.14** — validação cruzada de persistência, importação inválida e cancelamento nas subáreas do Fabricador |
 | Tarefa em execução | **F09.15** — auditar e fechar as lacunas funcionais do Fabricador antes do GATE-F09/G2 |
 | Requisito transversal atualizado | ADR-0006: aparência reconhecível, não pixel-perfect; todos os botões e funcionalidades; revisão final visual pendente |
 | Gate atual | **GATE-F08 PASSOU tecnicamente; UI/visual Windows/GPU e paridade completa continuam pendentes** |
 | Progresso validado neste controle | **126 / 247 tarefas (51,0%)** |
-| Tarefas em execução | **F09.15** — auditoria funcional completa do Fabricador, começando pelas ferramentas de Modelos e pela UI facial ausente |
+| Tarefas em execução | **F09.15** — auditoria funcional completa do Fabricador; seleção/transformação/visibilidade/ordem e rename já têm evidência; próxima lacuna: dividir/mesclar peças e restaurar a fonte importada |
 | Pendências conhecidas | F06: folha real/capturas/worker não testados; ferramentas de Modelos ausentes catalogadas em `docs/legacy-contracts/PENDENCIAS_FUNCIONAIS_FABRICADOR.md` e obrigatórias antes do G2. Isso não impede a programação F07, mas impede declarar Fabricador completo. Limite download F01 documentado |
 | Aceite Windows/GPU | **F06 Windows/visual não executado; GPU continua fora do escopo comprovado** |
 
@@ -386,7 +386,7 @@ Após concluir um lote ou fase, adicionar uma linha. Não inflar contador só po
 3. Inspecionar evidências reais da última tarefa validada; caso não existam, corrigir seu estado.
 4. **F07 liberada tecnicamente conforme ADR-0006.** A F06 tem 14 tarefas registradas e 198 testes anteriores; revisão de folha real/Windows/worker/capturas segue pendente até G2/F12/aceite final. Não afirmar que foi realizada.
 5. Continuar automaticamente pelas tarefas seguintes **uma de cada vez**, em lotes flexíveis de aproximadamente 3–8 tarefas relacionadas, enquanto todos os gates pertinentes passam.
-6. F07 está tecnicamente encerrada em `docs/gates/GATE-F07.md`. F08 passou tecnicamente em `docs/gates/GATE-F08.md`. F09.01–F09.13 estão validadas; continuar em **F09.14** conforme o Plano Mestre, começando pela auditoria testável das subáreas e gaps funcionais restantes. `characterId` no Animador aguarda a fonte persistente de personagens, e validação visual/GPU segue para G2. Não implementar Video Studio antes da fase apropriada.
+6. F07 está tecnicamente encerrada em `docs/gates/GATE-F07.md`. F08 passou tecnicamente em `docs/gates/GATE-F08.md`. F09.01–F09.14 estão validadas; continuar em **F09.15** conforme o Plano Mestre, fechando as lacunas funcionais restantes do Fabricador uma a uma. A auditoria mais recente identificou dividir/mesclar peças e restaurar a fonte importada como próxima lacuna testável. `characterId` no Animador aguarda a fonte persistente de personagens, e validação visual/GPU segue para G2. Não implementar Video Studio antes da fase apropriada.
 7. Ao encerrar, informar: **branch, HEAD, último ID VALIDADO, próximo ID PENDENTE, commits, comandos verdes, evidências, bloqueios e condição de desbloqueio**.
 
 ### Prompt de retomada
@@ -411,3 +411,5 @@ Após concluir um lote ou fase, adicionar uma linha. Não inflar contador só po
 **F09.15 em execução — persistência da ordem/visibilidade de camadas:** a integração SQLite agora altera camadas e visibilidade, força autosave, fecha e reabre o banco, verifica o estado e publica uma nova revisão sem perder o snapshot anterior. `TestarLocal.bat rapido` passou: build Debug, solução e headless **308/308**, sem falhas.
 
 **F09.15 em execução — sugestões automáticas de rig:** a heurística legada de posição/nome foi portada para `GV5.Geometry.RigJointSuggestionPlanner`, com botão de revisão no Fabricador. Conexões sugeridas são soltas, marcadas `IsSuggested`, acrescentadas só se não duplicarem filho nem criarem ciclo, e entram num único undo. `TestarLocal.bat rapido` passou: build Debug e **311/311 testes**, incluindo geometria 46/46 e headless 62/62; sem falhas. Permanecem os avisos já conhecidos do `ThumbnailService` (CS0618) e `HairRoleTintProcessorTests` (xUnit1051). Folhas reais e interação visual Windows ainda não foram avaliadas. Evidência: `docs/testing/F09.15_RIG_SUGGESTIONS.md`.
+
+**F09.15 em execução — renomeação reversível de peças:** `ModelPartRenameCommand` preserva ID, asset, recorte, transforms, visibilidade, ordem e juntas. O inspetor habilita renomear somente com uma seleção válida e nome diferente/não vazio (até 120 caracteres). Testes headless verificam alteração, undo, campo sincronizado, rejeição de vazio e round-trip SQLite após fechar/reabrir, incluindo publicação. `TestarLocal.bat rapido` passou em 2026-10-21: build Debug e **311/311 testes**, sem falhas; 62 headless. Avisos conhecidos: CS0618 em `ThumbnailService` e xUnit1051 em `HairRoleTintProcessorTests`. Evidência: `docs/testing/F09.15_PART_RENAME.md`. Validação visual no Windows permanece pendente. Commit local: `6cff393`.
