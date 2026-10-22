@@ -199,6 +199,7 @@ public sealed class FabricadorPersistenceStateTests
             var publish = Assert.Single(buttons, button => button.Content?.ToString() == "Publicar catálogo facial");
             Assert.Contains(buttons, button => button.Content?.ToString() == "＋ Importar");
             Assert.Contains(buttons, button => button.Content?.ToString() == "Salvar extra");
+            Assert.Contains(buttons, button => button.Content?.ToString() == "Restaurar encaixe inicial");
             Assert.Contains(buttons, button => button.Content?.ToString() == "Adicionar à montagem facial");
             Assert.Contains(buttons, button => button.Content?.ToString() == "Remover da biblioteca");
             var selectors = window.GetVisualDescendants().OfType<ComboBox>().ToArray();

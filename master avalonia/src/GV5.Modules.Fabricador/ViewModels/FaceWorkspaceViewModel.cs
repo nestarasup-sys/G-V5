@@ -114,7 +114,9 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanSaveSelectedHeadExtra))]
+    [NotifyPropertyChangedFor(nameof(CanResetSelectedHeadExtra))]
     [NotifyCanExecuteChangedFor(nameof(SaveSelectedHeadExtraCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ResetSelectedHeadExtraCommand))]
     private HeadExtraChoiceItem? selectedHeadExtra;
 
     [ObservableProperty]
@@ -186,6 +188,7 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
     [NotifyPropertyChangedFor(nameof(CanSaveSelectedHeadExtra))]
     [NotifyPropertyChangedFor(nameof(CanRemoveSelectedHeadExtra))]
     [NotifyPropertyChangedFor(nameof(CanAddSelectedHeadExtraToCatalog))]
+    [NotifyPropertyChangedFor(nameof(CanResetSelectedHeadExtra))]
     [NotifyCanExecuteChangedFor(nameof(AddHeadExtraCommand))]
     [NotifyCanExecuteChangedFor(nameof(SelectFaceSheetCommand))]
     [NotifyCanExecuteChangedFor(nameof(ConfirmImportCommand))]
@@ -199,6 +202,7 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
     [NotifyCanExecuteChangedFor(nameof(SaveSelectedHeadExtraCommand))]
     [NotifyCanExecuteChangedFor(nameof(RemoveSelectedHeadExtraCommand))]
     [NotifyCanExecuteChangedFor(nameof(AddSelectedHeadExtraToCatalogCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ResetSelectedHeadExtraCommand))]
     [NotifyCanExecuteChangedFor(nameof(AddHeadExtraCommand))]
     [NotifyCanExecuteChangedFor(nameof(SaveSelectedHeadExtraCommand))]
     [NotifyCanExecuteChangedFor(nameof(RemoveSelectedHeadExtraCommand))]
@@ -259,6 +263,8 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
         && TryReadHeadExtraTransform(out _);
     public bool CanRemoveSelectedHeadExtra => !IsBusy && _headExtraLibrary is not null
         && _headExtraLibraryRepository is not null && SelectedHeadExtra is not null;
+    public bool CanResetSelectedHeadExtra => !IsBusy && _headExtraLibrary is not null
+        && _headExtraLibraryRepository is not null && SelectedHeadExtra is not null && HeadPart is not null;
     public bool CanAddSelectedHeadExtraToCatalog => !IsBusy && _pinnedModel is not null
         && _catalogRepository is not null && SelectedHeadExtra is not null
         && (_savedCatalog?.Components.Length ?? 0) < FaceCatalogDraft.MaximumComponents
@@ -464,10 +470,12 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
         OnPropertyChanged(nameof(CanSaveSelectedHeadExtra));
         OnPropertyChanged(nameof(CanRemoveSelectedHeadExtra));
         OnPropertyChanged(nameof(CanAddSelectedHeadExtraToCatalog));
+        OnPropertyChanged(nameof(CanResetSelectedHeadExtra));
         AddHeadExtraCommand.NotifyCanExecuteChanged();
         SaveSelectedHeadExtraCommand.NotifyCanExecuteChanged();
         RemoveSelectedHeadExtraCommand.NotifyCanExecuteChanged();
         AddSelectedHeadExtraToCatalogCommand.NotifyCanExecuteChanged();
+        ResetSelectedHeadExtraCommand.NotifyCanExecuteChanged();
     }
 
     private async Task<bool> PersistHeadExtraLibraryAsync(HeadExtraLibraryDraft updated,
@@ -720,13 +728,7 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
                 var baseName = Path.GetFileNameWithoutExtension(file.Name);
                 var name = string.IsNullOrWhiteSpace(baseName) ? "Extra de cabeça" : baseName.Trim();
                 if (name.Length > 120) name = name[..120];
-                var sourceWidth = Math.Max(1, head.SourceCrop.Width);
-                var sourceHeight = Math.Max(1, head.SourceCrop.Height);
-                var scaleX = Math.Min(20, Math.Min(.6, sourceWidth * .55 / prepared.Width));
-                var scaleY = Math.Min(20, Math.Min(.35, sourceHeight * .30 / prepared.Height));
-                var modelPosition = head.Transform.Apply(new Point2D(sourceWidth * .5, sourceHeight * .75));
-                var transform = new Transform2D(modelPosition, new Point2D(scaleX, scaleY), 0,
-                    new Point2D(prepared.Width / 2d, prepared.Height / 2d));
+                var transform = CreateInitialHeadExtraTransform(head, prepared.Width, prepared.Height);
                 var extra = HeadExtraAsset.Create(imported.Value.Id, name, prepared.Width, prepared.Height, transform);
                 var current = _headExtraLibrary ?? HeadExtraLibraryDraft.Create(_headExtraModelSlot);
                 var candidate = _headExtraLibraryPersisted
@@ -766,6 +768,25 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
         catch (Exception exception) when (exception is IOException or InvalidOperationException or ArgumentException)
         { Error = "Não foi possível salvar o nome e o encaixe do extra."; }
         finally { IsBusy = false; }
+    }
+
+    [RelayCommand(CanExecute = nameof(CanResetSelectedHeadExtra))]
+    private async Task ResetSelectedHeadExtraAsync(CancellationToken cancellationToken)
+    {
+        if (SelectedHeadExtra is null || HeadPart is not { } head) return;
+        try
+        {
+            var transform = CreateInitialHeadExtraTransform(head, SelectedHeadExtra.Width, SelectedHeadExtra.Height);
+            HeadExtraX = FormatNumber(transform.Translation.X);
+            HeadExtraY = FormatNumber(transform.Translation.Y);
+            HeadExtraScaleX = FormatNumber(transform.Scale.X);
+            HeadExtraScaleY = FormatNumber(transform.Scale.Y);
+            HeadExtraRotation = FormatNumber(transform.RotationRadians * 180d / Math.PI);
+            await SaveSelectedHeadExtraAsync(cancellationToken);
+            if (!HasError) Status = $"Encaixe de “{HeadExtraName}” restaurado e salvo.";
+        }
+        catch (Exception exception) when (exception is InvalidDataException or ArgumentException)
+        { Error = "Não foi possível calcular o encaixe inicial deste extra."; }
     }
 
     [RelayCommand(CanExecute = nameof(CanRemoveSelectedHeadExtra))]
@@ -1154,6 +1175,17 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
             return true;
         }
         catch (ArgumentOutOfRangeException) { return false; }
+    }
+
+    private static Transform2D CreateInitialHeadExtraTransform(ModelPart head, int imageWidth, int imageHeight)
+    {
+        var sourceWidth = Math.Max(1, head.SourceCrop.Width);
+        var sourceHeight = Math.Max(1, head.SourceCrop.Height);
+        var scaleX = Math.Min(.6, sourceWidth * .55 / imageWidth);
+        var scaleY = Math.Min(.35, sourceHeight * .30 / imageHeight);
+        var modelPosition = head.Transform.Apply(new Point2D(sourceWidth * .5, sourceHeight * .75));
+        return new Transform2D(modelPosition, new Point2D(scaleX, scaleY), 0,
+            new Point2D(imageWidth / 2d, imageHeight / 2d));
     }
 
     private static bool TryNumber(string value, out double number) =>

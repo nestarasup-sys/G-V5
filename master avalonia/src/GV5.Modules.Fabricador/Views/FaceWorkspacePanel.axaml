@@ -95,6 +95,9 @@
                         <Button Content="Salvar extra" Command="{Binding SaveSelectedHeadExtraCommand}"
                                 IsEnabled="{Binding CanSaveSelectedHeadExtra}" Padding="9,6"
                                 Background="#F0EAF8" BorderBrush="#D8C8EB" Foreground="#704B9A" />
+                        <Button Content="Restaurar encaixe inicial" Command="{Binding ResetSelectedHeadExtraCommand}"
+                                IsEnabled="{Binding CanResetSelectedHeadExtra}" Padding="9,6"
+                                Background="#F0EAF8" BorderBrush="#D8C8EB" Foreground="#704B9A" />
                         <Button Content="Adicionar à montagem facial" Command="{Binding AddSelectedHeadExtraToCatalogCommand}"
                                 IsEnabled="{Binding CanAddSelectedHeadExtraToCatalog}" Padding="9,6"
                                 Background="#FFF5F8" BorderBrush="#EFCBD8" Foreground="#A84368" />

@@ -143,6 +143,7 @@ public sealed class FaceWorkspaceViewModelTests
             await viewModel.SaveSelectedHeadExtraCommand.ExecuteAsync(null);
             Assert.Equal("Óculos Pro", libraryRepository.Libraries[library.Id].Assets.Single().Name);
             Assert.Equal(Revision.From(3), libraryRepository.Libraries[library.Id].Revision);
+            var initialTransform = extra.DefaultTransform;
 
             Assert.True(viewModel.CanAddSelectedHeadExtraToCatalog);
             await viewModel.AddSelectedHeadExtraToCatalogCommand.ExecuteAsync(null);
@@ -161,6 +162,12 @@ public sealed class FaceWorkspaceViewModelTests
             Assert.Equal(Revision.From(4), libraryRepository.Libraries[library.Id].Revision);
             Assert.Equal(new Point2D(start.X + 9, start.Y + 2),
                 libraryRepository.Libraries[library.Id].Assets.Single().DefaultTransform.Translation);
+            Assert.Equal(Revision.Initial, repository.Catalogs[catalog.Id].Revision);
+
+            Assert.True(viewModel.CanResetSelectedHeadExtra);
+            await viewModel.ResetSelectedHeadExtraCommand.ExecuteAsync(null);
+            Assert.Equal(Revision.From(5), libraryRepository.Libraries[library.Id].Revision);
+            Assert.Equal(initialTransform, libraryRepository.Libraries[library.Id].Assets.Single().DefaultTransform);
             Assert.Equal(Revision.Initial, repository.Catalogs[catalog.Id].Revision);
 
             await viewModel.RemoveSelectedComponentCommand.ExecuteAsync(null);
