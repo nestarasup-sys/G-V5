@@ -58,16 +58,52 @@
                         <Button Content="Selecionar arquivo da folha" Command="{Binding SelectFaceSheetCommand}"
                                 IsEnabled="{Binding CanSelectSheet}" Padding="10,6"
                                 Background="#FFF5F8" BorderBrush="#EFCBD8" Foreground="#A84368" />
-                        <Button Content="Adicionar extra de cabeça" Command="{Binding AddHeadExtraCommand}"
-                                IsEnabled="{Binding CanAddHeadExtra}" Padding="10,6"
-                                Background="#F0EAF8" BorderBrush="#D8C8EB" Foreground="#704B9A" />
-                        <TextBlock Text="{Binding HeadExtraCount, StringFormat='Extras salvos: {0}'}" FontSize="10"
-                                   Foreground="#706872" VerticalAlignment="Center" />
-                        <TextBlock Text="{Binding VisibleHeadExtraCount, StringFormat='Ativos: {0}/8'}" FontSize="10"
-                                   Foreground="#706872" VerticalAlignment="Center" />
                         <Button Content="Descartar prévia" Command="{Binding CancelImportCommand}"
                                 IsVisible="{Binding HasPreview}" Padding="10,6" />
                     </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <Border Background="#F7F3FA" BorderBrush="#DDD2E9" BorderThickness="1" CornerRadius="9" Padding="10">
+                <StackPanel Spacing="8">
+                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                        <StackPanel Spacing="2">
+                            <TextBlock Text="Biblioteca independente de extras" FontWeight="Bold" Foreground="#342E36" />
+                            <TextBlock Text="{Binding HeadExtraLibraryCount, StringFormat='Por slot de modelo · {0} item(ns)'}"
+                                       FontSize="10" Foreground="#706872" />
+                        </StackPanel>
+                        <Button Grid.Column="1" Content="＋ Importar" Command="{Binding AddHeadExtraCommand}"
+                                IsEnabled="{Binding CanAddHeadExtra}" Padding="10,6"
+                                Background="#F0EAF8" BorderBrush="#D8C8EB" Foreground="#704B9A" />
+                    </Grid>
+                    <ComboBox ItemsSource="{Binding HeadExtraChoices}"
+                              SelectedItem="{Binding SelectedHeadExtra, Mode=TwoWay}"
+                              DisplayMemberBinding="{Binding Label}"
+                              PlaceholderText="Selecione um extra salvo" />
+                    <TextBox Text="{Binding HeadExtraName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                             MaxLength="120" PlaceholderText="Nome do extra" />
+                    <Grid ColumnDefinitions="*,*" ColumnSpacing="6" RowDefinitions="Auto,Auto,Auto" RowSpacing="5">
+                        <TextBox Text="{Binding HeadExtraX, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" PlaceholderText="Posição X" />
+                        <TextBox Grid.Column="1" Text="{Binding HeadExtraY, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" PlaceholderText="Posição Y" />
+                        <TextBox Grid.Row="1" Text="{Binding HeadExtraScaleX, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" PlaceholderText="Escala X" />
+                        <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding HeadExtraScaleY, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" PlaceholderText="Escala Y" />
+                        <TextBox Grid.Row="2" Text="{Binding HeadExtraRotation, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" PlaceholderText="Rotação em graus" />
+                        <TextBlock Grid.Row="2" Grid.Column="1" Text="Escala 0–20 · rotação em graus" FontSize="9"
+                                   Foreground="#958B96" VerticalAlignment="Center" TextWrapping="Wrap" />
+                    </Grid>
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <Button Content="Salvar extra" Command="{Binding SaveSelectedHeadExtraCommand}"
+                                IsEnabled="{Binding CanSaveSelectedHeadExtra}" Padding="9,6"
+                                Background="#F0EAF8" BorderBrush="#D8C8EB" Foreground="#704B9A" />
+                        <Button Content="Adicionar à montagem facial" Command="{Binding AddSelectedHeadExtraToCatalogCommand}"
+                                IsEnabled="{Binding CanAddSelectedHeadExtraToCatalog}" Padding="9,6"
+                                Background="#FFF5F8" BorderBrush="#EFCBD8" Foreground="#A84368" />
+                        <Button Content="Remover da biblioteca" Command="{Binding RemoveSelectedHeadExtraCommand}"
+                                IsEnabled="{Binding CanRemoveSelectedHeadExtra}" Padding="9,6"
+                                Background="#FFF3F4" BorderBrush="#F0CACA" Foreground="#A33442" />
+                    </StackPanel>
+                    <TextBlock Text="Após incluir na montagem facial, publique o catálogo para liberar o extra no Customizador."
+                               FontSize="10" Foreground="#706872" TextWrapping="Wrap" />
                 </StackPanel>
             </Border>
 

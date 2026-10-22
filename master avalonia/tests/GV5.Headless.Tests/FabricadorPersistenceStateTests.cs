@@ -197,14 +197,19 @@ public sealed class FabricadorPersistenceStateTests
             var select = Assert.Single(buttons, button => button.Content?.ToString() == "Selecionar arquivo da folha");
             var confirm = Assert.Single(buttons, button => button.Content?.ToString() == "Salvar par no catálogo facial");
             var publish = Assert.Single(buttons, button => button.Content?.ToString() == "Publicar catálogo facial");
+            Assert.Contains(buttons, button => button.Content?.ToString() == "＋ Importar");
+            Assert.Contains(buttons, button => button.Content?.ToString() == "Salvar extra");
+            Assert.Contains(buttons, button => button.Content?.ToString() == "Adicionar à montagem facial");
+            Assert.Contains(buttons, button => button.Content?.ToString() == "Remover da biblioteca");
             var selectors = window.GetVisualDescendants().OfType<ComboBox>().ToArray();
-            Assert.Equal(4, selectors.Length);
+            Assert.Equal(5, selectors.Length);
             Assert.False(select.IsEnabled);
             Assert.False(confirm.IsVisible);
             Assert.False(publish.IsEnabled);
             Assert.Contains(selectors, selector => ReferenceEquals(selector.ItemsSource, viewModel.SheetKinds));
             Assert.Contains(selectors, selector => ReferenceEquals(selector.ItemsSource, viewModel.NoseSheetModes));
             Assert.Contains(selectors, selector => ReferenceEquals(selector.ItemsSource, viewModel.ComponentChoices));
+            Assert.Contains(selectors, selector => ReferenceEquals(selector.ItemsSource, viewModel.HeadExtraChoices));
             Assert.Contains(window.GetVisualDescendants().OfType<TextBlock>(),
                 text => text.Text == "Olhos e rosto");
         }

@@ -103,43 +103,73 @@ public sealed class FaceWorkspaceViewModelTests
     }
 
     [Fact]
-    public async Task HeadExtraImport_CreatesCatalogEntryAndRemovalKeepsCentralAsset()
+    public async Task HeadExtraLibrary_ImportsRenamesAddsToCatalogAndKeepsAssetAfterRemoval()
     {
         var root = Path.Combine(Path.GetTempPath(), $"gv5-head-extra-vm-{Guid.NewGuid():N}");
         var repository = new MemoryFaceCatalogRepository();
+        var libraryRepository = new MemoryHeadExtraLibraryRepository();
         var assets = new MemoryAssetStore();
         var viewModel = new FaceWorkspaceViewModel(new RecordingFilePicker(CreateGreenBackedExtra()),
-            importService: null, repository, assets, headExtraImportService: CreateHeadExtraImportService(root));
+            importService: null, repository, assets, headExtraImportService: CreateHeadExtraImportService(root),
+            headExtraLibraryRepository: libraryRepository);
         try
         {
-            await viewModel.OpenModelRevisionAsync(CreatePublishedModel("Modelo com extra de cabeça"));
+            await viewModel.OpenModelRevisionAsync(CreatePublishedModel("Modelo com extra de cabeça"), ModelSlot.From(4));
             await viewModel.LoadCatalogAsync(TestContext.Current.CancellationToken);
             Assert.True(viewModel.CanAddHeadExtra);
 
             await viewModel.AddHeadExtraCommand.ExecuteAsync(null);
 
-            var catalog = Assert.Single(repository.Catalogs.Values);
-            var extra = Assert.Single(catalog.Components);
-            Assert.Equal(FaceComponentKind.HeadExtra, extra.Kind);
+            var library = Assert.Single(libraryRepository.Libraries.Values);
+            var extra = Assert.Single(library.Assets);
+            Assert.Equal(ModelSlot.From(4), library.ModelSlot);
             Assert.Equal("sobrancelhas", extra.Name);
-            Assert.Equal(Revision.Initial, catalog.Revision);
-            Assert.Equal(1, viewModel.HeadExtraCount);
-            Assert.Equal(extra.Id, viewModel.ComponentChoices.Single().Id);
+            Assert.Equal(Revision.Initial, library.Revision);
+            Assert.Equal(1, viewModel.HeadExtraLibraryCount);
+            Assert.Empty(repository.Catalogs);
             Assert.Contains("fundo verde removido", viewModel.Status, StringComparison.OrdinalIgnoreCase);
             Assert.Single(assets.Assets);
 
-            viewModel.ComponentName = "Óculos Pro";
-            Assert.True(viewModel.CanApplyComponentName);
-            await viewModel.ApplyComponentNameCommand.ExecuteAsync(null);
-            Assert.Equal("Óculos Pro", repository.Catalogs[catalog.Id].Components.Single().Name);
-            Assert.Equal(Revision.From(2), repository.Catalogs[catalog.Id].Revision);
+            var start = extra.DefaultTransform.Translation;
+            Assert.True(viewModel.BeginComponentMoveGesture());
+            Assert.True(viewModel.UpdateComponentMoveGesture(12, -5));
+            Assert.True(await viewModel.CompleteComponentMoveGestureAsync(TestContext.Current.CancellationToken));
+            Assert.Equal(new Point2D(start.X + 12, start.Y - 5),
+                libraryRepository.Libraries[library.Id].Assets.Single().DefaultTransform.Translation);
+            Assert.Equal(Revision.From(2), libraryRepository.Libraries[library.Id].Revision);
+
+            viewModel.HeadExtraName = "Óculos Pro";
+            Assert.True(viewModel.CanSaveSelectedHeadExtra);
+            await viewModel.SaveSelectedHeadExtraCommand.ExecuteAsync(null);
+            Assert.Equal("Óculos Pro", libraryRepository.Libraries[library.Id].Assets.Single().Name);
+            Assert.Equal(Revision.From(3), libraryRepository.Libraries[library.Id].Revision);
+
+            Assert.True(viewModel.CanAddSelectedHeadExtraToCatalog);
+            await viewModel.AddSelectedHeadExtraToCatalogCommand.ExecuteAsync(null);
+            var catalog = Assert.Single(repository.Catalogs.Values);
+            var component = Assert.Single(catalog.Components);
+            Assert.Equal(FaceComponentKind.HeadExtra, component.Kind);
+            Assert.Equal(extra.Id, component.Id);
+            Assert.Equal("Óculos Pro", component.Name);
+            Assert.Equal(Revision.Initial, catalog.Revision);
+
+            // Selecting the library item previews it independently even while the catalog component remains selected.
+            viewModel.SelectedHeadExtra = viewModel.HeadExtraChoices.Single();
+            Assert.True(viewModel.BeginComponentMoveGesture());
+            Assert.True(viewModel.UpdateComponentMoveGesture(-3, 7));
+            Assert.True(await viewModel.CompleteComponentMoveGestureAsync(TestContext.Current.CancellationToken));
+            Assert.Equal(Revision.From(4), libraryRepository.Libraries[library.Id].Revision);
+            Assert.Equal(new Point2D(start.X + 9, start.Y + 2),
+                libraryRepository.Libraries[library.Id].Assets.Single().DefaultTransform.Translation);
+            Assert.Equal(Revision.Initial, repository.Catalogs[catalog.Id].Revision);
 
             await viewModel.RemoveSelectedComponentCommand.ExecuteAsync(null);
 
             var updated = repository.Catalogs[catalog.Id];
-            Assert.Equal(Revision.From(3), updated.Revision);
+            Assert.Equal(Revision.From(2), updated.Revision);
             Assert.Empty(updated.Components);
             Assert.Equal(0, viewModel.HeadExtraCount);
+            Assert.Single(libraryRepository.Libraries[library.Id].Assets);
             Assert.Single(assets.Assets);
             Assert.Contains("asset continua protegido", viewModel.Status, StringComparison.OrdinalIgnoreCase);
         }
@@ -151,12 +181,14 @@ public sealed class FaceWorkspaceViewModelTests
     }
 
     [Fact]
-    public async Task HeadExtraCatalogStoresMoreThanEightAndLimitsPreviewSelectionToEight()
+    public async Task HeadExtraLibraryStoresMoreThanEightAndCatalogLimitsVisibleSelectionToEight()
     {
         var root = Path.Combine(Path.GetTempPath(), $"gv5-head-extra-slots-{Guid.NewGuid():N}");
         var repository = new MemoryFaceCatalogRepository();
+        var libraryRepository = new MemoryHeadExtraLibraryRepository();
         var viewModel = new FaceWorkspaceViewModel(new RecordingFilePicker(CreateGreenBackedExtra()), null,
-            repository, new MemoryAssetStore(), headExtraImportService: CreateHeadExtraImportService(root));
+            repository, new MemoryAssetStore(), headExtraImportService: CreateHeadExtraImportService(root),
+            headExtraLibraryRepository: libraryRepository);
         try
         {
             await viewModel.OpenModelRevisionAsync(CreatePublishedModel("Modelo com biblioteca de extras"));
@@ -166,6 +198,18 @@ public sealed class FaceWorkspaceViewModelTests
                 Assert.True(viewModel.CanAddHeadExtra);
                 await viewModel.AddHeadExtraCommand.ExecuteAsync(null);
             }
+
+            var library = Assert.Single(libraryRepository.Libraries.Values);
+            Assert.Equal(9, viewModel.HeadExtraLibraryCount);
+            foreach (var item in viewModel.HeadExtraChoices.Take(8).ToArray())
+            {
+                viewModel.SelectedHeadExtra = item;
+                Assert.True(viewModel.CanAddSelectedHeadExtraToCatalog);
+                await viewModel.AddSelectedHeadExtraToCatalogCommand.ExecuteAsync(null);
+            }
+            viewModel.SelectedHeadExtra = viewModel.HeadExtraChoices.Last();
+            Assert.True(viewModel.CanAddSelectedHeadExtraToCatalog);
+            await viewModel.AddSelectedHeadExtraToCatalogCommand.ExecuteAsync(null);
 
             var catalog = Assert.Single(repository.Catalogs.Values);
             Assert.Equal(9, viewModel.HeadExtraCount);
@@ -189,6 +233,7 @@ public sealed class FaceWorkspaceViewModelTests
                 .Where(selection => selection.Component.Kind == FaceComponentKind.HeadExtra).ToArray();
             Assert.Equal(8, previewExtras.Length);
             Assert.Contains(previewExtras, selection => selection.Component.Id == hidden.Id);
+            Assert.Equal(9, library.Assets.Length);
         }
         finally
         {
@@ -766,6 +811,40 @@ public sealed class FaceWorkspaceViewModelTests
             cancellationToken.ThrowIfCancellationRequested();
             IReadOnlyList<PublishedFaceCatalogRevision> publications = Publications.GetValueOrDefault(faceId) ?? [];
             return Task.FromResult(Result<IReadOnlyList<PublishedFaceCatalogRevision>>.Success(publications));
+        }
+    }
+
+    private sealed class MemoryHeadExtraLibraryRepository : IHeadExtraLibraryRepository
+    {
+        public Dictionary<Guid, HeadExtraLibraryDraft> Libraries { get; } = [];
+
+        public Task<Result<HeadExtraLibraryDraft>> CreateAsync(HeadExtraLibraryDraft draft,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(draft.Revision == Revision.Initial && Libraries.TryAdd(draft.Id, draft)
+                ? Result<HeadExtraLibraryDraft>.Success(draft)
+                : Result<HeadExtraLibraryDraft>.Failure(new ApplicationError(ApplicationErrorCode.Conflict, "Biblioteca duplicada.")));
+        }
+
+        public Task<Result<HeadExtraLibraryDraft>> GetAsync(ModelSlot modelSlot,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var draft = Libraries.Values.SingleOrDefault(item => item.ModelSlot == modelSlot);
+            return Task.FromResult(draft is null
+                ? Result<HeadExtraLibraryDraft>.Failure(new ApplicationError(ApplicationErrorCode.NotFound, "Biblioteca inexistente."))
+                : Result<HeadExtraLibraryDraft>.Success(draft));
+        }
+
+        public Task<Result<HeadExtraLibraryDraft>> SaveAsync(HeadExtraLibraryDraft draft, Revision expectedRevision,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!Libraries.TryGetValue(draft.Id, out var current) || current.Revision != expectedRevision)
+                return Task.FromResult(Result<HeadExtraLibraryDraft>.Failure(new ApplicationError(ApplicationErrorCode.Conflict, "Conflito.")));
+            Libraries[draft.Id] = draft;
+            return Task.FromResult(Result<HeadExtraLibraryDraft>.Success(draft));
         }
     }
 }

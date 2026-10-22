@@ -23,6 +23,10 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
     private readonly IAssetStore? _assetStore;
     private readonly FaceCatalogPreviewRenderer? _previewRenderer;
     private readonly HeadExtraImportService? _headExtraImportService;
+    private readonly IHeadExtraLibraryRepository? _headExtraLibraryRepository;
+    private HeadExtraLibraryDraft? _headExtraLibrary;
+    private ModelSlot _headExtraModelSlot = ModelSlot.From(1);
+    private bool _headExtraLibraryPersisted;
     private PublishedModelRevision? _pinnedModel;
     private FaceCatalogDraft? _savedCatalog;
     private FaceCatalogDraft? _previewCatalogOverride;
@@ -34,6 +38,8 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
     private FaceComponentId? _gestureComponentId;
     private Transform2D? _gestureStartTransform;
     private bool _gestureHasMoved;
+    private bool _gestureIsHeadExtra;
+    private bool _previewingHeadExtra;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasComposedPreviewError))]
@@ -107,6 +113,41 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
     private string componentName = "";
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanSaveSelectedHeadExtra))]
+    [NotifyCanExecuteChangedFor(nameof(SaveSelectedHeadExtraCommand))]
+    private HeadExtraChoiceItem? selectedHeadExtra;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanSaveSelectedHeadExtra))]
+    [NotifyCanExecuteChangedFor(nameof(SaveSelectedHeadExtraCommand))]
+    private string headExtraName = "";
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanSaveSelectedHeadExtra))]
+    [NotifyCanExecuteChangedFor(nameof(SaveSelectedHeadExtraCommand))]
+    private string headExtraX = "";
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanSaveSelectedHeadExtra))]
+    [NotifyCanExecuteChangedFor(nameof(SaveSelectedHeadExtraCommand))]
+    private string headExtraY = "";
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanSaveSelectedHeadExtra))]
+    [NotifyCanExecuteChangedFor(nameof(SaveSelectedHeadExtraCommand))]
+    private string headExtraScaleX = "";
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanSaveSelectedHeadExtra))]
+    [NotifyCanExecuteChangedFor(nameof(SaveSelectedHeadExtraCommand))]
+    private string headExtraScaleY = "";
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanSaveSelectedHeadExtra))]
+    [NotifyCanExecuteChangedFor(nameof(SaveSelectedHeadExtraCommand))]
+    private string headExtraRotation = "";
+
+    [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanApplyComponentTransform))]
     [NotifyCanExecuteChangedFor(nameof(ApplyComponentTransformCommand))]
     [NotifyPropertyChangedFor(nameof(CanApplyComponentName))]
@@ -142,6 +183,9 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
     [NotifyPropertyChangedFor(nameof(CanRemoveSelectedComponent))]
     [NotifyPropertyChangedFor(nameof(CanToggleSelectedVisibility))]
     [NotifyPropertyChangedFor(nameof(CanApplyComponentName))]
+    [NotifyPropertyChangedFor(nameof(CanSaveSelectedHeadExtra))]
+    [NotifyPropertyChangedFor(nameof(CanRemoveSelectedHeadExtra))]
+    [NotifyPropertyChangedFor(nameof(CanAddSelectedHeadExtraToCatalog))]
     [NotifyCanExecuteChangedFor(nameof(AddHeadExtraCommand))]
     [NotifyCanExecuteChangedFor(nameof(SelectFaceSheetCommand))]
     [NotifyCanExecuteChangedFor(nameof(ConfirmImportCommand))]
@@ -152,22 +196,32 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
     [NotifyCanExecuteChangedFor(nameof(RemoveSelectedComponentCommand))]
     [NotifyCanExecuteChangedFor(nameof(ToggleSelectedVisibilityCommand))]
     [NotifyCanExecuteChangedFor(nameof(ApplyComponentNameCommand))]
+    [NotifyCanExecuteChangedFor(nameof(SaveSelectedHeadExtraCommand))]
+    [NotifyCanExecuteChangedFor(nameof(RemoveSelectedHeadExtraCommand))]
+    [NotifyCanExecuteChangedFor(nameof(AddSelectedHeadExtraToCatalogCommand))]
+    [NotifyCanExecuteChangedFor(nameof(AddHeadExtraCommand))]
+    [NotifyCanExecuteChangedFor(nameof(SaveSelectedHeadExtraCommand))]
+    [NotifyCanExecuteChangedFor(nameof(RemoveSelectedHeadExtraCommand))]
+    [NotifyCanExecuteChangedFor(nameof(AddSelectedHeadExtraToCatalogCommand))]
     private bool isBusy;
 
     public FaceWorkspaceViewModel(IFilePicker? filePicker, FaceSheetImportService? importService,
         IFaceCatalogRepository? catalogRepository = null, IAssetStore? assetStore = null,
         AssetImageDecoder? imageDecoder = null, IRenderSceneRenderer? sceneRenderer = null,
-        HeadExtraImportService? headExtraImportService = null)
+        HeadExtraImportService? headExtraImportService = null,
+        IHeadExtraLibraryRepository? headExtraLibraryRepository = null)
     {
         _filePicker = filePicker;
         _importService = importService;
         _catalogRepository = catalogRepository;
         _assetStore = assetStore;
         _headExtraImportService = headExtraImportService;
+        _headExtraLibraryRepository = headExtraLibraryRepository;
         if (assetStore is not null && imageDecoder is not null && sceneRenderer is not null)
             _previewRenderer = new FaceCatalogPreviewRenderer(assetStore, imageDecoder, sceneRenderer);
         CatalogChoices = [];
         ComponentChoices = [];
+        HeadExtraChoices = [];
     }
 
     public bool HasPreview => Preview is not null;
@@ -184,18 +238,29 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
     public bool CanChangeSheetKind => !HasPreview && !IsBusy;
     public bool HasMultipleCatalogs => CatalogChoices.Count > 1;
     public bool HasSavedCatalog => _savedCatalog is not null;
+    public int HeadExtraLibraryCount => _headExtraLibrary?.Assets.Length ?? 0;
     public int HeadExtraCount => _savedCatalog?.Components.Count(component => component.Kind == FaceComponentKind.HeadExtra) ?? 0;
     public int VisibleHeadExtraCount => _savedCatalog?.Components.Count(component => component.Kind == FaceComponentKind.HeadExtra && component.IsVisible) ?? 0;
     public string SelectedVisibilityButtonLabel => SelectedComponent?.IsVisible == true ? "Ocultar no preview" : "Mostrar no preview";
     public bool IsNoseSheetSelected => SelectedSheetKind.Kind == FaceSheetKind.Nose;
     public ObservableCollection<FaceCatalogChoiceItem> CatalogChoices { get; }
     public ObservableCollection<FaceComponentChoiceItem> ComponentChoices { get; }
+    public ObservableCollection<HeadExtraChoiceItem> HeadExtraChoices { get; }
     public IReadOnlyList<FaceSheetKindChoiceItem> SheetKinds => FaceSheetKindChoices;
     public IReadOnlyList<FaceNoseSheetModeChoiceItem> NoseSheetModes => FaceNoseSheetModeChoices;
     public string SelectedSheetLabel => SelectedSheetKind.Label;
     public bool CanSelectSheet => !IsBusy && HeadPart is not null && _filePicker is not null && _importService is not null;
     public bool CanAddHeadExtra => !IsBusy && HeadPart is not null && _filePicker is not null
-        && _headExtraImportService is not null && _assetStore is not null && _catalogRepository is not null
+        && _headExtraImportService is not null && _assetStore is not null && _headExtraLibraryRepository is not null
+        && (_headExtraLibrary?.Assets.Length ?? 0) < HeadExtraLibraryDraft.MaximumAssets;
+    public bool CanSaveSelectedHeadExtra => !IsBusy && _headExtraLibrary is not null
+        && _headExtraLibraryRepository is not null && SelectedHeadExtra is not null
+        && !string.IsNullOrWhiteSpace(HeadExtraName) && HeadExtraName.Trim().Length <= 120
+        && TryReadHeadExtraTransform(out _);
+    public bool CanRemoveSelectedHeadExtra => !IsBusy && _headExtraLibrary is not null
+        && _headExtraLibraryRepository is not null && SelectedHeadExtra is not null;
+    public bool CanAddSelectedHeadExtraToCatalog => !IsBusy && _pinnedModel is not null
+        && _catalogRepository is not null && SelectedHeadExtra is not null
         && (_savedCatalog?.Components.Length ?? 0) < FaceCatalogDraft.MaximumComponents
         && (!HasMultipleCatalogs || SelectedCatalog is not null);
     public bool CanRemoveSelectedComponent => !IsBusy && _savedCatalog is not null
@@ -265,6 +330,7 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
     {
         _savedCatalog = value is not null && _catalogsById.TryGetValue(value.Id, out var catalog) ? catalog : null;
         _previewCatalogOverride = null;
+        _previewingHeadExtra = false;
         _gestureComponentId = null;
         _gestureStartTransform = null;
         LatestPublication = value is not null && _latestPublications.TryGetValue(value.Id, out var publication)
@@ -281,24 +347,53 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
     partial void OnSelectedComponentChanged(FaceComponentChoiceItem? value)
     {
         if (value is null) return;
+        var wasPreviewingHeadExtra = _previewingHeadExtra;
+        if (SelectedHeadExtra is not null) SelectedHeadExtra = null;
+        _previewingHeadExtra = false;
+        _previewCatalogOverride = null;
         ComponentName = value.Name;
         ComponentX = FormatNumber(value.Transform.Translation.X);
         ComponentY = FormatNumber(value.Transform.Translation.Y);
         ComponentScaleX = FormatNumber(value.Transform.Scale.X);
         ComponentScaleY = FormatNumber(value.Transform.Scale.Y);
         ComponentRotation = FormatNumber(value.Transform.RotationRadians * 180d / Math.PI);
+        if (wasPreviewingHeadExtra) _ = RefreshComposedPreviewAsync();
     }
 
-    public async Task OpenModelRevisionAsync(PublishedModelRevision model)
+    partial void OnSelectedHeadExtraChanged(HeadExtraChoiceItem? value)
+    {
+        if (value is null)
+        {
+            _previewCatalogOverride = null;
+            _previewingHeadExtra = false;
+            _ = RefreshComposedPreviewAsync();
+            return;
+        }
+        HeadExtraName = value.Name;
+        HeadExtraX = FormatNumber(value.Transform.Translation.X);
+        HeadExtraY = FormatNumber(value.Transform.Translation.Y);
+        HeadExtraScaleX = FormatNumber(value.Transform.Scale.X);
+        HeadExtraScaleY = FormatNumber(value.Transform.Scale.Y);
+        HeadExtraRotation = FormatNumber(value.Transform.RotationRadians * 180d / Math.PI);
+        UpdateHeadExtraPreview(value);
+    }
+
+    public async Task OpenModelRevisionAsync(PublishedModelRevision model, ModelSlot? modelSlot = null)
     {
         ArgumentNullException.ThrowIfNull(model);
-        if (_pinnedModel?.Id == model.Id) return;
+        var slot = modelSlot ?? ModelSlot.From(1);
+        if (_pinnedModel?.Id == model.Id && _headExtraModelSlot == slot) return;
         var discardedPreview = Preview is not null;
         await DisposePreviewAsync();
         var previousComposedFrame = ComposedPreviewFrame;
         ComposedPreviewFrame = null;
         previousComposedFrame?.Dispose();
         _pinnedModel = model;
+        _headExtraModelSlot = slot;
+        _headExtraLibrary = null;
+        _headExtraLibraryPersisted = false;
+        HeadExtraChoices.Clear();
+        SelectedHeadExtra = null;
         _savedCatalog = null;
         _previewCatalogOverride = null;
         _catalogsById.Clear();
@@ -313,19 +408,131 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
         OnPropertyChanged(nameof(HasSavedCatalog));
         OnPropertyChanged(nameof(CanSelectSheet));
         OnPropertyChanged(nameof(CanConfirmImport));
+        OnPropertyChanged(nameof(HeadExtraLibraryCount));
         SelectFaceSheetCommand.NotifyCanExecuteChanged();
         AddHeadExtraCommand.NotifyCanExecuteChanged();
+        await LoadHeadExtraLibraryAsync();
         RemoveSelectedComponentCommand.NotifyCanExecuteChanged();
         ConfirmImportCommand.NotifyCanExecuteChanged();
         await RefreshComposedPreviewAsync();
     }
 
+    private async Task LoadHeadExtraLibraryAsync(CancellationToken cancellationToken = default)
+    {
+        if (_headExtraLibraryRepository is null) return;
+        try
+        {
+            var loaded = await _headExtraLibraryRepository.GetAsync(_headExtraModelSlot, cancellationToken);
+            if (loaded.IsSuccess)
+            {
+                _headExtraLibrary = loaded.Value;
+                _headExtraLibraryPersisted = true;
+            }
+            else if (loaded.Error?.Code == ApplicationErrorCode.NotFound)
+            {
+                _headExtraLibrary = HeadExtraLibraryDraft.Create(_headExtraModelSlot);
+                _headExtraLibraryPersisted = false;
+            }
+            else
+            {
+                Error = loaded.Error?.Message ?? "Não foi possível carregar a biblioteca de extras.";
+                return;
+            }
+            RefreshHeadExtraChoices();
+            OnPropertyChanged(nameof(HeadExtraLibraryCount));
+            OnPropertyChanged(nameof(CanAddHeadExtra));
+            AddHeadExtraCommand.NotifyCanExecuteChanged();
+            Status = HeadExtraLibraryCount == 0
+                ? $"Biblioteca de extras do slot {_headExtraModelSlot.Value:00} vazia."
+                : $"{HeadExtraLibraryCount} extra(s) carregado(s) no slot {_headExtraModelSlot.Value:00}.";
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception exception) when (exception is IOException or InvalidOperationException or ArgumentException)
+        { Error = "Não foi possível carregar a biblioteca de extras desse slot."; }
+    }
+
+    private void RefreshHeadExtraChoices(FaceComponentId? selectedId = null)
+    {
+        HeadExtraChoices.Clear();
+        if (_headExtraLibrary is not null)
+            foreach (var asset in _headExtraLibrary.Assets.OrderBy(item => item.Name, StringComparer.CurrentCultureIgnoreCase))
+                HeadExtraChoices.Add(new HeadExtraChoiceItem(asset.Id, asset.AssetId, asset.Name, asset.Width, asset.Height, asset.DefaultTransform));
+        SelectedHeadExtra = HeadExtraChoices.FirstOrDefault(item => item.Id == selectedId)
+            ?? HeadExtraChoices.FirstOrDefault();
+        OnPropertyChanged(nameof(HeadExtraLibraryCount));
+        OnPropertyChanged(nameof(CanAddHeadExtra));
+        OnPropertyChanged(nameof(CanSaveSelectedHeadExtra));
+        OnPropertyChanged(nameof(CanRemoveSelectedHeadExtra));
+        OnPropertyChanged(nameof(CanAddSelectedHeadExtraToCatalog));
+        AddHeadExtraCommand.NotifyCanExecuteChanged();
+        SaveSelectedHeadExtraCommand.NotifyCanExecuteChanged();
+        RemoveSelectedHeadExtraCommand.NotifyCanExecuteChanged();
+        AddSelectedHeadExtraToCatalogCommand.NotifyCanExecuteChanged();
+    }
+
+    private async Task<bool> PersistHeadExtraLibraryAsync(HeadExtraLibraryDraft updated,
+        CancellationToken cancellationToken)
+    {
+        if (_headExtraLibraryRepository is null || _headExtraLibrary is null) return false;
+        var result = _headExtraLibraryPersisted
+            ? await _headExtraLibraryRepository.SaveAsync(updated, _headExtraLibrary.Revision, cancellationToken)
+            : await _headExtraLibraryRepository.CreateAsync(updated, cancellationToken);
+        if (result.IsFailure)
+        {
+            Error = result.Error!.Message;
+            return false;
+        }
+        _headExtraLibrary = result.Value;
+        _headExtraLibraryPersisted = true;
+        return true;
+    }
+
+    private void UpdateHeadExtraPreview(HeadExtraChoiceItem item)
+    {
+        if (_pinnedModel is null) return;
+        try
+        {
+            var component = FaceComponent.Restore(item.Id, FaceComponentKind.HeadExtra, item.Name, item.AssetId,
+                null, item.Transform, true, zOrder: 800);
+            var components = (_savedCatalog?.Components ?? [])
+                .Where(existing => existing.Id != item.Id)
+                .Append(component)
+                .ToArray();
+            _previewCatalogOverride = FaceCatalogDraft.Restore(_savedCatalog?.Id ?? FaceId.New(),
+                ModelRevisionReference.From(_pinnedModel), _savedCatalog?.Revision ?? Revision.Initial,
+                _savedCatalog?.Name ?? "Prévia de extra de cabeça", components);
+            _previewingHeadExtra = true;
+            _ = RefreshComposedPreviewAsync();
+        }
+        catch (ArgumentException)
+        {
+            ComposedPreviewError = "Não foi possível preparar a prévia deste extra de cabeça.";
+        }
+    }
+
     public bool BeginComponentMoveGesture()
     {
-        if (IsBusy || _savedCatalog is null || SelectedComponent is null
-            || !TryReadComponentTransform(out var transform)) return false;
-        _gestureComponentId = SelectedComponent.Id;
-        _gestureStartTransform = transform;
+        if (IsBusy) return false;
+        if (_previewingHeadExtra && SelectedHeadExtra is not null && TryReadHeadExtraTransform(out var extraTransform))
+        {
+            _gestureComponentId = SelectedHeadExtra.Id;
+            _gestureStartTransform = extraTransform;
+            _gestureIsHeadExtra = true;
+        }
+        else if (SelectedComponent is not null && _savedCatalog is not null
+            && TryReadComponentTransform(out var componentTransform))
+        {
+            _gestureComponentId = SelectedComponent.Id;
+            _gestureStartTransform = componentTransform;
+            _gestureIsHeadExtra = false;
+        }
+        else if (SelectedHeadExtra is not null && TryReadHeadExtraTransform(out extraTransform))
+        {
+            _gestureComponentId = SelectedHeadExtra.Id;
+            _gestureStartTransform = extraTransform;
+            _gestureIsHeadExtra = true;
+        }
+        else return false;
         _gestureHasMoved = false;
         return true;
     }
@@ -334,8 +541,20 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
     public bool UpdateComponentMoveGesture(double deltaX, double deltaY)
     {
         if (_gestureComponentId is not { } componentId || _gestureStartTransform is not { } start
-            || _savedCatalog is null || SelectedComponent?.Id != componentId
             || !double.IsFinite(deltaX) || !double.IsFinite(deltaY)) return false;
+        if (_gestureIsHeadExtra)
+        {
+            if (SelectedHeadExtra?.Id != componentId) return false;
+            var extraTransform = new Transform2D(new Point2D(start.Translation.X + deltaX, start.Translation.Y + deltaY),
+                start.Scale, start.RotationRadians, start.Pivot, start.FlipX, start.FlipY);
+            if (Math.Abs(extraTransform.Translation.X) > 100_000 || Math.Abs(extraTransform.Translation.Y) > 100_000) return false;
+            HeadExtraX = FormatNumber(extraTransform.Translation.X);
+            HeadExtraY = FormatNumber(extraTransform.Translation.Y);
+            _gestureHasMoved = deltaX != 0 || deltaY != 0;
+            UpdateHeadExtraPreview(SelectedHeadExtra with { Transform = extraTransform });
+            return true;
+        }
+        if (_savedCatalog is null || SelectedComponent?.Id != componentId) return false;
         var transform = new Transform2D(new Point2D(start.Translation.X + deltaX, start.Translation.Y + deltaY),
             start.Scale, start.RotationRadians, start.Pivot, start.FlipX, start.FlipY);
         if (Math.Abs(transform.Translation.X) > 100_000 || Math.Abs(transform.Translation.Y) > 100_000) return false;
@@ -352,11 +571,23 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
     {
         if (_gestureComponentId is null || _gestureStartTransform is null) return false;
         var hasMoved = _gestureHasMoved;
+        var isHeadExtra = _gestureIsHeadExtra;
         _gestureComponentId = null;
         _gestureStartTransform = null;
         _gestureHasMoved = false;
+        _gestureIsHeadExtra = false;
         _previewCatalogOverride = null;
         if (!hasMoved) return true;
+        if (isHeadExtra)
+        {
+            if (!CanSaveSelectedHeadExtra)
+            {
+                if (SelectedHeadExtra is not null) UpdateHeadExtraPreview(SelectedHeadExtra);
+                return false;
+            }
+            await SaveSelectedHeadExtraAsync(cancellationToken);
+            return !HasError;
+        }
         if (!CanApplyComponentTransform)
         {
             _ = RefreshComposedPreviewAsync();
@@ -369,10 +600,22 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
     public void CancelComponentMoveGesture()
     {
         if (_gestureComponentId is null || _gestureStartTransform is not { } start) return;
+        var isHeadExtra = _gestureIsHeadExtra;
         _gestureComponentId = null;
         _gestureStartTransform = null;
         _gestureHasMoved = false;
+        _gestureIsHeadExtra = false;
         _previewCatalogOverride = null;
+        if (isHeadExtra)
+        {
+            HeadExtraX = FormatNumber(start.Translation.X);
+            HeadExtraY = FormatNumber(start.Translation.Y);
+            HeadExtraScaleX = FormatNumber(start.Scale.X);
+            HeadExtraScaleY = FormatNumber(start.Scale.Y);
+            HeadExtraRotation = FormatNumber(start.RotationRadians * 180d / Math.PI);
+            if (SelectedHeadExtra is not null) UpdateHeadExtraPreview(SelectedHeadExtra);
+            return;
+        }
         ComponentX = FormatNumber(start.Translation.X);
         ComponentY = FormatNumber(start.Translation.Y);
         ComponentScaleX = FormatNumber(start.Scale.X);
@@ -459,7 +702,7 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
     private async Task AddHeadExtraAsync(CancellationToken cancellationToken)
     {
         if (_filePicker is null || _headExtraImportService is null || _assetStore is null
-            || _catalogRepository is null || HeadPart is not { } head) return;
+            || _headExtraLibraryRepository is null || HeadPart is not { } head) return;
         Error = null;
         Status = null;
         IsBusy = true;
@@ -484,30 +727,95 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
                 var modelPosition = head.Transform.Apply(new Point2D(sourceWidth * .5, sourceHeight * .75));
                 var transform = new Transform2D(modelPosition, new Point2D(scaleX, scaleY), 0,
                     new Point2D(prepared.Width / 2d, prepared.Height / 2d));
-                var extra = FaceComponent.Create(FaceComponentKind.HeadExtra, name, imported.Value.Id,
-                    null, transform, isVisible: VisibleHeadExtraCount < 8, zOrder: 800 + HeadExtraCount);
-
-                FaceCatalogDraft candidate = _savedCatalog is null
-                    ? FaceCatalogDraft.Restore(FaceId.New(), ModelRevisionReference.From(_pinnedModel!),
-                        Revision.Initial, "Rosto", [extra])
-                    : _savedCatalog.WithComponent(extra);
-                var saved = _savedCatalog is null
-                    ? await _catalogRepository.CreateAsync(candidate, cancellationToken)
-                    : await _catalogRepository.SaveAsync(candidate, _savedCatalog.Revision, cancellationToken);
-                if (saved.IsFailure) { Error = saved.Error!.Message; return; }
-                AcceptSavedCatalog(saved.Value, extra.Id);
+                var extra = HeadExtraAsset.Create(imported.Value.Id, name, prepared.Width, prepared.Height, transform);
+                var current = _headExtraLibrary ?? HeadExtraLibraryDraft.Create(_headExtraModelSlot);
+                var candidate = _headExtraLibraryPersisted
+                    ? current.WithAsset(extra)
+                    : HeadExtraLibraryDraft.Restore(current.Id, _headExtraModelSlot, Revision.Initial, [extra]);
+                if (!await PersistHeadExtraLibraryAsync(candidate, cancellationToken)) return;
+                RefreshHeadExtraChoices(extra.Id);
                 var chromaMessage = prepared.GreenKeyDetected
                     ? $" · fundo verde removido de {prepared.RemovedBackgroundPixels:N0} pixels"
                     : " · transparência preservada";
-                Status = $"Extra “{name}” adicionado ao catálogo facial{chromaMessage}.";
-                if (!extra.IsVisible)
-                    Status += " O limite de oito extras ativos foi atingido; ative-o no preview depois de ocultar outro.";
+                Status = $"Extra “{name}” salvo na biblioteca do slot {_headExtraModelSlot.Value:00}{chromaMessage}.";
             }
         }
         catch (OperationCanceledException) { Status = "Importação do extra de cabeça cancelada."; }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
                                           or InvalidDataException or InvalidOperationException or ArgumentException)
         { Error = "Não foi possível importar o extra de cabeça. Confira o arquivo e o espaço disponível."; }
+        finally { IsBusy = false; }
+    }
+
+    [RelayCommand(CanExecute = nameof(CanSaveSelectedHeadExtra))]
+    private async Task SaveSelectedHeadExtraAsync(CancellationToken cancellationToken)
+    {
+        if (_headExtraLibrary is null || SelectedHeadExtra is null || !TryReadHeadExtraTransform(out var transform)) return;
+        Error = null;
+        IsBusy = true;
+        try
+        {
+            var updated = HeadExtraAsset.Restore(SelectedHeadExtra.Id, SelectedHeadExtra.AssetId,
+                HeadExtraName.Trim(), SelectedHeadExtra.Width, SelectedHeadExtra.Height, transform);
+            var candidate = _headExtraLibrary.WithAsset(updated);
+            if (!await PersistHeadExtraLibraryAsync(candidate, cancellationToken)) return;
+            RefreshHeadExtraChoices(updated.Id);
+            Status = $"“{updated.Name}” salvo na biblioteca de extras.";
+        }
+        catch (OperationCanceledException) { Status = "Edição cancelada; os dados salvos foram preservados."; }
+        catch (Exception exception) when (exception is IOException or InvalidOperationException or ArgumentException)
+        { Error = "Não foi possível salvar o nome e o encaixe do extra."; }
+        finally { IsBusy = false; }
+    }
+
+    [RelayCommand(CanExecute = nameof(CanRemoveSelectedHeadExtra))]
+    private async Task RemoveSelectedHeadExtraAsync(CancellationToken cancellationToken)
+    {
+        if (_headExtraLibrary is null || SelectedHeadExtra is null) return;
+        Error = null;
+        IsBusy = true;
+        try
+        {
+            var removedId = SelectedHeadExtra.Id;
+            var candidate = _headExtraLibrary.WithoutAsset(removedId);
+            if (!await PersistHeadExtraLibraryAsync(candidate, cancellationToken)) return;
+            RefreshHeadExtraChoices();
+            Status = "Extra removido da biblioteca. Se já estiver no catálogo facial, a montagem continua referenciando o asset.";
+        }
+        catch (OperationCanceledException) { Status = "Exclusão cancelada; a biblioteca salva foi preservada."; }
+        catch (Exception exception) when (exception is IOException or InvalidOperationException or ArgumentException)
+        { Error = "Não foi possível remover o extra da biblioteca."; }
+        finally { IsBusy = false; }
+    }
+
+    [RelayCommand(CanExecute = nameof(CanAddSelectedHeadExtraToCatalog))]
+    private async Task AddSelectedHeadExtraToCatalogAsync(CancellationToken cancellationToken)
+    {
+        if (SelectedHeadExtra is null || _pinnedModel is null || _catalogRepository is null) return;
+        Error = null;
+        IsBusy = true;
+        try
+        {
+            var visible = _savedCatalog?.Components.Any(component => component.Id == SelectedHeadExtra.Id && component.IsVisible)
+                == true || VisibleHeadExtraCount < 8;
+            var component = FaceComponent.Restore(SelectedHeadExtra.Id, FaceComponentKind.HeadExtra,
+                SelectedHeadExtra.Name, SelectedHeadExtra.AssetId, null, SelectedHeadExtra.Transform,
+                visible, zOrder: 800 + HeadExtraCount);
+            var candidate = _savedCatalog is null
+                ? FaceCatalogDraft.Restore(FaceId.New(), ModelRevisionReference.From(_pinnedModel), Revision.Initial, "Rosto", [component])
+                : _savedCatalog.WithComponent(component);
+            var saved = _savedCatalog is null
+                ? await _catalogRepository.CreateAsync(candidate, cancellationToken)
+                : await _catalogRepository.SaveAsync(candidate, _savedCatalog.Revision, cancellationToken);
+            if (saved.IsFailure) { Error = saved.Error!.Message; return; }
+            AcceptSavedCatalog(saved.Value, component.Id);
+            Status = visible
+                ? $"“{component.Name}” adicionado à montagem facial. Publique o catálogo para usar no Customizador."
+                : "O catálogo já tem oito extras visíveis; o item foi adicionado oculto. Oculte outro antes de ativá-lo.";
+        }
+        catch (OperationCanceledException) { Status = "Inclusão no catálogo cancelada; a biblioteca foi preservada."; }
+        catch (Exception exception) when (exception is IOException or InvalidOperationException or ArgumentException)
+        { Error = "Não foi possível adicionar o extra selecionado ao catálogo facial."; }
         finally { IsBusy = false; }
     }
 
@@ -830,6 +1138,24 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
         catch (ArgumentOutOfRangeException) { return false; }
     }
 
+    private bool TryReadHeadExtraTransform(out Transform2D transform)
+    {
+        transform = default;
+        if (SelectedHeadExtra is null || !TryNumber(HeadExtraX, out var x) || !TryNumber(HeadExtraY, out var y)
+            || !TryNumber(HeadExtraScaleX, out var scaleX) || !TryNumber(HeadExtraScaleY, out var scaleY)
+            || !TryNumber(HeadExtraRotation, out var rotationDegrees)
+            || Math.Abs(x) > 100_000 || Math.Abs(y) > 100_000
+            || scaleX is <= 0 or > 20 || scaleY is <= 0 or > 20 || Math.Abs(rotationDegrees) > 3600) return false;
+        try
+        {
+            var original = SelectedHeadExtra.Transform;
+            transform = new Transform2D(new Point2D(x, y), new Point2D(scaleX, scaleY),
+                rotationDegrees * Math.PI / 180d, original.Pivot, original.FlipX, original.FlipY);
+            return true;
+        }
+        catch (ArgumentOutOfRangeException) { return false; }
+    }
+
     private static bool TryNumber(string value, out double number) =>
         double.TryParse(value, NumberStyles.Float, CultureInfo.CurrentCulture, out number) && double.IsFinite(number);
 
@@ -1013,3 +1339,9 @@ public sealed record FaceCatalogChoiceItem(FaceId Id, string Name, Revision Revi
 
 public sealed record FaceComponentChoiceItem(FaceComponentId Id, string Label, Transform2D Transform,
     string Name, FaceComponentKind Kind, bool IsVisible);
+
+public sealed record HeadExtraChoiceItem(FaceComponentId Id, AssetId AssetId, string Name, int Width, int Height,
+    Transform2D Transform)
+{
+    public string Label => Name;
+}
