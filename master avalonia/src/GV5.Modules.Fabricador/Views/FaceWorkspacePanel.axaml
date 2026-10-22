@@ -51,6 +51,13 @@
                 </Border>
             </Grid>
 
+            <StackPanel Spacing="5" IsVisible="{Binding HasMultipleCatalogs}">
+                <TextBlock Text="Catálogo facial de destino" FontSize="11" FontWeight="Bold" Foreground="#706872" />
+                <ComboBox ItemsSource="{Binding CatalogChoices}"
+                          SelectedItem="{Binding SelectedCatalog, Mode=TwoWay}"
+                          DisplayMemberBinding="{Binding Label}"
+                          PlaceholderText="Selecione o catálogo" />
+            </StackPanel>
             <TextBlock Text="{Binding CatalogStatus}" FontSize="11" Foreground="#706872" TextWrapping="Wrap" />
             <Button Content="Salvar par no catálogo facial" Command="{Binding ConfirmImportCommand}"
                     IsEnabled="{Binding CanConfirmImport}" IsVisible="{Binding HasPreview}"

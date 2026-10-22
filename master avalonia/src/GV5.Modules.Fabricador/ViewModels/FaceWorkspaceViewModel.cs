@@ -1,5 +1,6 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using System.Collections.ObjectModel;
 using GV5.Application.Contracts;
 using GV5.Assets.Processing;
 using GV5.Core.Identity;
@@ -18,6 +19,7 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
     private readonly IAssetStore? _assetStore;
     private PublishedModelRevision? _pinnedModel;
     private FaceCatalogDraft? _savedCatalog;
+    private readonly Dictionary<FaceId, FaceCatalogDraft> _catalogsById = [];
     private int _disposed;
 
     [ObservableProperty]
@@ -34,6 +36,11 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
     private string? status;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CatalogStatus))]
+    [NotifyPropertyChangedFor(nameof(CanConfirmImport))]
+    private FaceCatalogChoiceItem? selectedCatalog;
+
+    [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanSelectSheet))]
     [NotifyPropertyChangedFor(nameof(CanConfirmImport))]
     [NotifyCanExecuteChangedFor(nameof(SelectEyebrowSheetCommand))]
@@ -47,24 +54,44 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
         _importService = importService;
         _catalogRepository = catalogRepository;
         _assetStore = assetStore;
+        CatalogChoices = [];
     }
 
     public bool HasPreview => Preview is not null;
     public bool HasError => !string.IsNullOrWhiteSpace(Error);
     public bool HasStatus => !string.IsNullOrWhiteSpace(Status);
-    public bool CanSelectSheet => !IsBusy && _pinnedModel is not null && _filePicker is not null && _importService is not null;
+    public bool HasMultipleCatalogs => CatalogChoices.Count > 1;
+    public ObservableCollection<FaceCatalogChoiceItem> CatalogChoices { get; }
+    public bool CanSelectSheet => !IsBusy && HeadPart is not null && _filePicker is not null && _importService is not null;
     public bool CanConfirmImport => !IsBusy && Preview is not null && _pinnedModel is not null
-        && _catalogRepository is not null && _assetStore is not null;
+        && HeadPart is not null && _catalogRepository is not null && _assetStore is not null
+        && (!HasMultipleCatalogs || SelectedCatalog is not null);
     public string ModelRevisionLabel => _pinnedModel is null
         ? "Abra uma revisão publicada do modelo para editar o rosto."
-        : $"Modelo {_pinnedModel.Name} · revisão {_pinnedModel.Revision.Value}";
-    public string CatalogStatus => _savedCatalog is null
+        : HeadPart is null
+            ? $"Modelo {_pinnedModel.Name} · revisão {_pinnedModel.Revision.Value} · nenhuma peça de cabeça reconhecida"
+            : $"Modelo {_pinnedModel.Name} · revisão {_pinnedModel.Revision.Value}";
+    public string CatalogStatus => HasMultipleCatalogs && SelectedCatalog is null
+        ? "Escolha em qual catálogo facial salvar este par."
+        : _savedCatalog is null
         ? "O próximo salvamento cria o catálogo facial deste modelo."
         : $"Catálogo “{_savedCatalog.Name}” · {_savedCatalog.Components.Length} componentes salvos";
     public string PreviewSummary => Preview is null ? string.Empty
         : $"Folha {Preview.SourceWidth}×{Preview.SourceHeight} · {Preview.RemovedPixelCount:N0} pixels de fundo removidos · {Preview.Pieces.Count} lados prontos para revisão";
 
+    private ModelPart? HeadPart => _pinnedModel?.Content.Parts.FirstOrDefault(part =>
+        part.Name.Contains("cabe", StringComparison.OrdinalIgnoreCase)
+        || part.Name.Contains("head", StringComparison.OrdinalIgnoreCase));
+
     partial void OnPreviewChanged(FaceSheetImportPreview? value) => OnPropertyChanged(nameof(PreviewSummary));
+
+    partial void OnSelectedCatalogChanged(FaceCatalogChoiceItem? value)
+    {
+        _savedCatalog = value is not null && _catalogsById.TryGetValue(value.Id, out var catalog) ? catalog : null;
+        OnPropertyChanged(nameof(CatalogStatus));
+        OnPropertyChanged(nameof(CanConfirmImport));
+        ConfirmImportCommand.NotifyCanExecuteChanged();
+    }
 
     public async Task OpenModelRevisionAsync(PublishedModelRevision model)
     {
@@ -74,6 +101,10 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
         await DisposePreviewAsync();
         _pinnedModel = model;
         _savedCatalog = null;
+        _catalogsById.Clear();
+        CatalogChoices.Clear();
+        OnPropertyChanged(nameof(HasMultipleCatalogs));
+        SelectedCatalog = null;
         Error = null;
         Status = discardedPreview ? "A prévia anterior foi descartada ao trocar a revisão do modelo." : null;
         OnPropertyChanged(nameof(ModelRevisionLabel));
@@ -93,8 +124,24 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
             Error = result.Error!.Message;
             return;
         }
-        _savedCatalog = result.Value.OrderByDescending(catalog => catalog.Revision.Value).FirstOrDefault();
+        _catalogsById.Clear();
+        CatalogChoices.Clear();
+        foreach (var catalog in result.Value.OrderBy(item => item.Name, StringComparer.CurrentCultureIgnoreCase)
+                     .ThenByDescending(item => item.Revision.Value))
+        {
+            _catalogsById.Add(catalog.Id, catalog);
+            CatalogChoices.Add(new FaceCatalogChoiceItem(catalog.Id, catalog.Name, catalog.Revision));
+        }
+        OnPropertyChanged(nameof(HasMultipleCatalogs));
+        var selected = result.Value.Count == 1 ? result.Value[0] : null;
+        SelectedCatalog = selected is null ? null
+            : CatalogChoices.FirstOrDefault(choice => choice.Id == selected.Id);
         OnPropertyChanged(nameof(CatalogStatus));
+        OnPropertyChanged(nameof(ModelRevisionLabel));
+        OnPropertyChanged(nameof(CanSelectSheet));
+        OnPropertyChanged(nameof(CanConfirmImport));
+        SelectEyebrowSheetCommand.NotifyCanExecuteChanged();
+        ConfirmImportCommand.NotifyCanExecuteChanged();
         Status = _savedCatalog is null ? "Nenhum catálogo facial salvo nesta revisão." : "Catálogo facial carregado.";
     }
 
@@ -131,14 +178,34 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
     [RelayCommand(CanExecute = nameof(CanConfirmImport))]
     private async Task ConfirmImportAsync(CancellationToken cancellationToken)
     {
-        if (Preview is not { } preview || _pinnedModel is null || _catalogRepository is null || _assetStore is null) return;
+        if (Preview is not { } preview || _pinnedModel is null || HeadPart is not { } head
+            || _catalogRepository is null || _assetStore is null) return;
         Error = null;
         Status = null;
         IsBusy = true;
         try
         {
-            var components = new List<FaceComponent>(preview.Pieces.Count);
+            var prepared = new List<(FaceSheetImportPiecePreview Piece, FaceComponentSide Side, Transform2D Transform)>(preview.Pieces.Count);
             foreach (var piece in preview.Pieces)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var side = piece.Side switch
+                {
+                    FaceSheetSide.Left => FaceComponentSide.Left,
+                    FaceSheetSide.Right => FaceComponentSide.Right,
+                    _ => throw new InvalidDataException("O recorte da sobrancelha perdeu a identificação do lado.")
+                };
+                var transform = CreateInitialTransform(head, piece, side);
+                if (transform.Scale.X > 20 || transform.Scale.Y > 20)
+                {
+                    Error = "Uma sobrancelha é pequena demais para encaixar com segurança na cabeça deste modelo.";
+                    return;
+                }
+                prepared.Add((piece, side, transform));
+            }
+
+            var components = new List<FaceComponent>(prepared.Count);
+            foreach (var (piece, side, transform) in prepared)
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 await using var stream = await piece.OpenPngReadAsync(cancellationToken);
@@ -152,15 +219,9 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
                     return;
                 }
 
-                var side = piece.Side switch
-                {
-                    FaceSheetSide.Left => FaceComponentSide.Left,
-                    FaceSheetSide.Right => FaceComponentSide.Right,
-                    _ => throw new InvalidDataException("O recorte da sobrancelha perdeu a identificação do lado.")
-                };
                 components.Add(FaceComponent.Create(FaceComponentKind.Eyebrow,
                     side == FaceComponentSide.Left ? "Sobrancelha esquerda" : "Sobrancelha direita",
-                    imported.Value.Id, side, Transform2D.Identity));
+                    imported.Value.Id, side, transform));
             }
 
             FaceCatalogDraft updated;
@@ -182,6 +243,15 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
 
             if (persisted.IsFailure) { Error = persisted.Error!.Message; return; }
             _savedCatalog = persisted.Value;
+            _catalogsById[persisted.Value.Id] = persisted.Value;
+            var choiceIndex = -1;
+            for (var index = 0; index < CatalogChoices.Count; index++)
+                if (CatalogChoices[index].Id == persisted.Value.Id) { choiceIndex = index; break; }
+            var choice = new FaceCatalogChoiceItem(persisted.Value.Id, persisted.Value.Name, persisted.Value.Revision);
+            if (choiceIndex >= 0) CatalogChoices[choiceIndex] = choice;
+            else CatalogChoices.Add(choice);
+            OnPropertyChanged(nameof(HasMultipleCatalogs));
+            SelectedCatalog = choice;
             await DisposePreviewAsync();
             OnPropertyChanged(nameof(CatalogStatus));
             Status = "As duas sobrancelhas foram salvas no catálogo facial desta revisão.";
@@ -207,9 +277,31 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
         if (previous is not null) await previous.DisposeAsync();
     }
 
+    private static Transform2D CreateInitialTransform(ModelPart head, FaceSheetImportPiecePreview piece,
+        FaceComponentSide side)
+    {
+        var headWidth = head.SourceCrop.Width;
+        var headHeight = head.SourceCrop.Height;
+        if (headWidth <= 0 || headHeight <= 0)
+            throw new InvalidDataException("A peça de cabeça não tem dimensões válidas para encaixar sobrancelhas.");
+
+        var centerX = headWidth * (side == FaceComponentSide.Left ? .38 : .62);
+        var centerYFromTop = headHeight * .32;
+        var position = head.Transform.Apply(new Point2D(centerX, headHeight - centerYFromTop));
+        var scaleX = headWidth * .16 / piece.Width;
+        var scaleY = headHeight * .12 / piece.Height;
+        return new Transform2D(position, new Point2D(scaleX, scaleY), 0,
+            new Point2D(piece.Width / 2d, piece.Height / 2d), flipX: side == FaceComponentSide.Right);
+    }
+
     public async ValueTask DisposeAsync()
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
         await DisposePreviewAsync();
     }
+}
+
+public sealed record FaceCatalogChoiceItem(FaceId Id, string Name, Revision Revision)
+{
+    public string Label => $"{Name} · rev. {Revision.Value}";
 }

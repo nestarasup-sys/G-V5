@@ -23,10 +23,7 @@ public sealed class FaceWorkspaceViewModelTests
         var catalogRepository = new MemoryFaceCatalogRepository();
         var viewModel = new FaceWorkspaceViewModel(new RecordingFilePicker(bytes), CreateImportService(root),
             catalogRepository, assets);
-        var modelId = ModelId.New();
-        var modelContent = ModelDraftContent.CreateEmpty(modelId, Revision.Initial);
-        var model = PublishedModelRevision.Restore(ModelRevisionId.New(), modelId, Revision.Initial, Revision.Initial,
-            "Modelo de teste", 10, new string('a', 64), modelContent);
+        var model = CreatePublishedModel("Modelo de teste");
 
         try
         {
@@ -45,6 +42,16 @@ public sealed class FaceWorkspaceViewModelTests
             Assert.Equal(new[] { FaceComponentSide.Left, FaceComponentSide.Right },
                 firstSaved.Components.Select(component => component.Side!.Value).OrderBy(side => side));
             Assert.All(firstSaved.Components, component => Assert.Contains(component.AssetId, assets.Assets.Keys));
+            var leftSaved = Assert.Single(firstSaved.Components, component => component.Side == FaceComponentSide.Left);
+            var rightSaved = Assert.Single(firstSaved.Components, component => component.Side == FaceComponentSide.Right);
+            Assert.Equal(32.8, leftSaved.Transform.Translation.X, 6);
+            Assert.Equal(54, leftSaved.Transform.Translation.Y, 6);
+            Assert.Equal(47.2, rightSaved.Transform.Translation.X, 6);
+            Assert.Equal(54, rightSaved.Transform.Translation.Y, 6);
+            Assert.Equal(3.2, leftSaved.Transform.Scale.X, 6);
+            Assert.Equal(2, leftSaved.Transform.Scale.Y, 6);
+            Assert.False(leftSaved.Transform.FlipX);
+            Assert.True(rightSaved.Transform.FlipX);
             Assert.False(viewModel.HasPreview);
             Assert.Contains("2 componentes", viewModel.CatalogStatus, StringComparison.OrdinalIgnoreCase);
 
@@ -94,11 +101,60 @@ public sealed class FaceWorkspaceViewModelTests
         }
     }
 
+    [Fact]
+    public async Task ConfirmImport_RequiresAndWritesOnlyToTheCatalogSelectedByTheUser()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"gv5-face-vm-{Guid.NewGuid():N}");
+        var model = CreatePublishedModel("Modelo com vários catálogos");
+        var repository = new MemoryFaceCatalogRepository();
+        var selected = FaceCatalogDraft.Create(ModelRevisionReference.From(model), "Rosto principal");
+        var untouched = FaceCatalogDraft.Create(ModelRevisionReference.From(model), "Rosto alternativo");
+        repository.Catalogs.Add(selected.Id, selected);
+        repository.Catalogs.Add(untouched.Id, untouched);
+        var viewModel = new FaceWorkspaceViewModel(new RecordingFilePicker(CreateSeparatedBrows()),
+            CreateImportService(root), repository, new MemoryAssetStore());
+
+        try
+        {
+            await viewModel.OpenModelRevisionAsync(model);
+            await viewModel.LoadCatalogAsync(TestContext.Current.CancellationToken);
+
+            Assert.True(viewModel.HasMultipleCatalogs);
+            Assert.Null(viewModel.SelectedCatalog);
+            await viewModel.SelectEyebrowSheetCommand.ExecuteAsync(null);
+            Assert.False(viewModel.CanConfirmImport);
+
+            viewModel.SelectedCatalog = Assert.Single(viewModel.CatalogChoices,
+                choice => choice.Id == selected.Id);
+            Assert.True(viewModel.CanConfirmImport);
+            await viewModel.ConfirmImportCommand.ExecuteAsync(null);
+
+            Assert.Equal(Revision.From(2), repository.Catalogs[selected.Id].Revision);
+            Assert.Equal(2, repository.Catalogs[selected.Id].Components.Length);
+            Assert.Equal(Revision.Initial, repository.Catalogs[untouched.Id].Revision);
+            Assert.Empty(repository.Catalogs[untouched.Id].Components);
+            Assert.Equal(selected.Id, viewModel.SelectedCatalog!.Id);
+        }
+        finally
+        {
+            await viewModel.DisposeAsync();
+            if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+        }
+    }
+
     private static PublishedModelRevision CreatePublishedModel(string name)
     {
         var modelId = ModelId.New();
+        var assetId = AssetId.New();
+        var partId = ModelPartId.New();
+        var crop = new Rect2D(0, 0, 60, 50);
+        var head = new ModelPart(partId, "Cabeça", assetId, crop,
+            new Transform2D(new Point2D(10, 20), new Point2D(1, 1), 0, Point2D.Zero),
+            new ModelPartSourceTransform(crop, Transform2D.Identity));
+        var content = ModelDraftContent.Restore(ModelDraftContent.CurrentSchemaVersion, modelId, Revision.Initial,
+            ModelSlot.From(1), AssetId.New(), 100, 100, [head], [partId]);
         return PublishedModelRevision.Restore(ModelRevisionId.New(), modelId, Revision.Initial, Revision.Initial,
-            name, 10, new string('b', 64), ModelDraftContent.CreateEmpty(modelId, Revision.Initial));
+            name, 10, new string('b', 64), content);
     }
 
     private static FaceSheetImportService CreateImportService(string root) => new(
