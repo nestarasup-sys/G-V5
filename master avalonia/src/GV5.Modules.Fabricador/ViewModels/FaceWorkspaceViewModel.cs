@@ -22,6 +22,7 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
     private readonly IFaceCatalogRepository? _catalogRepository;
     private readonly IAssetStore? _assetStore;
     private readonly FaceCatalogPreviewRenderer? _previewRenderer;
+    private readonly HeadExtraImportService? _headExtraImportService;
     private PublishedModelRevision? _pinnedModel;
     private FaceCatalogDraft? _savedCatalog;
     private FaceCatalogDraft? _previewCatalogOverride;
@@ -67,6 +68,7 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
     [NotifyPropertyChangedFor(nameof(CatalogStatus))]
     [NotifyPropertyChangedFor(nameof(CanConfirmImport))]
     [NotifyPropertyChangedFor(nameof(CanPublishCatalog))]
+    [NotifyPropertyChangedFor(nameof(CanAddHeadExtra))]
     [NotifyPropertyChangedFor(nameof(PublicationStatus))]
     [NotifyPropertyChangedFor(nameof(HasSavedCatalog))]
     [NotifyPropertyChangedFor(nameof(PublishButtonLabel))]
@@ -90,6 +92,11 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanApplyComponentTransform))]
     [NotifyCanExecuteChangedFor(nameof(ApplyComponentTransformCommand))]
+    [NotifyPropertyChangedFor(nameof(CanRemoveSelectedComponent))]
+    [NotifyCanExecuteChangedFor(nameof(RemoveSelectedComponentCommand))]
+    [NotifyPropertyChangedFor(nameof(CanToggleSelectedVisibility))]
+    [NotifyCanExecuteChangedFor(nameof(ToggleSelectedVisibilityCommand))]
+    [NotifyPropertyChangedFor(nameof(SelectedVisibilityButtonLabel))]
     private FaceComponentChoiceItem? selectedComponent;
 
     [ObservableProperty]
@@ -122,21 +129,30 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
     [NotifyPropertyChangedFor(nameof(CanConfirmImport))]
     [NotifyPropertyChangedFor(nameof(CanChangeSheetKind))]
     [NotifyPropertyChangedFor(nameof(CanChangeNoseMode))]
+    [NotifyPropertyChangedFor(nameof(CanAddHeadExtra))]
+    [NotifyPropertyChangedFor(nameof(CanRemoveSelectedComponent))]
+    [NotifyPropertyChangedFor(nameof(CanToggleSelectedVisibility))]
+    [NotifyCanExecuteChangedFor(nameof(AddHeadExtraCommand))]
     [NotifyCanExecuteChangedFor(nameof(SelectFaceSheetCommand))]
     [NotifyCanExecuteChangedFor(nameof(ConfirmImportCommand))]
     [NotifyCanExecuteChangedFor(nameof(PublishCatalogCommand))]
     [NotifyPropertyChangedFor(nameof(CanApplyComponentTransform))]
     [NotifyCanExecuteChangedFor(nameof(ApplyComponentTransformCommand))]
+    [NotifyCanExecuteChangedFor(nameof(AddHeadExtraCommand))]
+    [NotifyCanExecuteChangedFor(nameof(RemoveSelectedComponentCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ToggleSelectedVisibilityCommand))]
     private bool isBusy;
 
     public FaceWorkspaceViewModel(IFilePicker? filePicker, FaceSheetImportService? importService,
         IFaceCatalogRepository? catalogRepository = null, IAssetStore? assetStore = null,
-        AssetImageDecoder? imageDecoder = null, IRenderSceneRenderer? sceneRenderer = null)
+        AssetImageDecoder? imageDecoder = null, IRenderSceneRenderer? sceneRenderer = null,
+        HeadExtraImportService? headExtraImportService = null)
     {
         _filePicker = filePicker;
         _importService = importService;
         _catalogRepository = catalogRepository;
         _assetStore = assetStore;
+        _headExtraImportService = headExtraImportService;
         if (assetStore is not null && imageDecoder is not null && sceneRenderer is not null)
             _previewRenderer = new FaceCatalogPreviewRenderer(assetStore, imageDecoder, sceneRenderer);
         CatalogChoices = [];
@@ -157,6 +173,9 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
     public bool CanChangeSheetKind => !HasPreview && !IsBusy;
     public bool HasMultipleCatalogs => CatalogChoices.Count > 1;
     public bool HasSavedCatalog => _savedCatalog is not null;
+    public int HeadExtraCount => _savedCatalog?.Components.Count(component => component.Kind == FaceComponentKind.HeadExtra) ?? 0;
+    public int VisibleHeadExtraCount => _savedCatalog?.Components.Count(component => component.Kind == FaceComponentKind.HeadExtra && component.IsVisible) ?? 0;
+    public string SelectedVisibilityButtonLabel => SelectedComponent?.IsVisible == true ? "Ocultar no preview" : "Mostrar no preview";
     public bool IsNoseSheetSelected => SelectedSheetKind.Kind == FaceSheetKind.Nose;
     public ObservableCollection<FaceCatalogChoiceItem> CatalogChoices { get; }
     public ObservableCollection<FaceComponentChoiceItem> ComponentChoices { get; }
@@ -164,6 +183,15 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
     public IReadOnlyList<FaceNoseSheetModeChoiceItem> NoseSheetModes => FaceNoseSheetModeChoices;
     public string SelectedSheetLabel => SelectedSheetKind.Label;
     public bool CanSelectSheet => !IsBusy && HeadPart is not null && _filePicker is not null && _importService is not null;
+    public bool CanAddHeadExtra => !IsBusy && HeadPart is not null && _filePicker is not null
+        && _headExtraImportService is not null && _assetStore is not null && _catalogRepository is not null
+        && (_savedCatalog?.Components.Length ?? 0) < FaceCatalogDraft.MaximumComponents
+        && (!HasMultipleCatalogs || SelectedCatalog is not null);
+    public bool CanRemoveSelectedComponent => !IsBusy && _savedCatalog is not null
+        && _catalogRepository is not null && SelectedComponent is not null;
+    public bool CanToggleSelectedVisibility => !IsBusy && _savedCatalog is not null
+        && _catalogRepository is not null && SelectedComponent is not null
+        && (SelectedComponent.IsVisible || SelectedComponent.Kind != FaceComponentKind.HeadExtra || VisibleHeadExtraCount < 8);
     public bool CanChangeNoseMode => IsNoseSheetSelected && CanChangeSheetKind;
     public bool CanConfirmImport => !IsBusy && Preview is not null && _pinnedModel is not null
         && HeadPart is not null && _catalogRepository is not null && _assetStore is not null
@@ -270,6 +298,8 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
         OnPropertyChanged(nameof(CanSelectSheet));
         OnPropertyChanged(nameof(CanConfirmImport));
         SelectFaceSheetCommand.NotifyCanExecuteChanged();
+        AddHeadExtraCommand.NotifyCanExecuteChanged();
+        RemoveSelectedComponentCommand.NotifyCanExecuteChanged();
         ConfirmImportCommand.NotifyCanExecuteChanged();
         await RefreshComposedPreviewAsync();
     }
@@ -407,6 +437,135 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
         catch (Exception exception) when (exception is IOException or InvalidOperationException or ArgumentException)
         { Error = "Não foi possível preparar a folha de sobrancelhas."; }
         finally { IsBusy = false; }
+    }
+
+    [RelayCommand(CanExecute = nameof(CanAddHeadExtra))]
+    private async Task AddHeadExtraAsync(CancellationToken cancellationToken)
+    {
+        if (_filePicker is null || _headExtraImportService is null || _assetStore is null
+            || _catalogRepository is null || HeadPart is not { } head) return;
+        Error = null;
+        Status = null;
+        IsBusy = true;
+        try
+        {
+            var file = await _filePicker.PickImageAsync(cancellationToken);
+            if (file is null) return;
+            await using (file)
+            {
+                var prepared = await _headExtraImportService.PrepareAsync(file.Content, file.MediaType, cancellationToken);
+                await using var png = new MemoryStream(prepared.PngBytes, writable: false);
+                var imported = await _assetStore.ImportAsync(png, "image/png", cancellationToken);
+                if (imported.IsFailure) { Error = imported.Error!.Message; return; }
+
+                var baseName = Path.GetFileNameWithoutExtension(file.Name);
+                var name = string.IsNullOrWhiteSpace(baseName) ? "Extra de cabeça" : baseName.Trim();
+                if (name.Length > 120) name = name[..120];
+                var sourceWidth = Math.Max(1, head.SourceCrop.Width);
+                var sourceHeight = Math.Max(1, head.SourceCrop.Height);
+                var scaleX = Math.Min(20, Math.Min(.6, sourceWidth * .55 / prepared.Width));
+                var scaleY = Math.Min(20, Math.Min(.35, sourceHeight * .30 / prepared.Height));
+                var modelPosition = head.Transform.Apply(new Point2D(sourceWidth * .5, sourceHeight * .75));
+                var transform = new Transform2D(modelPosition, new Point2D(scaleX, scaleY), 0,
+                    new Point2D(prepared.Width / 2d, prepared.Height / 2d));
+                var extra = FaceComponent.Create(FaceComponentKind.HeadExtra, name, imported.Value.Id,
+                    null, transform, isVisible: VisibleHeadExtraCount < 8, zOrder: 800 + HeadExtraCount);
+
+                FaceCatalogDraft candidate = _savedCatalog is null
+                    ? FaceCatalogDraft.Restore(FaceId.New(), ModelRevisionReference.From(_pinnedModel!),
+                        Revision.Initial, "Rosto", [extra])
+                    : _savedCatalog.WithComponent(extra);
+                var saved = _savedCatalog is null
+                    ? await _catalogRepository.CreateAsync(candidate, cancellationToken)
+                    : await _catalogRepository.SaveAsync(candidate, _savedCatalog.Revision, cancellationToken);
+                if (saved.IsFailure) { Error = saved.Error!.Message; return; }
+                AcceptSavedCatalog(saved.Value, extra.Id);
+                var chromaMessage = prepared.GreenKeyDetected
+                    ? $" · fundo verde removido de {prepared.RemovedBackgroundPixels:N0} pixels"
+                    : " · transparência preservada";
+                Status = $"Extra “{name}” adicionado ao catálogo facial{chromaMessage}.";
+                if (!extra.IsVisible)
+                    Status += " O limite de oito extras ativos foi atingido; ative-o no preview depois de ocultar outro.";
+            }
+        }
+        catch (OperationCanceledException) { Status = "Importação do extra de cabeça cancelada."; }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
+                                          or InvalidDataException or InvalidOperationException or ArgumentException)
+        { Error = "Não foi possível importar o extra de cabeça. Confira o arquivo e o espaço disponível."; }
+        finally { IsBusy = false; }
+    }
+
+    [RelayCommand(CanExecute = nameof(CanRemoveSelectedComponent))]
+    private async Task RemoveSelectedComponentAsync(CancellationToken cancellationToken)
+    {
+        if (_savedCatalog is null || _catalogRepository is null || SelectedComponent is null) return;
+        Error = null;
+        Status = null;
+        IsBusy = true;
+        try
+        {
+            var componentId = SelectedComponent.Id;
+            var updated = _savedCatalog.WithoutComponent(componentId);
+            var saved = await _catalogRepository.SaveAsync(updated, _savedCatalog.Revision, cancellationToken);
+            if (saved.IsFailure) { Error = saved.Error!.Message; return; }
+            AcceptSavedCatalog(saved.Value);
+            Status = "Componente removido do catálogo facial. O asset continua protegido pelo armazenamento central.";
+        }
+        catch (OperationCanceledException) { Status = "Remoção cancelada; o catálogo anterior foi preservado."; }
+        catch (Exception exception) when (exception is IOException or InvalidOperationException or ArgumentException)
+        { Error = "Não foi possível remover o componente do catálogo facial."; }
+        finally { IsBusy = false; }
+    }
+
+    [RelayCommand(CanExecute = nameof(CanToggleSelectedVisibility))]
+    private async Task ToggleSelectedVisibilityAsync(CancellationToken cancellationToken)
+    {
+        if (_savedCatalog is null || _catalogRepository is null || SelectedComponent is null) return;
+        Error = null;
+        Status = null;
+        IsBusy = true;
+        try
+        {
+            var selected = _savedCatalog.Components.FirstOrDefault(component => component.Id == SelectedComponent.Id);
+            if (selected is null) return;
+            var updated = _savedCatalog.WithVisibility(selected.Id, !selected.IsVisible);
+            var saved = await _catalogRepository.SaveAsync(updated, _savedCatalog.Revision, cancellationToken);
+            if (saved.IsFailure) { Error = saved.Error!.Message; return; }
+            AcceptSavedCatalog(saved.Value, selected.Id);
+            Status = selected.IsVisible
+                ? "Componente ocultado na prévia facial; ele continua salvo no catálogo."
+                : "Componente exibido na prévia facial.";
+        }
+        catch (OperationCanceledException) { Status = "Alteração de visibilidade cancelada; o catálogo anterior foi preservado."; }
+        catch (Exception exception) when (exception is IOException or InvalidOperationException or ArgumentException)
+        { Error = "Não foi possível alterar a visibilidade do componente facial."; }
+        finally { IsBusy = false; }
+    }
+
+    private void AcceptSavedCatalog(FaceCatalogDraft catalog, FaceComponentId? selectedComponentId = null)
+    {
+        _savedCatalog = catalog;
+        _catalogsById[catalog.Id] = catalog;
+        var choiceIndex = -1;
+        for (var index = 0; index < CatalogChoices.Count; index++)
+            if (CatalogChoices[index].Id == catalog.Id) { choiceIndex = index; break; }
+        var choice = new FaceCatalogChoiceItem(catalog.Id, catalog.Name, catalog.Revision);
+        if (choiceIndex >= 0) CatalogChoices[choiceIndex] = choice;
+        else CatalogChoices.Add(choice);
+        OnPropertyChanged(nameof(HasMultipleCatalogs));
+        OnPropertyChanged(nameof(HeadExtraCount));
+        OnPropertyChanged(nameof(VisibleHeadExtraCount));
+        OnPropertyChanged(nameof(CatalogStatus));
+        OnPropertyChanged(nameof(PublicationStatus));
+        OnPropertyChanged(nameof(HasSavedCatalog));
+        SelectedCatalog = choice;
+        RefreshComponentChoices();
+        if (selectedComponentId is { } id)
+            SelectedComponent = ComponentChoices.FirstOrDefault(component => component.Id == id);
+        AddHeadExtraCommand.NotifyCanExecuteChanged();
+        RemoveSelectedComponentCommand.NotifyCanExecuteChanged();
+        ToggleSelectedVisibilityCommand.NotifyCanExecuteChanged();
+        PublishCatalogCommand.NotifyCanExecuteChanged();
     }
 
     [RelayCommand(CanExecute = nameof(CanConfirmImport))]
@@ -606,7 +765,8 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
         SelectedComponent = null;
         if (_savedCatalog is null) return;
         foreach (var component in _savedCatalog.Components.OrderBy(item => item.ZOrder).ThenBy(item => item.Name, StringComparer.CurrentCultureIgnoreCase))
-            ComponentChoices.Add(new FaceComponentChoiceItem(component.Id, CreateComponentLabel(component), component.Transform));
+            ComponentChoices.Add(new FaceComponentChoiceItem(component.Id, CreateComponentLabel(component), component.Transform,
+                component.Kind, component.IsVisible));
         SelectedComponent = ComponentChoices.FirstOrDefault(choice => choice.Id == previousId) ?? ComponentChoices.FirstOrDefault();
         OnPropertyChanged(nameof(CanApplyComponentTransform));
         ApplyComponentTransformCommand.NotifyCanExecuteChanged();
@@ -811,4 +971,5 @@ public sealed record FaceCatalogChoiceItem(FaceId Id, string Name, Revision Revi
     public string Label => $"{Name} · rev. {Revision.Value}";
 }
 
-public sealed record FaceComponentChoiceItem(FaceComponentId Id, string Label, Transform2D Transform);
+public sealed record FaceComponentChoiceItem(FaceComponentId Id, string Label, Transform2D Transform,
+    FaceComponentKind Kind, bool IsVisible);

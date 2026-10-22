@@ -79,6 +79,7 @@ public sealed class SqliteFaceCatalogRepositoryTests
         var componentId = FaceComponentId.New();
         var asset = AssetId.New();
         var mouthAsset = AssetId.New();
+        var extraAsset = AssetId.New();
         try
         {
             using (var database = new SqliteDatabase(paths))
@@ -88,13 +89,16 @@ public sealed class SqliteFaceCatalogRepositoryTests
                 Assert.True(model.IsSuccess, model.Error?.Message);
                 await InsertAssetAsync(database, asset, token);
                 await InsertAssetAsync(database, mouthAsset, token);
+                await InsertAssetAsync(database, extraAsset, token);
                 var repository = new SqliteFaceCatalogRepository(database);
                 var initial = FaceCatalogDraft.Create(ModelRevisionReference.From(model.Value), "Rosto");
                 var component = FaceComponent.Restore(componentId, FaceComponentKind.Eye, "Olho esquerdo", asset,
                     FaceComponentSide.Left, Transform2D.Identity);
                 var mouth = FaceComponent.Create(FaceComponentKind.Mouth, "Boca aberta", mouthAsset, null,
                     Transform2D.Identity, mouthVariant: FaceMouthVariant.Open, zOrder: 875);
-                var withComponent = initial.WithComponent(component).WithComponent(mouth);
+                var extra = FaceComponent.Create(FaceComponentKind.HeadExtra, "Óculos", extraAsset, null,
+                    new Transform2D(new Point2D(22, 37), new Point2D(.6, .35), 0, new Point2D(4, 5)));
+                var withComponent = initial.WithComponent(component).WithComponent(mouth).WithComponent(extra);
                 var created = await repository.CreateAsync(initial, token);
                 Assert.True(created.IsSuccess, created.Error?.Message);
                 faceId = created.Value.Id;
@@ -106,6 +110,9 @@ public sealed class SqliteFaceCatalogRepositoryTests
                 Assert.Equal(1L, await ScalarAsync(database,
                     "SELECT COUNT(*) FROM asset_references WHERE owner_type='fabricator.face-draft' AND owner_id=$id AND slot=$slot AND asset_id=$asset;",
                     token, ("$id", faceId.Value.ToString("D")), ("$slot", componentId.ToString()), ("$asset", asset.ToString())));
+                Assert.Equal(1L, await ScalarAsync(database,
+                    "SELECT COUNT(*) FROM asset_references WHERE owner_type='fabricator.face-draft' AND owner_id=$id AND slot=$slot AND asset_id=$asset;",
+                    token, ("$id", faceId.Value.ToString("D")), ("$slot", extra.Id.ToString()), ("$asset", extraAsset.ToString())));
 
                 var moved = saved.Value.WithTransform(componentId,
                     new Transform2D(new Point2D(10, -3), new Point2D(1.1, 0.8), 0.2, new Point2D(4, 5)));
@@ -176,6 +183,19 @@ public sealed class SqliteFaceCatalogRepositoryTests
                 Assert.Equal(new Point2D(10, -3), item.Transform.Translation);
                 Assert.Equal(FaceMouthVariant.Open, loaded.Value.Components.Single(component => component.Name == "Boca aberta").MouthVariant);
                 Assert.Equal(875, loaded.Value.Components.Single(component => component.Name == "Boca aberta").ZOrder);
+                var persistedExtra = Assert.Single(loaded.Value.Components, component => component.Kind == FaceComponentKind.HeadExtra);
+                Assert.Equal("Óculos", persistedExtra.Name);
+                Assert.Equal(extraAsset, persistedExtra.AssetId);
+                Assert.Equal(new Point2D(22, 37), persistedExtra.Transform.Translation);
+                var withoutExtra = loaded.Value.WithoutComponent(persistedExtra.Id);
+                var removedExtra = await repository.SaveAsync(withoutExtra, loaded.Value.Revision, token);
+                Assert.True(removedExtra.IsSuccess, removedExtra.Error?.Message);
+                Assert.Empty(removedExtra.Value.Components.Where(component => component.Kind == FaceComponentKind.HeadExtra));
+                Assert.Equal(0L, await ScalarAsync(reopened,
+                    "SELECT COUNT(*) FROM asset_references WHERE owner_type='fabricator.face-draft' AND owner_id=$id AND slot=$slot;",
+                    token, ("$id", faceId.Value.ToString("D")), ("$slot", persistedExtra.Id.ToString())));
+                Assert.Equal(1L, await ScalarAsync(reopened,
+                    "SELECT COUNT(*) FROM assets WHERE asset_id=$asset;", token, ("$asset", extraAsset.ToString())));
                 Assert.Single(listed.Value);
                 var expressionRepository = new SqliteFaceExpressionRepository(reopened);
                 var collections = await expressionRepository.ListCollectionsAsync(loaded.Value.Model.RevisionId, token);

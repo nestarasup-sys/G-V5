@@ -90,6 +90,7 @@ internal static class AppComposition
                 MaximumPixels: 32_000_000)));
         services.AddSingleton<ModelSourceImportService>();
         services.AddSingleton<FaceSheetImportService>();
+        services.AddSingleton<HeadExtraImportService>();
         services.AddSingleton<ModelPartSplitService>();
         services.AddSingleton<ModelPartMergeService>();
         services.AddSingleton<ModelPartMixerService>();

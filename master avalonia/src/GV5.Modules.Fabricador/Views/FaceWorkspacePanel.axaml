@@ -58,6 +58,13 @@
                         <Button Content="Selecionar arquivo da folha" Command="{Binding SelectFaceSheetCommand}"
                                 IsEnabled="{Binding CanSelectSheet}" Padding="10,6"
                                 Background="#FFF5F8" BorderBrush="#EFCBD8" Foreground="#A84368" />
+                        <Button Content="Adicionar extra de cabeça" Command="{Binding AddHeadExtraCommand}"
+                                IsEnabled="{Binding CanAddHeadExtra}" Padding="10,6"
+                                Background="#F0EAF8" BorderBrush="#D8C8EB" Foreground="#704B9A" />
+                        <TextBlock Text="{Binding HeadExtraCount, StringFormat='Extras salvos: {0}'}" FontSize="10"
+                                   Foreground="#706872" VerticalAlignment="Center" />
+                        <TextBlock Text="{Binding VisibleHeadExtraCount, StringFormat='Ativos: {0}/8'}" FontSize="10"
+                                   Foreground="#706872" VerticalAlignment="Center" />
                         <Button Content="Descartar prévia" Command="{Binding CancelImportCommand}"
                                 IsVisible="{Binding HasPreview}" Padding="10,6" />
                     </StackPanel>
@@ -117,6 +124,14 @@
                     <Button Content="Salvar encaixe" Command="{Binding ApplyComponentTransformCommand}"
                             IsEnabled="{Binding CanApplyComponentTransform}" HorizontalAlignment="Left"
                             Padding="10,6" Background="#FFF5F8" BorderBrush="#EFCBD8" Foreground="#A84368" />
+                    <Button Content="Remover componente selecionado do catálogo"
+                            Command="{Binding RemoveSelectedComponentCommand}"
+                            IsEnabled="{Binding CanRemoveSelectedComponent}" HorizontalAlignment="Left"
+                            Padding="10,6" Background="#FFF3F4" BorderBrush="#EFCBD8" Foreground="#A84368" />
+                    <Button Content="{Binding SelectedVisibilityButtonLabel}"
+                            Command="{Binding ToggleSelectedVisibilityCommand}"
+                            IsEnabled="{Binding CanToggleSelectedVisibility}" HorizontalAlignment="Left"
+                            Padding="10,6" Background="#F0EAF8" BorderBrush="#D8C8EB" Foreground="#704B9A" />
                 </StackPanel>
             </Border>
             <Button Content="Salvar par no catálogo facial" Command="{Binding ConfirmImportCommand}"

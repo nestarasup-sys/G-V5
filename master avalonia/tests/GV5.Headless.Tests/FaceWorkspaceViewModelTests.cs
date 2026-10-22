@@ -62,6 +62,136 @@ public sealed class FaceWorkspaceViewModelTests
     }
 
     [Fact]
+    public async Task HeadExtraImport_RemovesGreenKeyAndCropsVisiblePixelsWhilePreservingAlphaAssets()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"gv5-head-extra-{Guid.NewGuid():N}");
+        var service = CreateHeadExtraImportService(root);
+        try
+        {
+            await using var greenInput = new MemoryStream(CreateGreenBackedExtra(), writable: false);
+            var processedGreen = await service.PrepareAsync(greenInput, "image/png", TestContext.Current.CancellationToken);
+            Assert.True(processedGreen.GreenKeyDetected);
+            Assert.True(processedGreen.RemovedBackgroundPixels > 0);
+            using var greenPng = new MemoryStream(processedGreen.PngBytes, writable: false);
+            var decodedGreen = await new AssetImageDecoder().DecodeAsync(greenPng, TestContext.Current.CancellationToken);
+            Assert.True(decodedGreen.IsSuccess);
+            using (decodedGreen.Image!)
+            {
+                Assert.Equal(9, decodedGreen.Image!.Width);
+                Assert.Equal(10, decodedGreen.Image.Height);
+                Assert.Equal(0, decodedGreen.Image.Bitmap.GetPixel(0, 0).Alpha);
+                Assert.Equal(SKColors.Red, decodedGreen.Image.Bitmap.GetPixel(4, 4));
+            }
+
+            await using var transparentInput = new MemoryStream(CreateTransparentExtra(), writable: false);
+            var processedTransparent = await service.PrepareAsync(transparentInput, "image/png", TestContext.Current.CancellationToken);
+            Assert.False(processedTransparent.GreenKeyDetected);
+            using var transparentPng = new MemoryStream(processedTransparent.PngBytes, writable: false);
+            var decodedTransparent = await new AssetImageDecoder().DecodeAsync(transparentPng, TestContext.Current.CancellationToken);
+            Assert.True(decodedTransparent.IsSuccess);
+            using (decodedTransparent.Image!)
+            {
+                Assert.Equal(9, decodedTransparent.Image!.Width);
+                Assert.Equal(9, decodedTransparent.Image.Height);
+                Assert.Equal(0, decodedTransparent.Image.Bitmap.GetPixel(0, 0).Alpha);
+            }
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task HeadExtraImport_CreatesCatalogEntryAndRemovalKeepsCentralAsset()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"gv5-head-extra-vm-{Guid.NewGuid():N}");
+        var repository = new MemoryFaceCatalogRepository();
+        var assets = new MemoryAssetStore();
+        var viewModel = new FaceWorkspaceViewModel(new RecordingFilePicker(CreateGreenBackedExtra()),
+            importService: null, repository, assets, headExtraImportService: CreateHeadExtraImportService(root));
+        try
+        {
+            await viewModel.OpenModelRevisionAsync(CreatePublishedModel("Modelo com extra de cabeça"));
+            await viewModel.LoadCatalogAsync(TestContext.Current.CancellationToken);
+            Assert.True(viewModel.CanAddHeadExtra);
+
+            await viewModel.AddHeadExtraCommand.ExecuteAsync(null);
+
+            var catalog = Assert.Single(repository.Catalogs.Values);
+            var extra = Assert.Single(catalog.Components);
+            Assert.Equal(FaceComponentKind.HeadExtra, extra.Kind);
+            Assert.Equal("sobrancelhas", extra.Name);
+            Assert.Equal(Revision.Initial, catalog.Revision);
+            Assert.Equal(1, viewModel.HeadExtraCount);
+            Assert.Equal(extra.Id, viewModel.ComponentChoices.Single().Id);
+            Assert.Contains("fundo verde removido", viewModel.Status, StringComparison.OrdinalIgnoreCase);
+            Assert.Single(assets.Assets);
+
+            await viewModel.RemoveSelectedComponentCommand.ExecuteAsync(null);
+
+            var updated = repository.Catalogs[catalog.Id];
+            Assert.Equal(Revision.From(2), updated.Revision);
+            Assert.Empty(updated.Components);
+            Assert.Equal(0, viewModel.HeadExtraCount);
+            Assert.Single(assets.Assets);
+            Assert.Contains("asset continua protegido", viewModel.Status, StringComparison.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            await viewModel.DisposeAsync();
+            if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task HeadExtraCatalogStoresMoreThanEightAndLimitsPreviewSelectionToEight()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"gv5-head-extra-slots-{Guid.NewGuid():N}");
+        var repository = new MemoryFaceCatalogRepository();
+        var viewModel = new FaceWorkspaceViewModel(new RecordingFilePicker(CreateGreenBackedExtra()), null,
+            repository, new MemoryAssetStore(), headExtraImportService: CreateHeadExtraImportService(root));
+        try
+        {
+            await viewModel.OpenModelRevisionAsync(CreatePublishedModel("Modelo com biblioteca de extras"));
+            await viewModel.LoadCatalogAsync(TestContext.Current.CancellationToken);
+            for (var index = 0; index < 9; index++)
+            {
+                Assert.True(viewModel.CanAddHeadExtra);
+                await viewModel.AddHeadExtraCommand.ExecuteAsync(null);
+            }
+
+            var catalog = Assert.Single(repository.Catalogs.Values);
+            Assert.Equal(9, viewModel.HeadExtraCount);
+            Assert.Equal(8, viewModel.VisibleHeadExtraCount);
+            var hidden = Assert.Single(catalog.Components, component => component.Kind == FaceComponentKind.HeadExtra && !component.IsVisible);
+            Assert.False(viewModel.CanToggleSelectedVisibility);
+            var active = viewModel.ComponentChoices.First(component => component.Kind == FaceComponentKind.HeadExtra && component.IsVisible);
+            viewModel.SelectedComponent = active;
+            Assert.True(viewModel.CanToggleSelectedVisibility);
+
+            await viewModel.ToggleSelectedVisibilityCommand.ExecuteAsync(null);
+            Assert.Equal(7, viewModel.VisibleHeadExtraCount);
+            viewModel.SelectedComponent = viewModel.ComponentChoices.Single(component => component.Id == hidden.Id);
+            Assert.True(viewModel.CanToggleSelectedVisibility);
+            await viewModel.ToggleSelectedVisibilityCommand.ExecuteAsync(null);
+
+            var updated = repository.Catalogs[catalog.Id];
+            Assert.Equal(8, viewModel.VisibleHeadExtraCount);
+            Assert.Contains(updated.Components, component => component.Id == hidden.Id && component.IsVisible);
+            var previewExtras = FaceCatalogPreviewSceneBuilder.GetDefaultSelections(updated)
+                .Where(selection => selection.Component.Kind == FaceComponentKind.HeadExtra).ToArray();
+            Assert.Equal(8, previewExtras.Length);
+            Assert.Contains(previewExtras, selection => selection.Component.Id == hidden.Id);
+        }
+        finally
+        {
+            await viewModel.DisposeAsync();
+            if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task ComponentTransform_RequiresValidValuesAndPersistsAsOneCatalogRevision()
     {
         var previousCulture = CultureInfo.CurrentCulture;
@@ -434,6 +564,10 @@ public sealed class FaceWorkspaceViewModelTests
         new AssetImageDecoder(new AssetImageDecodeLimits(8192, 32_000_000, 128L * 1024 * 1024)),
         new FaceSheetProcessor());
 
+    private static HeadExtraImportService CreateHeadExtraImportService(string root) => new(
+        new AssetImportStager(Path.Combine(root, "staging"), new AssetImportLimits(8 * 1024 * 1024, 8192, 32_000_000)),
+        new AssetImageDecoder(new AssetImageDecodeLimits(8192, 32_000_000, 128L * 1024 * 1024)));
+
     private static byte[] CreateSeparatedBrows()
     {
         using var bitmap = new SKBitmap(new SKImageInfo(18, 10, SKColorType.Rgba8888, SKAlphaType.Unpremul));
@@ -475,6 +609,26 @@ public sealed class FaceWorkspaceViewModelTests
         for (var index = 0; index < 6; index++)
             Paint(bitmap, (index % 3) * 7 + 1, (index / 3) * 7 + 1,
                 new SKColor((byte)(40 + index * 20), 50, 45, 255));
+        using var encoded = bitmap.Encode(SKEncodedImageFormat.Png, 100);
+        return encoded!.ToArray();
+    }
+
+    private static byte[] CreateGreenBackedExtra()
+    {
+        using var bitmap = new SKBitmap(new SKImageInfo(20, 20, SKColorType.Rgba8888, SKAlphaType.Unpremul));
+        bitmap.Erase(new SKColor(0, 255, 0, 255));
+        for (var y = 7; y < 13; y++)
+        for (var x = 8; x < 13; x++) bitmap.SetPixel(x, y, SKColors.Red);
+        using var encoded = bitmap.Encode(SKEncodedImageFormat.Png, 100);
+        return encoded!.ToArray();
+    }
+
+    private static byte[] CreateTransparentExtra()
+    {
+        using var bitmap = new SKBitmap(new SKImageInfo(20, 20, SKColorType.Rgba8888, SKAlphaType.Unpremul));
+        bitmap.Erase(SKColors.Transparent);
+        for (var y = 8; y < 13; y++)
+        for (var x = 8; x < 13; x++) bitmap.SetPixel(x, y, SKColors.Blue);
         using var encoded = bitmap.Encode(SKEncodedImageFormat.Png, 100);
         return encoded!.ToArray();
     }
