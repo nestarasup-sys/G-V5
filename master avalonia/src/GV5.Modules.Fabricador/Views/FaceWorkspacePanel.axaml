@@ -1,0 +1,62 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:GV5.Modules.Fabricador.ViewModels"
+             x:Class="GV5.Modules.Fabricador.Views.FaceWorkspacePanel"
+             x:DataType="vm:FaceWorkspaceViewModel"
+             DataContextChanged="OnDataContextChanged">
+    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <StackPanel Spacing="11" Margin="12">
+            <StackPanel Spacing="3">
+                <TextBlock Text="Olhos e rosto" FontSize="16" FontWeight="Bold" Foreground="#342E36" />
+                <TextBlock Text="Prepare e confira um par de sobrancelhas antes de gravá-lo no catálogo facial."
+                           FontSize="12" Foreground="#706872" TextWrapping="Wrap" />
+                <TextBlock Text="{Binding ModelRevisionLabel}" FontSize="11" Foreground="#958B96" TextWrapping="Wrap" />
+            </StackPanel>
+
+            <Border Background="#FBFAFB" BorderBrush="#EEE9ED" BorderThickness="1" CornerRadius="9" Padding="10">
+                <StackPanel Spacing="8">
+                    <TextBlock Text="Importar sobrancelhas" FontWeight="Bold" Foreground="#342E36" />
+                    <TextBlock Text="Use uma folha com os dois lados separados por transparência. O arquivo original é preservado durante a revisão."
+                               FontSize="11" Foreground="#706872" TextWrapping="Wrap" />
+                    <StackPanel Orientation="Horizontal" Spacing="7">
+                        <Button Content="Selecionar folha" Command="{Binding SelectEyebrowSheetCommand}"
+                                IsEnabled="{Binding CanSelectSheet}" Padding="10,6"
+                                Background="#FFF5F8" BorderBrush="#EFCBD8" Foreground="#A84368" />
+                        <Button Content="Descartar prévia" Command="{Binding CancelImportCommand}"
+                                IsVisible="{Binding HasPreview}" Padding="10,6" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <TextBlock Text="{Binding PreviewSummary}"
+                       IsVisible="{Binding HasPreview}" FontSize="10" Foreground="#958B96" TextWrapping="Wrap" />
+            <Grid ColumnDefinitions="*,*" ColumnSpacing="8" IsVisible="{Binding HasPreview}">
+                <Border Background="#FBFAFB" BorderBrush="#EEE9ED" BorderThickness="1" CornerRadius="8" Padding="7">
+                    <StackPanel Spacing="5">
+                        <TextBlock Text="ESQUERDA" FontSize="10" FontWeight="Bold" Foreground="#706872" HorizontalAlignment="Center" />
+                        <Border Height="112" Background="#E8E3E8" CornerRadius="5" ClipToBounds="True">
+                            <Image x:Name="LeftEyebrowImage" Stretch="Uniform" />
+                        </Border>
+                        <TextBlock Text="Recorte independente" FontSize="9" Foreground="#958B96" HorizontalAlignment="Center" />
+                    </StackPanel>
+                </Border>
+                <Border Grid.Column="1" Background="#FBFAFB" BorderBrush="#EEE9ED" BorderThickness="1" CornerRadius="8" Padding="7">
+                    <StackPanel Spacing="5">
+                        <TextBlock Text="DIREITA" FontSize="10" FontWeight="Bold" Foreground="#706872" HorizontalAlignment="Center" />
+                        <Border Height="112" Background="#E8E3E8" CornerRadius="5" ClipToBounds="True">
+                            <Image x:Name="RightEyebrowImage" Stretch="Uniform" />
+                        </Border>
+                        <TextBlock Text="Recorte independente" FontSize="9" Foreground="#958B96" HorizontalAlignment="Center" />
+                    </StackPanel>
+                </Border>
+            </Grid>
+
+            <TextBlock Text="{Binding CatalogStatus}" FontSize="11" Foreground="#706872" TextWrapping="Wrap" />
+            <Button Content="Salvar par no catálogo facial" Command="{Binding ConfirmImportCommand}"
+                    IsEnabled="{Binding CanConfirmImport}" IsVisible="{Binding HasPreview}"
+                    Padding="11,7" Background="#C74677" BorderBrush="#C74677" Foreground="#FFFFFF" />
+            <TextBlock Text="{Binding Status}" IsVisible="{Binding HasStatus}" FontSize="11" Foreground="#5D7C6B" TextWrapping="Wrap" />
+            <TextBlock Text="{Binding Error}" IsVisible="{Binding HasError}" FontSize="11" Foreground="#B4233C" TextWrapping="Wrap" />
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

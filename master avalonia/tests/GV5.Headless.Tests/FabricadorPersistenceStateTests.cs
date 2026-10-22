@@ -184,6 +184,31 @@ public sealed class FabricadorPersistenceStateTests
     }
 
     [AvaloniaFact]
+    public async Task FaceWorkspacePanel_LoadsTheEyebrowReviewAndConfirmationControls()
+    {
+        var viewModel = new FaceWorkspaceViewModel(filePicker: null, importService: null);
+        var panel = new FaceWorkspacePanel { DataContext = viewModel };
+        var window = new Window { Width = 480, Height = 520, Content = panel };
+        window.Show();
+
+        try
+        {
+            var buttons = window.GetVisualDescendants().OfType<Button>().ToArray();
+            var select = Assert.Single(buttons, button => button.Content?.ToString() == "Selecionar folha");
+            var confirm = Assert.Single(buttons, button => button.Content?.ToString() == "Salvar par no catálogo facial");
+            Assert.False(select.IsEnabled);
+            Assert.False(confirm.IsVisible);
+            Assert.Contains(window.GetVisualDescendants().OfType<TextBlock>(),
+                text => text.Text == "Olhos e rosto");
+        }
+        finally
+        {
+            window.Close();
+            await viewModel.DisposeAsync();
+        }
+    }
+
+    [AvaloniaFact]
     public async Task FabricadorView_ShowsDirtySavingSavedAndErrorAfterRealFileAccessFailure()
     {
         var cancellationToken = TestContext.Current.CancellationToken;

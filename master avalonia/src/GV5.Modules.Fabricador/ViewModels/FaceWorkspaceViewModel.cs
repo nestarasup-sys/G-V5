@@ -1,0 +1,215 @@
+using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
+using GV5.Application.Contracts;
+using GV5.Assets.Processing;
+using GV5.Core.Identity;
+using GV5.Core.Models;
+using GV5.Geometry;
+using GV5.Modules.Fabricador.Import;
+
+namespace GV5.Modules.Fabricador.ViewModels;
+
+/// <summary>Owns staged facial-sheet review and persistence for one immutable model revision.</summary>
+public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
+{
+    private readonly IFilePicker? _filePicker;
+    private readonly FaceSheetImportService? _importService;
+    private readonly IFaceCatalogRepository? _catalogRepository;
+    private readonly IAssetStore? _assetStore;
+    private PublishedModelRevision? _pinnedModel;
+    private FaceCatalogDraft? _savedCatalog;
+    private int _disposed;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasPreview))]
+    [NotifyPropertyChangedFor(nameof(CanConfirmImport))]
+    private FaceSheetImportPreview? preview;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasError))]
+    private string? error;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasStatus))]
+    private string? status;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanSelectSheet))]
+    [NotifyPropertyChangedFor(nameof(CanConfirmImport))]
+    [NotifyCanExecuteChangedFor(nameof(SelectEyebrowSheetCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ConfirmImportCommand))]
+    private bool isBusy;
+
+    public FaceWorkspaceViewModel(IFilePicker? filePicker, FaceSheetImportService? importService,
+        IFaceCatalogRepository? catalogRepository = null, IAssetStore? assetStore = null)
+    {
+        _filePicker = filePicker;
+        _importService = importService;
+        _catalogRepository = catalogRepository;
+        _assetStore = assetStore;
+    }
+
+    public bool HasPreview => Preview is not null;
+    public bool HasError => !string.IsNullOrWhiteSpace(Error);
+    public bool HasStatus => !string.IsNullOrWhiteSpace(Status);
+    public bool CanSelectSheet => !IsBusy && _pinnedModel is not null && _filePicker is not null && _importService is not null;
+    public bool CanConfirmImport => !IsBusy && Preview is not null && _pinnedModel is not null
+        && _catalogRepository is not null && _assetStore is not null;
+    public string ModelRevisionLabel => _pinnedModel is null
+        ? "Abra uma revisão publicada do modelo para editar o rosto."
+        : $"Modelo {_pinnedModel.Name} · revisão {_pinnedModel.Revision.Value}";
+    public string CatalogStatus => _savedCatalog is null
+        ? "O próximo salvamento cria o catálogo facial deste modelo."
+        : $"Catálogo “{_savedCatalog.Name}” · {_savedCatalog.Components.Length} componentes salvos";
+    public string PreviewSummary => Preview is null ? string.Empty
+        : $"Folha {Preview.SourceWidth}×{Preview.SourceHeight} · {Preview.RemovedPixelCount:N0} pixels de fundo removidos · {Preview.Pieces.Count} lados prontos para revisão";
+
+    partial void OnPreviewChanged(FaceSheetImportPreview? value) => OnPropertyChanged(nameof(PreviewSummary));
+
+    public async Task OpenModelRevisionAsync(PublishedModelRevision model)
+    {
+        ArgumentNullException.ThrowIfNull(model);
+        if (_pinnedModel?.Id == model.Id) return;
+        var discardedPreview = Preview is not null;
+        await DisposePreviewAsync();
+        _pinnedModel = model;
+        _savedCatalog = null;
+        Error = null;
+        Status = discardedPreview ? "A prévia anterior foi descartada ao trocar a revisão do modelo." : null;
+        OnPropertyChanged(nameof(ModelRevisionLabel));
+        OnPropertyChanged(nameof(CatalogStatus));
+        OnPropertyChanged(nameof(CanSelectSheet));
+        OnPropertyChanged(nameof(CanConfirmImport));
+        SelectEyebrowSheetCommand.NotifyCanExecuteChanged();
+        ConfirmImportCommand.NotifyCanExecuteChanged();
+    }
+
+    public async Task LoadCatalogAsync(CancellationToken cancellationToken = default)
+    {
+        if (_pinnedModel is null || _catalogRepository is null) return;
+        var result = await _catalogRepository.ListAsync(_pinnedModel.Id, cancellationToken);
+        if (result.IsFailure)
+        {
+            Error = result.Error!.Message;
+            return;
+        }
+        _savedCatalog = result.Value.OrderByDescending(catalog => catalog.Revision.Value).FirstOrDefault();
+        OnPropertyChanged(nameof(CatalogStatus));
+        Status = _savedCatalog is null ? "Nenhum catálogo facial salvo nesta revisão." : "Catálogo facial carregado.";
+    }
+
+    [RelayCommand(CanExecute = nameof(CanSelectSheet))]
+    private async Task SelectEyebrowSheetAsync(CancellationToken cancellationToken)
+    {
+        if (_filePicker is null || _importService is null || _pinnedModel is null) return;
+        Error = null;
+        Status = null;
+        IsBusy = true;
+        try
+        {
+            var file = await _filePicker.PickImageAsync(cancellationToken);
+            if (file is null) return;
+            await using var stream = file.Content;
+            var result = await _importService.PrepareAsync(stream, file.MediaType, FaceSheetKind.Eyebrows,
+                cancellationToken: cancellationToken);
+            if (result.IsFailure)
+            {
+                Error = result.Error!.Message;
+                return;
+            }
+
+            await DisposePreviewAsync();
+            Preview = result.Value;
+            Status = $"Folha preparada: {Preview.Pieces.Count} lados · {Preview.SourceWidth}×{Preview.SourceHeight}. Confira antes de salvar.";
+        }
+        catch (OperationCanceledException) { Status = "Importação de sobrancelhas cancelada."; }
+        catch (Exception exception) when (exception is IOException or InvalidOperationException or ArgumentException)
+        { Error = "Não foi possível preparar a folha de sobrancelhas."; }
+        finally { IsBusy = false; }
+    }
+
+    [RelayCommand(CanExecute = nameof(CanConfirmImport))]
+    private async Task ConfirmImportAsync(CancellationToken cancellationToken)
+    {
+        if (Preview is not { } preview || _pinnedModel is null || _catalogRepository is null || _assetStore is null) return;
+        Error = null;
+        Status = null;
+        IsBusy = true;
+        try
+        {
+            var components = new List<FaceComponent>(preview.Pieces.Count);
+            foreach (var piece in preview.Pieces)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                await using var stream = await piece.OpenPngReadAsync(cancellationToken);
+                var imported = await _assetStore.ImportAsync(stream, "image/png", cancellationToken);
+                if (imported.IsFailure) { Error = imported.Error!.Message; return; }
+                if (imported.Value.VerificationState != AssetVerificationState.Available
+                    || imported.Value.ByteLength != piece.PngByteLength
+                    || !string.Equals(imported.Value.Sha256, piece.PngSha256, StringComparison.OrdinalIgnoreCase))
+                {
+                    Error = "O AssetStore retornou uma imagem diferente do lado revisado.";
+                    return;
+                }
+
+                var side = piece.Side switch
+                {
+                    FaceSheetSide.Left => FaceComponentSide.Left,
+                    FaceSheetSide.Right => FaceComponentSide.Right,
+                    _ => throw new InvalidDataException("O recorte da sobrancelha perdeu a identificação do lado.")
+                };
+                components.Add(FaceComponent.Create(FaceComponentKind.Eyebrow,
+                    side == FaceComponentSide.Left ? "Sobrancelha esquerda" : "Sobrancelha direita",
+                    imported.Value.Id, side, Transform2D.Identity));
+            }
+
+            FaceCatalogDraft updated;
+            Result<FaceCatalogDraft> persisted;
+            if (_savedCatalog is null)
+            {
+                updated = FaceCatalogDraft.Restore(FaceId.New(), ModelRevisionReference.From(_pinnedModel),
+                    Revision.Initial, "Rosto", components);
+                persisted = await _catalogRepository.CreateAsync(updated, cancellationToken);
+            }
+            else
+            {
+                updated = FaceCatalogDraft.Restore(_savedCatalog.Id, _savedCatalog.Model,
+                    _savedCatalog.Revision.Next(), _savedCatalog.Name,
+                    _savedCatalog.Components.Where(component => component.Kind != FaceComponentKind.Eyebrow)
+                        .Concat(components));
+                persisted = await _catalogRepository.SaveAsync(updated, _savedCatalog.Revision, cancellationToken);
+            }
+
+            if (persisted.IsFailure) { Error = persisted.Error!.Message; return; }
+            _savedCatalog = persisted.Value;
+            await DisposePreviewAsync();
+            OnPropertyChanged(nameof(CatalogStatus));
+            Status = "As duas sobrancelhas foram salvas no catálogo facial desta revisão.";
+        }
+        catch (OperationCanceledException) { Status = "Salvamento cancelado; o catálogo anterior foi preservado."; }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidOperationException or ArgumentException)
+        { Error = "Não foi possível salvar as sobrancelhas no catálogo facial."; }
+        finally { IsBusy = false; }
+    }
+
+    [RelayCommand]
+    private async Task CancelImportAsync()
+    {
+        await DisposePreviewAsync();
+        Error = null;
+        Status = "Prévia descartada; nenhum catálogo foi alterado.";
+    }
+
+    private async Task DisposePreviewAsync()
+    {
+        var previous = Preview;
+        Preview = null;
+        if (previous is not null) await previous.DisposeAsync();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
+        await DisposePreviewAsync();
+    }
+}

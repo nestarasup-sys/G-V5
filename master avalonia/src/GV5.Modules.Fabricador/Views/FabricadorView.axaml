@@ -123,6 +123,21 @@
                                 Background="#F7F0FA"
                                 BorderBrush="#E4D4EA"
                                 Foreground="#704A82" />
+                        <Button Content="{Binding FaceWorkspaceButtonLabel}"
+                                Command="{Binding ToggleFaceWorkspaceCommand}"
+                                IsEnabled="{Binding CanToggleFaceWorkspace}"
+                                IsVisible="{Binding IsModelWorkspace}"
+                                Padding="10,6"
+                                Background="#FFF2F2"
+                                BorderBrush="#F0D1D4"
+                                Foreground="#9B4A52" />
+                        <Button Content="Voltar ao modelo"
+                                Command="{Binding ToggleFaceWorkspaceCommand}"
+                                IsVisible="{Binding IsFaceWorkspace}"
+                                Padding="10,6"
+                                Background="#FFF2F2"
+                                BorderBrush="#F0D1D4"
+                                Foreground="#9B4A52" />
                         <Button Content="Voltar ao modelo"
                                 Command="{Binding ToggleHairWorkspaceCommand}"
                                 IsVisible="{Binding IsHairWorkspace}"
@@ -655,6 +670,8 @@
                     </ScrollViewer>
                     <views:HairWorkspacePanel DataContext="{Binding HairWorkspace}"
                                               IsVisible="{Binding $parent[views:FabricadorView].DataContext.IsHairWorkspace}" />
+                    <views:FaceWorkspacePanel DataContext="{Binding FaceWorkspace}"
+                                              IsVisible="{Binding $parent[views:FabricadorView].DataContext.IsFaceWorkspace}" />
                     </Grid>
                 </Border>
             </Grid>
