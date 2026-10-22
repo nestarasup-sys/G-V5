@@ -3,13 +3,19 @@ using Avalonia.Headless.XUnit;
 using Avalonia.VisualTree;
 using Avalonia.Interactivity;
 using GV5.Application.Contracts;
+using GV5.Assets.Decoding;
+using GV5.Data.Assets;
+using GV5.Data.Diagnostics;
 using GV5.Data.Migrations;
 using GV5.Data.Repositories;
 using GV5.Data.Storage;
 using GV5.Core.Identity;
 using GV5.Core.Models;
+using GV5.Geometry;
 using GV5.Modules.Fabricador.ViewModels;
 using GV5.Modules.Fabricador.Views;
+using GV5.Modules.Fabricador.Import;
+using SkiaSharp;
 using Xunit;
 
 namespace GV5.Headless.Tests;
@@ -103,6 +109,151 @@ public sealed class FabricadorPersistenceStateTests
             viewModel.Dispose();
             DeleteTempRoot(root);
         }
+    }
+
+    [Fact]
+    public async Task SplitAndMergeCommandsPersistAssetsAndRigAcrossSqliteReopen()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var root = NewTempRoot();
+        var paths = new AppDataPaths(root);
+        var modelId = ModelId.New();
+        var originalPartId = ModelPartId.New();
+        var followingPartId = ModelPartId.New();
+        var sourceAssetId = AssetId.New();
+        var joint = new RigJoint(RigJointId.New(), TransformNodeId.From(originalPartId.Value),
+            TransformNodeId.From(followingPartId.Value), Point2D.Zero, Point2D.Zero, RigJointMode.Fixed);
+        try
+        {
+            using (var database = new SqliteDatabase(paths))
+            {
+                var initializer = CreateFullMigrationRunner(database);
+                await initializer.InitializeAsync(cancellationToken);
+                var assetStore = CreateAssetStore(paths, database, initializer);
+                var imported = await assetStore.ImportAsync(new MemoryStream(CreateStripPng(), writable: false),
+                    "image/png", cancellationToken);
+                Assert.True(imported.IsSuccess, imported.Error?.Message);
+                sourceAssetId = imported.Value.Id;
+                var drafts = new SqliteModelDraftRepository(database);
+                var draft = ModelDraft.Create(modelId, "Split e merge persistente", 100);
+                Assert.True((await drafts.CreateInSlotAsync(draft, ModelSlot.From(1), cancellationToken)).IsSuccess);
+                var crop = new Rect2D(1, 0, 4, 2);
+                var transform = new Transform2D(new Point2D(20, 30), new Point2D(1, 1), 0, Point2D.Zero);
+                var original = new ModelPart(originalPartId, "Peça", imported.Value.Id, crop, transform,
+                    new ModelPartSourceTransform(crop, transform));
+                var followingCrop = new Rect2D(0, 0, 1, 1);
+                var following = new ModelPart(followingPartId, "Peça ligada", imported.Value.Id, followingCrop,
+                    Transform2D.Identity, new ModelPartSourceTransform(followingCrop, Transform2D.Identity));
+                var content = ModelDraftContent.Restore(ModelDraftContent.CurrentSchemaVersion, modelId,
+                    Revision.Initial, ModelSlot.From(1), imported.Value.Id, 6, 2,
+                    [original, following], [originalPartId, followingPartId], [joint]);
+                var contentRepository = new SqliteModelDraftContentRepository(database);
+                var initialSave = await contentRepository.SaveAsync(content, expectedRevision: null, cancellationToken);
+                Assert.True(initialSave.IsSuccess, initialSave.Error?.Message);
+
+                var viewModel = new FabricadorViewModel(drafts, initializer, assetStore: assetStore,
+                    contentRepository: contentRepository,
+                    modelPartSplitService: new ModelPartSplitService(assetStore, new AssetImageDecoder()),
+                    modelPartMergeService: new ModelPartMergeService(assetStore, new AssetImageDecoder()),
+                    modelSlotRepository: new SqliteModelSlotRepository(database),
+                    autosaveDelay: TimeSpan.FromHours(1));
+                try
+                {
+                    await viewModel.ModelSlotsTask;
+                    await viewModel.SelectModelSlotCommand.ExecuteAsync(1);
+                    viewModel.SelectedModelPartId = originalPartId;
+                    Assert.True(viewModel.CanSplitSelectedPart);
+                    await viewModel.SplitSelectedPartCommand.ExecuteAsync(null);
+                    Assert.Equal(3, viewModel.PartLayers.Count);
+                    Assert.True(await viewModel.FlushPendingChangesAsync(cancellationToken));
+                    var split = await contentRepository.GetAsync(modelId, cancellationToken);
+                    Assert.True(split.IsSuccess, split.Error?.Message);
+                    Assert.Equal(Revision.From(2), split.Value.Revision);
+                    Assert.Equal(new[] { originalPartId, followingPartId },
+                        new[] { split.Value.LayerOrder[0], split.Value.LayerOrder[2] });
+                    var splitRightId = split.Value.LayerOrder[1];
+                    Assert.NotEqual(originalPartId, splitRightId);
+                    Assert.NotEqual(followingPartId, splitRightId);
+                    Assert.Equal(splitRightId, viewModel.PartLayers.Single(item => item.Id != originalPartId
+                        && item.Id != followingPartId).Id);
+                    Assert.Equal(joint, Assert.Single(split.Value.RigJoints));
+                }
+                finally { viewModel.Dispose(); }
+            }
+
+            using (var reopenedDatabase = new SqliteDatabase(paths))
+            {
+                var initializer = CreateFullMigrationRunner(reopenedDatabase);
+                await initializer.InitializeAsync(cancellationToken);
+                var reopenedRepository = new SqliteModelDraftContentRepository(reopenedDatabase);
+                var splitState = await reopenedRepository.GetAsync(modelId, cancellationToken);
+                Assert.True(splitState.IsSuccess, splitState.Error?.Message);
+                Assert.Equal(Revision.From(2), splitState.Value.Revision);
+                Assert.Equal(new[] { originalPartId, followingPartId },
+                    new[] { splitState.Value.LayerOrder[0], splitState.Value.LayerOrder[2] });
+                Assert.Equal(joint, Assert.Single(splitState.Value.RigJoints));
+                var reopenedStore = CreateAssetStore(paths, reopenedDatabase, initializer);
+                Assert.Equal(AssetVerificationState.Available,
+                    (await reopenedStore.GetMetadataAsync(splitState.Value.Parts.Single(part => part.Id != originalPartId
+                        && part.Id != followingPartId).AssetId, cancellationToken)).Value.VerificationState);
+                var drafts = new SqliteModelDraftRepository(reopenedDatabase);
+                var viewModel = new FabricadorViewModel(drafts, initializer, assetStore: reopenedStore,
+                    contentRepository: reopenedRepository,
+                    modelPartSplitService: new ModelPartSplitService(reopenedStore, new AssetImageDecoder()),
+                    modelPartMergeService: new ModelPartMergeService(reopenedStore, new AssetImageDecoder()),
+                    modelSlotRepository: new SqliteModelSlotRepository(reopenedDatabase),
+                    autosaveDelay: TimeSpan.FromHours(1));
+                try
+                {
+                    await viewModel.ModelSlotsTask;
+                    await viewModel.SelectModelSlotCommand.ExecuteAsync(1);
+                    Assert.Equal(3, viewModel.PartLayers.Count);
+                    viewModel.SelectedModelPartId = originalPartId;
+                    Assert.True(viewModel.CanMergeSelectedPart);
+                    await viewModel.MergeSelectedPartCommand.ExecuteAsync(null);
+                    Assert.Equal(2, viewModel.PartLayers.Count);
+                    Assert.True(await viewModel.FlushPendingChangesAsync(cancellationToken));
+                    var merged = await reopenedRepository.GetAsync(modelId, cancellationToken);
+                    Assert.True(merged.IsSuccess, merged.Error?.Message);
+                    Assert.Equal(Revision.From(3), merged.Value.Revision);
+                    Assert.Equal(2, merged.Value.Parts.Length);
+                    var mergedPart = merged.Value.Parts.Single(part => part.Id == originalPartId);
+                    Assert.Equal(new[] { originalPartId, followingPartId }, merged.Value.LayerOrder);
+                    Assert.Equal(joint, Assert.Single(merged.Value.RigJoints));
+                    Assert.Equal(sourceAssetId, merged.Value.SourceAssetId);
+                    Assert.Equal(AssetVerificationState.Available,
+                        (await reopenedStore.GetMetadataAsync(mergedPart.AssetId, cancellationToken)).Value.VerificationState);
+                }
+                finally { viewModel.Dispose(); }
+            }
+
+            using (var finalDatabase = new SqliteDatabase(paths))
+            {
+                var initializer = CreateFullMigrationRunner(finalDatabase);
+                await initializer.InitializeAsync(cancellationToken);
+                var finalRepository = new SqliteModelDraftContentRepository(finalDatabase);
+                var reopened = await finalRepository.GetAsync(modelId, cancellationToken);
+                Assert.True(reopened.IsSuccess, reopened.Error?.Message);
+                Assert.Equal(Revision.From(3), reopened.Value.Revision);
+                Assert.Equal(new[] { originalPartId, followingPartId }, reopened.Value.LayerOrder);
+                Assert.Equal(joint, Assert.Single(reopened.Value.RigJoints));
+                var persistedPart = reopened.Value.Parts.Single(part => part.Id == originalPartId);
+                Assert.Equal(originalPartId, persistedPart.Id);
+                Assert.Equal(new Rect2D(0, 0, 4, 2), persistedPart.SourceCrop);
+                var finalStore = CreateAssetStore(paths, finalDatabase, initializer);
+                var bytes = await ReadPixelsAsync(finalStore, persistedPart.AssetId, cancellationToken);
+                using var bitmap = SKBitmap.Decode(bytes)!;
+                Assert.Equal((4, 2), (bitmap.Width, bitmap.Height));
+                Assert.Equal(SKColors.Red, bitmap.GetPixel(0, 0));
+                Assert.Equal(SKColors.Green, bitmap.GetPixel(1, 0));
+                Assert.Equal(SKColors.Blue, bitmap.GetPixel(2, 0));
+                Assert.Equal(0, bitmap.GetPixel(3, 0).Alpha);
+                Assert.Equal(3L, await ScalarAsync(finalDatabase,
+                    "SELECT COUNT(*) FROM asset_references WHERE owner_type='fabricator.model-draft' AND owner_id=$id;",
+                    cancellationToken, ("$id", modelId.ToString())));
+            }
+        }
+        finally { DeleteTempRoot(root); }
     }
 
     [AvaloniaFact]
@@ -327,6 +478,53 @@ public sealed class FabricadorPersistenceStateTests
         new FacePublicationSchemaMigration(), new AnimationSlotsSchemaMigration(), new ModelSlotSchemaMigration(),
         new HeadExtraLibrarySchemaMigration(), new FaceDetailLibrarySchemaMigration()
     ]);
+
+    private static SqliteAssetStore CreateAssetStore(AppDataPaths paths, SqliteDatabase database,
+        IDataPlatformInitializer initializer)
+    {
+        var correlation = new OperationCorrelationContext();
+        var pipeline = new SqliteAssetImportPipeline(paths, database, initializer,
+            new StructuredFileLogger(paths, correlation), correlation);
+        return new SqliteAssetStore(pipeline, database, initializer);
+    }
+
+    private static byte[] CreateStripPng()
+    {
+        using var bitmap = new SKBitmap(new SKImageInfo(6, 2, SKColorType.Rgba8888, SKAlphaType.Unpremul));
+        for (var y = 0; y < bitmap.Height; y++)
+        {
+            bitmap.SetPixel(0, y, SKColors.Yellow);
+            bitmap.SetPixel(1, y, SKColors.Red);
+            bitmap.SetPixel(2, y, SKColors.Green);
+            bitmap.SetPixel(3, y, SKColors.Blue);
+            bitmap.SetPixel(4, y, new SKColor(255, 255, 255, 0));
+            bitmap.SetPixel(5, y, SKColors.Magenta);
+        }
+        using var image = SKImage.FromBitmap(bitmap);
+        using var encoded = image.Encode(SKEncodedImageFormat.Png, 100);
+        return encoded!.ToArray();
+    }
+
+    private static async Task<byte[]> ReadPixelsAsync(IAssetStore assetStore, AssetId assetId,
+        CancellationToken cancellationToken)
+    {
+        var opened = await assetStore.OpenReadAsync(assetId, cancellationToken);
+        Assert.True(opened.IsSuccess, opened.Error?.Message);
+        await using var stream = opened.Value;
+        using var buffer = new MemoryStream();
+        await stream.CopyToAsync(buffer, cancellationToken);
+        return buffer.ToArray();
+    }
+
+    private static async Task<long> ScalarAsync(SqliteDatabase database, string sql,
+        CancellationToken cancellationToken, params (string Name, object Value)[] parameters)
+    {
+        await using var connection = await database.OpenReadConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = sql;
+        foreach (var (name, value) in parameters) command.Parameters.AddWithValue(name, value);
+        return Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken));
+    }
 
     private static string NewTempRoot() => Path.Combine(Path.GetTempPath(), $"gv5-fabricador-state-{Guid.NewGuid():N}");
 
