@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Collections.ObjectModel;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Media.Imaging;
@@ -14,12 +15,12 @@ namespace GV5.Modules.Fabricador.Views;
 public partial class FaceWorkspacePanel : UserControl
 {
     private FaceWorkspaceViewModel? _viewModel;
-    private WriteableBitmap? _leftBitmap;
-    private WriteableBitmap? _rightBitmap;
+    private readonly ObservableCollection<FaceSheetPreviewTile> _previewTiles = [];
 
     public FaceWorkspacePanel()
     {
         InitializeComponent();
+        FacePiecesControl.ItemsSource = _previewTiles;
         DetachedFromVisualTree += (_, _) => ClearBitmaps();
         AttachedToVisualTree += (_, _) => UpdateImages();
     }
@@ -42,27 +43,37 @@ public partial class FaceWorkspacePanel : UserControl
     private void UpdateImages()
     {
         ClearBitmaps();
-        LeftEyebrowImage.Source = null;
-        RightEyebrowImage.Source = null;
         if (_viewModel?.Preview is not { } preview) return;
 
-        var left = preview.Pieces.FirstOrDefault(piece => piece.Side == FaceSheetSide.Left);
-        var right = preview.Pieces.FirstOrDefault(piece => piece.Side == FaceSheetSide.Right);
-        if (left is null || right is null) return;
-        _leftBitmap = CreateBitmap(left.Preview);
-        _rightBitmap = CreateBitmap(right.Preview);
-        LeftEyebrowImage.Source = _leftBitmap;
-        RightEyebrowImage.Source = _rightBitmap;
+        foreach (var piece in preview.Pieces)
+        {
+            var label = GetPieceLabel(piece.PartKind, piece.Side, piece.Index);
+            _previewTiles.Add(new FaceSheetPreviewTile(label, $"{piece.Width}×{piece.Height}", CreateBitmap(piece.Preview)));
+        }
     }
 
     private void ClearBitmaps()
     {
-        LeftEyebrowImage.Source = null;
-        RightEyebrowImage.Source = null;
-        _leftBitmap?.Dispose();
-        _rightBitmap?.Dispose();
-        _leftBitmap = null;
-        _rightBitmap = null;
+        FacePiecesControl.ItemsSource = null;
+        foreach (var tile in _previewTiles) tile.Bitmap.Dispose();
+        _previewTiles.Clear();
+        FacePiecesControl.ItemsSource = _previewTiles;
+    }
+
+    private static string GetPieceLabel(FaceSheetPartKind kind, FaceSheetSide? side, int index)
+    {
+        var label = kind switch
+        {
+            FaceSheetPartKind.Eye => "Olho",
+            FaceSheetPartKind.Pupil => "Pupila",
+            FaceSheetPartKind.ClosedEye => "Olho fechado",
+            FaceSheetPartKind.Eyebrow => "Sobrancelha",
+            FaceSheetPartKind.Nose => "Nariz",
+            FaceSheetPartKind.Mouth => "Boca",
+            _ => "Componente facial"
+        };
+        if (side is { } faceSide) return $"{label} {(faceSide == FaceSheetSide.Left ? "esquerdo" : "direito")}";
+        return $"{label} {index + 1:00}";
     }
 
     private static WriteableBitmap CreateBitmap(DecodedAssetImage decoded)
@@ -94,3 +105,5 @@ public partial class FaceWorkspacePanel : UserControl
         }
     }
 }
+
+public sealed record FaceSheetPreviewTile(string Label, string Dimensions, WriteableBitmap Bitmap);

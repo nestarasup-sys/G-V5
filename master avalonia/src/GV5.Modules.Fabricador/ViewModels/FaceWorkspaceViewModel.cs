@@ -26,6 +26,7 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasPreview))]
     [NotifyPropertyChangedFor(nameof(CanConfirmImport))]
+    [NotifyPropertyChangedFor(nameof(CanChangeSheetKind))]
     private FaceSheetImportPreview? preview;
 
     [ObservableProperty]
@@ -46,6 +47,10 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
     private FaceCatalogChoiceItem? selectedCatalog;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(SelectedSheetLabel))]
+    private FaceSheetKindChoiceItem selectedSheetKind = FaceSheetKindChoices[1];
+
+    [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanPublishCatalog))]
     [NotifyPropertyChangedFor(nameof(PublicationStatus))]
     [NotifyPropertyChangedFor(nameof(PublishButtonLabel))]
@@ -54,7 +59,8 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanSelectSheet))]
     [NotifyPropertyChangedFor(nameof(CanConfirmImport))]
-    [NotifyCanExecuteChangedFor(nameof(SelectEyebrowSheetCommand))]
+    [NotifyPropertyChangedFor(nameof(CanChangeSheetKind))]
+    [NotifyCanExecuteChangedFor(nameof(SelectFaceSheetCommand))]
     [NotifyCanExecuteChangedFor(nameof(ConfirmImportCommand))]
     [NotifyCanExecuteChangedFor(nameof(PublishCatalogCommand))]
     private bool isBusy;
@@ -72,9 +78,12 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
     public bool HasPreview => Preview is not null;
     public bool HasError => !string.IsNullOrWhiteSpace(Error);
     public bool HasStatus => !string.IsNullOrWhiteSpace(Status);
+    public bool CanChangeSheetKind => !HasPreview && !IsBusy;
     public bool HasMultipleCatalogs => CatalogChoices.Count > 1;
     public bool HasSavedCatalog => _savedCatalog is not null;
     public ObservableCollection<FaceCatalogChoiceItem> CatalogChoices { get; }
+    public IReadOnlyList<FaceSheetKindChoiceItem> SheetKinds => FaceSheetKindChoices;
+    public string SelectedSheetLabel => SelectedSheetKind.Label;
     public bool CanSelectSheet => !IsBusy && HeadPart is not null && _filePicker is not null && _importService is not null;
     public bool CanConfirmImport => !IsBusy && Preview is not null && _pinnedModel is not null
         && HeadPart is not null && _catalogRepository is not null && _assetStore is not null
@@ -103,7 +112,16 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
         ? "Publicar catálogo facial"
         : "Publicar nova revisão facial";
     public string PreviewSummary => Preview is null ? string.Empty
-        : $"Folha {Preview.SourceWidth}×{Preview.SourceHeight} · {Preview.RemovedPixelCount:N0} pixels de fundo removidos · {Preview.Pieces.Count} lados prontos para revisão";
+        : $"{GetSheetLabel(Preview.Kind)} · {Preview.SourceWidth}×{Preview.SourceHeight} · {Preview.RemovedPixelCount:N0} pixels de fundo removidos · {Preview.Pieces.Count} recortes prontos para revisão";
+
+    private static readonly FaceSheetKindChoiceItem[] FaceSheetKindChoices =
+    [
+        new(FaceSheetKind.Eyes, "Olhos, pupilas e olhos fechados"),
+        new(FaceSheetKind.Eyebrows, "Sobrancelhas"),
+        new(FaceSheetKind.Nose, "Nariz"),
+        new(FaceSheetKind.MouthClosed, "Bocas fechadas"),
+        new(FaceSheetKind.MouthOpen, "Bocas abertas")
+    ];
 
     private ModelPart? HeadPart => _pinnedModel?.Content.Parts.FirstOrDefault(part =>
         part.Name.Contains("cabe", StringComparison.OrdinalIgnoreCase)
@@ -143,7 +161,7 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
         OnPropertyChanged(nameof(HasSavedCatalog));
         OnPropertyChanged(nameof(CanSelectSheet));
         OnPropertyChanged(nameof(CanConfirmImport));
-        SelectEyebrowSheetCommand.NotifyCanExecuteChanged();
+        SelectFaceSheetCommand.NotifyCanExecuteChanged();
         ConfirmImportCommand.NotifyCanExecuteChanged();
     }
 
@@ -184,13 +202,13 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
         OnPropertyChanged(nameof(ModelRevisionLabel));
         OnPropertyChanged(nameof(CanSelectSheet));
         OnPropertyChanged(nameof(CanConfirmImport));
-        SelectEyebrowSheetCommand.NotifyCanExecuteChanged();
+        SelectFaceSheetCommand.NotifyCanExecuteChanged();
         ConfirmImportCommand.NotifyCanExecuteChanged();
         Status = _savedCatalog is null ? "Nenhum catálogo facial salvo nesta revisão." : "Catálogo facial carregado.";
     }
 
     [RelayCommand(CanExecute = nameof(CanSelectSheet))]
-    private async Task SelectEyebrowSheetAsync(CancellationToken cancellationToken)
+    private async Task SelectFaceSheetAsync(CancellationToken cancellationToken)
     {
         if (_filePicker is null || _importService is null || _pinnedModel is null) return;
         Error = null;
@@ -201,7 +219,7 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
             var file = await _filePicker.PickImageAsync(cancellationToken);
             if (file is null) return;
             await using var stream = file.Content;
-            var result = await _importService.PrepareAsync(stream, file.MediaType, FaceSheetKind.Eyebrows,
+            var result = await _importService.PrepareAsync(stream, file.MediaType, SelectedSheetKind.Kind,
                 cancellationToken: cancellationToken);
             if (result.IsFailure)
             {
@@ -211,9 +229,9 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
 
             await DisposePreviewAsync();
             Preview = result.Value;
-            Status = $"Folha preparada: {Preview.Pieces.Count} lados · {Preview.SourceWidth}×{Preview.SourceHeight}. Confira antes de salvar.";
+            Status = $"Folha de {SelectedSheetKind.Label.ToLowerInvariant()} preparada: {Preview.Pieces.Count} recortes · {Preview.SourceWidth}×{Preview.SourceHeight}. Confira antes de salvar.";
         }
-        catch (OperationCanceledException) { Status = "Importação de sobrancelhas cancelada."; }
+        catch (OperationCanceledException) { Status = "Importação facial cancelada."; }
         catch (Exception exception) when (exception is IOException or InvalidOperationException or ArgumentException)
         { Error = "Não foi possível preparar a folha de sobrancelhas."; }
         finally { IsBusy = false; }
@@ -229,27 +247,34 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
         IsBusy = true;
         try
         {
-            var prepared = new List<(FaceSheetImportPiecePreview Piece, FaceComponentSide Side, Transform2D Transform)>(preview.Pieces.Count);
+            var prepared = new List<(FaceSheetImportPiecePreview Piece, FaceComponentKind Kind,
+                FaceComponentSide? Side, FaceMouthVariant MouthVariant, Transform2D Transform)>(preview.Pieces.Count);
             foreach (var piece in preview.Pieces)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                var side = piece.Side switch
+                var kind = MapComponentKind(piece.PartKind);
+                FaceComponentSide? side = piece.Side is { } pieceSide ? pieceSide switch
                 {
                     FaceSheetSide.Left => FaceComponentSide.Left,
                     FaceSheetSide.Right => FaceComponentSide.Right,
-                    _ => throw new InvalidDataException("O recorte da sobrancelha perdeu a identificação do lado.")
-                };
-                var transform = CreateInitialTransform(head, piece, side);
+                    _ => throw new InvalidDataException("O recorte facial tem um lado desconhecido.")
+                } : null;
+                if ((kind is FaceComponentKind.Eye or FaceComponentKind.Pupil or FaceComponentKind.ClosedEye or FaceComponentKind.Eyebrow) != side.HasValue)
+                    throw new InvalidDataException("O recorte facial não corresponde ao lado exigido pelo componente.");
+                var mouthVariant = preview.Kind == FaceSheetKind.MouthOpen ? FaceMouthVariant.Open : FaceMouthVariant.Closed;
+                var sharedScaleSource = kind is FaceComponentKind.Nose or FaceComponentKind.Mouth
+                    ? preview.Pieces[0] : null;
+                var transform = CreateInitialTransform(head, piece, kind, side, sharedScaleSource);
                 if (transform.Scale.X > 20 || transform.Scale.Y > 20)
                 {
-                    Error = "Uma sobrancelha é pequena demais para encaixar com segurança na cabeça deste modelo.";
+                    Error = "Um recorte facial é pequeno demais para encaixar com segurança na cabeça deste modelo.";
                     return;
                 }
-                prepared.Add((piece, side, transform));
+                prepared.Add((piece, kind, side, mouthVariant, transform));
             }
 
             var components = new List<FaceComponent>(prepared.Count);
-            foreach (var (piece, side, transform) in prepared)
+            foreach (var (piece, kind, side, mouthVariant, transform) in prepared)
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 await using var stream = await piece.OpenPngReadAsync(cancellationToken);
@@ -263,9 +288,9 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
                     return;
                 }
 
-                components.Add(FaceComponent.Create(FaceComponentKind.Eyebrow,
-                    side == FaceComponentSide.Left ? "Sobrancelha esquerda" : "Sobrancelha direita",
-                    imported.Value.Id, side, transform));
+                components.Add(FaceComponent.Create(kind, CreateComponentName(kind, side, piece.Index),
+                    imported.Value.Id, side, transform, mouthVariant: kind == FaceComponentKind.Mouth
+                        ? mouthVariant : FaceMouthVariant.Closed));
             }
 
             FaceCatalogDraft updated;
@@ -280,7 +305,7 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
             {
                 updated = FaceCatalogDraft.Restore(_savedCatalog.Id, _savedCatalog.Model,
                     _savedCatalog.Revision.Next(), _savedCatalog.Name,
-                    _savedCatalog.Components.Where(component => component.Kind != FaceComponentKind.Eyebrow)
+                    _savedCatalog.Components.Where(component => !IsReplacedBySheet(component, preview.Kind))
                         .Concat(components));
                 persisted = await _catalogRepository.SaveAsync(updated, _savedCatalog.Revision, cancellationToken);
             }
@@ -298,7 +323,7 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
             SelectedCatalog = choice;
             await DisposePreviewAsync();
             OnPropertyChanged(nameof(CatalogStatus));
-            Status = "As duas sobrancelhas foram salvas no catálogo facial desta revisão.";
+            Status = $"{components.Count} recortes de {GetSheetLabel(preview.Kind).ToLowerInvariant()} foram salvos no catálogo facial desta revisão.";
         }
         catch (OperationCanceledException) { Status = "Salvamento cancelado; o catálogo anterior foi preservado."; }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidOperationException or ArgumentException)
@@ -350,21 +375,95 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
     }
 
     private static Transform2D CreateInitialTransform(ModelPart head, FaceSheetImportPiecePreview piece,
-        FaceComponentSide side)
+        FaceComponentKind kind, FaceComponentSide? side, FaceSheetImportPiecePreview? sharedScaleSource = null)
     {
         var headWidth = head.SourceCrop.Width;
         var headHeight = head.SourceCrop.Height;
         if (headWidth <= 0 || headHeight <= 0)
-            throw new InvalidDataException("A peça de cabeça não tem dimensões válidas para encaixar sobrancelhas.");
+            throw new InvalidDataException("A peça de cabeça não tem dimensões válidas para encaixar componentes faciais.");
 
-        var centerX = headWidth * (side == FaceComponentSide.Left ? .38 : .62);
-        var centerYFromTop = headHeight * .32;
+        var centerX = kind switch
+        {
+            FaceComponentKind.Nose or FaceComponentKind.Mouth => headWidth * .5,
+            _ => headWidth * (side == FaceComponentSide.Right
+                ? kind == FaceComponentKind.Eyebrow ? .62 : .63
+                : kind == FaceComponentKind.Eyebrow ? .38 : .37)
+        };
+        var centerYFromTop = kind switch
+        {
+            FaceComponentKind.Eyebrow => headHeight * .32,
+            FaceComponentKind.Eye or FaceComponentKind.Pupil or FaceComponentKind.ClosedEye => headHeight * .46,
+            FaceComponentKind.Nose => headHeight * .61,
+            FaceComponentKind.Mouth => headHeight * .78,
+            _ => headHeight * .46
+        };
         var position = head.Transform.Apply(new Point2D(centerX, headHeight - centerYFromTop));
-        var scaleX = headWidth * .16 / piece.Width;
-        var scaleY = headHeight * .12 / piece.Height;
+        var scaleSource = sharedScaleSource ?? piece;
+        var (scaleX, scaleY) = kind switch
+        {
+            FaceComponentKind.Eyebrow => (headWidth * .16 / piece.Width, headHeight * .12 / piece.Height),
+            FaceComponentKind.Eye or FaceComponentKind.ClosedEye => (headWidth * .19 / piece.Width, headHeight * .17 / piece.Height),
+            FaceComponentKind.Pupil => (.35, .35),
+            FaceComponentKind.Nose => (headWidth * .075 / scaleSource.Width, headWidth * .075 / scaleSource.Width),
+            FaceComponentKind.Mouth => (headWidth * .2 / scaleSource.Width, headWidth * .2 / scaleSource.Width),
+            _ => throw new InvalidDataException("Não há encaixe inicial definido para esta categoria facial.")
+        };
         return new Transform2D(position, new Point2D(scaleX, scaleY), 0,
-            new Point2D(piece.Width / 2d, piece.Height / 2d), flipX: side == FaceComponentSide.Right);
+            new Point2D(piece.Width / 2d, piece.Height / 2d),
+            flipX: kind == FaceComponentKind.Eyebrow && side == FaceComponentSide.Right);
     }
+
+    private static string GetSheetLabel(FaceSheetKind kind) =>
+        FaceSheetKindChoices.First(choice => choice.Kind == kind).Label;
+
+    private static FaceComponentKind MapComponentKind(FaceSheetPartKind kind) => kind switch
+    {
+        FaceSheetPartKind.Eye => FaceComponentKind.Eye,
+        FaceSheetPartKind.Pupil => FaceComponentKind.Pupil,
+        FaceSheetPartKind.ClosedEye => FaceComponentKind.ClosedEye,
+        FaceSheetPartKind.Eyebrow => FaceComponentKind.Eyebrow,
+        FaceSheetPartKind.Nose => FaceComponentKind.Nose,
+        FaceSheetPartKind.Mouth => FaceComponentKind.Mouth,
+        _ => throw new InvalidDataException("O processador retornou uma categoria facial desconhecida.")
+    };
+
+    private static string CreateComponentName(FaceComponentKind kind, FaceComponentSide? side, int index)
+    {
+        var category = kind switch
+        {
+            FaceComponentKind.Eye => "Olho",
+            FaceComponentKind.Pupil => "Pupila",
+            FaceComponentKind.ClosedEye => "Olho fechado",
+            FaceComponentKind.Eyebrow => "Sobrancelha",
+            FaceComponentKind.Nose => "Nariz",
+            FaceComponentKind.Mouth => "Boca",
+            _ => "Componente facial"
+        };
+        return kind is FaceComponentKind.Mouth or FaceComponentKind.Nose
+            ? $"{category} {index + 1:00}"
+            : (category, side) switch
+            {
+                ("Olho", FaceComponentSide.Left) => "Olho esquerdo",
+                ("Olho", FaceComponentSide.Right) => "Olho direito",
+                ("Olho fechado", FaceComponentSide.Left) => "Olho fechado esquerdo",
+                ("Olho fechado", FaceComponentSide.Right) => "Olho fechado direito",
+                ("Pupila", FaceComponentSide.Left) => "Pupila esquerda",
+                ("Pupila", FaceComponentSide.Right) => "Pupila direita",
+                ("Sobrancelha", FaceComponentSide.Left) => "Sobrancelha esquerda",
+                ("Sobrancelha", FaceComponentSide.Right) => "Sobrancelha direita",
+                _ => category
+            };
+    }
+
+    private static bool IsReplacedBySheet(FaceComponent component, FaceSheetKind kind) => kind switch
+    {
+        FaceSheetKind.Eyes => component.Kind is FaceComponentKind.Eye or FaceComponentKind.Pupil or FaceComponentKind.ClosedEye,
+        FaceSheetKind.Eyebrows => component.Kind == FaceComponentKind.Eyebrow,
+        FaceSheetKind.Nose => component.Kind == FaceComponentKind.Nose,
+        FaceSheetKind.MouthClosed => component.Kind == FaceComponentKind.Mouth && component.MouthVariant == FaceMouthVariant.Closed,
+        FaceSheetKind.MouthOpen => component.Kind == FaceComponentKind.Mouth && component.MouthVariant == FaceMouthVariant.Open,
+        _ => false
+    };
 
     public async ValueTask DisposeAsync()
     {
@@ -372,6 +471,8 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
         await DisposePreviewAsync();
     }
 }
+
+public sealed record FaceSheetKindChoiceItem(FaceSheetKind Kind, string Label);
 
 public sealed record FaceCatalogChoiceItem(FaceId Id, string Name, Revision Revision)
 {

@@ -194,14 +194,15 @@ public sealed class FabricadorPersistenceStateTests
         try
         {
             var buttons = window.GetVisualDescendants().OfType<Button>().ToArray();
-            var select = Assert.Single(buttons, button => button.Content?.ToString() == "Selecionar folha");
+            var select = Assert.Single(buttons, button => button.Content?.ToString() == "Selecionar arquivo da folha");
             var confirm = Assert.Single(buttons, button => button.Content?.ToString() == "Salvar par no catálogo facial");
             var publish = Assert.Single(buttons, button => button.Content?.ToString() == "Publicar catálogo facial");
-            var catalogSelector = Assert.Single(window.GetVisualDescendants().OfType<ComboBox>());
+            var selectors = window.GetVisualDescendants().OfType<ComboBox>().ToArray();
+            Assert.Equal(2, selectors.Length);
             Assert.False(select.IsEnabled);
             Assert.False(confirm.IsVisible);
             Assert.False(publish.IsEnabled);
-            Assert.NotNull(catalogSelector.ItemsSource);
+            Assert.Contains(selectors, selector => ReferenceEquals(selector.ItemsSource, viewModel.SheetKinds));
             Assert.Contains(window.GetVisualDescendants().OfType<TextBlock>(),
                 text => text.Text == "Olhos e rosto");
         }

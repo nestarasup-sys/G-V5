@@ -32,7 +32,7 @@ public sealed class FaceWorkspaceViewModelTests
             Assert.True(viewModel.CanSelectSheet);
             Assert.False(viewModel.CanConfirmImport);
 
-            await viewModel.SelectEyebrowSheetCommand.ExecuteAsync(null);
+            await viewModel.SelectFaceSheetCommand.ExecuteAsync(null);
             Assert.True(viewModel.HasPreview);
             Assert.True(viewModel.CanConfirmImport);
             await viewModel.ConfirmImportCommand.ExecuteAsync(null);
@@ -55,7 +55,7 @@ public sealed class FaceWorkspaceViewModelTests
             Assert.False(viewModel.HasPreview);
             Assert.Contains("2 componentes", viewModel.CatalogStatus, StringComparison.OrdinalIgnoreCase);
 
-            await viewModel.SelectEyebrowSheetCommand.ExecuteAsync(null);
+            await viewModel.SelectFaceSheetCommand.ExecuteAsync(null);
             await viewModel.ConfirmImportCommand.ExecuteAsync(null);
 
             var replaced = Assert.Single(catalogRepository.Catalogs.Values);
@@ -65,7 +65,7 @@ public sealed class FaceWorkspaceViewModelTests
                 replaced.Components.Select(component => component.Side!.Value).OrderBy(side => side));
             Assert.DoesNotContain(firstSaved.Components.Select(component => component.Id),
                 id => replaced.Components.Any(component => component.Id == id));
-            Assert.Contains("salvas", viewModel.Status, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("foram salvos", viewModel.Status, StringComparison.OrdinalIgnoreCase);
 
             Assert.True(viewModel.CanPublishCatalog);
             await viewModel.PublishCatalogCommand.ExecuteAsync(null);
@@ -75,7 +75,7 @@ public sealed class FaceWorkspaceViewModelTests
             Assert.False(viewModel.CanPublishCatalog);
             Assert.Contains("publicado", viewModel.PublicationStatus, StringComparison.OrdinalIgnoreCase);
 
-            await viewModel.SelectEyebrowSheetCommand.ExecuteAsync(null);
+            await viewModel.SelectFaceSheetCommand.ExecuteAsync(null);
             await viewModel.ConfirmImportCommand.ExecuteAsync(null);
             Assert.True(viewModel.CanPublishCatalog);
             Assert.Contains("mudanças", viewModel.PublicationStatus, StringComparison.OrdinalIgnoreCase);
@@ -98,7 +98,7 @@ public sealed class FaceWorkspaceViewModelTests
         try
         {
             await viewModel.OpenModelRevisionAsync(first);
-            await viewModel.SelectEyebrowSheetCommand.ExecuteAsync(null);
+            await viewModel.SelectFaceSheetCommand.ExecuteAsync(null);
             Assert.True(viewModel.HasPreview);
 
             await viewModel.OpenModelRevisionAsync(second);
@@ -134,7 +134,7 @@ public sealed class FaceWorkspaceViewModelTests
 
             Assert.True(viewModel.HasMultipleCatalogs);
             Assert.Null(viewModel.SelectedCatalog);
-            await viewModel.SelectEyebrowSheetCommand.ExecuteAsync(null);
+            await viewModel.SelectFaceSheetCommand.ExecuteAsync(null);
             Assert.False(viewModel.CanConfirmImport);
 
             viewModel.SelectedCatalog = Assert.Single(viewModel.CatalogChoices,
@@ -147,6 +147,64 @@ public sealed class FaceWorkspaceViewModelTests
             Assert.Equal(Revision.Initial, repository.Catalogs[untouched.Id].Revision);
             Assert.Empty(repository.Catalogs[untouched.Id].Components);
             Assert.Equal(selected.Id, viewModel.SelectedCatalog!.Id);
+        }
+        finally
+        {
+            await viewModel.DisposeAsync();
+            if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task ConfirmImport_PersistsEyeRowsAndKeepsOpenAndClosedMouthSheetsSeparate()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"gv5-face-kinds-{Guid.NewGuid():N}");
+        var repository = new MemoryFaceCatalogRepository();
+        var viewModel = new FaceWorkspaceViewModel(new SequenceFilePicker(CreateEyesSheet(), CreateMouthSheet(), CreateNoseSheet(), CreateMouthSheet()),
+            CreateImportService(root), repository, new MemoryAssetStore());
+
+        try
+        {
+            await viewModel.OpenModelRevisionAsync(CreatePublishedModel("Modelo facial completo"));
+            await viewModel.LoadCatalogAsync(TestContext.Current.CancellationToken);
+
+            viewModel.SelectedSheetKind = viewModel.SheetKinds.Single(choice => choice.Kind == FaceSheetKind.Eyes);
+            await viewModel.SelectFaceSheetCommand.ExecuteAsync(null);
+            Assert.Equal(6, viewModel.Preview!.Pieces.Count);
+            Assert.False(viewModel.CanChangeSheetKind);
+            await viewModel.ConfirmImportCommand.ExecuteAsync(null);
+            Assert.True(viewModel.CanChangeSheetKind);
+            var catalog = Assert.Single(repository.Catalogs.Values);
+            Assert.Equal(2, catalog.Components.Count(component => component.Kind == FaceComponentKind.Eye));
+            Assert.Equal(2, catalog.Components.Count(component => component.Kind == FaceComponentKind.Pupil));
+            Assert.Equal(2, catalog.Components.Count(component => component.Kind == FaceComponentKind.ClosedEye));
+
+            viewModel.SelectedSheetKind = viewModel.SheetKinds.Single(choice => choice.Kind == FaceSheetKind.MouthOpen);
+            await viewModel.SelectFaceSheetCommand.ExecuteAsync(null);
+            Assert.Equal(21, viewModel.Preview!.Pieces.Count);
+            await viewModel.ConfirmImportCommand.ExecuteAsync(null);
+            catalog = repository.Catalogs[catalog.Id];
+            Assert.Equal(21, catalog.Components.Count(component => component.Kind == FaceComponentKind.Mouth
+                && component.MouthVariant == FaceMouthVariant.Open));
+
+            viewModel.SelectedSheetKind = viewModel.SheetKinds.Single(choice => choice.Kind == FaceSheetKind.Nose);
+            await viewModel.SelectFaceSheetCommand.ExecuteAsync(null);
+            Assert.Single(viewModel.Preview!.Pieces);
+            await viewModel.ConfirmImportCommand.ExecuteAsync(null);
+            catalog = repository.Catalogs[catalog.Id];
+            Assert.Single(catalog.Components, component => component.Kind == FaceComponentKind.Nose);
+            Assert.Equal(Revision.From(3), catalog.Revision);
+
+            viewModel.SelectedSheetKind = viewModel.SheetKinds.Single(choice => choice.Kind == FaceSheetKind.MouthClosed);
+            await viewModel.SelectFaceSheetCommand.ExecuteAsync(null);
+            Assert.Equal(21, viewModel.Preview!.Pieces.Count);
+            await viewModel.ConfirmImportCommand.ExecuteAsync(null);
+            catalog = repository.Catalogs[catalog.Id];
+            Assert.Equal(21, catalog.Components.Count(component => component.Kind == FaceComponentKind.Mouth
+                && component.MouthVariant == FaceMouthVariant.Closed));
+            Assert.Equal(21, catalog.Components.Count(component => component.Kind == FaceComponentKind.Mouth
+                && component.MouthVariant == FaceMouthVariant.Open));
+            Assert.Equal(Revision.From(4), catalog.Revision);
         }
         finally
         {
@@ -185,6 +243,39 @@ public sealed class FaceWorkspaceViewModelTests
         return encoded!.ToArray();
     }
 
+    private static byte[] CreateEyesSheet()
+    {
+        using var bitmap = new SKBitmap(new SKImageInfo(18, 30, SKColorType.Rgba8888, SKAlphaType.Unpremul));
+        bitmap.Erase(new SKColor(0, 255, 0, 255));
+        for (var row = 0; row < 3; row++)
+        {
+            Paint(bitmap, 2, row * 10 + 3, new SKColor((byte)(30 + row * 40), 25, 20, 255));
+            Paint(bitmap, 12, row * 10 + 3, new SKColor((byte)(50 + row * 40), 35, 25, 255));
+        }
+        using var encoded = bitmap.Encode(SKEncodedImageFormat.Png, 100);
+        return encoded!.ToArray();
+    }
+
+    private static byte[] CreateMouthSheet()
+    {
+        using var bitmap = new SKBitmap(new SKImageInfo(70, 30, SKColorType.Rgba8888, SKAlphaType.Unpremul));
+        bitmap.Erase(new SKColor(0, 255, 0, 255));
+        for (var index = 0; index < 21; index++)
+            Paint(bitmap, (index % 7) * 10 + 3, (index / 7) * 10 + 3,
+                new SKColor((byte)(40 + index * 7), 20, 80, 255));
+        using var encoded = bitmap.Encode(SKEncodedImageFormat.Png, 100);
+        return encoded!.ToArray();
+    }
+
+    private static byte[] CreateNoseSheet()
+    {
+        using var bitmap = new SKBitmap(new SKImageInfo(20, 20, SKColorType.Rgba8888, SKAlphaType.Unpremul));
+        bitmap.Erase(new SKColor(0, 255, 0, 255));
+        Paint(bitmap, 8, 8, new SKColor(90, 50, 45, 255));
+        using var encoded = bitmap.Encode(SKEncodedImageFormat.Png, 100);
+        return encoded!.ToArray();
+    }
+
     private static void Paint(SKBitmap bitmap, int x, int y, SKColor color)
     {
         for (var row = y; row < y + 3; row++)
@@ -197,6 +288,19 @@ public sealed class FaceWorkspaceViewModelTests
         {
             cancellationToken.ThrowIfCancellationRequested();
             return Task.FromResult<PickedFile?>(new PickedFile("sobrancelhas.png", "image/png",
+                new MemoryStream(bytes, writable: false)));
+        }
+    }
+
+    private sealed class SequenceFilePicker(params byte[][] sheets) : IFilePicker
+    {
+        private readonly Queue<byte[]> _sheets = new(sheets);
+
+        public Task<PickedFile?> PickImageAsync(CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!_sheets.TryDequeue(out var bytes)) throw new InvalidOperationException("A fixture facial acabou.");
+            return Task.FromResult<PickedFile?>(new PickedFile("folha-facial.png", "image/png",
                 new MemoryStream(bytes, writable: false)));
         }
     }
