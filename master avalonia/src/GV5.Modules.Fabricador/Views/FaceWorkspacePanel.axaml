@@ -17,7 +17,7 @@
             <Border Background="#F6F3F6" BorderBrush="#E3DCE4" BorderThickness="1" CornerRadius="9" Padding="8">
                 <Grid RowDefinitions="Auto,Auto,Auto" RowSpacing="6">
                     <TextBlock Text="Prévia do rosto no modelo" FontWeight="Bold" Foreground="#342E36" />
-                    <TextBlock Grid.Row="1" Text="Selecione um componente e arraste na prévia para ajustar a posição."
+                    <TextBlock Grid.Row="1" Text="Clique em um componente para selecioná-lo; arraste para ajustar a posição."
                                FontSize="10" Foreground="#706872" TextWrapping="Wrap" />
                     <Border Grid.Row="2" Height="220" Background="#E9E4EA" CornerRadius="6" ClipToBounds="True">
                         <Grid>

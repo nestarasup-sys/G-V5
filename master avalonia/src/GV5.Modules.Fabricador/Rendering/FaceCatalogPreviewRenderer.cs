@@ -47,6 +47,21 @@ public sealed class FaceCatalogPreviewRenderer(
         return scene;
     }
 
+    public async Task<FaceComponentId?> HitTestAsync(PublishedModelRevision model, FaceCatalogDraft catalog,
+        Point2D previewPoint, int maximumDimension = 512, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(model);
+        ArgumentNullException.ThrowIfNull(catalog);
+        var selections = FaceCatalogPreviewSceneBuilder.GetDefaultSelections(catalog);
+        var crops = new Dictionary<AssetId, Rect2D>();
+        foreach (var assetId in selections.Select(selection => selection.Component.AssetId).Distinct())
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            crops.Add(assetId, await GetComponentCropAsync(assetId, cancellationToken).ConfigureAwait(false));
+        }
+        return FaceCatalogPreviewSceneBuilder.HitTest(model, catalog, crops, previewPoint, maximumDimension);
+    }
+
     private async Task<Rect2D> GetComponentCropAsync(AssetId assetId, CancellationToken cancellationToken)
     {
         await _cropGate.WaitAsync(cancellationToken);

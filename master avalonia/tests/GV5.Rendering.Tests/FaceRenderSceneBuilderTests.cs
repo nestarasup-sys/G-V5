@@ -48,6 +48,39 @@ public sealed class FaceRenderSceneBuilderTests
     }
 
     [Fact]
+    public void CatalogPreviewHitTest_SelectsTopmostVisibleComponentUsingRenderedTransform()
+    {
+        var modelId = ModelId.New();
+        var modelRevisionId = ModelRevisionId.New();
+        var sourceAsset = AssetId.New();
+        var headPartId = ModelPartId.New();
+        var headCrop = new Rect2D(0, 0, 100, 100);
+        var head = new ModelPart(headPartId, "Cabeça", sourceAsset, headCrop, Transform2D.Identity,
+            new ModelPartSourceTransform(headCrop, Transform2D.Identity));
+        var content = ModelDraftContent.Restore(ModelDraftContent.CurrentSchemaVersion, modelId,
+            Revision.Initial, ModelSlot.From(1), sourceAsset, 100, 100, [head], [headPartId]);
+        var model = PublishedModelRevision.Restore(modelRevisionId, modelId, Revision.Initial,
+            Revision.Initial, "Modelo de hit-test", 1, new string('a', 64), content);
+        var noseAsset = AssetId.New();
+        var blushAsset = AssetId.New();
+        var transform = new Transform2D(new Point2D(24, 31), new Point2D(1.5, 1.2), .2, new Point2D(4, 3));
+        var nose = FaceComponent.Create(FaceComponentKind.Nose, "Nariz", noseAsset, null, transform, zOrder: 900);
+        var blush = FaceComponent.Create(FaceComponentKind.Blush, "Blush", blushAsset, null, transform, zOrder: 700);
+        var catalog = FaceCatalogDraft.Create(ModelRevisionReference.From(model), "Rosto")
+            .WithComponent(nose).WithComponent(blush);
+        var crops = new Dictionary<AssetId, Rect2D>
+        {
+            [noseAsset] = new Rect2D(0, 0, 12, 10), [blushAsset] = new Rect2D(0, 0, 12, 10)
+        };
+        var scene = FaceCatalogPreviewSceneBuilder.Build(model, catalog, crops, 100);
+        var noseLayer = Assert.Single(scene.Layers, layer => layer.AssetId == noseAsset);
+        var pointOnNose = RenderLayerGeometry.GetSceneMatrix(noseLayer, scene.Height).Transform(new Point2D(6, 5));
+
+        Assert.Equal(nose.Id, FaceCatalogPreviewSceneBuilder.HitTest(model, catalog, crops, pointOnNose, 100));
+        Assert.Null(FaceCatalogPreviewSceneBuilder.HitTest(model, catalog, crops, new Point2D(99, 99), 100));
+    }
+
+    [Fact]
     public void Build_ComposesLinkedEyesMirroredAndOnlySelectedMouthVariantInStableOrder()
     {
         var model = ModelRevisionReference.Restore(ModelId.New(), ModelRevisionId.New(), Revision.Initial, new string('d', 64));

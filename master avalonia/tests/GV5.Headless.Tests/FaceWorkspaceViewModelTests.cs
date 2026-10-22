@@ -336,6 +336,36 @@ public sealed class FaceWorkspaceViewModelTests
     }
 
     [Fact]
+    public async Task ComposedPreviewHitTestSelectsCatalogComponentDirectly()
+    {
+        var assets = new MemoryAssetStore();
+        await using var stream = new MemoryStream(CreateSeparatedBrows(), writable: false);
+        var imported = await assets.ImportAsync(stream, "image/png", TestContext.Current.CancellationToken);
+        Assert.True(imported.IsSuccess);
+        var model = CreatePublishedModel("Modelo para seleção direta");
+        var component = FaceComponent.Create(FaceComponentKind.Nose, "Nariz selecionável", imported.Value.Id,
+            null, new Transform2D(new Point2D(24, 30), new Point2D(1, 1), 0, Point2D.Zero));
+        var catalogRepository = new MemoryFaceCatalogRepository();
+        var catalog = FaceCatalogDraft.Create(ModelRevisionReference.From(model), "Rosto").WithComponent(component);
+        catalogRepository.Catalogs.Add(catalog.Id, catalog);
+        var viewModel = new FaceWorkspaceViewModel(null, null, catalogRepository, assets,
+            imageDecoder: new AssetImageDecoder(), sceneRenderer: new UnusedSceneRenderer());
+        try
+        {
+            await viewModel.OpenModelRevisionAsync(model, ModelSlot.From(1));
+            await viewModel.LoadCatalogAsync(TestContext.Current.CancellationToken);
+            var previewRenderer = new FaceCatalogPreviewRenderer(assets, new AssetImageDecoder(), new UnusedSceneRenderer());
+            var scene = await previewRenderer.BuildSceneAsync(model, catalog, cancellationToken: TestContext.Current.CancellationToken);
+            var layer = Assert.Single(scene.Layers, item => item.AssetId == imported.Value.Id);
+            var point = RenderLayerGeometry.GetSceneMatrix(layer, scene.Height).Transform(new Point2D(5, 5));
+
+            Assert.True(await viewModel.SelectComponentAtPreviewPointAsync(point, TestContext.Current.CancellationToken));
+            Assert.Equal(component.Id, viewModel.SelectedComponent?.Id);
+        }
+        finally { await viewModel.DisposeAsync(); }
+    }
+
+    [Fact]
     public async Task ComponentTransform_RequiresValidValuesAndPersistsAsOneCatalogRevision()
     {
         var previousCulture = CultureInfo.CurrentCulture;

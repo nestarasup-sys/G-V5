@@ -74,6 +74,39 @@ public static class FaceCatalogPreviewSceneBuilder
         }
     }
 
+    /// <summary>Returns the topmost visible facial component under a point in preview pixel coordinates.</summary>
+    public static FaceComponentId? HitTest(PublishedModelRevision model, FaceCatalogDraft catalog,
+        IReadOnlyDictionary<AssetId, Rect2D> faceAssetCrops, Point2D previewPoint, int maximumDimension = 512)
+    {
+        ArgumentNullException.ThrowIfNull(model);
+        ArgumentNullException.ThrowIfNull(catalog);
+        ArgumentNullException.ThrowIfNull(faceAssetCrops);
+        if (!double.IsFinite(previewPoint.X) || !double.IsFinite(previewPoint.Y)) return null;
+        if (catalog.Model != ModelRevisionReference.From(model))
+            throw new ArgumentException("The face catalog must target this exact published model revision.", nameof(catalog));
+
+        var selections = GetDefaultSelections(catalog);
+        var assembly = FaceAssembly.Restore(catalog,
+            selections.Select(item => new KeyValuePair<FaceAssemblySlot, FaceComponentId>(item.Slot, item.Component.Id)),
+            eyeSidesLinked: false, eyebrowSidesLinked: false, eyeMode: FaceEyeMode.Open, mouthMode: FaceMouthMode.Closed);
+        var modelScene = ModelDraftRenderSceneBuilder.Build(model.Content, maximumDimension);
+        var faceLayers = FaceRenderSceneBuilder.Build(catalog, assembly, faceAssetCrops, modelScene.Layers.Length);
+        var orderedSelections = selections.OrderBy(item => item.Component.ZOrder).ThenBy(item => item.Slot).ToArray();
+        var previewSize = ModelDraftRenderSceneBuilder.GetPreviewSize(model.Content, maximumDimension);
+        var scale = previewSize.Scale;
+
+        for (var index = faceLayers.Count - 1; index >= 0; index--)
+        {
+            var layer = ScaleLayer(faceLayers[index], scale);
+            var localPoint = RenderLayerGeometry.GetSceneMatrix(layer, previewSize.Height).Invert().Transform(previewPoint);
+            var crop = faceAssetCrops[orderedSelections[index].Component.AssetId];
+            if (new Rect2D(0, 0, crop.Width, crop.Height).Contains(localPoint))
+                return orderedSelections[index].Component.Id;
+        }
+
+        return null;
+    }
+
     private static RenderLayer ScaleLayer(RenderLayer layer, double scale)
     {
         var transform = layer.Transform;

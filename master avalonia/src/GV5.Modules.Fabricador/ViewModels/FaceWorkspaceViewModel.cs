@@ -765,6 +765,53 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
         return true;
     }
 
+    public async Task<bool> SelectComponentAtPreviewPointAsync(Point2D previewPoint,
+        CancellationToken cancellationToken = default)
+    {
+        if (IsBusy || _pinnedModel is not { } model || _previewRenderer is null) return false;
+        var catalog = _previewCatalogOverride ?? _savedCatalog;
+        if (catalog is null) return false;
+        FaceComponentId? componentId;
+        try
+        {
+            componentId = await _previewRenderer.HitTestAsync(model, catalog, previewPoint,
+                cancellationToken: cancellationToken);
+        }
+        catch (OperationCanceledException) { return false; }
+        catch (Exception exception) when (exception is IOException or InvalidOperationException
+                                          or InvalidDataException or ArgumentException)
+        {
+            Error = "Não foi possível identificar o componente na prévia facial.";
+            return false;
+        }
+
+        if (componentId is not { } id || _pinnedModel?.Id != model.Id
+            || (_previewCatalogOverride?.Id ?? _savedCatalog?.Id) != catalog.Id) return false;
+        var catalogChoice = ComponentChoices.FirstOrDefault(choice => choice.Id == id);
+        if (catalogChoice is not null)
+        {
+            SelectedHeadExtra = null;
+            SelectedFaceDetail = null;
+            SelectedComponent = catalogChoice;
+            return true;
+        }
+        var detailChoice = FaceDetailChoices.FirstOrDefault(choice => choice.Id == id);
+        if (detailChoice is not null)
+        {
+            SelectedHeadExtra = null;
+            SelectedFaceDetail = detailChoice;
+            return true;
+        }
+        var extraChoice = HeadExtraChoices.FirstOrDefault(choice => choice.Id == id);
+        if (extraChoice is not null)
+        {
+            SelectedFaceDetail = null;
+            SelectedHeadExtra = extraChoice;
+            return true;
+        }
+        return false;
+    }
+
     /// <summary>Updates the selected component's preview position using model-space deltas.</summary>
     public bool UpdateComponentMoveGesture(double deltaX, double deltaY)
     {

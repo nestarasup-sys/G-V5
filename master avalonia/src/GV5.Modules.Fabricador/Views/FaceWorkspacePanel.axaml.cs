@@ -10,6 +10,7 @@ using GV5.Assets.Decoding;
 using GV5.Assets.Processing;
 using GV5.Modules.Fabricador.ViewModels;
 using GV5.Rendering;
+using GV5.Geometry;
 using System.Runtime.InteropServices;
 
 namespace GV5.Modules.Fabricador.Views;
@@ -92,11 +93,14 @@ public partial class FaceWorkspacePanel : UserControl
         _composedPreviewBitmap = null;
     }
 
-    private void OnComposedPreviewPointerPressed(object? sender, PointerPressedEventArgs e)
+    private async void OnComposedPreviewPointerPressed(object? sender, PointerPressedEventArgs e)
     {
         if (!e.GetCurrentPoint(ComposedFacePreviewImage).Properties.IsLeftButtonPressed
-            || _viewModel?.ComposedPreviewFrame is null
-            || !_viewModel.BeginComponentMoveGesture()) return;
+            || _viewModel is not { } viewModel
+            || viewModel.ComposedPreviewFrame is not { } frame) return;
+        if (GetPreviewScenePoint(e.GetPosition(ComposedFacePreviewImage), frame) is { } scenePoint)
+            await viewModel.SelectComponentAtPreviewPointAsync(scenePoint);
+        if (!viewModel.BeginComponentMoveGesture()) return;
         _componentDragStart = e.GetPosition(ComposedFacePreviewImage);
         _isDraggingSelectedComponent = true;
         e.Pointer.Capture(ComposedFacePreviewImage);
@@ -139,6 +143,18 @@ public partial class FaceWorkspacePanel : UserControl
         var bounds = ComposedFacePreviewImage.Bounds;
         return bounds.Width <= 0 || bounds.Height <= 0 ? 0
             : Math.Min(bounds.Width / frame.Width, bounds.Height / frame.Height);
+    }
+
+    private Point2D? GetPreviewScenePoint(Point position, RenderedFrame frame)
+    {
+        var bounds = ComposedFacePreviewImage.Bounds;
+        var displayScale = GetPreviewDisplayScale(frame);
+        if (displayScale <= 0) return null;
+        var offsetX = (bounds.Width - frame.Width * displayScale) / 2;
+        var offsetY = (bounds.Height - frame.Height * displayScale) / 2;
+        var x = (position.X - offsetX) / displayScale;
+        var y = (position.Y - offsetY) / displayScale;
+        return x < 0 || y < 0 || x >= frame.Width || y >= frame.Height ? null : new Point2D(x, y);
     }
 
     private static string GetPieceLabel(FaceSheetPartKind kind, FaceSheetSide? side, int index)
