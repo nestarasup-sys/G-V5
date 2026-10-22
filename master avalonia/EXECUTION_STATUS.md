@@ -13,15 +13,15 @@
 | Branch obrigatória | `Master-AValonia` |
 | Pasta exclusiva do novo aplicativo | `master avalonia/` |
 | Commit-base inspecionado antes deste arquivo | `53b7f7a97321e85063a8dd4f9635e48d36548323` |
-| Último commit de implementação validado | `d4a8a62` (F09.15: Misturador de emendas com undo por traço) |
-| Checkout local revalidado | `TestarLocal.bat rapido` passou: build Debug, **249 testes da solution** e **65 testes headless**, total **314, 0 falhas**, em 2026-10-21; avisos conhecidos: 2 CS0618 no `ThumbnailService` e 1 xUnit1051 em `HairRoleTintProcessorTests` |
+| Último commit de implementação validado | `3649ad0` (F09.15: preparação revisável de importação facial) |
+| Checkout local revalidado | `TestarLocal.bat rapido` passou em 2026-10-21: build Debug e **321/321 testes**, zero falhas; permanecem 2 CS0618 no `ThumbnailService` e 1 xUnit1051 em `HairRoleTintProcessorTests` |
 | Fase ativa | **F09 — Fabricador IV — cabelos, face, expressões e completação (F09.15 em execução)** |
 | Última tarefa VALIDADA | **F09.14** — validação cruzada de persistência, importação inválida e cancelamento nas subáreas do Fabricador |
 | Tarefa em execução | **F09.15** — auditar e fechar as lacunas funcionais do Fabricador antes do GATE-F09/G2 |
 | Requisito transversal atualizado | ADR-0006: aparência reconhecível, não pixel-perfect; todos os botões e funcionalidades; revisão final visual pendente |
 | Gate atual | **GATE-F08 PASSOU tecnicamente; UI/visual Windows/GPU e paridade completa continuam pendentes** |
 | Progresso validado neste controle | **126 / 247 tarefas (51,0%)** |
-| Tarefas em execução | **F09.15** — auditoria funcional completa do Fabricador; seleção/transformação/visibilidade/ordem, rename, restauração, divisão, mesclagem segura e Misturador têm evidência; próxima lacuna: 10 slots de modelos |
+| Tarefas em execução | **F09.15** — auditoria funcional do Fabricador; evidências incluem slots persistentes, transformação, rig, divisão/mesclagem, Misturador e preparação de folhas faciais; próxima lacuna: interface Olhos/Rosto com confirmação e persistência de importação |
 | Pendências conhecidas | F06: folha real/capturas/worker não testados; ferramentas de Modelos ausentes catalogadas em `docs/legacy-contracts/PENDENCIAS_FUNCIONAIS_FABRICADOR.md` e obrigatórias antes do G2. Isso não impede a programação F07, mas impede declarar Fabricador completo. Limite download F01 documentado |
 | Aceite Windows/GPU | **F06 Windows/visual não executado; GPU continua fora do escopo comprovado** |
 
@@ -35,7 +35,7 @@
 
 **F09.15 — mesclagem horizontal adjacente validada localmente:** commit `fade72e`; build Debug aprovado e os mesmos 313 testes executaram com zero falhas (249 solution + 64 headless). O teste cobre split→merge com RGBA/alpha sem perda, ID e ordem preservados, rig mantido e undo reconstituindo peças/camadas/juntas. A mesclagem habilita apenas duas peças adjacentes com origem e transformação compatíveis; seleção múltipla livre, round-trip SQLite dedicado e revisão Windows continuam pendentes. Evidência: [`docs/testing/F09.15_PART_MERGE.md`](docs/testing/F09.15_PART_MERGE.md). Próxima lacuna: misturador/edição de pixels.
 
-**F09.15 — Misturador validado localmente:** commit `d4a8a62`; `TestarLocal.bat rapido` aprovou a build e 314 testes (249 solution + 65 headless). O teste confirma suavização apenas na camada superior onde há cobertura, pixels fora da emenda preservados, camada inferior intacta e undo restaurando o conteúdo. Evidência: [`docs/testing/F09.15_MIXER.md`](docs/testing/F09.15_MIXER.md). O uso físico do mouse/Windows e round-trip SQLite do traço ainda não foram validados. Próxima lacuna: os dez slots de modelos.
+**F09.15 — Misturador validado localmente:** commit `d4a8a62`; `TestarLocal.bat rapido` aprovou a build e 314 testes (249 solution + 65 headless). O teste confirma suavização apenas na camada superior onde há cobertura, pixels fora da emenda preservados, camada inferior intacta e undo restaurando o conteúdo. Evidência: [`docs/testing/F09.15_MIXER.md`](docs/testing/F09.15_MIXER.md). O uso físico do mouse/Windows e round-trip SQLite do traço ainda não foram validados. Os dez slots persistentes foram implementados em `76f8e4f`; evidência do gate está em `docs/testing/F09.15_MODEL_SLOTS.md`. Próxima lacuna priorizada: importação de sobrancelhas por folha, identificada em `docs/legacy-contracts/F09_FACE_LEGADO.md`.
 
 ## 2. Fontes e regras de leitura
 
@@ -423,3 +423,5 @@ Após concluir um lote ou fase, adicionar uma linha. Não inflar contador só po
 **F09.15 em execução — restaurar transforms da origem:** o botão restaura em um comando todos os transforms de peças para `SourceTransform.Transform`; undo recupera o movimento anterior. Fixtures verificam que IDs, assets, recortes, visibilidade, ordem e juntas são preservados. Teste SQLite salva, fecha/reabre e publica o estado restaurado sem modificar a revisão publicada anterior. `TestarLocal.bat rapido` passou em 2026-10-21: build Debug e **312/312 testes**, incluindo 63 headless; sem falhas. Avisos conhecidos: dois CS0618 do `ThumbnailService` e xUnit1051 em `HairRoleTintProcessorTests`. Evidência: `docs/testing/F09.15_SOURCE_RESTORE.md`. Revisão visual Windows pendente. Commit local: `0638d0a`.
 
 **F09.15 em execução — dez slots de modelos:** a migração 18 adiciona atribuições canônicas de slot separadas das revisões de conteúdo; novas atribuições são atômicas, abrir slot carrega o rascunho sob demanda e excluir bloqueia checkpoints/publicações/referências. A migração conserva todos os drafts, mantém a atribuição mais recente em slots duplicados e preenche vagas livres com modelos legados sem slot. Headless verifica dez cartões, seleção, criar/trocar/excluir e recuperação de checkpoint em slot livre; testes SQLite fecham/reabrem o banco e provam conflitos sem rascunho órfão. `TestarLocal.bat rapido` passou em 2026-10-21: **319/319 testes**, sem falhas. Evidência `docs/testing/F09.15_MODEL_SLOTS.md`. Modelos além da capacidade de dez e revisão visual Windows continuam pendentes.
+
+**F09.15 em execução — preparação de folhas faciais:** commit local `3649ad0` prepara a fonte e os componentes faciais independentes em staging, com previews limitados, validação de folha e limpeza após falha/cancelamento. Folhas de sobrancelha sem separação verdadeira entre lados são rejeitadas em vez de cortadas artificialmente. `TestarLocal.bat rapido` passou em 2026-10-21: build Debug e **321/321 testes**, zero falhas. Evidência em `docs/testing/F09.15_FACE_SHEET_IMPORT.md`. A tela Olhos/Rosto, confirmação/publicação e persistência ainda faltam e são o próximo recorte.

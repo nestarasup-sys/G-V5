@@ -39,7 +39,7 @@ Cada peça produz dois assets, esquerdo e direito. A importação registra `pair
 
 `faceProcessor.worker.ts` oferece outra segmentação de folhas: amostra o fundo, remove a máscara candidata apenas quando conectada à borda, aplica despill e recorta as regiões. Para `eyes`, procura três bandas verticais e divide cada uma em esquerdo/direito; para `eyebrows`, processa uma região e divide em dois lados. Para `nose`, aceita um nariz, seis em grade 3×2 ou detecção automática dessa grade. `mouth-closed` e `mouth-open` dividem a folha em 21 células, grade 7×3. Os recortes escolhidos podem ser fornecidos por ID para reaproveitar limites manuais.
 
-**Lacuna observada no código da interface atual:** a biblioteca possui a categoria `eyebrow`, o tipo de folha antigo também a define e o worker sabe dividir sobrancelhas, mas o modal de importação atual do modo Olhos só mostra o importador de três peças de olho. Não há no `FaceComponentsWorkspace.tsx` um input de arquivo que invoque o caminho `eyebrows` do worker. Sobrancelhas podem continuar disponíveis via assets existentes/migração, mas um caminho novo de importação precisa ser confirmado e reconstruído sem presumir que o tipo do backend é um botão disponível.
+**Situação no legado e avanço Avalonia:** no Electron, a biblioteca possui a categoria `eyebrow`, o worker sabe dividir sobrancelhas, mas o modal de importação atual do modo Olhos não expõe o caminho `eyebrows`. No Avalonia, `FaceSheetImportService` agora prepara e mantém em staging a fonte e os dois PNGs revisáveis; exige separador transparente entre os lados e limpa os temporários em falha/cancelamento/descarte. Ainda falta uma tela de Olhos/Rosto que permita selecionar modelo, revisar e confirmar a importação, persistir o catálogo e publicar. Evidência: `docs/testing/F09.15_FACE_SHEET_IMPORT.md`.
 
 ### Nariz e boca
 
@@ -90,7 +90,7 @@ O processo principal valida IDs, modelo/slot, dimensões, nome e transforms ante
 2. Preservar os lados, IDs de par, seleção linked/move-together, âncoras de calibração e transform por componente.
 3. Tratar olho aberto, pupila e olho fechado como três tipos de saída; o corte de uma fonte vertical não significa que a fonte tinha uma grade fixa de alturas.
 4. Preservar queixas de importação: falta de separador, área vazia, limite de pixels, PNG inválido e falha no meio não podem deixar assets parciais visíveis.
-5. Reconstruir o importador de sobrancelha como função real e testada. O contrato de domínio existente não prova que a interface legada tem um botão atual para essa operação.
+5. Concluir o importador de sobrancelha com uma tela de Olhos/Rosto, seleção de modelo, revisão e confirmação/publicação; o serviço de preparação e os casos positivos, incompletos e cancelados estão testados, mas não substituem a interface persistente.
 6. Detalhes, nariz e bocas precisam de transform independente; nariz retém opacidade e boca aberta/fechada precisa manter calibração visual conjunta.
 7. Head extras têm asset próprio e transform no espaço da cabeça; não devem se misturar a cabelos nem a pixels do modelo-base.
 8. Não copiar Data URLs, `localStorage` ou gravação JSON como arquitetura nova; usar IDs estáveis, AssetStore, referências, SQLite e snapshots previstos no plano.
