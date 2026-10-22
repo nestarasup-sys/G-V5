@@ -250,6 +250,92 @@ public sealed class FaceWorkspaceViewModelTests
     }
 
     [Fact]
+    public async Task FaceDetailLibraryImportsEditsPublishesAndRemovesOnlyItsLibraryReference()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"gv5-face-detail-vm-{Guid.NewGuid():N}");
+        var catalogRepository = new MemoryFaceCatalogRepository();
+        var detailRepository = new MemoryFaceDetailLibraryRepository();
+        var assets = new MemoryAssetStore();
+        var viewModel = new FaceWorkspaceViewModel(new RecordingFilePicker(CreateGreenBackedExtra()), null,
+            catalogRepository, assets, faceDetailImportService: CreateFaceDetailImportService(root),
+            faceDetailLibraryRepository: detailRepository);
+        try
+        {
+            await viewModel.OpenModelRevisionAsync(CreatePublishedModel("Modelo com detalhes"), ModelSlot.From(2));
+            await viewModel.LoadCatalogAsync(TestContext.Current.CancellationToken);
+            viewModel.SelectedFaceDetailKind = viewModel.FaceDetailKinds.Single(item => item.Kind == FaceDetailKind.Blush);
+            Assert.True(viewModel.CanImportFaceDetail);
+            await viewModel.ImportFaceDetailCommand.ExecuteAsync(null);
+
+            var library = Assert.Single(detailRepository.Libraries.Values);
+            var detail = Assert.Single(library.Assets);
+            Assert.Equal(ModelSlot.From(2), library.ModelSlot);
+            Assert.Equal(FaceDetailKind.Blush, detail.Kind);
+            Assert.Equal(Revision.Initial, library.Revision);
+            Assert.Single(assets.Assets);
+
+            viewModel.FaceDetailName = "Blush rosado";
+            await viewModel.SaveSelectedFaceDetailCommand.ExecuteAsync(null);
+            Assert.Equal(Revision.From(2), detailRepository.Libraries[library.Id].Revision);
+            Assert.Equal("Blush rosado", detailRepository.Libraries[library.Id].Assets.Single().Name);
+
+            await viewModel.AddSelectedFaceDetailToCatalogCommand.ExecuteAsync(null);
+            var catalog = Assert.Single(catalogRepository.Catalogs.Values);
+            var component = Assert.Single(catalog.Components);
+            Assert.Equal(FaceComponentKind.Blush, component.Kind);
+            Assert.Equal(detail.Id, component.Id);
+            Assert.Equal(detail.AssetId, component.AssetId);
+            await viewModel.PublishCatalogCommand.ExecuteAsync(null);
+            Assert.Single(catalogRepository.Publications[catalog.Id]);
+
+            viewModel.SelectedFaceDetail = viewModel.FaceDetailChoices.Single();
+            Assert.True(viewModel.BeginComponentMoveGesture());
+            Assert.True(viewModel.UpdateComponentMoveGesture(5, 8));
+            Assert.True(await viewModel.CompleteComponentMoveGestureAsync(TestContext.Current.CancellationToken));
+            Assert.Equal(Revision.From(3), detailRepository.Libraries[library.Id].Revision);
+            Assert.Equal(Revision.Initial, catalogRepository.Catalogs[catalog.Id].Revision);
+
+            await viewModel.RemoveSelectedFaceDetailCommand.ExecuteAsync(null);
+            Assert.Empty(detailRepository.Libraries[library.Id].Assets);
+            Assert.Single(catalogRepository.Catalogs[catalog.Id].Components);
+            Assert.Single(assets.Assets);
+        }
+        finally
+        {
+            await viewModel.DisposeAsync();
+            if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task FaceDetailImportRejectsAssetStoreHashMismatch()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"gv5-face-detail-hash-{Guid.NewGuid():N}");
+        var catalogRepository = new MemoryFaceCatalogRepository();
+        var detailRepository = new MemoryFaceDetailLibraryRepository();
+        var assets = new MemoryAssetStore { NextSha256Override = new string('0', 64) };
+        var viewModel = new FaceWorkspaceViewModel(new RecordingFilePicker(CreateGreenBackedExtra()), null,
+            catalogRepository, assets, faceDetailImportService: CreateFaceDetailImportService(root),
+            faceDetailLibraryRepository: detailRepository);
+        try
+        {
+            await viewModel.OpenModelRevisionAsync(CreatePublishedModel("Modelo com hash inválido"), ModelSlot.From(2));
+            await viewModel.LoadCatalogAsync(TestContext.Current.CancellationToken);
+            viewModel.SelectedFaceDetailKind = viewModel.FaceDetailKinds.Single(item => item.Kind == FaceDetailKind.Blush);
+
+            await viewModel.ImportFaceDetailCommand.ExecuteAsync(null);
+
+            Assert.Contains("não confirmou", viewModel.Error, StringComparison.OrdinalIgnoreCase);
+            Assert.Empty(detailRepository.Libraries);
+        }
+        finally
+        {
+            await viewModel.DisposeAsync();
+            if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task ComponentTransform_RequiresValidValuesAndPersistsAsOneCatalogRevision()
     {
         var previousCulture = CultureInfo.CurrentCulture;
@@ -626,6 +712,10 @@ public sealed class FaceWorkspaceViewModelTests
         new AssetImportStager(Path.Combine(root, "staging"), new AssetImportLimits(8 * 1024 * 1024, 8192, 32_000_000)),
         new AssetImageDecoder(new AssetImageDecodeLimits(8192, 32_000_000, 128L * 1024 * 1024)));
 
+    private static FaceDetailImportService CreateFaceDetailImportService(string root) => new(
+        new AssetImportStager(Path.Combine(root, "face-detail-staging"), new AssetImportLimits(8 * 1024 * 1024, 8192, 32_000_000)),
+        new AssetImageDecoder(new AssetImageDecodeLimits(8192, 32_000_000, 128L * 1024 * 1024)));
+
     private static byte[] CreateSeparatedBrows()
     {
         using var bitmap = new SKBitmap(new SKImageInfo(18, 10, SKColorType.Rgba8888, SKAlphaType.Unpremul));
@@ -723,13 +813,17 @@ public sealed class FaceWorkspaceViewModelTests
     private sealed class MemoryAssetStore : IAssetStore
     {
         public Dictionary<AssetId, (AssetMetadata Metadata, byte[] Bytes)> Assets { get; } = [];
+        public string? NextSha256Override { get; set; }
 
         public async Task<Result<AssetMetadata>> ImportAsync(Stream content, string mediaType, CancellationToken cancellationToken = default)
         {
             using var buffer = new MemoryStream();
             await content.CopyToAsync(buffer, cancellationToken);
             var bytes = buffer.ToArray();
-            var metadata = new AssetMetadata(AssetId.New(), Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes)).ToLowerInvariant(),
+            var hash = NextSha256Override
+                ?? Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes)).ToLowerInvariant();
+            NextSha256Override = null;
+            var metadata = new AssetMetadata(AssetId.New(), hash,
                 mediaType, bytes.LongLength, AssetVerificationState.Available, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
             Assets.Add(metadata.Id, (metadata, bytes));
             return Result<AssetMetadata>.Success(metadata);
@@ -852,6 +946,40 @@ public sealed class FaceWorkspaceViewModelTests
                 return Task.FromResult(Result<HeadExtraLibraryDraft>.Failure(new ApplicationError(ApplicationErrorCode.Conflict, "Conflito.")));
             Libraries[draft.Id] = draft;
             return Task.FromResult(Result<HeadExtraLibraryDraft>.Success(draft));
+        }
+    }
+
+    private sealed class MemoryFaceDetailLibraryRepository : IFaceDetailLibraryRepository
+    {
+        public Dictionary<Guid, FaceDetailLibraryDraft> Libraries { get; } = [];
+
+        public Task<Result<FaceDetailLibraryDraft>> CreateAsync(FaceDetailLibraryDraft draft,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(draft.Revision == Revision.Initial && Libraries.TryAdd(draft.Id, draft)
+                ? Result<FaceDetailLibraryDraft>.Success(draft)
+                : Result<FaceDetailLibraryDraft>.Failure(new ApplicationError(ApplicationErrorCode.Conflict, "Biblioteca facial duplicada.")));
+        }
+
+        public Task<Result<FaceDetailLibraryDraft>> GetAsync(ModelSlot modelSlot,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var draft = Libraries.Values.SingleOrDefault(item => item.ModelSlot == modelSlot);
+            return Task.FromResult(draft is null
+                ? Result<FaceDetailLibraryDraft>.Failure(new ApplicationError(ApplicationErrorCode.NotFound, "Biblioteca facial inexistente."))
+                : Result<FaceDetailLibraryDraft>.Success(draft));
+        }
+
+        public Task<Result<FaceDetailLibraryDraft>> SaveAsync(FaceDetailLibraryDraft draft, Revision expectedRevision,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!Libraries.TryGetValue(draft.Id, out var current) || current.Revision != expectedRevision)
+                return Task.FromResult(Result<FaceDetailLibraryDraft>.Failure(new ApplicationError(ApplicationErrorCode.Conflict, "Conflito.")));
+            Libraries[draft.Id] = draft;
+            return Task.FromResult(Result<FaceDetailLibraryDraft>.Success(draft));
         }
     }
 }

@@ -24,9 +24,13 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
     private readonly FaceCatalogPreviewRenderer? _previewRenderer;
     private readonly HeadExtraImportService? _headExtraImportService;
     private readonly IHeadExtraLibraryRepository? _headExtraLibraryRepository;
+    private readonly FaceDetailImportService? _faceDetailImportService;
+    private readonly IFaceDetailLibraryRepository? _faceDetailLibraryRepository;
     private HeadExtraLibraryDraft? _headExtraLibrary;
+    private FaceDetailLibraryDraft? _faceDetailLibrary;
     private ModelSlot _headExtraModelSlot = ModelSlot.From(1);
     private bool _headExtraLibraryPersisted;
+    private bool _faceDetailLibraryPersisted;
     private PublishedModelRevision? _pinnedModel;
     private FaceCatalogDraft? _savedCatalog;
     private FaceCatalogDraft? _previewCatalogOverride;
@@ -40,6 +44,8 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
     private bool _gestureHasMoved;
     private bool _gestureIsHeadExtra;
     private bool _previewingHeadExtra;
+    private bool _previewingFaceDetail;
+    private bool _gestureIsFaceDetail;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasComposedPreviewError))]
@@ -120,6 +126,48 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
     private HeadExtraChoiceItem? selectedHeadExtra;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanSaveSelectedFaceDetail))]
+    [NotifyPropertyChangedFor(nameof(CanResetSelectedFaceDetail))]
+    [NotifyCanExecuteChangedFor(nameof(SaveSelectedFaceDetailCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ResetSelectedFaceDetailCommand))]
+    private FaceDetailChoiceItem? selectedFaceDetail;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanSaveSelectedFaceDetail))]
+    [NotifyCanExecuteChangedFor(nameof(SaveSelectedFaceDetailCommand))]
+    private string faceDetailName = "";
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanSaveSelectedFaceDetail))]
+    [NotifyCanExecuteChangedFor(nameof(SaveSelectedFaceDetailCommand))]
+    private string faceDetailX = "";
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanSaveSelectedFaceDetail))]
+    [NotifyCanExecuteChangedFor(nameof(SaveSelectedFaceDetailCommand))]
+    private string faceDetailY = "";
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanSaveSelectedFaceDetail))]
+    [NotifyCanExecuteChangedFor(nameof(SaveSelectedFaceDetailCommand))]
+    private string faceDetailScaleX = "";
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanSaveSelectedFaceDetail))]
+    [NotifyCanExecuteChangedFor(nameof(SaveSelectedFaceDetailCommand))]
+    private string faceDetailScaleY = "";
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanSaveSelectedFaceDetail))]
+    [NotifyCanExecuteChangedFor(nameof(SaveSelectedFaceDetailCommand))]
+    private string faceDetailRotation = "";
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanImportFaceDetail))]
+    [NotifyCanExecuteChangedFor(nameof(ImportFaceDetailCommand))]
+    private FaceDetailKindChoiceItem selectedFaceDetailKind = FaceDetailKindChoices[0];
+
+    [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanSaveSelectedHeadExtra))]
     [NotifyCanExecuteChangedFor(nameof(SaveSelectedHeadExtraCommand))]
     private string headExtraName = "";
@@ -189,6 +237,11 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
     [NotifyPropertyChangedFor(nameof(CanRemoveSelectedHeadExtra))]
     [NotifyPropertyChangedFor(nameof(CanAddSelectedHeadExtraToCatalog))]
     [NotifyPropertyChangedFor(nameof(CanResetSelectedHeadExtra))]
+    [NotifyPropertyChangedFor(nameof(CanImportFaceDetail))]
+    [NotifyPropertyChangedFor(nameof(CanSaveSelectedFaceDetail))]
+    [NotifyPropertyChangedFor(nameof(CanResetSelectedFaceDetail))]
+    [NotifyPropertyChangedFor(nameof(CanRemoveSelectedFaceDetail))]
+    [NotifyPropertyChangedFor(nameof(CanAddSelectedFaceDetailToCatalog))]
     [NotifyCanExecuteChangedFor(nameof(AddHeadExtraCommand))]
     [NotifyCanExecuteChangedFor(nameof(SelectFaceSheetCommand))]
     [NotifyCanExecuteChangedFor(nameof(ConfirmImportCommand))]
@@ -203,6 +256,11 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
     [NotifyCanExecuteChangedFor(nameof(RemoveSelectedHeadExtraCommand))]
     [NotifyCanExecuteChangedFor(nameof(AddSelectedHeadExtraToCatalogCommand))]
     [NotifyCanExecuteChangedFor(nameof(ResetSelectedHeadExtraCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ImportFaceDetailCommand))]
+    [NotifyCanExecuteChangedFor(nameof(SaveSelectedFaceDetailCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ResetSelectedFaceDetailCommand))]
+    [NotifyCanExecuteChangedFor(nameof(RemoveSelectedFaceDetailCommand))]
+    [NotifyCanExecuteChangedFor(nameof(AddSelectedFaceDetailToCatalogCommand))]
     [NotifyCanExecuteChangedFor(nameof(AddHeadExtraCommand))]
     [NotifyCanExecuteChangedFor(nameof(SaveSelectedHeadExtraCommand))]
     [NotifyCanExecuteChangedFor(nameof(RemoveSelectedHeadExtraCommand))]
@@ -213,7 +271,9 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
         IFaceCatalogRepository? catalogRepository = null, IAssetStore? assetStore = null,
         AssetImageDecoder? imageDecoder = null, IRenderSceneRenderer? sceneRenderer = null,
         HeadExtraImportService? headExtraImportService = null,
-        IHeadExtraLibraryRepository? headExtraLibraryRepository = null)
+        IHeadExtraLibraryRepository? headExtraLibraryRepository = null,
+        FaceDetailImportService? faceDetailImportService = null,
+        IFaceDetailLibraryRepository? faceDetailLibraryRepository = null)
     {
         _filePicker = filePicker;
         _importService = importService;
@@ -221,11 +281,14 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
         _assetStore = assetStore;
         _headExtraImportService = headExtraImportService;
         _headExtraLibraryRepository = headExtraLibraryRepository;
+        _faceDetailImportService = faceDetailImportService;
+        _faceDetailLibraryRepository = faceDetailLibraryRepository;
         if (assetStore is not null && imageDecoder is not null && sceneRenderer is not null)
             _previewRenderer = new FaceCatalogPreviewRenderer(assetStore, imageDecoder, sceneRenderer);
         CatalogChoices = [];
         ComponentChoices = [];
         HeadExtraChoices = [];
+        FaceDetailChoices = [];
     }
 
     public bool HasPreview => Preview is not null;
@@ -243,6 +306,7 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
     public bool HasMultipleCatalogs => CatalogChoices.Count > 1;
     public bool HasSavedCatalog => _savedCatalog is not null;
     public int HeadExtraLibraryCount => _headExtraLibrary?.Assets.Length ?? 0;
+    public int FaceDetailLibraryCount => _faceDetailLibrary?.Assets.Length ?? 0;
     public int HeadExtraCount => _savedCatalog?.Components.Count(component => component.Kind == FaceComponentKind.HeadExtra) ?? 0;
     public int VisibleHeadExtraCount => _savedCatalog?.Components.Count(component => component.Kind == FaceComponentKind.HeadExtra && component.IsVisible) ?? 0;
     public string SelectedVisibilityButtonLabel => SelectedComponent?.IsVisible == true ? "Ocultar no preview" : "Mostrar no preview";
@@ -250,6 +314,8 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
     public ObservableCollection<FaceCatalogChoiceItem> CatalogChoices { get; }
     public ObservableCollection<FaceComponentChoiceItem> ComponentChoices { get; }
     public ObservableCollection<HeadExtraChoiceItem> HeadExtraChoices { get; }
+    public ObservableCollection<FaceDetailChoiceItem> FaceDetailChoices { get; }
+    public IReadOnlyList<FaceDetailKindChoiceItem> FaceDetailKinds => FaceDetailKindChoices;
     public IReadOnlyList<FaceSheetKindChoiceItem> SheetKinds => FaceSheetKindChoices;
     public IReadOnlyList<FaceNoseSheetModeChoiceItem> NoseSheetModes => FaceNoseSheetModeChoices;
     public string SelectedSheetLabel => SelectedSheetKind.Label;
@@ -265,6 +331,21 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
         && _headExtraLibraryRepository is not null && SelectedHeadExtra is not null;
     public bool CanResetSelectedHeadExtra => !IsBusy && _headExtraLibrary is not null
         && _headExtraLibraryRepository is not null && SelectedHeadExtra is not null && HeadPart is not null;
+    public bool CanImportFaceDetail => !IsBusy && HeadPart is not null && _filePicker is not null
+        && _faceDetailImportService is not null && _assetStore is not null && _faceDetailLibraryRepository is not null
+        && (_faceDetailLibrary?.Assets.Length ?? 0) < FaceDetailLibraryDraft.MaximumAssets;
+    public bool CanSaveSelectedFaceDetail => !IsBusy && _faceDetailLibrary is not null
+        && _faceDetailLibraryRepository is not null && SelectedFaceDetail is not null
+        && !string.IsNullOrWhiteSpace(FaceDetailName) && FaceDetailName.Trim().Length <= 120
+        && TryReadFaceDetailTransform(out _);
+    public bool CanResetSelectedFaceDetail => !IsBusy && _faceDetailLibrary is not null
+        && _faceDetailLibraryRepository is not null && SelectedFaceDetail is not null && HeadPart is not null;
+    public bool CanRemoveSelectedFaceDetail => !IsBusy && _faceDetailLibrary is not null
+        && _faceDetailLibraryRepository is not null && SelectedFaceDetail is not null;
+    public bool CanAddSelectedFaceDetailToCatalog => !IsBusy && _pinnedModel is not null
+        && _catalogRepository is not null && SelectedFaceDetail is not null
+        && (_savedCatalog?.Components.Length ?? 0) < FaceCatalogDraft.MaximumComponents
+        && (!HasMultipleCatalogs || SelectedCatalog is not null);
     public bool CanAddSelectedHeadExtraToCatalog => !IsBusy && _pinnedModel is not null
         && _catalogRepository is not null && SelectedHeadExtra is not null
         && (_savedCatalog?.Components.Length ?? 0) < FaceCatalogDraft.MaximumComponents
@@ -326,6 +407,14 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
         new(FaceNoseSheetMode.Auto, "Detectar automaticamente")
     ];
 
+    private static readonly FaceDetailKindChoiceItem[] FaceDetailKindChoices =
+    [
+        new(FaceDetailKind.EyeHighlightLeft, "Brilho olho esquerdo"),
+        new(FaceDetailKind.EyeHighlightRight, "Brilho olho direito"),
+        new(FaceDetailKind.Blush, "Blush"),
+        new(FaceDetailKind.FacialShadow, "Sombra facial")
+    ];
+
     private ModelPart? HeadPart => _pinnedModel?.Content.Parts.FirstOrDefault(part =>
         part.Name.Contains("cabe", StringComparison.OrdinalIgnoreCase)
         || part.Name.Contains("head", StringComparison.OrdinalIgnoreCase));
@@ -335,8 +424,11 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
     partial void OnSelectedCatalogChanged(FaceCatalogChoiceItem? value)
     {
         _savedCatalog = value is not null && _catalogsById.TryGetValue(value.Id, out var catalog) ? catalog : null;
+        if (SelectedFaceDetail is not null) SelectedFaceDetail = null;
+        if (SelectedHeadExtra is not null) SelectedHeadExtra = null;
         _previewCatalogOverride = null;
         _previewingHeadExtra = false;
+        _previewingFaceDetail = false;
         _gestureComponentId = null;
         _gestureStartTransform = null;
         LatestPublication = value is not null && _latestPublications.TryGetValue(value.Id, out var publication)
@@ -354,8 +446,11 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
     {
         if (value is null) return;
         var wasPreviewingHeadExtra = _previewingHeadExtra;
+        var wasPreviewingFaceDetail = _previewingFaceDetail;
+        if (SelectedFaceDetail is not null) SelectedFaceDetail = null;
         if (SelectedHeadExtra is not null) SelectedHeadExtra = null;
         _previewingHeadExtra = false;
+        _previewingFaceDetail = false;
         _previewCatalogOverride = null;
         ComponentName = value.Name;
         ComponentX = FormatNumber(value.Transform.Translation.X);
@@ -363,18 +458,20 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
         ComponentScaleX = FormatNumber(value.Transform.Scale.X);
         ComponentScaleY = FormatNumber(value.Transform.Scale.Y);
         ComponentRotation = FormatNumber(value.Transform.RotationRadians * 180d / Math.PI);
-        if (wasPreviewingHeadExtra) _ = RefreshComposedPreviewAsync();
+        if (wasPreviewingHeadExtra || wasPreviewingFaceDetail) _ = RefreshComposedPreviewAsync();
     }
 
     partial void OnSelectedHeadExtraChanged(HeadExtraChoiceItem? value)
     {
         if (value is null)
         {
-            _previewCatalogOverride = null;
+            if (_previewingHeadExtra) _previewCatalogOverride = null;
             _previewingHeadExtra = false;
             _ = RefreshComposedPreviewAsync();
             return;
         }
+        if (SelectedFaceDetail is not null) SelectedFaceDetail = null;
+        _previewingFaceDetail = false;
         HeadExtraName = value.Name;
         HeadExtraX = FormatNumber(value.Transform.Translation.X);
         HeadExtraY = FormatNumber(value.Transform.Translation.Y);
@@ -382,6 +479,26 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
         HeadExtraScaleY = FormatNumber(value.Transform.Scale.Y);
         HeadExtraRotation = FormatNumber(value.Transform.RotationRadians * 180d / Math.PI);
         UpdateHeadExtraPreview(value);
+    }
+
+    partial void OnSelectedFaceDetailChanged(FaceDetailChoiceItem? value)
+    {
+        if (value is null)
+        {
+            if (_previewingFaceDetail) _previewCatalogOverride = null;
+            _previewingFaceDetail = false;
+            _ = RefreshComposedPreviewAsync();
+            return;
+        }
+        if (SelectedHeadExtra is not null) SelectedHeadExtra = null;
+        _previewingHeadExtra = false;
+        FaceDetailName = value.Name;
+        FaceDetailX = FormatNumber(value.Transform.Translation.X);
+        FaceDetailY = FormatNumber(value.Transform.Translation.Y);
+        FaceDetailScaleX = FormatNumber(value.Transform.Scale.X);
+        FaceDetailScaleY = FormatNumber(value.Transform.Scale.Y);
+        FaceDetailRotation = FormatNumber(value.Transform.RotationRadians * 180d / Math.PI);
+        UpdateFaceDetailPreview(value);
     }
 
     public async Task OpenModelRevisionAsync(PublishedModelRevision model, ModelSlot? modelSlot = null)
@@ -397,9 +514,13 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
         _pinnedModel = model;
         _headExtraModelSlot = slot;
         _headExtraLibrary = null;
+        _faceDetailLibrary = null;
         _headExtraLibraryPersisted = false;
+        _faceDetailLibraryPersisted = false;
         HeadExtraChoices.Clear();
+        FaceDetailChoices.Clear();
         SelectedHeadExtra = null;
+        SelectedFaceDetail = null;
         _savedCatalog = null;
         _previewCatalogOverride = null;
         _catalogsById.Clear();
@@ -415,9 +536,12 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
         OnPropertyChanged(nameof(CanSelectSheet));
         OnPropertyChanged(nameof(CanConfirmImport));
         OnPropertyChanged(nameof(HeadExtraLibraryCount));
+        OnPropertyChanged(nameof(FaceDetailLibraryCount));
         SelectFaceSheetCommand.NotifyCanExecuteChanged();
         AddHeadExtraCommand.NotifyCanExecuteChanged();
+        ImportFaceDetailCommand.NotifyCanExecuteChanged();
         await LoadHeadExtraLibraryAsync();
+        await LoadFaceDetailLibraryAsync();
         RemoveSelectedComponentCommand.NotifyCanExecuteChanged();
         ConfirmImportCommand.NotifyCanExecuteChanged();
         await RefreshComposedPreviewAsync();
@@ -455,6 +579,36 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
         catch (OperationCanceledException) { }
         catch (Exception exception) when (exception is IOException or InvalidOperationException or ArgumentException)
         { Error = "Não foi possível carregar a biblioteca de extras desse slot."; }
+    }
+
+    private async Task LoadFaceDetailLibraryAsync(CancellationToken cancellationToken = default)
+    {
+        if (_faceDetailLibraryRepository is null) return;
+        try
+        {
+            var loaded = await _faceDetailLibraryRepository.GetAsync(_headExtraModelSlot, cancellationToken);
+            if (loaded.IsSuccess)
+            {
+                _faceDetailLibrary = loaded.Value;
+                _faceDetailLibraryPersisted = true;
+            }
+            else if (loaded.Error?.Code == ApplicationErrorCode.NotFound)
+            {
+                _faceDetailLibrary = FaceDetailLibraryDraft.Create(_headExtraModelSlot);
+                _faceDetailLibraryPersisted = false;
+            }
+            else { Error = loaded.Error?.Message ?? "Não foi possível carregar a biblioteca facial."; return; }
+            RefreshFaceDetailChoices();
+            OnPropertyChanged(nameof(FaceDetailLibraryCount));
+            OnPropertyChanged(nameof(CanImportFaceDetail));
+            ImportFaceDetailCommand.NotifyCanExecuteChanged();
+            Status = FaceDetailLibraryCount == 0
+                ? $"Biblioteca de detalhes faciais do slot {_headExtraModelSlot.Value:00} vazia."
+                : $"{FaceDetailLibraryCount} detalhe(s) facial(is) carregado(s) no slot {_headExtraModelSlot.Value:00}.";
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception exception) when (exception is IOException or InvalidOperationException or ArgumentException)
+        { Error = "Não foi possível carregar a biblioteca de detalhes faciais desse slot."; }
     }
 
     private void RefreshHeadExtraChoices(FaceComponentId? selectedId = null)
@@ -495,6 +649,41 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
         return true;
     }
 
+    private void RefreshFaceDetailChoices(FaceComponentId? selectedId = null)
+    {
+        FaceDetailChoices.Clear();
+        if (_faceDetailLibrary is not null)
+            foreach (var asset in _faceDetailLibrary.Assets.OrderBy(item => item.Kind).ThenBy(item => item.Name, StringComparer.CurrentCultureIgnoreCase))
+                FaceDetailChoices.Add(new FaceDetailChoiceItem(asset.Id, asset.AssetId, asset.Kind, asset.Name,
+                    asset.Width, asset.Height, asset.Transform));
+        SelectedFaceDetail = FaceDetailChoices.FirstOrDefault(item => item.Id == selectedId)
+            ?? FaceDetailChoices.FirstOrDefault();
+        OnPropertyChanged(nameof(FaceDetailLibraryCount));
+        OnPropertyChanged(nameof(CanImportFaceDetail));
+        OnPropertyChanged(nameof(CanSaveSelectedFaceDetail));
+        OnPropertyChanged(nameof(CanResetSelectedFaceDetail));
+        OnPropertyChanged(nameof(CanRemoveSelectedFaceDetail));
+        OnPropertyChanged(nameof(CanAddSelectedFaceDetailToCatalog));
+        ImportFaceDetailCommand.NotifyCanExecuteChanged();
+        SaveSelectedFaceDetailCommand.NotifyCanExecuteChanged();
+        ResetSelectedFaceDetailCommand.NotifyCanExecuteChanged();
+        RemoveSelectedFaceDetailCommand.NotifyCanExecuteChanged();
+        AddSelectedFaceDetailToCatalogCommand.NotifyCanExecuteChanged();
+    }
+
+    private async Task<bool> PersistFaceDetailLibraryAsync(FaceDetailLibraryDraft updated,
+        CancellationToken cancellationToken)
+    {
+        if (_faceDetailLibraryRepository is null || _faceDetailLibrary is null) return false;
+        var result = !_faceDetailLibraryPersisted
+            ? await _faceDetailLibraryRepository.CreateAsync(updated, cancellationToken)
+            : await _faceDetailLibraryRepository.SaveAsync(updated, _faceDetailLibrary.Revision, cancellationToken);
+        if (result.IsFailure) { Error = result.Error!.Message; return false; }
+        _faceDetailLibrary = result.Value;
+        _faceDetailLibraryPersisted = true;
+        return true;
+    }
+
     private void UpdateHeadExtraPreview(HeadExtraChoiceItem item)
     {
         if (_pinnedModel is null) return;
@@ -518,14 +707,44 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
         }
     }
 
+    private void UpdateFaceDetailPreview(FaceDetailChoiceItem item)
+    {
+        if (_pinnedModel is null) return;
+        try
+        {
+            var (kind, side) = MapFaceDetailKind(item.Kind);
+            var component = FaceComponent.Restore(item.Id, kind, item.Name, item.AssetId, side,
+                item.Transform, true, zOrder: FaceComponent.GetDefaultZOrder(kind));
+            var components = (_savedCatalog?.Components ?? [])
+                .Where(existing => existing.Id != item.Id)
+                .Append(component)
+                .ToArray();
+            _previewCatalogOverride = FaceCatalogDraft.Restore(_savedCatalog?.Id ?? FaceId.New(),
+                ModelRevisionReference.From(_pinnedModel), _savedCatalog?.Revision ?? Revision.Initial,
+                _savedCatalog?.Name ?? "Prévia de detalhe facial", components);
+            _previewingFaceDetail = true;
+            _ = RefreshComposedPreviewAsync();
+        }
+        catch (ArgumentException)
+        { ComposedPreviewError = "Não foi possível preparar a prévia deste detalhe facial."; }
+    }
+
     public bool BeginComponentMoveGesture()
     {
         if (IsBusy) return false;
-        if (_previewingHeadExtra && SelectedHeadExtra is not null && TryReadHeadExtraTransform(out var extraTransform))
+        if (_previewingFaceDetail && SelectedFaceDetail is not null && TryReadFaceDetailTransform(out var detailTransform))
+        {
+            _gestureComponentId = SelectedFaceDetail.Id;
+            _gestureStartTransform = detailTransform;
+            _gestureIsFaceDetail = true;
+            _gestureIsHeadExtra = false;
+        }
+        else if (_previewingHeadExtra && SelectedHeadExtra is not null && TryReadHeadExtraTransform(out var extraTransform))
         {
             _gestureComponentId = SelectedHeadExtra.Id;
             _gestureStartTransform = extraTransform;
             _gestureIsHeadExtra = true;
+            _gestureIsFaceDetail = false;
         }
         else if (SelectedComponent is not null && _savedCatalog is not null
             && TryReadComponentTransform(out var componentTransform))
@@ -533,6 +752,7 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
             _gestureComponentId = SelectedComponent.Id;
             _gestureStartTransform = componentTransform;
             _gestureIsHeadExtra = false;
+            _gestureIsFaceDetail = false;
         }
         else if (SelectedHeadExtra is not null && TryReadHeadExtraTransform(out extraTransform))
         {
@@ -562,6 +782,18 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
             UpdateHeadExtraPreview(SelectedHeadExtra with { Transform = extraTransform });
             return true;
         }
+        if (_gestureIsFaceDetail)
+        {
+            if (SelectedFaceDetail?.Id != componentId) return false;
+            var detailTransform = new Transform2D(new Point2D(start.Translation.X + deltaX, start.Translation.Y + deltaY),
+                start.Scale, start.RotationRadians, start.Pivot, start.FlipX, start.FlipY);
+            if (Math.Abs(detailTransform.Translation.X) > 100_000 || Math.Abs(detailTransform.Translation.Y) > 100_000) return false;
+            FaceDetailX = FormatNumber(detailTransform.Translation.X);
+            FaceDetailY = FormatNumber(detailTransform.Translation.Y);
+            _gestureHasMoved = deltaX != 0 || deltaY != 0;
+            UpdateFaceDetailPreview(SelectedFaceDetail with { Transform = detailTransform });
+            return true;
+        }
         if (_savedCatalog is null || SelectedComponent?.Id != componentId) return false;
         var transform = new Transform2D(new Point2D(start.Translation.X + deltaX, start.Translation.Y + deltaY),
             start.Scale, start.RotationRadians, start.Pivot, start.FlipX, start.FlipY);
@@ -580,10 +812,12 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
         if (_gestureComponentId is null || _gestureStartTransform is null) return false;
         var hasMoved = _gestureHasMoved;
         var isHeadExtra = _gestureIsHeadExtra;
+        var isFaceDetail = _gestureIsFaceDetail;
         _gestureComponentId = null;
         _gestureStartTransform = null;
         _gestureHasMoved = false;
         _gestureIsHeadExtra = false;
+        _gestureIsFaceDetail = false;
         _previewCatalogOverride = null;
         if (!hasMoved) return true;
         if (isHeadExtra)
@@ -594,6 +828,16 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
                 return false;
             }
             await SaveSelectedHeadExtraAsync(cancellationToken);
+            return !HasError;
+        }
+        if (isFaceDetail)
+        {
+            if (!CanSaveSelectedFaceDetail)
+            {
+                if (SelectedFaceDetail is not null) UpdateFaceDetailPreview(SelectedFaceDetail);
+                return false;
+            }
+            await SaveSelectedFaceDetailAsync(cancellationToken);
             return !HasError;
         }
         if (!CanApplyComponentTransform)
@@ -609,10 +853,12 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
     {
         if (_gestureComponentId is null || _gestureStartTransform is not { } start) return;
         var isHeadExtra = _gestureIsHeadExtra;
+        var isFaceDetail = _gestureIsFaceDetail;
         _gestureComponentId = null;
         _gestureStartTransform = null;
         _gestureHasMoved = false;
         _gestureIsHeadExtra = false;
+        _gestureIsFaceDetail = false;
         _previewCatalogOverride = null;
         if (isHeadExtra)
         {
@@ -622,6 +868,16 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
             HeadExtraScaleY = FormatNumber(start.Scale.Y);
             HeadExtraRotation = FormatNumber(start.RotationRadians * 180d / Math.PI);
             if (SelectedHeadExtra is not null) UpdateHeadExtraPreview(SelectedHeadExtra);
+            return;
+        }
+        if (isFaceDetail)
+        {
+            FaceDetailX = FormatNumber(start.Translation.X);
+            FaceDetailY = FormatNumber(start.Translation.Y);
+            FaceDetailScaleX = FormatNumber(start.Scale.X);
+            FaceDetailScaleY = FormatNumber(start.Scale.Y);
+            FaceDetailRotation = FormatNumber(start.RotationRadians * 180d / Math.PI);
+            if (SelectedFaceDetail is not null) UpdateFaceDetailPreview(SelectedFaceDetail);
             return;
         }
         ComponentX = FormatNumber(start.Translation.X);
@@ -746,6 +1002,142 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
                                           or InvalidDataException or InvalidOperationException or ArgumentException)
         { Error = "Não foi possível importar o extra de cabeça. Confira o arquivo e o espaço disponível."; }
+        finally { IsBusy = false; }
+    }
+
+    [RelayCommand(CanExecute = nameof(CanImportFaceDetail))]
+    private async Task ImportFaceDetailAsync(CancellationToken cancellationToken)
+    {
+        if (_filePicker is null || _faceDetailImportService is null || _assetStore is null
+            || _faceDetailLibraryRepository is null || HeadPart is not { } head) return;
+        Error = null;
+        Status = null;
+        IsBusy = true;
+        try
+        {
+            var file = await _filePicker.PickImageAsync(cancellationToken);
+            if (file is null) return;
+            await using (file)
+            {
+                var prepared = await _faceDetailImportService.PrepareAsync(file.Content, file.MediaType, cancellationToken);
+                await using var png = new MemoryStream(prepared.PngBytes, writable: false);
+                var imported = await _assetStore.ImportAsync(png, "image/png", cancellationToken);
+                if (imported.IsFailure) { Error = imported.Error!.Message; return; }
+                var expectedSha256 = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(prepared.PngBytes))
+                    .ToLowerInvariant();
+                if (imported.Value.VerificationState != AssetVerificationState.Available
+                    || imported.Value.ByteLength != prepared.PngBytes.Length
+                    || !string.Equals(imported.Value.Sha256, expectedSha256, StringComparison.OrdinalIgnoreCase))
+                { Error = "O AssetStore não confirmou o PNG preparado para o detalhe facial."; return; }
+
+                var baseName = Path.GetFileNameWithoutExtension(file.Name);
+                var fallback = SelectedFaceDetailKind.Label;
+                var name = string.IsNullOrWhiteSpace(baseName) ? fallback : baseName.Trim();
+                if (name.Length > 120) name = name[..120];
+                var transform = CreateInitialFaceDetailTransform(head, SelectedFaceDetailKind.Kind,
+                    prepared.Width, prepared.Height);
+                var detail = FaceDetailAsset.Create(SelectedFaceDetailKind.Kind, imported.Value.Id, name,
+                    prepared.Width, prepared.Height, transform);
+                var current = _faceDetailLibrary ?? FaceDetailLibraryDraft.Create(_headExtraModelSlot);
+                var candidate = _faceDetailLibraryPersisted
+                    ? current.WithAsset(detail)
+                    : FaceDetailLibraryDraft.Restore(current.Id, _headExtraModelSlot, Revision.Initial, [detail]);
+                if (!await PersistFaceDetailLibraryAsync(candidate, cancellationToken)) return;
+                RefreshFaceDetailChoices(detail.Id);
+                Status = $"Detalhe “{name}” salvo na biblioteca do slot {_headExtraModelSlot.Value:00}.";
+            }
+        }
+        catch (OperationCanceledException) { Status = "Importação do detalhe facial cancelada."; }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
+                                          or InvalidDataException or InvalidOperationException or ArgumentException)
+        { Error = "Não foi possível importar o detalhe facial. Confira o arquivo e o espaço disponível."; }
+        finally { IsBusy = false; }
+    }
+
+    [RelayCommand(CanExecute = nameof(CanSaveSelectedFaceDetail))]
+    private async Task SaveSelectedFaceDetailAsync(CancellationToken cancellationToken)
+    {
+        if (_faceDetailLibrary is null || SelectedFaceDetail is null || !TryReadFaceDetailTransform(out var transform)) return;
+        Error = null;
+        IsBusy = true;
+        try
+        {
+            var updated = FaceDetailAsset.Restore(SelectedFaceDetail.Id, SelectedFaceDetail.Kind,
+                SelectedFaceDetail.AssetId, FaceDetailName.Trim(), SelectedFaceDetail.Width, SelectedFaceDetail.Height, transform);
+            var candidate = _faceDetailLibrary.WithAsset(updated);
+            if (!await PersistFaceDetailLibraryAsync(candidate, cancellationToken)) return;
+            RefreshFaceDetailChoices(updated.Id);
+            Status = $"Detalhe “{updated.Name}” salvo na biblioteca facial.";
+        }
+        catch (OperationCanceledException) { Status = "Edição cancelada; os dados salvos foram preservados."; }
+        catch (Exception exception) when (exception is IOException or InvalidOperationException or ArgumentException)
+        { Error = "Não foi possível salvar o nome e o encaixe do detalhe facial."; }
+        finally { IsBusy = false; }
+    }
+
+    [RelayCommand(CanExecute = nameof(CanResetSelectedFaceDetail))]
+    private async Task ResetSelectedFaceDetailAsync(CancellationToken cancellationToken)
+    {
+        if (SelectedFaceDetail is null || HeadPart is not { } head) return;
+        try
+        {
+            var transform = CreateInitialFaceDetailTransform(head, SelectedFaceDetail.Kind,
+                SelectedFaceDetail.Width, SelectedFaceDetail.Height);
+            FaceDetailX = FormatNumber(transform.Translation.X);
+            FaceDetailY = FormatNumber(transform.Translation.Y);
+            FaceDetailScaleX = FormatNumber(transform.Scale.X);
+            FaceDetailScaleY = FormatNumber(transform.Scale.Y);
+            FaceDetailRotation = FormatNumber(transform.RotationRadians * 180d / Math.PI);
+            await SaveSelectedFaceDetailAsync(cancellationToken);
+            if (!HasError) Status = $"Encaixe de “{FaceDetailName}” restaurado e salvo.";
+        }
+        catch (Exception exception) when (exception is InvalidDataException or ArgumentException)
+        { Error = "Não foi possível calcular o encaixe inicial deste detalhe facial."; }
+    }
+
+    [RelayCommand(CanExecute = nameof(CanRemoveSelectedFaceDetail))]
+    private async Task RemoveSelectedFaceDetailAsync(CancellationToken cancellationToken)
+    {
+        if (_faceDetailLibrary is null || SelectedFaceDetail is null) return;
+        Error = null;
+        IsBusy = true;
+        try
+        {
+            var candidate = _faceDetailLibrary.WithoutAsset(SelectedFaceDetail.Id);
+            if (!await PersistFaceDetailLibraryAsync(candidate, cancellationToken)) return;
+            RefreshFaceDetailChoices();
+            Status = "Detalhe removido da biblioteca. Referências já incluídas no catálogo facial permanecem protegidas.";
+        }
+        catch (OperationCanceledException) { Status = "Exclusão cancelada; a biblioteca facial salva foi preservada."; }
+        catch (Exception exception) when (exception is IOException or InvalidOperationException or ArgumentException)
+        { Error = "Não foi possível remover o detalhe facial da biblioteca."; }
+        finally { IsBusy = false; }
+    }
+
+    [RelayCommand(CanExecute = nameof(CanAddSelectedFaceDetailToCatalog))]
+    private async Task AddSelectedFaceDetailToCatalogAsync(CancellationToken cancellationToken)
+    {
+        if (SelectedFaceDetail is null || _pinnedModel is null || _catalogRepository is null) return;
+        Error = null;
+        IsBusy = true;
+        try
+        {
+            var (kind, side) = MapFaceDetailKind(SelectedFaceDetail.Kind);
+            var component = FaceComponent.Restore(SelectedFaceDetail.Id, kind, SelectedFaceDetail.Name,
+                SelectedFaceDetail.AssetId, side, SelectedFaceDetail.Transform, zOrder: FaceComponent.GetDefaultZOrder(kind));
+            var candidate = _savedCatalog is null
+                ? FaceCatalogDraft.Restore(FaceId.New(), ModelRevisionReference.From(_pinnedModel), Revision.Initial, "Rosto", [component])
+                : _savedCatalog.WithComponent(component);
+            var saved = _savedCatalog is null
+                ? await _catalogRepository.CreateAsync(candidate, cancellationToken)
+                : await _catalogRepository.SaveAsync(candidate, _savedCatalog.Revision, cancellationToken);
+            if (saved.IsFailure) { Error = saved.Error!.Message; return; }
+            AcceptSavedCatalog(saved.Value, component.Id);
+            Status = $"“{component.Name}” adicionado à montagem facial. Publique o catálogo para usar no Customizador.";
+        }
+        catch (OperationCanceledException) { Status = "Inclusão no catálogo cancelada; a biblioteca facial foi preservada."; }
+        catch (Exception exception) when (exception is IOException or InvalidOperationException or ArgumentException)
+        { Error = "Não foi possível adicionar o detalhe selecionado ao catálogo facial."; }
         finally { IsBusy = false; }
     }
 
@@ -1177,6 +1569,24 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
         catch (ArgumentOutOfRangeException) { return false; }
     }
 
+    private bool TryReadFaceDetailTransform(out Transform2D transform)
+    {
+        transform = default;
+        if (SelectedFaceDetail is null || !TryNumber(FaceDetailX, out var x) || !TryNumber(FaceDetailY, out var y)
+            || !TryNumber(FaceDetailScaleX, out var scaleX) || !TryNumber(FaceDetailScaleY, out var scaleY)
+            || !TryNumber(FaceDetailRotation, out var rotationDegrees)
+            || Math.Abs(x) > 100_000 || Math.Abs(y) > 100_000
+            || scaleX is <= 0 or > 20 || scaleY is <= 0 or > 20 || Math.Abs(rotationDegrees) > 3600) return false;
+        try
+        {
+            var original = SelectedFaceDetail.Transform;
+            transform = new Transform2D(new Point2D(x, y), new Point2D(scaleX, scaleY),
+                rotationDegrees * Math.PI / 180d, original.Pivot, original.FlipX, original.FlipY);
+            return true;
+        }
+        catch (ArgumentOutOfRangeException) { return false; }
+    }
+
     private static Transform2D CreateInitialHeadExtraTransform(ModelPart head, int imageWidth, int imageHeight)
     {
         var sourceWidth = Math.Max(1, head.SourceCrop.Width);
@@ -1187,6 +1597,48 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
         return new Transform2D(modelPosition, new Point2D(scaleX, scaleY), 0,
             new Point2D(imageWidth / 2d, imageHeight / 2d));
     }
+
+    private static Transform2D CreateInitialFaceDetailTransform(ModelPart head, FaceDetailKind kind,
+        int imageWidth, int imageHeight)
+    {
+        var headWidth = head.SourceCrop.Width;
+        var headHeight = head.SourceCrop.Height;
+        if (headWidth <= 0 || headHeight <= 0 || imageWidth <= 0 || imageHeight <= 0)
+            throw new InvalidDataException("A cabeça ou a imagem do detalhe facial não tem dimensões válidas.");
+        var targetWidth = kind switch
+        {
+            FaceDetailKind.EyeHighlightLeft or FaceDetailKind.EyeHighlightRight => .075,
+            FaceDetailKind.Blush => .24,
+            FaceDetailKind.FacialShadow => .3,
+            _ => throw new ArgumentOutOfRangeException(nameof(kind))
+        };
+        var x = kind switch
+        {
+            FaceDetailKind.EyeHighlightLeft => headWidth * .39,
+            FaceDetailKind.EyeHighlightRight => headWidth * .61,
+            _ => headWidth * .5
+        };
+        var yFromTop = kind switch
+        {
+            FaceDetailKind.EyeHighlightLeft or FaceDetailKind.EyeHighlightRight => headHeight * .48,
+            FaceDetailKind.Blush => headHeight * .68,
+            FaceDetailKind.FacialShadow => headHeight * .62,
+            _ => throw new ArgumentOutOfRangeException(nameof(kind))
+        };
+        var scale = Math.Clamp(headWidth * targetWidth / imageWidth, .01, 20);
+        var position = head.Transform.Apply(new Point2D(x, headHeight - yFromTop));
+        return new Transform2D(position, new Point2D(scale, scale), 0,
+            new Point2D(imageWidth / 2d, imageHeight / 2d));
+    }
+
+    private static (FaceComponentKind Kind, FaceComponentSide? Side) MapFaceDetailKind(FaceDetailKind kind) => kind switch
+    {
+        FaceDetailKind.EyeHighlightLeft => (FaceComponentKind.EyeHighlight, FaceComponentSide.Left),
+        FaceDetailKind.EyeHighlightRight => (FaceComponentKind.EyeHighlight, FaceComponentSide.Right),
+        FaceDetailKind.Blush => (FaceComponentKind.Blush, null),
+        FaceDetailKind.FacialShadow => (FaceComponentKind.FacialShadow, null),
+        _ => throw new ArgumentOutOfRangeException(nameof(kind))
+    };
 
     private static bool TryNumber(string value, out double number) =>
         double.TryParse(value, NumberStyles.Float, CultureInfo.CurrentCulture, out number) && double.IsFinite(number);
@@ -1376,4 +1828,21 @@ public sealed record HeadExtraChoiceItem(FaceComponentId Id, AssetId AssetId, st
     Transform2D Transform)
 {
     public string Label => Name;
+}
+
+public sealed record FaceDetailKindChoiceItem(FaceDetailKind Kind, string Label);
+
+public sealed record FaceDetailChoiceItem(FaceComponentId Id, AssetId AssetId, FaceDetailKind Kind, string Name,
+    int Width, int Height, Transform2D Transform)
+{
+    public string Label => $"{KindLabel(Kind)} · {Name}";
+
+    private static string KindLabel(FaceDetailKind kind) => kind switch
+    {
+        FaceDetailKind.EyeHighlightLeft => "Brilho esquerdo",
+        FaceDetailKind.EyeHighlightRight => "Brilho direito",
+        FaceDetailKind.Blush => "Blush",
+        FaceDetailKind.FacialShadow => "Sombra facial",
+        _ => "Detalhe facial"
+    };
 }

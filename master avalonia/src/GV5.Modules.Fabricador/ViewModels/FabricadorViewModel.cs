@@ -1204,7 +1204,9 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
         IFaceCatalogRepository? faceCatalogRepository = null,
         AssetImageDecoder? assetImageDecoder = null,
         HeadExtraImportService? headExtraImportService = null,
-        IHeadExtraLibraryRepository? headExtraLibraryRepository = null)
+        IHeadExtraLibraryRepository? headExtraLibraryRepository = null,
+        FaceDetailImportService? faceDetailImportService = null,
+        IFaceDetailLibraryRepository? faceDetailLibraryRepository = null)
     {
         _repository = repository ?? throw new ArgumentNullException(nameof(repository));
         _dataInitializer = dataInitializer ?? throw new ArgumentNullException(nameof(dataInitializer));
@@ -1216,7 +1218,8 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
         HairWorkspace = new HairWorkspaceViewModel(_filePicker, hairSheetImportService, hairRoleTintProcessor,
             hairStyleRepository, assetStore);
         FaceWorkspace = new FaceWorkspaceViewModel(_filePicker, faceSheetImportService, faceCatalogRepository,
-            assetStore, assetImageDecoder, sceneRenderer, headExtraImportService, headExtraLibraryRepository);
+            assetStore, assetImageDecoder, sceneRenderer, headExtraImportService, headExtraLibraryRepository,
+            faceDetailImportService, faceDetailLibraryRepository);
         _assetStore = assetStore;
         _thumbnailService = thumbnailService;
         _modelPartSplitService = modelPartSplitService;

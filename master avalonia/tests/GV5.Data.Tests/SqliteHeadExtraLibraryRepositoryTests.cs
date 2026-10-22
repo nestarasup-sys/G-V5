@@ -135,7 +135,7 @@ public sealed class SqliteHeadExtraLibraryRepositoryTests
         new PoseRepositorySchemaMigration(), new AnimationRepositorySchemaMigration(), new WardrobeRepositorySchemaMigration(),
         new HairStyleRepositorySchemaMigration(), new FaceCatalogRepositorySchemaMigration(), new FaceExpressionRepositorySchemaMigration(),
         new FacePublicationSchemaMigration(), new AnimationSlotsSchemaMigration(), new ModelSlotSchemaMigration(),
-        new HeadExtraLibrarySchemaMigration()
+        new HeadExtraLibrarySchemaMigration(), new FaceDetailLibrarySchemaMigration()
     ]);
 
     private static async Task InsertAssetAsync(SqliteDatabase database, AssetId id, CancellationToken token)

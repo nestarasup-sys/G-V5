@@ -202,8 +202,10 @@ public sealed class FabricadorPersistenceStateTests
             Assert.Contains(buttons, button => button.Content?.ToString() == "Restaurar encaixe inicial");
             Assert.Contains(buttons, button => button.Content?.ToString() == "Adicionar à montagem facial");
             Assert.Contains(buttons, button => button.Content?.ToString() == "Remover da biblioteca");
+            Assert.Contains(buttons, button => button.Content?.ToString() == "＋ Importar detalhe");
+            Assert.Contains(buttons, button => button.Content?.ToString() == "Salvar detalhe");
             var selectors = window.GetVisualDescendants().OfType<ComboBox>().ToArray();
-            Assert.Equal(5, selectors.Length);
+            Assert.Equal(7, selectors.Length);
             Assert.False(select.IsEnabled);
             Assert.False(confirm.IsVisible);
             Assert.False(publish.IsEnabled);
@@ -211,6 +213,8 @@ public sealed class FabricadorPersistenceStateTests
             Assert.Contains(selectors, selector => ReferenceEquals(selector.ItemsSource, viewModel.NoseSheetModes));
             Assert.Contains(selectors, selector => ReferenceEquals(selector.ItemsSource, viewModel.ComponentChoices));
             Assert.Contains(selectors, selector => ReferenceEquals(selector.ItemsSource, viewModel.HeadExtraChoices));
+            Assert.Contains(selectors, selector => ReferenceEquals(selector.ItemsSource, viewModel.FaceDetailKinds));
+            Assert.Contains(selectors, selector => ReferenceEquals(selector.ItemsSource, viewModel.FaceDetailChoices));
             Assert.Contains(window.GetVisualDescendants().OfType<TextBlock>(),
                 text => text.Text == "Olhos e rosto");
         }
@@ -321,7 +325,7 @@ public sealed class FabricadorPersistenceStateTests
         new PoseRepositorySchemaMigration(), new AnimationRepositorySchemaMigration(), new WardrobeRepositorySchemaMigration(),
         new HairStyleRepositorySchemaMigration(), new FaceCatalogRepositorySchemaMigration(), new FaceExpressionRepositorySchemaMigration(),
         new FacePublicationSchemaMigration(), new AnimationSlotsSchemaMigration(), new ModelSlotSchemaMigration(),
-        new HeadExtraLibrarySchemaMigration()
+        new HeadExtraLibrarySchemaMigration(), new FaceDetailLibrarySchemaMigration()
     ]);
 
     private static string NewTempRoot() => Path.Combine(Path.GetTempPath(), $"gv5-fabricador-state-{Guid.NewGuid():N}");

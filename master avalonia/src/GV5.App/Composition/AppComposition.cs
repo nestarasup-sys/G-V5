@@ -56,6 +56,7 @@ internal static class AppComposition
         services.AddSingleton<ISqliteMigration, AnimationSlotsSchemaMigration>();
         services.AddSingleton<ISqliteMigration, ModelSlotSchemaMigration>();
         services.AddSingleton<ISqliteMigration, HeadExtraLibrarySchemaMigration>();
+        services.AddSingleton<ISqliteMigration, FaceDetailLibrarySchemaMigration>();
         services.AddSingleton<SqliteMigrationRunner>();
         services.AddSingleton<IDataPlatformInitializer>(provider => provider.GetRequiredService<SqliteMigrationRunner>());
         services.AddSingleton<IAssetCatalog, SqliteAssetCatalog>();
@@ -70,6 +71,7 @@ internal static class AppComposition
         services.AddSingleton<IHairStyleRepository, SqliteHairStyleRepository>();
         services.AddSingleton<IFaceCatalogRepository, SqliteFaceCatalogRepository>();
         services.AddSingleton<IHeadExtraLibraryRepository, SqliteHeadExtraLibraryRepository>();
+        services.AddSingleton<IFaceDetailLibraryRepository, SqliteFaceDetailLibraryRepository>();
         services.AddSingleton<IFaceExpressionRepository, SqliteFaceExpressionRepository>();
         services.AddSingleton<IFabricatorDependencyCatalog, SqliteFabricatorDependencyCatalog>();
         services.AddSingleton<IWardrobeCatalog>(provider => new WardrobeCatalog(
@@ -92,6 +94,7 @@ internal static class AppComposition
                 MaximumPixels: 32_000_000)));
         services.AddSingleton<ModelSourceImportService>();
         services.AddSingleton<FaceSheetImportService>();
+        services.AddSingleton<FaceDetailImportService>();
         services.AddSingleton<HeadExtraImportService>();
         services.AddSingleton<ModelPartSplitService>();
         services.AddSingleton<ModelPartMergeService>();

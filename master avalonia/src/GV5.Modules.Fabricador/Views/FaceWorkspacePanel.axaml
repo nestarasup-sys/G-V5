@@ -110,6 +110,55 @@
                 </StackPanel>
             </Border>
 
+            <Border Background="#FAF5F8" BorderBrush="#E6D2DD" BorderThickness="1" CornerRadius="9" Padding="10">
+                <StackPanel Spacing="8">
+                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                        <StackPanel Spacing="2">
+                            <TextBlock Text="Biblioteca de detalhes faciais" FontWeight="Bold" Foreground="#342E36" />
+                            <TextBlock Text="{Binding FaceDetailLibraryCount, StringFormat='Por slot de modelo · {0} item(ns)'}"
+                                       FontSize="10" Foreground="#706872" />
+                        </StackPanel>
+                        <Button Grid.Column="1" Content="＋ Importar detalhe" Command="{Binding ImportFaceDetailCommand}"
+                                IsEnabled="{Binding CanImportFaceDetail}" Padding="10,6"
+                                Background="#FFF0F6" BorderBrush="#E9C8D8" Foreground="#A84368" />
+                    </Grid>
+                    <ComboBox ItemsSource="{Binding FaceDetailKinds}"
+                              SelectedItem="{Binding SelectedFaceDetailKind, Mode=TwoWay}"
+                              DisplayMemberBinding="{Binding Label}" />
+                    <ComboBox ItemsSource="{Binding FaceDetailChoices}"
+                              SelectedItem="{Binding SelectedFaceDetail, Mode=TwoWay}"
+                              DisplayMemberBinding="{Binding Label}"
+                              PlaceholderText="Selecione um detalhe salvo" />
+                    <TextBox Text="{Binding FaceDetailName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                             MaxLength="120" PlaceholderText="Nome do detalhe" />
+                    <Grid ColumnDefinitions="*,*" ColumnSpacing="6" RowDefinitions="Auto,Auto,Auto" RowSpacing="5">
+                        <TextBox Text="{Binding FaceDetailX, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" PlaceholderText="Posição X" />
+                        <TextBox Grid.Column="1" Text="{Binding FaceDetailY, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" PlaceholderText="Posição Y" />
+                        <TextBox Grid.Row="1" Text="{Binding FaceDetailScaleX, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" PlaceholderText="Escala X" />
+                        <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding FaceDetailScaleY, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" PlaceholderText="Escala Y" />
+                        <TextBox Grid.Row="2" Text="{Binding FaceDetailRotation, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" PlaceholderText="Rotação em graus" />
+                        <TextBlock Grid.Row="2" Grid.Column="1" Text="Brilhos, blush e sombra facial" FontSize="9"
+                                   Foreground="#958B96" VerticalAlignment="Center" TextWrapping="Wrap" />
+                    </Grid>
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <Button Content="Salvar detalhe" Command="{Binding SaveSelectedFaceDetailCommand}"
+                                IsEnabled="{Binding CanSaveSelectedFaceDetail}" Padding="9,6"
+                                Background="#F0EAF8" BorderBrush="#D8C8EB" Foreground="#704B9A" />
+                        <Button Content="Restaurar encaixe inicial" Command="{Binding ResetSelectedFaceDetailCommand}"
+                                IsEnabled="{Binding CanResetSelectedFaceDetail}" Padding="9,6"
+                                Background="#F0EAF8" BorderBrush="#D8C8EB" Foreground="#704B9A" />
+                        <Button Content="Adicionar à montagem facial" Command="{Binding AddSelectedFaceDetailToCatalogCommand}"
+                                IsEnabled="{Binding CanAddSelectedFaceDetailToCatalog}" Padding="9,6"
+                                Background="#FFF5F8" BorderBrush="#EFCBD8" Foreground="#A84368" />
+                        <Button Content="Remover da biblioteca" Command="{Binding RemoveSelectedFaceDetailCommand}"
+                                IsEnabled="{Binding CanRemoveSelectedFaceDetail}" Padding="9,6"
+                                Background="#FFF3F4" BorderBrush="#F0CACA" Foreground="#A33442" />
+                    </StackPanel>
+                    <TextBlock Text="Inclua o detalhe no catálogo e publique a revisão facial para usá-lo no Customizador."
+                               FontSize="10" Foreground="#706872" TextWrapping="Wrap" />
+                </StackPanel>
+            </Border>
+
             <TextBlock Text="{Binding PreviewSummary}"
                        IsVisible="{Binding HasPreview}" FontSize="10" Foreground="#958B96" TextWrapping="Wrap" />
             <ItemsControl x:Name="FacePiecesControl" IsVisible="{Binding HasPreview}">
