@@ -13,15 +13,15 @@
 | Branch obrigatória | `Master-AValonia` |
 | Pasta exclusiva do novo aplicativo | `master avalonia/` |
 | Commit-base inspecionado antes deste arquivo | `53b7f7a97321e85063a8dd4f9635e48d36548323` |
-| Último commit de implementação validado | `6a911a5` (F09.15: workspace facial com importação persistente) |
-| Checkout local revalidado | `TestarLocal.bat rapido` passou em 2026-10-21: build Debug e **324/324 testes**, zero falhas; permanecem 2 CS0618 no `ThumbnailService` e 1 xUnit1051 em `HairRoleTintProcessorTests` |
+| Último commit de implementação validado | `a0f8ab9` (F09.15: editor facial com recuperação de conflito) |
+| Checkout local revalidado | `TestarLocal.bat rapido` passou em 2026-10-21: build Debug e **328/328 testes**, zero falhas; permanecem 2 CS0618 no `ThumbnailService` e 1 xUnit1051 em `HairRoleTintProcessorTests` |
 | Fase ativa | **F09 — Fabricador IV — cabelos, face, expressões e completação (F09.15 em execução)** |
 | Última tarefa VALIDADA | **F09.14** — validação cruzada de persistência, importação inválida e cancelamento nas subáreas do Fabricador |
 | Tarefa em execução | **F09.15** — auditar e fechar as lacunas funcionais do Fabricador antes do GATE-F09/G2 |
 | Requisito transversal atualizado | ADR-0006: aparência reconhecível, não pixel-perfect; todos os botões e funcionalidades; revisão final visual pendente |
 | Gate atual | **GATE-F08 PASSOU tecnicamente; UI/visual Windows/GPU e paridade completa continuam pendentes** |
 | Progresso validado neste controle | **126 / 247 tarefas (51,0%)** |
-| Tarefas em execução | **F09.15** — auditoria funcional do Fabricador; inclui slots persistentes, transformação, rig, divisão/mesclagem, Misturador e importação persistente de sobrancelhas; próxima lacuna: editor facial com seleção, encaixe visual e demais folhas (olhos, pupilas, olhos fechados, nariz e bocas) |
+| Tarefas em execução | **F09.15** — auditoria funcional do Fabricador; inclui slots persistentes, transformação, rig, divisão/mesclagem, Misturador e importação facial persistente com ajuste numérico; próxima lacuna priorizada: prévia facial composta e arrasto direto, seguida dos detalhes faciais e extras de cabeça |
 | Pendências conhecidas | F06: folha real/capturas/worker não testados; ferramentas de Modelos ausentes catalogadas em `docs/legacy-contracts/PENDENCIAS_FUNCIONAIS_FABRICADOR.md` e obrigatórias antes do G2. Isso não impede a programação F07, mas impede declarar Fabricador completo. Limite download F01 documentado |
 | Aceite Windows/GPU | **F06 Windows/visual não executado; GPU continua fora do escopo comprovado** |
 
