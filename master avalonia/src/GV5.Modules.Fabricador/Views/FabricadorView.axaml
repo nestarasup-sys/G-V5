@@ -240,12 +240,13 @@
                                         <TextBlock Text="Camadas" FontSize="15" FontWeight="Bold" Foreground="#342E36" />
                                         <TextBlock Text="O topo da lista fica na frente." FontSize="12" Foreground="#AAA1AA" />
                                     </StackPanel>
-                                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
+                                    <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6">
                                         <StackPanel Spacing="3">
                                             <TextBlock Text="Peça selecionada" FontSize="11" Foreground="#AAA1AA" />
-                                            <TextBlock Text="{Binding SelectedPartName}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" Foreground="#342E36" />
+                                            <TextBox Text="{Binding SelectedPartNameDraft, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding CanEditSelectedPartName}" PlaceholderText="Selecione uma peça" MaxLength="120" />
                                         </StackPanel>
-                                        <Button Grid.Column="1" Content="Limpar seleção" Command="{Binding ClearSelectionCommand}" Padding="8,5" />
+                                        <Button Grid.Column="1" Content="Renomear" Command="{Binding RenameSelectedPartCommand}" IsEnabled="{Binding CanRenameSelectedPart}" Padding="8,5" VerticalAlignment="Center" />
+                                        <Button Grid.Column="2" Content="Limpar seleção" Command="{Binding ClearSelectionCommand}" Padding="8,5" VerticalAlignment="Center" />
                                     </Grid>
                                     <ListBox x:Name="ModelPartLayerList" ItemsSource="{Binding PartLayers}" Loaded="OnModelPartLayerListLoaded" MinHeight="100" MaxHeight="360" Background="Transparent" BorderThickness="0">
                                         <ListBox.ItemTemplate>

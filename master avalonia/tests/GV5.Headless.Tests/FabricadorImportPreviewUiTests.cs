@@ -43,6 +43,8 @@ public sealed class FabricadorImportPreviewUiTests
         AnimationId poseBasedAnimationId;
         AnimationId replacementAnimationId = default;
         ModelPartId persistedHiddenPartId = default;
+        ModelPartId persistedRenamedPartId = default;
+        string persistedRenamedPartName = "";
         ModelPartId[] persistedLayerOrder = [];
         ModelDraftContent savedContent;
 
@@ -358,6 +360,13 @@ public sealed class FabricadorImportPreviewUiTests
                     persistedHiddenPartId = persistedLayerOrder[0];
                     viewModel.TogglePartVisibilityCommand.Execute(persistedHiddenPartId);
                     Assert.False(viewModel.PartLayers.Single(item => item.Id == persistedHiddenPartId).IsVisible);
+                    persistedRenamedPartId = persistedLayerOrder[1];
+                    persistedRenamedPartName = "Camada exportada renomeada";
+                    viewModel.SelectPartLayerCommand.Execute(persistedRenamedPartId);
+                    viewModel.SelectedPartNameDraft = persistedRenamedPartName;
+                    Assert.True(viewModel.CanRenameSelectedPart);
+                    viewModel.RenameSelectedPartCommand.Execute(null);
+                    Assert.Equal(persistedRenamedPartName, viewModel.PartLayers.Single(item => item.Id == persistedRenamedPartId).Name);
                     Assert.True(await viewModel.FlushPendingChangesAsync(cancellationToken));
                     Assert.Equal(PersistenceState.Saved, viewModel.SaveState);
                 }
@@ -394,6 +403,7 @@ public sealed class FabricadorImportPreviewUiTests
                 Assert.Equal(Revision.From(3), savedContent.Revision);
                 Assert.Equal(persistedLayerOrder.Reverse(), savedContent.LayerOrder);
                 Assert.False(savedContent.Parts.Single(part => part.Id == persistedHiddenPartId).IsVisible);
+                Assert.Equal(persistedRenamedPartName, savedContent.Parts.Single(part => part.Id == persistedRenamedPartId).Name);
                 var savedJoint = Assert.Single(savedContent.RigJoints);
                 Assert.Equal(RigJointMode.Fixed, savedJoint.Mode);
                 Assert.Equal(new Point2D(31.5, 18), savedJoint.ParentAnchor);
@@ -414,6 +424,7 @@ public sealed class FabricadorImportPreviewUiTests
                 Assert.Equal(savedContent.Parts.Select(part => part.AssetId), published.Value.Content.Parts.Select(part => part.AssetId));
                 Assert.Equal(persistedLayerOrder.Reverse(), published.Value.Content.LayerOrder);
                 Assert.False(published.Value.Content.Parts.Single(part => part.Id == persistedHiddenPartId).IsVisible);
+                Assert.Equal(persistedRenamedPartName, published.Value.Content.Parts.Single(part => part.Id == persistedRenamedPartId).Name);
                 var persistedPublication = await revisions.GetAsync(modelId, Revision.Initial, cancellationToken);
                 Assert.True(persistedPublication.IsSuccess, persistedPublication.Error?.Message);
                 Assert.Equal(savedContent.Parts.Select(part => part.Transform), persistedPublication.Value.Content.Parts.Select(part => part.Transform));
@@ -642,6 +653,19 @@ public sealed class FabricadorImportPreviewUiTests
             Assert.Equal(parts[0].Id, viewModel.SelectedModelPartId);
             Assert.True(viewModel.PartLayers.Single(item => item.Id == parts[0].Id).IsSelected);
             Assert.True(viewModel.PartLayers.Single(item => item.Id == parts[0].Id).CanMoveForward);
+            var originalPartName = viewModel.PartLayers.Single(item => item.Id == parts[0].Id).Name;
+            viewModel.SelectedPartNameDraft = "Peça renomeada no teste";
+            Assert.True(viewModel.RenameSelectedPartCommand.CanExecute(null));
+            viewModel.RenameSelectedPartCommand.Execute(null);
+            Assert.Equal("Peça renomeada no teste", viewModel.PartLayers.Single(item => item.Id == parts[0].Id).Name);
+            Assert.Equal(1, viewModel.UndoCount);
+            viewModel.UndoCommand.Execute(null);
+            Assert.Equal(originalPartName, viewModel.PartLayers.Single(item => item.Id == parts[0].Id).Name);
+            Assert.Equal(originalPartName, viewModel.SelectedPartNameDraft);
+            Assert.Equal(0, viewModel.UndoCount);
+            viewModel.SelectedPartNameDraft = "   ";
+            Assert.False(viewModel.RenameSelectedPartCommand.CanExecute(null));
+            viewModel.SelectedPartNameDraft = originalPartName;
             viewModel.BringPartForwardCommand.Execute(parts[0].Id);
             Assert.Equal(1, viewModel.UndoCount);
             Assert.Equal([parts[0].Id, parts[1].Id], viewModel.PartLayers.Select(item => item.Id));

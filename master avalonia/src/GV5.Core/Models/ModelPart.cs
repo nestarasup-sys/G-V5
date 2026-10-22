@@ -74,4 +74,7 @@ public sealed record ModelPart
 
     public ModelPart WithVisibility(bool isVisible) =>
         new(Id, Name, AssetId, SourceCrop, Transform, SourceTransform, isVisible);
+
+    public ModelPart WithName(string name) =>
+        new(Id, name, AssetId, SourceCrop, Transform, SourceTransform, IsVisible);
 }
