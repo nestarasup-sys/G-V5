@@ -35,6 +35,8 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
     private readonly ModelSourceImportService? _modelSourceImportService;
     private readonly ModelPartSplitService? _modelPartSplitService;
     private readonly ModelPartMergeService? _modelPartMergeService;
+    private readonly ModelPartMixerService? _modelPartMixerService;
+    private CancellationTokenSource? _modelMixerCancellation;
     private readonly IAssetStore? _assetStore;
     private readonly IThumbnailService? _thumbnailService;
     private readonly Dictionary<AssetId, Bitmap> _partLayerThumbnailCache = [];
@@ -135,6 +137,7 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
     [NotifyPropertyChangedFor(nameof(CanSelectModelSource))]
     [NotifyPropertyChangedFor(nameof(CanPublishModelSource))]
     [NotifyPropertyChangedFor(nameof(CanPublishRevision))]
+    [NotifyPropertyChangedFor(nameof(CanToggleModelMixer))]
     [NotifyCanExecuteChangedFor(nameof(PublishModelRevisionCommand))]
     [NotifyPropertyChangedFor(nameof(CanCancelImport))]
     [NotifyPropertyChangedFor(nameof(CanApplyChromaPreview))]
@@ -203,6 +206,9 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
     [NotifyPropertyChangedFor(nameof(CanUndo))]
     [NotifyPropertyChangedFor(nameof(CanRedo))]
     [NotifyPropertyChangedFor(nameof(CanPublishRevision))]
+    [NotifyPropertyChangedFor(nameof(CanToggleModelMixer))]
+    [NotifyPropertyChangedFor(nameof(CanvasHelpText))]
+    [NotifyPropertyChangedFor(nameof(CanCancelModelMixer))]
     [NotifyPropertyChangedFor(nameof(CanSplitSelectedPart))]
     [NotifyPropertyChangedFor(nameof(CanMergeSelectedPart))]
     [NotifyCanExecuteChangedFor(nameof(SplitSelectedPartCommand))]
@@ -212,6 +218,7 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
     [NotifyCanExecuteChangedFor(nameof(UndoCommand))]
     [NotifyCanExecuteChangedFor(nameof(RedoCommand))]
     [NotifyCanExecuteChangedFor(nameof(PublishModelRevisionCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ToggleModelMixerCommand))]
     private bool isSplittingModelPart;
 
     [ObservableProperty]
@@ -221,6 +228,31 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasModelPartSplitStatus))]
     private string? modelPartSplitStatus;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanEdit))]
+    [NotifyPropertyChangedFor(nameof(CanSave))]
+    [NotifyPropertyChangedFor(nameof(CanUndo))]
+    [NotifyPropertyChangedFor(nameof(CanRedo))]
+    [NotifyPropertyChangedFor(nameof(CanPublishRevision))]
+    [NotifyPropertyChangedFor(nameof(CanToggleModelMixer))]
+    [NotifyPropertyChangedFor(nameof(CanSplitSelectedPart))]
+    [NotifyPropertyChangedFor(nameof(CanMergeSelectedPart))]
+    [NotifyCanExecuteChangedFor(nameof(ToggleModelMixerCommand))]
+    [NotifyCanExecuteChangedFor(nameof(CancelModelMixerCommand))]
+    [NotifyCanExecuteChangedFor(nameof(SplitSelectedPartCommand))]
+    [NotifyCanExecuteChangedFor(nameof(MergeSelectedPartCommand))]
+    [NotifyCanExecuteChangedFor(nameof(SaveCommand))]
+    [NotifyCanExecuteChangedFor(nameof(UndoCommand))]
+    [NotifyCanExecuteChangedFor(nameof(RedoCommand))]
+    [NotifyCanExecuteChangedFor(nameof(PublishModelRevisionCommand))]
+    private bool isApplyingModelMixer;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ModelMixerButtonLabel))]
+    [NotifyPropertyChangedFor(nameof(CanvasHelpText))]
+    [NotifyCanExecuteChangedFor(nameof(ToggleModelMixerCommand))]
+    private bool isModelMixerActive;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsSelectTool))]
@@ -251,7 +283,9 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
     [NotifyCanExecuteChangedFor(nameof(UndoCommand))]
     [NotifyCanExecuteChangedFor(nameof(RedoCommand))]
     [NotifyPropertyChangedFor(nameof(CanPublishRevision))]
+    [NotifyPropertyChangedFor(nameof(CanToggleModelMixer))]
     [NotifyCanExecuteChangedFor(nameof(PublishModelRevisionCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ToggleModelMixerCommand))]
     private bool isSaving;
 
     [ObservableProperty]
@@ -275,7 +309,9 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
     [NotifyCanExecuteChangedFor(nameof(UndoCommand))]
     [NotifyCanExecuteChangedFor(nameof(RedoCommand))]
     [NotifyPropertyChangedFor(nameof(CanPublishRevision))]
+    [NotifyPropertyChangedFor(nameof(CanToggleModelMixer))]
     [NotifyCanExecuteChangedFor(nameof(PublishModelRevisionCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ToggleModelMixerCommand))]
     private ModelDraftCheckpoint? pendingRecoveryCheckpoint;
 
     [ObservableProperty]
@@ -299,7 +335,9 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
     [NotifyCanExecuteChangedFor(nameof(UndoCommand))]
     [NotifyCanExecuteChangedFor(nameof(RedoCommand))]
     [NotifyPropertyChangedFor(nameof(CanPublishRevision))]
+    [NotifyPropertyChangedFor(nameof(CanToggleModelMixer))]
     [NotifyCanExecuteChangedFor(nameof(PublishModelRevisionCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ToggleModelMixerCommand))]
     private bool isCheckingRecovery;
 
     [ObservableProperty]
@@ -328,18 +366,20 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
     [NotifyPropertyChangedFor(nameof(CanMergeSelectedPart))]
     [NotifyPropertyChangedFor(nameof(CanEditSelectedPartName))]
     [NotifyPropertyChangedFor(nameof(PublishRevisionButtonLabel))]
+    [NotifyPropertyChangedFor(nameof(CanToggleModelMixer))]
     [NotifyCanExecuteChangedFor(nameof(PublishModelRevisionCommand))]
     [NotifyCanExecuteChangedFor(nameof(RestoreSourceTransformsCommand))]
     [NotifyCanExecuteChangedFor(nameof(MergeSelectedPartCommand))]
     [NotifyCanExecuteChangedFor(nameof(SaveCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ToggleModelMixerCommand))]
     private bool isPublishingRevision;
 
-    public bool CanSave => !IsSaving && !IsPublishingRevision && !IsCheckingRecovery && !HasPendingRecovery && !IsSplittingModelPart
+    public bool CanSave => !IsSaving && !IsPublishingRevision && !IsCheckingRecovery && !HasPendingRecovery && !IsSplittingModelPart && !IsApplyingModelMixer
         && !string.IsNullOrWhiteSpace(ModelName) && HasPendingChanges;
-    public bool CanEdit => !IsSaving && !IsPublishingRevision && !IsCheckingRecovery && !HasPendingRecovery && !IsSplittingModelPart;
+    public bool CanEdit => !IsSaving && !IsPublishingRevision && !IsCheckingRecovery && !HasPendingRecovery && !IsSplittingModelPart && !IsApplyingModelMixer;
     public bool CanEditSelectedPartName => CanEdit && IsModelWorkspace && SelectedModelPartId is not null;
     public bool CanPublishRevision => _publishModelRevisionService is not null && _savedDraft is not null
-        && _modelContent is not null && !IsPublishingRevision && !IsSaving && !IsCheckingRecovery && !HasPendingRecovery && !IsSplittingModelPart;
+        && _modelContent is not null && !IsPublishingRevision && !IsSaving && !IsCheckingRecovery && !HasPendingRecovery && !IsSplittingModelPart && !IsApplyingModelMixer;
     public string PublishRevisionButtonLabel => IsPublishingRevision ? "Publicando…" : "Publicar versão";
     public bool HasSaveError => !string.IsNullOrWhiteSpace(SaveError);
     public bool HasPublishError => !string.IsNullOrWhiteSpace(PublishError);
@@ -349,6 +389,9 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
     public bool HasImportStatus => !string.IsNullOrWhiteSpace(ImportStatus);
     public bool CanCancelImport => _modelImportCancellation is not null || (!IsImporting && ImportPreview is not null);
     public bool CanCancelSplitModelPart => IsSplittingModelPart && _partSplitCancellation is not null;
+    public bool CanToggleModelMixer => CanEdit && !IsImporting && IsModelWorkspace && _modelPartMixerService is not null;
+    public bool CanCancelModelMixer => IsApplyingModelMixer && _modelMixerCancellation is not null;
+    public string ModelMixerButtonLabel => IsModelMixerActive ? "Sair do Misturador" : "Misturador";
     public bool HasModelPartSplitError => !string.IsNullOrWhiteSpace(ModelPartSplitError);
     public bool HasModelPartSplitStatus => !string.IsNullOrWhiteSpace(ModelPartSplitStatus);
     public bool CanApplyChromaPreview => !IsImporting && ImportPreview is { IsPublished: false } && _modelSourceImportService is not null;
@@ -380,6 +423,9 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
         {
             if (!SetProperty(ref _isPoseWorkspace, value)) return;
             OnPropertyChanged(nameof(IsModelWorkspace));
+            OnPropertyChanged(nameof(CanToggleModelMixer));
+            ToggleModelMixerCommand.NotifyCanExecuteChanged();
+            if (!IsModelWorkspace) IsModelMixerActive = false;
             OnPropertyChanged(nameof(CanEditSelectedPartName));
             OnPropertyChanged(nameof(CanRenameSelectedPart));
             OnPropertyChanged(nameof(CanRestoreSourceTransforms));
@@ -422,6 +468,9 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
         {
             if (!SetProperty(ref _isAnimationWorkspace, value)) return;
             OnPropertyChanged(nameof(IsModelWorkspace));
+            OnPropertyChanged(nameof(CanToggleModelMixer));
+            ToggleModelMixerCommand.NotifyCanExecuteChanged();
+            if (!IsModelWorkspace) IsModelMixerActive = false;
             OnPropertyChanged(nameof(CanEditSelectedPartName));
             OnPropertyChanged(nameof(CanRenameSelectedPart));
             OnPropertyChanged(nameof(CanRestoreSourceTransforms));
@@ -455,6 +504,9 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
         {
             if (!SetProperty(ref _isHairWorkspace, value)) return;
             OnPropertyChanged(nameof(IsModelWorkspace));
+            OnPropertyChanged(nameof(CanToggleModelMixer));
+            ToggleModelMixerCommand.NotifyCanExecuteChanged();
+            if (!IsModelWorkspace) IsModelMixerActive = false;
             OnPropertyChanged(nameof(CanEditSelectedPartName));
             OnPropertyChanged(nameof(CanRenameSelectedPart));
             OnPropertyChanged(nameof(CanRestoreSourceTransforms));
@@ -491,7 +543,9 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
     public string AnimationPlaybackButtonLabel => IsAnimationPlaying ? "Pausar prévia" : "Reproduzir prévia";
     public string CanvasHeader => IsHairWorkspace ? "OFICINA DE CABELO" : IsPoseWorkspace ? "CANVAS DE POSE" : "CANVAS DE MONTAGEM";
     public string CanvasSubtitle => IsHairWorkspace ? "Prévia das peças processadas" : IsPoseWorkspace ? PoseModelRevisionLabel : "Prévia do modelo";
-    public string CanvasHelpText => IsHairWorkspace
+    public string CanvasHelpText => IsModelMixerActive && IsModelWorkspace
+        ? "Misturador ativo: arraste sobre a emenda entre peças sobrepostas · Desfazer reverte o traço"
+        : IsHairWorkspace
         ? "A imagem original permanece intacta; ajuste chroma e cores no painel lateral"
         : IsPoseWorkspace
             ? "Arraste uma peça selecionada para mover · use os controles para girar a pose"
@@ -762,6 +816,69 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
     [RelayCommand(CanExecute = nameof(CanCancelSplitModelPart))]
     private void CancelSplitModelPart() => _partSplitCancellation?.Cancel();
 
+    [RelayCommand(CanExecute = nameof(CanToggleModelMixer))]
+    private void ToggleModelMixer()
+    {
+        if (!CanToggleModelMixer) return;
+        IsModelMixerActive = !IsModelMixerActive;
+        ModelPartSplitError = null;
+        ModelPartSplitStatus = IsModelMixerActive
+            ? "Misturador ativo: pincele sobre uma emenda entre peças para suavizar a transparência."
+            : null;
+    }
+
+    [RelayCommand(CanExecute = nameof(CanCancelModelMixer))]
+    private void CancelModelMixer() => _modelMixerCancellation?.Cancel();
+
+    public async Task ApplyModelMixerStrokeAsync(IReadOnlyList<Point2D> scenePoints)
+    {
+        if (!IsModelMixerActive || !IsModelWorkspace || !CanEdit || _modelContent is null || _modelPartMixerService is null
+            || scenePoints.Count == 0) return;
+
+        var content = _modelContent;
+        var cancellation = new CancellationTokenSource();
+        _modelMixerCancellation = cancellation;
+        IsApplyingModelMixer = true;
+        ModelPartSplitError = null;
+        ModelPartSplitStatus = "Processando o traço do Misturador…";
+        try
+        {
+            var result = await _modelPartMixerService.ApplyStrokeAsync(content, scenePoints, cancellationToken: cancellation.Token);
+            if (result.IsFailure)
+            {
+                ModelPartSplitError = result.Error?.Message ?? "Não foi possível aplicar o Misturador.";
+                ModelPartSplitStatus = null;
+                return;
+            }
+            if (!ReferenceEquals(content, _modelContent))
+                throw new InvalidOperationException("O modelo mudou durante o traço do Misturador.");
+            if (result.Value.Changes.IsDefaultOrEmpty)
+            {
+                ModelPartSplitStatus = "Nenhuma emenda coberta por outra peça foi encontrada sob o pincel.";
+                return;
+            }
+            ExecuteModelCommand(new ModelPartMixerCommand(result.Value.Changes));
+            ModelPartSplitStatus = $"Traço aplicado a {result.Value.Changes.Length} peça(s). Use Desfazer para reverter.";
+        }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+        {
+            ModelPartSplitStatus = "Traço do Misturador cancelado; as peças originais foram mantidas.";
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or ArgumentException or IOException)
+        {
+            ModelPartSplitError = "O Misturador falhou; as imagens originais foram mantidas.";
+            ModelPartSplitStatus = null;
+            _ = _logger?.WriteAsync(DiagnosticEventCode.AssetImportFailed, DiagnosticOutcome.Failure,
+                exception is IOException ? DiagnosticErrorCode.StorageFailure : DiagnosticErrorCode.InvalidAsset);
+        }
+        finally
+        {
+            cancellation.Dispose();
+            if (ReferenceEquals(_modelMixerCancellation, cancellation)) _modelMixerCancellation = null;
+            IsApplyingModelMixer = false;
+        }
+    }
+
     [RelayCommand(CanExecute = nameof(CanMergeSelectedPart))]
     private async Task MergeSelectedPartAsync()
     {
@@ -1023,7 +1140,8 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
         IHairStyleRepository? hairStyleRepository = null,
         IThumbnailService? thumbnailService = null,
         ModelPartSplitService? modelPartSplitService = null,
-        ModelPartMergeService? modelPartMergeService = null)
+        ModelPartMergeService? modelPartMergeService = null,
+        ModelPartMixerService? modelPartMixerService = null)
     {
         _repository = repository ?? throw new ArgumentNullException(nameof(repository));
         _dataInitializer = dataInitializer ?? throw new ArgumentNullException(nameof(dataInitializer));
@@ -1038,6 +1156,7 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
         _thumbnailService = thumbnailService;
         _modelPartSplitService = modelPartSplitService;
         _modelPartMergeService = modelPartMergeService;
+        _modelPartMixerService = modelPartMixerService;
         _contentRepository = contentRepository;
         _sceneRenderer = sceneRenderer;
         _publishModelRevisionService = publishModelRevisionService;
@@ -3598,6 +3717,7 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
     {
         _isFabricatorDisposed = true;
         CancelPreviewSafely(Interlocked.Exchange(ref _partSplitCancellation, null));
+        CancelPreviewSafely(Interlocked.Exchange(ref _modelMixerCancellation, null));
         var thumbnailCancellation = Interlocked.Exchange(ref _partLayerThumbnailCancellation, null);
         CancelPreviewSafely(thumbnailCancellation);
         foreach (var thumbnail in _partLayerThumbnailCache.Values) thumbnail.Dispose();

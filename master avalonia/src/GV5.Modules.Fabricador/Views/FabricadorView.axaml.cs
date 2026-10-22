@@ -52,6 +52,7 @@ public partial class FabricadorView : UserControl
         ModelCanvas.RigAnchorDragStarted = OnRigAnchorDragStarted;
         ModelCanvas.RigAnchorDragMoved = OnRigAnchorDragMoved;
         ModelCanvas.RigAnchorDragCompleted = OnRigAnchorDragCompleted;
+        ModelCanvas.MixerStrokeCompleted = OnMixerStrokeCompleted;
         UpdateCanvasInteractionState();
         UpdatePreviewImage();
         UpdateRenderedModel();
@@ -86,7 +87,12 @@ public partial class FabricadorView : UserControl
             or nameof(FabricadorViewModel.CanEditRig)
             or nameof(FabricadorViewModel.RigJointItems)
             or nameof(FabricadorViewModel.SelectedRigJoint)
-            or nameof(FabricadorViewModel.IsPoseWorkspace))
+            or nameof(FabricadorViewModel.IsPoseWorkspace)
+            or nameof(FabricadorViewModel.IsAnimationWorkspace)
+            or nameof(FabricadorViewModel.IsHairWorkspace)
+            or nameof(FabricadorViewModel.IsModelMixerActive)
+            or nameof(FabricadorViewModel.IsApplyingModelMixer)
+            or nameof(FabricadorViewModel.CanEdit))
         {
             if (Dispatcher.UIThread.CheckAccess())
             {
@@ -298,6 +304,7 @@ public partial class FabricadorView : UserControl
             _viewModel.SelectedPartPivot,
             showTransformHandles: !_viewModel.IsPoseWorkspace);
         ModelCanvas.SetTool(_viewModel.ActiveTool);
+        ModelCanvas.SetMixerActive(_viewModel.IsModelWorkspace && _viewModel.IsModelMixerActive && _viewModel.CanEdit);
         ModelCanvas.SetRigJoints(
             _viewModel.RigJointItems.Select(item => item.Joint),
             _viewModel.SelectedRigJoint?.Joint.Id,
@@ -308,6 +315,10 @@ public partial class FabricadorView : UserControl
     private void OnCanvasTransformStarted(TransformGestureStart gesture) => _viewModel?.BeginModelPartTransform(gesture);
     private void OnCanvasTransformMoved(Point2D scenePoint) => _viewModel?.UpdateModelPartTransform(scenePoint);
     private void OnCanvasTransformCompleted() => _viewModel?.CompleteModelPartTransform();
+    private void OnMixerStrokeCompleted(IReadOnlyList<Point2D> scenePoints)
+    {
+        if (_viewModel is { } viewModel) _ = viewModel.ApplyModelMixerStrokeAsync(scenePoints);
+    }
     private void OnRigAnchorDragStarted(RigJointId jointId, bool isParentAnchor) => _viewModel?.BeginRigAnchorDrag(jointId, isParentAnchor);
     private SnapResult OnRigAnchorDragMoved(Point2D pointer, double snapThreshold) =>
         _viewModel?.UpdateRigAnchorDrag(pointer, snapThreshold) ?? new SnapResult(Point2D.Zero, null, null);

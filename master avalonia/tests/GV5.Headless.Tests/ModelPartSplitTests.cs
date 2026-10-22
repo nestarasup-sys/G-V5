@@ -14,6 +14,43 @@ namespace GV5.Headless.Tests;
 public sealed class ModelPartSplitTests
 {
     [Fact]
+    public async Task MixerSoftensOnlyTopOpaquePixelsAtAnOverlapAndCanBeUndone()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var store = new TestAssetStore();
+        var redAsset = await store.ImportAsync(new MemoryStream(CreateSolid(4, 4, SKColors.Red)), "image/png", cancellationToken);
+        var blueAsset = await store.ImportAsync(new MemoryStream(CreateSolid(4, 4, SKColors.Blue)), "image/png", cancellationToken);
+        var lowerId = ModelPartId.New();
+        var upperId = ModelPartId.New();
+        var crop = new Rect2D(0, 0, 4, 4);
+        var lower = new ModelPart(lowerId, "Base", blueAsset.Value.Id, crop, Transform2D.Identity,
+            new ModelPartSourceTransform(crop, Transform2D.Identity));
+        var upper = new ModelPart(upperId, "Topo", redAsset.Value.Id, crop, Transform2D.Identity,
+            new ModelPartSourceTransform(crop, Transform2D.Identity));
+        var content = ModelDraftContent.Restore(ModelDraftContent.CurrentSchemaVersion, ModelId.New(),
+            Revision.Initial, ModelSlot.From(1), redAsset.Value.Id, 4, 4,
+            [lower, upper], [lowerId, upperId]);
+
+        var result = await new ModelPartMixerService(store, new AssetImageDecoder())
+            .ApplyStrokeAsync(content, [new Point2D(2, 2)], 1, cancellationToken);
+
+        Assert.True(result.IsSuccess, result.Error?.Message);
+        var change = Assert.Single(result.Value.Changes);
+        Assert.Equal(upperId, change.Before.Id);
+        Assert.Equal(SKColors.Red, await ReadPixelAsync(store, change.After.AssetId, 0, 0));
+        var softened = await ReadPixelAsync(store, change.After.AssetId, 2, 2);
+        Assert.InRange(softened.Alpha, (byte)210, (byte)225);
+        Assert.Equal(SKColors.Blue, await ReadPixelAsync(store, lower.AssetId, 2, 2));
+
+        var command = new ModelPartMixerCommand(result.Value.Changes);
+        var mixed = command.Apply(content);
+        Assert.Equal(change.After.AssetId, mixed.Parts.Single(part => part.Id == upperId).AssetId);
+        var undone = command.Revert(mixed);
+        Assert.Equal(content.Parts, undone.Parts);
+        Assert.Equal(content.LayerOrder, undone.LayerOrder);
+    }
+
+    [Fact]
     public async Task SplitAndMergePreservePixelsAlphaRigAndUndoRedo()
     {
         var store = new TestAssetStore();
@@ -114,6 +151,15 @@ public sealed class ModelPartSplitTests
             bitmap.SetPixel(4, y, new SKColor(255, 255, 255, 0));
             bitmap.SetPixel(5, y, SKColors.Magenta);
         }
+        using var image = SKImage.FromBitmap(bitmap);
+        using var encoded = image.Encode(SKEncodedImageFormat.Png, 100)!;
+        return encoded.ToArray();
+    }
+
+    private static byte[] CreateSolid(int width, int height, SKColor color)
+    {
+        using var bitmap = new SKBitmap(new SKImageInfo(width, height, SKColorType.Rgba8888, SKAlphaType.Unpremul));
+        bitmap.Erase(color);
         using var image = SKImage.FromBitmap(bitmap);
         using var encoded = image.Encode(SKEncodedImageFormat.Png, 100)!;
         return encoded.ToArray();

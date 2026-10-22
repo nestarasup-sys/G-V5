@@ -147,7 +147,7 @@
                         ClipToBounds="True">
                     <Grid RowDefinitions="32,*,29">
                         <Border Grid.Row="0" Background="#FBFAFB" BorderBrush="#F0EBEF" BorderThickness="0,0,0,1" Padding="11,0">
-                            <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+                            <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto" ColumnSpacing="8">
                                 <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
                                     <Ellipse Width="6" Height="6" Fill="#E786A6" />
                                     <TextBlock Text="{Binding CanvasHeader}" FontSize="12" FontWeight="Bold" LetterSpacing="0.8" Foreground="#A198A2" />
@@ -163,6 +163,8 @@
                                         Background="#F6F0F4"
                                         BorderBrush="#E6D8E1"
                                         Foreground="#795168" />
+                                <Button Grid.Column="3" Content="{Binding ModelMixerButtonLabel}" Command="{Binding ToggleModelMixerCommand}" IsEnabled="{Binding CanToggleModelMixer}" IsVisible="{Binding IsModelWorkspace}" Padding="8,3" FontSize="11" Background="#FFF0F5" BorderBrush="#EFCBD8" Foreground="#A84368" ToolTip.Tip="Pincele uma emenda entre peças sobrepostas para suavizar a transparência. Use Desfazer para reverter o traço." />
+                                <Button Grid.Column="4" Content="Cancelar traço" Command="{Binding CancelModelMixerCommand}" IsEnabled="{Binding CanCancelModelMixer}" IsVisible="{Binding CanCancelModelMixer}" Padding="8,3" FontSize="11" />
                             </Grid>
                         </Border>
                         <views:FabricatorCanvas x:Name="ModelCanvas" Grid.Row="1" MinHeight="360" ShowGrid="{Binding CanvasGridEnabled}" />

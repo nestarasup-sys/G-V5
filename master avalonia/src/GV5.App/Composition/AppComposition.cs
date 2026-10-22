@@ -88,6 +88,7 @@ internal static class AppComposition
         services.AddSingleton<ModelSourceImportService>();
         services.AddSingleton<ModelPartSplitService>();
         services.AddSingleton<ModelPartMergeService>();
+        services.AddSingleton<ModelPartMixerService>();
         services.AddSingleton<HairSheetImportService>();
         services.AddSingleton<AssetBitmapCache>();
         services.AddSingleton<AvaloniaRenderedFrameAdapter>();

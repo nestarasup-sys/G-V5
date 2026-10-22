@@ -42,6 +42,7 @@ public partial class FabricatorCanvas : UserControl
     public Action<RigJointId, bool>? RigAnchorDragStarted { get; set; }
     public Func<Point2D, double, SnapResult>? RigAnchorDragMoved { get; set; }
     public Action? RigAnchorDragCompleted { get; set; }
+    public Action<IReadOnlyList<Point2D>>? MixerStrokeCompleted { get; set; }
     private RigJoint[] _rigJoints = [];
     private RigJointId? _selectedRigJointId;
     private bool _canEditRig;
@@ -49,6 +50,8 @@ public partial class FabricatorCanvas : UserControl
     private (RigJointId JointId, bool IsParent)? _activeRigAnchor;
     private SnapResult _activeRigSnap;
     private bool _isPanning;
+    private List<Point2D>? _mixerStrokePoints;
+    public bool MixerActive { get; private set; }
     private ModelPartTransformKind? _activeTransformKind;
     private Point _pointerStart;
     private Vector _panStart;
@@ -68,7 +71,13 @@ public partial class FabricatorCanvas : UserControl
         }
 
         CurrentTool = tool;
-        Cursor = new Cursor(tool == FabricatorTool.Pan ? StandardCursorType.Hand : StandardCursorType.Arrow);
+        Cursor = new Cursor(MixerActive ? StandardCursorType.Cross : tool == FabricatorTool.Pan ? StandardCursorType.Hand : StandardCursorType.Arrow);
+    }
+
+    public void SetMixerActive(bool active)
+    {
+        MixerActive = active;
+        Cursor = new Cursor(active ? StandardCursorType.Cross : CurrentTool == FabricatorTool.Pan ? StandardCursorType.Hand : StandardCursorType.Arrow);
     }
 
     public void SetSelection(Rect2D? bounds, Point2D? rotationPivot = null, bool showTransformHandles = true)
@@ -107,6 +116,14 @@ public partial class FabricatorCanvas : UserControl
             return;
         }
 
+        if (MixerActive && properties.IsLeftButtonPressed)
+        {
+            _mixerStrokePoints = [ScreenToScene(point)];
+            e.Pointer.Capture(Viewport);
+            e.Handled = true;
+            return;
+        }
+
         if (properties.IsLeftButtonPressed && CurrentTool == FabricatorTool.Select)
         {
             var scenePoint = ScreenToScene(point);
@@ -138,6 +155,16 @@ public partial class FabricatorCanvas : UserControl
 
     private void OnPointerMoved(object? sender, PointerEventArgs e)
     {
+        if (_mixerStrokePoints is { } stroke)
+        {
+            var scenePoint = ScreenToScene(e.GetPosition(Viewport));
+            var previous = stroke[^1];
+            if (Math.Abs(previous.X - scenePoint.X) + Math.Abs(previous.Y - scenePoint.Y) >= 2)
+                stroke.Add(scenePoint);
+            e.Handled = true;
+            return;
+        }
+
         if (_activeRigAnchor is not null)
         {
             var scale = GetBaseScale() * ZoomFactor;
@@ -168,6 +195,15 @@ public partial class FabricatorCanvas : UserControl
 
     private void OnPointerReleased(object? sender, PointerReleasedEventArgs e)
     {
+        if (_mixerStrokePoints is { } stroke)
+        {
+            _mixerStrokePoints = null;
+            e.Pointer.Capture(null);
+            MixerStrokeCompleted?.Invoke(stroke);
+            e.Handled = true;
+            return;
+        }
+
         if (_activeRigAnchor is not null)
         {
             _activeRigAnchor = null;
