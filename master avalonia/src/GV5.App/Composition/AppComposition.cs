@@ -78,6 +78,7 @@ internal static class AppComposition
         services.AddSingleton<IDataPlatformBackupService, DatabaseBackupService>();
         services.AddSingleton<AssetImageDecoder>();
         services.AddSingleton<ChromaCropProcessor>();
+        services.AddSingleton<FaceSheetProcessor>();
         services.AddSingleton<HairSheetProcessor>();
         services.AddSingleton<HairRoleTintProcessor>();
         services.AddSingleton<ModelSheetSegmentationProcessor>();
@@ -88,6 +89,7 @@ internal static class AppComposition
                 MaximumDimension: 16_384,
                 MaximumPixels: 32_000_000)));
         services.AddSingleton<ModelSourceImportService>();
+        services.AddSingleton<FaceSheetImportService>();
         services.AddSingleton<ModelPartSplitService>();
         services.AddSingleton<ModelPartMergeService>();
         services.AddSingleton<ModelPartMixerService>();

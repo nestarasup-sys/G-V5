@@ -187,6 +187,9 @@ public sealed class FaceSheetProcessor
                 var rowBounds = FindVisibleBounds(bitmap, faceRows[row].X, faceRows[row].Y, faceRows[row].Width,
                     faceRows[row].Height, cancellationToken);
                 if (rowBounds.IsEmpty) throw new InvalidDataException($"Facial sheet row {row} is empty.");
+                if (kind == FaceSheetKind.Eyebrows
+                    && !HasSeparators(bitmap, rowBounds, count: 2, vertical: false, cancellationToken))
+                    throw new InvalidDataException("A folha de sobrancelhas precisa separar visualmente o lado esquerdo do direito.");
                 var faceColumns = SplitByBands(bitmap, rowBounds, 2, vertical: false, cancellationToken);
                 var type = kind == FaceSheetKind.Eyebrows ? FaceSheetPartKind.Eyebrow : row switch
                 {
