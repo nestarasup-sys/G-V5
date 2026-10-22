@@ -24,11 +24,15 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
     private readonly FaceCatalogPreviewRenderer? _previewRenderer;
     private PublishedModelRevision? _pinnedModel;
     private FaceCatalogDraft? _savedCatalog;
+    private FaceCatalogDraft? _previewCatalogOverride;
     private readonly Dictionary<FaceId, FaceCatalogDraft> _catalogsById = [];
     private readonly Dictionary<FaceId, PublishedFaceCatalogRevision> _latestPublications = [];
     private int _disposed;
     private CancellationTokenSource? _composedPreviewCancellation;
     private long _composedPreviewVersion;
+    private FaceComponentId? _gestureComponentId;
+    private Transform2D? _gestureStartTransform;
+    private bool _gestureHasMoved;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasComposedPreviewError))]
@@ -147,6 +151,8 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
     public string ComposedPreviewPlaceholder => IsRenderingComposedPreview
         ? "Compondo prévia facial…"
         : "A prévia aparece ao abrir uma revisão publicada do modelo.";
+    public double ComposedPreviewModelScale => _pinnedModel is null ? 1
+        : ModelDraftRenderSceneBuilder.GetPreviewSize(_pinnedModel.Content, 512).Scale;
     public bool HasStatus => !string.IsNullOrWhiteSpace(Status);
     public bool CanChangeSheetKind => !HasPreview && !IsBusy;
     public bool HasMultipleCatalogs => CatalogChoices.Count > 1;
@@ -215,6 +221,9 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
     partial void OnSelectedCatalogChanged(FaceCatalogChoiceItem? value)
     {
         _savedCatalog = value is not null && _catalogsById.TryGetValue(value.Id, out var catalog) ? catalog : null;
+        _previewCatalogOverride = null;
+        _gestureComponentId = null;
+        _gestureStartTransform = null;
         LatestPublication = value is not null && _latestPublications.TryGetValue(value.Id, out var publication)
             ? publication : null;
         RefreshComponentChoices();
@@ -247,6 +256,7 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
         previousComposedFrame?.Dispose();
         _pinnedModel = model;
         _savedCatalog = null;
+        _previewCatalogOverride = null;
         _catalogsById.Clear();
         _latestPublications.Clear();
         CatalogChoices.Clear();
@@ -262,6 +272,67 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
         SelectFaceSheetCommand.NotifyCanExecuteChanged();
         ConfirmImportCommand.NotifyCanExecuteChanged();
         await RefreshComposedPreviewAsync();
+    }
+
+    public bool BeginComponentMoveGesture()
+    {
+        if (IsBusy || _savedCatalog is null || SelectedComponent is null
+            || !TryReadComponentTransform(out var transform)) return false;
+        _gestureComponentId = SelectedComponent.Id;
+        _gestureStartTransform = transform;
+        _gestureHasMoved = false;
+        return true;
+    }
+
+    /// <summary>Updates the selected component's preview position using model-space deltas.</summary>
+    public bool UpdateComponentMoveGesture(double deltaX, double deltaY)
+    {
+        if (_gestureComponentId is not { } componentId || _gestureStartTransform is not { } start
+            || _savedCatalog is null || SelectedComponent?.Id != componentId
+            || !double.IsFinite(deltaX) || !double.IsFinite(deltaY)) return false;
+        var transform = new Transform2D(new Point2D(start.Translation.X + deltaX, start.Translation.Y + deltaY),
+            start.Scale, start.RotationRadians, start.Pivot, start.FlipX, start.FlipY);
+        if (Math.Abs(transform.Translation.X) > 100_000 || Math.Abs(transform.Translation.Y) > 100_000) return false;
+
+        ComponentX = FormatNumber(transform.Translation.X);
+        ComponentY = FormatNumber(transform.Translation.Y);
+        _gestureHasMoved = deltaX != 0 || deltaY != 0;
+        _previewCatalogOverride = _savedCatalog.WithTransform(componentId, transform);
+        _ = RefreshComposedPreviewAsync();
+        return true;
+    }
+
+    public async Task<bool> CompleteComponentMoveGestureAsync(CancellationToken cancellationToken = default)
+    {
+        if (_gestureComponentId is null || _gestureStartTransform is null) return false;
+        var hasMoved = _gestureHasMoved;
+        _gestureComponentId = null;
+        _gestureStartTransform = null;
+        _gestureHasMoved = false;
+        _previewCatalogOverride = null;
+        if (!hasMoved) return true;
+        if (!CanApplyComponentTransform)
+        {
+            _ = RefreshComposedPreviewAsync();
+            return false;
+        }
+        await ApplyComponentTransformAsync(cancellationToken);
+        return !HasError;
+    }
+
+    public void CancelComponentMoveGesture()
+    {
+        if (_gestureComponentId is null || _gestureStartTransform is not { } start) return;
+        _gestureComponentId = null;
+        _gestureStartTransform = null;
+        _gestureHasMoved = false;
+        _previewCatalogOverride = null;
+        ComponentX = FormatNumber(start.Translation.X);
+        ComponentY = FormatNumber(start.Translation.Y);
+        ComponentScaleX = FormatNumber(start.Scale.X);
+        ComponentScaleY = FormatNumber(start.Scale.Y);
+        ComponentRotation = FormatNumber(start.RotationRadians * 180d / Math.PI);
+        _ = RefreshComposedPreviewAsync();
     }
 
     public async Task LoadCatalogAsync(CancellationToken cancellationToken = default)
@@ -600,7 +671,8 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
         IsRenderingComposedPreview = true;
         try
         {
-            var frame = await _previewRenderer.RenderAsync(_pinnedModel, _savedCatalog, 512, request.Token);
+            var catalog = _previewCatalogOverride ?? _savedCatalog;
+            var frame = await _previewRenderer.RenderAsync(_pinnedModel, catalog, 512, request.Token);
             if (request.IsCancellationRequested || requestVersion != Volatile.Read(ref _composedPreviewVersion))
             {
                 frame.Dispose();

@@ -112,6 +112,49 @@ public sealed class FaceWorkspaceViewModelTests
     }
 
     [Fact]
+    public async Task ComponentMoveGesture_RendersPreviewValuesAndSavesOnceOnReleaseOrRestoresOnCancel()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"gv5-face-move-{Guid.NewGuid():N}");
+        var repository = new MemoryFaceCatalogRepository();
+        var viewModel = new FaceWorkspaceViewModel(new RecordingFilePicker(CreateSeparatedBrows()),
+            CreateImportService(root), repository, new MemoryAssetStore());
+        try
+        {
+            await viewModel.OpenModelRevisionAsync(CreatePublishedModel("Modelo com arrasto facial"));
+            await viewModel.LoadCatalogAsync(TestContext.Current.CancellationToken);
+            await viewModel.SelectFaceSheetCommand.ExecuteAsync(null);
+            await viewModel.ConfirmImportCommand.ExecuteAsync(null);
+
+            var initial = Assert.Single(repository.Catalogs.Values);
+            var selectedId = viewModel.SelectedComponent!.Id;
+            var originalTransform = viewModel.SelectedComponent.Transform;
+            Assert.True(viewModel.BeginComponentMoveGesture());
+            Assert.True(viewModel.UpdateComponentMoveGesture(11, -7));
+            Assert.Equal(originalTransform.Translation.X + 11, double.Parse(viewModel.ComponentX, CultureInfo.CurrentCulture), 3);
+            Assert.Equal(originalTransform.Translation.Y - 7, double.Parse(viewModel.ComponentY, CultureInfo.CurrentCulture), 3);
+
+            Assert.True(await viewModel.CompleteComponentMoveGestureAsync(TestContext.Current.CancellationToken));
+            var saved = repository.Catalogs[initial.Id];
+            Assert.Equal(Revision.From(2), saved.Revision);
+            var moved = Assert.Single(saved.Components, component => component.Id == selectedId);
+            Assert.Equal(originalTransform.Translation.X + 11, moved.Transform.Translation.X, 3);
+            Assert.Equal(originalTransform.Translation.Y - 7, moved.Transform.Translation.Y, 3);
+
+            Assert.True(viewModel.BeginComponentMoveGesture());
+            Assert.True(viewModel.UpdateComponentMoveGesture(-30, 40));
+            viewModel.CancelComponentMoveGesture();
+            Assert.Equal(Revision.From(2), repository.Catalogs[initial.Id].Revision);
+            Assert.Equal(moved.Transform.Translation.X, double.Parse(viewModel.ComponentX, CultureInfo.CurrentCulture), 3);
+            Assert.Equal(moved.Transform.Translation.Y, double.Parse(viewModel.ComponentY, CultureInfo.CurrentCulture), 3);
+        }
+        finally
+        {
+            await viewModel.DisposeAsync();
+            if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task ComponentTransform_ConflictReloadsLatestCatalogAndPreservesPendingValuesForRetry()
     {
         var root = Path.Combine(Path.GetTempPath(), $"gv5-face-transform-conflict-{Guid.NewGuid():N}");

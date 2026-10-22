@@ -5,6 +5,7 @@ using Avalonia.Controls;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform;
 using Avalonia.Threading;
+using Avalonia.Input;
 using GV5.Assets.Decoding;
 using GV5.Assets.Processing;
 using GV5.Modules.Fabricador.ViewModels;
@@ -18,6 +19,8 @@ public partial class FaceWorkspacePanel : UserControl
     private FaceWorkspaceViewModel? _viewModel;
     private readonly ObservableCollection<FaceSheetPreviewTile> _previewTiles = [];
     private WriteableBitmap? _composedPreviewBitmap;
+    private bool _isDraggingSelectedComponent;
+    private Point _componentDragStart;
 
     public FaceWorkspacePanel()
     {
@@ -87,6 +90,55 @@ public partial class FaceWorkspacePanel : UserControl
         ComposedFacePreviewImage.Source = null;
         _composedPreviewBitmap?.Dispose();
         _composedPreviewBitmap = null;
+    }
+
+    private void OnComposedPreviewPointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (!e.GetCurrentPoint(ComposedFacePreviewImage).Properties.IsLeftButtonPressed
+            || _viewModel?.ComposedPreviewFrame is null
+            || !_viewModel.BeginComponentMoveGesture()) return;
+        _componentDragStart = e.GetPosition(ComposedFacePreviewImage);
+        _isDraggingSelectedComponent = true;
+        e.Pointer.Capture(ComposedFacePreviewImage);
+        e.Handled = true;
+    }
+
+    private void OnComposedPreviewPointerMoved(object? sender, PointerEventArgs e)
+    {
+        if (!_isDraggingSelectedComponent || _viewModel is not { } viewModel
+            || viewModel.ComposedPreviewFrame is not { } frame) return;
+        var displayScale = GetPreviewDisplayScale(frame);
+        var modelScale = viewModel.ComposedPreviewModelScale;
+        if (displayScale <= 0 || modelScale <= 0) return;
+        var position = e.GetPosition(ComposedFacePreviewImage);
+        var deltaX = (position.X - _componentDragStart.X) / displayScale / modelScale;
+        var deltaY = -((position.Y - _componentDragStart.Y) / displayScale / modelScale);
+        viewModel.UpdateComponentMoveGesture(deltaX, deltaY);
+        e.Handled = true;
+    }
+
+    private async void OnComposedPreviewPointerReleased(object? sender, PointerReleasedEventArgs e)
+    {
+        if (!_isDraggingSelectedComponent) return;
+        _isDraggingSelectedComponent = false;
+        e.Pointer.Capture(null);
+        e.Handled = true;
+        if (_viewModel is { } viewModel)
+            await viewModel.CompleteComponentMoveGestureAsync();
+    }
+
+    private void OnComposedPreviewPointerCaptureLost(object? sender, PointerCaptureLostEventArgs e)
+    {
+        if (!_isDraggingSelectedComponent) return;
+        _isDraggingSelectedComponent = false;
+        _viewModel?.CancelComponentMoveGesture();
+    }
+
+    private double GetPreviewDisplayScale(RenderedFrame frame)
+    {
+        var bounds = ComposedFacePreviewImage.Bounds;
+        return bounds.Width <= 0 || bounds.Height <= 0 ? 0
+            : Math.Min(bounds.Width / frame.Width, bounds.Height / frame.Height);
     }
 
     private static string GetPieceLabel(FaceSheetPartKind kind, FaceSheetSide? side, int index)
