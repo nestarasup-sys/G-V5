@@ -33,11 +33,13 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
     private readonly IOperationCorrelationContext? _correlationContext;
     private readonly IFilePicker? _filePicker;
     private readonly ModelSourceImportService? _modelSourceImportService;
+    private readonly ModelPartSplitService? _modelPartSplitService;
     private readonly IAssetStore? _assetStore;
     private readonly IThumbnailService? _thumbnailService;
     private readonly Dictionary<AssetId, Bitmap> _partLayerThumbnailCache = [];
     private readonly Queue<(AssetId Id, Bitmap Bitmap)> _partLayerThumbnailOrder = [];
     private CancellationTokenSource? _partLayerThumbnailCancellation;
+    private CancellationTokenSource? _partSplitCancellation;
     private bool _isPublishingPartLayerThumbnailUpdate;
     private const int MaximumPartLayerThumbnails = 24;
     private readonly IModelDraftContentRepository? _contentRepository;
@@ -193,6 +195,29 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
     private string selectedPartNameDraft = string.Empty;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanEdit))]
+    [NotifyPropertyChangedFor(nameof(CanSave))]
+    [NotifyPropertyChangedFor(nameof(CanUndo))]
+    [NotifyPropertyChangedFor(nameof(CanRedo))]
+    [NotifyPropertyChangedFor(nameof(CanPublishRevision))]
+    [NotifyPropertyChangedFor(nameof(CanSplitSelectedPart))]
+    [NotifyCanExecuteChangedFor(nameof(SplitSelectedPartCommand))]
+    [NotifyCanExecuteChangedFor(nameof(CancelSplitModelPartCommand))]
+    [NotifyCanExecuteChangedFor(nameof(SaveCommand))]
+    [NotifyCanExecuteChangedFor(nameof(UndoCommand))]
+    [NotifyCanExecuteChangedFor(nameof(RedoCommand))]
+    [NotifyCanExecuteChangedFor(nameof(PublishModelRevisionCommand))]
+    private bool isSplittingModelPart;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasModelPartSplitError))]
+    private string? modelPartSplitError;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasModelPartSplitStatus))]
+    private string? modelPartSplitStatus;
+
+    [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsSelectTool))]
     [NotifyPropertyChangedFor(nameof(IsPanTool))]
     private FabricatorTool activeTool = FabricatorTool.Select;
@@ -296,12 +321,12 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
     [NotifyCanExecuteChangedFor(nameof(SaveCommand))]
     private bool isPublishingRevision;
 
-    public bool CanSave => !IsSaving && !IsPublishingRevision && !IsCheckingRecovery && !HasPendingRecovery
+    public bool CanSave => !IsSaving && !IsPublishingRevision && !IsCheckingRecovery && !HasPendingRecovery && !IsSplittingModelPart
         && !string.IsNullOrWhiteSpace(ModelName) && HasPendingChanges;
-    public bool CanEdit => !IsSaving && !IsPublishingRevision && !IsCheckingRecovery && !HasPendingRecovery;
+    public bool CanEdit => !IsSaving && !IsPublishingRevision && !IsCheckingRecovery && !HasPendingRecovery && !IsSplittingModelPart;
     public bool CanEditSelectedPartName => CanEdit && IsModelWorkspace && SelectedModelPartId is not null;
     public bool CanPublishRevision => _publishModelRevisionService is not null && _savedDraft is not null
-        && _modelContent is not null && !IsPublishingRevision && !IsSaving && !IsCheckingRecovery && !HasPendingRecovery;
+        && _modelContent is not null && !IsPublishingRevision && !IsSaving && !IsCheckingRecovery && !HasPendingRecovery && !IsSplittingModelPart;
     public string PublishRevisionButtonLabel => IsPublishingRevision ? "Publicando…" : "Publicar versão";
     public bool HasSaveError => !string.IsNullOrWhiteSpace(SaveError);
     public bool HasPublishError => !string.IsNullOrWhiteSpace(PublishError);
@@ -310,6 +335,9 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
     public bool HasImportError => !string.IsNullOrWhiteSpace(ImportError);
     public bool HasImportStatus => !string.IsNullOrWhiteSpace(ImportStatus);
     public bool CanCancelImport => _modelImportCancellation is not null || (!IsImporting && ImportPreview is not null);
+    public bool CanCancelSplitModelPart => IsSplittingModelPart && _partSplitCancellation is not null;
+    public bool HasModelPartSplitError => !string.IsNullOrWhiteSpace(ModelPartSplitError);
+    public bool HasModelPartSplitStatus => !string.IsNullOrWhiteSpace(ModelPartSplitStatus);
     public bool CanApplyChromaPreview => !IsImporting && ImportPreview is { IsPublished: false } && _modelSourceImportService is not null;
     public string ChromaToleranceLabel => $"Tolerância do chroma: {ChromaTolerance}";
     public bool IsChromaPreviewStale => ImportPreview is { HasChromaPreview: true } preview
@@ -596,6 +624,13 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
         && !string.IsNullOrWhiteSpace(SelectedPartNameDraft)
         && SelectedPartNameDraft.Trim().Length <= 120
         && !string.Equals(part.Name, SelectedPartNameDraft.Trim(), StringComparison.Ordinal);
+    public bool CanSplitSelectedPart => CanEdit && IsModelWorkspace && !IsSplittingModelPart
+        && _assetStore is not null && _modelPartSplitService is not null && _modelContent is not null
+        && SelectedModelPartId is { } splitId
+        && _modelContent.Parts.FirstOrDefault(part => part.Id == splitId) is { } splitPart
+        && splitPart.SourceCrop.Width >= 2
+        && Math.Abs(splitPart.SourceCrop.Width - splitPart.SourceTransform.Crop.Width) < 0.0001
+        && Math.Abs(splitPart.SourceCrop.Height - splitPart.SourceTransform.Crop.Height) < 0.0001;
     public bool CanRestoreSourceTransforms => CanEdit && IsModelWorkspace && _modelContent is not null
         && _modelContent.Parts.Any(part => part.Transform != part.SourceTransform.Transform);
     public IReadOnlyList<ModelPartLayerItem> PosePartItems => IsPoseWorkspace ? PartLayers : [];
@@ -634,6 +669,98 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
             .Select(part => new ModelPartTransformChange(part.Id, part.Transform, part.SourceTransform.Transform))
             .ToImmutableArray();
         ExecuteModelCommand(new ModelPartRestoreSourceTransformsCommand(changes));
+    }
+
+    [RelayCommand(CanExecute = nameof(CanSplitSelectedPart))]
+    private async Task SplitSelectedPartAsync()
+    {
+        if (!CanSplitSelectedPart || _modelContent is null || _modelPartSplitService is null
+            || SelectedModelPartId is not { } partId)
+            return;
+
+        var original = _modelContent.Parts.FirstOrDefault(part => part.Id == partId);
+        if (original is null) return;
+
+        var splitCancellation = new CancellationTokenSource();
+        _partSplitCancellation = splitCancellation;
+        var cancellationToken = splitCancellation.Token;
+        IsSplittingModelPart = true;
+        ModelPartSplitError = null;
+        ModelPartSplitStatus = "Dividindo a peça em duas partes…";
+        try
+        {
+            var split = await _modelPartSplitService.SplitVerticallyAsync(original, cancellationToken);
+            if (split.IsFailure)
+            {
+                ModelPartSplitError = split.Error?.Message ?? "Não foi possível dividir a peça.";
+                ModelPartSplitStatus = null;
+                return;
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+            if (_modelContent is null || !_modelContent.Parts.Any(part => part.Id == original.Id))
+                throw new InvalidOperationException("A peça selecionada mudou durante a divisão.");
+
+            var assets = split.Value;
+            var sourceCrop = original.SourceTransform.Crop;
+            var leftCrop = new Rect2D(sourceCrop.X, sourceCrop.Y, assets.LeftWidth, assets.Height);
+            var rightSourceCrop = new Rect2D(sourceCrop.X + assets.LeftWidth, sourceCrop.Y, assets.RightWidth, assets.Height);
+            var left = new ModelPart(original.Id, original.Name, assets.Left.Id,
+                new Rect2D(0, 0, assets.LeftWidth, assets.Height), original.Transform,
+                new ModelPartSourceTransform(leftCrop, original.SourceTransform.Transform), original.IsVisible);
+            var rightId = ModelPartId.New();
+            var rightName = BuildSplitPartName(original.Name, _modelContent.Parts.Select(part => part.Name));
+            var right = new ModelPart(rightId, rightName, assets.Right.Id,
+                new Rect2D(0, 0, assets.RightWidth, assets.Height),
+                OffsetTransformForLocalCrop(original.Transform, assets.LeftWidth),
+                new ModelPartSourceTransform(rightSourceCrop,
+                    OffsetTransformForLocalCrop(original.SourceTransform.Transform, assets.LeftWidth)), original.IsVisible);
+
+            ExecuteModelCommand(new ModelPartSplitCommand(original, left, right));
+            ModelPartSplitStatus = $"Peça dividida em “{original.Name}” e “{rightName}”. Desfazer restaura a peça original.";
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            ModelPartSplitStatus = "Divisão cancelada.";
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or ArgumentException or IOException)
+        {
+            ModelPartSplitError = "A divisão falhou; a peça original foi mantida. Tente novamente.";
+            ModelPartSplitStatus = null;
+            _ = _logger?.WriteAsync(DiagnosticEventCode.AssetImportFailed, DiagnosticOutcome.Failure,
+                exception is IOException ? DiagnosticErrorCode.StorageFailure : DiagnosticErrorCode.InvalidAsset);
+        }
+        finally
+        {
+            splitCancellation.Dispose();
+            if (ReferenceEquals(_partSplitCancellation, splitCancellation)) _partSplitCancellation = null;
+            IsSplittingModelPart = false;
+        }
+    }
+
+    [RelayCommand(CanExecute = nameof(CanCancelSplitModelPart))]
+    private void CancelSplitModelPart() => _partSplitCancellation?.Cancel();
+
+    private static string BuildSplitPartName(string originalName, IEnumerable<string> existingNames)
+    {
+        var occupied = existingNames.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        for (var suffix = 2; suffix < int.MaxValue; suffix++)
+        {
+            var suffixText = $" ({suffix})";
+            var baseName = originalName[..Math.Min(originalName.Length, 120 - suffixText.Length)];
+            var candidate = baseName + suffixText;
+            if (!occupied.Contains(candidate)) return candidate;
+        }
+        throw new InvalidOperationException("Não foi possível criar um nome exclusivo para a nova peça.");
+    }
+
+    private static Transform2D OffsetTransformForLocalCrop(Transform2D transform, double localX)
+    {
+        var origin = transform.Apply(Point2D.Zero);
+        var offset = transform.Apply(new Point2D(localX, 0));
+        var delta = new Point2D(offset.X - origin.X, offset.Y - origin.Y);
+        return new Transform2D(new Point2D(transform.Translation.X + delta.X, transform.Translation.Y + delta.Y),
+            transform.Scale, transform.RotationRadians, transform.Pivot, transform.FlipX, transform.FlipY);
     }
     public Rect2D? SelectedPartBounds => ActiveCanvasContent is not { } activeContent || SelectedModelPartId is not { } id
         ? null
@@ -784,7 +911,8 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
         HairSheetImportService? hairSheetImportService = null,
         HairRoleTintProcessor? hairRoleTintProcessor = null,
         IHairStyleRepository? hairStyleRepository = null,
-        IThumbnailService? thumbnailService = null)
+        IThumbnailService? thumbnailService = null,
+        ModelPartSplitService? modelPartSplitService = null)
     {
         _repository = repository ?? throw new ArgumentNullException(nameof(repository));
         _dataInitializer = dataInitializer ?? throw new ArgumentNullException(nameof(dataInitializer));
@@ -797,6 +925,7 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
             hairStyleRepository, assetStore);
         _assetStore = assetStore;
         _thumbnailService = thumbnailService;
+        _modelPartSplitService = modelPartSplitService;
         _contentRepository = contentRepository;
         _sceneRenderer = sceneRenderer;
         _publishModelRevisionService = publishModelRevisionService;
@@ -3354,6 +3483,7 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
     public void Dispose()
     {
         _isFabricatorDisposed = true;
+        CancelPreviewSafely(Interlocked.Exchange(ref _partSplitCancellation, null));
         var thumbnailCancellation = Interlocked.Exchange(ref _partLayerThumbnailCancellation, null);
         CancelPreviewSafely(thumbnailCancellation);
         foreach (var thumbnail in _partLayerThumbnailCache.Values) thumbnail.Dispose();
