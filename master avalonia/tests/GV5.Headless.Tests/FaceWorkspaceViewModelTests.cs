@@ -1,4 +1,5 @@
 using GV5.Application.Contracts;
+using System.Globalization;
 using GV5.Assets.Decoding;
 using GV5.Assets.Import;
 using GV5.Assets.Processing;
@@ -14,6 +15,56 @@ namespace GV5.Headless.Tests;
 
 public sealed class FaceWorkspaceViewModelTests
 {
+    [Fact]
+    public async Task ComponentTransform_RequiresValidValuesAndPersistsAsOneCatalogRevision()
+    {
+        var previousCulture = CultureInfo.CurrentCulture;
+        CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("pt-BR");
+        var root = Path.Combine(Path.GetTempPath(), $"gv5-face-transform-{Guid.NewGuid():N}");
+        var repository = new MemoryFaceCatalogRepository();
+        var viewModel = new FaceWorkspaceViewModel(new RecordingFilePicker(CreateSeparatedBrows()), CreateImportService(root),
+            repository, new MemoryAssetStore());
+        try
+        {
+            await viewModel.OpenModelRevisionAsync(CreatePublishedModel("Modelo de transform"));
+            await viewModel.LoadCatalogAsync(TestContext.Current.CancellationToken);
+            await viewModel.SelectFaceSheetCommand.ExecuteAsync(null);
+            await viewModel.ConfirmImportCommand.ExecuteAsync(null);
+
+            Assert.Equal(2, viewModel.ComponentChoices.Count);
+            Assert.NotNull(viewModel.SelectedComponent);
+            Assert.True(viewModel.CanApplyComponentTransform);
+            var selectedId = viewModel.SelectedComponent!.Id;
+            viewModel.ComponentX = "41,5";
+            viewModel.ComponentY = "63";
+            viewModel.ComponentScaleX = "2,25";
+            viewModel.ComponentScaleY = "1,75";
+            viewModel.ComponentRotation = "30";
+            await viewModel.ApplyComponentTransformCommand.ExecuteAsync(null);
+
+            var catalog = Assert.Single(repository.Catalogs.Values);
+            Assert.Equal(Revision.From(2), catalog.Revision);
+            var updated = Assert.Single(catalog.Components, component => component.Id == selectedId);
+            Assert.Equal(41.5, updated.Transform.Translation.X, 6);
+            Assert.Equal(63, updated.Transform.Translation.Y, 6);
+            Assert.Equal(2.25, updated.Transform.Scale.X, 6);
+            Assert.Equal(1.75, updated.Transform.Scale.Y, 6);
+            Assert.Equal(Math.PI / 6, updated.Transform.RotationRadians, 6);
+            Assert.Equal(catalog.Revision, viewModel.SelectedCatalog!.Revision);
+
+            viewModel.ComponentScaleX = "21";
+            Assert.False(viewModel.CanApplyComponentTransform);
+            Assert.False(viewModel.ApplyComponentTransformCommand.CanExecute(null));
+            Assert.Equal(Revision.From(2), repository.Catalogs[catalog.Id].Revision);
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = previousCulture;
+            await viewModel.DisposeAsync();
+            if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+        }
+    }
+
     [Fact]
     public async Task ConfirmImport_PersistsBothSidesAndReimportReplacesRatherThanDuplicatesThem()
     {

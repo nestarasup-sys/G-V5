@@ -74,6 +74,27 @@
                           PlaceholderText="Selecione o catálogo" />
             </StackPanel>
             <TextBlock Text="{Binding CatalogStatus}" FontSize="11" Foreground="#706872" TextWrapping="Wrap" />
+            <Border IsVisible="{Binding HasSavedCatalog}" Background="#FBFAFB" BorderBrush="#EEE9ED"
+                    BorderThickness="1" CornerRadius="8" Padding="9">
+                <StackPanel Spacing="7">
+                    <TextBlock Text="Ajustar encaixe do componente" FontWeight="Bold" Foreground="#342E36" />
+                    <ComboBox ItemsSource="{Binding ComponentChoices}"
+                              SelectedItem="{Binding SelectedComponent, Mode=TwoWay}"
+                              DisplayMemberBinding="{Binding Label}" />
+                    <Grid ColumnDefinitions="*,*" ColumnSpacing="6" RowDefinitions="Auto,Auto,Auto" RowSpacing="5">
+                        <TextBox Text="{Binding ComponentX, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" PlaceholderText="Posição X" />
+                        <TextBox Grid.Column="1" Text="{Binding ComponentY, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" PlaceholderText="Posição Y" />
+                        <TextBox Grid.Row="1" Text="{Binding ComponentScaleX, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" PlaceholderText="Escala X" />
+                        <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding ComponentScaleY, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" PlaceholderText="Escala Y" />
+                        <TextBox Grid.Row="2" Text="{Binding ComponentRotation, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" PlaceholderText="Rotação em graus" />
+                        <TextBlock Grid.Row="2" Grid.Column="1" Text="Escala maior que 0 e até 20 · rotação em graus"
+                                   FontSize="9" Foreground="#958B96" VerticalAlignment="Center" TextWrapping="Wrap" />
+                    </Grid>
+                    <Button Content="Salvar encaixe" Command="{Binding ApplyComponentTransformCommand}"
+                            IsEnabled="{Binding CanApplyComponentTransform}" HorizontalAlignment="Left"
+                            Padding="10,6" Background="#FFF5F8" BorderBrush="#EFCBD8" Foreground="#A84368" />
+                </StackPanel>
+            </Border>
             <Button Content="Salvar par no catálogo facial" Command="{Binding ConfirmImportCommand}"
                     IsEnabled="{Binding CanConfirmImport}" IsVisible="{Binding HasPreview}"
                     Padding="11,7" Background="#C74677" BorderBrush="#C74677" Foreground="#FFFFFF" />

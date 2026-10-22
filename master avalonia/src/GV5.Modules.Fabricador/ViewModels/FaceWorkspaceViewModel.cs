@@ -1,6 +1,7 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using System.Collections.ObjectModel;
+using System.Globalization;
 using GV5.Application.Contracts;
 using GV5.Assets.Processing;
 using GV5.Core.Identity;
@@ -63,6 +64,36 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
     private PublishedFaceCatalogRevision? latestPublication;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanApplyComponentTransform))]
+    [NotifyCanExecuteChangedFor(nameof(ApplyComponentTransformCommand))]
+    private FaceComponentChoiceItem? selectedComponent;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanApplyComponentTransform))]
+    [NotifyCanExecuteChangedFor(nameof(ApplyComponentTransformCommand))]
+    private string componentX = "";
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanApplyComponentTransform))]
+    [NotifyCanExecuteChangedFor(nameof(ApplyComponentTransformCommand))]
+    private string componentY = "";
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanApplyComponentTransform))]
+    [NotifyCanExecuteChangedFor(nameof(ApplyComponentTransformCommand))]
+    private string componentScaleX = "";
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanApplyComponentTransform))]
+    [NotifyCanExecuteChangedFor(nameof(ApplyComponentTransformCommand))]
+    private string componentScaleY = "";
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanApplyComponentTransform))]
+    [NotifyCanExecuteChangedFor(nameof(ApplyComponentTransformCommand))]
+    private string componentRotation = "";
+
+    [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanSelectSheet))]
     [NotifyPropertyChangedFor(nameof(CanConfirmImport))]
     [NotifyPropertyChangedFor(nameof(CanChangeSheetKind))]
@@ -70,6 +101,8 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
     [NotifyCanExecuteChangedFor(nameof(SelectFaceSheetCommand))]
     [NotifyCanExecuteChangedFor(nameof(ConfirmImportCommand))]
     [NotifyCanExecuteChangedFor(nameof(PublishCatalogCommand))]
+    [NotifyPropertyChangedFor(nameof(CanApplyComponentTransform))]
+    [NotifyCanExecuteChangedFor(nameof(ApplyComponentTransformCommand))]
     private bool isBusy;
 
     public FaceWorkspaceViewModel(IFilePicker? filePicker, FaceSheetImportService? importService,
@@ -80,6 +113,7 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
         _catalogRepository = catalogRepository;
         _assetStore = assetStore;
         CatalogChoices = [];
+        ComponentChoices = [];
     }
 
     public bool HasPreview => Preview is not null;
@@ -90,6 +124,7 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
     public bool HasSavedCatalog => _savedCatalog is not null;
     public bool IsNoseSheetSelected => SelectedSheetKind.Kind == FaceSheetKind.Nose;
     public ObservableCollection<FaceCatalogChoiceItem> CatalogChoices { get; }
+    public ObservableCollection<FaceComponentChoiceItem> ComponentChoices { get; }
     public IReadOnlyList<FaceSheetKindChoiceItem> SheetKinds => FaceSheetKindChoices;
     public IReadOnlyList<FaceNoseSheetModeChoiceItem> NoseSheetModes => FaceNoseSheetModeChoices;
     public string SelectedSheetLabel => SelectedSheetKind.Label;
@@ -101,6 +136,8 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
     public bool CanPublishCatalog => !IsBusy && _savedCatalog is { Components.Length: > 0 }
         && _catalogRepository is not null
         && LatestPublication?.DraftRevision != _savedCatalog.Revision;
+    public bool CanApplyComponentTransform => !IsBusy && _catalogRepository is not null && _savedCatalog is not null
+        && SelectedComponent is not null && TryReadComponentTransform(out _);
     public string ModelRevisionLabel => _pinnedModel is null
         ? "Abra uma revisão publicada do modelo para editar o rosto."
         : HeadPart is null
@@ -151,11 +188,22 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
         _savedCatalog = value is not null && _catalogsById.TryGetValue(value.Id, out var catalog) ? catalog : null;
         LatestPublication = value is not null && _latestPublications.TryGetValue(value.Id, out var publication)
             ? publication : null;
+        RefreshComponentChoices();
         OnPropertyChanged(nameof(CatalogStatus));
         OnPropertyChanged(nameof(HasSavedCatalog));
         OnPropertyChanged(nameof(CanConfirmImport));
         ConfirmImportCommand.NotifyCanExecuteChanged();
         PublishCatalogCommand.NotifyCanExecuteChanged();
+    }
+
+    partial void OnSelectedComponentChanged(FaceComponentChoiceItem? value)
+    {
+        if (value is null) return;
+        ComponentX = FormatNumber(value.Transform.Translation.X);
+        ComponentY = FormatNumber(value.Transform.Translation.Y);
+        ComponentScaleX = FormatNumber(value.Transform.Scale.X);
+        ComponentScaleY = FormatNumber(value.Transform.Scale.Y);
+        ComponentRotation = FormatNumber(value.Transform.RotationRadians * 180d / Math.PI);
     }
 
     public async Task OpenModelRevisionAsync(PublishedModelRevision model)
@@ -385,6 +433,90 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
         finally { IsBusy = false; }
     }
 
+    [RelayCommand(CanExecute = nameof(CanApplyComponentTransform))]
+    private async Task ApplyComponentTransformAsync(CancellationToken cancellationToken)
+    {
+        if (_catalogRepository is null || _savedCatalog is null || SelectedComponent is null
+            || !TryReadComponentTransform(out var transform)) return;
+        Error = null;
+        Status = null;
+        IsBusy = true;
+        try
+        {
+            var updated = _savedCatalog.WithTransform(SelectedComponent.Id, transform);
+            var saved = await _catalogRepository.SaveAsync(updated, _savedCatalog.Revision, cancellationToken);
+            if (saved.IsFailure)
+            {
+                Error = saved.Error!.Message;
+                return;
+            }
+            _savedCatalog = saved.Value;
+            _catalogsById[saved.Value.Id] = saved.Value;
+            var choiceIndex = -1;
+            for (var index = 0; index < CatalogChoices.Count; index++)
+                if (CatalogChoices[index].Id == saved.Value.Id) { choiceIndex = index; break; }
+            var catalogChoice = new FaceCatalogChoiceItem(saved.Value.Id, saved.Value.Name, saved.Value.Revision);
+            if (choiceIndex >= 0) CatalogChoices[choiceIndex] = catalogChoice;
+            SelectedCatalog = catalogChoice;
+            Status = $"Encaixe de {SelectedComponent.Label.ToLowerInvariant()} salvo no catálogo facial.";
+        }
+        catch (OperationCanceledException) { Status = "Ajuste cancelado; o catálogo anterior foi preservado."; }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
+        { Error = "Confira posição, escala e rotação do componente facial."; }
+        finally { IsBusy = false; }
+    }
+
+    private void RefreshComponentChoices()
+    {
+        var previousId = SelectedComponent?.Id;
+        ComponentChoices.Clear();
+        SelectedComponent = null;
+        if (_savedCatalog is null) return;
+        foreach (var component in _savedCatalog.Components.OrderBy(item => item.ZOrder).ThenBy(item => item.Name, StringComparer.CurrentCultureIgnoreCase))
+            ComponentChoices.Add(new FaceComponentChoiceItem(component.Id, CreateComponentLabel(component), component.Transform));
+        SelectedComponent = ComponentChoices.FirstOrDefault(choice => choice.Id == previousId) ?? ComponentChoices.FirstOrDefault();
+        OnPropertyChanged(nameof(CanApplyComponentTransform));
+        ApplyComponentTransformCommand.NotifyCanExecuteChanged();
+    }
+
+    private bool TryReadComponentTransform(out Transform2D transform)
+    {
+        transform = default;
+        if (SelectedComponent is null || !TryNumber(ComponentX, out var x) || !TryNumber(ComponentY, out var y)
+            || !TryNumber(ComponentScaleX, out var scaleX) || !TryNumber(ComponentScaleY, out var scaleY)
+            || !TryNumber(ComponentRotation, out var rotationDegrees)
+            || Math.Abs(x) > 100_000 || Math.Abs(y) > 100_000
+            || scaleX is <= 0 or > 20 || scaleY is <= 0 or > 20 || Math.Abs(rotationDegrees) > 3600) return false;
+        try
+        {
+            var original = SelectedComponent.Transform;
+            transform = new Transform2D(new Point2D(x, y), new Point2D(scaleX, scaleY),
+                rotationDegrees * Math.PI / 180d, original.Pivot, original.FlipX, original.FlipY);
+            return true;
+        }
+        catch (ArgumentOutOfRangeException) { return false; }
+    }
+
+    private static bool TryNumber(string value, out double number) =>
+        double.TryParse(value, NumberStyles.Float, CultureInfo.CurrentCulture, out number) && double.IsFinite(number);
+
+    private static string FormatNumber(double value) => value.ToString("0.###", CultureInfo.CurrentCulture);
+
+    private static string CreateComponentLabel(FaceComponent component)
+    {
+        var type = component.Kind switch
+        {
+            FaceComponentKind.Eye => "Olho", FaceComponentKind.Pupil => "Pupila",
+            FaceComponentKind.ClosedEye => "Olho fechado", FaceComponentKind.Eyebrow => "Sobrancelha",
+            FaceComponentKind.Nose => "Nariz", FaceComponentKind.Mouth => "Boca",
+            FaceComponentKind.EyeHighlight => "Brilho do olho", FaceComponentKind.Blush => "Blush",
+            FaceComponentKind.FacialShadow => "Sombra facial", FaceComponentKind.HeadExtra => "Extra de cabeça",
+            _ => "Componente"
+        };
+        var side = component.Side switch { FaceComponentSide.Left => " esquerdo", FaceComponentSide.Right => " direito", _ => "" };
+        return $"{type}{side} · {component.Name}";
+    }
+
     private async Task DisposePreviewAsync()
     {
         var previous = Preview;
@@ -497,3 +629,5 @@ public sealed record FaceCatalogChoiceItem(FaceId Id, string Name, Revision Revi
 {
     public string Label => $"{Name} · rev. {Revision.Value}";
 }
+
+public sealed record FaceComponentChoiceItem(FaceComponentId Id, string Label, Transform2D Transform);
