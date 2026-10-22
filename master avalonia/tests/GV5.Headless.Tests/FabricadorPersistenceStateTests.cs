@@ -15,6 +15,7 @@ using GV5.Geometry;
 using GV5.Modules.Fabricador.ViewModels;
 using GV5.Modules.Fabricador.Views;
 using GV5.Modules.Fabricador.Import;
+using GV5.Rendering;
 using SkiaSharp;
 using Xunit;
 
@@ -249,6 +250,97 @@ public sealed class FabricadorPersistenceStateTests
                 Assert.Equal(SKColors.Blue, bitmap.GetPixel(2, 0));
                 Assert.Equal(0, bitmap.GetPixel(3, 0).Alpha);
                 Assert.Equal(3L, await ScalarAsync(finalDatabase,
+                    "SELECT COUNT(*) FROM asset_references WHERE owner_type='fabricator.model-draft' AND owner_id=$id;",
+                    cancellationToken, ("$id", modelId.ToString())));
+            }
+        }
+        finally { DeleteTempRoot(root); }
+    }
+
+    [Fact]
+    public async Task ModelMixerStrokePersistsOnlyChangedLayerAfterSqliteReopen()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var root = NewTempRoot();
+        var paths = new AppDataPaths(root);
+        var modelId = ModelId.New();
+        var lowerId = ModelPartId.New();
+        var upperId = ModelPartId.New();
+        AssetId redAssetId;
+        AssetId blueAssetId;
+        AssetId changedAssetId;
+        try
+        {
+            using (var database = new SqliteDatabase(paths))
+            {
+                var initializer = CreateFullMigrationRunner(database);
+                await initializer.InitializeAsync(cancellationToken);
+                var assetStore = CreateAssetStore(paths, database, initializer);
+                var red = await assetStore.ImportAsync(new MemoryStream(CreateSolidPng(64, 64, SKColors.Red), writable: false),
+                    "image/png", cancellationToken);
+                var blue = await assetStore.ImportAsync(new MemoryStream(CreateSolidPng(64, 64, SKColors.Blue), writable: false),
+                    "image/png", cancellationToken);
+                Assert.True(red.IsSuccess, red.Error?.Message);
+                Assert.True(blue.IsSuccess, blue.Error?.Message);
+                redAssetId = red.Value.Id;
+                blueAssetId = blue.Value.Id;
+                var drafts = new SqliteModelDraftRepository(database);
+                Assert.True((await drafts.CreateInSlotAsync(ModelDraft.Create(modelId, "Misturador persistente", 100),
+                    ModelSlot.From(1), cancellationToken)).IsSuccess);
+                var crop = new Rect2D(0, 0, 64, 64);
+                var lower = new ModelPart(lowerId, "Base", blueAssetId, crop, Transform2D.Identity,
+                    new ModelPartSourceTransform(crop, Transform2D.Identity));
+                var upper = new ModelPart(upperId, "Topo", redAssetId, crop, Transform2D.Identity,
+                    new ModelPartSourceTransform(crop, Transform2D.Identity));
+                var content = ModelDraftContent.Restore(ModelDraftContent.CurrentSchemaVersion, modelId,
+                    Revision.Initial, ModelSlot.From(1), redAssetId, 64, 64, [lower, upper], [lowerId, upperId]);
+                var contentRepository = new SqliteModelDraftContentRepository(database);
+                Assert.True((await contentRepository.SaveAsync(content, expectedRevision: null, cancellationToken)).IsSuccess);
+
+                var viewModel = new FabricadorViewModel(drafts, initializer, assetStore: assetStore,
+                    contentRepository: contentRepository, modelPartMixerService: new ModelPartMixerService(assetStore,
+                        new AssetImageDecoder()), modelSlotRepository: new SqliteModelSlotRepository(database),
+                    autosaveDelay: TimeSpan.FromHours(1));
+                try
+                {
+                    await viewModel.ModelSlotsTask;
+                    await viewModel.SelectModelSlotCommand.ExecuteAsync(1);
+                    Assert.True(viewModel.CanToggleModelMixer);
+                    viewModel.ToggleModelMixerCommand.Execute(null);
+                    Assert.True(viewModel.IsModelMixerActive);
+                    var previewSize = ModelDraftRenderSceneBuilder.GetPreviewSize(content);
+                    await viewModel.ApplyModelMixerStrokeAsync([new Point2D(previewSize.Width / 2d, previewSize.Height / 2d)]);
+                    Assert.Contains("Traço aplicado", viewModel.ModelPartSplitStatus, StringComparison.OrdinalIgnoreCase);
+                    Assert.True(await viewModel.FlushPendingChangesAsync(cancellationToken));
+                    var mixed = await contentRepository.GetAsync(modelId, cancellationToken);
+                    Assert.True(mixed.IsSuccess, mixed.Error?.Message);
+                    Assert.Equal(Revision.From(2), mixed.Value.Revision);
+                    Assert.Equal(blueAssetId, mixed.Value.Parts.Single(part => part.Id == lowerId).AssetId);
+                    changedAssetId = mixed.Value.Parts.Single(part => part.Id == upperId).AssetId;
+                    Assert.NotEqual(redAssetId, changedAssetId);
+                }
+                finally { viewModel.Dispose(); }
+            }
+
+            using (var reopenedDatabase = new SqliteDatabase(paths))
+            {
+                var initializer = CreateFullMigrationRunner(reopenedDatabase);
+                await initializer.InitializeAsync(cancellationToken);
+                var reopened = await new SqliteModelDraftContentRepository(reopenedDatabase).GetAsync(modelId, cancellationToken);
+                Assert.True(reopened.IsSuccess, reopened.Error?.Message);
+                Assert.Equal(Revision.From(2), reopened.Value.Revision);
+                Assert.Equal(blueAssetId, reopened.Value.Parts.Single(part => part.Id == lowerId).AssetId);
+                Assert.Equal(changedAssetId, reopened.Value.Parts.Single(part => part.Id == upperId).AssetId);
+                var assetStore = CreateAssetStore(paths, reopenedDatabase, initializer);
+                var changedPixels = await ReadPixelsAsync(assetStore, changedAssetId, cancellationToken);
+                using var changedBitmap = SKBitmap.Decode(changedPixels)!;
+                Assert.Equal((64, 64), (changedBitmap.Width, changedBitmap.Height));
+                Assert.InRange(changedBitmap.GetPixel(32, 32).Alpha, (byte)175, (byte)200);
+                Assert.True(changedBitmap.GetPixel(32, 32).Alpha < 255);
+                var bluePixels = await ReadPixelsAsync(assetStore, blueAssetId, cancellationToken);
+                using var blueBitmap = SKBitmap.Decode(bluePixels)!;
+                Assert.Equal(SKColors.Blue, blueBitmap.GetPixel(32, 32));
+                Assert.Equal(3L, await ScalarAsync(reopenedDatabase,
                     "SELECT COUNT(*) FROM asset_references WHERE owner_type='fabricator.model-draft' AND owner_id=$id;",
                     cancellationToken, ("$id", modelId.ToString())));
             }
@@ -500,6 +592,15 @@ public sealed class FabricadorPersistenceStateTests
             bitmap.SetPixel(4, y, new SKColor(255, 255, 255, 0));
             bitmap.SetPixel(5, y, SKColors.Magenta);
         }
+        using var image = SKImage.FromBitmap(bitmap);
+        using var encoded = image.Encode(SKEncodedImageFormat.Png, 100);
+        return encoded!.ToArray();
+    }
+
+    private static byte[] CreateSolidPng(int width, int height, SKColor color)
+    {
+        using var bitmap = new SKBitmap(new SKImageInfo(width, height, SKColorType.Rgba8888, SKAlphaType.Unpremul));
+        bitmap.Erase(color);
         using var image = SKImage.FromBitmap(bitmap);
         using var encoded = image.Encode(SKEncodedImageFormat.Png, 100);
         return encoded!.ToArray();
