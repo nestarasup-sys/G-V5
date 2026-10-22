@@ -45,6 +45,7 @@ public sealed class FabricadorImportPreviewUiTests
         ModelPartId persistedHiddenPartId = default;
         ModelPartId persistedRenamedPartId = default;
         string persistedRenamedPartName = "";
+        Transform2D[] persistedInitialPublicationTransforms = [];
         ModelPartId[] persistedLayerOrder = [];
         ModelDraftContent savedContent;
 
@@ -161,6 +162,9 @@ public sealed class FabricadorImportPreviewUiTests
                     Assert.True(beforePoseResult.IsSuccess, beforePoseResult.Error?.Message);
                     var modelBeforePose = beforePoseResult.Value;
                     await viewModel.PublishModelRevisionCommand.ExecuteAsync(null);
+                    var initialPublishedContent = await revisionRepository.GetAsync(loadedContent.Value.ModelId, Revision.Initial, cancellationToken);
+                    Assert.True(initialPublishedContent.IsSuccess, initialPublishedContent.Error?.Message);
+                    persistedInitialPublicationTransforms = initialPublishedContent.Value.Content.Parts.Select(part => part.Transform).ToArray();
                     Assert.Null(viewModel.PublishError);
                     await viewModel.TogglePoseWorkspaceCommand.ExecuteAsync(null);
                     Assert.True(viewModel.IsPoseWorkspace);
@@ -367,6 +371,9 @@ public sealed class FabricadorImportPreviewUiTests
                     Assert.True(viewModel.CanRenameSelectedPart);
                     viewModel.RenameSelectedPartCommand.Execute(null);
                     Assert.Equal(persistedRenamedPartName, viewModel.PartLayers.Single(item => item.Id == persistedRenamedPartId).Name);
+                    Assert.True(viewModel.CanRestoreSourceTransforms);
+                    viewModel.RestoreSourceTransformsCommand.Execute(null);
+                    Assert.False(viewModel.CanRestoreSourceTransforms);
                     Assert.True(await viewModel.FlushPendingChangesAsync(cancellationToken));
                     Assert.Equal(PersistenceState.Saved, viewModel.SaveState);
                 }
@@ -408,7 +415,7 @@ public sealed class FabricadorImportPreviewUiTests
                 Assert.Equal(RigJointMode.Fixed, savedJoint.Mode);
                 Assert.Equal(new Point2D(31.5, 18), savedJoint.ParentAnchor);
                 Assert.Equal(savedJoint.ParentAnchor, savedJoint.ChildAnchor);
-                Assert.Single(savedContent.Parts.Where(part => part.SourceTransform.Transform != part.Transform));
+                Assert.All(savedContent.Parts, part => Assert.Equal(part.SourceTransform.Transform, part.Transform));
                 foreach (var assetId in savedContent.Parts.Select(part => part.AssetId).Append(savedContent.SourceAssetId!.Value))
                 {
                     var metadata = await reopenedStore.GetMetadataAsync(assetId, cancellationToken);
@@ -427,7 +434,7 @@ public sealed class FabricadorImportPreviewUiTests
                 Assert.Equal(persistedRenamedPartName, published.Value.Content.Parts.Single(part => part.Id == persistedRenamedPartId).Name);
                 var persistedPublication = await revisions.GetAsync(modelId, Revision.Initial, cancellationToken);
                 Assert.True(persistedPublication.IsSuccess, persistedPublication.Error?.Message);
-                Assert.Equal(savedContent.Parts.Select(part => part.Transform), persistedPublication.Value.Content.Parts.Select(part => part.Transform));
+                Assert.Equal(persistedInitialPublicationTransforms, persistedPublication.Value.Content.Parts.Select(part => part.Transform));
                 Assert.Equal(savedContent.RigJoints, persistedPublication.Value.Content.RigJoints);
                 var reopenedPoses = new SqlitePoseRepository(reopenedDatabase);
                 var pose = await reopenedPoses.GetAsync(savedPoseId, cancellationToken);
@@ -767,6 +774,22 @@ public sealed class FabricadorImportPreviewUiTests
             Assert.Equal(bounds, viewModel.SelectedPartBounds!.Value);
             Assert.Equal(parts.Select(partItem => partItem.Id).Reverse(), viewModel.PartLayers.Select(item => item.Id));
             Assert.All(viewModel.PartLayers, item => Assert.True(item.IsVisible));
+            var restoreBounds = viewModel.SelectedPartBounds!.Value;
+            var restoreStart = new Point2D(restoreBounds.X + restoreBounds.Width / 2, restoreBounds.Y + restoreBounds.Height / 2);
+            viewModel.BeginModelPartTransform(new TransformGestureStart(ModelPartTransformKind.Move, restoreStart));
+            viewModel.UpdateModelPartTransform(restoreStart + new Point2D(5, 3));
+            viewModel.CompleteModelPartTransform();
+            var movedPartBounds = viewModel.SelectedPartBounds!.Value;
+            Assert.True(viewModel.CanRestoreSourceTransforms);
+            viewModel.RestoreSourceTransformsCommand.Execute(null);
+            Assert.Equal(bounds, viewModel.SelectedPartBounds!.Value);
+            Assert.False(viewModel.CanRestoreSourceTransforms);
+            viewModel.UndoCommand.Execute(null);
+            Assert.Equal(movedPartBounds, viewModel.SelectedPartBounds!.Value);
+            Assert.True(viewModel.CanRestoreSourceTransforms);
+            viewModel.UndoCommand.Execute(null);
+            Assert.Equal(bounds, viewModel.SelectedPartBounds!.Value);
+            Assert.False(viewModel.CanRestoreSourceTransforms);
             viewModel.TogglePartVisibilityCommand.Execute(parts[0].Id);
             Assert.Equal(0, viewModel.RedoCount);
             viewModel.UndoCommand.Execute(null);

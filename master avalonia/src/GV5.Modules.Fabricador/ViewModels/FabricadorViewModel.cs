@@ -172,8 +172,10 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(SelectedPartName))]
     [NotifyPropertyChangedFor(nameof(CanRenameSelectedPart))]
+    [NotifyPropertyChangedFor(nameof(CanRestoreSourceTransforms))]
     [NotifyPropertyChangedFor(nameof(CanEditSelectedPartName))]
     [NotifyCanExecuteChangedFor(nameof(RenameSelectedPartCommand))]
+    [NotifyCanExecuteChangedFor(nameof(RestoreSourceTransformsCommand))]
     [NotifyPropertyChangedFor(nameof(SelectedPartBounds))]
     [NotifyPropertyChangedFor(nameof(SelectedPartPivot))]
     [NotifyPropertyChangedFor(nameof(PartLayers))]
@@ -204,8 +206,10 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
     [NotifyPropertyChangedFor(nameof(CanEdit))]
     [NotifyPropertyChangedFor(nameof(CanEditRig))]
     [NotifyPropertyChangedFor(nameof(CanRenameSelectedPart))]
+    [NotifyPropertyChangedFor(nameof(CanRestoreSourceTransforms))]
     [NotifyPropertyChangedFor(nameof(CanEditSelectedPartName))]
     [NotifyCanExecuteChangedFor(nameof(RenameSelectedPartCommand))]
+    [NotifyCanExecuteChangedFor(nameof(RestoreSourceTransformsCommand))]
     [NotifyPropertyChangedFor(nameof(PartLayers))]
     [NotifyCanExecuteChangedFor(nameof(SaveCommand))]
     [NotifyCanExecuteChangedFor(nameof(RestoreCheckpointCommand))]
@@ -224,8 +228,10 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
     [NotifyPropertyChangedFor(nameof(CanEdit))]
     [NotifyPropertyChangedFor(nameof(CanEditRig))]
     [NotifyPropertyChangedFor(nameof(CanRenameSelectedPart))]
+    [NotifyPropertyChangedFor(nameof(CanRestoreSourceTransforms))]
     [NotifyPropertyChangedFor(nameof(CanEditSelectedPartName))]
     [NotifyCanExecuteChangedFor(nameof(RenameSelectedPartCommand))]
+    [NotifyCanExecuteChangedFor(nameof(RestoreSourceTransformsCommand))]
     [NotifyPropertyChangedFor(nameof(PartLayers))]
     [NotifyCanExecuteChangedFor(nameof(SaveCommand))]
     [NotifyCanExecuteChangedFor(nameof(RestoreCheckpointCommand))]
@@ -247,6 +253,7 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
     [NotifyPropertyChangedFor(nameof(CanEdit))]
     [NotifyPropertyChangedFor(nameof(CanEditRig))]
     [NotifyPropertyChangedFor(nameof(CanRenameSelectedPart))]
+    [NotifyPropertyChangedFor(nameof(CanRestoreSourceTransforms))]
     [NotifyPropertyChangedFor(nameof(CanEditSelectedPartName))]
     [NotifyCanExecuteChangedFor(nameof(RenameSelectedPartCommand))]
     [NotifyPropertyChangedFor(nameof(PartLayers))]
@@ -281,9 +288,11 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
     [NotifyPropertyChangedFor(nameof(CanEdit))]
     [NotifyPropertyChangedFor(nameof(CanEditRig))]
     [NotifyPropertyChangedFor(nameof(CanRenameSelectedPart))]
+    [NotifyPropertyChangedFor(nameof(CanRestoreSourceTransforms))]
     [NotifyPropertyChangedFor(nameof(CanEditSelectedPartName))]
     [NotifyPropertyChangedFor(nameof(PublishRevisionButtonLabel))]
     [NotifyCanExecuteChangedFor(nameof(PublishModelRevisionCommand))]
+    [NotifyCanExecuteChangedFor(nameof(RestoreSourceTransformsCommand))]
     [NotifyCanExecuteChangedFor(nameof(SaveCommand))]
     private bool isPublishingRevision;
 
@@ -332,7 +341,9 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
             OnPropertyChanged(nameof(IsModelWorkspace));
             OnPropertyChanged(nameof(CanEditSelectedPartName));
             OnPropertyChanged(nameof(CanRenameSelectedPart));
+            OnPropertyChanged(nameof(CanRestoreSourceTransforms));
             RenameSelectedPartCommand.NotifyCanExecuteChanged();
+            RestoreSourceTransformsCommand.NotifyCanExecuteChanged();
             OnPropertyChanged(nameof(IsEditorWorkspace));
             OnPropertyChanged(nameof(CanvasHeader));
             OnPropertyChanged(nameof(CanvasSubtitle));
@@ -370,7 +381,9 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
             OnPropertyChanged(nameof(IsModelWorkspace));
             OnPropertyChanged(nameof(CanEditSelectedPartName));
             OnPropertyChanged(nameof(CanRenameSelectedPart));
+            OnPropertyChanged(nameof(CanRestoreSourceTransforms));
             RenameSelectedPartCommand.NotifyCanExecuteChanged();
+            RestoreSourceTransformsCommand.NotifyCanExecuteChanged();
             OnPropertyChanged(nameof(IsEditorWorkspace));
             OnPropertyChanged(nameof(HasModelParts));
             OnPropertyChanged(nameof(PartLayers));
@@ -399,7 +412,9 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
             OnPropertyChanged(nameof(IsModelWorkspace));
             OnPropertyChanged(nameof(CanEditSelectedPartName));
             OnPropertyChanged(nameof(CanRenameSelectedPart));
+            OnPropertyChanged(nameof(CanRestoreSourceTransforms));
             RenameSelectedPartCommand.NotifyCanExecuteChanged();
+            RestoreSourceTransformsCommand.NotifyCanExecuteChanged();
             OnPropertyChanged(nameof(IsEditorWorkspace));
             OnPropertyChanged(nameof(CanvasHeader));
             OnPropertyChanged(nameof(CanvasSubtitle));
@@ -581,6 +596,8 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
         && !string.IsNullOrWhiteSpace(SelectedPartNameDraft)
         && SelectedPartNameDraft.Trim().Length <= 120
         && !string.Equals(part.Name, SelectedPartNameDraft.Trim(), StringComparison.Ordinal);
+    public bool CanRestoreSourceTransforms => CanEdit && IsModelWorkspace && _modelContent is not null
+        && _modelContent.Parts.Any(part => part.Transform != part.SourceTransform.Transform);
     public IReadOnlyList<ModelPartLayerItem> PosePartItems => IsPoseWorkspace ? PartLayers : [];
     public string SelectedPartName => ActiveCanvasContent is not { } activeContent || SelectedModelPartId is not { } id
         ? "Nenhuma peça selecionada"
@@ -605,6 +622,18 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
 
         var part = _modelContent.Parts.First(candidate => candidate.Id == id);
         ExecuteModelCommand(new ModelPartRenameCommand(id, part.Name, SelectedPartNameDraft.Trim()));
+    }
+
+    [RelayCommand(CanExecute = nameof(CanRestoreSourceTransforms))]
+    private void RestoreSourceTransforms()
+    {
+        if (!CanRestoreSourceTransforms || _modelContent is null) return;
+
+        var changes = _modelContent.Parts
+            .Where(part => part.Transform != part.SourceTransform.Transform)
+            .Select(part => new ModelPartTransformChange(part.Id, part.Transform, part.SourceTransform.Transform))
+            .ToImmutableArray();
+        ExecuteModelCommand(new ModelPartRestoreSourceTransformsCommand(changes));
     }
     public Rect2D? SelectedPartBounds => ActiveCanvasContent is not { } activeContent || SelectedModelPartId is not { } id
         ? null
@@ -2908,7 +2937,9 @@ public partial class FabricadorViewModel : ObservableObject, IModulePageViewMode
         OnPropertyChanged(nameof(SelectedPartPivot));
         SyncSelectedPartNameDraft();
         OnPropertyChanged(nameof(CanRenameSelectedPart));
+        OnPropertyChanged(nameof(CanRestoreSourceTransforms));
         RenameSelectedPartCommand.NotifyCanExecuteChanged();
+        RestoreSourceTransformsCommand.NotifyCanExecuteChanged();
         RefreshRigPanel();
         SetModelContentDirty(true);
         _ = RenderModelPreviewAsync(content);

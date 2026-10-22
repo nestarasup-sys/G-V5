@@ -248,6 +248,7 @@
                                         <Button Grid.Column="1" Content="Renomear" Command="{Binding RenameSelectedPartCommand}" IsEnabled="{Binding CanRenameSelectedPart}" Padding="8,5" VerticalAlignment="Center" />
                                         <Button Grid.Column="2" Content="Limpar seleção" Command="{Binding ClearSelectionCommand}" Padding="8,5" VerticalAlignment="Center" />
                                     </Grid>
+                                    <Button Content="Restaurar transformações originais" Command="{Binding RestoreSourceTransformsCommand}" IsEnabled="{Binding CanRestoreSourceTransforms}" HorizontalAlignment="Left" Padding="8,5" ToolTip.Tip="Volta todas as peças à posição em que foram separadas da imagem-fonte. Desfazer restaura as posições anteriores." />
                                     <ListBox x:Name="ModelPartLayerList" ItemsSource="{Binding PartLayers}" Loaded="OnModelPartLayerListLoaded" MinHeight="100" MaxHeight="360" Background="Transparent" BorderThickness="0">
                                         <ListBox.ItemTemplate>
                                             <DataTemplate x:DataType="vm:ModelPartLayerItem">

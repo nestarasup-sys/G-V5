@@ -86,6 +86,39 @@ public sealed class ModelRigEditorTests
         Assert.Throws<ArgumentException>(() => new ModelRigEditor(model, [orphan]));
     }
 
+    [Fact]
+    public void RestoreSourceTransformsChangesOnlyRequestedTransformsAndIsReversible()
+    {
+        var (model, ids) = Model();
+        var joint = new RigJoint(RigJointId.New(), TransformNodeId.From(ids[0].Value),
+            TransformNodeId.From(ids[1].Value), Point2D.Zero, Point2D.Zero, RigJointMode.Fixed);
+        var content = ModelDraftContent.Restore(model.SchemaVersion, model.ModelId, model.Revision,
+            model.Slot, model.SourceAssetId, model.SourceWidth, model.SourceHeight,
+            model.Parts, model.LayerOrder.Reverse(), [joint]);
+        var editedPart = content.Parts[0];
+        var editedTransform = new Transform2D(new Point2D(19, 23), editedPart.Transform.Scale,
+            editedPart.Transform.RotationRadians, editedPart.Transform.Pivot);
+        var editedContent = ModelDraftContent.Restore(content.SchemaVersion, content.ModelId, content.Revision,
+            content.Slot, content.SourceAssetId, content.SourceWidth, content.SourceHeight,
+            content.Parts.Select(part => part.Id == editedPart.Id ? part.WithTransform(editedTransform) : part),
+            content.LayerOrder, content.RigJoints);
+        var command = new ModelPartRestoreSourceTransformsCommand([
+            new ModelPartTransformChange(editedPart.Id, editedTransform, editedPart.SourceTransform.Transform)
+        ]);
+
+        var restored = command.Apply(editedContent);
+        Assert.Equal(editedPart.SourceTransform.Transform, restored.Parts.Single(part => part.Id == editedPart.Id).Transform);
+        Assert.Equal(editedContent.Parts.Where(part => part.Id != editedPart.Id).Select(part => part.Transform),
+            restored.Parts.Where(part => part.Id != editedPart.Id).Select(part => part.Transform));
+        Assert.Equal(content.LayerOrder, restored.LayerOrder);
+        Assert.Equal(content.RigJoints, restored.RigJoints);
+        Assert.Equal(editedContent.Parts.Select(part => part.SourceTransform), restored.Parts.Select(part => part.SourceTransform));
+
+        var reverted = command.Revert(restored);
+        Assert.Equal(editedTransform, reverted.Parts.Single(part => part.Id == editedPart.Id).Transform);
+        Assert.Equal(editedContent.Parts.Select(part => part.Transform), reverted.Parts.Select(part => part.Transform));
+    }
+
     private static (ModelDraftContent Model, ModelPartId[] Parts) Model()
     {
         var parts = new[]
