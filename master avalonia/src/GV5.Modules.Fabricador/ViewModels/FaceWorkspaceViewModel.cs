@@ -92,6 +92,8 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanApplyComponentTransform))]
     [NotifyCanExecuteChangedFor(nameof(ApplyComponentTransformCommand))]
+    [NotifyPropertyChangedFor(nameof(CanApplyComponentName))]
+    [NotifyCanExecuteChangedFor(nameof(ApplyComponentNameCommand))]
     [NotifyPropertyChangedFor(nameof(CanRemoveSelectedComponent))]
     [NotifyCanExecuteChangedFor(nameof(RemoveSelectedComponentCommand))]
     [NotifyPropertyChangedFor(nameof(CanToggleSelectedVisibility))]
@@ -100,8 +102,15 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
     private FaceComponentChoiceItem? selectedComponent;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanApplyComponentName))]
+    [NotifyCanExecuteChangedFor(nameof(ApplyComponentNameCommand))]
+    private string componentName = "";
+
+    [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanApplyComponentTransform))]
     [NotifyCanExecuteChangedFor(nameof(ApplyComponentTransformCommand))]
+    [NotifyPropertyChangedFor(nameof(CanApplyComponentName))]
+    [NotifyCanExecuteChangedFor(nameof(ApplyComponentNameCommand))]
     private string componentX = "";
 
     [ObservableProperty]
@@ -132,6 +141,7 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
     [NotifyPropertyChangedFor(nameof(CanAddHeadExtra))]
     [NotifyPropertyChangedFor(nameof(CanRemoveSelectedComponent))]
     [NotifyPropertyChangedFor(nameof(CanToggleSelectedVisibility))]
+    [NotifyPropertyChangedFor(nameof(CanApplyComponentName))]
     [NotifyCanExecuteChangedFor(nameof(AddHeadExtraCommand))]
     [NotifyCanExecuteChangedFor(nameof(SelectFaceSheetCommand))]
     [NotifyCanExecuteChangedFor(nameof(ConfirmImportCommand))]
@@ -141,6 +151,7 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
     [NotifyCanExecuteChangedFor(nameof(AddHeadExtraCommand))]
     [NotifyCanExecuteChangedFor(nameof(RemoveSelectedComponentCommand))]
     [NotifyCanExecuteChangedFor(nameof(ToggleSelectedVisibilityCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ApplyComponentNameCommand))]
     private bool isBusy;
 
     public FaceWorkspaceViewModel(IFilePicker? filePicker, FaceSheetImportService? importService,
@@ -189,6 +200,10 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
         && (!HasMultipleCatalogs || SelectedCatalog is not null);
     public bool CanRemoveSelectedComponent => !IsBusy && _savedCatalog is not null
         && _catalogRepository is not null && SelectedComponent is not null;
+    public bool CanApplyComponentName => !IsBusy && _savedCatalog is not null && _catalogRepository is not null
+        && SelectedComponent is not null && !string.IsNullOrWhiteSpace(ComponentName)
+        && ComponentName.Trim().Length <= 120
+        && !string.Equals(ComponentName.Trim(), SelectedComponent.Name, StringComparison.Ordinal);
     public bool CanToggleSelectedVisibility => !IsBusy && _savedCatalog is not null
         && _catalogRepository is not null && SelectedComponent is not null
         && (SelectedComponent.IsVisible || SelectedComponent.Kind != FaceComponentKind.HeadExtra || VisibleHeadExtraCount < 8);
@@ -266,6 +281,7 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
     partial void OnSelectedComponentChanged(FaceComponentChoiceItem? value)
     {
         if (value is null) return;
+        ComponentName = value.Name;
         ComponentX = FormatNumber(value.Transform.Translation.X);
         ComponentY = FormatNumber(value.Transform.Translation.Y);
         ComponentScaleX = FormatNumber(value.Transform.Scale.X);
@@ -542,6 +558,29 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
         finally { IsBusy = false; }
     }
 
+    [RelayCommand(CanExecute = nameof(CanApplyComponentName))]
+    private async Task ApplyComponentNameAsync(CancellationToken cancellationToken)
+    {
+        if (_savedCatalog is null || _catalogRepository is null || SelectedComponent is null
+            || !CanApplyComponentName) return;
+        Error = null;
+        Status = null;
+        IsBusy = true;
+        try
+        {
+            var componentId = SelectedComponent.Id;
+            var updated = _savedCatalog.WithComponentName(componentId, ComponentName.Trim());
+            var saved = await _catalogRepository.SaveAsync(updated, _savedCatalog.Revision, cancellationToken);
+            if (saved.IsFailure) { Error = saved.Error!.Message; return; }
+            AcceptSavedCatalog(saved.Value, componentId);
+            Status = "Nome do componente facial salvo no catálogo.";
+        }
+        catch (OperationCanceledException) { Status = "Renomeação cancelada; o nome anterior foi preservado."; }
+        catch (Exception exception) when (exception is IOException or InvalidOperationException or ArgumentException)
+        { Error = "Não foi possível salvar o nome do componente. Use até 120 caracteres."; }
+        finally { IsBusy = false; }
+    }
+
     private void AcceptSavedCatalog(FaceCatalogDraft catalog, FaceComponentId? selectedComponentId = null)
     {
         _savedCatalog = catalog;
@@ -565,6 +604,7 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
         AddHeadExtraCommand.NotifyCanExecuteChanged();
         RemoveSelectedComponentCommand.NotifyCanExecuteChanged();
         ToggleSelectedVisibilityCommand.NotifyCanExecuteChanged();
+        ApplyComponentNameCommand.NotifyCanExecuteChanged();
         PublishCatalogCommand.NotifyCanExecuteChanged();
     }
 
@@ -766,7 +806,7 @@ public partial class FaceWorkspaceViewModel : ObservableObject, IAsyncDisposable
         if (_savedCatalog is null) return;
         foreach (var component in _savedCatalog.Components.OrderBy(item => item.ZOrder).ThenBy(item => item.Name, StringComparer.CurrentCultureIgnoreCase))
             ComponentChoices.Add(new FaceComponentChoiceItem(component.Id, CreateComponentLabel(component), component.Transform,
-                component.Kind, component.IsVisible));
+                component.Name, component.Kind, component.IsVisible));
         SelectedComponent = ComponentChoices.FirstOrDefault(choice => choice.Id == previousId) ?? ComponentChoices.FirstOrDefault();
         OnPropertyChanged(nameof(CanApplyComponentTransform));
         ApplyComponentTransformCommand.NotifyCanExecuteChanged();
@@ -972,4 +1012,4 @@ public sealed record FaceCatalogChoiceItem(FaceId Id, string Name, Revision Revi
 }
 
 public sealed record FaceComponentChoiceItem(FaceComponentId Id, string Label, Transform2D Transform,
-    FaceComponentKind Kind, bool IsVisible);
+    string Name, FaceComponentKind Kind, bool IsVisible);

@@ -118,6 +118,9 @@ public sealed class SqliteFaceCatalogRepositoryTests
                     new Transform2D(new Point2D(10, -3), new Point2D(1.1, 0.8), 0.2, new Point2D(4, 5)));
                 var updated = await repository.SaveAsync(moved, saved.Value.Revision, token);
                 Assert.True(updated.IsSuccess, updated.Error?.Message);
+                var renamedCatalog = updated.Value.WithComponentName(extra.Id, "Óculos Pro");
+                var renamed = await repository.SaveAsync(renamedCatalog, updated.Value.Revision, token);
+                Assert.True(renamed.IsSuccess, renamed.Error?.Message);
 
                 var expressionRepository = new SqliteFaceExpressionRepository(database);
                 var collection = FaceExpressionCollection.Create(ModelRevisionReference.From(model.Value), "Expressões", 10);
@@ -132,12 +135,12 @@ public sealed class SqliteFaceCatalogRepositoryTests
                 var staleCollection = await expressionRepository.SaveCollectionAsync(renamedCollection, collection.Revision, token);
                 Assert.True(staleCollection.IsFailure);
                 Assert.Equal(ApplicationErrorCode.Conflict, staleCollection.Error!.Code);
-                var assembly = FaceAssembly.Create(updated.Value).Select(updated.Value, component.Id)
-                    .Select(updated.Value, mouth.Id);
-                var preset = FaceExpressionPresetDraft.Create(collection, updated.Value, 12, "Irritada", assembly);
+                var assembly = FaceAssembly.Create(renamed.Value).Select(renamed.Value, component.Id)
+                    .Select(renamed.Value, mouth.Id);
+                var preset = FaceExpressionPresetDraft.Create(collection, renamed.Value, 12, "Irritada", assembly);
                 var createdPreset = await expressionRepository.CreatePresetAsync(preset, token);
                 Assert.True(createdPreset.IsSuccess, createdPreset.Error?.Message);
-                var sparePreset = FaceExpressionPresetDraft.Create(cascadeCollection, updated.Value, 13, "Triste");
+                var sparePreset = FaceExpressionPresetDraft.Create(cascadeCollection, renamed.Value, 13, "Triste");
                 sparePresetId = sparePreset.Id;
                 var createdSparePreset = await expressionRepository.CreatePresetAsync(sparePreset, token);
                 Assert.True(createdSparePreset.IsSuccess, createdSparePreset.Error?.Message);
@@ -153,14 +156,14 @@ public sealed class SqliteFaceCatalogRepositoryTests
                 Assert.True(stalePreset.IsFailure);
                 Assert.Equal(ApplicationErrorCode.Conflict, stalePreset.Error!.Code);
                 var faceRepository = new SqliteFaceCatalogRepository(database);
-                var staleFacePublication = await faceRepository.PublishAsync(updated.Value.Id, Revision.Initial, 25, token);
+                var staleFacePublication = await faceRepository.PublishAsync(renamed.Value.Id, Revision.Initial, 25, token);
                 Assert.True(staleFacePublication.IsFailure);
                 Assert.Equal(ApplicationErrorCode.Conflict, staleFacePublication.Error!.Code);
                 var expressionWithoutFacePublication = await expressionRepository.PublishPresetAsync(presetChanges.Id,
                     savedPreset.Value.Revision, 25, token);
                 Assert.True(expressionWithoutFacePublication.IsFailure);
                 Assert.Equal(ApplicationErrorCode.NotFound, expressionWithoutFacePublication.Error!.Code);
-                var facePublication = await faceRepository.PublishAsync(updated.Value.Id, updated.Value.Revision, 26, token);
+                var facePublication = await faceRepository.PublishAsync(renamed.Value.Id, renamed.Value.Revision, 26, token);
                 Assert.True(facePublication.IsSuccess, facePublication.Error?.Message);
                 publishedFaceId = facePublication.Value.Id;
                 var expressionPublication = await expressionRepository.PublishPresetAsync(presetChanges.Id,
@@ -184,7 +187,7 @@ public sealed class SqliteFaceCatalogRepositoryTests
                 Assert.Equal(FaceMouthVariant.Open, loaded.Value.Components.Single(component => component.Name == "Boca aberta").MouthVariant);
                 Assert.Equal(875, loaded.Value.Components.Single(component => component.Name == "Boca aberta").ZOrder);
                 var persistedExtra = Assert.Single(loaded.Value.Components, component => component.Kind == FaceComponentKind.HeadExtra);
-                Assert.Equal("Óculos", persistedExtra.Name);
+                Assert.Equal("Óculos Pro", persistedExtra.Name);
                 Assert.Equal(extraAsset, persistedExtra.AssetId);
                 Assert.Equal(new Point2D(22, 37), persistedExtra.Transform.Translation);
                 var withoutExtra = loaded.Value.WithoutComponent(persistedExtra.Id);

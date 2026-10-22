@@ -128,10 +128,16 @@ public sealed class FaceWorkspaceViewModelTests
             Assert.Contains("fundo verde removido", viewModel.Status, StringComparison.OrdinalIgnoreCase);
             Assert.Single(assets.Assets);
 
+            viewModel.ComponentName = "Óculos Pro";
+            Assert.True(viewModel.CanApplyComponentName);
+            await viewModel.ApplyComponentNameCommand.ExecuteAsync(null);
+            Assert.Equal("Óculos Pro", repository.Catalogs[catalog.Id].Components.Single().Name);
+            Assert.Equal(Revision.From(2), repository.Catalogs[catalog.Id].Revision);
+
             await viewModel.RemoveSelectedComponentCommand.ExecuteAsync(null);
 
             var updated = repository.Catalogs[catalog.Id];
-            Assert.Equal(Revision.From(2), updated.Revision);
+            Assert.Equal(Revision.From(3), updated.Revision);
             Assert.Empty(updated.Components);
             Assert.Equal(0, viewModel.HeadExtraCount);
             Assert.Single(assets.Assets);

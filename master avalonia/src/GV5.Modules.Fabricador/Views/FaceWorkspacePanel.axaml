@@ -112,6 +112,13 @@
                     <ComboBox ItemsSource="{Binding ComponentChoices}"
                               SelectedItem="{Binding SelectedComponent, Mode=TwoWay}"
                               DisplayMemberBinding="{Binding Label}" />
+                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
+                        <TextBox Text="{Binding ComponentName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                 MaxLength="120" PlaceholderText="Nome do componente" />
+                        <Button Grid.Column="1" Content="Salvar nome" Command="{Binding ApplyComponentNameCommand}"
+                                IsEnabled="{Binding CanApplyComponentName}" Padding="10,6"
+                                Background="#F0EAF8" BorderBrush="#D8C8EB" Foreground="#704B9A" />
+                    </Grid>
                     <Grid ColumnDefinitions="*,*" ColumnSpacing="6" RowDefinitions="Auto,Auto,Auto" RowSpacing="5">
                         <TextBox Text="{Binding ComponentX, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" PlaceholderText="Posição X" />
                         <TextBox Grid.Column="1" Text="{Binding ComponentY, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" PlaceholderText="Posição Y" />

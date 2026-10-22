@@ -91,6 +91,9 @@ public sealed record FaceComponent
     public FaceComponent WithTransform(Transform2D transform) =>
         Restore(Id, Kind, Name, AssetId, Side, transform, IsVisible, MouthVariant, ZOrder);
 
+    public FaceComponent WithName(string name) =>
+        Restore(Id, Kind, name, AssetId, Side, Transform, IsVisible, MouthVariant, ZOrder);
+
     public FaceComponent WithZOrder(int zOrder) =>
         Restore(Id, Kind, Name, AssetId, Side, Transform, IsVisible, MouthVariant, zOrder);
 
@@ -161,6 +164,17 @@ public sealed record FaceCatalogDraft
         var index = FindComponentIndex(component.Id);
         var updated = index < 0 ? Components.Add(component) : Components.SetItem(index, component);
         return Restore(Id, Model, Revision.Next(), Name, updated);
+    }
+
+    public FaceCatalogDraft WithComponentName(FaceComponentId componentId, string name)
+    {
+        if (!componentId.IsValid) throw new ArgumentException("A facial component ID must be valid.", nameof(componentId));
+        ArgumentNullException.ThrowIfNull(name);
+        var index = FindComponentIndex(componentId);
+        if (index < 0) throw new InvalidOperationException("The selected facial component is not present in this catalog.");
+        var current = Components[index];
+        if (string.Equals(current.Name, name.Trim(), StringComparison.Ordinal)) return this;
+        return Restore(Id, Model, Revision.Next(), Name, Components.SetItem(index, current.WithName(name)));
     }
 
     public FaceCatalogDraft WithoutComponent(FaceComponentId componentId)
