@@ -366,6 +366,50 @@ public sealed class FaceWorkspaceViewModelTests
     }
 
     [Fact]
+    public async Task ComposedPreviewHitTestSkipsTransparentTopPixelsAndSelectsTheVisibleComponentBelow()
+    {
+        var assets = new MemoryAssetStore();
+        await using var lowerStream = new MemoryStream(CreateAlphaPatternPng(transparentCenter: false), writable: false);
+        await using var upperStream = new MemoryStream(CreateAlphaPatternPng(transparentCenter: true), writable: false);
+        var lowerAsset = await assets.ImportAsync(lowerStream, "image/png", TestContext.Current.CancellationToken);
+        var upperAsset = await assets.ImportAsync(upperStream, "image/png", TestContext.Current.CancellationToken);
+        Assert.True(lowerAsset.IsSuccess, lowerAsset.Error?.Message);
+        Assert.True(upperAsset.IsSuccess, upperAsset.Error?.Message);
+
+        var model = CreatePublishedModel("Modelo para seleção por alpha");
+        var lower = FaceComponent.Create(FaceComponentKind.Blush, "Camada visível abaixo", lowerAsset.Value.Id,
+            null, Transform2D.Identity, zOrder: 700);
+        var upper = FaceComponent.Create(FaceComponentKind.Nose, "Camada com transparência", upperAsset.Value.Id,
+            null, Transform2D.Identity, zOrder: 900);
+        var catalog = FaceCatalogDraft.Create(ModelRevisionReference.From(model), "Rosto")
+            .WithComponent(lower).WithComponent(upper);
+        var repository = new MemoryFaceCatalogRepository();
+        repository.Catalogs.Add(catalog.Id, catalog);
+        var viewModel = new FaceWorkspaceViewModel(null, null, repository, assets,
+            imageDecoder: new AssetImageDecoder(), sceneRenderer: new UnusedSceneRenderer());
+        try
+        {
+            await viewModel.OpenModelRevisionAsync(model, ModelSlot.From(1));
+            await viewModel.LoadCatalogAsync(TestContext.Current.CancellationToken);
+            var previewRenderer = new FaceCatalogPreviewRenderer(assets, new AssetImageDecoder(), new UnusedSceneRenderer());
+            var scene = await previewRenderer.BuildSceneAsync(model, catalog, cancellationToken: TestContext.Current.CancellationToken);
+            var upperLayer = Assert.Single(scene.Layers, layer => layer.AssetId == upperAsset.Value.Id);
+            var pointInTransparentPixel = RenderLayerGeometry.GetSceneMatrix(upperLayer, scene.Height)
+                .Transform(new Point2D(4.5, 4.5));
+            var pointInOpaquePixel = RenderLayerGeometry.GetSceneMatrix(upperLayer, scene.Height)
+                .Transform(new Point2D(0.5, 0.5));
+
+            Assert.True(await viewModel.SelectComponentAtPreviewPointAsync(pointInTransparentPixel,
+                TestContext.Current.CancellationToken));
+            Assert.Equal(lower.Id, viewModel.SelectedComponent?.Id);
+            Assert.True(await viewModel.SelectComponentAtPreviewPointAsync(pointInOpaquePixel,
+                TestContext.Current.CancellationToken));
+            Assert.Equal(upper.Id, viewModel.SelectedComponent?.Id);
+        }
+        finally { await viewModel.DisposeAsync(); }
+    }
+
+    [Fact]
     public async Task ComponentTransform_RequiresValidValuesAndPersistsAsOneCatalogRevision()
     {
         var previousCulture = CultureInfo.CurrentCulture;
@@ -752,6 +796,15 @@ public sealed class FaceWorkspaceViewModelTests
         bitmap.Erase(new SKColor(0, 255, 0, 255));
         Paint(bitmap, 2, 3, new SKColor(30, 25, 20, 255));
         Paint(bitmap, 12, 3, new SKColor(50, 35, 25, 255));
+        using var encoded = bitmap.Encode(SKEncodedImageFormat.Png, 100);
+        return encoded!.ToArray();
+    }
+
+    private static byte[] CreateAlphaPatternPng(bool transparentCenter)
+    {
+        using var bitmap = new SKBitmap(new SKImageInfo(8, 8, SKColorType.Rgba8888, SKAlphaType.Unpremul));
+        bitmap.Erase(SKColors.Red);
+        if (transparentCenter) bitmap.SetPixel(4, 4, SKColors.Transparent);
         using var encoded = bitmap.Encode(SKEncodedImageFormat.Png, 100);
         return encoded!.ToArray();
     }

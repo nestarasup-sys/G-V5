@@ -76,7 +76,8 @@ public static class FaceCatalogPreviewSceneBuilder
 
     /// <summary>Returns the topmost visible facial component under a point in preview pixel coordinates.</summary>
     public static FaceComponentId? HitTest(PublishedModelRevision model, FaceCatalogDraft catalog,
-        IReadOnlyDictionary<AssetId, Rect2D> faceAssetCrops, Point2D previewPoint, int maximumDimension = 512)
+        IReadOnlyDictionary<AssetId, Rect2D> faceAssetCrops, Point2D previewPoint, int maximumDimension = 512,
+        IReadOnlyDictionary<AssetId, FaceAlphaMask>? alphaMasks = null)
     {
         ArgumentNullException.ThrowIfNull(model);
         ArgumentNullException.ThrowIfNull(catalog);
@@ -100,7 +101,10 @@ public static class FaceCatalogPreviewSceneBuilder
             var layer = ScaleLayer(faceLayers[index], scale);
             var localPoint = RenderLayerGeometry.GetSceneMatrix(layer, previewSize.Height).Invert().Transform(previewPoint);
             var crop = faceAssetCrops[orderedSelections[index].Component.AssetId];
-            if (new Rect2D(0, 0, crop.Width, crop.Height).Contains(localPoint))
+            var sourceBounds = new Rect2D(0, 0, crop.Width, crop.Height);
+            if (sourceBounds.Contains(localPoint)
+                && (alphaMasks is null || !alphaMasks.TryGetValue(orderedSelections[index].Component.AssetId, out var mask)
+                    || mask.IsOpaque(localPoint, sourceBounds)))
                 return orderedSelections[index].Component.Id;
         }
 

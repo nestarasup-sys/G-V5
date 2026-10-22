@@ -81,6 +81,46 @@ public sealed class FaceRenderSceneBuilderTests
     }
 
     [Fact]
+    public void CatalogPreviewHitTest_PassesThroughTransparentPixelsToTheVisibleLayerBelow()
+    {
+        var sourceAsset = AssetId.New();
+        var partId = ModelPartId.New();
+        var crop = new Rect2D(0, 0, 20, 20);
+        var part = new ModelPart(partId, "Cabeça", sourceAsset, crop, Transform2D.Identity,
+            new ModelPartSourceTransform(crop, Transform2D.Identity));
+        var content = ModelDraftContent.Restore(ModelDraftContent.CurrentSchemaVersion, ModelId.New(),
+            Revision.Initial, ModelSlot.From(1), sourceAsset, 20, 20, [part], [partId]);
+        var model = PublishedModelRevision.Restore(ModelRevisionId.New(), content.ModelId, Revision.Initial,
+            Revision.Initial, "Modelo de hit-test alfa", 1, new string('c', 64), content);
+        var lowerAsset = AssetId.New();
+        var upperAsset = AssetId.New();
+        var lower = FaceComponent.Create(FaceComponentKind.Blush, "Camada inferior", lowerAsset, null,
+            Transform2D.Identity, zOrder: 700);
+        var upper = FaceComponent.Create(FaceComponentKind.Nose, "Camada superior", upperAsset, null,
+            Transform2D.Identity, zOrder: 900);
+        var catalog = FaceCatalogDraft.Create(ModelRevisionReference.From(model), "Rosto")
+            .WithComponent(lower).WithComponent(upper);
+        var crops = new Dictionary<AssetId, Rect2D>
+        {
+            [lowerAsset] = new(0, 0, 4, 4), [upperAsset] = new(0, 0, 4, 4)
+        };
+        var scene = FaceCatalogPreviewSceneBuilder.Build(model, catalog, crops, 20);
+        var upperLayer = Assert.Single(scene.Layers, layer => layer.AssetId == upperAsset);
+        var center = RenderLayerGeometry.GetSceneMatrix(upperLayer, scene.Height).Transform(new Point2D(2.5, 2.5));
+        var opaquePoint = RenderLayerGeometry.GetSceneMatrix(upperLayer, scene.Height).Transform(new Point2D(0.5, 0.5));
+        var lowerMask = new FaceAlphaMask(4, 4, Enumerable.Repeat((byte)255, 16).ToArray());
+        var upperAlpha = Enumerable.Repeat((byte)255, 16).ToArray();
+        upperAlpha[2 * 4 + 2] = 0;
+        var masks = new Dictionary<AssetId, FaceAlphaMask>
+        {
+            [lowerAsset] = lowerMask, [upperAsset] = new FaceAlphaMask(4, 4, upperAlpha)
+        };
+
+        Assert.Equal(lower.Id, FaceCatalogPreviewSceneBuilder.HitTest(model, catalog, crops, center, 20, masks));
+        Assert.Equal(upper.Id, FaceCatalogPreviewSceneBuilder.HitTest(model, catalog, crops, opaquePoint, 20, masks));
+    }
+
+    [Fact]
     public void Build_ComposesLinkedEyesMirroredAndOnlySelectedMouthVariantInStableOrder()
     {
         var model = ModelRevisionReference.Restore(ModelId.New(), ModelRevisionId.New(), Revision.Initial, new string('d', 64));
